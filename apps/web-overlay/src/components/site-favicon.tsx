@@ -328,6 +328,41 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 仅改这一行）。少数派/拼多多的 customIcon 均为 …/favicon.ico，会被
   // isRemoteRawFavicon 拦截后回落 map，无需清空。
   'weixin.qq.com': '/brand-icons/weixin.png',
+  // 2026-11-18（C 类第 1 批 c1g1）：Perplexity / Hugging Face / Suno / ElevenLabs。
+  // 4 站 icon 均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
+  // navigation.json 不动。Midjourney 阻塞未落盘（见批次笔记），无条目。
+  'perplexity.ai': '/brand-icons/perplexity.svg',
+  'huggingface.co': '/brand-icons/huggingface.png',
+  'suno.com': '/brand-icons/suno.png',
+  'elevenlabs.io': '/brand-icons/elevenlabs.svg',
+  // 2026-11-18（C 类第 1 批 c1g2）：智谱清言 / 讯飞星火 / n8n。
+  // 3 站 icon 均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
+  // navigation.json 不动。GitHub 走下方标题规则，不建 'github.com' 键。
+  'chatglm.cn': '/brand-icons/zhipu.png',
+  'xinghuo.xfyun.cn': '/brand-icons/xinghuo.png',
+  'n8n.io': '/brand-icons/n8n.png',
+  // 2026-11-18（C 类第 1 批 c1g3）：淘宝 / 京东 / 抖音 / 快手 / 哔哩哔哩。
+  // 5 站 icon 均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
+  // navigation.json 不动。京东取帧提醒：ICO 最大帧为第 7 帧 48×48 32bpp，
+  // PIL 默认帧是 4bpp 抖动帧，复核不要用 PIL 默认帧。
+  'taobao.com': '/brand-icons/taobao.png',
+  'jd.com': '/brand-icons/jd.png',
+  'douyin.com': '/brand-icons/douyin.png',
+  'kuaishou.com': '/brand-icons/kuaishou.png',
+  'bilibili.com': '/brand-icons/bilibili.png',
+  // 2026-11-18（C 类第 1 批 c1g4：办公 + 内容社区）：飞书 / Stack Overflow / 知乎 / 豆瓣 / 小红书。
+  // 5 站 icon 均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
+  // navigation.json 不动。
+  'feishu.cn': '/brand-icons/feishu.png',
+  'stackoverflow.com': '/brand-icons/stackoverflow.png',
+  'zhihu.com': '/brand-icons/zhihu.png',
+  'douban.com': '/brand-icons/douban.png',
+  'xiaohongshu.com': '/brand-icons/xiaohongshu.png',
+  // 2026-11-18（C 类第 1 批 Trae 补救）：Trae。
+  // icon 为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
+  // navigation.json 不动。源为 docs.trae.ai 首页声明的 shortcut icon
+  //（trae.cn 地域墙 403，见批次笔记）；trae.ai 不在站内，不加键。
+  'trae.cn': '/brand-icons/trae.png',
 }
 
 /**
@@ -527,6 +562,11 @@ export function resolveSiteIcon(
     // 载体裁决（B2 复审 §5.3）：落盘 vllm.svg（官网 SVG 双声明、透明底，
     // 规范 §1.1 SVG 优先）；ICO 版为同一标的白底不透明载体，已裁决废弃。
     if (lowerTitle.includes('vllm')) return '/brand-icons/vllm.svg'
+    // 2026-11-18（C 类第 1 批 c1g2）：GitHub 主站。github.com 为 7 站共享域名（GitHub、GitHub Trending、Cline、Copilot、LangGraph、Qwen 3、vLLM），严禁加 'github.com' 域名映射键。
+    // 子串 'github' 在 navigation.json 全库 347 站标题中仅命中 3 站：GitHub、GitHub Trending、GitHub Copilot；
+    // 其中 Copilot 已由上方 'copilot' 规则（:515）先行命中，不受本条影响；GitHub Trending（C4）暂由本条命中、解析为 github.svg，
+    // C4 为 Trending 加 'trending' 规则时必须放在本条之前。来源：官网首页 <link rel="icon"> 声明的 favicon.svg（github.githubassets.com），SVG 原样。
+    if (lowerTitle.includes('github')) return '/brand-icons/github.svg'
 
     if (LOCAL_LOGO_MAP[hostname]) {
       return LOCAL_LOGO_MAP[hostname]!

@@ -192,7 +192,10 @@ describe("C-03：视频首帧加载超时与加载态", () => {
     // 直接 return，从不经过 markVideoReady——首帧已在（readyState >= 2）时须当场摘掉，
     // 否则唤回后“加载中…”一直显示在播着的视频底下（p6 探针实测：stateAfterWake.loading 仍 true）。
     const play = fnBody("playClip", 2800);
-    const fast = play.slice(play.indexOf("if (clipCurrent === name && clipVisible)"), play.indexOf("ensureClipEls();"));
+    // 合入注（2026-11-18 视觉线 B-03）：playClip 快路径条件加了 && !opts.forceSwap
+    //（走路接缝换路时绕过快路径），原 indexOf 串已不存在；行为不变（快路径仍
+    // 是同一路已加载的视频，首帧已在即摘加载态），按新条件改写。
+    const fast = play.slice(play.indexOf("if (clipCurrent === name && clipVisible && !opts.forceSwap)"), play.indexOf("ensureClipEls();"));
     expect(fast).toContain("readyState >= 2");
     expect(fast).toContain("root.classList.remove('xm-loading')");
     expect(fast).toContain("clearTimeout(videoLoadT)");

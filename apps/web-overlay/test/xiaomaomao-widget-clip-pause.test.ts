@@ -83,7 +83,10 @@ describe("A/B 切换旧一路暂停：淡化结束后只留一路解码", () => 
 
   it("其余暂停路径不受影响：stopClips 仍会停两路，pauseClips/resumeClips 只动可见路", () => {
     expect(WIDGET).toContain("function stopClips()");
-    const stop = WIDGET.slice(WIDGET.indexOf("function stopClips()"), WIDGET.indexOf("function stopClips()") + 500);
+    // 合入注（2026-11-18 视觉线 B-01）：stopClips 顶部多了一行摘静态首帧，
+    // clipVisible = null; 被顶到 offset 513，500 字符窗口够不着；行为不变
+    //（仍停两路、仍清 clipVisible），窗口放宽到 600。
+    const stop = WIDGET.slice(WIDGET.indexOf("function stopClips()"), WIDGET.indexOf("function stopClips()") + 600);
     expect(stop).toContain("v.pause()");
     expect(stop).toContain("clipVisible = null;");
     expect(WIDGET).toContain("function pauseClips()");

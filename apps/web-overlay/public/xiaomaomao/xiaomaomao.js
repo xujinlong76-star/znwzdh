@@ -1,11 +1,13 @@
 // 小猫猫网站 AI 助手挂件 v11（合并版）：右下角悬浮的粉色小猫（Muse 当前头像真图 + 同套姿势图），
 // 能聊天找站、会说话、会卖萌、会睡觉，还能摸、能喂、能一起玩接星星。
+// 默认显示走透明视频（2026-11-18，William 点选）：待机播透明 idle 循环、行走播透明
+// walk 循环，视频在播时舞台透明；文件不在/播不了/浏览器不支持 VP9 透明时回退静态姿势。
 // v8（2026-11-12，William 指示换皇冠全套新版）：
 //   ①默认形象整套换皇冠版——13 张皇冠表情进 POSES（状态映射见 POSES 上方注释），
 //   旧形象不删：整套保留为图库「经典 / 经典深色」选项（POSES_CLASSIC / POSES_DARK），
 //   老用户的经典存档选择原样有效；默认不再跟随深浅主题换图。
 //   ②皇冠动画接入——互动时播静音短循环（media/crown-animations/expr-*.webm，探活回退、懒加载、
-//   离屏暂停、减动效不播、常驻主态仍是静态图）；带声音版（media/crown-animations/snd-*.mp4）只在
+//   离屏暂停、减动效不播；常驻主态 2026-11-18 起改走透明视频循环，播不了回静态图）；带声音版（media/crown-animations/snd-*.mp4）只在
 //   用户主动点猫时才播、默认静音，绝不自动外放（petSoundArmed 一次性授权位）。
 //   ③深色模式如实登记缺口：皇冠套没有深色变体，不拿浅色图冒充——深色下舞台改走
 //   柔和奶油底衬 + 暖金光晕影（CSS html.dark .xm-stage），图本身与浅色模式同一套。
@@ -524,6 +526,12 @@
        （舞台是 1:1 方形、视频也是 1:1）。双视频交叉淡化：.xm-clip 常驻显示、靠 opacity
        淡入淡出；喂猫待命时舞台亮一圈粉色光环。 */
     '#xiaomaomao.xm-play .xm-stage{background:transparent;border-color:transparent;box-shadow:none;border-radius:0;overflow:visible;animation:none;pointer-events:none}' +
+    /* 默认显示走透明视频（2026-11-18）：视频在播时舞台去白底/描边/圆角裁剪、
+       姿势图藏进视频后面（透明区不露白底图）；视频不在/播不了时类名摘掉，
+       静态白圆原样回来。深色奶油底衬不能压过视频态，另写一条深色覆盖。 */
+    '#xiaomaomao.xm-has-video .xm-stage{background:transparent;border-color:transparent;box-shadow:none;border-radius:0;overflow:visible}' +
+    'html.dark #xiaomaomao.xm-has-video .xm-stage{background:transparent;border-color:transparent;box-shadow:none}' +
+    '#xiaomaomao.xm-has-video .xm-lean{opacity:0;transition:opacity .28s var(--xm-ease)}' +
     '#xiaomaomao .xm-hit{display:none;position:absolute;left:6%;top:6%;width:88%;height:88%;border-radius:50%;pointer-events:auto;z-index:3}' +
     '#xiaomaomao.xm-play .xm-hit{display:block}' +
     /* 2026-11-18 审计抓到：只把舞台设 pointer-events:none 不够——.xm-wrap 本身是
@@ -910,6 +918,13 @@
       v.setAttribute('preload', 'auto');
       try { v.disablePictureInPicture = true; } catch (e) { /* 忽略 */ }
       stageEl.appendChild(v);
+      /* 默认视频回退：解码出错即回退——idle 出错停视频回静态，非 idle 出错回 idle
+         （探活只验文件在不在，解码失败要靠 error 事件兜底）。 */
+      v.addEventListener('error', function () {
+        if (clipVisible !== v || !clipCurrent) return;
+        if (clipCurrent === 'idle') stopClips();
+        else playClip('idle');
+      });
     });
     clipVisible = clipA;
   }
@@ -944,6 +959,7 @@
         clipCurrent = name;
         var p = next.play();
         if (p && p.catch) p.catch(function () { /* 自动播放被拦时留首帧 */ });
+        markVideoReady(next, seq);
       } catch (e) { /* 无头/受限环境静默 */ }
     };
     if (next.src && resolved.url && next.src.indexOf(resolved.url) !== -1) { show(); return; }
@@ -969,12 +985,66 @@
   }
   function stopClips() {
     clipSeq++;
+    root.classList.remove('xm-has-video'); /* 视频停了，透明舞台与姿势图一起回静态 */
     [clipA, clipB].forEach(function (v) {
       if (!v) return;
       try { v.pause(); } catch (e) { /* 忽略 */ }
       v.classList.remove('xm-on');
     });
+    clipVisible = null;
     clipCurrent = '';
+  }
+
+  /* ---------- 默认显示走透明视频（2026-11-18） ----------
+     待机播 idle 透明循环；行走/散步沿用游乐场 walk 循环（追/漫步已调 playClip('walk')）。
+     检测办法：canPlayType('video/webm; codecs="vp9"')——能解 VP9 WebM 的浏览器都解得动
+     它的 alpha 面（Chrome/Edge/Firefox）；Safari 不认 VP9（返回空串）→ 直接静态。
+     这是编解码支持检测，不是逐像素 alpha 探针；真机 Safari 未覆盖。
+     文件不在/加载失败/解码出错 → playClip 探活失败或 error 事件 → stopClips → 静态。 */
+  function supportsVp9Alpha() {
+    try {
+      var v = document.createElement('video');
+      return !!(v && v.canPlayType && v.canPlayType('video/webm; codecs="vp9"'));
+    } catch (e) { return false; }
+  }
+  var ambientVideo = false; /* 默认视频在播 */
+  function ambientEligible() {
+    return !reducedMotion && !avatarPick && supportsVp9Alpha() &&
+      !root.classList.contains('xm-closed');
+  }
+  function startAmbientVideo() {
+    if (!ambientEligible()) return false;
+    ambientVideo = true;
+    playClip('idle');
+    return true;
+  }
+  function stopAmbientVideo() {
+    ambientVideo = false;
+    if (!play.on) stopClips();
+  }
+  /* 视频暂停/续播（贴边/离屏/切后台/收起时省电）：只动当前可见的那一路；
+     续播只在游乐场或默认视频在播时才续，静态态不无故开播。 */
+  function pauseClips() {
+    try { if (clipVisible && !clipVisible.paused) clipVisible.pause(); } catch (e) { /* 忽略 */ }
+  }
+  function resumeClips() {
+    try {
+      if (clipVisible && clipVisible.paused && clipCurrent && (play.on || ambientVideo) && !document.hidden) {
+        var p = clipVisible.play();
+        if (p && p.catch) p.catch(function () { /* 留首帧 */ });
+      }
+    } catch (e) { /* 忽略 */ }
+  }
+  /* 视频有首帧才算真在播：透明类（舞台透明+藏姿势图）只在首帧就绪后挂，
+     之前姿势图仍顶着，不闪空舞台；error/停播时由 stopClips 摘掉。 */
+  function markVideoReady(v, seq) {
+    var on = function () {
+      if (seq === clipSeq && clipVisible === v) root.classList.add('xm-has-video');
+    };
+    try {
+      if (v.readyState >= 2) on();
+      else v.addEventListener('loadeddata', on, { once: true });
+    } catch (e) { /* 忽略 */ }
   }
 
   /* ---------- 追鼠标 + 扑光标（Top 1） ----------
@@ -1202,7 +1272,8 @@
       window.clearTimeout(play.wanderT);
       window.clearTimeout(play.sleepT);
       if (play.raf) { try { cancelAnimationFrame(play.raf); } catch (e) { /* 忽略 */ } play.raf = 0; }
-      stopClips();
+      /* 游乐场关掉回默认视频（不是回静态）：默认视频开不起来才停视频 */
+      if (!startAmbientVideo()) stopClips();
       root.classList.remove('xm-play');
       root.classList.remove('xm-eat-ready');
       if (store.pos) applySavedPos();
@@ -1366,17 +1437,21 @@
     window.XIAOMAOMAO.feedLink = function (url, title) { feedLink({ url: url, title: title || url }); };
   } catch (e) { /* 忽略 */ }
 
-  /* v8：离屏/切后台停播——猫滚出视口就暂停，切到别的标签页直接收视频（声音版尤其不许在后台响） */
+  /* v8：离屏/切后台停播——猫滚出视口就暂停，切到别的标签页直接收视频（声音版尤其不许在后台响）
+     默认视频同款：离屏/切后台暂停当前那一路，回来再续播（静态态不无故开播）。 */
   try {
     if ('IntersectionObserver' in window) {
       new IntersectionObserver(function (entries) {
         for (var i = 0; i < entries.length; i++) {
-          if (!entries[i].isIntersecting && videoEl) stopCelebVideo(); /* v8 复审返工：离屏直接移除，别让暂停定格盖住后面的静态姿势 */
+          if (!entries[i].isIntersecting) {
+            if (videoEl) stopCelebVideo(); /* v8 复审返工：离屏直接移除，别让暂停定格盖住后面的静态姿势 */
+            pauseClips();
+          } else resumeClips();
         }
       }, { threshold: 0.05 }).observe(stageEl);
     }
   } catch (e) { /* 老环境无 IO：靠 9 秒兜底收尾 */ }
-  document.addEventListener('visibilitychange', function () { if (document.hidden) stopCelebVideo(); });
+  document.addEventListener('visibilitychange', function () { if (document.hidden) { stopCelebVideo(); pauseClips(); } else resumeClips(); });
 
   /* ---------- 气泡（打字机） ---------- */
   var typeTimer = null, bubbleHideTimer = null;
@@ -1741,6 +1816,7 @@
     root.style.transform = 'translateX(' + (dockSide === 'left' ? -shift : shift) + 'px)';
     docked = true;
     root.classList.add('xm-docked');
+    pauseClips(); /* 默认视频：贴边半藏即停播，不在半藏态白白解码 */
     hideBubble();
   }
   function undock() {
@@ -1748,6 +1824,7 @@
     docked = false;
     root.classList.remove('xm-docked');
     root.style.transform = '';
+    resumeClips(); /* 弹回：视频续播 */
     noteXmAct();
   }
   window.setInterval(function () {
@@ -2128,6 +2205,7 @@
     hideBubble();
     stopSpeak();
     stopCelebVideo(); /* v8 复审返工：收起即停视频，滞后的探活链凭令牌丢弃 */
+    pauseClips(); /* 默认视频：收起成圆标即停播，不在圆标里白白解码 */
     autoClosed = false;
     autoParked = false;
     userUnparked = false;
@@ -2165,6 +2243,8 @@
     persist();
     markActive();
     wakeUp(false);
+    /* 唤回：游乐场开着续播游乐场那一路，否则默认视频续上（已在播时是空操作） */
+    if (play.on) resumeClips(); else startAmbientVideo();
     setPose('waking');
     happyBounce();
     burst(7);
@@ -2944,6 +3024,8 @@
     refreshAvatarImages();
     renderLook();
     showLookNote(avatarPick ? '好啦，以后就用这个形象陪你～' : '恢复默认啦，整套姿势都回来咯');
+    /* 默认视频：用户选了单张形象就停默认视频，恢复默认再播 */
+    if (avatarPick) stopAmbientVideo(); else startAmbientVideo();
   }
   function encodeSquareImage(img, size, q) {
     var canvas = document.createElement('canvas');
@@ -2992,6 +3074,7 @@
           return;
         }
         stopCelebVideo(); /* v8 复审返工：换形象即停视频，滞后的探活链凭令牌丢弃 */
+        stopAmbientVideo(); /* 上传了自己的图：默认视频停，用户形象优先 */
         refreshAvatarImages();
         renderLook();
         showLookNote('存好啦！这张图只在这台设备上陪你～');
@@ -3056,4 +3139,7 @@
   if (!reducedMotion && (window.XIAOMAOMAO_PLAY === true || store.play)) {
     window.setTimeout(function () { setPlayMode(true); }, 1200);
   }
+  /* 默认显示走透明视频（2026-11-18）：游乐场没开时也播 idle 透明循环；减动效/
+     自改形象/收起态/不支持 VP9 透明/文件不在时安静回退静态姿势，不报错、不留白。 */
+  window.setTimeout(function () { if (!play.on) startAmbientVideo(); }, 600);
 })();

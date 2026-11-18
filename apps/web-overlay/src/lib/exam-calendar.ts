@@ -709,6 +709,95 @@ export function examNodeStatus(node: ExamNode, nowMs: number = Date.now()): Exam
   return 'active'
 }
 
+/**
+ * 今日节点（U-102，首页「今日提醒」行的数据源）。
+ *
+ * 判定只用自然日口径（daysUntil + examNodeStatus），不新造时刻门控函数、
+ * 不给 ExamNode 加时刻字段（京考报名 18:00 截止的决策见 jingkao 节点注释）：
+ *  - kind 'today'：单日节点当天（examNodeStatus === 'today'），如三省成绩查询；
+ *  - kind 'endsToday'：多日窗口末日当天（active 且 endISO 就是今天），
+ *    如京考报名、文职缴费在 11-18——行内只写「今日截止」，时点只以
+ *    节点 detail 原文呈现，不算「已截止 / 未截止」；
+ *  - kind 'startsToday'：多日窗口首日当天（active 且 startISO 就是今天），
+ *    但只在该场考试当天没有更直接的今日节点（today / endsToday）时才收录，
+ *    如江西成绩复核在 11-19；新疆成绩复核在 11-18 不收——成考当天已有
+ *    三省查询三个今日节点，复核进接续区，不抢今日行。
+ *  - estimated 节点永不进今日集合（examNodeStatus 恒返回 'estimated'，
+ *    如浙江成绩查询 11-20 当天也不出现）。
+ * 顺序即 EXAMS 数组序、考试内节点数组序，不另排序；exams 参数只为测试
+ * 注入合成数据，调用方不传。11-18 恰好 5 项，11-19 只剩江西成绩复核。
+ */
+export interface TodayNodeItem {
+  exam: ExamInfo
+  node: ExamNode
+  kind: 'today' | 'endsToday' | 'startsToday'
+}
+
+export function todayNodes(
+  nowMs: number = Date.now(),
+  exams: ExamInfo[] = EXAMS,
+): TodayNodeItem[] {
+  const items: TodayNodeItem[] = []
+  const hasDirectToday = new Set<string>()
+  for (const exam of exams) {
+    for (const node of exam.nodes) {
+      if (node.estimated) continue
+      const status = examNodeStatus(node, nowMs)
+      if (status === 'today') {
+        items.push({ exam, node, kind: 'today' })
+        hasDirectToday.add(exam.id)
+      } else if (status === 'active' && daysUntil(node.endISO, nowMs) === 0) {
+        items.push({ exam, node, kind: 'endsToday' })
+        hasDirectToday.add(exam.id)
+      }
+    }
+  }
+  for (const exam of exams) {
+    if (hasDirectToday.has(exam.id)) continue
+    for (const node of exam.nodes) {
+      if (node.estimated) continue
+      if (examNodeStatus(node, nowMs) === 'active' && daysUntil(node.startISO, nowMs) === 0) {
+        items.push({ exam, node, kind: 'startsToday' })
+      }
+    }
+  }
+  return items
+}
+
+/**
+ * 今日节点的接续节点（U-102，今日行展开区「接续安排」的数据源）。
+ *
+ * 只取当天有今日节点的考试、且不在今日集合内、仍可办（isNodeActionable）
+ * 的节点，按 startISO 排序：文职 11-18 接续为准考证打印 + 全军统一笔试，
+ * 京考接续为准考证打印 + 公安专业科目笔试 + 公共科目笔试；成考接续为
+ * 三省复核 + 浙江志愿确认（estimated 的浙江成绩查询被 isNodeActionable
+ * 排除）。全部取自节点数据，不写死日期、不新造节点——京考没有缴费节点，
+ * 故「京考缴费」不可能出现。
+ */
+export interface TodayFollowUpItem {
+  exam: ExamInfo
+  node: ExamNode
+}
+
+export function todayFollowUpNodes(
+  nowMs: number = Date.now(),
+  exams: ExamInfo[] = EXAMS,
+): TodayFollowUpItem[] {
+  const today = todayNodes(nowMs, exams)
+  const todayKeys = new Set(today.map((t) => `${t.exam.id}\n${t.node.label}`))
+  const involved = new Set(today.map((t) => t.exam.id))
+  const out: TodayFollowUpItem[] = []
+  for (const exam of exams) {
+    if (!involved.has(exam.id)) continue
+    const rest = exam.nodes
+      .filter((n) => !todayKeys.has(`${exam.id}\n${n.label}`))
+      .filter((n) => isNodeActionable(n, exam, nowMs))
+      .sort((a, b) => a.startISO.localeCompare(b.startISO))
+    for (const node of rest) out.push({ exam, node })
+  }
+  return out
+}
+
 /** 最近一场：未结束的考试里首考日最早的；多日考试末日仍算未结束
  *（考研 12-19–20：12-20 当天条带仍在，与 /exam 倒计时岛「进行中 ·
  * 第 2 天」一致）；八场全结束则返回 undefined（调用方渲染空态条带）。

@@ -451,9 +451,13 @@ export const EXAMS: ExamInfo[] = [
     // 报名 11-12 9:00–11-18 18:00、准考证打印 12-01 9:00–12-06 16:30、
     // 公安专业科目 12-05 14:00–16:00、公共科目 12-06（行测 9:00–11:00、
     // 申论 14:00–16:30）。
-    // 报名是多日窗口节点（11-12–11-18），窗口内状态为进行中；18:00 是
-    // 时刻级截止，无法用日期字段表达，11-18 当天仍显示进行中，detail
-    // 写明「18:00 截止」，不新造时刻门控函数。
+    // 报名是多日窗口节点（11-12–11-18），节点状态 examNodeStatus 仍是
+    // 纯日期口径：11-18 全天为进行中，11-19 才翻已结束，detail 写明
+    // 「18:00 截止」。18:00 时刻截止只在渲染层按表查
+    // （examNodeDeadlineLabel / todayNodeDeadlineMs，查表 key 为
+    // `${exam.id}:${node.label}`），调用方用
+    // `deadlineLabel ?? EXAM_NODE_STATUS_LABEL[status]` 取文案；不给
+    // ExamNode 加时刻字段，不改 examNodeStatus / todayNodes。
     // 不收缴费节点：官方窗口 11-21 0:00–11-23 24:00 已核实，但文件无
     // 缴费类节点先例（国考/省考均不设缴费节点），最小切口不收。
     // 不收成绩节点：官方只写「2027 年 1 月」，无确切日；成绩类禁用
@@ -872,6 +876,61 @@ export const EXAM_NODE_STATUS_LABEL: Record<ExamNodeStatus, string> = {
   active: '进行中',
   upcoming: '未开始',
   estimated: '预计',
+}
+
+/**
+ * 11-18 峰值日时刻截止表（渲染层专用，考试峰值日包 W9）。
+ *
+ * 只覆盖 11-18 当天 5 个已核实目标时刻（北京时间，距当日 0 点的分钟数；
+ * 毫秒值按 shanghaiMidnightMs('2026-11-18') + 分钟数算，与 guokaoAdmissionPhase
+ * 的 15:00 截止同款算法）：
+ *  - 成考江西成绩查询 09:00、成考新疆成绩查询 12:00、成考广东成绩查询 16:20
+ *    （三省 detail 原文所载公告时刻；广东取 16:20 小程序自查开通时刻，
+ *    16:00 仅短信推送；「已截止」只指公告时刻已过，不代表查分通道关闭，
+ *    永不写「已开通」「已可查」）；
+ *  - 京考报名 18:00、军队文职缴费 18:00（两节点 detail 原文所载截止时刻）。
+ *
+ * 不给 ExamNode 加时刻字段、不改 examNodeStatus / todayNodes：节点状态机
+ * 与今日行仍是纯日期口径（todayNodes 的注释仍成立）；时刻判定只发生在
+ * 渲染层，调用方用 `deadlineLabel ?? EXAM_NODE_STATUS_LABEL[status]` 取文案。
+ * 守卫：只按 `${exam.id}:${node.label}` 查表，且节点日期须覆盖 2026-11-18
+ * （查 node.startISO / endISO），不以 label 裸匹配；其他节点一律 undefined / null。
+ */
+const PEAK_DAY_DEADLINE_MINUTES: Readonly<Record<string, number>> = {
+  'chengkao:江西成绩查询': 9 * 60,
+  'chengkao:新疆成绩查询': 12 * 60,
+  'chengkao:广东成绩查询': 16 * 60 + 20,
+  'jingkao:报名': 18 * 60,
+  'jundui-wenzhi:缴费': 18 * 60,
+}
+
+/** 表内节点的 2026-11-18 目标时刻（UTC 毫秒数）；表外或日期不覆盖 11-18 的节点返回 undefined */
+function peakDayDeadlineMs(exam: ExamInfo, node: ExamNode): number | undefined {
+  const minutes = PEAK_DAY_DEADLINE_MINUTES[`${exam.id}:${node.label}`]
+  if (minutes === undefined) return undefined
+  if (node.startISO > '2026-11-18' || node.endISO < '2026-11-18') return undefined
+  return shanghaiMidnightMs('2026-11-18') + minutes * 60 * 1000
+}
+
+/** 今日行条目的目标时刻（UTC 毫秒数）：表外节点返回 undefined，供倒计时组件传 target 用 */
+export function todayNodeDeadlineMs(item: TodayNodeItem): number | undefined {
+  return peakDayDeadlineMs(item.exam, item.node)
+}
+
+/**
+ * 节点时刻截止文案（渲染层用）：目标时刻已到（nowMs >= 目标时刻）返回
+ * 「已截止」，未到或表外节点返回 null；调用方用
+ * `examNodeDeadlineLabel(exam, node, nowMs) ?? EXAM_NODE_STATUS_LABEL[examNodeStatus(node, nowMs)]`
+ * 取最终文案。
+ */
+export function examNodeDeadlineLabel(
+  exam: ExamInfo,
+  node: ExamNode,
+  nowMs: number = Date.now(),
+): '已截止' | null {
+  const deadlineMs = peakDayDeadlineMs(exam, node)
+  if (deadlineMs === undefined) return null
+  return nowMs >= deadlineMs ? '已截止' : null
 }
 
 /**

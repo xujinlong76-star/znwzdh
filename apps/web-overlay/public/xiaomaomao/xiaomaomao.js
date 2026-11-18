@@ -1452,6 +1452,9 @@
     play.raf = requestAnimationFrame(playTick);
     var dt = play._lastTick ? Math.min(100, Math.max(0, now - play._lastTick)) : 16;
     play._lastTick = now;
+    /* C-11：面板开着猫站住别动——循环继续、位置不动，关面板自动续跑；
+       不杀循环，免得关面板后无重启源。 */
+    if (root.classList.contains('xm-open')) return;
     if (play.mode !== 'chase' && play.mode !== 'wander' && play.mode !== 'pounce') return;
     var speed = play.mode === 'pounce' ? PLAY_POUNCE_SPEED : PLAY_CHASE_SPEED;
     var c = playCatCenter();
@@ -1526,16 +1529,22 @@
     if (on) {
       if (docked) undock();
       if (root.classList.contains('xm-closed')) root.classList.remove('xm-closed');
+      /* A P1-3：亲手开游乐场 = 明确要猫出来——清掉持久收起并写盘，
+         否则刷新后开机自启把收起读回来，收起粘不住。 */
+      if (store.closed) { store.closed = false; store.closedAt = 0; persist(); }
       root.classList.remove('xm-parked');
       root.classList.add('xm-play');
-      if (sleeping) wakeUp(false);
+      /* C-12：睡眠态唤醒时可能补发了排队的升级庆祝——已补发就不再出
+         通用“好耶”招呼，庆祝优先（庆祝自带气泡）。 */
+      var celebrated = false;
+      if (sleeping) celebrated = wakeUp(false);
       var r = playRootRect();
       playSetPos(r.left, r.top);
       play.mode = 'idle';
       playClip('idle');
       playEnsureLoop();
       playScheduleWander();
-      showBubble('好耶，陪我玩吧～我会追着你的鼠标跑！', true);
+      if (!celebrated) showBubble('好耶，陪我玩吧～我会追着你的鼠标跑！', true);
     } else {
       playCancelCatch();
       playCancelPounce();
@@ -1907,18 +1916,24 @@
     return greetingText();
   }
   var lastActive = Date.now();
+  /* C-15：850ms 内用户动过手（点/按）就跳过本次自动招呼，别跟用户点的气泡抢文案。
+     滚动不算——滚动不触发气泡，无竞态。 */
+  var userActed = false;
   var lastTipAt = 0, tipIdx = 0, sleeping = false, funIdx = 0, greeted = false;
   function markActive() { lastActive = Date.now(); }
   ['pointerdown', 'keydown'].forEach(function (ev) {
-    document.addEventListener(ev, markActive, { passive: true });
+    document.addEventListener(ev, function () { userActed = true; markActive(); }, { passive: true });
   });
   document.addEventListener('scroll', markActive, { passive: true });
   function wakeUp(fromUser) {
-    if (!sleeping) return;
+    if (!sleeping) return false;
     sleeping = false;
     wrapEl.classList.remove('xm-sleep');
     setPose('main');
-    if (fromUser) showBubble('唔……我醒啦！想找什么跟我说', true);
+    /* C-12：唤醒后补发排队的升级庆祝；已补发就不再出通用“我醒啦”，庆祝优先。 */
+    var celebrated = flushPendingCelebration();
+    if (fromUser && !celebrated) showBubble('唔……我醒啦！想找什么跟我说', true);
+    return celebrated;
   }
   function goSleep() {
     if (sleeping || root.classList.contains('xm-open')) return;
@@ -1972,7 +1987,7 @@
     var idleFor = Date.now() - lastActive;
     if (idleFor > 180000 || (isNight() && idleFor > 60000)) { goSleep(); return; }
     if (sleeping) return;
-    if (!userTyping && idleFor > 50000 && Date.now() - lastTipAt > 58000) {
+    if (!userTyping && !ctlShown && idleFor > 50000 && Date.now() - lastTipAt > 58000) {
       lastTipAt = Date.now();
       showBubble(TIPS[tipIdx % TIPS.length], false);
       tipIdx += 1;
@@ -2250,7 +2265,7 @@
     if (docked) undock();
     noteXmAct();
     /* v7：贴边弹回的那次进入只弹回、不顺带出坞（免得猫刚弹回来又被坞围住） */
-    if (!wasDocked) showControls();
+    if (!wasDocked) showControls(true);
   });
   root.addEventListener('pointerdown', function () { noteXmAct(); }, true);
 
@@ -2309,8 +2324,15 @@
     return root.classList.contains('xm-open') || root.classList.contains('xm-closed') ||
       (typeof gameEl !== 'undefined' && gameEl && gameEl.classList.contains('xm-on'));
   }
-  function showControls() {
+  function showControls(fromUser) {
     if (ctlBlocked()) return;
+    /* C-14：气泡与坞双向互斥——用户亲手唤坞先收气泡再开坞；自动提示
+       （首访 1500ms hint，无参调用）遇气泡在显示时直接不开，免得腰斩
+       850ms 首访招呼。悬停/轻点是用户动作，仍可唤坞。 */
+    if (root.querySelector('.xm-bubble.xm-show')) {
+      if (!fromUser) return;
+      hideBubble();
+    }
     window.clearTimeout(ctlLeaveTimer);
     root.classList.add('xm-ctl');
     ctlShown = true;
@@ -2461,7 +2483,7 @@
     /* v7：触摸设备没有悬停——轻点猫只负责唤出/收起坞，摸猫走坞里的爪印钮，
        免得每点一次猫又出气泡又出坞、两样东西打架 */
     if (coarsePointer) {
-      if (ctlShown) hideControls(); else showControls();
+      if (ctlShown) hideControls(); else showControls(true);
       return;
     }
     petSoundArmed = true; /* v8：桌面点猫本体＝主动点猫，这次摸猫的动画可以带声音 */
@@ -2493,6 +2515,9 @@
   function collapseCat() {
     hideControls();
     if (gameEl && gameEl.classList.contains('xm-on')) closeGame();
+    /* A P1-3/C-10：收起即关游乐场——rAF/定时器停掉，store.play 写盘 false，
+       否则游乐场在圆标后面继续跑、刷新又自启，收起粘不住。 */
+    if (play.on) setPlayMode(false);
     root.classList.add('xm-closed');
     root.classList.remove('xm-open');
     hideBubble();
@@ -2535,14 +2560,18 @@
     store.closedAt = 0;
     persist();
     markActive();
-    wakeUp(false);
+    /* C-12：唤回后补发排队的升级庆祝；已补发就不再出通用“我回来啦”与
+       waking 姿势，庆祝优先（庆祝自带 milestone 姿势与气泡）。 */
+    var celebrated = wakeUp(false) || flushPendingCelebration();
     /* 唤回：游乐场开着续播游乐场那一路，否则默认视频续上（已在播时是空操作） */
     if (play.on) resumeClips(); else { reviveVideoOnWake(); startAmbientVideo(); }
-    setPose('waking');
-    happyBounce();
-    burst(7);
-    showBubble(greeted ? '我回来啦，想找什么？' : greetingText(), true);
-    window.setTimeout(function () { if (currentPose === 'waking') setPose('main'); }, 3200);
+    if (!celebrated) {
+      setPose('waking');
+      happyBounce();
+      burst(7);
+      showBubble(greeted ? '我回来啦，想找什么？' : greetingText(), true);
+      window.setTimeout(function () { if (currentPose === 'waking') setPose('main'); }, 3200);
+    }
   });
 
   /* ---------- 聊天面板 ---------- */
@@ -2560,11 +2589,16 @@
     wakeUp(false);
     root.querySelector('.xm-chat-btn').classList.remove('xm-pulse');
     setPose('making');
+    /* C-11：面板打开时猫站住别走——游乐场在跑就切待机视频，腿别空踩。 */
+    if (play.on && (play.mode === 'chase' || play.mode === 'wander' || play.mode === 'pounce')) playClip('idle');
     alignPanel();
     if (!chatted) {
       chatted = true;
       addCatText('你好呀，我是小猫猫！找网站是我的强项，比如「想看免费短剧」「要做 PPT 的工具」「学英语的网站」，直接打字告诉我就行。也可以问我某个分类里有什么、场景包怎么用。');
     }
+    /* C-12：开面板时补发排队的升级庆祝（面板开着走 addCatText，不弹气泡；
+       睡眠态已在上面 wakeUp 里补发过，这里是空操作，不重复）。 */
+    flushPendingCelebration();
     window.setTimeout(function () { try { inputEl.focus({ preventScroll: true }); } catch (e) { inputEl.focus(); } }, 120);
   }
   function closePanel() {
@@ -2572,6 +2606,9 @@
     closeLook();
     setPose('main');
     markActive();
+    /* C-11：关面板按游乐场模式续播——追/漫步续走路视频，扑态按待机续
+       （扑自身的定时器会收尾，不抢它的收尾）。 */
+    if (play.on) { if (play.mode === 'chase' || play.mode === 'wander') playClip('walk'); else playClip('idle'); }
   }
   root.querySelector('.xm-chat-btn').addEventListener('click', function (ev) {
     ev.stopPropagation();
@@ -2900,6 +2937,35 @@
       (s.chestAvailable ? ' · 🎁可开' : '');
     growthChipEl.classList.add('xm-on');
   }
+  /* C-12/A P1-2：收起/睡眠时到的升级庆祝先排队，不写盘见证、不丢弃；
+     唤回/唤醒后由 flushPendingCelebration 补发。队列只活在内存里——
+     刷新后见证未推进，9.5 秒复查会重新算出同一批增量再排队，不丢。 */
+  var pendingCelebration = null;
+  function celebrateGrowth(text) {
+    undock();
+    setPose('milestone');
+    happyBounce();
+    burst(14);
+    celebrateVideo('levelup');
+    showEmo('★');
+    showBubble(text, true);
+    window.setTimeout(function () {
+      if (currentPose === 'milestone' && !root.classList.contains('xm-open')) setPose('main');
+    }, 4200);
+  }
+  function flushPendingCelebration() {
+    if (!pendingCelebration) return false;
+    if (root.classList.contains('xm-closed') || sleeping) return false;
+    var p = pendingCelebration;
+    pendingCelebration = null;
+    /* 见证在补发时才写盘——补发前见证不动，复查会重新算出同一批增量覆盖队列。 */
+    v4.seenLevel = Math.max(v4.seenLevel, p.level);
+    v4.seenBadges = p.ids;
+    persistV4();
+    if (root.classList.contains('xm-open')) { addCatText(p.text); return true; }
+    celebrateGrowth(p.text);
+    return true;
+  }
   function checkGrowth(announce) {
     var p = readGrowth();
     refreshGrowthChip();
@@ -2916,27 +2982,29 @@
     var newOnes = earned.filter(function (b) { return v4.seenBadges.indexOf(b.id) < 0; });
     var leveled = lv.level > v4.seenLevel;
     if (!leveled && !newOnes.length) return;
-    v4.seenLevel = Math.max(v4.seenLevel, lv.level);
-    v4.seenBadges = ids;
-    persistV4();
     var parts = [];
     if (leveled) parts.push('哇！你升级啦：Lv.' + lv.level + '「' + lv.title + '」🎉');
     if (newOnes.length) {
       parts.push('新徽章点亮：' + newOnes.slice(0, 2).map(function (b) { return b.icon + '「' + b.title + '」'; }).join('、') + (newOnes.length > 2 ? ' 等 ' + newOnes.length + ' 枚' : '') + '！');
     }
     var text = parts.join(' ');
-    if (root.classList.contains('xm-open')) { addCatText(text); return; }
-    if (root.classList.contains('xm-closed') || sleeping) return;
-    undock();
-    setPose('milestone');
-    happyBounce();
-    burst(14);
-    celebrateVideo('levelup');
-    showEmo('★');
-    showBubble(text, true);
-    window.setTimeout(function () {
-      if (currentPose === 'milestone' && !root.classList.contains('xm-open')) setPose('main');
-    }, 4200);
+    if (root.classList.contains('xm-open')) {
+      v4.seenLevel = Math.max(v4.seenLevel, lv.level);
+      v4.seenBadges = ids;
+      persistV4();
+      addCatText(text);
+      return;
+    }
+    if (root.classList.contains('xm-closed') || sleeping) {
+      /* C-12：收起/睡眠时不写盘见证、不丢弃——排队等唤回/唤醒后补发。
+         下次复查会重新算出同一批增量覆盖队列，不重复、不丢失。 */
+      pendingCelebration = { text: text, level: lv.level, ids: ids };
+      return;
+    }
+    v4.seenLevel = Math.max(v4.seenLevel, lv.level);
+    v4.seenBadges = ids;
+    persistV4();
+    celebrateGrowth(text);
   }
   function initGrowthWatch() {
     checkGrowth(false);
@@ -3406,6 +3474,8 @@
   window.setTimeout(function () { burst(8); }, 380);
   window.setTimeout(function () {
     greeted = true;
+    /* C-15：850ms 内用户动过手（点/按）就跳过本次自动招呼——别跟用户点的气泡抢文案。 */
+    if (userActed) return;
     if (!root.classList.contains('xm-open') && !root.classList.contains('xm-closed')) {
       setPose('waking');
       /* v12：850ms 招呼多半还没手势——先出气泡不读；首次手势后补读一次（且仅当气泡还在时）。 */
@@ -3434,7 +3504,9 @@
   /* 互动玩法第一批：演示页用 window.XIAOMAOMAO_PLAY = true 开局进游乐场；
      否则按用户上次的选择（store.play）恢复。减动效用户不自动开。 */
   if (!reducedMotion && (window.XIAOMAOMAO_PLAY === true || store.play)) {
-    window.setTimeout(function () { setPlayMode(true); }, 1200);
+    /* A P1-3：回调内再查一次收起——1200ms 内用户刚收起过就不再自启，
+       只查外层条件防不住这个竞态。 */
+    window.setTimeout(function () { if (store.closed) return; setPlayMode(true); }, 1200);
   }
   /* 默认显示走透明视频（2026-11-18）：游乐场没开时也播 idle 透明循环；减动效/
      自改形象/收起态时不播；不支持 VP9 透明/文件不在时走 WebP 兜底，不报错、不留白。 */

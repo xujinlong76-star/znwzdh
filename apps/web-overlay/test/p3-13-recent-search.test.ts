@@ -6,6 +6,9 @@
  * vitest 无 jsdom 写不了渲染断言，接线断言见本文件下半部分（随面板
  * 改动补入），真点按靠 CI E2E 闭合。
  */
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import {
   clearSearchHistorySnapshot,
@@ -21,6 +24,15 @@ import type { HubSearchHistoryItem } from '../src/lib/navhub-api'
 afterAll(() => {
   vi.resetModules()
 })
+
+const HERE = dirname(fileURLToPath(import.meta.url))
+
+function overlaySource(rel: string): string {
+  const candidates = [resolve(HERE, '..', rel), resolve(HERE, '..', '..', 'web-overlay', rel)]
+  const hit = candidates.find((p) => p.replace(/\\/g, '/').includes('/web-overlay/') && existsSync(p))
+  if (!hit) throw new Error('无法定位 overlay 文件 ' + rel + '（候选：' + candidates.join(' | ') + '）')
+  return readFileSync(hit, 'utf8')
+}
 
 function historyItem(over: Partial<HubSearchHistoryItem> & { id: number; query: string }): HubSearchHistoryItem {
   const { id, query, ...rest } = over
@@ -105,5 +117,50 @@ describe('clearSearchHistorySnapshot：清空后删快照键（R4）', () => {
       else (globalThis as { window?: unknown }).window = prevWindow
     }
     expect(() => clearSearchHistorySnapshot()).not.toThrow()
+  })
+})
+
+/* ---------- 面板接线（源码断言；真点按靠 CI E2E） ---------- */
+
+describe('接线：SearchPalette 最近搜索可单条删除 + 一键清空', () => {
+  const palette = overlaySource('src/components/search-palette.tsx')
+
+  it('取数走 fetchSearchHistoryPage（limit 8，带 id），不再用只回词的 fetchSearchHistory', () => {
+    expect(palette).toContain('fetchSearchHistoryPage')
+    expect(palette).toContain('toRecentSearchItems')
+    expect(palette).not.toContain('fetchSearchHistory(')
+  })
+
+  it('单条删除按 id 走 deleteSearchHistoryItem，失败时列表不动 + toast', () => {
+    expect(palette).toContain('deleteSearchHistoryItem(identity, item.id)')
+    expect(palette).toContain("toast({ title: '删除失败'")
+    // 先 await 再改列表：失败直接 return，setRecent 只在成功后执行
+    const handler = palette.slice(palette.indexOf('handleDeleteRecent'), palette.indexOf('handleClearRecent'))
+    expect(handler).toContain('const ok = await deleteSearchHistoryItem')
+    expect(handler.indexOf('if (!ok)')).toBeLessThan(handler.indexOf('setRecent('))
+  })
+
+  it('一键清空两步确认（清空→确认清空），成功后删快照键；失败列表不动 + toast', () => {
+    expect(palette).toContain('clearCloudSearchHistory(identity)')
+    expect(palette).toContain('clearSearchHistorySnapshot()')
+    expect(palette).toContain("'确认清空'")
+    expect(palette).toContain("toast({ title: '清空失败'")
+    expect(palette).toContain('将删除当前身份（登录身份或本机匿名 id）下的全部最近搜索')
+  })
+
+  it('行容器是 div、回填区与 × 并列（R3：不嵌套 button）；× 32px、触屏 44px、stopPropagation', () => {
+    expect(palette).toContain('删除最近搜索')
+    expect(palette).toContain('h-8 w-8')
+    expect(palette).toContain('pointer-coarse:h-11 pointer-coarse:w-11')
+    expect(palette).toContain('e.stopPropagation()')
+  })
+
+  it('× 不进 navItems（最近行只在空查询面板，不在结果键盘导航列表里）', () => {
+    const navBlock = palette.slice(palette.indexOf('const navItems = useMemo'), palette.indexOf('const navIndexById'))
+    expect(navBlock).not.toContain('recent')
+  })
+
+  it('建议层的 history 仍传查询词数组（RecentSearchItem 需先 map 回 query）', () => {
+    expect(palette).toContain('history: recent.map((item) => item.query)')
   })
 })

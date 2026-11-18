@@ -25,7 +25,9 @@ import {
   searchSites,
   searchPlugins,
   reportClick,
-  fetchSearchHistory,
+  fetchSearchHistoryPage,
+  deleteSearchHistoryItem,
+  clearCloudSearchHistory,
   fetchCollections,
   createCustomSite,
   type HubSearchHit,
@@ -38,6 +40,12 @@ import { queryToTitleAndUrl } from '@/lib/submit-prefill'
 import { saveWantedSearch } from '@/lib/wanted-searches'
 import { searchChannelStatus } from '@/lib/search-degrade'
 import { buildSearchSuggestions, matchSuggestionText } from '@/lib/search-suggestions'
+import {
+  clearSearchHistorySnapshot,
+  removeRecentSearchItem,
+  toRecentSearchItems,
+  type RecentSearchItem,
+} from '@/lib/recent-search'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
 import { highlightParts } from '@/lib/highlight'
@@ -301,10 +309,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [fallbackHint, setFallbackHint] = useState<'filter' | 'fuzzy' | undefined>(undefined)
   /** A3：放宽时被丢弃的分面条件，用于把「已放宽」点名到付费条件上 */
   const [relaxedFacets, setRelaxedFacets] = useState<Record<string, string[]> | undefined>(undefined)
-  const [recent, setRecent] = useState<string[]>([])
+  const [recent, setRecent] = useState<RecentSearchItem[]>([])
   const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
   /** 中枢不可用（历史拉取降级）：与「真的没有历史」区分，避免把故障渲染成「暂无数据」 */
   const [recentDegraded, setRecentDegraded] = useState(false)
+  /** 清空最近搜索的两步确认是否已 armed（同 /me/history「清空全部」→「确认清空全部」） */
+  const [confirmClearRecent, setConfirmClearRecent] = useState(false)
   /** 知识图谱对标与实体关联方案命中 */
   const [relationHits, setRelationHits] = useState<HubSiteRelation[]>([])
   /** 智能析取到的分面筛选意图 */
@@ -521,6 +531,52 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
 
 
+  /* P3-13：最近搜索单条删除 + 一键清空（U-37②）。
+     删除按服务端 id，不按查询词过滤；失败时列表不动 + toast
+     （沿用 /me/history removeItem 的口径）。清空是显式两步确认，
+     成功后删本机快照键，否则下次降级加载会把已清空的历史「复活」（R4）。 */
+  const refreshRecent = useCallback(async () => {
+    if (!identity) return
+    // 中枢不可用时 fetchSearchHistoryPage 返回兜底空页，与「真的没有历史」无法区分；
+    // 用局部标记把「已降级」带出 then（onDegraded 在 resolve 之前同步触发）。
+    let failed = false
+    const page = await fetchSearchHistoryPage(identity, { limit: 8 }, () => {
+      failed = true
+    })
+    setRecentDegraded(failed)
+    setRecent(toRecentSearchItems(page.items))
+  }, [identity])
+
+  const handleDeleteRecent = useCallback(
+    async (item: RecentSearchItem) => {
+      if (!identity) return
+      const ok = await deleteSearchHistoryItem(identity, item.id)
+      if (!ok) {
+        toast({ title: '删除失败', description: '云端暂不可用，请稍后重试', variant: 'destructive' })
+        return
+      }
+      setRecent((prev) => removeRecentSearchItem(prev, item.id))
+    },
+    [identity, toast],
+  )
+
+  const handleClearRecent = useCallback(async () => {
+    if (!identity || recent.length === 0) return
+    if (!confirmClearRecent) {
+      setConfirmClearRecent(true)
+      return
+    }
+    setConfirmClearRecent(false)
+    const ok = await clearCloudSearchHistory(identity)
+    if (!ok) {
+      toast({ title: '清空失败', description: '云端暂不可用，请稍后重试', variant: 'destructive' })
+      return
+    }
+    setRecent([])
+    clearSearchHistorySnapshot()
+    toast({ title: '搜索历史已清空' })
+  }, [identity, recent.length, confirmClearRecent, toast])
+
   /* 最近搜索与最近访问站点：聚焦且空查询时加载 */
   useEffect(() => {
     if (isFocused && !query.trim()) {
@@ -530,19 +586,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         // 容错降级：本地最近访问读取失败保持空数组
       })
 
-      if (identity) {
-        // 中枢不可用时 fetchSearchHistory 返回兜底 []，与「真的没有历史」无法区分；
-        // 用局部标记把「已降级」带出 then（onDegraded 在 resolve 之前同步触发）。
-        let failed = false
-        void fetchSearchHistory(identity, 8, () => {
-          failed = true
-        }).then((items) => {
-          setRecentDegraded(failed)
-          setRecent(items)
-        })
-      }
+      setConfirmClearRecent(false)
+      void refreshRecent()
     }
-  }, [isFocused, query, identity])
+  }, [isFocused, query, refreshRecent])
 
   /* 点击外部关闭 */
   useEffect(() => {
@@ -1100,7 +1147,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     () =>
       buildSearchSuggestions({
         query,
-        history: recent,
+        history: recent.map((item) => item.query),
         collections: allCollections,
         relatedSearches: suggestions,
       }),
@@ -1611,19 +1658,56 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           )}
           {recent.length > 0 && (
             <div>
-              <div className="px-3.5 py-2 text-xs font-medium text-muted-foreground flex items-center gap-1.5 bg-muted/40">
-                <Clock className="h-3 w-3" /> 最近搜索
+              <div className="px-3.5 py-2 text-xs font-medium text-muted-foreground flex items-center justify-between gap-1.5 bg-muted/40">
+                <span className="flex items-center gap-1.5">
+                  <Clock className="h-3 w-3" /> 最近搜索
+                </span>
+                {/* P3-13：一键清空，两步确认（同 /me/history）；确认文案按
+                    /me/history:6 的身份口径：当前身份是登录身份或本机匿名 id */}
+                <button
+                  type="button"
+                  aria-label={confirmClearRecent ? '确认清空最近搜索' : '清空最近搜索'}
+                  title={
+                    confirmClearRecent
+                      ? '将删除当前身份（登录身份或本机匿名 id）下的全部最近搜索'
+                      : '清空最近搜索'
+                  }
+                  onClick={() => void handleClearRecent()}
+                  className={
+                    confirmClearRecent
+                      ? 'rounded px-1.5 py-0.5 text-xs font-medium text-destructive hover:bg-destructive/10'
+                      : 'rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                  }
+                >
+                  {confirmClearRecent ? '确认清空' : '清空'}
+                </button>
               </div>
               <div className="p-1">
-                {recent.map((r) => (
-                  <button
-                    key={r}
-                    className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground hover:text-foreground flex items-center justify-between"
-                    onClick={() => setQuery(r)}
-                  >
-                    <span>{r}</span>
-                    <ArrowRight className="h-3 w-3 opacity-40" />
-                  </button>
+                {/* R3：行容器是 div，点选回填区与 × 按钮并列——<button> 里
+                    不能再嵌 <button>；× 命中区 32px，触屏 44px，不进 navItems */}
+                {recent.map((item) => (
+                  <div key={item.id} className="flex items-center gap-1 rounded hover:bg-accent/50">
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 text-left px-3 py-1.5 text-xs rounded text-muted-foreground hover:text-foreground flex items-center justify-between gap-2"
+                      onClick={() => setQuery(item.query)}
+                    >
+                      <span className="truncate">{item.query}</span>
+                      <ArrowRight className="h-3 w-3 shrink-0 opacity-40" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`删除最近搜索“${item.query}”`}
+                      title="删除这条最近搜索"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void handleDeleteRecent(item)
+                      }}
+                      className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded text-muted-foreground/70 hover:bg-muted hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-11"
+                    >
+                      <X className="h-3.5 w-3.5" aria-hidden />
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>

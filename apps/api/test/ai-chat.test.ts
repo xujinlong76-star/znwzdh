@@ -25,7 +25,7 @@ const fixtureUrls = [pptSiteUrl, "https://slides.example.com/free", "https://pic
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navhub-ai-chat-"));
-  ctx = await createContext(loadConfig({ mode: "lite", sqlitePath: join(dir, "api.db"), corsOrigins: ["*"] }));
+  ctx = await createContext(loadConfig({ mode: "lite", sqlitePath: join(dir, "api.db"), corsOrigins: ["*"], embedding: { enabled: false } }));
   app = await buildServer(ctx);
   await app.ready();
 

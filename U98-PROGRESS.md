@@ -21,7 +21,7 @@
 
 ## 进度
 - [x] 2026-11-18 17:59 检查点 0：接单核实——分支 `fix/u98-home-small-windows-count`，head `9dcef7f7`，工作区干净，0 提交；证据目录新建；本文件首版落盘并提交（checkpoint）。
-- [ ] 定性：读测试原文 + 考试数据源，根因写清。
+- [x] 2026-11-18 18:20 定性完成（证据 `~/workspace/u98-2026-11-18/DIAGNOSIS.md`）：根因 = U-144 考试数据增长致测试期望滞后，非产品回归。证据链：测试文件 `603bbec2..2f1dbfc1` 区间 0 改动（最近改动 `44394500`）；`034b43e9` 提交信息「今日行 11-18 5 项 -> 6 项」（江苏自考）、`c06c567d`「6 项 -> 7 项」（广东自考）；`todayNodes(2026-11-18)` 逐项枚举 7 项（京考报名 endsToday、文职缴费 endsToday、成考江西/广东/新疆成绩查询 today、江苏自考成绩查询 today、广东自考成绩查询 today），`urgentCount` 同为 7；失败本地复现 `expected 7 to be 5`（`apps/web/test/home-small-windows.test.ts:40`，1 failed / 5 passed，mirror 后跑）。CI 交叉：`2f1dbfc1` 分片 1/3、2/3 failure 与本用例位置吻合（雷达第 38 轮）。
 - [ ] 修复：期望改为数据派生。
 - [ ] 验证：定向测试 + 前端 typecheck 全绿。
 - [ ] 推送：origin 分支推送 + 回读确认 head SHA。

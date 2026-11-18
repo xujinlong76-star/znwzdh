@@ -54,12 +54,12 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
-# 最小权限 + PR / 非 main、master ref 的新运行自动取消旧运行（main/master 推送不取消）
+# 最小权限 + 每次推送独立成组（按 SHA），互不取消、互不排队
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
 env:

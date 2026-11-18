@@ -12,6 +12,27 @@
  */
 import type { HubSearchHistoryItem } from '@/lib/navhub-api'
 
+/**
+ * 离线快照键（T24，/me/history 写入）：只存最近一页（≤20 条）+ 时间戳。
+ * 本键是唯一事实源——/me/history 的读写与各处的清空都要走它；
+ * 以前清空只清云端不删本键，下次降级加载会把已清空的历史当快照
+ * 「复活」展示（R4）。
+ */
+export const SEARCH_HISTORY_SNAPSHOT_KEY = 'navhub.search_history.cache.v1'
+
+/**
+ * 删掉本机历史快照。清空成功后必须调：否则下次取数降级时
+ * /me/history 会把快照里的旧记录原样展示出来，清空等于没清。
+ * 隐私模式 / 非浏览器环境写不进也不抛错（快照只是尽力而为的增强）。
+ */
+export function clearSearchHistorySnapshot(): void {
+  try {
+    window.localStorage.removeItem(SEARCH_HISTORY_SNAPSHOT_KEY)
+  } catch {
+    // 尽力而为：删不掉也不构成功能承诺
+  }
+}
+
 /** 面板里一行最近搜索：服务端 id（单条删除用）+ 查询词（回填用）。 */
 export interface RecentSearchItem {
   id: number

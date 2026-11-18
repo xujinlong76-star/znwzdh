@@ -8,7 +8,9 @@
  */
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import {
+  clearSearchHistorySnapshot,
   removeRecentSearchItem,
+  SEARCH_HISTORY_SNAPSHOT_KEY,
   toRecentSearchItems,
   type RecentSearchItem,
 } from '../src/lib/recent-search'
@@ -82,5 +84,26 @@ describe('removeRecentSearchItem：单条删除', () => {
 
   it('id 不存在时原样返回', () => {
     expect(removeRecentSearchItem(items, 99)).toEqual(items)
+  })
+})
+
+describe('clearSearchHistorySnapshot：清空后删快照键（R4）', () => {
+  it('键名就是 /me/history 用的 navhub.search_history.cache.v1', () => {
+    expect(SEARCH_HISTORY_SNAPSHOT_KEY).toBe('navhub.search_history.cache.v1')
+  })
+
+  it('调 localStorage.removeItem 删该键；无 window 时不抛错', () => {
+    const removeItem = vi.fn()
+    const prevWindow = (globalThis as { window?: unknown }).window
+    ;(globalThis as { window?: unknown }).window = { localStorage: { removeItem } }
+    try {
+      clearSearchHistorySnapshot()
+      expect(removeItem).toHaveBeenCalledWith('navhub.search_history.cache.v1')
+      expect(removeItem).toHaveBeenCalledTimes(1)
+    } finally {
+      if (prevWindow === undefined) delete (globalThis as { window?: unknown }).window
+      else (globalThis as { window?: unknown }).window = prevWindow
+    }
+    expect(() => clearSearchHistorySnapshot()).not.toThrow()
   })
 })

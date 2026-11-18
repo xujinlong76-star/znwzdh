@@ -171,6 +171,9 @@
     }
   } catch (e) { /* 脏数据静默退化为默认值 */ }
   if (!v4.satAt) v4.satAt = Date.now();
+  /* U-99：恢复后立即挂到 store 上——否则加载期/交互路径的裸 persist()
+     会把不带 v4 的 store 写回，连续 reload 两次后成长见证永久丢失。 */
+  store.v4 = v4;
   function persistV4() { store.v4 = v4; persist(); }
   function todayKeyStr(d) {
     d = d || new Date();

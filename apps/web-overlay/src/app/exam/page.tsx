@@ -269,7 +269,7 @@ export default async function ExamPage() {
           {prepSites.length > 0 ? (
             <ul className="mt-4 grid gap-3 sm:grid-cols-2">
               {prepSites.map((site) => (
-                <li key={site.id} className="rounded-xl border border-border bg-card">
+                <li key={site.id} className="min-w-0 rounded-xl border border-border bg-card">
                   <a
                     href={safeHref(site.href)}
                     target="_blank"

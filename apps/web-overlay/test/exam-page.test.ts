@@ -530,6 +530,16 @@ describe('备考入口标题（U-108）', () => {
     expect(page).not.toContain('官方入口清单没能取到')
   })
 
+  it('窄屏守卫：备考区 LI 带 min-w-0，390px 下不撑宽（W13b）', () => {
+    // 根因：UL 是 grid auto 单列，轨道按 LI min-content 定宽；LI 默认
+    // min-width:auto，内层 flex 链接里的 nowrap 截断描述（最长约 649px）
+    // 把轨道顶宽，文档横向溢出到 661px、卡片描述在右缘切断。min-w-0 清掉
+    // grid 项自动最小宽，轨道才能缩到容器宽；内层 min-w-0 flex-1 +
+    // truncate 链本身不动。实测：修前 docScroll 661 / LI 649，修后
+    // docScroll 390 / LI 366，1280 下双列 LI 586、描述仍 ellipsis。
+    expect(page).toContain('<li key={site.id} className="min-w-0 rounded-xl border border-border bg-card">')
+  })
+
   it('对照：备考区仍现读 navigation.json「考试备考」分类 12 站，不改 navigation.json', () => {
     // 只作对照：12 站 = 官方组 8 家 + 培训组 4 家；分区渲染留待下轮，
     // 此处只数总数，页面仍不硬编码站点地址。

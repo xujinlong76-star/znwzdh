@@ -278,8 +278,10 @@ describe("U-143：零结果「回到第 1 页」不丢分类/分面", () => {
   });
 
   it("「回到第 1 页」链接的 searchHref 带分类与分面（第 1 页省略 page）", () => {
-    const label = results.indexOf("回到第 1 页");
-    expect(label, "search-results.tsx 缺少「回到第 1 页」").toBeGreaterThan(-1);
+    // 「回到第 1 页」也在实现注释里出现一次（U-143 标注），必须定位到
+    // 链接文本那一行（行尾换行），而不是注释里的提及。
+    const label = results.indexOf("回到第 1 页\n");
+    expect(label, "search-results.tsx 缺少「回到第 1 页」链接").toBeGreaterThan(-1);
     const link = results.slice(Math.max(0, label - 300), label);
     expect(link).toContain("searchHref({ q, tag, category, facets })");
   });

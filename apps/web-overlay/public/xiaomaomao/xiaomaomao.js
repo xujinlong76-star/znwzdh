@@ -1860,7 +1860,19 @@
      2026-11-18 :123（390px 首页招呼 15 秒未出）：旧阈值“任一方向重叠 >4px 即拦”太严——
      首页右下角三个 44px 悬浮钮（回到顶部/超级搜索/微工具箱）各占气泡面积仅约 12%，
      也会把招呼拦死。改判“单个元素重叠面积占气泡面积 >25% 才拦”：小悬浮钮不再拦，
-     整宽卡片/搜索框等大面积遮挡仍拦（c3001 桌面 221×55 气泡盖卡片案仍被拦住）。 */
+     整宽卡片/搜索框等大面积遮挡仍拦（c3001 桌面 221×55 气泡盖卡片案仍被拦住）。
+     U-161（2026-11-18 :123 续）：390px 首页招呼仍被拦——探针（HEAD d4bf700d，
+     390×844 两轮一致）气泡 248×56（x[134,382] y[620,676]），元凶是 ChatGPT
+     卡片容器 DIV.nav-card-deferred（重叠 98.39%）及其 A.absolute.inset-0
+     全幅链接（97.98%）；标题链接 23.98%、44px 悬浮钮各 12.36% 均不到线。
+     纯排除卡片容器会使 c3001 回归——c3001 元凶同为卡片容器（.nav-card-glow，
+     桌面 1686px），且导航卡容器同时挂 nav-card-deferred 与 nav-card-glow
+     两类名（navigation-card.tsx rich/standard 两变体）。故分支条件：只在窄屏
+     （≤640px，与 isNarrowViewport / P1-1 市场收起同断点）排除“整卡背景式”
+     元素——卡片容器本身与其 absolute inset-0 全幅链接；桌面端卡片照常计入，
+     c3001 不丢。法理：窄屏单列布局下卡片顶恒在 604，任何“卡片计入”的门控都
+     永拦招呼，与 :123 要求直接冲突；且气泡 pointer-events:none，不挡点击。
+     非 deferred 的 .nav-card-glow 卡片（如 hero deck）任何宽度下都照常计入。 */
   function autoGreetWouldCoverContent() {
     var main = document.querySelector('main');
     if (!bubbleEl || !main) return false;
@@ -1875,8 +1887,29 @@
     var catRect = root.getBoundingClientRect();
     var rect = { left: catRect.right + 4 - bw, top: catRect.top - 12 - bh, right: catRect.right + 4, bottom: catRect.top - 12 };
     var bubbleArea = bw * bh;
+    /* U-161：窄屏才排除整卡背景式元素（见上）。自包含量法：不复用后文定义的
+       isNarrowViewport()（契约测试从源码抠出本函数单测，函数外无定义会抛错）；
+       断点与之同为 ≤640px。量不到宽度时默认按桌面算（卡片计入，保 c3001）。 */
+    var narrowViewport = false;
+    try {
+      if (typeof window !== 'undefined' && window.matchMedia) narrowViewport = window.matchMedia('(max-width: 640px)').matches;
+      else if (typeof window !== 'undefined') narrowViewport = window.innerWidth <= 640;
+    } catch (e) { narrowViewport = false; }
+    /* U-161：“整卡背景式”元素 = .nav-card-deferred 卡片容器本身，及其内部的
+       absolute inset-0 全幅链接。量不到 class 时当普通元素计入（fail-closed）。 */
+    function isFullCardBackground(el) {
+      try {
+        var cl = el.classList;
+        if (!cl || !cl.contains) return false;
+        if (cl.contains('nav-card-deferred')) return true;
+        if (el.tagName === 'A' && cl.contains('absolute') && cl.contains('inset-0') &&
+            el.closest && el.closest('.nav-card-deferred')) return true;
+      } catch (e) { /* 量不到就计入 */ }
+      return false;
+    }
     var els = main.querySelectorAll('a, button, [role="button"], article, .nav-card-glow');
     for (var i = 0; i < els.length; i++) {
+      if (narrowViewport && isFullCardBackground(els[i])) continue;
       var r = els[i].getBoundingClientRect();
       if (!r.width || !r.height) continue;
       var ix = Math.min(r.right, rect.right) - Math.max(r.left, rect.left);

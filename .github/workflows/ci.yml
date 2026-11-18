@@ -54,7 +54,7 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
-# 最小权限 + 非 main/master 分支新 push 自动取消旧运行（main/master 不取消）
+# 最小权限 + PR / 非 main、master ref 的新运行自动取消旧运行（main/master 推送不取消）
 permissions:
   contents: read
 

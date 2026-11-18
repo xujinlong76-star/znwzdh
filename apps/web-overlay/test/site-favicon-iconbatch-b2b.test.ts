@@ -40,14 +40,15 @@ const CUSTOM_ICON_CASES: Array<{ url: string; title: string; icon: string; expec
 // 同为 github.com 的其余 6 站：vLLM 标题规则不得波及（R2 裁决的反向断言）。
 // 期望值随先合入批次更新：Cline / GitHub Copilot 随 B1b 合入后为本地路径，
 // LangGraph / Qwen 3 随 B2a 合入后为本地路径（B2 复审 §9 裁决）；
-// GitHub / GitHub Trending 不受任何一批影响，仍为空串。
+// GitHub / GitHub Trending 不受 vLLM 标题规则波及；C1 c1g2 新增 'github'
+// 标题规则后，两站解析为本地 github.svg（先前为空串，见 U-149）。
 const UNAFFECTED: Array<{ url: string; title: string; expected: string }> = [
   { url: 'https://github.com/cline/cline', title: 'Cline', expected: '/brand-icons/cline.svg' },
   { url: 'https://github.com/features/copilot', title: 'GitHub Copilot', expected: '/brand-icons/copilot.svg' },
   { url: 'https://github.com/langchain-ai/langgraph', title: 'LangGraph', expected: '/brand-icons/langgraph.svg' },
   { url: 'https://github.com/QwenLM/Qwen3', title: 'Qwen 3', expected: '/brand-icons/qwen3.png' },
-  { url: 'https://github.com', title: 'GitHub', expected: '' },
-  { url: 'https://github.com/trending', title: 'GitHub Trending', expected: '' },
+  { url: 'https://github.com', title: 'GitHub', expected: '/brand-icons/github.svg' },
+  { url: 'https://github.com/trending', title: 'GitHub Trending', expected: '/brand-icons/github.svg' },
 ]
 
 const LOCAL_ASSETS = [

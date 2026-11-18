@@ -11,8 +11,21 @@
  * 删除带重试：上一轮被强杀的 API 可能还有几百毫秒的文件句柄未释放。
  */
 import { mkdirSync, rmSync } from 'node:fs'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
+
+/**
+ * U-141（2026-11-18）：本地跑 E2E 也要先放猫挂件夹具媒体，理由与 CI 相同——
+ * 真实媒体二进制不进仓库，没有它猫在全新 checkout 里必被 hideCat() 藏掉。
+ * 与 CI（ci.yml 的 test-e2e 作业）调同一脚本；幂等，缺夹具时直接非零退出。
+ */
+{
+  const placed = spawnSync(process.execPath, ['scripts/ensure-cat-media.mjs'], {
+    cwd: process.cwd(),
+    stdio: 'inherit',
+  })
+  if (placed.status !== 0) process.exit(placed.status ?? 1)
+}
 
 const dbPath = process.env.NAVHUB_E2E_DB_PATH
   ? resolve(process.cwd(), process.env.NAVHUB_E2E_DB_PATH)

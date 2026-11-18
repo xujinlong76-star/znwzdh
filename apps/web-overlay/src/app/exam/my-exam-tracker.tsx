@@ -32,7 +32,7 @@ const NODE_DOT_CLASS: Record<string, string> = {
  * 本机，SSR 与水合结果不会打架；存储不可用（满了或被禁）时静默放弃，
  * 不阻塞用户看时间轴。
  *
- * 状态走共享 hook useMyExams：八场卡片与首页条带共用同一份模块级快照，
+ * 状态走共享 hook useMyExams：十场卡片与首页条带共用同一份模块级快照，
  * 写操作读共享现态、不读本实例闭包里的旧快照——交错点关注/勾选不再
  * 互相覆盖；存储读坏时 hook 拒写并把原因交回界面。
  */
@@ -156,7 +156,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
                 ) : null}
               </span>
               <span className="shrink-0 text-xs text-muted-foreground">
-                {/* 峰值日包 W10：11-18 八项目标时刻已过时文案读「已截止」
+                {/* 峰值日包 W10：11-18 七项目标时刻已过时文案读「已截止」
                     （examNodeDeadlineLabel，渲染层时刻口径）；其余节点
                     沿用日期口径的状态文案。只改文案，不改状态、圆点、
                     关注/勾选禁用逻辑（门控仍按日期口径，午夜才翻）。 */}

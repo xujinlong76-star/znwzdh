@@ -1322,7 +1322,7 @@ export function SpotlightModal({
                                 e.stopPropagation()
                                 void handleDeleteRecent(item)
                               }}
-                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 hover:bg-muted hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-11"
+                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-11"
                             >
                               <X className="h-3.5 w-3.5" aria-hidden />
                             </button>

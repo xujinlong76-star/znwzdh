@@ -16,11 +16,13 @@
  *   报名 →「去官网报名」/ aria「报名官方报名入口（新窗口打开）」
  *   公共科目笔试（京考）→「查看官方公告」/ aria「公共科目笔试官方公告入口（新窗口打开）」
  *   江西成绩复核 →「去报名系统申请复核」/ aria「江西成绩复核报名系统申请复核入口（新窗口打开）」
+ *   广东自考成绩查询 →「去系统查成绩」/ aria「成绩查询系统查询成绩入口（新窗口打开）」
  *   其余 13 处准考证打印类节点 →「去官网打印准考证」不变。
  *
  * label 键安全性：'公共科目笔试' 在国考/省考也出现，但那两处节点无 url、
  * 不渲染链接，映射只在 node.url 分支内调用，误伤不到；'报名' 与
- * '江西成绩复核' 各只出现一次。T6 锁死这一事实源状态。
+ * '江西成绩复核' 各只出现一次；'成绩查询' 在江苏与广东自考各出现一次，
+ * 但只有广东节点带 url，映射只在 node.url 分支内调用，误伤不到。T6 锁死这一事实源状态。
  *
  * 计数口径修正（相对 /tmp/u124-test-plan.md 草稿 T5）：
  * 「打印准考证」短串在渲染 HTML 里修后仍出现 16 次——13 次链接文案 +
@@ -37,6 +39,7 @@ import {
   CET_ADMISSION_URL,
   EXAMS,
   GUANGDONG_SHENGKAO_ADMISSION_URL,
+  GUANGDONG_ZIKAO_SCORE_URL,
   GUOKAO_ADMISSION_URL,
   JIANGSU_SHENGKAO_ADMISSION_URL,
   JIANGXI_CHENGKAO_REVIEW_URL,
@@ -116,7 +119,7 @@ const allLinks = (): RenderedLink[] => EXAMS.flatMap((exam) => linksOf(exam))
 
 const examById = (id: string): ExamInfo => EXAMS.find((e) => e.id === id)!
 
-/** 16 个带 url 节点逐字映射（examId + label → URL 常量），T4/T6 共用。 */
+/** 17 个带 url 节点逐字映射（examId + label → URL 常量），T4/T6 共用。 */
 const EXPECTED_URLS: Array<[string, string, string]> = [
   ['guokao', '准考证打印', GUOKAO_ADMISSION_URL],
   ['cet', '口试准考证打印', CET_ADMISSION_URL],
@@ -134,10 +137,11 @@ const EXPECTED_URLS: Array<[string, string, string]> = [
   ['jingkao', '准考证打印', JINGKAO_APPLY_URL],
   ['jingkao', '公共科目笔试', JINGKAO_NOTICE_URL],
   ['chengkao', '江西成绩复核', JIANGXI_CHENGKAO_REVIEW_URL],
+  ['guangdong-zikao', '成绩查询', GUANGDONG_ZIKAO_SCORE_URL],
 ]
 
-/** 3 处例外 label（其余 13 处仍为「去官网打印准考证」）。 */
-const EXCEPTION_LABELS = new Set(['报名', '公共科目笔试', '江西成绩复核'])
+/** 4 处例外 label（其余 13 处仍为「去官网打印准考证」）。 */
+const EXCEPTION_LABELS = new Set(['报名', '公共科目笔试', '江西成绩复核', '成绩查询'])
 
 describe('T1：京考报名改对', () => {
   it('报名行链接文本为「去官网报名」，不含「打印」，href 仍为报名系统原值', () => {
@@ -174,10 +178,23 @@ describe('T3：江西成绩复核改对', () => {
   })
 })
 
+
+describe('T3b：广东自考成绩查询改对', () => {
+  it('查询行链接文本为「去系统查成绩」，不含「打印」「打印准考证」，href 仍为系统原值', () => {
+    const link = linksOf(examById('guangdong-zikao')).find((l) => l.label === '成绩查询')!
+    expect(link.text).toBe('去系统查成绩')
+    expect(link.text).not.toContain('打印准考证')
+    expect(link.text).not.toContain('打印')
+    expect(link.ariaLabel).toBe('成绩查询系统查询成绩入口（新窗口打开）')
+    expect(link.ariaLabel).not.toContain('打印')
+    expect(link.href).toBe(safeHref(GUANGDONG_ZIKAO_SCORE_URL))
+  })
+})
+
 describe('T4：其余 13 处准考证打印类节点文案不变', () => {
   it('13 处链接文本仍为「去官网打印准考证」，aria-label 仍为「…官方打印入口」，href 各自原值', () => {
     const links = allLinks()
-    expect(links).toHaveLength(16)
+    expect(links).toHaveLength(17)
     for (const [examId, label, url] of EXPECTED_URLS) {
       if (EXCEPTION_LABELS.has(label)) continue
       const link = links.find((l) => l.examId === examId && l.label === label)!
@@ -189,9 +206,9 @@ describe('T4：其余 13 处准考证打印类节点文案不变', () => {
 })
 
 describe('T5：全量计数（防漏网/防多改）', () => {
-  it('「去官网打印准考证」恰好 13 次、带 url 的 <a> 恰好 16 个、3 处例外无「打印」残留', () => {
+  it('「去官网打印准考证」恰好 13 次、带 url 的 <a> 恰好 17 个、4 处例外无「打印」残留', () => {
     const links = allLinks()
-    expect(links).toHaveLength(16)
+    expect(links).toHaveLength(17)
     expect(links.filter((l) => l.text === '去官网打印准考证')).toHaveLength(13)
     for (const link of links) {
       if (EXCEPTION_LABELS.has(link.label)) {
@@ -207,7 +224,7 @@ describe('T5：全量计数（防漏网/防多改）', () => {
 })
 
 describe('T6：无数据改动（数据层守卫）', () => {
-  it('九场 id、节点总数、16 个 url 逐字一致，无新增 url，ExamNode 无新增字段', () => {
+  it('十场 id、节点总数、17 个 url 逐字一致，无新增 url，ExamNode 无新增字段', () => {
     expect(EXAMS.map((e) => e.id)).toEqual([
       'guokao',
       'cet',
@@ -218,19 +235,22 @@ describe('T6：无数据改动（数据层守卫）', () => {
       'kaoyan',
       'chengkao',
       'jiangsu-zikao',
+      'guangdong-zikao',
     ])
-    expect(EXAMS.flatMap((e) => e.nodes)).toHaveLength(37)
+    expect(EXAMS.flatMap((e) => e.nodes)).toHaveLength(38)
     const byKey = new Map(
       EXAMS.flatMap((e) => e.nodes.map((n) => [`${e.id}:${n.label}`, n] as const)),
     )
-    expect(byKey.size).toBe(37)
+    expect(byKey.size).toBe(38)
     for (const [examId, label, url] of EXPECTED_URLS) {
       expect(byKey.get(`${examId}:${label}`)?.url).toBe(url)
     }
-    expect(EXAMS.flatMap((e) => e.nodes).filter((n) => n.url)).toHaveLength(16)
-    // U-144：江苏两节点不挂 url，url 总数仍是 16，不因新增节点多出链接。
+    expect(EXAMS.flatMap((e) => e.nodes).filter((n) => n.url)).toHaveLength(17)
+    // U-144：江苏两节点不挂 url；广东自考查询节点挂线上系统直链（U-87），
+    // url 总数 16→17。
     expect(byKey.get('jiangsu-zikao:成绩查询')?.url).toBeUndefined()
     expect(byKey.get('jiangsu-zikao:成绩复核')?.url).toBeUndefined()
+    expect(byKey.get('guangdong-zikao:成绩查询')?.url).toBe(GUANGDONG_ZIKAO_SCORE_URL)
     for (const node of EXAMS.flatMap((e) => e.nodes)) {
       for (const key of Object.keys(node)) {
         expect(['label', 'detail', 'url', 'startISO', 'endISO', 'estimated']).toContain(key)
@@ -247,9 +267,9 @@ describe('T6：无数据改动（数据层守卫）', () => {
 })
 
 describe('T7：链接安全属性不变', () => {
-  it('全部 16 个链接均有 target="_blank" 与 rel="noopener noreferrer"，href 均过 safeHref', () => {
+  it('全部 17 个链接均有 target="_blank" 与 rel="noopener noreferrer"，href 均过 safeHref', () => {
     const links = allLinks()
-    expect(links).toHaveLength(16)
+    expect(links).toHaveLength(17)
     const urlByKey = new Map(EXPECTED_URLS.map(([e, l, u]) => [`${e}:${l}`, u]))
     for (const link of links) {
       expect(link.target).toBe('_blank')
@@ -260,7 +280,7 @@ describe('T7：链接安全属性不变', () => {
 })
 
 describe('T8：源码硬编码不回潮', () => {
-  it('「去官网打印准考证」只出现一次且位于映射函数内，三处例外文案各出现一次', () => {
+  it('「去官网打印准考证」只出现一次且位于映射函数内，四处例外文案各出现一次', () => {
     const island = read('src/app/exam/my-exam-tracker.tsx')
     expect(island.match(/去官网打印准考证/g)?.length).toBe(1)
     expect(island).toContain('function nodeLinkCopy')
@@ -271,12 +291,15 @@ describe('T8：源码硬编码不回潮', () => {
     expect(island.match(/去官网报名/g)?.length).toBe(1)
     expect(island.match(/查看官方公告/g)?.length).toBe(1)
     expect(island.match(/去报名系统申请复核/g)?.length).toBe(1)
-    // 映射表恰好覆盖 3 个例外 label + 默认分支，不写死域名。
+    expect(island.match(/去系统查成绩/g)?.length).toBe(1)
+    // 映射表恰好覆盖 4 个例外 label + 默认分支，不写死域名。
     expect(island).toContain("label === '报名'")
     expect(island).toContain("label === '公共科目笔试'")
     expect(island).toContain("label === '江西成绩复核'")
+    expect(island).toContain("label === '成绩查询'")
     expect(island).not.toContain('rsj.beijing.gov.cn')
     expect(island).not.toContain('beijing.gov.cn')
     expect(island).not.toContain('jdyw.jxeea.cn')
+    expect(island).not.toContain('eeagd.edu.cn')
   })
 })

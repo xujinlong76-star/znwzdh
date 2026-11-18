@@ -5,10 +5,11 @@
  *  - 国考卡片挂准考证打印提醒岛（只在 11-22–11-29 15:00 渲染，官方链接在
  *    exam-calendar 常量里，不在页面写死域名；15:00 准点下线靠客户端岛，
  *    服务端页 revalidate 1 小时会迟到 1 小时）；
- *  - 考试清单只含已核实的九场：国考、四六级、省考、京考、考研、成考、军队文职、教资面试、江苏自考，不含已考完的
+ *  - 考试清单只含已核实的十场：国考、四六级、省考、京考、考研、成考、军队文职、教资面试、江苏自考、广东自考，不含已考完的
  *    经济师（11-07–08）等过期场次；省考文案不写「联考」；
  *    成考是例外：统考 10-17–18 已结束，但成绩节点 11-18 未过，故列入清单。
  *    江苏自考是第二个例外：考期 10-24–25 已结束，但成绩节点 11-18 未过，故列入清单。
+ *    广东自考是第三个例外：考期 10-24–25 已结束，但成绩节点 11-18 未过，故列入清单。
  *  - 页面外链一律过 safeHref，备考站点从 navigation.json 现读、页面不硬编码
  *    12 条站点地址；canonical 自指 /exam；
  *  - 小字链接不用 text-primary（深色/三皮肤下仅 3.33–4.46:1，不达 AA），
@@ -21,6 +22,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   EXAMS,
+  GUANGDONG_ZIKAO_SCORE_URL,
   JIAOSHI_MIANSHI_URL,
   JINGKAO_APPLY_URL,
   JINGKAO_NOTICE_URL,
@@ -40,7 +42,7 @@ const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
 
 describe('daysUntil（北京时间自然日）', () => {
-  it('九场考试距 11-13 的天数与日历一致', () => {
+  it('十场考试距 11-13 的天数与日历一致', () => {
     expect(daysUntil('2026-11-29', NOV_13_0800_CST)).toBe(16)
     expect(daysUntil('2026-12-06', NOV_13_0800_CST)).toBe(23)
     expect(daysUntil('2026-12-12', NOV_13_0800_CST)).toBe(29)
@@ -53,6 +55,8 @@ describe('daysUntil（北京时间自然日）', () => {
     // 成考统考 10-17 已过 27 天（负值），成绩节点 11-18 仍在将来
     expect(daysUntil('2026-10-17', NOV_13_0800_CST)).toBe(-27)
     // 江苏自考考期 10-24 已过 20 天（负值），成绩节点 11-18 仍在将来
+    expect(daysUntil('2026-10-24', NOV_13_0800_CST)).toBe(-20)
+    // 广东自考考期 10-24 已过 20 天（负值），成绩节点 11-18 仍在将来（与江苏自考同日同值）
     expect(daysUntil('2026-10-24', NOV_13_0800_CST)).toBe(-20)
   })
 
@@ -171,9 +175,9 @@ describe('countdownParts', () => {
   })
 })
 
-describe('考试清单只含已核实的九场', () => {
-  it('恰好九场，首日与核实日期一致', () => {
-    expect(EXAMS.map((e) => e.id)).toEqual(['guokao', 'cet', 'shengkao', 'jiaoshi-mianshi', 'jundui-wenzhi', 'jingkao', 'kaoyan', 'chengkao', 'jiangsu-zikao'])
+describe('考试清单只含已核实的十场', () => {
+  it('恰好十场，首日与核实日期一致', () => {
+    expect(EXAMS.map((e) => e.id)).toEqual(['guokao', 'cet', 'shengkao', 'jiaoshi-mianshi', 'jundui-wenzhi', 'jingkao', 'kaoyan', 'chengkao', 'jiangsu-zikao', 'guangdong-zikao'])
     expect(EXAMS.map((e) => e.startISO)).toEqual([
       '2026-11-29',
       '2026-12-12',
@@ -184,6 +188,7 @@ describe('考试清单只含已核实的九场', () => {
       '2026-12-19',
       '2026-10-17',
       '2026-10-24',
+      '2026-10-24', // 广东自考（与江苏自考同日）
     ])
   })
 
@@ -293,6 +298,58 @@ describe('江苏自考节点（U-144）', () => {
     expect(examNodeStatus(review, Date.UTC(2026, 10, 18, 0, 0))).toBe('active')
     expect(examNodeStatus(review, Date.UTC(2026, 10, 20, 0, 0))).toBe('active')
     expect(examNodeStatus(review, Date.UTC(2026, 10, 21, 0, 0))).toBe('done')
+  })
+})
+
+
+describe('广东自考节点（U-144）', () => {
+  // 查找包成函数：实现未落盘时 describe 体内直接 find 会在收集期抛错、
+  // 整文件 0 跑；各 it 内调用，失败只落本 it。
+  const guangdong = () => EXAMS.find((e) => e.id === 'guangdong-zikao')!
+
+  it('只列已核实的一节点：成绩查询；报名、准考证与复核节点不收', () => {
+    const exam = guangdong()
+    expect(exam.name).toBe('2026 年 10 月广东省高等教育自学考试')
+    expect(exam.shortName).toBe('广东自考')
+    expect(exam.tagline).toBe('成绩 11 月 18 日公布')
+    expect(exam.examDateLabel).toBe('10 月 24–25 日')
+    expect(exam.startISO).toBe('2026-10-24')
+    expect(exam.endISO).toBe('2026-10-25')
+    expect(exam.nodes.map((n) => n.label)).toEqual(['成绩查询'])
+    expect(exam.nodes.map((n) => [n.label, n.startISO, n.endISO])).toEqual([
+      ['成绩查询', '2026-11-18', '2026-11-18'],
+    ])
+    // 成绩查询挂线上系统直链（U-87 规则：公告原文给出可直接登录办理的
+    // 线上系统 URL 才挂链）；日期与时刻均已核实，不设 estimated。
+    expect(exam.nodes[0]!.url).toBe(GUANGDONG_ZIKAO_SCORE_URL)
+    expect(GUANGDONG_ZIKAO_SCORE_URL).toBe('https://www.eeagd.edu.cn/selfec/')
+    expect(exam.nodes[0]!.estimated).toBeUndefined()
+    // 报名/准考证/复核节点不收：考期已过；复核无全省统一窗口（各市自考办
+    // 在成绩公布后 10 个工作日内安排），不设日期节点。label 里出现即红。
+    expect(exam.nodes.map((n) => n.label).join('')).not.toContain('报名')
+    expect(exam.nodes.map((n) => n.label).join('')).not.toContain('准考证')
+    expect(exam.nodes.map((n) => n.label).join('')).not.toContain('复核')
+    // 域名只认 eea.gd.gov.cn；ee.gd.gov.cn 不得出现（雷达第 30 轮定论）。
+    expect([exam.note ?? '', ...exam.nodes.map((n) => `${n.detail}${n.url ?? ''}`)].join('')).not.toContain('ee.gd.gov.cn')
+  })
+
+  it('detail 逐字：查分 11-18 15:00 起 + 四种入口 + 系统查合格成绩与当次违规处理情况；复核写进 entry note（无全省统一窗口）', () => {
+    const query = guangdong().nodes[0]!
+    expect(query.detail).toBe(
+      '11 月 18 日 15:00 起可查：官微小程序（gdsksy）、支付宝小程序、百度智能小程序、广东省自学考试管理系统（查合格成绩与当次违规处理情况）',
+    )
+    expect(guangdong().note).toBe(
+      '统考 10 月 24–25 日已结束，条目存在只为承载成绩节点；成绩复核无全省统一窗口，各市自考办在成绩公布后 10 个工作日内安排具体受理时间与地点，以所在市公布为准，须本人持身份证、准考证到参加考试所在市自考办申请，逾期不予受理，仅限漏评、漏记分、错记分、加错分四种情形。',
+    )
+  })
+
+  it('考期已过但成绩节点未过（与成考、江苏自考同款例外）：11-13 时考试状态已结束，节点仍按日期翻转', () => {
+    const exam = guangdong()
+    expect(examStatus(exam, NOV_13_0800_CST)).toBe('ended')
+    const query = exam.nodes[0]!
+    expect(examNodeStatus(query, Date.UTC(2026, 10, 17, 0, 0))).toBe('upcoming')
+    expect(examNodeStatus(query, Date.UTC(2026, 10, 18, 0, 0))).toBe('today')
+    expect(examNodeStatus(query, Date.UTC(2026, 10, 19, 0, 0))).toBe('done')
   })
 })
 

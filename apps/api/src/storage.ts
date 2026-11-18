@@ -20,6 +20,7 @@ import { backfillDerivedFacets, formatFacetBackfillReport } from "./facet-backfi
 import { indexSitesBatch } from "./index-site.ts";
 import { loadVideoCatalogFromDb, resolveVideoStoreMode, syncReplacementHistorySafely, syncVideoCatalogSafely, VIDEO_REPLACEMENTS_PATH } from "./video-catalog.ts";
 import { deriveVideoShards } from "./video-shards.ts";
+import { deriveNavigationShards } from "./navigation-shards.ts";
 
 /** 外置替换审计文档的 basename（路径事实源在 video-catalog.ts，避免两处硬编码漂移） */
 const REPLACEMENTS_BASENAME = VIDEO_REPLACEMENTS_PATH.split("/").pop()!;
@@ -721,6 +722,27 @@ export async function writeNavigationData(
     }
   } catch (err) {
     console.warn("[storage] 分面回填失败（不影响本次写回）:", err);
+  }
+  // 导航快照分片派生（U-36，主方案 A）：写回提交后同步派生 public 快照的
+  // index / 分类分片，web 读路径改读分片进 Data Cache，首页 ISR 才真生效。
+  // 纪律（照抄 writeVideosData）：派生失败只记 error 日志、不连带写失败——
+  // 源数据已经落库，读路径靠 sourceVersion 校验发现分片缺失/不一致时自动
+  // 回落整包读。派生源是提交后重建的 public 快照（不是本次提交的输入文档：
+  // 输入可能含停用站，public 投影才是首页真实读到的内容）。
+  try {
+    const version = await ctx.repo.readNavDataVersion();
+    if (version !== null) {
+      invalidateSnapshotCache();
+      const publicDoc = await readNavigationSnapshot(ctx, "public", version);
+      const derived = deriveNavigationShards(publicDoc, version);
+      for (const w of derived.writes) {
+        await writeKv(ctx, pathToKey(w.path), w.data);
+      }
+    } else {
+      console.warn("[navigation] 分片派生跳过：data_version 取不到（读路径将回落整包读）");
+    }
+  } catch (err) {
+    console.error("[navigation] 分片派生失败（读路径将回落整包读）:", err);
   }
   return result;
 }

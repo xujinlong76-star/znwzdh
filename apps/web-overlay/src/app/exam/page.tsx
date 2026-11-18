@@ -20,6 +20,7 @@ import { Breadcrumbs } from '@/components/breadcrumbs'
 import { JsonLd } from '@/components/json-ld'
 import { SiteFavicon } from '@/components/site-favicon'
 import { getFileContent } from '@/lib/github'
+import { loadNavigationCatalog } from '@/lib/navigation-catalog-read'
 import { getProcessedData } from '@/lib/data-loader'
 import { safeHref } from '@/lib/safe-url'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
@@ -62,7 +63,6 @@ const DESCRIPTION =
   '2026 成考成绩、2027 国考、四六级、省考、京考、考研初试、军队文职笔试、教资面试的倒计时与关键节点：准考证打印、笔试时间、成绩查询一次看全，附报名与备考入口。'
 const EMPTY_TITLE = '考试日历 - 成考、国考、四六级、省考、京考、考研、军队文职、教资面试'
 const EMPTY_DESCRIPTION = '本轮八场考试已结束，时间与关键节点备查；新日程以官方公告为准。'
-const NAVIGATION_PATH = 'src/navsphere/content/navigation.json'
 const SITE_PATH = 'src/navsphere/content/site.json'
 
 const EXAM_ICONS: Record<string, LucideIcon> = {
@@ -91,11 +91,12 @@ export async function generateMetadata(): Promise<Metadata> {
 /** 备考站点区：读站内「学习成长 / 考试备考」分类（12 站），失败时返回空数组降级 */
 async function loadExamPrepSites(): Promise<NavigationSubItem[]> {
   try {
-    const [navigationRaw, siteRaw] = await Promise.all([
-      getFileContent(NAVIGATION_PATH),
+    // U-36：与首页同款，导航改读中枢派生的分片，不再读 2MB 整包
+    const [navigationLoad, siteRaw] = await Promise.all([
+      loadNavigationCatalog(),
       getFileContent(SITE_PATH),
     ])
-    const { navigationData } = getProcessedData(navigationRaw as never, siteRaw as never)
+    const { navigationData } = getProcessedData(navigationLoad.data as never, siteRaw as never)
     const category = navigationData.navigationItems.find((c) => c.id === EXAM_PREP_CATEGORY_ID)
     const sub = category?.subCategories?.find((s) => s.id === EXAM_PREP_SUB_ID)
     return sub?.items ?? []

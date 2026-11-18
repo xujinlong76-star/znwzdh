@@ -349,6 +349,37 @@ async function revalidateStorageTag(path: string, content?: string): Promise<voi
       revalidatePath("/videos/sitemap.xml");
       revalidatePath("/videos/feed.xml");
     }
+    if (path.includes("navigation.json") && !path.includes("navigation-index.json") && !path.includes("navigation-cat-")) {
+      // 导航分片（U-36，主方案 A）：首页、考试页改读中枢派生的 index/分类分片，
+      // 它们的 Data Cache 条目挂的是各自路径的标签，只失效 navigation.json
+      // 本体的话页面会继续吃旧分片——这里一并失效。子片页数不在写入内容里，
+      // 按分类 id 逐一失效基础路径与 p1–p4（单分类超 750KB 才切子片，实库最大
+      // 分类 340 站、单片约 150–230KB，p4 已是 4 倍余量；超出部分靠各分片的
+      // revalidate 窗口兜底，与视频侧同款口径）。
+      const { NAVIGATION_INDEX_PATH, navigationShardPath, navigationShardPagePath } = await import(
+        "@/lib/navigation-catalog-paths"
+      );
+      revalidateTag(storageTag(NAVIGATION_INDEX_PATH), "max");
+      if (content) {
+        try {
+          const parsed = JSON.parse(content) as {
+            navigationItems?: Array<{ id?: unknown }>;
+          };
+          for (const cat of parsed.navigationItems ?? []) {
+            if (typeof cat?.id === "string" && cat.id) {
+              revalidateTag(storageTag(navigationShardPath(cat.id)), "max");
+              for (let p = 1; p <= 4; p++) {
+                revalidateTag(storageTag(navigationShardPagePath(cat.id, p)), "max");
+              }
+            }
+          }
+        } catch {
+          // 内容不可解析：分片标签靠 revalidate 窗口失效，不影响写入结果
+        }
+      }
+      revalidatePath("/");
+      revalidatePath("/exam");
+    }
   } catch {
     // 非 Next 运行时 / 非请求上下文：忽略
   }

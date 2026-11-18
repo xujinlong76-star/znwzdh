@@ -14,6 +14,7 @@ import { collectDramaSites, countCategorySites } from "@/lib/drama-sites";
 import { getFirstDramaPoster } from "@/lib/server/cinema-media";
 import type { CinemaInitialData } from "@/components/home-drama-cinema";
 import { getFileContent } from "@/lib/github";
+import { loadNavigationCatalog } from "@/lib/navigation-catalog-read";
 import { configuredSiteOrigin } from "@/lib/seo/origin";
 import { webSiteLd, organizationLd } from "@/lib/seo/json-ld";
 import { JsonLd } from "@/components/json-ld";
@@ -63,16 +64,18 @@ export const revalidate = 60;
  * 而不是把 revalidate 改回 force-dynamic。
  */
 
-const NAVIGATION_PATH = "src/navsphere/content/navigation.json";
 const SITE_PATH = "src/navsphere/content/site.json";
 
 const getData = cache(async () => {
-  // 并行读取，避免两次串行往返
-  const [navigationRaw, siteRaw] = await Promise.all([
-    getFileContent(NAVIGATION_PATH),
+  // U-36：导航改读中枢派生的分片（index + 按分类分片），不再读 2MB 整包；
+  // 拼装树在渲染字段上与整包逐字等值（见 navigation-catalog-read.test.ts）。
+  // 校验不过时 loadNavigationCatalog 自动回落整包读（degraded），永不比现状差。
+  // 回滚位：NAVHUB_NAVIGATION_READ_MODE=doc。
+  const [navigationLoad, siteRaw] = await Promise.all([
+    loadNavigationCatalog(),
     getFileContent(SITE_PATH),
   ]);
-  return getProcessedData(navigationRaw as never, siteRaw as never);
+  return getProcessedData(navigationLoad.data as never, siteRaw as never);
 });
 
 /**

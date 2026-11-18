@@ -85,7 +85,7 @@ describe("顶栏触达尺寸（navigation-toolbar）", () => {
     const block = src.slice(start, end);
     expect(block, "今日中心按钮不再是纯图标按钮，不应再用 size=\"icon\"").not.toContain('size="icon"');
     expect(block, "今日中心按钮仍应是 h-11 w-11（44px 触达）").toContain("h-11 w-11");
-    expect(block, "今日中心按钮应有可见文字标签「今日 N 项」/「今日」").toContain("今日");
+    expect(block, "今日中心按钮应有可见文字标签「今日 N 项」/「今日」").toContain("今日 ${todayBadge.todayCount}");
   });
 
   it("「全选」文本按钮（size=\"sm\"）也是 36px 高（h-9 w-auto，F3 尾项裁决）", () => {

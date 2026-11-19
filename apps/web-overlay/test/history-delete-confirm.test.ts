@@ -233,3 +233,22 @@ describe('U-233：11-19 今日行注释为 3 项（含天津成绩复核）', ()
     expect(CAL).not.toContain('上海自考成绩查询（startsToday）2 项')
   })
 })
+
+const WATCHLIST = overlaySource('src/app/me/watchlist/page.tsx')
+
+describe('U-230：集数步进空值不调 onSet、不静默清零', () => {
+  it('断言 1：commit 空值守卫——空/空白先恢复原值 return，onSet 只在守卫之后', () => {
+    const start = WATCHLIST.indexOf('const commit = () => {')
+    expect(start, 'EpisodeStepper commit 应存在').toBeGreaterThanOrEqual(0)
+    const body = WATCHLIST.slice(start, WATCHLIST.indexOf('}\n  )', start))
+    const guardIdx = body.indexOf("if (draft.trim() === '') {")
+    expect(guardIdx, 'commit 应有空值守卫').toBeGreaterThanOrEqual(0)
+    const guardBlock = body.slice(guardIdx, body.indexOf('}', guardIdx) + 1)
+    expect(guardBlock).toContain('setDraft(null)')
+    expect(guardBlock).toContain('return')
+    expect(guardBlock).not.toContain('onSet')
+    // 守卫在 Number(draft)/onSet 之前：空值到不了写盘。
+    expect(body.indexOf('onSet(n)'), 'onSet 应在守卫之后').toBeGreaterThan(guardIdx)
+    expect(body.indexOf('Number(draft)'), 'Number 转换应在守卫之后').toBeGreaterThan(guardIdx)
+  })
+})

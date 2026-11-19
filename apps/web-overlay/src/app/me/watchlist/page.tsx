@@ -72,6 +72,12 @@ function EpisodeStepper({ entry, onSet }: { entry: WatchEntry; onSet: (episode: 
   const shown = draft ?? String(entry.episode)
   const commit = () => {
     if (draft === null) return
+    // U-230：空值/空白直接恢复原值、不调 onSet——Number('') === 0，
+    // 失焦/回车会把集数静默清零，下游 setEpisode 又把 0 当合法值写盘。
+    if (draft.trim() === '') {
+      setDraft(null)
+      return
+    }
     const n = Math.trunc(Number(draft))
     setDraft(null)
     if (Number.isFinite(n)) onSet(n)

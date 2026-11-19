@@ -216,8 +216,9 @@ export default async function ExamPage() {
                   </div>
                   <MyExamTracker exam={exam} />
                   {/* 国考准考证打印提醒岛：只在国考卡片、只在 11-22–11-29 15:00
-                      渲染提醒块；挂载前渲染 null，15:00 准点下线（服务端页
-                      revalidate 1 小时，直出会迟到 1 小时，故走客户端岛）。
+                      渲染提醒块；挂载前渲染 null，15:00 边界 60 秒 tick 重算、
+                      最长迟 1 分钟下线（服务端页 revalidate 1 小时，直出会迟到
+                      1 小时，故走客户端岛）。
                       官方链接在 exam-calendar 常量里，不在页面写死域名。 */}
                   {exam.id === 'guokao' ? <GuokaoAdmissionReminderIsland exam={exam} /> : null}
                   {exam.note ? (

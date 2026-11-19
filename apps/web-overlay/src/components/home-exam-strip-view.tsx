@@ -63,8 +63,14 @@ export function HomeExamStripView({
 }) {
   const { state } = useMyExams()
   const [mounted, setMounted] = useState(false)
+  // U-235：60 秒 tick 只重算 tier / reminder / admission（关注状态不碰）；
+  // 常驻首页过午夜、过 15:00 后徽章与提醒与新的一天一致——按绝对时刻
+  // 重算，非累减倒计时。
+  const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     setMounted(true)
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
   }, [])
 
   const preferred = state === null ? undefined : nearestFollowedExam(state)
@@ -78,7 +84,7 @@ export function HomeExamStripView({
 
   // 紧迫度与提醒档位都是 (考试 + 今天) 的只读派生：不写存储、不标脏，
   // 与 Wave 0 的脏标记零交集。挂载前取 relaxed / 无提醒，与 SSR 一致。
-  const now = Date.now()
+  // now 是 60 秒 tick 的 state（U-235），每次 tick 重算以下三项。
   const tier: ExamUrgencyTier = mounted ? (urgencyTier(exam, now) ?? 'relaxed') : 'relaxed'
   // 提醒文案只对已关注考试显示（未关注只变色、不出文案，避免噪音）。
   const reminder: ExamReminderTier | null =

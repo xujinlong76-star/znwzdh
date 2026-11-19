@@ -835,7 +835,8 @@ describe('R1：已结束考试仍有可办节点时卡片不渲染裸「已结�
 
   it('跟踪岛：行文与按钮按有无可办节点切换 scoped 文案，禁用口径与纯规则层一致（U-106）', () => {
     const island = read('src/app/exam/my-exam-tracker.tsx')
-    expect(island).toContain('hasActionableNodes(exam)')
+    // U-235：可办判断按 tick 的 now 重算（与倒计时岛同款显式传 now）。
+    expect(island).toContain('hasActionableNodes(exam, now)')
     expect(island).toContain('统考已结束，下方节点仍可办理')
     expect(island).toContain('本场考试已结束')
     // U-106（R1「禁用逻辑不动」已推翻）：统考已过但节点仍可办时按钮
@@ -898,7 +899,8 @@ describe('我的考试岛源码守卫', () => {
   })
 
   it('已结束场次的关注按钮禁用、复选框禁用，状态由 examStatus 派生（U-106：仍有可办节点时不禁用）', () => {
-    expect(island).toContain('examStatus(exam)')
+    // U-235：状态按 tick 的 now 重算（与倒计时岛同款显式传 now）。
+    expect(island).toContain('examStatus(exam, now)')
     expect(island).toContain("=== 'ended'")
     expect(island).toContain(
       'disabled={storageBlocked !== null || (ended && !hasPendingNodes && !followed)}',

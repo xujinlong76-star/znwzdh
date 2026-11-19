@@ -76,13 +76,17 @@ export function GuokaoAdmissionReminder({
  * SSR 直出会在午夜边界与水合结果差一天）；挂载后按当前时刻算门控，
  * 窗口内渲染 card 形态，窗口外渲染 nothing。15:00 截止是时刻级门控，
  * 客户端岛比分段缓存的服务端直出翻得准（服务端页 revalidate 1 小时，
- * 15:00 后最多迟 1 小时下线，岛是准点下线）。
+ * 15:00 后最多迟 1 小时下线；岛 60 秒 tick、最长迟 1 分钟下线）。
  */
 export function GuokaoAdmissionReminderIsland({ exam }: { exam: ExamInfo }) {
   const [now, setNow] = useState<number | null>(null)
 
+  // U-235：60 秒 tick——常驻页过 15:00 不翻态是旧 bug；每分钟按绝对时刻
+  // 重算门控（admissionReminderFor），非累减倒计时。
   useEffect(() => {
     setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
   }, [])
 
   if (now === null) return null

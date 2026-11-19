@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { ArrowUpRight } from 'lucide-react'
 import { useMyExams } from '@/hooks/useMyExams'
 import {
@@ -57,8 +58,17 @@ function nodeLinkCopy(label: string): { text: string; ariaAction: string } {
 export function MyExamTracker({ exam }: { exam: ExamInfo }) {
   const { state, storageBlocked, toggleFollow, toggleNodeCheck } = useMyExams()
 
+  // U-235：60 秒 tick——常驻 /exam 过 18:00 不翻「已截止」是旧 bug；每分钟
+  // 按绝对截止时刻重算行文案（examNodeDeadlineLabel），非累减倒计时。
+  // 禁用口径不动（U-106 未定：18:00 后复选框是否随之禁用无定论，仍按日期口径）。
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+
   const followed = state !== null && isFollowed(state, exam.id)
-  const ended = examStatus(exam) === 'ended'
+  const ended = examStatus(exam, now) === 'ended'
   // R1（2026-11-17）：统考已过但节点仍可办时（成考 11-18 的成绩查询），
   // 卡片行文不写裸「已结束」，改按统考 scoped 文案并指向下方节点；
   // 节点全过后（11-30 起）仍是「本场考试已结束」，行为不变。
@@ -66,7 +76,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
   // 时未关注用户仍可关注、已关注可继续勾选：按钮 disabled 是 ended &&
   // !hasPendingNodes && !followed（已关注者恒可取消关注），复选框是
   // ended && !hasPendingNodes；节点全过后恢复禁用。
-  const hasPendingNodes = ended && hasActionableNodes(exam)
+  const hasPendingNodes = ended && hasActionableNodes(exam, now)
   const done = state === null ? 0 : checkedCount(state, exam)
   const checkedLabels = state === null ? [] : (state.checked[exam.id] ?? [])
 
@@ -110,7 +120,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
       ) : null}
       <ol className="mt-3 space-y-2.5">
         {exam.nodes.map((node) => {
-          const status = examNodeStatus(node)
+          const status = examNodeStatus(node, now)
           const checked = followed && checkedLabels.includes(node.label)
           const linkCopy = nodeLinkCopy(node.label)
           return (
@@ -160,7 +170,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
                     （examNodeDeadlineLabel，渲染层时刻口径）；其余节点
                     沿用日期口径的状态文案。只改文案，不改状态、圆点、
                     关注/勾选禁用逻辑（门控仍按日期口径，午夜才翻）。 */}
-                {examNodeDeadlineLabel(exam, node) ?? EXAM_NODE_STATUS_LABEL[status]}
+                {examNodeDeadlineLabel(exam, node, now) ?? EXAM_NODE_STATUS_LABEL[status]}
               </span>
             </li>
           )

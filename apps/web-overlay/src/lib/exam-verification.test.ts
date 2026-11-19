@@ -36,9 +36,10 @@ import {
 /** 固定“现在”：2026-11-19 12:00（北京时间），PoC 核查日。 */
 const NOW_MS = Date.parse('2026-11-19T12:00:00+08:00')
 /** A4 全量校验的评估时刻：8 个 reprint 节点实测核查于 2026-11-19 23:30，
- * 须取该时刻之后，否则“checked_at 不得晚于当前时间”规则会把真实核查判为未来值。
+ * 天津节点 F1b 核查于 2026-11-20 02:35（02:35 裁决），须取该时刻之后，
+ * 否则“checked_at 不得晚于当前时间”规则会把真实核查判为未来值。
  * NOW_MS（12:00）仍用于其他与“当天”相关的断言，不动。 */
-const VALIDATION_NOW_MS = Date.parse('2026-11-19T23:59:59+08:00')
+const VALIDATION_NOW_MS = Date.parse('2026-11-20T02:35:00+08:00')
 /** 31 天前：2026-10-19 12:00（北京时间），已过期。 */
 const EXPIRED_AT = '2026-10-19T12:00:00+08:00'
 /** 新鲜核查时间：2026-11-19 10:00（北京时间）。 */
@@ -377,13 +378,12 @@ describe('A7：准入闸行为（unverified 节点）', () => {
     expect(ms).toBe(Date.parse('2026-11-18T18:00:00+08:00'))
   })
 
-  it('全部当前 unverified 的 PEAK 表项（11 项）调 peakDayDeadlineMs 均返回 undefined', () => {
-    // PEAK 表 19 项中 8 项已核实（reprint，准入）；其余 11 项的节点均为
+  it('全部当前 unverified 的 PEAK 表项（10 项）调 peakDayDeadlineMs 均返回 undefined', () => {
+    // PEAK 表 19 项中 9 项已核实（reprint，准入；F1b 天津 +1）；其余 10 项的节点均为
     // unverified，准入闸须把它们全部拦下（时刻倒计时不渲染、PEAK 表不收）。
     const unverifiedPeakKeys = [
       'chengkao:江西成绩查询',
       'chengkao:新疆成绩查询',
-      'chengkao:天津成绩复核',
       'chengkao:新疆成绩复核',
       'chengkao:江西成绩复核',
       'guangdong-zikao:成绩查询',
@@ -393,7 +393,7 @@ describe('A7：准入闸行为（unverified 节点）', () => {
       'shengkao:浙江准考证打印',
       'shengkao:江苏准考证打印',
     ]
-    expect(unverifiedPeakKeys).toHaveLength(11)
+    expect(unverifiedPeakKeys).toHaveLength(10)
     for (const key of unverifiedPeakKeys) {
       const [examId, label] = key.split(':')
       const exam = EXAMS.find((e) => e.id === examId) as ExamInfo
@@ -401,6 +401,22 @@ describe('A7：准入闸行为（unverified 节点）', () => {
       expect(node.verification_level, `${key} 应为 unverified`).toBe('unverified')
       expect(peakDayDeadlineMs(exam, node, NOW_MS), `${key} 准入闸应返回 undefined`).toBeUndefined()
     }
+  })
+
+  it('F1b 天津 reprint 已准入：peakDayDeadlineMs 返回 11-19 18:00（§7.2 准入闸通过）', () => {
+    // F1b 快照一致化：天津节点 verification_level reprint、confidence medium、
+    // checked_at 2026-11-20T02:35:00+08:00（02:35 裁决），准入闸通过；
+    // NOW_MS（11-19 12:00）早于 checked_at 亦不过期（isVerificationExpired 只判超 30 天）。
+    const exam = EXAMS.find((e) => e.id === 'chengkao') as ExamInfo
+    const node = exam.nodes.find((n) => n.label === '天津成绩复核') as ExamNode
+    expect(node.verification_level).toBe('reprint')
+    expect(node.source_url).toBe('https://www.hqwx.com/chengrengk-kaoshi/news/17859084897258.html')
+    expect(node.archived_url).toBeUndefined()
+    expect(node.checked_at).toBe('2026-11-20T02:35:00+08:00')
+    expect(node.confidence).toBe('medium')
+    expect(deriveConfidence(node)).toBe('medium')
+    expect(isPeakEligible(node, NOW_MS)).toBe(true)
+    expect(peakDayDeadlineMs(exam, node, NOW_MS)).toBe(Date.parse('2026-11-19T18:00:00+08:00'))
   })
 })
 

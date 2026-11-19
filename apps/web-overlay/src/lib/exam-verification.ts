@@ -17,7 +17,7 @@
  *    存档失败行亦称“archived_url 留空、confidence 上限 medium、不阻塞定级”。
  *    本批以任务书 + §12.3 为准：reprint 允许 archived_url 为空（有真实 source_url
  *    且已读、confidence 上限 medium）；official 仍要求 source+archived 双全。
- *    本轮结果：8 节点 reprint（PoC 6 + 同源相邻 2），其余 35 节点 unverified。
+ *    本轮结果：9 节点 reprint（PoC 6 + 同源相邻 2 + 天津 F1b 1），其余 34 节点 unverified。
  *    待 SPN2 存档链路（W1 的 scripts/exam-verify.mjs，需 IA_S3 凭据）跑通并 CDX
  *    反查通过后，方可逐节点升级 official。
  *  - 域名白名单只登记两处来源：① exam-calendar.ts 文件头注释已载明的官方域名；

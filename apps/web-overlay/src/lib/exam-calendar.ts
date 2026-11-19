@@ -49,7 +49,7 @@ export interface ExamNode {
    * 裁决记录：任务书 PoC 填值规则 + §12.3 覆盖 §2.1“reprint 存档必填”一行）；
    * 无来源的节点只能标 unverified（此时 source_url / archived_url / checked_at 必须为空）。
    * 2026-11-19 PoC 核查：CDX 反查 10 个 PoC 节点的公告原文页均无 Wayback 快照，
-   * 故本轮 8 节点 reprint、其余 35 节点 unverified（诚实值，见 exam-verification.ts 文件头）。
+   * 故本轮 9 节点 reprint（F1b 天津 +1）、其余 34 节点 unverified（诚实值，见 exam-verification.ts 文件头）。
    */
   verification_level: VerificationLevel
   /** 事实来源 URL（公告原文页）；unverified 时为空。禁止短链、本站自身 URL、http 改 https。 */
@@ -674,7 +674,7 @@ export const EXAMS: ExamInfo[] = [
     // 不是节点截止时刻，同样不入表。节点 11-19→11-20：11-19 被海南直接节点抑制进
     // 接续区（与江西复核同款，抑制只拦 startsToday）；11-20 以 endsToday 进今日行
     // （第一遍不抑制），无 PEAK 表项故无倒计时 chip、全天显示「进行中」、不翻「已截止」。
-    // 天津成绩复核（U-162，节点级别 unverified，2026-11-19 核实）：环球青藤（原环球网校）
+    // 天津成绩复核（U-162，节点级别 reprint，F1b 2026-11-20 02:35 裁决已落定）：环球青藤（原环球网校）
     // hqwx 2026-11-18《2026成考查分汇总11月18日更新：海南19日17时将公布，
     // 17地开通记录对照》（https://www.hqwx.com/chengrengk-kaoshi/news/17859084897258.html）——
     // 成绩 11 月 18 日 9 时起可查，复核 11 月 19 日 9 时至 18 时网上申请缴费，
@@ -684,7 +684,7 @@ export const EXAMS: ExamInfo[] = [
     // 的 17 地快照，本轮仅补海南待开通提示，其他地区未在本轮重新逐省核验」——
     // 天津细节 2026-11-20 02:35 紧急核实结论 A 已核实：窗口 11-19 09:00–18:00
     // 正确，11-20 12:00 是 eol.cn 所标的 2025 年窗口，不复刻到 2026 年。
-    // zhaokao.net 仍未直读到官方原文，无第二信源，故节点级别为 unverified、
+    // zhaokao.net 仍未直读到官方原文，无第二信源，故节点级别为 reprint、
     // 不得写「据官网公告」，不挂 url 字段
     // （detail 文本亦不写 URL 字符串）。移动端不支持复核申请，需电脑访问招考
     // 资讯网（只记注释，不进 detail）。11-19 18:00 是截止时刻、入 PEAK 表
@@ -775,8 +775,13 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '天津成绩复核',
-        verification_level: 'unverified',
-        confidence: 'low',
+        // reprint（F1b，2026-11-20 02:35 紧急核实结论 A 裁决已落定）：来源为 hqwx
+        // 环球青藤转载（11-19 09:00–18:00 网上申请缴费，与节点一致）；zhaokao.net
+        // 官方原文仍未直读到，故仍为转载级；CDX 反查无 Wayback 快照，archived_url 留空。
+        verification_level: 'reprint',
+        source_url: 'https://www.hqwx.com/chengrengk-kaoshi/news/17859084897258.html',
+        checked_at: '2026-11-20T02:35:00+08:00',
+        confidence: 'medium',
         detail: '11 月 19 日 9:00 至 18:00 网上申请缴费；复核结果 11 月 25 日 9:00 至 11 月 30 日 17:00 可查',
         startISO: '2026-11-19',
         endISO: '2026-11-19',

@@ -15,7 +15,8 @@ import {
   type ExamUrgencyTier,
 } from '@/lib/exam-calendar'
 import { ExamVerificationBadge } from '@/components/exam-verification-badge'
-import { isPeakEligible } from '@/lib/exam-verification'
+import { useExamVerificationLookup } from '@/components/exam-verification-context'
+import { formatCorrectionNote, isPeakEligible } from '@/lib/exam-verification'
 
 /**
  * 紧迫度配色（大号天数 / 今天考试文案）：站内已有的 amber-600 / red-600
@@ -38,6 +39,9 @@ const URGENCY_DAY_CLASS: Record<ExamUrgencyTier, string> = {
  * 客户端时间，SSR 直出会在午夜边界与水合结果差一天。
  */
 export function ExamCountdown({ exam }: { exam: ExamInfo }) {
+  // R1：服务端取数经 ExamVerificationProvider（page.tsx）传入；未包 Provider
+  // 的调用点（如首页条带）取空表，行为不变。
+  const { latestByKey, correctionsByKey } = useExamVerificationLookup()
   const [now, setNow] = useState<number | null>(null)
 
   useEffect(() => {
@@ -94,14 +98,25 @@ export function ExamCountdown({ exam }: { exam: ExamInfo }) {
   const parts = countdownParts(shanghaiMidnightMs(firstExamDay(exam)), now)
   // §7.1 / §9.2：下一节点的时刻倒计时 chip 只给准入节点；unverified 节点只显示
   // 「待核实」徽标，不渲染时刻倒计时。考试日本身的天数倒计时是日期口径，不受此限。
+  // R1：最新核查行 verdict === 'false' 时节点下架（准入闸 false、时刻 undefined）。
   const nextNode = nextExamNode(exam, now)
-  const nextEligible = nextNode !== undefined && isPeakEligible(nextNode, now)
+  const nextKey = nextNode !== undefined ? `${exam.id}:${nextNode.label}` : undefined
+  const nextLatest = nextKey !== undefined ? latestByKey[nextKey] : undefined
+  const nextEligible = nextNode !== undefined && isPeakEligible(nextNode, now, nextLatest)
   const nextDeadlineMs =
     nextNode !== undefined && nextEligible
-      ? todayNodeDeadlineMs({ exam, node: nextNode, kind: 'today' }, now)
+      ? todayNodeDeadlineMs({ exam, node: nextNode, kind: 'today' }, now, nextLatest)
       : undefined
   const nextParts =
     nextDeadlineMs !== undefined ? countdownParts(nextDeadlineMs, now) : undefined
+  // §6.3 更正注：时刻/入口/适用口径三类重大错误的更正注置于节点卡片顶部
+  //（此处为下一节点行下方，即该节点卡片区内）；同一节点多次更正按时间倒序。
+  const nextCorrectionNotes =
+    nextKey !== undefined
+      ? (correctionsByKey[nextKey] ?? [])
+          .map((c) => formatCorrectionNote(c))
+          .filter((t): t is string => t !== null)
+      : []
   return (
     <div className="space-y-2">
       <div
@@ -131,6 +146,15 @@ export function ExamCountdown({ exam }: { exam: ExamInfo }) {
               {nextParts.hours} 小时 {nextParts.minutes} 分
             </span>
           ) : null}
+        </div>
+      ) : null}
+      {nextCorrectionNotes.length > 0 ? (
+        <div className="space-y-1">
+          {nextCorrectionNotes.map((note, i) => (
+            <p key={i} className="text-xs leading-relaxed text-muted-foreground">
+              {note}
+            </p>
+          ))}
         </div>
       ) : null}
     </div>

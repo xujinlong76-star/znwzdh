@@ -33,6 +33,8 @@ import {
 } from '@/lib/exam-calendar'
 import { ExamCountdown } from './exam-countdown'
 import { ExamCorrectionReport } from './exam-correction-report'
+import { ExamVerificationProvider } from '@/components/exam-verification-context'
+import { loadExamVerificationLookup } from '@/lib/exam-verification-store'
 import { GuokaoAdmissionReminderIsland } from '@/components/guokao-admission-reminder'
 import { MyExamTracker } from './my-exam-tracker'
 
@@ -90,6 +92,9 @@ async function retryExamPrepSites() {
 
 export default async function ExamPage() {
   const prepSites = await loadExamPrepSites()
+  // R1 更正闭环：服务端取全部节点的最新核查行（verdict）与更正行，序列化后
+  // 传给 ExamCountdown 岛；取数失败时返回空表，页面按节点 5 字段渲染，不阻塞。
+  const verificationLookup = await loadExamVerificationLookup()
   const origin = configuredSiteOrigin()
   const nearest = nearestExam()
   // 撞期提醒只读数据层派生（activeExamReminders，过期自动隐藏）：
@@ -197,7 +202,11 @@ export default async function ExamPage() {
                     </div>
                   </div>
                   <div className="mt-4">
-                    <ExamCountdown exam={exam} />
+                    {/* R1：服务端取数经 Context 传给岛（page 有源码守卫锁死
+                        `<ExamCountdown exam={exam} />` 字面量，不用 props 传）。 */}
+                    <ExamVerificationProvider value={verificationLookup}>
+                      <ExamCountdown exam={exam} />
+                    </ExamVerificationProvider>
                   </div>
                   <MyExamTracker exam={exam} />
                   {/* 国考准考证打印提醒岛：只在国考卡片、只在 11-22–11-29 15:00

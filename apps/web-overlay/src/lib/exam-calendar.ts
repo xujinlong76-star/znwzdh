@@ -23,6 +23,7 @@
 
 import {
   isPeakEligible,
+  type LatestExamVerificationRef,
   type VerificationConfidence,
   type VerificationLevel,
 } from './exam-verification'
@@ -673,7 +674,7 @@ export const EXAMS: ExamInfo[] = [
     // 不是节点截止时刻，同样不入表。节点 11-19→11-20：11-19 被海南直接节点抑制进
     // 接续区（与江西复核同款，抑制只拦 startsToday）；11-20 以 endsToday 进今日行
     // （第一遍不抑制），无 PEAK 表项故无倒计时 chip、全天显示「进行中」、不翻「已截止」。
-    // 天津成绩复核（U-162，转载级，2026-11-19 核实）：环球青藤（原环球网校）
+    // 天津成绩复核（U-162，节点级别 unverified，2026-11-19 核实）：环球青藤（原环球网校）
     // hqwx 2026-11-18《2026成考查分汇总11月18日更新：海南19日17时将公布，
     // 17地开通记录对照》（https://www.hqwx.com/chengrengk-kaoshi/news/17859084897258.html）——
     // 成绩 11 月 18 日 9 时起可查，复核 11 月 19 日 9 时至 18 时网上申请缴费，
@@ -681,15 +682,17 @@ export const EXAMS: ExamInfo[] = [
     // 17 时查结果）。hqwx 自认「本文为资讯梳理，不是官方公告原文；所有时间、
     // 凭证与后续安排以各省教育考试院官方发布为准」，且「本页保留前次已核验开通
     // 的 17 地快照，本轮仅补海南待开通提示，其他地区未在本轮重新逐省核验」——
-    // 天津细节为前次快照、本轮未重新核验。zhaokao.net 本轮未直读到官方原文，
-    // 无第二信源，故口径级别为转载级、不得写「据官网公告」，不挂 url 字段
+    // 天津细节 2026-11-20 02:35 紧急核实结论 A 已核实：窗口 11-19 09:00–18:00
+    // 正确，11-20 12:00 是 eol.cn 所标的 2025 年窗口，不复刻到 2026 年。
+    // zhaokao.net 仍未直读到官方原文，无第二信源，故节点级别为 unverified、
+    // 不得写「据官网公告」，不挂 url 字段
     // （detail 文本亦不写 URL 字符串）。移动端不支持复核申请，需电脑访问招考
     // 资讯网（只记注释，不进 detail）。11-19 18:00 是截止时刻、入 PEAK 表
     // （与海南 17:00、上海 10:00 的开通时刻性质相反，后两者不入表）；结果窗口
     // 11-25 09:00 是开通时刻、11-30 17:00 是结果窗口末端，均不入表。节点单日
     // kind 'today'：11-19 进今日行（海南直接节点之后），11-20 翻 done、不进
-    // 接续区。eol.cn 2025 口径（11-19 09:00–11-20 12:00 现场办理）与 2026
-    // 三处实质冲突，绝不复刻。
+    // 接续区。eol.cn 2025 口径（11-19 09:00–11-20 12:00 现场办理）已证实为
+    // 2025 年窗口（2026-11-20 02:35 核实结论 A），绝不复刻到 2026 年。
     // 查分节点不挂 url（五省：广东走官微/支付宝/百度三大小程序；江西、浙江、
     // 新疆查分 URL 未核实到 verbatim，不编链接；海南查询入口 URL 已核实但仍不挂，
     // 见海南注释，U-102 口径）；
@@ -774,7 +777,7 @@ export const EXAMS: ExamInfo[] = [
         label: '天津成绩复核',
         verification_level: 'unverified',
         confidence: 'low',
-        detail: '11 月 19 日 9:00 至 18:00 网上申请缴费；复核结果 11 月 25 日 9:00 至 11 月 30 日 17:00 可查（转载级、未见官方原文，待官方原文核实后升级）',
+        detail: '11 月 19 日 9:00 至 18:00 网上申请缴费；复核结果 11 月 25 日 9:00 至 11 月 30 日 17:00 可查',
         startISO: '2026-11-19',
         endISO: '2026-11-19',
       },
@@ -1282,9 +1285,13 @@ export function peakDayDeadlineMs(
   exam: ExamInfo,
   node: ExamNode,
   nowMs: number = Date.now(),
+  // R1：服务端传入该节点的最新核查行（store latestVerificationForNode）；
+  // verdict === 'false' 时准入闸返回 false，本函数返回 undefined（节点下架）。
+  // 不传时行为不变（只按节点 5 字段判定）。
+  latestVerification?: LatestExamVerificationRef | null,
 ): number | undefined {
-  // §7.2 准入闸：未准入节点（unverified / low / 过期）返回 undefined，与表外节点同等处理。
-  if (!isPeakEligible(node, nowMs)) return undefined
+  // §7.2 准入闸：未准入节点（unverified / low / 过期 / 最新核查 verdict=false）返回 undefined，与表外节点同等处理。
+  if (!isPeakEligible(node, nowMs, latestVerification)) return undefined
   const target = PEAK_DAY_DEADLINE_MINUTES[`${exam.id}:${node.label}`]
   if (target === undefined) return undefined
   if (node.startISO > target.date || node.endISO < target.date) return undefined
@@ -1293,8 +1300,12 @@ export function peakDayDeadlineMs(
 
 /** 今日行条目的目标时刻（UTC 毫秒数）：表外节点返回 undefined，供倒计时组件传 target 用；
  * 未准入节点同步返回 undefined（§7.2，与 peakDayDeadlineMs 同闸）。 */
-export function todayNodeDeadlineMs(item: TodayNodeItem, nowMs: number = Date.now()): number | undefined {
-  return peakDayDeadlineMs(item.exam, item.node, nowMs)
+export function todayNodeDeadlineMs(
+  item: TodayNodeItem,
+  nowMs: number = Date.now(),
+  latestVerification?: LatestExamVerificationRef | null,
+): number | undefined {
+  return peakDayDeadlineMs(item.exam, item.node, nowMs, latestVerification)
 }
 
 /**

@@ -760,7 +760,7 @@ describe('U-160 山西成考成绩复核（转载级，不入 PEAK 表）', () =
   })
 })
 
-describe('U-162 天津成考成绩复核（D2 例外未核实：PEAK 表 11-19 18:00 暂不准入）', () => {
+describe('U-162 天津成考成绩复核（节点 unverified 未核实：PEAK 表 11-19 18:00 暂不准入；02:35 裁决已落定）', () => {
   // 查找包成函数：实现未落盘时顶层 find 会在收集期抛错、整文件 0 跑；
   // 各 it 内调用，失败只落本 it。
   const tianjinNode = () => chengkao.nodes.find((n) => n.label === '天津成绩复核')!
@@ -777,17 +777,20 @@ describe('U-162 天津成考成绩复核（D2 例外未核实：PEAK 表 11-19 1
   /** 2026-11-21 08:00 北京时间（复核单日已过次日） */
   const NOV_21_0800_CST = Date.UTC(2026, 10, 21, 0, 0, 0)
 
-  it('节点落库：单日 11-19，无 url；detail 逐字口径 + 转载级标注', () => {
+  it('节点落库：单日 11-19，无 url；detail 逐字口径（事实描述，不含级别断言）', () => {
     const node = tianjinNode()
     expect(node.startISO).toBe('2026-11-19')
     expect(node.endISO).toBe('2026-11-19')
     expect(node.url).toBeUndefined()
     expect(node.detail).toBe(
-      '11 月 19 日 9:00 至 18:00 网上申请缴费；复核结果 11 月 25 日 9:00 至 11 月 30 日 17:00 可查（转载级、未见官方原文，待官方原文核实后升级）',
+      '11 月 19 日 9:00 至 18:00 网上申请缴费；复核结果 11 月 25 日 9:00 至 11 月 30 日 17:00 可查',
     )
-    expect(node.detail).toContain('转载级')
-    expect(node.detail).toContain('未见官方原文')
-    expect(node.detail).toContain('待官方原文核实后升级')
+    // R5 同款（F1 补修）：节点 verification_level 为 unverified，detail 不得以
+    // unverified 级别自称“转载级”，不写级别断言，只保留事实描述。
+    expect(node.verification_level).toBe('unverified')
+    expect(node.detail).not.toContain('转载级')
+    expect(node.detail).not.toContain('未见官方原文')
+    expect(node.detail).not.toContain('待官方原文核实后升级')
   })
 
   it('底线守卫：不写「据官网公告」、不写「逾期不予受理」、不写「现场办理」、不写 2025 口径、不写来源 URL 与移动端限制', () => {
@@ -806,7 +809,7 @@ describe('U-162 天津成考成绩复核（D2 例外未核实：PEAK 表 11-19 1
     expect(node.detail).not.toContain('招考资讯网')
   })
 
-  it('天津 PEAK 表项仍在但真实节点未核实：todayNodeDeadlineMs 为 undefined（§7.2，D2 例外——官方原文未直读 + 外部节奏指向 11-20 12:00 冲突，须升级给用户）；eligible 包装对照为 11-19 18:00', () => {
+  it('天津 PEAK 表项仍在但真实节点未核实：todayNodeDeadlineMs 为 undefined（§7.2，节点 unverified 未准入；02:35 裁决已落定，窗口 11-19 09:00–18:00 正确）；eligible 包装对照为 11-19 18:00', () => {
     const byKey19 = new Map(
       todayNodes(NOV_19_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
     )

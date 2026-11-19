@@ -337,14 +337,60 @@ export function verificationBadgeProps(node: ExamNodeVerificationInput): Verific
 }
 
 /**
+ * R1 更正闭环（01-verification-workflow §2.4 / §10 A8）：exam_verifications 表里
+ * 最新核查行的最小引用。准入闸只读 verdict：任一断言 verdict === 'false' 时节点
+ * 整体下架整改，不参与 confidence 推导，峰值日包与 .ics feed 均不进。
+ * 调用方（服务端）用 store 的 latestVerificationForNode() 取最新行后传入；
+ * 浏览器绝不直连库。
+ */
+export interface LatestExamVerificationRef {
+  verdict: string
+}
+
+/** 最新核查行是否为 false（节点下架信号）。无行 / verdict 非 false 时为 false。 */
+export function hasFalseVerification(
+  latest: LatestExamVerificationRef | null | undefined,
+): boolean {
+  return latest !== null && latest !== undefined && latest.verdict === 'false'
+}
+
+/** 更正注输入（exam_corrections 行的渲染子集，§6.1 / §6.3）。 */
+export interface ExamCorrectionNote {
+  originalText: string
+  correctedText: string | null
+  /** 更正发布时间（毫秒时间戳）；草稿行 null 时注不渲染。 */
+  correctionPublishedAt: number | null
+  reason?: string
+}
+
+/**
+ * 更正注文案（§6.1 模板）：「更正 [日期]：本文早前版本称“[原文逐字]”。
+ * 实际情况是“[更正后逐字]”。我们对错误深表歉意。」+ 原因。
+ * originalText 须与旧节点文案逐字一致（调用方保证，本函数只做拼接、不改写）。
+ */
+export function formatCorrectionNote(correction: ExamCorrectionNote): string | null {
+  if (correction.correctedText === null || correction.correctedText === '') return null
+  if (correction.correctionPublishedAt === null) return null
+  const date = formatCheckedLabel(
+    new Date(correction.correctionPublishedAt).toISOString(),
+  )?.slice(0, 10) ?? ''
+  const reason = correction.reason !== undefined && correction.reason !== '' ? `更正原因：${correction.reason}。` : ''
+  return `更正 ${date}：本文早前版本称“${correction.originalText}”。实际情况是“${correction.correctedText}”。我们对错误深表歉意。${reason}`
+}
+
+/**
  * §7.2 峰值日包准入闸（库内可判定部分）：① 级别 official/reprint；② confidence high/medium；
  * ③ checked_at 在 30 天内。④ A1 断言 verdict === 'verified' 是 DB 侧条件（exam_verifications
  * 表），不在本函数内判定；调用方不得绕过本闸另设白名单。
+ * R1：latestVerification 传入最新核查行时，verdict === 'false' 即下架（返回 false），
+ * 与 §2.4“任一断言 false → 节点从峰值日包与 .ics feed 下架”一致；不传时行为不变。
  */
 export function isPeakEligible(
   node: ExamNodeVerificationInput,
   nowMs: number = Date.now(),
+  latestVerification?: LatestExamVerificationRef | null,
 ): boolean {
+  if (hasFalseVerification(latestVerification)) return false
   if (node.verification_level !== 'official' && node.verification_level !== 'reprint') return false
   if (node.confidence !== 'high' && node.confidence !== 'medium') return false
   return !isVerificationExpired(node, nowMs)
@@ -354,16 +400,18 @@ export function isPeakEligible(
 export function isIcsFeedEligible(
   node: ExamNodeVerificationInput,
   nowMs: number = Date.now(),
+  latestVerification?: LatestExamVerificationRef | null,
 ): boolean {
-  return node.verification_level === 'official' && isPeakEligible(node, nowMs)
+  return node.verification_level === 'official' && isPeakEligible(node, nowMs, latestVerification)
 }
 
 /** §7.1：.ics 单文件下载 official / reprint 均可，unverified 不提供。 */
 export function isIcsDownloadEligible(
   node: ExamNodeVerificationInput,
   nowMs: number = Date.now(),
+  latestVerification?: LatestExamVerificationRef | null,
 ): boolean {
-  return isPeakEligible(node, nowMs)
+  return isPeakEligible(node, nowMs, latestVerification)
 }
 
 /**

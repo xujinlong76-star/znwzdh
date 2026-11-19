@@ -66,6 +66,14 @@ describe("backfillDerivedFacets 服务", () => {
       categoryId: cat.id,
       facets: { pricing: ["paid"] },
     });
+    // 新键已有人工标注的站：回填永不覆盖
+    const manualAccount = await ctx.repo.createSite({
+      url: "https://manual-account.example.com",
+      title: "人工标注账号工具",
+      description: "一款工具",
+      categoryId: cat.id,
+      facets: { requires_account: ["required"], free_trial: ["trial_30d"] },
+    });
 
     const sites = await ctx.repo.listAllSites(undefined, {});
     const report = await backfillDerivedFacets(ctx, sites);
@@ -82,9 +90,25 @@ describe("backfillDerivedFacets 服务", () => {
     const platformOf = async (id: string) => (await ctx.repo.getSite(id))?.facets?.platform;
     expect(await platformOf(unknownSite.id)).toContain("web");
 
+    // 新键 fill-if-absent：缺失补 unknown，已有人类标注永不覆盖
+    const facetOf = async (id: string, key: string) =>
+      (await ctx.repo.getSite(id))?.facets?.[key];
+    expect(await facetOf(unknownSite.id, "requires_account")).toEqual(["unknown"]);
+    expect(await facetOf(unknownSite.id, "free_trial")).toEqual(["unknown"]);
+    expect(await facetOf(unknownSite.id, "data_export")).toEqual(["unknown"]);
+    expect(await facetOf(manualAccount.id, "requires_account")).toEqual(["required"]);
+    expect(await facetOf(manualAccount.id, "free_trial")).toEqual(["trial_30d"]);
+    expect(await facetOf(manualAccount.id, "data_export")).toEqual(["unknown"]);
+    expect(report.filledRequiresAccount).toBe(4);
+    expect(report.filledFreeTrial).toBe(4);
+    expect(report.filledDataExport).toBe(5);
+
     // 幂等：再跑一遍不应新增任何 pricing（全部已标注，含 unknown）
     const again = await backfillDerivedFacets(ctx, await ctx.repo.listAllSites(undefined, {}));
     expect(again.filledPricing).toBe(0);
+    expect(again.filledRequiresAccount).toBe(0);
+    expect(again.filledFreeTrial).toBe(0);
+    expect(again.filledDataExport).toBe(0);
   });
 });
 

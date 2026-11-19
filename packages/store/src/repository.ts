@@ -84,6 +84,16 @@ export type {
   SitePriceSourceType,
   UpsertSitePriceInput,
 } from "./repository/site-prices.ts";
+import * as siteProfilesRepo from "./repository/site-profiles.ts";
+export { PROFILE_PROVENANCE_FIELD_KEYS } from "./repository/site-profiles.ts";
+export type {
+  ProfileProvenanceFieldKey,
+  ProfileProvenanceRecord,
+  SetProfileProvenanceInput,
+  SiteProfileRecord,
+  SiteProfileStatus,
+  UpsertSiteProfileInput,
+} from "./repository/site-profiles.ts";
 import * as analyticsRepo from "./repository/analytics.ts";
 import * as jobsRepo from "./repository/jobs.ts";
 import * as systemRepo from "./repository/system.ts";
@@ -1839,6 +1849,43 @@ async revokeAllSessions(userId: string): Promise<number> {
 
   async deleteSitePrice(ownerIdentity: string, siteId: string): Promise<boolean> {
     return sitePricesRepo.deleteSitePrice(this, ownerIdentity, siteId);
+  }
+
+  async listSitePricesBySite(siteId: string): Promise<sitePricesRepo.SitePriceRecord[]> {
+    return sitePricesRepo.listSitePricesBySite(this, siteId);
+  }
+
+  /* ------------------------- 结构化档案字段 ------------------------- */
+
+  /**
+   * 结构化档案字段（02-site-profiles §3，batch0-02）：一站一行 +
+   * 分面溯源。upsert 只覆盖同站同字段；alternatives 目标不存在时整行
+   * 写失败（仓储层最后一道防线，路由层已先校验并回 400）。
+   */
+  async getSiteProfile(siteId: string): Promise<siteProfilesRepo.SiteProfileRecord | null> {
+    return siteProfilesRepo.getSiteProfile(this, siteId);
+  }
+
+  async upsertSiteProfile(
+    input: siteProfilesRepo.UpsertSiteProfileInput,
+  ): Promise<siteProfilesRepo.SiteProfileRecord> {
+    return siteProfilesRepo.upsertSiteProfile(this, input);
+  }
+
+  async getProfileProvenance(
+    siteId: string,
+  ): Promise<siteProfilesRepo.ProfileProvenanceRecord[]> {
+    return siteProfilesRepo.getProfileProvenance(this, siteId);
+  }
+
+  async setProfileProvenance(
+    input: siteProfilesRepo.SetProfileProvenanceInput,
+  ): Promise<siteProfilesRepo.ProfileProvenanceRecord> {
+    return siteProfilesRepo.setProfileProvenance(this, input);
+  }
+
+  async upsertProfileFacets(siteId: string, facets: Record<string, string[]>): Promise<void> {
+    return siteProfilesRepo.upsertProfileFacets(this, siteId, facets);
   }
 
   /* ------------------------- 榜单与分析 ------------------------- */

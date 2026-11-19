@@ -379,6 +379,23 @@ export async function migrateExamVerifications(db: { dialect: string; sqlite?: a
   for (const sql of stmts) await execSql(db, sql);
 }
 
+/**
+ * 结构化档案字段建表（02-site-profiles §3，batch0-02）。
+ * 与 migrateWantedSearches / migrateUserSyncState 同款三处幂等：
+ * 新库由 driver.ts 建、旧库由版本化迁移补，这里是台账可审计的入口。
+ * 只建表，不进 COLUMN_ALTERS；PG 与 SQLite 仅整数类型写法不同
+ * （BIGINT vs INTEGER，其余同形）。
+ */
+export async function migrateSiteProfiles(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  const int = db.dialect === "pg" ? "BIGINT" : "INTEGER";
+  const stmts = [
+    `CREATE TABLE IF NOT EXISTS site_profiles (site_id TEXT PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE, best_for TEXT, not_for TEXT, license TEXT, alternatives TEXT, profile_source_url TEXT NOT NULL, profile_verified_at ${int} NOT NULL, verified_by TEXT NOT NULL, profile_status TEXT NOT NULL DEFAULT 'draft', created_at ${int} NOT NULL, updated_at ${int} NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS site_profile_provenance (site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE, field_key TEXT NOT NULL, source_url TEXT NOT NULL, verified_at ${int} NOT NULL, verified_by TEXT NOT NULL, PRIMARY KEY (site_id, field_key))`,
+    "CREATE INDEX IF NOT EXISTS site_profile_provenance_site_idx ON site_profile_provenance(site_id)",
+  ];
+  for (const sql of stmts) await execSql(db, sql);
+}
+
 export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
   await ensureMigrationFailures(db);
   /**

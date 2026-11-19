@@ -72,7 +72,14 @@ export function processNavigationSubItem(item: NavigationSubItemRaw): Navigation
         // 已于 2026-11-12 移除，不再消费本字段（见 dead-link.ts 文件头）。
         // 没有该字段时仍为 undefined，不影响其它渲染。
         health: item.health,
-        videoConfig
+        videoConfig,
+        // Batch0-02：档案三字段（分片 join 只带 verified 行）+ status 透传
+        // （修既有漂移：RENDER_ITEM_FIELDS 有 status，本函数此前不透传）。
+        // 缺失时保持 undefined，不硬造值。
+        status: item.status,
+        pricing: item.pricing,
+        requires_account: item.requires_account,
+        best_for: item.best_for,
     }
 }
 

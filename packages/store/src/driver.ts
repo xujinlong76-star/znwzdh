@@ -237,6 +237,34 @@ CREATE TABLE IF NOT EXISTS site_prices (
 );
 CREATE INDEX IF NOT EXISTS site_prices_owner_site_idx ON site_prices(owner_identity, site_id);
 
+/**
+ * 结构化档案字段（02-site-profiles §3，batch0-02）：一站一行 + 分面溯源。
+ * profile_status 只有 draft / verified 两态，默认 draft；alternatives 存
+ * JSON 文本数组；provenance 表 (site_id, field_key) 复合主键。
+ */
+CREATE TABLE IF NOT EXISTS site_profiles (
+  site_id TEXT PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE,
+  best_for TEXT,
+  not_for TEXT,
+  license TEXT,
+  alternatives TEXT,
+  profile_source_url TEXT NOT NULL,
+  profile_verified_at INTEGER NOT NULL,
+  verified_by TEXT NOT NULL,
+  profile_status TEXT NOT NULL DEFAULT 'draft',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS site_profile_provenance (
+  site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  field_key TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  verified_at INTEGER NOT NULL,
+  verified_by TEXT NOT NULL,
+  PRIMARY KEY (site_id, field_key)
+);
+CREATE INDEX IF NOT EXISTS site_profile_provenance_site_idx ON site_profile_provenance(site_id);
+
 CREATE TABLE IF NOT EXISTS collection_items (
   collection_id TEXT NOT NULL, site_id TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0, note TEXT
 );
@@ -1029,6 +1057,30 @@ CREATE TABLE IF NOT EXISTS site_prices (
   UNIQUE (owner_identity, site_id)
 );
 CREATE INDEX IF NOT EXISTS site_prices_owner_site_idx ON site_prices(owner_identity, site_id);
+
+/** 结构化档案字段（02-site-profiles §3，batch0-02）：PG 侧与 SQLite 侧同形。 */
+CREATE TABLE IF NOT EXISTS site_profiles (
+  site_id TEXT PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE,
+  best_for TEXT,
+  not_for TEXT,
+  license TEXT,
+  alternatives TEXT,
+  profile_source_url TEXT NOT NULL,
+  profile_verified_at BIGINT NOT NULL,
+  verified_by TEXT NOT NULL,
+  profile_status TEXT NOT NULL DEFAULT 'draft',
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS site_profile_provenance (
+  site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  field_key TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  verified_at BIGINT NOT NULL,
+  verified_by TEXT NOT NULL,
+  PRIMARY KEY (site_id, field_key)
+);
+CREATE INDEX IF NOT EXISTS site_profile_provenance_site_idx ON site_profile_provenance(site_id);
 
 CREATE TABLE IF NOT EXISTS collection_items (
   collection_id TEXT NOT NULL, site_id TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0, note TEXT

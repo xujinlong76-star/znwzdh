@@ -169,6 +169,21 @@ export interface NavigationSubItemRaw {
   icon?: string
   useDefaultIcon?: boolean
   enabled: boolean
+  /**
+   * 站点状态（导航 JSON 本体目前不带该字段，分片白名单保留位；
+   * processNavigationSubItem 原样透传，缺失为 undefined）。
+   */
+  status?: string
+  /**
+   * Batch0-02 档案字段（只由分片 join 带入 verified 行，不进 navigation.json
+   * 本体；processNavigationSubItem 原样透传，缺失为 undefined）。
+   * pricing：定性档 free / freemium / paid / open_source / unknown；
+   * requires_account：none / optional / required / unknown；
+   * best_for：适用陈述原文，≤140 字。
+   */
+  pricing?: string
+  requires_account?: string
+  best_for?: string
   videoConfig?: VideoConfigRaw
   /**
    * 站点标签（导航站自己的 taxonomy，与 hub 的 tags 同源）。
@@ -219,6 +234,15 @@ export interface NavigationSubItem {
   icon?: string
   useDefaultIcon?: boolean
   enabled: boolean
+  /** 站点状态（分片白名单保留位，缺失为 undefined）。 */
+  status?: string
+  /**
+   * Batch0-02 档案字段（只由分片 join 带入 verified 行；缺失为 undefined，
+   * 卡片层按缺失处理，不画占位）。取值见 NavigationSubItemRaw。
+   */
+  pricing?: string
+  requires_account?: string
+  best_for?: string
   tags?: string[]
   actions?: SiteAction[]
   relations?: SiteRelation[]

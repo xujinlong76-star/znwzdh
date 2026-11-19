@@ -21,6 +21,10 @@
  *   note        我的备注：favorites.note 原文。
  *   migration   迁移成本：用户填写；第一期无独立字段，来源为用户备注/标签
  *               （有备注用备注原文，无备注用标签）；两者都空则留空标“未验证”，不编造。
+ *   best_for / not_for / license / alternatives（Batch0-02 档案四格）：
+ *               W3 的 site_profiles 行；只接 profile_status='verified' 的行，
+ *               draft 态按缺失处理；缺失即 verified:false，不编造值。
+ *               alternatives 的值是站内 id 数组（≤5 个，写时由路由校验存在性）。
  *
  * 每个格子 `{ value, source, verified, verifiedAt }`：缺失时 value 为 null、
  * verified 为 false、verifiedAt 为 null，前端据此渲染“未验证”。不设 winner、
@@ -55,7 +59,7 @@ export interface ComparisonCell {
   freeTierLimit?: string | null;
 }
 
-/** 一站的对照行：七个维度各一格（Phase 1 六格 + P2-2 价格数值格）。 */
+/** 一站的对照行：七个维度各一格（Phase 1 六格 + P2-2 价格数值格）+ Batch0-02 档案四格。 */
 export interface SiteComparisonItem {
   siteId: string;
   title: string;
@@ -67,6 +71,26 @@ export interface SiteComparisonItem {
   note: ComparisonCell;
   migration: ComparisonCell;
   price: ComparisonCell;
+  /** 适用陈述（site_profiles.best_for，≤140 字原文）。 */
+  best_for: ComparisonCell;
+  /** 适用边界（site_profiles.not_for，≤140 字原文）。 */
+  not_for: ComparisonCell;
+  /** 开源协议（site_profiles.license，SPDX 或 LICENSE 文件 URL）。 */
+  license: ComparisonCell;
+  /** 替代站（site_profiles.alternatives，站内 id 数组）。 */
+  alternatives: ComparisonCell;
+}
+
+/** 档案行的 plain 形态（store 的 SiteProfileRecord 的对照子集，不依赖 store 包）。 */
+export interface SiteProfileEntry {
+  bestFor: string | null;
+  notFor: string | null;
+  license: string | null;
+  alternatives: string[] | null;
+  sourceUrl: string;
+  verifiedAt: number;
+  /** 只有 'verified' 的行才进对照表；'draft' 按缺失处理（草稿态永不渲染）。 */
+  status: "draft" | "verified";
 }
 
 /** 价格数值记录的 plain 形态（store 的 SitePriceRecord 的对照子集，不依赖 store 包）。 */
@@ -93,11 +117,18 @@ export interface SiteComparisonInput {
   favorite: SiteComparisonFavorite;
   /** 本站的价格数值记录（无记录传 null/undefined → price 格“未验证”）。 */
   price?: SitePriceEntry | null;
+  /**
+   * 本站的档案行（W3 的 site_profiles 行；无行传 null/undefined →
+   * 四格“未验证”）。调用方只传 profile_status='verified' 的行，
+   * draft 行即使传进来也被本函数按缺失处理，不会渲染。
+   */
+  profile?: SiteProfileEntry | null;
 }
 
 const FACET_SOURCE = "站点分面";
 const NOTE_SOURCE = "我的备注";
 const HEALTH_SOURCE = "健康巡检";
+const PROFILE_SOURCE = "站点档案";
 const PRICE_MANUAL_SOURCE = "手工填写";
 const PRICE_SCRAPE_SOURCE = "官方定价页";
 
@@ -275,12 +306,36 @@ function migrationCell(favorite: SiteComparisonFavorite): ComparisonCell {
 }
 
 /**
+ * 档案四格（Batch0-02）：只认 verified 行；draft 态、缺行、字段为空
+ * 一律 verified:false、value:null，不编造值。alternatives 的值是站内
+ * id 数组（原样透传，不解析标题、不猜关系）。
+ */
+function profileCell(
+  profile: SiteProfileEntry | null | undefined,
+  pick: (p: SiteProfileEntry) => string | string[] | null,
+): ComparisonCell {
+  if (!profile || profile.status !== "verified") return unverifiedCell(PROFILE_SOURCE);
+  const raw = pick(profile);
+  if (typeof raw === "string") {
+    const value = raw.trim();
+    if (!value) return unverifiedCell(PROFILE_SOURCE);
+    return { value, source: PROFILE_SOURCE, verified: true, verifiedAt: profile.verifiedAt };
+  }
+  if (Array.isArray(raw)) {
+    const value = raw.map((v) => v.trim()).filter(Boolean);
+    if (value.length === 0) return unverifiedCell(PROFILE_SOURCE);
+    return { value, source: PROFILE_SOURCE, verified: true, verifiedAt: profile.verifiedAt };
+  }
+  return unverifiedCell(PROFILE_SOURCE);
+}
+
+/**
  * 按入参顺序组装对照行（调用方负责按请求 siteIds 顺序传入，并先做本人收藏校验）。
  * now 仅供测试注入过期边界，生产调用方不传（默认 Date.now()）。
  * 价格数值不参与任何排序、打分、推荐——本函数只拼格子。
  */
 export function buildSiteComparison(items: SiteComparisonInput[], now: number = Date.now()): SiteComparisonItem[] {
-  return items.map(({ site, favorite, price }) => ({
+  return items.map(({ site, favorite, price, profile }) => ({
     siteId: site.id,
     title: site.title,
     url: site.url,
@@ -291,5 +346,9 @@ export function buildSiteComparison(items: SiteComparisonInput[], now: number = 
     note: noteCell(favorite),
     migration: migrationCell(favorite),
     price: priceCell(price, now),
+    best_for: profileCell(profile, (p) => p.bestFor),
+    not_for: profileCell(profile, (p) => p.notFor),
+    license: profileCell(profile, (p) => p.license),
+    alternatives: profileCell(profile, (p) => p.alternatives),
   }));
 }

@@ -460,6 +460,51 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'iso.org': '/brand-icons/iso.svg',
   'roadmap.sh': '/brand-icons/roadmap.png',
   'ui.shadcn.com': '/brand-icons/shadcn.png',
+  // 2026-11-19（C 类第 5 批 C5）：Bun / Node.js / Python / Rust / Go /
+  // Java / Drizzle ORM / MySQL / PostgreSQL / Redis / MongoDB / Fastify /
+  // Express / NestJS / Laravel / Django / Docker Hub / Podman / Compose /
+  // Terraform。
+  // 20 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
+  // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 子域站用完整 hostname 建键，不建裸域键：'orm.drizzle.team'、
+  // 'hub.docker.com'、'docs.docker.com'、'developer.hashicorp.com'。
+  // 全库 354 站核对：本批 20 个 map 键各只命中 1 站，无后缀串站。
+  // Java：java.png 为 16×16 咖啡杯原样（java.com 唯一官方 favicon，
+  // 其余候选 apple-touch-icon / favicon-32x32 均为 404）；备选 Duke
+  // 48px（dev.java favicon，另一图形）未擅自替换，待用户裁决，未决点。
+  // 纯黑标：rust.svg（黑齿轮 R）与 terraform.svg（黑 HashiCorp 标，
+  // SVG 内含 @media (prefers-color-scheme: dark) 白字规则）深色主题下
+  // 对比度弱，属规范 §9 留待统一处理轮次，本批不加底块、不改组件。
+  // express.svg / fastify.svg 自带黑底方块（#1a1a1a / #0a0b0d），
+  // 双主题均可见，无问题。
+  // Compose：标取自官方 docker/compose 仓库根目录 logo.png（README 标注
+  // "Docker Compose Logo"）；docs.docker.com 的 favicon 是通用 Docker
+  // 鲸鱼，与 Docker Hub 雷同，已弃用、不要用错。
+  // MySQL：首页 curl 回 403（机器人拦截），但 favicon 直链 200，海豚标
+  // 已验证，无影响。Docker Hub：favicon.ico 实为 PNG 65×65，按内容
+  // 解码落盘 .png，无 .ico 残留。
+  // 非方标等比缩略（不拉伸不裁切）：nodejs.png 112×128、
+  // postgresql.png 124×128、compose.png 117×128。
+  'bun.sh': '/brand-icons/bun.svg',
+  'nodejs.org': '/brand-icons/nodejs.png',
+  'python.org': '/brand-icons/python.png',
+  'rust-lang.org': '/brand-icons/rust.svg',
+  'go.dev': '/brand-icons/go.svg',
+  'java.com': '/brand-icons/java.png',
+  'orm.drizzle.team': '/brand-icons/drizzle.png',
+  'mysql.com': '/brand-icons/mysql.png',
+  'postgresql.org': '/brand-icons/postgresql.png',
+  'redis.io': '/brand-icons/redis.png',
+  'mongodb.com': '/brand-icons/mongodb.png',
+  'fastify.dev': '/brand-icons/fastify.svg',
+  'expressjs.com': '/brand-icons/express.svg',
+  'nestjs.com': '/brand-icons/nestjs.svg',
+  'laravel.com': '/brand-icons/laravel.png',
+  'djangoproject.com': '/brand-icons/django.png',
+  'hub.docker.com': '/brand-icons/docker-hub.png',
+  'podman.io': '/brand-icons/podman.png',
+  'docs.docker.com': '/brand-icons/compose.png',
+  'developer.hashicorp.com': '/brand-icons/terraform.svg',
 }
 
 /**

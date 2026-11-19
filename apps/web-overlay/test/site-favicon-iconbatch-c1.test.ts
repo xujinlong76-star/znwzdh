@@ -14,7 +14,7 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
  * 本批 CASES 必须传三参数（url, title, customIcon）：navigation.json 的
  * icon 字段（customIcon）在 resolveSiteIcon 里优先级最高，不传就复现不了
  * 真实解析链。19 站的 href / 标题 / customIcon 均按当前 main 的
- * navigation.json（347 站）逐个核对，不可猜；19 站 customIcon 均为远端
+ * navigation.json（349 站）逐个核对，不可猜；19 站 customIcon 均为远端
  * …/favicon.ico，isRemoteRawFavicon 会拦截后回落 map / 标题规则。
  *
  * GitHub 标题规则（见 site-favicon.tsx）：github.com 为 7 站共享域名，

@@ -1208,6 +1208,34 @@
                 "短剧创作",
                 "剧本"
               ]
+            },
+            {
+              "id": "nav-d1a6cc9e4dd8",
+              "title": "SkyReels",
+              "href": "https://www.skyreels.ai/",
+              "description": "昆仑万维 AI 短剧创作平台：剧本生成、智能分镜、视频合成一站式成剧",
+              "icon": "https://www.skyreels.ai/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI短剧",
+                "短剧创作",
+                "分镜",
+                "成片"
+              ]
+            },
+            {
+              "id": "nav-1bfe0d776459",
+              "title": "讯飞绘镜",
+              "href": "https://typemovie.art/",
+              "description": "科大讯飞 AI 短视频创作平台：输入描述自动完成剧本生成、智能分镜、画面生成到视频合成",
+              "icon": "https://typemovie.art/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "AI短剧",
+                "短剧创作",
+                "分镜",
+                "剧本"
+              ]
             }
           ]
         }

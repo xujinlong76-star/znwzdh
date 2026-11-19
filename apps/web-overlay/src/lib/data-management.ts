@@ -2,7 +2,7 @@
  * 数据管理页（/admin/data）的纯逻辑：部署基线与灌入状态判定。
  *
  * 基线数字的出处（都不许凭空改）：
- *   - 站点 349：一级 14 / 二级 48 / 站点 349，实测自
+ *   - 站点 354：一级 14 / 二级 48 / 站点 354，实测自
  *     `apps/web-overlay/src/navsphere/content/navigation.json`
  *     （data-management.test.ts 每次跑测试都会重数一遍，漂移即红）。
  *     2026-11-15 T5 元宝收录：新增「AI 搜索」二级与元宝搜索一站，基线 333→334、二级 47→48。
@@ -13,6 +13,7 @@
  *     2026-11-17 进化轮 15:22：补站 U-22（Todoist/Make/Descript/OpusClip/NotebookLM），基线 341→346。
  *     2026-11-18 进化轮 05:22：补站微博（消费生活 > 社交与婚恋），基线 346→347。
  *     2026-11-19 进化轮 16:22：补站 U-08（AI 短剧与漫剧创作：SkyReels/讯飞绘镜），基线 347→349。
+ *     2026-11-19 进化轮 19:22：补站 U-08（配色与色板：Paletton/Color Hunt/Khroma；编程学习：The Odin Project；在线课程：edX），基线 349→354。
  *   - 视频 2265：实测自 `apps/web-overlay/src/navsphere/content/videos.json`
  *    （导航分类 items + 子分类 items 的条目数，与 storage.ts
  *     countVideoDocItems 同口径，测试每次重数，漂移即红）。
@@ -25,7 +26,7 @@
  *   - ≥ 基线 = 已灌入（之后管理员自己加站，超基线是正常的）。
  */
 
-export const BASELINE_SITES = 349
+export const BASELINE_SITES = 354
 export const BASELINE_VIDEOS = 2265
 
 export type SeedStatus = 'seeded' | 'below-baseline' | 'empty'

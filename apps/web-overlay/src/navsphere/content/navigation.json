@@ -2720,6 +2720,42 @@
                 "配色",
                 "工具"
               ]
+            },
+            {
+              "id": "nav-3104e8afb902",
+              "title": "Paletton",
+              "href": "https://paletton.com",
+              "description": "配色方案设计器，实时预览色彩搭配",
+              "icon": "https://paletton.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "配色",
+                "工具"
+              ]
+            },
+            {
+              "id": "nav-719582542a72",
+              "title": "Color Hunt",
+              "href": "https://colorhunt.co",
+              "description": "设计师手选配色方案库",
+              "icon": "https://colorhunt.co/img/colorhunt-favicon.svg?2",
+              "enabled": true,
+              "tags": [
+                "配色",
+                "色板"
+              ]
+            },
+            {
+              "id": "nav-0e2bdd7b85b5",
+              "title": "Khroma",
+              "href": "https://www.khroma.co",
+              "description": "AI 学习偏好生成个性配色组合",
+              "icon": "https://www.khroma.co/assets/icons/fav.png",
+              "enabled": true,
+              "tags": [
+                "AI",
+                "配色"
+              ]
             }
           ]
         },
@@ -3240,6 +3276,18 @@
                 "入门",
                 "教程"
               ]
+            },
+            {
+              "id": "nav-f76396799087",
+              "title": "The Odin Project",
+              "href": "https://www.theodinproject.com",
+              "description": "免费开源全栈开发学习路径，项目驱动",
+              "icon": "https://www.theodinproject.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "编程",
+                "学习路径"
+              ]
             }
           ]
         },
@@ -3368,6 +3416,18 @@
               "tags": [
                 "学习",
                 "课程"
+              ]
+            },
+            {
+              "id": "nav-b9cd3b2bc578",
+              "title": "edX",
+              "href": "https://www.edx.org",
+              "description": "哈佛、MIT 等名校在线课程平台",
+              "icon": "https://www.edx.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "课程",
+                "名校"
               ]
             }
           ]

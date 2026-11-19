@@ -1833,6 +1833,18 @@
                 "容器",
                 "可视化"
               ]
+            },
+            {
+              "id": "nav-73a19732a7a809f3",
+              "title": "Nomad",
+              "href": "https://www.nomadproject.io",
+              "description": "HashiCorp 的轻量调度器，容器与非容器混部简单。",
+              "enabled": true,
+              "tags": [
+                "容器",
+                "编排",
+                "调度"
+              ]
             }
           ]
         },

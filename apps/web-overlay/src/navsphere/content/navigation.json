@@ -1808,6 +1808,19 @@
                 "编排",
                 "多容器"
               ]
+            },
+            {
+              "id": "nav-0416888d17ba",
+              "title": "Rancher",
+              "href": "https://www.rancher.com",
+              "description": "企业级 Kubernetes 集群管理平台，开源免费（Rancher Prime 商业支持付费）",
+              "icon": "https://www.rancher.com/assets/img/favicon.png",
+              "enabled": true,
+              "tags": [
+                "K8s",
+                "编排",
+                "集群"
+              ]
             }
           ]
         },

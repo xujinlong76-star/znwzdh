@@ -449,6 +449,11 @@
   "evidence": "开源 K8s 包管理器",
   "title": "Helm"
  },
+ "rancher.com": {
+  "pricing": "open_source",
+  "evidence": "开源 Kubernetes 管理平台（Apache-2.0），Rancher Prime 为商业支持（付费）",
+  "title": "Rancher"
+ },
  "docs.docker.com/compose": {
   "pricing": "open_source",
   "evidence": "开源多容器编排工具",

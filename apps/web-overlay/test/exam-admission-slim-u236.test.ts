@@ -37,7 +37,7 @@ describe('U-236：瘦身行只在开放期出现，11-15–11-22 不设', () => 
   })
 
   it('瘦身行只留增量（入场新规 + 多打两份），不含窗口、入口与笔试时间', () => {
-    const slim = admissionReminderFor(guokao, NOV_23_NOON_CST)?.slimCardLine!
+    const slim = admissionReminderFor(guokao, NOV_23_NOON_CST)?.slimCardLine ?? ''
     expect(slim).toContain('多打两份备用')
     expect(slim).toContain('开考 15 分钟后不得入场')
     expect(slim).toContain('行测最晚 8:45')

@@ -18,8 +18,8 @@
  * 字段映射（W1 的 exam_corrections 表无 sourceUrl / contact 列）：
  *  - draft.sourceUrl / draft.contact 以「来源链接：」「联系方式：」行并入 reason，
  *    不丢信息；correctedText 留空（草稿）、correctionPublishedAt 为 null；
- *  - originalPublishedAt 按 §2.6 为 notNull：节点数据无逐条发布时间，草稿态由
- *    server action 以举报时间填充占位（见字段注释），核查确认时补正。
+ *  - originalPublishedAt 草稿态为 null（R3）：节点数据无逐条发布时间，未知即 NULL，
+ *    不得以举报时间占位冒充原文发布时间，核查确认时补正。
  * 库路径与 apps/api/src/config.ts 同款：
  * `NAVHUB_SQLITE_PATH` → `NAVHUB_DB_PATH` → `./data/navhub.db`。
  * 每次提交 open + close 各一次，不跨请求持有 better-sqlite3 句柄。
@@ -59,7 +59,7 @@ type InsertExamCorrectionFn = (
     errorType: string
     reason: string
     howDiscovered: 'reader_tip'
-    originalPublishedAt: number
+    originalPublishedAt: number | null
     correctionPublishedAt?: number | null
     location?: 'both'
     correctedBy: string

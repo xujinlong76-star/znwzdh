@@ -361,7 +361,7 @@ CREATE TABLE IF NOT EXISTS exam_corrections (
   id INTEGER PRIMARY KEY AUTOINCREMENT, exam_id TEXT NOT NULL, node_label TEXT NOT NULL,
   assertion_hash TEXT NOT NULL, original_text TEXT NOT NULL, corrected_text TEXT,
   error_type TEXT NOT NULL, reason TEXT NOT NULL, how_discovered TEXT NOT NULL,
-  original_published_at INTEGER NOT NULL, correction_published_at INTEGER,
+  original_published_at INTEGER, correction_published_at INTEGER,
   location TEXT NOT NULL DEFAULT 'both', corrected_by TEXT NOT NULL,
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
 );
@@ -1174,7 +1174,7 @@ CREATE TABLE IF NOT EXISTS exam_corrections (
   id BIGSERIAL PRIMARY KEY, exam_id TEXT NOT NULL, node_label TEXT NOT NULL,
   assertion_hash TEXT NOT NULL, original_text TEXT NOT NULL, corrected_text TEXT,
   error_type TEXT NOT NULL, reason TEXT NOT NULL, how_discovered TEXT NOT NULL,
-  original_published_at BIGINT NOT NULL, correction_published_at BIGINT,
+  original_published_at BIGINT, correction_published_at BIGINT,
   location TEXT NOT NULL DEFAULT 'both', corrected_by TEXT NOT NULL,
   created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL
 );

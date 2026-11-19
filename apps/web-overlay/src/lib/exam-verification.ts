@@ -416,8 +416,9 @@ export function isIcsDownloadEligible(
 
 /**
  * 报错草稿输入（§9.3 / §2.6）：读者报错先以 how_discovered='reader_tip' 建草稿行，
- * corrected_text 与 correction_published_at 为空，核查确认后才补全发布；未确认的报错
- * 不直接改节点字段。originalPublishedAt 按 §2.6 为 notNull（见字段上注释）。
+ * corrected_text、original_published_at 与 correction_published_at 为空，核查确认后
+ * 才补全发布；未确认的报错不直接改节点字段。originalPublishedAt 为 NULL 的原因
+ * （R3）：节点数据无逐条发布时间，未知即 NULL，不得以举报时间占位冒充原文发布时间。
  */
 export type ExamCorrectionErrorType = 'factual' | 'date' | 'url' | 'attribution' | 'context'
 
@@ -439,12 +440,11 @@ export interface ExamCorrectionDraftInput {
   /** 联系方式（选填；同上，以「联系方式：」行并入 reason）。 */
   contact?: string
   /**
-   * 原文首次发布时间（毫秒时间戳）。方案 §2.6 规定 notNull，W1 的 store 亦
-   * requireFiniteNumber。节点数据无逐条发布时间，草稿态以举报时间填充占位
-   * （见 exam-correction-actions.ts）；核查确认时由核查人以实际发布时间补正。
-   * 若协调员裁决改为允许 NULL，须改 W1 的 schema.ts + store（不在本 worker 范围）。
+   * 原文首次发布时间（毫秒时间戳）。草稿态为 null：节点数据无逐条发布时间，未知
+   * 即 NULL，不得以举报时间占位冒充（R3）；核查确认时由核查人以实际发布时间补正。
+   * store 侧草稿分支允许两时间戳为 NULL，正式更正行仍强制必填。
    */
-  originalPublishedAt: number
+  originalPublishedAt: number | null
   correctionPublishedAt: number | null
   location: 'in_article' | 'corrections_page' | 'both'
   correctedBy: string

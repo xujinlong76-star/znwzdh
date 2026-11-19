@@ -535,10 +535,12 @@ export const examVerifications = sqliteTable("exam_verifications", {
 /**
  * 考试节点更正日志（01-verification-workflow §2.6，字段照抄 fact-check-workflow Step 7）。
  *
- * 注意：corrected_text 与 correction_published_at 在 §2.6 里标 NOT NULL，但 §9.3
- * 要求报错入口先以 how_discovered='reader_tip' 建一条草稿行（两者都为空），核查确认后
- * 才补全并发布。两处口径冲突时以 §9.3 的草稿流程为准：这两列可空，正式更正行仍由
- * insertExamCorrection() 强制要求两者必填。
+ * 注意：corrected_text、original_published_at 与 correction_published_at 在 §2.6
+ * 里标 NOT NULL，但 §9.3 要求报错入口先以 how_discovered='reader_tip' 建一条草稿行
+ * （三者都为空），核查确认后才补全并发布。两处口径冲突时以 §9.3 的草稿流程为准：
+ * 这三列可空，正式更正行仍由 insertExamCorrection() 强制要求三者必填。
+ * original_published_at 可空的原因（R3）：节点数据无逐条发布时间，草稿态不得以
+ * 举报时间（Date.now()）占位冒充原文发布时间，未知即 NULL，核查确认时补正。
  */
 export const examCorrections = sqliteTable("exam_corrections", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -556,8 +558,8 @@ export const examCorrections = sqliteTable("exam_corrections", {
   reason: text("reason").notNull(),
   /** 发现方式：reader_tip | internal_review | source_complaint */
   howDiscovered: text("how_discovered").notNull(),
-  /** 原文首次发布时间（毫秒时间戳） */
-  originalPublishedAt: integer("original_published_at").notNull(),
+  /** 原文首次发布时间（毫秒时间戳）；草稿行未知时为空，正式更正行必填（R3：不得用举报时间占位） */
+  originalPublishedAt: integer("original_published_at"),
   /** 更正发布时间（毫秒时间戳）；草稿行未发布时为空 */
   correctionPublishedAt: integer("correction_published_at"),
   /** 更正注位置：in_article | corrections_page | both */
@@ -1060,5 +1062,6 @@ export const schema = {
   identityAliases, identityMerges, userLlmConfigs, userSettings,
   comparisonSnapshots, sitePrices, comparisonSnapshotShares,
   siteProfiles, siteProfileProvenance,
+  examVerifications, examCorrections,
 };
 

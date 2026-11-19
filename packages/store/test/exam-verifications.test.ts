@@ -8,6 +8,8 @@
  *  - assertionHash 规范化（去首尾空白、连续空白折叠为单空格）；
  *  - 更正草稿分支（§9.3）：仅 how_discovered='reader_tip' 的草稿行允许
  *    corrected_text 为空，正式更正行必填；
+ *  - R3：草稿行 original_published_at 与 correction_published_at 可为 NULL
+ *    （未知即 NULL，不得用举报时间占位）；正式更正行缺任一时间戳写失败；
  *  - 迁移幂等（A11）：20261119_exam_verifications 连续跑两次，第二次 0 报错，
  *    两表各建且仅建一次。
  */
@@ -214,12 +216,52 @@ describe("考试核验数据层（01-verification-workflow §2.5/§2.6）", () =
     ).rejects.toThrow();
   });
 
+  it("R3 草稿行：两时间戳为 NULL 可入库（未知即 NULL，不用举报时间占位）", async () => {
+    const draft = await insertExamCorrection(
+      db,
+      correctionInput({
+        howDiscovered: "reader_tip" as const,
+        correctedText: "",
+        originalPublishedAt: null,
+        correctionPublishedAt: null,
+      }),
+    );
+    expect(draft.correctedText).toBeNull();
+    expect(draft.originalPublishedAt).toBeNull();
+    expect(draft.correctionPublishedAt).toBeNull();
+
+    // 回读同一行：NULL 不是 0，仍为 NULL
+    const rows = await listCorrectionsForNode(db, EXAM_ID, NODE_LABEL);
+    const found = rows.find((r) => r.id === draft.id);
+    expect(found?.originalPublishedAt).toBeNull();
+    expect(found?.correctionPublishedAt).toBeNull();
+
+    // 草稿行带真实时间戳仍可入库（不强制 NULL）
+    const stamped = await insertExamCorrection(
+      db,
+      correctionInput({
+        howDiscovered: "reader_tip" as const,
+        correctedText: "",
+        originalPublishedAt: Date.parse("2026-11-18T10:00:00+08:00"),
+        correctionPublishedAt: null,
+      }),
+    );
+    expect(stamped.originalPublishedAt).toBe(Date.parse("2026-11-18T10:00:00+08:00"));
+  });
+
   it("正式更正行：corrected_text 与 correction_published_at 必填", async () => {
     await expect(
       insertExamCorrection(db, correctionInput({ correctedText: "   " })),
     ).rejects.toThrow();
     await expect(
       insertExamCorrection(db, correctionInput({ correctionPublishedAt: null })),
+    ).rejects.toThrow();
+    // R3：正式更正行缺 original_published_at 同样写失败
+    await expect(
+      insertExamCorrection(db, correctionInput({ originalPublishedAt: null })),
+    ).rejects.toThrow();
+    await expect(
+      insertExamCorrection(db, correctionInput({ originalPublishedAt: undefined })),
     ).rejects.toThrow();
   });
 

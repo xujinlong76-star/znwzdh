@@ -11,7 +11,6 @@
  *     本机隔离副本在这里列出、展开对照、下载、并回收藏或显式删除。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -448,14 +447,23 @@ export default function MeDataPage() {
       }
       setState('deleted')
       toast({ title: '云端数据已删除', description: '登录账号已一并删除，邮箱与密码不再可用；重新注册是全新的空账号。' })
-  // 先删后登出：云端账号已删除，再退出本地会话、回到匿名态。
-  await signOut({ callbackUrl: '/' })
+      // U-278：不在这里登出——立即登出会跳首页，确认区永远渲染不到。
+      // 登出改由确认区「退出并返回用户中心」按钮触发（handleDeletedReturn）；
+      // 服务端在 DELETE 返回前已 revokeAllSessions 并删了账号行，残留本地
+      // 会话已无实际权限，推迟登出无风险。
     } catch (err) {
       setError(err instanceof Error ? err.message : '删除失败')
     } finally {
       setDeleting(false)
     }
   }, [confirmText, favorites, toast])
+
+  // U-278：确认区「退出并返回用户中心」按钮的唯一登出入口。删除成功后先停在
+  // 确认态展示结果，用户点返回才登出回 /me（此时已是匿名态，会话在
+  // 服务端早已吊销，登出只是清本地 cookie）。
+  const handleDeletedReturn = useCallback(async () => {
+    await signOut({ callbackUrl: '/me' })
+  }, [])
 
   return (
     <Container as="main" id="main-content" className="space-y-6 pt-3 pb-8 sm:pt-4 sm:pb-10">
@@ -502,10 +510,10 @@ export default function MeDataPage() {
             <div className="min-w-0">
               <p className="text-sm font-semibold">云端数据已删除</p>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                收藏、历史、画像、LLM 配置、金库元信息与插件安装记录均已清除，登录账号本身保留。
+                收藏、历史、画像、LLM 配置、金库元信息与插件安装记录均已清除，登录账号已一并删除，邮箱与密码不再可用。
               </p>
-              <Button asChild variant="outline" size="sm" className="mt-3 w-full text-xs sm:w-auto">
-                <Link href="/me">返回用户中心</Link>
+              <Button variant="outline" size="sm" className="mt-3 w-full text-xs sm:w-auto" onClick={() => void handleDeletedReturn()}>
+                退出并返回用户中心
               </Button>
             </div>
           </div>

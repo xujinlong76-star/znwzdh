@@ -20,17 +20,17 @@
     "@navhub/ai": "workspace:*",
     "@navhub/core": "workspace:*",
     "@navhub/store": "workspace:*",
-    "@fastify/cors": "11.1.0",
-    "@fastify/rate-limit": "10.3.0",
-    "fastify": "5.12.6",
+    "@fastify/cors": "11.4.2",
+    "@fastify/rate-limit": "11.2.2",
+    "fastify": "5.12.8",
     "sqlite-vec": "0.1.9",
-    "better-sqlite3": "13.0.3",
+    "better-sqlite3": "13.1.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "eslint": "10.13.0",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.71.2"
+    "typescript-eslint": "8.72.2"
   },
   "exports": {
     ".": {

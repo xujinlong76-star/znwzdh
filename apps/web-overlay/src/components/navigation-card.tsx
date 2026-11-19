@@ -333,6 +333,27 @@ export const NavigationCard = memo(function NavigationCard({
   const topAlternative = item.relations?.find((r) => r.relationType === 'alternative')
 
   /**
+   * Batch0-02 档案角标文案（细化方案 §8.1）。
+   *
+   * pricing 五档全画（unknown 灰色“未标注”）；requires_account 只画三档
+   * 确定值，unknown 卡片上不画（详情页写“未核实”）；required 用中性色，
+   * 不用红（须登录不是负面信息）。分片 join 只带 verified 行，draft 态
+   * 字段根本到不了卡片，卡片层不再另判。
+   */
+  const PRICING_BADGE_LABEL: Record<string, string> = {
+    free: "完全免费",
+    freemium: "免费增值",
+    paid: "付费",
+    open_source: "开源免费",
+    unknown: "未标注",
+  }
+  const REQUIRES_ACCOUNT_BADGE_LABEL: Record<string, string> = {
+    none: "免登录",
+    optional: "登录可选",
+    required: "须登录",
+  }
+
+  /**
    * 卡片的键盘模型：**整卡只有一个 Tab 停留点**（主链接）。
    *
    * 原实现给卡片根节点 tabIndex=0，加上主链接、置顶、速览、工作台、收藏
@@ -1108,6 +1129,14 @@ export const NavigationCard = memo(function NavigationCard({
                 </CardDescription>
               )}
 
+              {/* Batch0-02 best_for 一行：描述下方，≤140 字原文，超长省略号 +
+                  title 悬停看全文；缺失时整行不画，不画占位。 */}
+              {item.best_for && (
+                <p title={item.best_for} className="text-xs text-muted-foreground truncate leading-relaxed mt-1.5 break-words">
+                  {item.best_for}
+                </p>
+              )}
+
               {/* 徽标、指标与深链行：自适应折叠，绝不挤压主标题 */}
               {effectiveCardElements.showPinnedBadge && (item.liveMetrics?.githubStars || topAlternative || (item.actions && item.actions.length > 0)) && (
                 <div className="flex items-center gap-1.5 pt-1.5 flex-wrap">
@@ -1152,6 +1181,18 @@ export const NavigationCard = memo(function NavigationCard({
                       #{tag}
                     </Link>
                   ))}
+                  {/* Batch0-02 档案角标：与 #tag 芯片同一行；三字段全部缺失时
+                      本行与现状完全一致（条件渲染，无占位）。 */}
+                  {item.pricing && PRICING_BADGE_LABEL[item.pricing] && (
+                    <span className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.2 rounded bg-muted/70 text-muted-foreground font-mono">
+                      {PRICING_BADGE_LABEL[item.pricing]}
+                    </span>
+                  )}
+                  {item.requires_account && item.requires_account !== "unknown" && REQUIRES_ACCOUNT_BADGE_LABEL[item.requires_account] && (
+                    <span className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.2 rounded bg-muted/70 text-muted-foreground font-mono">
+                      {REQUIRES_ACCOUNT_BADGE_LABEL[item.requires_account]}
+                    </span>
+                  )}
                 </div>
               )}
             </div>

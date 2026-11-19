@@ -13,9 +13,10 @@
  *  5. 派生失败不连带写失败（畸形文档抛错由写路径 catch）。
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import { readStoragePath, readStorageVersion, writeNavigationData } from "../src/storage.ts";
@@ -69,6 +70,10 @@ function syntheticSite(catId: string, i: number): Record<string, unknown> {
     liveMetrics: { openSource: i % 3 === 0, githubStars: 1000 + i },
     workspaces: ["workspace-a"],
     health: { ok: true, latencyMs: 120, httpStatus: 200, lastCheckedAt: 1700000000000 },
+    // Batch0-02：档案白名单字段（分片只带渲染字段，见 RENDER_FIELDS）
+    pricing: i % 3 === 0 ? "free" : i % 3 === 1 ? "freemium" : "unknown",
+    requires_account: i % 2 === 0 ? "none" : "optional",
+    best_for: `适合测试站点 ${i} 的适用陈述`,
   };
 }
 
@@ -102,7 +107,7 @@ function countItems(doc: { navigationItems: Array<Record<string, unknown>> }): n
 }
 
 /** 渲染字段白名单（与 data-loader.ts 的 processNavigationSubItem 逐字一致） */
-const RENDER_FIELDS = ["id", "title", "href", "description", "icon", "useDefaultIcon", "enabled", "status", "tags", "health", "videoConfig"] as const;
+const RENDER_FIELDS = ["id", "title", "href", "description", "icon", "useDefaultIcon", "enabled", "status", "tags", "health", "videoConfig", "pricing", "requires_account", "best_for"] as const;
 
 function renderProjection(item: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -332,5 +337,172 @@ describe("writeNavigationData 分片挂钩", () => {
     const index = (await readStoragePath(ctx, NAVIGATION_INDEX_PATH)) as { totalItems: number };
     // 公开分片只数可见站：n-1、n-2 在，停用的 n-3 不在
     expect(index.totalItems).toBe(2);
+  });
+});
+
+/** Batch0-02 专用的源码定位：测试文件在 apps/api/test，源码在 apps/api/src 与 apps/web-overlay/src */
+const HERE = dirname(fileURLToPath(import.meta.url));
+function readRepoFile(rel: string): string {
+  return readFileSync(resolve(HERE, "..", "..", "..", rel), "utf8");
+}
+
+describe("Batch0-02：两处白名单逐字一致（含新增 3 字段与 status）", () => {
+  it("navigation-shards.ts 的 RENDER_ITEM_FIELDS 与本文件 RENDER_FIELDS 逐字一致", () => {
+    const src = readRepoFile("apps/api/src/navigation-shards.ts");
+    const m = src.match(/const RENDER_ITEM_FIELDS = \[([\s\S]*?)\] as const;/);
+    expect(m, "源码里找不到 RENDER_ITEM_FIELDS 定义").not.toBeNull();
+    const fields = [...(m![1].matchAll(/"([^"]+)"/g))].map((x) => x[1]);
+    expect([...fields].sort()).toEqual([...RENDER_FIELDS].sort());
+    for (const f of ["pricing", "requires_account", "best_for", "status"]) {
+      expect(fields).toContain(f);
+    }
+  });
+
+  it("data-loader.ts 的 processNavigationSubItem 透传新 3 字段与 status", () => {
+    const src = readRepoFile("apps/web-overlay/src/lib/data-loader.ts");
+    for (const line of [
+      "pricing: item.pricing",
+      "requires_account: item.requires_account",
+      "best_for: item.best_for",
+      "status: item.status",
+    ]) {
+      expect(src, `data-loader 缺透传：${line}`).toContain(line);
+    }
+  });
+
+  it("拼装树含新 3 字段与 status（合成文档逐字等值已覆盖）", () => {
+    const doc = syntheticPublicDoc();
+    const derived = deriveNavigationShards(doc, 4242);
+    const byPath = new Map(derived.writes.map((w) => [w.path, w.data]));
+    const index = byPath.get(NAVIGATION_INDEX_PATH) as {
+      categories: Array<{ id: string; shardPaths: string[] }>;
+    };
+    const first = byPath.get(index.categories[0].shardPaths[0]) as {
+      category: { items: Array<Record<string, unknown>>; subCategories: Array<{ items: Array<Record<string, unknown>> }> };
+    };
+    const item =
+      first.category.items[0] ?? first.category.subCategories[0].items[0];
+    expect(item.status).toBe("active");
+    expect(item.pricing).toBeDefined();
+    expect(item.requires_account).toBeDefined();
+    expect(item.best_for).toBeDefined();
+  });
+});
+
+describe("Batch0-02：deriveNavigationShards 的 profilesBySiteId join", () => {
+  function smallDoc(): { navigationItems: Array<Record<string, unknown>>; replacementHistory: unknown[] } {
+    return {
+      navigationItems: [
+        {
+          id: "cat-a",
+          title: "分类A",
+          enabled: true,
+          items: [
+            { id: "s-1", title: "站一", href: "https://one.example.com", enabled: true },
+            { id: "s-2", title: "站二", href: "https://two.example.com", enabled: true },
+          ],
+          subCategories: [
+            {
+              id: "sub-a",
+              title: "子分类",
+              parentId: "cat-a",
+              enabled: true,
+              items: [{ id: "s-3", title: "站三", href: "https://three.example.com", enabled: true }],
+            },
+          ],
+        },
+      ],
+      replacementHistory: [],
+    };
+  }
+
+  function shardItems(derived: ReturnType<typeof deriveNavigationShards>): Array<Record<string, unknown>> {
+    const byPath = new Map(derived.writes.map((w) => [w.path, w.data]));
+    const index = byPath.get(NAVIGATION_INDEX_PATH) as {
+      categories: Array<{ shardPaths: string[] }>;
+    };
+    const out: Array<Record<string, unknown>> = [];
+    for (const p of index.categories[0].shardPaths) {
+      const shard = byPath.get(p) as {
+        category: { items: Array<Record<string, unknown>>; subCategories: Array<{ items: Array<Record<string, unknown>> }> };
+      };
+      out.push(...(shard.category.items ?? []));
+      for (const sub of shard.category.subCategories ?? []) out.push(...(sub.items ?? []));
+    }
+    return out;
+  }
+
+  it("入参缺省时字段全部缺省：不编造、不回落、不猜", () => {
+    const items = shardItems(deriveNavigationShards(smallDoc(), 1));
+    expect(items).toHaveLength(3);
+    for (const item of items) {
+      expect(item.pricing).toBeUndefined();
+      expect(item.requires_account).toBeUndefined();
+      expect(item.best_for).toBeUndefined();
+    }
+  });
+
+  it("传入 verified 行：按站 id 精确 join，子分类条目同样生效", () => {
+    const profiles = new Map([
+      ["s-1", { pricing: "freemium", requires_account: "optional", best_for: "个人轻量写作" }],
+      ["s-3", { pricing: "open_source", requires_account: "none", best_for: "本地部署场景" }],
+    ]);
+    const items = shardItems(deriveNavigationShards(smallDoc(), 1, profiles));
+    const byId = new Map(items.map((i) => [i.id, i]));
+    expect(byId.get("s-1")).toMatchObject({
+      pricing: "freemium",
+      requires_account: "optional",
+      best_for: "个人轻量写作",
+    });
+    expect(byId.get("s-3")).toMatchObject({
+      pricing: "open_source",
+      requires_account: "none",
+      best_for: "本地部署场景",
+    });
+    // 不在 map 里的站不带字段
+    expect(byId.get("s-2")!.pricing).toBeUndefined();
+    expect(byId.get("s-2")!.best_for).toBeUndefined();
+  });
+
+  it("map 里只有部分字段时只 join 已给的字段；map 外的站 id 被忽略", () => {
+    const profiles = new Map([
+      ["s-2", { pricing: "paid" }],
+      ["ghost-site", { pricing: "free", requires_account: "none", best_for: "不存在的站" }],
+    ]);
+    const items = shardItems(deriveNavigationShards(smallDoc(), 1, profiles));
+    const byId = new Map(items.map((i) => [i.id, i]));
+    expect(byId.get("s-2")).toMatchObject({ pricing: "paid" });
+    expect(byId.get("s-2")!.requires_account).toBeUndefined();
+    expect(byId.get("s-2")!.best_for).toBeUndefined();
+    expect(items.map((i) => i.id)).not.toContain("ghost-site");
+  });
+});
+
+describe("Batch0-02：分片体积最坏情况（best_for 满 140 字）", () => {
+  it("全站 best_for 均为 140 字时，每片序列化后仍 ≤750KB", () => {
+    const doc = syntheticPublicDoc();
+    const longBestFor = "适".repeat(140);
+    for (const cat of doc.navigationItems) {
+      for (const item of (cat.items as Array<Record<string, unknown>>) ?? []) {
+        item.best_for = longBestFor;
+        item.pricing = "freemium";
+        item.requires_account = "required";
+      }
+      for (const sub of (cat.subCategories as Array<Record<string, unknown>>) ?? []) {
+        for (const item of (sub.items as Array<Record<string, unknown>>) ?? []) {
+          item.best_for = longBestFor;
+          item.pricing = "freemium";
+          item.requires_account = "required";
+        }
+      }
+    }
+    const derived = deriveNavigationShards(doc, 99);
+    for (const w of derived.writes) {
+      if (!w.path.includes("navigation-cat-")) continue;
+      const chars = JSON.stringify(w.data).length;
+      const bytes = Buffer.byteLength(JSON.stringify(w.data), "utf8");
+      expect(chars, w.path).toBeLessThan(NAVIGATION_SHARD_SIZE_LIMIT_BYTES);
+      expect(bytes, w.path).toBeLessThan(NAVIGATION_SHARD_SIZE_LIMIT_BYTES);
+    }
   });
 });

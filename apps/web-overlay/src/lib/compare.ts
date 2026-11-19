@@ -29,6 +29,30 @@ export const COMPARE_DIMENSIONS = [
 
 export type CompareDimensionKey = (typeof COMPARE_DIMENSIONS)[number]['key']
 
+/**
+ * 对照表的档案四格（Batch0-02 §8.3 分组口径，F8 接入对照表视图）。
+ * 顺序即表内行顺序，渲染位置在价格行（`price`）之后、平台行之前；
+ * 不进 COMPARE_DIMENSIONS——分流结论的依据格与快照分享的字段选择
+ * 仍只取七维，四格只做展示，不参与结论与分享。
+ */
+export const PROFILE_DIMENSIONS = [
+  { key: 'best_for', label: '适用场景', group: '适用' },
+  { key: 'not_for', label: '不适用场景', group: '适用' },
+  { key: 'license', label: '开源协议', group: '数据' },
+  { key: 'alternatives', label: '可替代站点', group: '替代' },
+] as const
+
+export type ProfileDimensionKey = (typeof PROFILE_DIMENSIONS)[number]['key']
+
+/** 对照表的一行：七维或档案四格（差异高亮两边共用同一判定）。 */
+export type CompareRowKey = CompareDimensionKey | ProfileDimensionKey
+
+export const PROFILE_DIMENSION_LABELS: Record<ProfileDimensionKey, string> =
+  Object.fromEntries(PROFILE_DIMENSIONS.map((d) => [d.key, d.label])) as Record<
+    ProfileDimensionKey,
+    string
+  >
+
 export const COMPARE_DIMENSION_LABELS: Record<CompareDimensionKey, string> =
   Object.fromEntries(COMPARE_DIMENSIONS.map((d) => [d.key, d.label])) as Record<
     CompareDimensionKey,
@@ -59,7 +83,7 @@ export interface ComparisonCell {
   freeTierLimit?: string | null
 }
 
-/** 一站的对照行：扁平七格（REST 实际形态，见 CompareResponse 生成类型）。 */
+/** 一站的对照行：扁平七格（REST 实际形态，见 CompareResponse 生成类型）+ 档案四格。 */
 export interface ComparisonItem {
   siteId: string
   title: string
@@ -71,6 +95,14 @@ export interface ComparisonItem {
   maintenance: ComparisonCell
   note: ComparisonCell
   migration: ComparisonCell
+  /** 适用陈述（site_profiles.best_for，≤140 字原文；缺失/draft 时 verified:false）。 */
+  best_for: ComparisonCell
+  /** 适用边界（site_profiles.not_for，≤140 字原文；缺失/draft 时 verified:false）。 */
+  not_for: ComparisonCell
+  /** 开源协议（site_profiles.license，SPDX 或 LICENSE 文件 URL；缺失/draft 时 verified:false）。 */
+  license: ComparisonCell
+  /** 替代站（site_profiles.alternatives，站内 id 数组；缺失/draft 时 verified:false）。 */
+  alternatives: ComparisonCell
 }
 
 export function isCompareDimensionKey(key: string): key is CompareDimensionKey {
@@ -140,12 +172,28 @@ export function compareCellsDiffer(
   return normalizeCellValue(a) !== normalizeCellValue(b)
 }
 
-/** 某一维在各站之间是否存在差异（任一对值不同即整行高亮）。 */
-export function compareRowDiffers(items: readonly ComparisonItem[], key: CompareDimensionKey): boolean {
+/** 某一维在各站之间是否存在差异（任一对值不同即整行高亮）；档案四格共用同一判定。 */
+export function compareRowDiffers(items: readonly ComparisonItem[], key: CompareRowKey): boolean {
   for (let i = 1; i < items.length; i++) {
     if (compareCellsDiffer(items[0]?.[key], items[i]?.[key])) return true
   }
   return false
+}
+
+/**
+ * alternatives 格的站内 id 列表：只有 `verified === true` 且值为非空数组才出值。
+ * draft 行 / 缺失行（服务端一律置 `verified:false`、value:null）与“有值未验证”
+ * 一律返回 []，不在视图里出值、不编造站名；标题由视图另行按 id 懒取。
+ */
+export function alternativeSiteIds(cell: ComparisonCell | null | undefined): string[] {
+  if (!cell || cell.verified !== true) return []
+  if (!Array.isArray(cell.value)) return []
+  const seen = new Set<string>()
+  for (const raw of cell.value) {
+    const id = String(raw).trim()
+    if (id && !seen.has(id)) seen.add(id)
+  }
+  return [...seen]
 }
 
 /**
@@ -185,7 +233,7 @@ export function normalizeComparisonItem(raw: unknown): ComparisonItem | null {
     record.cells && typeof record.cells === 'object'
       ? (record.cells as Record<string, unknown>)
       : record
-  const cell = (key: CompareDimensionKey): ComparisonCell => {
+  const cell = (key: string): ComparisonCell => {
     const rawCell = cellsSource[key]
     if (!rawCell || typeof rawCell !== 'object') {
       return { value: null, source: '', verified: false, verifiedAt: null }
@@ -222,6 +270,10 @@ export function normalizeComparisonItem(raw: unknown): ComparisonItem | null {
     maintenance: cell('maintenance'),
     note: cell('note'),
     migration: cell('migration'),
+    best_for: cell('best_for'),
+    not_for: cell('not_for'),
+    license: cell('license'),
+    alternatives: cell('alternatives'),
   }
 }
 

@@ -399,7 +399,9 @@ export default function SearchHistoryPage() {
         ))}
       </div>
 
-      {state === 'loading' && <SectionState variant="loading" rows={4} loadingLabel="正在加载搜索历史" />}
+      {/* A4：搜索取数态不得绑架访问 tab——搜索 loading 时访问 tab
+          不应显示「正在加载搜索历史」骨架，访问分支自有 visitState。 */}
+      {tab === 'searches' && state === 'loading' && <SectionState variant="loading" rows={4} loadingLabel="正在加载搜索历史" />}
 
       {tab === 'searches' && offlineSnapshotAt && state === 'ready' && (
         <p role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2 text-[11px] leading-relaxed text-amber-800 dark:text-amber-200">
@@ -414,7 +416,9 @@ export default function SearchHistoryPage() {
         </p>
       )}
 
-      {tab === 'visits' && state === 'ready' && (
+      {/* A4：访问分支只认 tab 与 visitState，不再要求搜索 state === 'ready'——
+          搜索取数失败/加载中时，访问 tab 仍可正常渲染与重试。 */}
+      {tab === 'visits' && (
         <>
           {visitState === 'loading' && <SectionState variant="loading" rows={4} loadingLabel="正在加载访问历史" />}
 
@@ -507,7 +511,9 @@ export default function SearchHistoryPage() {
         </section>
       )}
 
-      {state === 'error' && (
+      {/* A4：搜索 error 只在搜索 tab 下展示——访问 tab 下应由访问分支
+          自己的 error 态（带 loadVisits 重试）接管，而非搜索的重试入口。 */}
+      {tab === 'searches' && state === 'error' && (
         <SectionState
           variant="error"
           title="历史记录暂时取不到"

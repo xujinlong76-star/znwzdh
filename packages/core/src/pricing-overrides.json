@@ -439,6 +439,16 @@
   "evidence": "开源 Kubernetes 管理平台（Apache-2.0），Rancher Prime 为商业支持（付费）",
   "title": "Rancher"
  },
+ "portainer.io": {
+  "pricing": "open_source",
+  "evidence": "Zlib 开源（GitHub portainer/portainer），官网定价页：3 节点内免费，Business/Enterprise 付费",
+  "title": "Portainer"
+ },
+ "nomadproject.io": {
+  "pricing": "freemium",
+  "evidence": "BUSL 1.1（GitHub README 徽章 + LICENSE 原文 + 官网 CE 许可页）；免费社区版 + 付费 Nomad Enterprise（README 与官网企业版页）",
+  "title": "Nomad"
+ },
  "docs.docker.com/compose": {
   "pricing": "open_source",
   "evidence": "开源多容器编排工具",

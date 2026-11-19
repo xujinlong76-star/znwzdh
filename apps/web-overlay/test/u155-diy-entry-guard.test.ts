@@ -66,7 +66,15 @@ describe("U-155：外观按钮是图标 + 可见文字「DIY 排版」", () => {
   it("点击路径不动：仍调 onOpenAppearanceGuide（外观向导小窗）", () => {
     const src = overlayFile("src/components/navigation-toolbar.tsx");
     const block = buttonBlock(src, "打开外观排版与新手向导小窗");
-    expect(block).toContain("onClick={onOpenAppearanceGuide}");
+    // U-155 埋点（51f00576）：点击改为“先上报后打开”，onClick 由直传
+    // onOpenAppearanceGuide 包成箭头函数；行为不变——向导仍在同一 handler
+    // 内无条件打开，上报 fire-and-forget 绝不阻塞。断言改为钉新形式。
+    expect(block).toContain("trackDiyEvent('diy_appearance_click')");
+    expect(block).toContain("onOpenAppearanceGuide()");
+    expect(
+      block.indexOf("trackDiyEvent('diy_appearance_click')"),
+      "先上报后打开：上报应在打开之前",
+    ).toBeLessThan(block.indexOf("onOpenAppearanceGuide()"));
   });
 });
 

@@ -36,7 +36,7 @@ import {
 
 /** 固定“现在”：2026-11-19 12:00（北京时间），PoC 核查日。 */
 const NOW_MS = Date.parse('2026-11-19T12:00:00+08:00')
-/** A4 全量校验的评估时刻：8 个 reprint 节点实测核查于 2026-11-19 23:30，
+/** A4 全量校验的评估时刻：9 个 reprint 节点中 8 个实测核查于 2026-11-19 23:30，
  * 天津节点 F1b 核查于 2026-11-20 02:35（02:35 裁决），须取该时刻之后，
  * 否则“checked_at 不得晚于当前时间”规则会把真实核查判为未来值。
  * NOW_MS（12:00）仍用于其他与“当天”相关的断言，不动。 */
@@ -331,7 +331,7 @@ describe('§7.1 verificationBadgeProps', () => {
     expect(props.text).toBe('转载级 · 未直读官方原文')
   })
 
-  it('R4 库内实测：8 个 reprint 节点中京考 2 节点 →“官方源已读 · 未存档”，其余 6 节点 →“转载级”', () => {
+  it('R4 库内实测：9 个 reprint 节点中京考 2 节点 →“官方源已读 · 未存档”，其余 7 节点 →“转载级”', () => {
     const badges: Array<{ key: string; text: string }> = []
     for (const exam of EXAMS) {
       for (const node of exam.nodes) {
@@ -339,14 +339,14 @@ describe('§7.1 verificationBadgeProps', () => {
         badges.push({ key: `${exam.id}:${node.label}`, text: verificationBadgeProps(node, exam.id).text })
       }
     }
-    expect(badges).toHaveLength(8)
+    expect(badges).toHaveLength(9)
     expect(
       badges
         .filter((b) => b.text === '官方源已读 · 未存档')
         .map((b) => b.key)
         .sort(),
     ).toEqual(['jingkao:准考证打印', 'jingkao:报名'])
-    expect(badges.filter((b) => b.text === '转载级 · 未直读官方原文')).toHaveLength(6)
+    expect(badges.filter((b) => b.text === '转载级 · 未直读官方原文')).toHaveLength(7)
   })
 
   it('unverified：灰态“待核实”', () => {

@@ -41,10 +41,13 @@ const getDramaData = cache(async (): Promise<DramaPageData> => {
 });
 
 export async function generateMetadata(): Promise<Metadata> {
+  // 与页面同取数（React cache 去重，同一请求只读一次导航）：文案里的平台数
+  // 跟随 collectDramaSites 的实际条数，补站不再让数字漂移（U-282/U-265）。
+  const { sites } = await getDramaData();
   return {
     title: "短剧专区",
     description:
-      "短剧平台入口与热门剧追剧清单：红果、抖音、快手等 12 个平台；部分平台的短剧只在 App 内播，榜单页与频道页链接不是正片。",
+      `短剧平台入口与热门剧追剧清单：红果、抖音、快手等 ${sites.length} 个平台；部分平台的短剧只在 App 内播，榜单页与频道页链接不是正片。`,
   };
 }
 

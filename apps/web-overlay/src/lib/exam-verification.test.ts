@@ -380,16 +380,17 @@ describe('R4 isOfficialSourceUrl（白名单域名比对）', () => {
   })
 })
 
-describe('A4/A5：43 节点 5 字段齐全', () => {
-  it('A4：全部 43 节点 verification_level 非空且 confidence 等于 deriveConfidence() 推导值', () => {
+describe('A4/A5：44 节点 5 字段齐全', () => {
+  it('A4：全部 44 节点 verification_level 非空且 confidence 等于 deriveConfidence() 推导值', () => {
     const nodes: Array<{ examId: string; node: ExamNode }> = []
     for (const exam of EXAMS) {
       for (const node of exam.nodes) nodes.push({ examId: exam.id, node })
     }
     // 计数纠正（2026-11-19 实测）：细化方案称 46 节点，系 `label:` 行计数误含 3 行非节点
     //（ExamNode 接口字段 + ExamCountdownLine.label + nearestExamCountdown 内的 let label），
-    // 11 场考试的真实节点数为 3+4+9+2+3+4+2+11+2+1+2 = 43。本断言以 43 为准。
-    expect(nodes.length).toBe(43)
+    // 11 场考试的真实节点数为 3+4+9+2+3+4+2+12+2+1+2 = 44（U-252 云南成绩查询
+    // 使成考由 11 增至 12 节点）。本断言以 44 为准。
+    expect(nodes.length).toBe(44)
     for (const { examId, node } of nodes) {
       expect(node.verification_level, `${examId}:${node.label} verification_level 非空`).toBeTruthy()
       expect(

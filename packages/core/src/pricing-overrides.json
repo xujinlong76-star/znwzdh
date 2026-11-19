@@ -434,6 +434,11 @@
   "evidence": "开源 K8s 包管理器",
   "title": "Helm"
  },
+ "rancher.com": {
+  "pricing": "open_source",
+  "evidence": "开源 Kubernetes 管理平台（Apache-2.0），Rancher Prime 为商业支持（付费）",
+  "title": "Rancher"
+ },
  "docs.docker.com/compose": {
   "pricing": "open_source",
   "evidence": "开源多容器编排工具",
@@ -1348,6 +1353,11 @@
   "pricing": "free",
   "evidence": "站点描述明示：海量竖屏短剧免费看",
   "title": "DramaWave"
+ },
+ "melolo.com": {
+  "pricing": "free",
+  "evidence": "剧集页文案明示：Watch short dramas for free - no subscription or coins required；No sign-up required；3 部剧集页实测 200，分别含 45/54/57 集 .mp4 直链（v.melolo.com）与 Watch Episode 入口",
+  "title": "Melolo"
  },
  "douyin.com": {
   "pricing": "free",

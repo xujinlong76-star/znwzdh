@@ -286,10 +286,10 @@ describe('广东成绩复核节点（U-110）', () => {
     expect(nextExamNode(guangdongOnly, NOV_20_1000_CST)?.label).toBe('广东成绩复核')
   })
 
-  it('成考现为七省十一节点：头注释同步改数；证书下载仍只在 note，不作节点', () => {
-    expect(chengkao.nodes).toHaveLength(11)
+  it('成考现为八省十二节点：头注释同步改数；证书下载仍只在 note，不作节点', () => {
+    expect(chengkao.nodes).toHaveLength(12)
     const calendar = read('src/lib/exam-calendar.ts')
-    expect(calendar).toContain('七省十一节点')
+    expect(calendar).toContain('八省十二节点')
     expect(calendar).not.toContain('七省十节点')
     expect(chengkao.nodes.some((n) => n.label.includes('证书'))).toBe(false)
     expect(chengkao.note ?? '').toContain(

@@ -2840,6 +2840,30 @@
                 "AI",
                 "配色"
               ]
+            },
+            {
+              "id": "nav-57c110a3244f",
+              "title": "Colormind",
+              "href": "https://colormind.io",
+              "description": "AI 深度学习配色生成器，从照片与艺术中学习色彩风格",
+              "icon": "https://colormind.io/favicon32.gif",
+              "enabled": true,
+              "tags": [
+                "AI",
+                "配色"
+              ]
+            },
+            {
+              "id": "nav-3974490e2cda",
+              "title": "Happy Hues",
+              "href": "https://www.happyhues.co",
+              "description": "精选配色方案的真实场景应用示例，点击复制色值",
+              "icon": "https://cdn.prod.website-files.com/5dd40aa8049df8748c72d0ee/5dd9b94105da589ba59c4907_happy-hues-fav.png",
+              "enabled": true,
+              "tags": [
+                "配色",
+                "色板"
+              ]
             }
           ]
         },

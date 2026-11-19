@@ -1873,5 +1873,15 @@
   "pricing": "free",
   "evidence": "Go 官方文档全文免登录可读（go.dev/doc/ 200，标题 Documentation - The Go Programming Language），无付费墙、无订阅/定价页，免费开放",
   "title": "Go 官方文档"
+ },
+ "colormind.io": {
+  "pricing": "free",
+  "evidence": "配色生成全功能免登录可用（colormind.io/ 200，标题 Colormind - the AI powered color palette generator），无付费墙、无账号/订阅/定价页；API 页明示免费供个人与非商业使用",
+  "title": "Colormind"
+ },
+ "happyhues.co": {
+  "pricing": "free",
+  "evidence": "全站色板免费浏览使用、无付费档、无需账号（www.happyhues.co/ 200，标题 Happy Hues - Curated colors in context.），官网无定价页",
+  "title": "Happy Hues"
  }
 }

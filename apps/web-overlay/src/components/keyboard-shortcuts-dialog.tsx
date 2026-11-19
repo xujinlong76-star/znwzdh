@@ -15,6 +15,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { getModifierKey } from '@/lib/platform'
 import { spotlightHotkeyHint, useSpotlightShortcutMode } from '@/lib/user-preferences'
 import { isAnyDialogOpen, isEventTargetTyping } from '@/lib/keyboard-guards'
+import { trackDiyEvent } from '@/lib/navhub-api'
 
 interface KeyboardShortcutsDialogProps {
   open?: boolean
@@ -159,6 +160,8 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
       // 不要再别处另起一个同样的绑定，否则两次 toggle 会互相抵消。
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
         e.preventDefault()
+        // U-155：计快捷键使用次数，开与关都计（与 diy_open_click 只计开启不同）
+        trackDiyEvent('diy_shortcut_e')
         toggleEditingLayout()
       }
 

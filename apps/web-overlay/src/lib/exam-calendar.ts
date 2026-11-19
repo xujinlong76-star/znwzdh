@@ -892,7 +892,7 @@ export function examNodeStatus(node: ExamNode, nowMs: number = Date.now()): Exam
  *    如浙江成绩查询 11-20 当天也不出现）。
  * 顺序：直接节点（today / endsToday）按 EXAMS 数组序、考试内节点数组序；
  * startsToday 为第二遍追加，排在全部直接节点之后；两遍内部均不另排序。
- * exams 参数只为测试注入合成数据，调用方不传。11-18 恰好 7 项，11-19 海南成绩查询（today）+ 上海自考成绩查询（startsToday）2 项；
+ * exams 参数只为测试注入合成数据，调用方不传。11-18 恰好 7 项，11-19 海南成绩查询（today）+ 天津成绩复核（today，U-162）+ 上海自考成绩查询（startsToday）3 项；
  * 江西成绩复核因成考已有今日节点退接续区（U-164，与新疆复核 11-18 同款抑制）。
  */
 export interface TodayNodeItem {

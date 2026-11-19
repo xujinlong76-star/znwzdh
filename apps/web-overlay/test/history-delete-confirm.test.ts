@@ -224,3 +224,12 @@ describe('A2：页头清理/清空操作栏只属于搜索 tab', () => {
     expect(handler).toContain('setTab(key)')
   })
 })
+
+const CAL = overlaySource('src/lib/exam-calendar.ts')
+
+describe('U-233：11-19 今日行注释为 3 项（含天津成绩复核）', () => {
+  it('断言 1：todayNodes 注释写 11-19 共 3 项，含天津成绩复核（U-162）', () => {
+    expect(CAL).toContain('11-19 海南成绩查询（today）+ 天津成绩复核（today，U-162）+ 上海自考成绩查询（startsToday）3 项')
+    expect(CAL).not.toContain('上海自考成绩查询（startsToday）2 项')
+  })
+})

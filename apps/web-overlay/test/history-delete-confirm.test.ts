@@ -298,3 +298,43 @@ describe('U-230：集数步进空值不调 onSet、不静默清零', () => {
     expect(body.indexOf('Number(draft)'), 'Number 转换应在守卫之后').toBeGreaterThan(guardIdx)
   })
 })
+
+/** 截取 loadVisits 的 useCallback 体（从声明起到其依赖数组结尾）。 */
+function loadVisitsBody(src: string): string {
+  const start = src.indexOf('const loadVisits = useCallback')
+  expect(start, 'loadVisits 应存在').toBeGreaterThanOrEqual(0)
+  const end = src.indexOf('}, [', start)
+  expect(end, 'loadVisits 应有依赖数组').toBeGreaterThan(start)
+  return src.slice(start, end)
+}
+
+describe('U-239（页面接线）：历史页访问 tab 用当前身份取数', () => {
+  it('断言 1：loadVisits 传 identity 调 fetchVisitsPage，身份未就绪不发请求', () => {
+    const body = loadVisitsBody(PAGE)
+    expect(body).toContain('fetchVisitsPage(identity, { limit: 20, offset }')
+    // 守卫先于取数：visitBusy 或 identity 为空直接 return，不产生 401。
+    assertOrder(
+      body,
+      ['if (visitBusy || !identity) return', 'fetchVisitsPage(identity,'],
+      'loadVisits 守卫顺序',
+    )
+  })
+
+  it('断言 2：loadVisits 依赖 identity——身份就绪后 effect 重跑再取', () => {
+    const start = PAGE.indexOf('const loadVisits = useCallback')
+    const depStart = PAGE.indexOf('}, [', start)
+    const depEnd = PAGE.indexOf('])', depStart)
+    const deps = PAGE.slice(depStart, depEnd)
+    expect(deps).toContain('visitBusy')
+    expect(deps).toContain('identity')
+  })
+
+  it('断言 3：搜索 tab 取数不受影响——仍用 fetchSearchHistoryPage(identity, …)', () => {
+    expect(PAGE).toContain('fetchSearchHistoryPage(id, { limit: PAGE_SIZE, offset: 0 }')
+    expect(PAGE).toContain('fetchSearchHistoryPage(identity, { limit: PAGE_SIZE, offset: nextOffset })')
+    // 访问取数不走搜索接口、不复用搜索分页状态。
+    const body = loadVisitsBody(PAGE)
+    expect(body).not.toContain('fetchSearchHistoryPage')
+    expect(body).not.toContain('setItems(')
+  })
+})

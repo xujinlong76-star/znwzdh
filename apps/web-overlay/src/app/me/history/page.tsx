@@ -253,11 +253,14 @@ export default function SearchHistoryPage() {
   }, [cleaningZero, identity, toast, zeroResultItems.length])
 
   const loadVisits = useCallback(async (offset: number) => {
-    if (visitBusy) return
+    // U-239：匿名态必须带 identity 取数（fetchVisitsPage 自报 anon 头），
+    // 否则 /api/me/visits 直接 401。身份未就绪时不发请求：保持 idle，
+    // identity 就绪后 effect 重跑再取，避免一次无意义的 401 落 error。
+    if (visitBusy || !identity) return
     if (offset === 0) setVisitState('loading')
     setVisitBusy(true)
     let degraded = false
-    const page = await fetchVisitsPage({ limit: 20, offset }, () => {
+    const page = await fetchVisitsPage(identity, { limit: 20, offset }, () => {
       degraded = true
     })
     setVisitBusy(false)
@@ -272,7 +275,7 @@ export default function SearchHistoryPage() {
     setVisitHasMore(page.hasMore)
     setVisitNextOffset(page.nextOffset)
     setVisitState('ready')
-  }, [visitBusy])
+  }, [visitBusy, identity])
 
   // 切到访问 tab 时首次加载；身份变化后回 idle（下次切入按新身份取）
   useEffect(() => {

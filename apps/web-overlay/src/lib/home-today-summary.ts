@@ -7,6 +7,7 @@ import {
   todayNodes,
   type ExamUrgencyTier,
 } from '@/lib/exam-calendar'
+import { isPeakEligible } from '@/lib/exam-verification'
 
 export interface HomeTodayBadgeSummary {
   todayCount: number
@@ -15,9 +16,10 @@ export interface HomeTodayBadgeSummary {
   countdownTier: ExamUrgencyTier | null
 }
 
-/** 计算首页顶栏「今日」按钮角标与悬停摘要（确定性按传入时间戳算）。 */
+/** 计算首页顶栏「今日」按钮角标与悬停摘要（确定性按传入时间戳算）。
+ * 计数口径与 HomeTodayZone 一致：只计准入节点（§7.2，未核实节点不计入）。 */
 export function computeHomeTodayBadge(nowMs: number = Date.now()): HomeTodayBadgeSummary {
-  const nodes = todayNodes(nowMs)
+  const nodes = todayNodes(nowMs).filter((item) => isPeakEligible(item.node, nowMs))
   const urgentCount = nodes.filter(
     (item) => item.kind === 'today' || item.kind === 'endsToday',
   ).length

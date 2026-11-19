@@ -7,11 +7,15 @@ import {
   examStatus,
   firstExamDay,
   hasActionableNodes,
+  nextExamNode,
   shanghaiMidnightMs,
+  todayNodeDeadlineMs,
   urgencyTier,
   type ExamInfo,
   type ExamUrgencyTier,
 } from '@/lib/exam-calendar'
+import { ExamVerificationBadge } from '@/components/exam-verification-badge'
+import { isPeakEligible } from '@/lib/exam-verification'
 
 /**
  * 紧迫度配色（大号天数 / 今天考试文案）：站内已有的 amber-600 / red-600
@@ -88,22 +92,47 @@ export function ExamCountdown({ exam }: { exam: ExamInfo }) {
 
   // 倒计时锚首考日（国考 11-28 专业科目先考），与时钟卡同口径。
   const parts = countdownParts(shanghaiMidnightMs(firstExamDay(exam)), now)
+  // §7.1 / §9.2：下一节点的时刻倒计时 chip 只给准入节点；unverified 节点只显示
+  // 「待核实」徽标，不渲染时刻倒计时。考试日本身的天数倒计时是日期口径，不受此限。
+  const nextNode = nextExamNode(exam, now)
+  const nextEligible = nextNode !== undefined && isPeakEligible(nextNode, now)
+  const nextDeadlineMs =
+    nextNode !== undefined && nextEligible
+      ? todayNodeDeadlineMs({ exam, node: nextNode, kind: 'today' }, now)
+      : undefined
+  const nextParts =
+    nextDeadlineMs !== undefined ? countdownParts(nextDeadlineMs, now) : undefined
   return (
-    <div
-      className="flex items-end gap-3"
-      role="timer"
-      aria-label={`${exam.shortName}倒计时 ${parts.days} 天 ${parts.hours} 小时 ${parts.minutes} 分钟`}
-    >
-      <span
-        className={`font-mono text-4xl font-extrabold tabular-nums tracking-tight ${URGENCY_DAY_CLASS[tier]}`}
+    <div className="space-y-2">
+      <div
+        className="flex items-end gap-3"
+        role="timer"
+        aria-live="off"
+        aria-label={`${exam.shortName}倒计时 ${parts.days} 天 ${parts.hours} 小时 ${parts.minutes} 分钟`}
       >
-        {parts.days}
-      </span>
-      <span className="pb-1 text-sm text-muted-foreground">天</span>
-      <span className="pb-1 font-mono text-sm tabular-nums text-muted-foreground">
-        {String(parts.hours).padStart(2, '0')}:{String(parts.minutes).padStart(2, '0')}:
-        {String(parts.seconds).padStart(2, '0')}
-      </span>
+        <span
+          className={`font-mono text-4xl font-extrabold tabular-nums tracking-tight ${URGENCY_DAY_CLASS[tier]}`}
+        >
+          {parts.days}
+        </span>
+        <span className="pb-1 text-sm text-muted-foreground">天</span>
+        <span className="pb-1 font-mono text-sm tabular-nums text-muted-foreground">
+          {String(parts.hours).padStart(2, '0')}:{String(parts.minutes).padStart(2, '0')}:
+          {String(parts.seconds).padStart(2, '0')}
+        </span>
+      </div>
+      {nextNode !== undefined ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-muted-foreground">下一步：{nextNode.label}</span>
+          <ExamVerificationBadge node={nextNode} />
+          {nextParts !== undefined && nextDeadlineMs !== undefined ? (
+            <span aria-live="off" className="font-mono tabular-nums text-muted-foreground">
+              距截止 {nextParts.days > 0 ? `${nextParts.days} 天 ` : ''}
+              {nextParts.hours} 小时 {nextParts.minutes} 分
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }

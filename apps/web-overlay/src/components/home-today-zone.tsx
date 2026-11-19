@@ -15,6 +15,7 @@ import {
   type ExamUrgencyTier,
 } from '@/lib/exam-calendar'
 import { HomeTodayCountdown } from '@/components/home-today-countdown'
+import { isPeakEligible } from '@/lib/exam-verification'
 
 /**
  * 首页「今日一件事」区（U-24，首屏第一位）。
@@ -130,16 +131,19 @@ export function HomeTodayZone({ nowMs = Date.now() }: HomeTodayZoneProps) {
                   </div>
                   <ul className="space-y-1.5">
                     {todayItems.map(({ exam, node, kind }) => {
-                      // 峰值日包 W10：有已核实目标时刻的节点（11-18 七项）在
-                      // 徽章与 detail 之间挂倒计时 chip；表外节点（undefined）
-                      // 不渲染。target 是 todayNodeDeadlineMs 的毫秒值转 ISO，
-                      // 绝不拿 endISO 当天 00:00 冒充。kind === 'today' 的行
-                      // （查分节点，「距开通」语义）过期后 chip 直接消失
+                      // 峰值日包 W10 + 核验准入闸（§7.2）：chip 渲染前调 isPeakEligible，
+                      // 不满足只显示日期文案，不显示倒计时与“剩 X 小时”。target 是
+                      // todayNodeDeadlineMs 的毫秒值转 ISO，绝不拿 endISO 当天 00:00 冒充。
+                      // kind === 'today' 的行（查分节点，「距开通」语义）过期后 chip 直接消失
                       // （hideWhenPassed），不显示 endedLabel 缺省文案；
                       // endsToday 的行过期仍显示 endedLabel 缺省文案。
                       // startsToday 行的 chip（如江西复核）目标同样是窗口关闭时刻，
-                      // 不是开始时刻。
-                      const deadlineMs = todayNodeDeadlineMs({ exam, node, kind })
+                      // 不是开始时刻。reprint 级 chip 右侧加“转载”小字（与 official
+                      // 同等醒目）；unverified 行加灰态“待核实”。
+                      const eligible = isPeakEligible(node, nowMs)
+                      const deadlineMs = eligible
+                        ? todayNodeDeadlineMs({ exam, node, kind }, nowMs)
+                        : undefined
                       return (
                         <li
                           key={`${exam.id}:${node.label}`}
@@ -155,11 +159,23 @@ export function HomeTodayZone({ nowMs = Date.now() }: HomeTodayZoneProps) {
                               今日开始
                             </span>
                           ) : null}
+                          {node.verification_level === 'unverified' ? (
+                            <span className="shrink-0 rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                              待核实
+                            </span>
+                          ) : null}
                           {deadlineMs !== undefined ? (
-                            <HomeTodayCountdown
-                              target={new Date(deadlineMs).toISOString()}
-                              {...(kind === 'today' ? { hideWhenPassed: true } : {})}
-                            />
+                            <>
+                              <HomeTodayCountdown
+                                target={new Date(deadlineMs).toISOString()}
+                                {...(kind === 'today' ? { hideWhenPassed: true } : {})}
+                              />
+                              {node.verification_level === 'reprint' ? (
+                                <span className="shrink-0 text-xs font-medium text-amber-700 dark:text-amber-400">
+                                  转载
+                                </span>
+                              ) : null}
+                            </>
                           ) : null}
                           <span className="min-w-0 flex-1 basis-full text-muted-foreground">{node.detail}</span>
                         </li>

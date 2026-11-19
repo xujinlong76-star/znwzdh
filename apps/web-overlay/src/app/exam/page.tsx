@@ -32,6 +32,7 @@ import {
   nearestExam,
 } from '@/lib/exam-calendar'
 import { ExamCountdown } from './exam-countdown'
+import { ExamCorrectionReport } from './exam-correction-report'
 import { GuokaoAdmissionReminderIsland } from '@/components/guokao-admission-reminder'
 import { MyExamTracker } from './my-exam-tracker'
 
@@ -309,6 +310,34 @@ export default async function ExamPage() {
             </div>
           )}
           <p className="mt-4 text-xs leading-relaxed text-muted-foreground">{EXAM_DATA_NOTE}</p>
+        </section>
+
+        {/* 核验方法说明区（01-verification-workflow §9.1，常驻）：七步改编、核查范围、更正政策三段文字 + 报错入口 */}
+        <section aria-labelledby="exam-methodology-heading">
+          <h2 id="exam-methodology-heading" className="text-lg font-bold text-foreground">
+            核验方法
+          </h2>
+          <div className="mt-4 space-y-3 rounded-2xl border border-border bg-card p-5 text-sm leading-relaxed text-muted-foreground">
+            <p>
+              本页每个带时刻的考试节点都走七步核验流水线：拆断言（截止时刻、入口链接、适用口径各一条）→
+              读公告原文 → 取证 → 双源交叉 → 定级 → 建档 → 发布或更正。其中第 4 步“联系信源”按本站特例
+              改为“双源交叉”：考试机构没有可直接联系的官方渠道，改为官网原文加第二独立来源交叉验证，
+              只有两源一致才通过；冲突按固定规则裁决（官方原文优先，冲突时降级为转载级并标注），
+              例外情形升级给站长裁决、不发布。
+            </p>
+            <p>
+              核查范围是全部 43 个节点逐条核查，不抽查。每个节点卡片右上角的徽标就是核验级别：
+              “官方原文已核实”为官方原文级（来源与存档双全），“转载级”为未直读官方原文，
+              “待核实”为尚未核实——待核实的节点不进入峰值日包与考试订阅，不显示时刻倒计时。
+            </p>
+            <p>
+              更正政策：错了公开更正、不静默改数。事实变了标“更新”，原先写错了标“更正”；
+              时刻、入口链接、适用口径三类重大错误的更正注置于节点卡片顶部，一般错误置于文末。
+              发现错误可以在下方报错，核查确认后会公开更正。
+            </p>
+          </div>
+          <h3 className="mt-4 text-base font-bold text-foreground">发现错误？点此报错</h3>
+          <ExamCorrectionReport />
         </section>
       </div>
       <Footer />

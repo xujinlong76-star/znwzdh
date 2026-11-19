@@ -106,7 +106,7 @@ export function HomeTodayCountdown({
   // 挂载后 effect 立即取时并开始 tick，文案随即变为实时剩余时间。
   if (nowMs === null) {
     return (
-      <span role="timer" aria-label="倒计时" className={COUNTDOWN_BADGE_CLASS}>
+      <span role="timer" aria-live="off" aria-label="倒计时" className={COUNTDOWN_BADGE_CLASS}>
         倒计时
       </span>
     )
@@ -117,7 +117,7 @@ export function HomeTodayCountdown({
   // 挂载前的「倒计时」占位不受影响（见上，SSR 测试依赖它）。
   if (hideWhenPassed && targetMs <= nowMs) return null
   return (
-    <span role="timer" aria-label={`倒计时 ${text}`} className={COUNTDOWN_BADGE_CLASS}>
+    <span role="timer" aria-live="off" aria-label={`倒计时 ${text}`} className={COUNTDOWN_BADGE_CLASS}>
       {text}
     </span>
   )

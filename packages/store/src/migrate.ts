@@ -359,8 +359,10 @@ export async function migrateUserSyncState(db: { dialect: string; sqlite?: any; 
  * 与 migrateUserSyncState 同款三处幂等：新库由 driver.ts 建、旧库由语句表补，
  * 这里是台账可审计的版本化入口。DDL 与 schema.ts / driver.ts 保持逐字一致。
  *
- * 注意：corrected_text 与 correction_published_at 可空——§2.6 标 NOT NULL，但 §9.3
- * 要求 reader_tip 草稿行两者都为空；以草稿流程为准（见 schema.ts 的 examCorrections 注释）。
+ * 注意：corrected_text、original_published_at 与 correction_published_at 可空——§2.6
+ * 标 NOT NULL，但 §9.3 要求 reader_tip 草稿行三者都为空；以草稿流程为准（见 schema.ts
+ * 的 examCorrections 注释）。original_published_at 可空系 R3：草稿态未知即 NULL，
+ * 不得以举报时间占位冒充原文发布时间；正式更正行三者仍由 insertExamCorrection() 强制必填。
  */
 export async function migrateExamVerifications(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
   const isPg = db.dialect === "pg";
@@ -371,7 +373,7 @@ export async function migrateExamVerifications(db: { dialect: string; sqlite?: a
     "CREATE INDEX IF NOT EXISTS exam_verifications_exam_node_idx ON exam_verifications(exam_id, node_label)",
     "CREATE INDEX IF NOT EXISTS exam_verifications_hash_idx ON exam_verifications(assertion_hash)",
     "CREATE INDEX IF NOT EXISTS exam_verifications_checked_idx ON exam_verifications(checked_at)",
-    `CREATE TABLE IF NOT EXISTS exam_corrections (${idDef}, exam_id TEXT NOT NULL, node_label TEXT NOT NULL, assertion_hash TEXT NOT NULL, original_text TEXT NOT NULL, corrected_text TEXT, error_type TEXT NOT NULL, reason TEXT NOT NULL, how_discovered TEXT NOT NULL, original_published_at ${ts} NOT NULL, correction_published_at ${ts}, location TEXT NOT NULL DEFAULT 'both', corrected_by TEXT NOT NULL, created_at ${ts} NOT NULL, updated_at ${ts} NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS exam_corrections (${idDef}, exam_id TEXT NOT NULL, node_label TEXT NOT NULL, assertion_hash TEXT NOT NULL, original_text TEXT NOT NULL, corrected_text TEXT, error_type TEXT NOT NULL, reason TEXT NOT NULL, how_discovered TEXT NOT NULL, original_published_at ${ts}, correction_published_at ${ts}, location TEXT NOT NULL DEFAULT 'both', corrected_by TEXT NOT NULL, created_at ${ts} NOT NULL, updated_at ${ts} NOT NULL)`,
     "CREATE INDEX IF NOT EXISTS exam_corrections_exam_node_idx ON exam_corrections(exam_id, node_label)",
     "CREATE INDEX IF NOT EXISTS exam_corrections_hash_idx ON exam_corrections(assertion_hash)",
     "CREATE INDEX IF NOT EXISTS exam_corrections_published_idx ON exam_corrections(correction_published_at)",

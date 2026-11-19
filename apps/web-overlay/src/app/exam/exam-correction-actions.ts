@@ -63,10 +63,10 @@ export async function submitExamCorrectionReport(formData: FormData): Promise<Ex
     howDiscovered: 'reader_tip',
     ...(sourceUrl !== '' ? { sourceUrl } : {}),
     ...(contact !== '' ? { contact } : {}),
-    // originalPublishedAt 按 §2.6 为 notNull：节点数据无逐条发布时间，草稿态以
-    // 举报时间填充占位（见 ExamCorrectionDraftInput 字段注释）；核查确认时由
-    // 核查人以实际发布时间补正。
-    originalPublishedAt: Date.now(),
+    // R3：originalPublishedAt 草稿态为 NULL——节点数据无逐条发布时间，未知即 NULL，
+    // 不得以举报时间（Date.now()）占位冒充原文发布时间；核查确认时由核查人以实际
+    // 发布时间补正。store 侧草稿分支允许两时间戳为 NULL，正式更正行仍强制必填。
+    originalPublishedAt: null,
     correctionPublishedAt: null,
     location: 'both',
     correctedBy: 'reader_tip',

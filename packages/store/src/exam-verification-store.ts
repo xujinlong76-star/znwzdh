@@ -10,7 +10,9 @@
  *    false→mostly_false/false/pants_on_fire；unverifiable→rating 必须为空。
  *    half_true 在 §2.5 表里没有合法 verdict，一律拒绝。
  *  - 更正草稿分支（§9.3）：仅 how_discovered='reader_tip' 的草稿行允许
- *    corrected_text 为空；正式更正行 corrected_text 与 correction_published_at 必填。
+ *    corrected_text 为空；草稿行 original_published_at 与 correction_published_at
+ *    可为 NULL（R3：未知即 NULL，不得用举报时间占位）；正式更正行 corrected_text
+ *    与两时间戳必填。
  */
 import { createHash } from "node:crypto";
 import type { Db } from "./driver.ts";
@@ -65,7 +67,7 @@ export interface ExamCorrectionRecord {
   errorType: string;
   reason: string;
   howDiscovered: string;
-  originalPublishedAt: number;
+  originalPublishedAt: number | null;
   correctionPublishedAt: number | null;
   location: string;
   correctedBy: string;
@@ -103,7 +105,8 @@ export interface InsertExamCorrectionInput {
   errorType: ExamErrorType;
   reason: string;
   howDiscovered: ExamHowDiscovered;
-  originalPublishedAt: number;
+  /** 草稿行可为 null（未知即 NULL，R3）；正式更正行必填 */
+  originalPublishedAt: number | null;
   /** 草稿行未发布时为空；正式更正行必填 */
   correctionPublishedAt?: number | null;
   location?: ExamCorrectionLocation;
@@ -250,7 +253,9 @@ function rowToCorrection(row: Row): ExamCorrectionRecord {
     errorType: String(row["error_type"]),
     reason: String(row["reason"]),
     howDiscovered: String(row["how_discovered"]),
-    originalPublishedAt: Number(row["original_published_at"]),
+    originalPublishedAt: row["original_published_at"] === null || row["original_published_at"] === undefined
+      ? null
+      : Number(row["original_published_at"]),
     correctionPublishedAt: row["correction_published_at"] === null || row["correction_published_at"] === undefined
       ? null
       : Number(row["correction_published_at"]),
@@ -331,7 +336,6 @@ export async function insertExamCorrection(
     requireEnum(input.location, LOCATIONS, "location");
   }
   const reason = requireNonEmpty(input.reason, "reason");
-  const originalPublishedAt = requireFiniteNumber(input.originalPublishedAt, "originalPublishedAt");
   const correctedBy = requireNonEmpty(input.correctedBy, "correctedBy");
 
   // 草稿分支（§9.3）：corrected_text 为空只允许 how_discovered='reader_tip' 的草稿行。
@@ -346,15 +350,27 @@ export async function insertExamCorrection(
       "[exam-verification] corrected_text 为空只允许 how_discovered='reader_tip' 的草稿行",
     );
   }
+  // R3：两时间戳草稿行可为 NULL（未知即 NULL，不得用举报时间占位冒充原文发布时间）；
+  // 正式更正行两者必填（更正注须带原文发布与更正发布日期，§6.3）。草稿行若传了
+  // 时间戳，仍须为有限数字（拒绝 NaN / Infinity 入库）。
+  let originalPublishedAt: number | null = null;
   let correctionPublishedAt: number | null = null;
   if (!isDraft) {
-    // 正式更正行：correction_published_at 必填（更正注须带发布日期，§6.3）。
+    originalPublishedAt = requireFiniteNumber(
+      input.originalPublishedAt,
+      "originalPublishedAt（正式更正行必填）",
+    );
     correctionPublishedAt = requireFiniteNumber(
       input.correctionPublishedAt,
       "correctionPublishedAt（正式更正行必填）",
     );
-  } else if (input.correctionPublishedAt !== null && input.correctionPublishedAt !== undefined) {
-    correctionPublishedAt = requireFiniteNumber(input.correctionPublishedAt, "correctionPublishedAt");
+  } else {
+    if (input.originalPublishedAt !== null && input.originalPublishedAt !== undefined) {
+      originalPublishedAt = requireFiniteNumber(input.originalPublishedAt, "originalPublishedAt");
+    }
+    if (input.correctionPublishedAt !== null && input.correctionPublishedAt !== undefined) {
+      correctionPublishedAt = requireFiniteNumber(input.correctionPublishedAt, "correctionPublishedAt");
+    }
   }
 
   const nowMs = Date.now();

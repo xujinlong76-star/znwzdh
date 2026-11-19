@@ -16,6 +16,7 @@
  *    2026-11-19 修复 U-246：补站 U-08（配色与色板：Paletton/Color Hunt/Khroma；编程学习：The Odin Project；在线课程：edX），Paletton/Color Hunt/Khroma 入 pricing-overrides（free 3）、edX 入表（freemium 1），The Odin Project 经强信号规则命中 open_source，确定值 349→354、未标注仍 0。
  *    2026-11-19 进化轮 21:22：补站 U-08（UI 资源素材：Photopea；气象与环境：Windy；数字图书馆：Internet Archive/Open Library；免费短剧：ShortMax/GoodShort/NetShort；学习路线：CS自学指南/JavaGuide/W3Schools/Exercism）并入 pricing-overrides（freemium 6、free 3、open_source 2），确定值 354→365、未标注仍 0。
  *    2026-11-19 进化轮 22:22：补站 U-08（影视评分：Rotten Tomatoes/Metacritic）并入 pricing-overrides（free 2），确定值 365→367、未标注仍 0。
+ *    2026-11-19 batch0/W5（02 定价缺口 + 孤儿清理）：Gitee AI 入表（freemium，官网计费文档核实）、The Odin Project 入表（free，官网 About 页核实；此前仅经强信号规则命中 open_source，人工核实后以 free 为准，与 freeCodeCamp 同类学习平台口径一致）；删 8 条孤儿键（子路径/旧域名残留，所指站点均已有站级键覆盖），覆盖表 373→367 条，确定值仍 367、未标注仍 0、孤儿 0。
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -115,5 +116,19 @@ describe("导航 367 站全量推导（数据完整性基线）", () => {
     }
     expect(determinate).toBe(367);
     expect(unknownTitles).toEqual([]);
+  });
+
+  it("覆盖表无孤儿键：每条键都对应至少一个当前站点（2026-11-19 batch0/W5 清理 8 条子路径/旧域名残留后为 0）", () => {
+    const siteKeys = new Set(sites.map((s) => pricingOverrideKey(s.href)));
+    const orphans = Object.keys(PRICING_OVERRIDES).filter((k) => !siteKeys.has(k));
+    expect(orphans).toEqual([]);
+    expect(Object.keys(PRICING_OVERRIDES).length).toBe(367);
+  });
+
+  it("两站缺口闭合：Gitee AI 与 The Odin Project 均命中人工核实覆盖表", () => {
+    expect(derivePricing({ url: "https://moark.com" }, PRICING_OVERRIDES).value).toBe("freemium");
+    expect(derivePricing({ url: "https://moark.com" }, PRICING_OVERRIDES).source).toBe("override");
+    expect(derivePricing({ url: "https://www.theodinproject.com" }, PRICING_OVERRIDES).value).toBe("free");
+    expect(derivePricing({ url: "https://www.theodinproject.com" }, PRICING_OVERRIDES).source).toBe("override");
   });
 });

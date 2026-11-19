@@ -99,11 +99,6 @@
   "evidence": "官网设免费额度与付费档",
   "title": "Adobe Firefly"
  },
- "canva.com/ai-image-generator": {
-  "pricing": "freemium",
-  "evidence": "Canva 免费层可用，Pro 付费档额度更高",
-  "title": "Canva AI"
- },
  "leonardo.ai": {
   "pricing": "freemium",
   "evidence": "官网设免费层与付费档",
@@ -233,11 +228,6 @@
   "pricing": "freemium",
   "evidence": "官网设免费层与付费档",
   "title": "Viggle AI"
- },
- "kling.ai": {
-  "pricing": "freemium",
-  "evidence": "官网设免费额度与付费档",
-  "title": "Kling AI"
  },
  "haiper.ai": {
   "pricing": "freemium",
@@ -424,11 +414,6 @@
   "evidence": "开源对象存储（AGPL）",
   "title": "MinIO"
  },
- "cloud.tencent.com/product/cdb": {
-  "pricing": "paid",
-  "evidence": "云数据库为按量付费服务",
-  "title": "Tencent Cloud Database"
- },
  "hub.docker.com": {
   "pricing": "freemium",
   "evidence": "公共仓库免费 + 付费档",
@@ -453,11 +438,6 @@
   "pricing": "open_source",
   "evidence": "开源多容器编排工具",
   "title": "Compose"
- },
- "kubernetes.io/docs/tasks/access-application-cluster/web-ui-dashboard": {
-  "pricing": "open_source",
-  "evidence": "K8s 官方开源管理界面",
-  "title": "Kubernetes Dashboard"
  },
  "vercel.com": {
   "pricing": "freemium",
@@ -579,20 +559,10 @@
   "evidence": "问答社区免费使用",
   "title": "SegmentFault"
  },
- "xie.infoq.cn": {
-  "pricing": "free",
-  "evidence": "开发者社区免费使用",
-  "title": "InfoQ 开发者社区"
- },
  "developer.mozilla.org": {
   "pricing": "free",
   "evidence": "官方技术文档免费开放",
   "title": "MDN Web Docs"
- },
- "developer.mozilla.org/zh-CN": {
-  "pricing": "free",
-  "evidence": "官方技术文档免费开放",
-  "title": "MDN 中文"
  },
  "docs.oracle.com/en/java/javase": {
   "pricing": "free",
@@ -608,11 +578,6 @@
   "pricing": "free",
   "evidence": "RFC 全文库免费开放",
   "title": "IETF RFC 搜索"
- },
- "postgresql.org/docs": {
-  "pricing": "free",
-  "evidence": "官方文档免费开放",
-  "title": "PostgreSQL 文档"
  },
  "iso.org/standards.html": {
   "pricing": "paid",
@@ -1559,11 +1524,6 @@
   "evidence": "Cloudflare 官网：Pages 免费版 + 付费 Workers 套餐",
   "title": "Cloudflare Pages"
  },
- "nodejs.org/docs/latest/api": {
-  "pricing": "free",
-  "evidence": "官方文档免费开放",
-  "title": "Node.js 文档"
- },
  "gogs.io/getting-started/introduction": {
   "pricing": "open_source",
   "evidence": "站点描述明示开源代码托管",
@@ -1863,5 +1823,15 @@
   "pricing": "free",
   "evidence": "官网首页全文免登录可读、无付费墙、无订阅/定价页；首页 Premium 命中均为第三方流媒体频道名，非本站付费档（Wikipedia 登记 Free）",
   "title": "Metacritic"
+ },
+ "moark.com": {
+  "pricing": "freemium",
+  "evidence": "官网计费文档 ai.gitee.com/docs/compute/billing：按量计费（后付费）与包周期两种付费模式；应用收费策略页 ai.gitee.com/docs/appstore/price 列有免费模式，免费试用 + 按量/订阅付费并存",
+  "title": "Gitee AI"
+ },
+ "theodinproject.com": {
+  "pricing": "free",
+  "evidence": "官网 About 页（theodinproject.com/about）：全栈课程免费、由开源社区与捐赠支持，无付费档；课程内容开源（GitHub TheOdinProject/curriculum）。与 freeCodeCamp 同类学习平台口径一致记 free",
+  "title": "The Odin Project"
  }
 }

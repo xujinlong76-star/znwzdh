@@ -44,7 +44,7 @@ import { LOCAL_LOGO_MAP, resolveSiteIcon } from '../src/components/site-favicon'
  * 事实钉死（只记、不加底块、不改组件）：
  * - 亚马逊走 '亚马逊' 标题规则（map 精确查找之前），'amazon.com' 键绝不加：
  *   后缀匹配会让 C11 的 AWS WAF（aws.amazon.com）串站解析为 amazon.png。
- *   子串 '亚马逊' 全库 365 站标题仅命中亚马逊一站；AWS WAF 由 C11 落地、
+ *   子串 '亚马逊' 全库 369 站标题仅命中亚马逊一站；AWS WAF 由 C11 落地、
  *   解析为 aws-waf.svg（期望已随 C11 同步改）。
  * - 亚马逊与百度地图源 ICO 字节同为 15,086 B 属巧合（48px BMP 帧定长）；
  *   提取出的 48px PNG 帧 md5 不同（amazon 89fa9c6a… / baidumap dec3cd3d…），

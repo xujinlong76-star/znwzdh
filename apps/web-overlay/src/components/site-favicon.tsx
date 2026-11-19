@@ -597,7 +597,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 10 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
   // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
   // 子域站用完整 hostname 建键，不建裸域键：'zh.wikipedia.org'。
-  // 全库 367 站核对：本批 10 个 map 键各只命中 1 站，无后缀串站。
+  // 全库 369 站核对：本批 10 个 map 键各只命中 1 站，无后缀串站。
   // 6 站为 16×16 原样小图（huatu / zhipin / lagou；另 3 站走标题规则，
   // 见下方），按规范 §1.1 原样落盘、绝不放大，卡片上显小是合规状态。
   'fenbi.com': '/brand-icons/fenbi.png',
@@ -621,7 +621,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 子域站用完整 hostname 建键：'ieeexplore.ieee.org'（IEEE Xplore，
   // 不建 'ieee.org' 裸域键）。Hugging Face Papers 不进 map（见下方
   // 'hugging face papers' 标题规则，huggingface.co 键已被 Hugging Face
-  // 主站占用）。全库 367 站核对：本批 16 个 map 键各只命中 1 站，
+  // 主站占用）。全库 369 站核对：本批 16 个 map 键各只命中 1 站，
   // 无后缀串站。中国知网 cnki.svg 为白色反白宽版标（viewBox
   // 0 0 2941.51×685.5，白字/白标 + 一颗橙点），宽版原样不裁；
   // 浅/深两主题下白字可见靠下方 LOGO_TILE_MAP 的 'dark' 深色底块
@@ -930,7 +930,7 @@ export function resolveSiteIcon(
     // - yz.chsi.com.cn 仅此 2 站：'研招网' 与 '考研网上报名' 互不为子串，
     //   各命中 1 站；'chsi.com.cn' 键绝不加。
     // - cet.neea.edu.cn 仅此 2 站 + www.neea.edu.cn 1 站：三条标题子串
-    //   在全库 367 站中各仅命中 1 站；'neea.edu.cn' / 'cet.neea.edu.cn'
+    //   在全库 369 站中各仅命中 1 站；'neea.edu.cn' / 'cet.neea.edu.cn'
     //   键绝不加。注意官网标题用 '四、六级'（顿号），与成绩查询的
     //   '四六级' 不重叠，故两条规则互不干扰。
     // 同源像素相同是官方源本身同一文件（yz.png 与 yz-yzwb.png 逐字节
@@ -947,7 +947,7 @@ export function resolveSiteIcon(
     // huggingface.co 键已被 Hugging Face 主站占用（→ huggingface.png），
     // hostname map 无法区分；且其 navigation.json icon 字段是错域的
     // paperswithcode.com/favicon.ico（被 isRemoteRawFavicon 拦截，未用）。
-    // 子串 'hugging face papers' 在 navigation.json 全库 367 站标题中
+    // 子串 'hugging face papers' 在 navigation.json 全库 369 站标题中
     // 仅命中 Hugging Face Papers 一站，故走标题规则，必须放在 map 精确
     // 查找之前。落盘 huggingface-papers.svg 为 huggingface.co 官方 HF 标
     // SVG 原样（width 95 height 88，viewBox 缺省），与 huggingface.png

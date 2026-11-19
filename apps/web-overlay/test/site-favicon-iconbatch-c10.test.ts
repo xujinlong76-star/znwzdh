@@ -74,7 +74,7 @@ import { resolveLogoTile, resolveSiteIcon } from '../src/components/site-favicon
  * - 光栅单站落盘均 ≤ ~15 KB（最大 arxiv 8,264 B）；
  *   SVG 2 站原样落盘，不受光栅单站 ≤ ~15 KB 规则约束
  *   （cnki.svg 266,324 B 为宽版全标原样）。
- * - 全库 367 站核对：本批 16 个 map 键各只命中 1 站，无后缀串站；
+ * - 全库 369 站核对：本批 16 个 map 键各只命中 1 站，无后缀串站；
  *   'hugging face papers' 标题子串全库仅命中 Hugging Face Papers 一站；
  *   Hugging Face 主站仍解析为 huggingface.png，不受标题规则影响。
  */

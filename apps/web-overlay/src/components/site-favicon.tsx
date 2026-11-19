@@ -700,6 +700,46 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   ['mee.gov.cn', 'mee.png'],
   ['permit.mee.gov.cn', 'permit-mee.png'],
   ['aws.amazon.com', 'aws-waf.svg'],
+  // 2026-11-19（C 类第 12 批 C12，17/20）：国家信访局 / 国家税务局 /
+  // 国家林业和草原局 / Soul / 积目 / 百合网 / 世纪佳缘 / Akamai /
+  // F5 Networks / Imperva / Ansible Collaborative / Alibaba Cloud /
+  // Qiniu Cloud / 腾讯云 / 华为云 / Coolify。国家网信办举报中心 /
+  // 公安部 / 伊对阻塞未入（见 C12 测试事实钉死）；中国政府网不进
+  // map（见上方 '中国政府网' 标题规则，'gov.cn' 键绝不加）。
+  // 17 站 icon 字段均为远端 …/favicon.ico（含 Ansible 的错域
+  // ansible.com/favicon.ico 与 Akamai 的 akamai.com/favicon.ico），
+  // 被 isRemoteRawFavicon 拦截，map 生效，navigation.json 不动。
+  // 'github.com' / 'adobe.com' 键绝不加。子域站用完整 hostname 建键：
+  // 'cloud.tencent.com'（腾讯云，不建 'tencent.com' 裸域键）。
+  // 全库 369 站核对：本批 16 个 map 键中 14 个各只命中 1 站；
+  // 'aliyun.com' 命中 4 站但其 3 个子域站（通义千问 qianwen /
+  // Tongyi Lingma lingma / Codeup codeup）各有精确键先行命中，
+  // 故只剩 Alibaba Cloud 一站落到本键，无后缀串站；'redhat.com'
+  // 全库仅命中 Ansible Collaborative 一站（无 Red Hat 主站）。
+  // Ansible 落盘为页面 favicon 即 Red Hat 红帽标（48×48），保留或
+  // 改用宽版 lockup SVG / Ansible “A” 单标待复审裁决，见 C12 测试
+  // 事实钉死，本轮按设计原样接线、不擅自换图。chinatax.png 98,842 B
+  //（967×217 宽版页眉标原样）与 forestry.jpg 21,108 B（58×53 JPEG
+  // 原样）均超光栅单站 ~15 KB 参考线，按原样接线、待复审裁决
+  // （接受原样或无损压缩、尺寸须保持），见 C12 测试事实钉死。
+  // gov.png / baihe.png / jiayuan.png 为 16×16 原样小图（无更大官方
+  // 方标），按规范 §1.1 原样保留、绝不放大。
+  ['gjxfj.gov.cn', 'gjxfj.png'],
+  ['chinatax.gov.cn', 'chinatax.png'],
+  ['forestry.gov.cn', 'forestry.jpg'],
+  ['soulapp.cn', 'soul.png'],
+  ['jimoapp.com', 'jimo.png'],
+  ['baihe.com', 'baihe.png'],
+  ['jiayuan.com', 'jiayuan.png'],
+  ['akamai.com', 'akamai.png'],
+  ['f5.com', 'f5.png'],
+  ['imperva.com', 'imperva.png'],
+  ['redhat.com', 'ansible-collaborative.png'],
+  ['aliyun.com', 'aliyun.png'],
+  ['qiniu.com', 'qiniu.png'],
+  ['cloud.tencent.com', 'tencent-cloud.png'],
+  ['huaweicloud.com', 'huaweicloud.png'],
+  ['coolify.io', 'coolify.png'],
  ];
 
 /**
@@ -973,6 +1013,16 @@ export function resolveSiteIcon(
     // SVG 原样（width 95 height 88，viewBox 缺省），与 huggingface.png
     // 不同名、不同文件。
     if (lowerTitle.includes('hugging face papers')) return '/brand-icons/huggingface-papers.svg'
+    // 2026-11-19（C 类第 12 批 C12）：中国政府网。'gov.cn' 键绝不加：
+    // 后缀匹配会让全库 12 个 *.gov.cn 命中站全部解析为 gov.png，其中
+    // 公安部（mps.gov.cn，本批阻塞未入）、国家公务员局 3 站（scs.gov.cn，
+    // C9 阻塞未入）、生态环境部 2 站（mee.gov.cn，C11 未上 main）均无
+    // 精确键兜底，会被错指为中国政府网国徽标。仿 C6 亚马逊 / C9 标题
+    // 规则先例走标题规则，必须放在 map 精确查找之前。子串 '中国政府网'
+    // 在 navigation.json 全库 369 站标题中仅命中中国政府网一站。
+    // 来源：www.gov.cn 首页声明的 trs_favicon.ico（内容实为 PNG 16×16，
+    // 按内容解码落盘 gov.png，原样不放大，见 C12 测试事实钉死）。
+    if (lowerTitle.includes('中国政府网')) return '/brand-icons/gov.png'
 
     if (LOCAL_LOGO_MAP[hostname]) {
       return LOCAL_LOGO_MAP[hostname]!

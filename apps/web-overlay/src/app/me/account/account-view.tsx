@@ -28,6 +28,39 @@ import {
 } from '@/lib/user-settings'
 import { Activity, AlertTriangle, CheckCircle2, CircleDashed, Edit3, KeyRound, Loader2, ShieldCheck, User, XCircle } from 'lucide-react'
 
+/**
+ * U-261 自检 toast 结算（纯函数，便于单测三档分支）。
+ *
+ * 云端未核验的合成行（id 'cloud-unavailable'，status 'unknown'）只进明细
+ * 展示，不计入「异常未修复」数——否则本机全过、仅云端未查时也会报
+ * 「仍有 1 项异常未修复」，而「本机自检通过，云端未核验」这档永远不可达。
+ */
+export function summarizeDiagnostics(
+  checks: DiagnosticCheckItem[],
+  totalRepaired: number,
+  cloudOk: boolean,
+): { title: string; description: string } {
+  const unresolved = checks.filter(
+    (c) => c.id !== 'cloud-unavailable' && ['failed', 'critical', 'warning', 'unknown'].includes(c.status),
+  ).length
+  if (unresolved > 0) {
+    return {
+      title:
+        totalRepaired > 0
+          ? `自检完成：仍有 ${unresolved} 项异常未修复，已修复 ${totalRepaired} 项`
+          : `自检完成：仍有 ${unresolved} 项异常未修复`,
+      description: '详见下方检查明细',
+    }
+  }
+  if (!cloudOk) {
+    return { title: '本机自检通过，云端未核验', description: '云端检查未完成，本次只核验了本机部分。' }
+  }
+  return {
+    title: totalRepaired > 0 ? `自检完成：已自动修复 ${totalRepaired} 项异常` : '健康自检通过：0 项异常',
+    description: '本机存储结构、偏好设置与云端数据引用均已核验一致。',
+  }
+}
+
 export function AccountView() {
   const { toast } = useToast()
   const { state, overview, error, reload } = useMeOverview()
@@ -104,18 +137,24 @@ export function AccountView() {
         body: JSON.stringify({}),
         cache: 'no-store',
       })
-      if (res.ok) {
+      const cloudOk = res.ok
+      if (cloudOk) {
         const cloud = (await res.json()) as { repairedCount?: number; checks?: DiagnosticCheckItem[] }
         if (Array.isArray(cloud.checks)) combined.push(...cloud.checks)
         totalRepaired += Number(cloud.repairedCount ?? 0)
+      } else {
+        // U-261：云端非 2xx 不再静默跳过——明细里补一行 unknown，toast 结算也不再谎报全过。
+        combined.push({
+          id: 'cloud-unavailable',
+          label: '云端数据引用核验',
+          status: 'unknown',
+          detail: '云端检查未完成（服务端返回非 2xx），本次只核验了本机部分。',
+        })
       }
 
       setDiagChecks(combined)
       setDiagRepaired(totalRepaired)
-      toast({
-        title: totalRepaired > 0 ? `自检完成：已自动修复 ${totalRepaired} 项异常` : '健康自检通过：0 项异常',
-        description: '本机存储结构、偏好设置与云端数据引用均已核验一致。',
-      })
+      toast(summarizeDiagnostics(combined, totalRepaired, cloudOk))
     } catch {
       toast({ title: '自检执行失败', description: '请稍后重试', variant: 'destructive' })
     } finally {

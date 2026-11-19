@@ -1821,6 +1821,18 @@
                 "编排",
                 "集群"
               ]
+            },
+            {
+              "id": "nav-037d194bcc9a5df7",
+              "title": "Portainer",
+              "href": "https://www.portainer.io",
+              "description": "开源容器可视化管理面板，图形界面管理镜像、容器与堆栈。",
+              "enabled": true,
+              "tags": [
+                "Docker",
+                "容器",
+                "可视化"
+              ]
             }
           ]
         },

@@ -87,7 +87,7 @@ export function extractFaviconMonogram(title: string, _url?: string): string {
 
 /**
  * 品牌图标本地映射的紧凑表（2026-11-19 U-248 体积压缩）。
- * 317 条里 274 条的值共享 '/brand-icons/' 前缀；前缀只写一次、条目只存
+ * 337 条里 294 条的值共享 '/brand-icons/' 前缀；前缀只写一次、条目只存
  * 裸文件名，首屏少发约 2.8 KB。值里带 '/' 的是完整路径（/assets/... 或
  * https://...），原样使用，不加前缀。新增条目时裸文件名进 brand-icons，
  * 完整路径照写即可。
@@ -439,7 +439,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 'adobe.com' 键绝不加。子域站用完整 hostname 建键，不建裸域键：
   // 'codeup.aliyun.com'、'developer.mozilla.org'、'docs.oracle.com'、
   // 'ui.shadcn.com'。'leetcode.cn' 与 'leetcode.com' 各自建键、互不干扰。
-  // 全库 377 站核对：本批 19 个 map 键各只命中 1 站，无后缀串站
+  // 全库 378 站核对：本批 19 个 map 键各只命中 1 站，无后缀串站
   // （Gitee AI 的 href 是 moark.com，不在 gitee.com 名下）。
   // Java 官方文档：站方 favicon 即红色 Oracle 椭圆 O 标（120×120），
   // 不是 Java 咖啡杯；按“官网在用图标”原样接线，未擅自换标，只记录。
@@ -475,7 +475,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
   // 子域站用完整 hostname 建键，不建裸域键：'orm.drizzle.team'、
   // 'hub.docker.com'、'docs.docker.com'、'developer.hashicorp.com'。
-  // 全库 377 站核对：本批 20 个 map 键各只命中 1 站，无后缀串站。
+  // 全库 378 站核对：本批 20 个 map 键各只命中 1 站，无后缀串站。
   // Java：java.png 为 16×16 咖啡杯原样（java.com 唯一官方 favicon，
   // 其余候选 apple-touch-icon / favicon-32x32 均为 404）；备选 Duke
   // 48px（dev.java favicon，另一图形）未擅自替换，待用户裁决，未决点。
@@ -519,7 +519,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 20 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
   // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
   // 子域站用完整 hostname 建键，不建裸域键：'map.baidu.com'。
-  // 全库 377 站核对：本批 19 个 map 键各只命中 1 站，无后缀串站。
+  // 全库 378 站核对：本批 19 个 map 键各只命中 1 站，无后缀串站。
   // 支付宝：落盘 alipay.png 为首页 shortcut icon 的 2600×1950 官方“支”字标
   // 裁透明边距后缩至 128×109（原样，未改画）；同一首页另有 32px 蓝底白“支”
   // ICO 方标（备选）未采用，待复审裁决，见 C6 测试事实钉死。
@@ -552,7 +552,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
   // 子域站用完整 hostname 建键：'app.diagrams.net'（Draw.io）；
   // 'b3log.org' 键只命中思源笔记一站（href 为 b3log.org/siyuan，
-  // 全库 377 站核对无其他 b3log.org 站）；其余 17 键各只命中 1 站，
+  // 全库 378 站核对无其他 b3log.org 站）；其余 17 键各只命中 1 站，
   // 无后缀串站。
   // 网易云课堂阻塞未接线：站方 /favicon.ico 仅 16×16（1150 B）质量不达标；
   // 吉祥物图不是 logo；站点头部 logo 是雪碧图区域且直链超时；图标字体无
@@ -604,7 +604,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 10 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
   // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
   // 子域站用完整 hostname 建键，不建裸域键：'zh.wikipedia.org'。
-  // 全库 377 站核对：本批 10 个 map 键各只命中 1 站，无后缀串站。
+  // 全库 378 站核对：本批 10 个 map 键各只命中 1 站，无后缀串站。
   // 6 站为 16×16 原样小图（huatu / zhipin / lagou；另 3 站走标题规则，
   // 见下方），按规范 §1.1 原样落盘、绝不放大，卡片上显小是合规状态。
   ['fenbi.com', 'fenbi.png'],
@@ -628,7 +628,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 子域站用完整 hostname 建键：'ieeexplore.ieee.org'（IEEE Xplore，
   // 不建 'ieee.org' 裸域键）。Hugging Face Papers 不进 map（见下方
   // 'hugging face papers' 标题规则，huggingface.co 键已被 Hugging Face
-  // 主站占用）。全库 377 站核对：本批 16 个 map 键各只命中 1 站，
+  // 主站占用）。全库 378 站核对：本批 16 个 map 键各只命中 1 站，
   // 无后缀串站。中国知网 cnki.svg 为白色反白宽版标（viewBox
   // 0 0 2941.51×685.5，白字/白标 + 一颗橙点），宽版原样不裁；
   // 浅/深两主题下白字可见靠下方 LOGO_TILE_MAP 的 'dark' 深色底块
@@ -663,7 +663,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // SiteInspire（429 Vercel 检查点），本次不接线、不放占位图。
   // 17 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
   // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
-  // 全库 377 站核对：本批 17 个 map 键各只命中 1 站，无后缀串站。
+  // 全库 378 站核对：本批 17 个 map 键各只命中 1 站，无后缀串站。
   // 同域两站用完整 hostname 各建键，不互相覆盖：'mee.gov.cn'（生态环境部）
   // 与 'permit.mee.gov.cn'（排污平台）；精确查找先于后缀匹配，
   // permit.mee.gov.cn 命中自有键，不会串到 mee.png。
@@ -711,7 +711,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 被 isRemoteRawFavicon 拦截，map 生效，navigation.json 不动。
   // 'github.com' / 'adobe.com' 键绝不加。子域站用完整 hostname 建键：
   // 'cloud.tencent.com'（腾讯云，不建 'tencent.com' 裸域键）。
-  // 全库 377 站核对：本批 16 个 map 键中 14 个各只命中 1 站；
+  // 全库 378 站核对：本批 16 个 map 键中 14 个各只命中 1 站；
   // 'aliyun.com' 命中 4 站但其 3 个子域站（通义千问 qianwen /
   // Tongyi Lingma lingma / Codeup codeup）各有精确键先行命中，
   // 故只剩 Alibaba Cloud 一站落到本键，无后缀串站；'redhat.com'
@@ -744,7 +744,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 站 icon 字段为远端 https://zeabur.com/favicon.svg，被
   // isRemoteRawFavicon 拦截（pathname '/favicon.svg'），map 生效，
   // navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
-  // 全库 377 站核对：'zeabur.com' 键只命中 Zeabur 一站，无后缀串站。
+  // 全库 378 站核对：'zeabur.com' 键只命中 Zeabur 一站，无后缀串站。
   // 落盘 zeabur.svg 为官网声明的浅色 favicon /logo.svg 原样
   // （370 B，viewBox 0 0 32 32，三色 #19181B / #6300FF / #EE430E，
   // 见 C13 测试事实钉死）。深色变体 /logo-dark.svg（368 B，仅黑
@@ -759,7 +759,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 站 icon 字段为远端 https://midjourney.com/favicon.ico，被
   // isRemoteRawFavicon 拦截（pathname '/favicon.ico'），map 生效，
   // navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
-  // 全库 377 站核对：'midjourney.com' 键只命中 Midjourney 一站，
+  // 全库 378 站核对：'midjourney.com' 键只命中 Midjourney 一站，
   // 无后缀串站、无子域站。落盘为白底不透明 PNG 原样（128×128，
   // 全图不透明像素 16,384/16,384，深色帆船标 bbox x18–109 y19–96），
   // 浅/深主题下均显白底方块，无底块（resolveLogoTile 为 null），
@@ -769,9 +769,15 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 站 icon 字段用站方 head 自声明的 favicon.png，被 isRemoteRawFavicon
   // 拦截后回落 map；品牌标为 Simple Icons 原样 SVG（1,337 B，fill
   // #0075A8，<title>Rancher</title>，与 CDN 内容 md5 一致）。
-  // 全库 377 站核对：'rancher.com' 键只命中 Rancher 一站，无后缀串站。
+  // 全库 378 站核对：'rancher.com' 键只命中 Rancher 一站，无后缀串站。
   // 深色下品牌蓝偏暗，按统一规范 §9 不做单站补丁、不配底块，留待统一处理轮。
   ['rancher.com', 'rancher.svg'],
+  // 2026-11-20（U-253 补站 Portainer）：站方 favicon.ico / favicon.svg / apple-touch-icon.png 均为 404，
+  // head icon 为内联 data URI 不可用；导航条目省略 icon 字段，解析走 map；品牌标为 Simple Icons 原样 SVG（1,043 B，fill
+  // #13BEF9，<title>Portainer</title>，与 CDN 内容 md5 一致）。
+  // 全库 378 站核对：'portainer.io' 键只命中 Portainer 一站，无后缀串站。
+  // 品牌色 #13BEF9 明亮，无需底块（resolveLogoTile 为 null），不做单站补丁。
+  ['portainer.io', 'portainer.svg'],
  ];
 
 /**
@@ -998,20 +1004,20 @@ export function resolveSiteIcon(
     if (lowerTitle.includes('vllm')) return '/brand-icons/vllm.svg'
     // 2026-11-19（C 类第 4 批 C4）：GitHub Trending。github.com 为 7 站共享域名，
     // 严禁加 'github.com' 域名映射键（见上方 cline/copilot 规则与 C1 github 规则）。
-    // 子串 'trending' 在 navigation.json 全库 377 站标题中仅命中 GitHub Trending
+    // 子串 'trending' 在 navigation.json 全库 378 站标题中仅命中 GitHub Trending
     // 一站，故走标题规则；本条必须放在下方 'github' 规则之前，否则 Trending
     // 会先被 'github' 规则命中、解析为 github.svg。落盘 github-trending.svg
     // 与既有 github.svg 逐字节相同（同为 GitHub 官方 favicon.svg），按任务要求
     // 单独落盘、未复用 github.svg。来源：github.githubassets.com/favicons/favicon.svg。
     if (lowerTitle.includes('trending')) return '/brand-icons/github-trending.svg'
     // 2026-11-18（C 类第 1 批 c1g2）：GitHub 主站。github.com 为 7 站共享域名（GitHub、GitHub Trending、Cline、Copilot、LangGraph、Qwen 3、vLLM），严禁加 'github.com' 域名映射键。
-    // 子串 'github' 在 navigation.json 全库 377 站标题中仅命中 3 站：GitHub、GitHub Trending、GitHub Copilot；
+    // 子串 'github' 在 navigation.json 全库 378 站标题中仅命中 3 站：GitHub、GitHub Trending、GitHub Copilot；
     // 其中 Copilot 已由上方 'copilot' 规则（:515）先行命中，不受本条影响；GitHub Trending（C4）暂由本条命中、解析为 github.svg，
     // C4 为 Trending 加 'trending' 规则时必须放在本条之前。来源：官网首页 <link rel="icon"> 声明的 favicon.svg（github.githubassets.com），SVG 原样。
     if (lowerTitle.includes('github')) return '/brand-icons/github.svg'
     // 2026-11-19（C 类第 6 批 C6）：亚马逊。'amazon.com' 严禁进 map：
     // 后缀匹配会让 C11 的 AWS WAF（aws.amazon.com）串站解析为 amazon.png。
-    // 子串 '亚马逊' 在 navigation.json 全库 377 站标题中仅命中亚马逊一站，
+    // 子串 '亚马逊' 在 navigation.json 全库 378 站标题中仅命中亚马逊一站，
     // 故走标题规则（map 精确查找之前）；AWS WAF 标题不含该子串，不受影响。
     // 来源：www.amazon.com/favicon.ico 最大帧 48×48 转 PNG 原样。
     if (lowerTitle.includes('亚马逊')) return '/brand-icons/amazon.png'
@@ -1022,7 +1028,7 @@ export function resolveSiteIcon(
     // - yz.chsi.com.cn 仅此 2 站：'研招网' 与 '考研网上报名' 互不为子串，
     //   各命中 1 站；'chsi.com.cn' 键绝不加。
     // - cet.neea.edu.cn 仅此 2 站 + www.neea.edu.cn 1 站：三条标题子串
-    //   在全库 377 站中各仅命中 1 站；'neea.edu.cn' / 'cet.neea.edu.cn'
+    //   在全库 378 站中各仅命中 1 站；'neea.edu.cn' / 'cet.neea.edu.cn'
     //   键绝不加。注意官网标题用 '四、六级'（顿号），与成绩查询的
     //   '四六级' 不重叠，故两条规则互不干扰。
     // 同源像素相同是官方源本身同一文件（yz.png 与 yz-yzwb.png 逐字节
@@ -1039,7 +1045,7 @@ export function resolveSiteIcon(
     // huggingface.co 键已被 Hugging Face 主站占用（→ huggingface.png），
     // hostname map 无法区分；且其 navigation.json icon 字段是错域的
     // paperswithcode.com/favicon.ico（被 isRemoteRawFavicon 拦截，未用）。
-    // 子串 'hugging face papers' 在 navigation.json 全库 377 站标题中
+    // 子串 'hugging face papers' 在 navigation.json 全库 378 站标题中
     // 仅命中 Hugging Face Papers 一站，故走标题规则，必须放在 map 精确
     // 查找之前。落盘 huggingface-papers.svg 为 huggingface.co 官方 HF 标
     // SVG 原样（width 95 height 88，viewBox 缺省），与 huggingface.png
@@ -1051,7 +1057,7 @@ export function resolveSiteIcon(
     // C9 阻塞未入）、生态环境部 2 站（mee.gov.cn，C11 未上 main）均无
     // 精确键兜底，会被错指为中国政府网国徽标。仿 C6 亚马逊 / C9 标题
     // 规则先例走标题规则，必须放在 map 精确查找之前。子串 '中国政府网'
-    // 在 navigation.json 全库 377 站标题中仅命中中国政府网一站。
+    // 在 navigation.json 全库 378 站标题中仅命中中国政府网一站。
     // 来源：www.gov.cn 首页声明的 trs_favicon.ico（内容实为 PNG 16×16，
     // 按内容解码落盘 gov.png，原样不放大，见 C12 测试事实钉死）。
     if (lowerTitle.includes('中国政府网')) return '/brand-icons/gov.png'

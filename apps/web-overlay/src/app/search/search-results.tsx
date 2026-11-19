@@ -6,8 +6,10 @@ import { SiteFavicon } from '@/components/site-favicon'
 import { isSafeHttpUrl, safeHref } from '@/lib/safe-url'
 import {
   SEARCH_QUERY_MAX_LENGTH,
+  describeSelectedFacets,
   inferredConditionLabels,
   relaxedPricingNotice,
+  removeFacetValue,
   searchHref,
   searchMaxPage,
   searchPageWindow,
@@ -731,6 +733,9 @@ export function SearchResults({
   const inferred = result ? inferredConditionLabels(result) : []
   const filterRelaxed = result?.fallback === 'filter'
   const tagApplied = tag !== null && !filterRelaxed
+  // U-210：已选分面 chips 只依赖 facets prop（URL 归一化后的真相），
+  // 不依赖 facetGroups——/api/facets 取数失败时分面栏不渲染，已选分面仍可见、可清。
+  const facetChips = describeSelectedFacets(facets)
   const fuzzy = result?.fallback === 'fuzzy'
   // U-184：resultLabel 必须覆盖全部四类筛选态（q/tag/category/facets）——
   // 空态门（:839）开门后纯分类/纯分面态进入结果分支，若这里仍为空串，
@@ -845,7 +850,7 @@ export function SearchResults({
               分类芯片只要 category 非空就渲染（不用 tagApplied 口径：
               category 无「被放宽」的单独信号，hidden input 无论如何都
               保留它；放宽态隐藏芯片会让用户失去唯一清除入口）。 */}
-          {tagApplied || category ? (
+          {tagApplied || category || facetChips.length > 0 ? (
             <div className="flex flex-wrap items-center gap-2 text-xs">
               {tagApplied ? (
                 <>
@@ -873,6 +878,31 @@ export function SearchResults({
                   >
                     去掉筛选
                     <span aria-hidden>×</span>
+                  </Link>
+                </>
+              ) : null}
+              {/* U-210：已选分面 chips 与标签/分类同组，只依赖 facets prop；
+                  分面栏因 /api/facets 失败不渲染时仍可见、可清。点一枚 chip
+                  只去掉该值；「清空分面」保留 q/tag/category，只清全部 f_*。 */}
+              {facetChips.length > 0 ? (
+                <>
+                  {facetChips.map((chip) => (
+                    <Link
+                      key={`${chip.key}:${chip.value}`}
+                      href={searchHref({ q, tag, category, facets: removeFacetValue(facets, chip.key, chip.value) })}
+                      aria-label={`去掉分面「${chip.keyLabel}：${chip.valueLabel}」`}
+                      title={`去掉分面「${chip.keyLabel}：${chip.valueLabel}」`}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 font-medium text-primary"
+                    >
+                      {chip.keyLabel}：{chip.valueLabel}
+                      <span aria-hidden>×</span>
+                    </Link>
+                  ))}
+                  <Link
+                    href={searchHref({ q, tag, category })}
+                    className="inline-flex items-center gap-0.5 text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    清空分面
                   </Link>
                 </>
               ) : null}

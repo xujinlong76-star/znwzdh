@@ -216,6 +216,50 @@ const PRICING_VALUE_LABELS: Record<string, string> = {
 }
 
 /**
+ * U-210：已选分面的一枚展示芯片。
+ *
+ * 只依赖 URL 归一化后的 `facets`，不依赖中枢 /api/facets 分布——
+ * 分面栏取数失败/分布为空/选中值不在分布里时，已选分面仍有落点可见、可清。
+ * 轴名取中文映射，未知键原样显示 key，不静默吞掉；pricing 的受控值取中文，
+ * 其余轴的值原样展示（与 inferredConditionLabels 同口径）。
+ */
+export interface SelectedFacetChip {
+  key: string
+  keyLabel: string
+  value: string
+  valueLabel: string
+}
+
+export function describeSelectedFacets(facets: Record<string, string[]>): SelectedFacetChip[] {
+  const out: SelectedFacetChip[] = []
+  for (const [key, values] of Object.entries(facets)) {
+    const keyLabel = FACET_KEY_LABELS[key] ?? key
+    for (const value of values ?? []) {
+      const valueLabel = key === 'pricing' ? (PRICING_VALUE_LABELS[value] ?? value) : value
+      out.push({ key, keyLabel, value, valueLabel })
+    }
+  }
+  return out
+}
+
+/**
+ * U-210：去掉某轴上的一个已选值；去掉后该轴为空则删 key。
+ * 返回新对象，不改入参；空轴不进 URL（appendFacetParams 不写空轴）。
+ */
+export function removeFacetValue(
+  facets: Record<string, string[]>,
+  key: string,
+  value: string,
+): Record<string, string[]> {
+  const next: Record<string, string[]> = {}
+  for (const [k, values] of Object.entries(facets)) {
+    const rest = k === key ? values.filter((v) => v !== value) : values
+    if (rest.length > 0) next[k] = rest
+  }
+  return next
+}
+
+/**
  * A3：付费条件被放宽时的点名提示。
  *
  * 中枢在「带分面筛选却零命中」时会放宽筛选重试并回 relaxedFacets 点名被

@@ -13,6 +13,7 @@ import {
   SEARCH_PAGE_SIZE,
   SEARCH_QUERY_MAX_LENGTH,
   SEARCH_TAG_MAX_LENGTH,
+  describeSelectedFacets,
   inferredConditionLabels,
   normalizeSearchCategory,
   normalizeSearchFacets,
@@ -20,6 +21,7 @@ import {
   normalizeSearchQuery,
   normalizeSearchTag,
   overLimitSearchPage,
+  removeFacetValue,
   searchApiPath,
   searchHref,
   searchMaxPage,
@@ -356,5 +358,60 @@ describe('U-189：超限页码服务端 redirect 到归一化 URL', () => {
 
   it('redirect 判断在取数之前，不浪费一次中枢往返', () => {
     expect(searchPage.indexOf('redirect(searchHref')).toBeLessThan(searchPage.indexOf('Promise.all'))
+  })
+})
+
+describe('U-210：已选分面 chips 不依赖 /api/facets 分布', () => {
+  const view = overlaySource('src/app/search/search-results.tsx')
+
+  it('已知轴取中文轴名，pricing 受控值取中文', () => {
+    expect(describeSelectedFacets({ pricing: ['free'] })).toEqual([
+      { key: 'pricing', keyLabel: '付费模式', value: 'free', valueLabel: '完全免费' },
+    ])
+    expect(describeSelectedFacets({ platform: ['web', 'linux'] })).toEqual([
+      { key: 'platform', keyLabel: '平台', value: 'web', valueLabel: 'web' },
+      { key: 'platform', keyLabel: '平台', value: 'linux', valueLabel: 'linux' },
+    ])
+  })
+
+  it('未知键原样显示 key，不静默吞掉', () => {
+    expect(describeSelectedFacets({ foo: ['bar'] })).toEqual([
+      { key: 'foo', keyLabel: 'foo', value: 'bar', valueLabel: 'bar' },
+    ])
+  })
+
+  it('空分面返回空数组', () => {
+    expect(describeSelectedFacets({})).toEqual([])
+    expect(describeSelectedFacets({ pricing: [] })).toEqual([])
+  })
+
+  it('去掉多选轴上的一个值，保留其余值', () => {
+    const input = { pricing: ['free'], platform: ['web', 'linux'] }
+    expect(removeFacetValue(input, 'platform', 'web')).toEqual({ pricing: ['free'], platform: ['linux'] })
+    expect(input).toEqual({ pricing: ['free'], platform: ['web', 'linux'] })
+  })
+
+  it('去掉某轴最后一个值即删 key，不留空轴进 URL', () => {
+    expect(removeFacetValue({ pricing: ['free'], platform: ['web'] }, 'pricing', 'free')).toEqual({
+      platform: ['web'],
+    })
+    expect(removeFacetValue({ pricing: ['free'] }, 'pricing', 'free')).toEqual({})
+  })
+
+  it('去掉不存在的键/值返回等值对象', () => {
+    expect(removeFacetValue({ pricing: ['free'] }, 'platform', 'web')).toEqual({ pricing: ['free'] })
+    expect(removeFacetValue({ pricing: ['free'] }, 'pricing', 'paid')).toEqual({ pricing: ['free'] })
+  })
+
+  it('chips 只依赖 facets prop：容器门条件不含 facetGroups', () => {
+    expect(view).toContain('{tagApplied || category || facetChips.length > 0 ? (')
+    expect(view).toContain('const facetChips = describeSelectedFacets(facets)')
+  })
+
+  it('每枚 chip 点后只去掉该值，「清空分面」只清 f_*', () => {
+    expect(view).toContain('facets: removeFacetValue(facets, chip.key, chip.value)')
+    expect(view).toContain('href={searchHref({ q, tag, category })}')
+    expect(view).toContain('清空分面')
+    expect(view).toContain('去掉分面「${chip.keyLabel}')
   })
 })

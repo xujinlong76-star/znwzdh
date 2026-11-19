@@ -537,6 +537,56 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'sf-express.com': '/brand-icons/sf-express.png',
   'yto.net.cn': '/brand-icons/yto.png',
   'weibo.com': '/brand-icons/weibo.png',
+  // 2026-11-19（C 类第 8 批 C8）：石墨文档 / 语雀 / Obsidian / AppFlowy /
+  // AFFiNE / 思源笔记 / Excalidraw / XMind / MindManager / ProcessOn /
+  // GitMind / tldraw / Draw.io / Miro / Khan Academy / Skillshare /
+  // 慕课网 / 学习强国 / 菜鸟教程。19/20 站，网易云课堂阻塞未入（见下）。
+  // 19 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
+  // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 子域站用完整 hostname 建键：'app.diagrams.net'（Draw.io）；
+  // 'b3log.org' 键只命中思源笔记一站（href 为 b3log.org/siyuan，
+  // 全库 365 站核对无其他 b3log.org 站）；其余 17 键各只命中 1 站，
+  // 无后缀串站。
+  // 网易云课堂阻塞未接线：站方 /favicon.ico 仅 16×16（1150 B）质量不达标；
+  // 吉祥物图不是 logo；站点头部 logo 是雪碧图区域且直链超时；图标字体无
+  // 图片文件。解阻塞二选一：浏览器端取材后复审定夺，或用户拍板接受 16px
+  // 原样。本批不放占位图，该站仍走字母徽标兜底。
+  // Khan Academy 仅 32px：首页被机器人验证墙拦截，可达的唯一官方标即
+  // 32×32 站方 favicon，原样落盘；更大品牌标须浏览器端取材或接受 32px。
+  // 慕课网间歇验证墙：favicon 直链约 1/3 概率返回机器人检查页，正确字节
+  // 稳定（复验 3 次 2 次命中，md5 与首轮一致）；复核命中检查页请重试，
+  // 不要一次墙就判失败。宽版白字 wordmark logo.png（128×40）已排除，
+  // 改用 48×48 火焰 favicon，勿以 wordmark 替换。
+  // AFFiNE 白底圆角方块：实测 affine.png 96×96、透明像素仅 760/9216
+  // （四角透明圆角、底色近白 252–253），深色底上清晰可见，本批不加
+  // 底块、不改组件。（原“黑色线稿透明底、深色对比度弱”按实测更正。）
+  // SVG 3 站（obsidian / tldraw / xmind）为官网首页声明的 favicon 原样，
+  // 本机无渲染器未做栅格渲染复核，留待复审在浏览器/浅深主题确认。
+  // MindManager：源 .ico 实为 PNG 50×45，按内容解码原样落盘 .png，
+  // 无 .ico 残留。学习强国：站方 favicon 内容为 PNG 30×30，原样落盘。
+  // 小尺寸原样站（源 <128 不放大）：32×32（石墨 / AppFlowy / Khan）、
+  // 96×96（AFFiNE）、50×45（MindManager）、64×64（ProcessOn）、
+  // 72×72（GitMind）、120×120（Skillshare）、48×48（慕课网）、
+  // 30×30（学习强国）。
+  'shimo.im': '/brand-icons/shimo.png',
+  'yuque.com': '/brand-icons/yuque.png',
+  'obsidian.md': '/brand-icons/obsidian.svg',
+  'appflowy.com': '/brand-icons/appflowy.png',
+  'affine.pro': '/brand-icons/affine.png',
+  'b3log.org': '/brand-icons/siyuan.png',
+  'excalidraw.com': '/brand-icons/excalidraw.png',
+  'xmind.cn': '/brand-icons/xmind.svg',
+  'mindmanager.com': '/brand-icons/mindmanager.png',
+  'processon.com': '/brand-icons/processon.png',
+  'gitmind.com': '/brand-icons/gitmind.png',
+  'tldraw.com': '/brand-icons/tldraw.svg',
+  'app.diagrams.net': '/brand-icons/diagrams.png',
+  'miro.com': '/brand-icons/miro.png',
+  'khanacademy.org': '/brand-icons/khanacademy.png',
+  'skillshare.com': '/brand-icons/skillshare.png',
+  'imooc.com': '/brand-icons/imooc.png',
+  'xuexi.cn': '/brand-icons/xuexi.png',
+  'runoob.com': '/brand-icons/runoob.png',
 }
 
 /**

@@ -55,6 +55,10 @@ export interface MyExamsApi {
   toggleFollow: (examId: string) => boolean
   /** 勾选 / 取消勾选一个节点；只对已关注考试生效，其余 no-op 返回 false */
   toggleNodeCheck: (examId: string, nodeLabel: string) => boolean
+  /** 时刻提醒开关快照：键 `${examId}:${nodeLabel}` → 是否已设提醒（R12：与关注/勾选同款本机保存，但分键存放，键在 hook 内定义） */
+  reminders: ExamReminders
+  /** 切换某节点的时刻提醒；写操作读共享现态、不读调用方闭包里的旧快照 */
+  toggleReminder: (examId: string, nodeLabel: string) => boolean
   /** 同步成功后用合并结果整体替换本地（云端是事实源），并清脏标记 */
   replaceAll: (state: MyExamsState) => boolean
   /** 重置本地：先备份原值再清空；返回 { backedUp } */
@@ -288,6 +292,8 @@ export function useMyExams(): MyExamsApi {
 
   const resetLocal = useCallback(() => resetMyExamsLocal(), [])
 
+  const { reminders, toggleReminder } = useExamReminders()
+
   return {
     state,
     ready,
@@ -300,5 +306,143 @@ export function useMyExams(): MyExamsApi {
     toggleNodeCheck,
     replaceAll,
     resetLocal,
+    reminders,
+    toggleReminder,
   }
+}
+
+/* ---------------------------- 时刻提醒（共享，R12） ---------------------------- */
+
+/**
+ * 时刻提醒开关：原先在 my-exam-tracker 岛内直调 localStorage（W2 引入），
+ * 违反 my-exams 守卫「岛接共享 hook，岛内无直接 localStorage 调用」，
+ * 且每场卡片各持一份 useState、写回时用本实例闭包旧快照整份覆盖——
+ * 交错点提醒会互相丢更新（与旧关注快照同款竞态）。改走本共享 hook，
+ * 与关注/勾选同一纪律：模块级共享快照 + useSyncExternalStore，
+ * 写操作读模块级共享现态。
+ *
+ * 键与值语义与旧岛实现一致，不迁移、不改键：
+ *  - 键 exam-node-reminders-v1，与关注/勾选键分键存放；MyExamsState 结构不动，
+ *    老用户已存的提醒按原键继续读。
+ *  - 值 Record<`${examId}:${nodeLabel}`, boolean>；toggle 取反、false 值保留在
+ *    表里（不删键），与旧 setReminders(prev => ({ ...prev, [key]: !prev[key] })) 一致。
+ *  - 旧岛读时机是首渲染同步读、写时机是 reminders 变化后 effect 整份写回；
+ *    新 hook 首渲染经 getSnapshot 懒加载读到同一值，写只在 toggle 当刻同步整份
+ *    写回（不再每次挂载都无谓回写一次；损坏 JSON 读作 {}，与旧 catch 一致；
+ *    写失败静默放弃、内存态仍有效，与旧 effect 的 try/catch 一致）。
+ */
+
+/** 时刻提醒存储键。改键 = 老用户已设的提醒凭空消失，不许改。 */
+export const EXAM_REMINDER_STORAGE_KEY = 'exam-node-reminders-v1'
+
+/** 时刻提醒快照：键 `${examId}:${nodeLabel}` → 是否已设提醒。 */
+export type ExamReminders = Record<string, boolean>
+
+export function loadExamRemindersLocal(): ExamReminders {
+  if (typeof window === 'undefined') return {}
+  let raw: string | null
+  try {
+    raw = window.localStorage.getItem(EXAM_REMINDER_STORAGE_KEY)
+  } catch {
+    return {}
+  }
+  if (raw === null) return {}
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return {}
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+  const out: ExamReminders = {}
+  for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof v === 'boolean') out[k] = v
+  }
+  return out
+}
+
+export function saveExamRemindersLocal(reminders: ExamReminders): void {
+  try {
+    window.localStorage.setItem(EXAM_REMINDER_STORAGE_KEY, JSON.stringify(reminders))
+  } catch {
+    // 存储满 / 隐私模式：内存态仍然有效，刷新丢失（与旧岛 effect 的静默放弃一致）。
+  }
+}
+
+let sharedReminders: ExamReminders | null = null
+let remindersSnapshot: ExamReminders = {}
+let remindersInitialized = false
+const reminderListeners = new Set<() => void>()
+
+export function applyExamReminders(next: ExamReminders): void {
+  sharedReminders = next
+  remindersSnapshot = next
+  for (const listener of reminderListeners) listener()
+}
+
+export function subscribeExamReminders(listener: () => void): () => void {
+  reminderListeners.add(listener)
+  return () => {
+    reminderListeners.delete(listener)
+  }
+}
+
+/** 首渲染懒加载：与旧岛 useState 初始读同一时刻读到同一值；服务端返回空快照。 */
+export function getExamRemindersSnapshot(): ExamReminders {
+  if (sharedReminders === null && !remindersInitialized) {
+    remindersInitialized = true
+    sharedReminders = loadExamRemindersLocal()
+    remindersSnapshot = sharedReminders
+  }
+  return remindersSnapshot
+}
+
+export function getExamRemindersServerSnapshot(): ExamReminders {
+  return {}
+}
+
+/** 跨 tab / 跨组件刷新：重新读存储并应用（storage 事件与工作台事件共用） */
+export function refreshExamRemindersFromStorage(): void {
+  applyExamReminders(loadExamRemindersLocal())
+}
+
+/**
+ * 切换某节点的时刻提醒。写前读模块级共享现态（不是调用方闭包里的旧快照），
+ * 十一场卡片交错点也不会互相覆盖。
+ */
+export function toggleExamReminder(examId: string, nodeLabel: string): boolean {
+  const current = sharedReminders ?? loadExamRemindersLocal()
+  const key = `${examId}:${nodeLabel}`
+  const next = { ...current, [key]: !current[key] }
+  applyExamReminders(next)
+  saveExamRemindersLocal(next)
+  return true
+}
+
+export function useExamReminders(): {
+  reminders: ExamReminders
+  toggleReminder: (examId: string, nodeLabel: string) => boolean
+} {
+  const reminders = useSyncExternalStore(
+    subscribeExamReminders,
+    getExamRemindersSnapshot,
+    getExamRemindersServerSnapshot,
+  )
+
+  useEffect(() => {
+    const refresh = () => refreshExamRemindersFromStorage()
+    window.addEventListener('navhub_workbench_updated', refresh)
+    window.addEventListener('storage', refresh)
+    return () => {
+      window.removeEventListener('navhub_workbench_updated', refresh)
+      window.removeEventListener('storage', refresh)
+    }
+  }, [])
+
+  const toggleReminder = useCallback(
+    (examId: string, nodeLabel: string) => toggleExamReminder(examId, nodeLabel),
+    [],
+  )
+
+  return { reminders, toggleReminder }
 }

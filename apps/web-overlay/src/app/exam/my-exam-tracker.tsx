@@ -19,8 +19,7 @@ import { safeHref } from '@/lib/safe-url'
 import { ExamVerificationBadge } from '@/components/exam-verification-badge'
 import { isPeakEligible } from '@/lib/exam-verification'
 
-/** 时刻提醒本地开关（本机 localStorage，与关注/勾选同款存放；未核实节点不提供入口）。 */
-const REMINDER_STORAGE_KEY = 'exam-node-reminders-v1'
+/** 时刻提醒开关走共享 hook useMyExams（R12，存储键在 hook 内定义；未核实节点不提供入口）。 */
 
 const NODE_DOT_CLASS: Record<string, string> = {
   done: 'bg-muted-foreground/40',
@@ -39,6 +38,7 @@ const NODE_DOT_CLASS: Record<string, string> = {
  * 不阻塞用户看时间轴。
  *
  * 状态走共享 hook useMyExams：十一场卡片与首页条带共用同一份模块级快照，
+ * 时刻提醒同款走该 hook（R12，岛内不再直调 localStorage）；
  * 写操作读共享现态、不读本实例闭包里的旧快照——交错点关注/勾选不再
  * 互相覆盖；存储读坏时 hook 拒写并把原因交回界面。
  */
@@ -61,7 +61,10 @@ function nodeLinkCopy(label: string): { text: string; ariaAction: string } {
 }
 
 export function MyExamTracker({ exam }: { exam: ExamInfo }) {
-  const { state, storageBlocked, toggleFollow, toggleNodeCheck } = useMyExams()
+  // R12：时刻提醒也走共享 hook（与关注/勾选同一份模块级快照纪律）。
+  // 默认值只容错未提供提醒字段的测试桩；正式 hook 恒返回提醒快照与切换函数。
+  const { state, storageBlocked, toggleFollow, toggleNodeCheck, reminders = {}, toggleReminder } =
+    useMyExams()
 
   // U-235：60 秒 tick——常驻 /exam 过 18:00 不翻「已截止」是旧 bug；每分钟
   // 按绝对截止时刻重算行文案（examNodeDeadlineLabel），非累减倒计时。
@@ -73,29 +76,6 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
   }, [])
 
   const followed = state !== null && isFollowed(state, exam.id)
-  const [reminders, setReminders] = useState<Record<string, boolean>>(() => {
-    try {
-      if (typeof window === 'undefined') return {}
-      return JSON.parse(localStorage.getItem(REMINDER_STORAGE_KEY) ?? '{}') as Record<
-        string,
-        boolean
-      >
-    } catch {
-      return {}
-    }
-  })
-  useEffect(() => {
-    try {
-      localStorage.setItem(REMINDER_STORAGE_KEY, JSON.stringify(reminders))
-    } catch {
-      // 存储不可用时静默放弃，不阻塞看时间轴。
-    }
-  }, [reminders])
-
-  function toggleReminder(nodeLabel: string) {
-    const key = `${exam.id}:${nodeLabel}`
-    setReminders((prev) => ({ ...prev, [key]: !prev[key] }))
-  }
   const ended = examStatus(exam, now) === 'ended'
   // R1（2026-11-17）：统考已过但节点仍可办时（成考 11-18 的成绩查询），
   // 卡片行文不写裸「已结束」，改按统考 scoped 文案并指向下方节点；
@@ -222,7 +202,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
                 reminderEligible ? (
                   <button
                     type="button"
-                    onClick={() => toggleReminder(node.label)}
+                    onClick={() => toggleReminder?.(exam.id, node.label)}
                     aria-pressed={reminderOn}
                     aria-label={reminderOn ? `取消${node.label}时刻提醒` : `设置${node.label}时刻提醒`}
                     className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap text-sm font-medium text-sky-700 hover:underline dark:text-sky-400"

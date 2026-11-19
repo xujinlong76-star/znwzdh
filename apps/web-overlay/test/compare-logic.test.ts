@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  alternativeSiteIds,
   buildCompareConclusion,
   buildCompareHref,
   COMPARE_NOTES_KEY,
@@ -129,6 +130,11 @@ describe('格子归一化与差异判定', () => {
       maintenance: cell('可达'),
       note: cell(null),
       migration: cell(null),
+      // 档案四格（F8）：本用例的两站均无档案行，四格一律未验证
+      best_for: cell(null, false, null),
+      not_for: cell(null, false, null),
+      license: cell(null, false, null),
+      alternatives: cell(null, false, null),
     }
     const items = [
       { siteId: 'a', title: 'A', url: 'https://a.example', ...base },
@@ -220,6 +226,84 @@ describe('接口返回归一化', () => {
     expect(normalizeComparisonItems(null)).toEqual([])
     expect(normalizeComparisonItems({ ok: true, items: 'not-an-array' })).toEqual([])
     expect(normalizeComparisonItems({ ok: true, items: [] })).toEqual([])
+  })
+})
+
+describe('档案四格归一化（Batch0-02 R10 视图层 F8）', () => {
+  const verifiedProfile = {
+    best_for: { value: '个人轻量写作', source: '站点档案', verified: true, verifiedAt: 1795000000000 },
+    not_for: { value: '不支持团队协作', source: '站点档案', verified: true, verifiedAt: 1795000000000 },
+    license: { value: 'MIT', source: '站点档案', verified: true, verifiedAt: 1795000000000 },
+    alternatives: { value: ['nav-b', 'nav-c'], source: '站点档案', verified: true, verifiedAt: 1795000000000 },
+  }
+
+  it('verified 四格透传值 / 来源 / verified / verifiedAt（含 alternatives 数组）', () => {
+    const item = normalizeComparisonItem({ siteId: 'a', title: 'A', url: 'https://a.example', ...verifiedProfile })
+    expect(item?.best_for).toEqual({ value: '个人轻量写作', source: '站点档案', verified: true, verifiedAt: 1795000000000, lastCheckedAt: null, stale: undefined, sourceUrl: null, amountMinor: undefined, currency: undefined, period: undefined, freeTierLimit: null })
+    expect(item?.not_for.value).toBe('不支持团队协作')
+    expect(item?.license.value).toBe('MIT')
+    expect(item?.alternatives.value).toEqual(['nav-b', 'nav-c'])
+    expect(item?.alternatives.verified).toBe(true)
+    expect(item?.alternatives.verifiedAt).toBe(1795000000000)
+  })
+
+  it('缺失四格补 verified:false、value:null，不编造值', () => {
+    const item = normalizeComparisonItem({ siteId: 'a', title: 'A', url: 'https://a.example' })
+    for (const key of ['best_for', 'not_for', 'license', 'alternatives'] as const) {
+      expect(item?.[key].value).toBe(null)
+      expect(item?.[key].verified).toBe(false)
+      expect(item?.[key].verifiedAt).toBe(null)
+    }
+  })
+
+  it('draft 行按缺失处理：verified:false 的格不被当成已验证（视图据此灰显）', () => {
+    // 服务端只传 verified 行；draft 行到前端即 verified:false 形态，值不得被采信
+    const item = normalizeComparisonItem({
+      siteId: 'a',
+      title: 'A',
+      url: 'https://a.example',
+      best_for: { value: '草稿不应显示', source: '站点档案', verified: false, verifiedAt: null },
+      alternatives: { value: ['nav-b'], source: '站点档案', verified: false, verifiedAt: null },
+    })
+    expect(item?.best_for.verified).toBe(false)
+    expect(alternativeSiteIds(item?.best_for)).toEqual([])
+    expect(alternativeSiteIds(item?.alternatives)).toEqual([])
+  })
+
+  it('alternatives 只有 verified 时才出 id 列表（去重、去空），未验证返回 []', () => {
+    expect(alternativeSiteIds(cell(['nav-b', 'nav-c', 'nav-b', ' '])))
+      .toEqual(['nav-b', 'nav-c'])
+    expect(alternativeSiteIds(cell(['nav-b'], false))).toEqual([])
+    expect(alternativeSiteIds(cell(null, false))).toEqual([])
+    expect(alternativeSiteIds(undefined)).toEqual([])
+    expect(alternativeSiteIds(cell('不是数组'))).toEqual([])
+  })
+
+  it('cells 包裹形态同样透传四格', () => {
+    const item = normalizeComparisonItem({
+      siteId: 'a',
+      title: 'A',
+      url: 'https://a.example',
+      cells: { best_for: { value: '个人轻量写作', source: '站点档案', verified: true, verifiedAt: 1 } },
+    })
+    expect(item?.best_for.value).toBe('个人轻量写作')
+    expect(item?.best_for.verified).toBe(true)
+    expect(item?.license.value).toBe(null)
+    expect(item?.license.verified).toBe(false)
+  })
+
+  it('四格参与差异判定：值不同即整行差异', () => {
+    const a = normalizeComparisonItem({ siteId: 'a', title: 'A', url: 'https://a.example', ...verifiedProfile })
+    const b = normalizeComparisonItem({
+      siteId: 'b',
+      title: 'B',
+      url: 'https://b.example',
+      ...verifiedProfile,
+      license: { value: 'Apache-2.0', source: '站点档案', verified: true, verifiedAt: 1795000000000 },
+    })
+    expect(a && b && compareRowDiffers([a, b], 'license')).toBe(true)
+    expect(a && b && compareRowDiffers([a, b], 'best_for')).toBe(false)
+    expect(a && b && compareRowDiffers([a, b], 'alternatives')).toBe(false)
   })
 })
 

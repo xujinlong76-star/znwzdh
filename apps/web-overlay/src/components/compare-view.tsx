@@ -7,10 +7,15 @@
  * 匿名调接口会 401/404——这里报诚实错误，不渲染空表。
  *
  * 呈现约定（设计 §3.3 + 评审判定）：
- *   - 并排对照：行 = 6 个维度，列 = 站点（2–4 列）；移动端卡片堆叠
+ *   - 并排对照：行 = 7 个维度 + 档案四格（Batch0-02 §8.3：适用 best_for/not_for、
+ *     数据 license、替代 alternatives；四格在价格行之后、平台行之前），
+ *     列 = 站点（2–4 列）；移动端卡片堆叠
  *     `grid-cols-1 md:grid-cols-2 xl:grid-cols-4`（断点 md 768px / xl 1280px；
  *     4 列只在 xl（1280px+）展开，md/lg 保持 2 列——lg 4 列每卡过挤）；
  *   - 每格 = 值 + 来源 + 日期，缺失显式“未验证”，不填充模板句；
+ *     档案四格只有 `verified === true` 才出值（best_for/not_for 原文、license 值、
+ *     alternatives 站名列表点进目标站）；`verified === false`（含 draft 行）的格
+ *     灰显“未验证”，不编造值；
  *   - 差异高亮只高亮“值不同”的行（复用 `border-primary/40 + bg-primary/5`），
  *     不标谁赢、无 `winner`；
  *   - 分流结论只写按场景分流的一句话，注明依据是哪几个格子；结论只能引用
@@ -23,17 +28,19 @@
  * 不进 `/compare` 首屏 chunk。
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { getApiToken, hubUrl } from '@/lib/navhub-api'
 import { safeHref } from '@/lib/safe-url'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import {
+  alternativeSiteIds,
   COMPARE_DIMENSIONS,
   COMPARE_SCENARIOS,
   PRICE_CURRENCIES,
   PRICE_PERIODS,
+  PROFILE_DIMENSIONS,
   buildCompareConclusion,
   compareRowDiffers,
   deleteCompareNote,
@@ -55,6 +62,7 @@ import {
   type CompareDimensionKey,
   type CompareScenarioKey,
   type PriceScrapeCandidate,
+  type ProfileDimensionKey,
   type SavedCompareNote,
   type VerifyStatusResult,
 } from '@/lib/compare'
@@ -155,10 +163,70 @@ function CellValue({ cell, dimensionKey }: { cell: ComparisonCell; dimensionKey:
   )
 }
 
+/**
+ * 档案四格的格子值（Batch0-02 §8.3，F8）。
+ * 只有 `verified === true` 且有值才出值：best_for/not_for/license 出原文，
+ * alternatives 出站名列表（每站名点进 `/site/<id>` 目标站，标题按 id 懒取，
+ * 取不到只显示站内 id，不编造站名）；`verified === false`（缺失 / draft 行）
+ * 一律灰显“未验证”，不编造值、不画占位文案。
+ */
+function ProfileCellValue({
+  cell,
+  dimensionKey,
+  alternativeTitles,
+}: {
+  cell: ComparisonCell
+  dimensionKey: ProfileDimensionKey
+  alternativeTitles: Readonly<Record<string, string>>
+}) {
+  const date = formatVerifiedDate(cell.verifiedAt)
+  const altIds = dimensionKey === 'alternatives' ? alternativeSiteIds(cell) : []
+  const shown = dimensionKey === 'alternatives' ? altIds.length > 0 : cell.verified === true && formatCellValue(cell) !== '未验证'
+  if (!shown) {
+    return (
+      <div className="min-w-0 opacity-60">
+        <div className="text-sm text-foreground break-words">未验证</div>
+        <div className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+          {cell.source ? `来源：${cell.source}` : '来源未标注'}
+          {date ? ` · 核实于 ${date}` : ''}
+          {' · 未验证'}
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="min-w-0">
+      {dimensionKey === 'alternatives' ? (
+        <ul className="space-y-1">
+          {altIds.map((id) => (
+            <li key={id}>
+              <Link
+                href={`/site/${encodeURIComponent(id)}`}
+                className="text-sm text-primary hover:underline break-words"
+              >
+                {alternativeTitles[id] ?? id}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="text-sm text-foreground break-words">{formatCellValue(cell)}</div>
+      )}
+      <div className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+        {cell.source ? `来源：${cell.source}` : '来源未标注'}
+        {date ? ` · 核实于 ${date}` : ''}
+      </div>
+    </div>
+  )
+}
+
 export function CompareView({ siteIds }: { siteIds: string[] }) {
   const [items, setItems] = useState<ComparisonItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+
+  // 档案四格（F8）：alternatives 的站内 id → 站名（按 id 懒取，取不到显示 id，不编造站名）
+  const [alternativeTitles, setAlternativeTitles] = useState<Record<string, string>>({})
 
   // 刷新验证（P2-1）：逐站 loading / 结果文案 / robots 禁抓本机记忆
   const [verifyingIds, setVerifyingIds] = useState<Record<string, boolean>>({})
@@ -224,6 +292,45 @@ export function CompareView({ siteIds }: { siteIds: string[] }) {
       cancelled = true
     }
   }, [siteIds.join(','), reloadToken])
+
+  // 档案四格（F8）：alternatives 只存站内 id，站名按 id 向 GET /api/sites/:id 懒取；
+  // 取不到（404/网络失败）不编造站名，渲染时回落显示站内 id。
+  useEffect(() => {
+    if (!items) return
+    const ids = [...new Set(items.flatMap((item) => alternativeSiteIds(item.alternatives)))]
+    if (ids.length === 0) return
+    let cancelled = false
+    const token = getApiToken()
+    void Promise.all(
+      ids.map(async (id) => {
+        try {
+          const res = await fetch(hubUrl('/api/sites/' + encodeURIComponent(id)), {
+            headers: {
+              Accept: 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+          })
+          if (!res.ok) return null
+          const body: unknown = await res.json()
+          const title =
+            body && typeof body === 'object' && typeof (body as Record<string, unknown>).title === 'string'
+              ? ((body as Record<string, unknown>).title as string).trim()
+              : ''
+          return title ? { id, title } : null
+        } catch {
+          return null
+        }
+      }),
+    ).then((found) => {
+      if (cancelled) return
+      const next: Record<string, string> = {}
+      for (const entry of found) if (entry) next[entry.id] = entry.title
+      if (Object.keys(next).length > 0) setAlternativeTitles((prev) => ({ ...prev, ...next }))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [items])
 
   const siteTitles = useMemo(() => {
     const map: Record<string, string> = {}
@@ -658,13 +765,13 @@ export function CompareView({ siteIds }: { siteIds: string[] }) {
                 const differs = compareRowDiffers(items, dim.key)
                 const cell = item[dim.key]
                 return (
-                  <div
-                    key={dim.key}
-                    className={cn(
-                      'rounded-lg px-2.5 py-2',
-                      differs && 'border border-primary/40 bg-primary/5',
-                    )}
-                  >
+                  <Fragment key={dim.key}>
+                    <div
+                      className={cn(
+                        'rounded-lg px-2.5 py-2',
+                        differs && 'border border-primary/40 bg-primary/5',
+                      )}
+                    >
                     <dt className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
                       {dim.label}
                       {differs && (
@@ -897,7 +1004,47 @@ export function CompareView({ siteIds }: { siteIds: string[] }) {
                         </div>
                       )}
                     </dd>
-                  </div>
+                    </div>
+                    {/* 档案四格（Batch0-02 §8.3，F8）：在价格行之后、平台行之前，按适用 / 数据 / 替代分组 */}
+                    {dim.key === 'price' &&
+                      PROFILE_DIMENSIONS.map((pdim) => {
+                        const profileDiffers = compareRowDiffers(items, pdim.key)
+                        const profileCell = item[pdim.key]
+                        const showGroupCaption =
+                          pdim.key === 'best_for' || pdim.key === 'license' || pdim.key === 'alternatives'
+                        return (
+                          <Fragment key={pdim.key}>
+                            {showGroupCaption && (
+                              <div className="pt-1 text-[10px] font-semibold tracking-wide text-muted-foreground">
+                                {pdim.group}
+                              </div>
+                            )}
+                            <div
+                              className={cn(
+                                'rounded-lg px-2.5 py-2',
+                                profileDiffers && 'border border-primary/40 bg-primary/5',
+                              )}
+                            >
+                              <dt className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                                {pdim.label}
+                                {profileDiffers && (
+                                  <span className="px-1.5 py-px rounded text-[10px] font-semibold bg-primary/10 text-primary border border-primary/30">
+                                    差异
+                                  </span>
+                                )}
+                              </dt>
+                              <dd className="mt-1">
+                                <ProfileCellValue
+                                  cell={profileCell}
+                                  dimensionKey={pdim.key}
+                                  alternativeTitles={alternativeTitles}
+                                />
+                              </dd>
+                            </div>
+                          </Fragment>
+                        )
+                      })}
+                  </Fragment>
                 )
               })}
             </dl>

@@ -909,12 +909,16 @@ describe('W2：搜索面板与本机备份的诚实接线（预设密度 / 导�
     expect(palette).not.toContain("{isEditingLayout ? 'Esc' : 'E'}")
   })
 
-  it('特征掩码里 DIY 悬浮按钮的标题与描述都说 Ctrl/Cmd+E，不说裸 E', () => {
+  it('特征掩码里 DIY 入口的标题与描述都说 Ctrl/Cmd+E，不说裸 E', () => {
     const store = overlayFile('src/lib/modular/feature-mask-store.ts')
-    expect(store).toContain("title: '右下角 [DIY 排版工坊 Ctrl/⌘+E] 悬浮按钮'")
+    // U-155（2026-11-19）：旧文案「右下角悬浮按钮」已失实——44394500 后静息态
+    // FAB 永不渲染，DIY 入口现为工具栏「DIY 排版」按钮；只改措辞，测试意图
+    // （快捷键须写 Ctrl/Cmd+E，不写裸 E）不动。
+    expect(store).toContain("title: 'DIY 排版工坊入口组件 [Ctrl/⌘+E]'")
     expect(store).toContain('仍可随时按 Ctrl/Cmd+E 呼出恢复中心')
     expect(store).not.toContain('按键盘 E 键呼出恢复中心')
     expect(store).not.toContain('[DIY 排版工坊 E] 悬浮按钮')
+    expect(store).not.toContain('右下角 [DIY 排版工坊 Ctrl/⌘+E] 悬浮按钮')
   })
 
   it('本机备份还原：先校验、再看 commit 返回值，个数按落地那份算', () => {

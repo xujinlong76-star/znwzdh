@@ -204,8 +204,12 @@ export const L4_FEATURE_CATALOG: readonly FeatureCatalogDefinition[] = [
   {
     id: 'feat:diy-fab',
     level: 'L4_FEATURE',
-    title: '右下角 [DIY 排版工坊 Ctrl/⌘+E] 悬浮按钮',
-    description: '隐藏右下角常驻悬浮按钮（仍可随时按 Ctrl/Cmd+E 呼出恢复中心）',
+    // U-155（2026-11-19）：旧文案「右下角悬浮按钮」已失实——44394500 后静息态
+    // FAB 永不渲染（HomeDIYTrigger 带 hideStaticButton 挂载），该条目实际控制
+    // 的是 DIY 入口组件挂载（分享确认对话框与存储告警条）；DIY 入口现为工具栏
+    // 「DIY 排版」按钮 → 外观小窗 →「开启 DIY」。快捷键措辞不动。
+    title: 'DIY 排版工坊入口组件 [Ctrl/⌘+E]',
+    description: '隐藏 DIY 入口组件（分享确认对话框与存储告警，仍可随时按 Ctrl/Cmd+E 呼出恢复中心）',
     parentTitle: 'L4 交互与实验室特性',
   },
 ] as const

@@ -1853,5 +1853,15 @@
   "pricing": "free",
   "evidence": "官网首页：100% free, forever；社区资助的非营利组织",
   "title": "Exercism"
+ },
+ "rottentomatoes.com": {
+  "pricing": "free",
+  "evidence": "官网首页全文可读、无订阅/付费档，/subscribe 404 无订阅页；免费广告支持模式，无公开付费档（App Store 标价 Free/0 USD，多家评测一致）",
+  "title": "Rotten Tomatoes"
+ },
+ "metacritic.com": {
+  "pricing": "free",
+  "evidence": "官网首页全文免登录可读、无付费墙、无订阅/定价页；首页 Premium 命中均为第三方流媒体频道名，非本站付费档（Wikipedia 登记 Free）",
+  "title": "Metacritic"
  }
 }

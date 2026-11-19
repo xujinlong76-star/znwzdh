@@ -4135,6 +4135,30 @@
                 "欧美电影",
                 "日记"
               ]
+            },
+            {
+              "id": "nav-bbdff16b81a9",
+              "title": "Rotten Tomatoes",
+              "href": "https://www.rottentomatoes.com",
+              "description": "全球最具影响力的影评聚合平台，Tomatometer 新鲜度评分",
+              "icon": "https://www.rottentomatoes.com/assets/pizza-pie/images/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "影评",
+                "评分"
+              ]
+            },
+            {
+              "id": "nav-6080a9435a89",
+              "title": "Metacritic",
+              "href": "https://www.metacritic.com",
+              "description": "权威媒体评分聚合，Metascore 百分制综合评分",
+              "icon": "https://www.metacritic.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "评分",
+                "综评"
+              ]
             }
           ]
         },

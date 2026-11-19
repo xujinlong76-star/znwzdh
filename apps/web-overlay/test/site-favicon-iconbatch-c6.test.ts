@@ -44,7 +44,8 @@ import { LOCAL_LOGO_MAP, resolveSiteIcon } from '../src/components/site-favicon'
  * 事实钉死（只记、不加底块、不改组件）：
  * - 亚马逊走 '亚马逊' 标题规则（map 精确查找之前），'amazon.com' 键绝不加：
  *   后缀匹配会让 C11 的 AWS WAF（aws.amazon.com）串站解析为 amazon.png。
- *   子串 '亚马逊' 全库 365 站标题仅命中亚马逊一站；AWS WAF 仍解析为空串。
+ *   子串 '亚马逊' 全库 365 站标题仅命中亚马逊一站；AWS WAF 由 C11 落地、
+ *   解析为 aws-waf.svg（期望已随 C11 同步改）。
  * - 亚马逊与百度地图源 ICO 字节同为 15,086 B 属巧合（48px BMP 帧定长）；
  *   提取出的 48px PNG 帧 md5 不同（amazon 89fa9c6a… / baidumap dec3cd3d…），
  *   拼图目视分别为笑脸标与图钉标，无串站。
@@ -152,8 +153,9 @@ describe('resolveSiteIcon（图标修复 C 类第 6 批）', () => {
     // 'amazon.com' 键绝不进 map（后缀匹配会误伤 aws.amazon.com）
     expect('amazon.com' in LOCAL_LOGO_MAP).toBe(false)
     expect(resolveSiteIcon('https://www.amazon.com', '亚马逊', 'https://www.amazon.com/favicon.ico')).toBe('/brand-icons/amazon.png')
-    // AWS WAF（C11 未做）仍解析为空串，不被亚马逊标误指
-    expect(resolveSiteIcon('https://aws.amazon.com/waf/', 'AWS WAF', 'https://aws.amazon.com/favicon.ico')).toBe('')
+    // AWS WAF（C11 已落地）解析为 aws-waf.svg，不被亚马逊标误指；
+    // 期望已随 C11 同步改（仿 C4 同步改 C1 测试的 Trending 期望）
+    expect(resolveSiteIcon('https://aws.amazon.com/waf/', 'AWS WAF', 'https://aws.amazon.com/favicon.ico')).toBe('/brand-icons/aws-waf.svg')
   })
 
   it('事实钉死：亚马逊与百度地图同源字节、不同标、无串站', () => {

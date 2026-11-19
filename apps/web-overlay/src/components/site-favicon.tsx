@@ -648,6 +648,51 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'sketch.com': '/brand-icons/sketch.png',
   'penpot.app': '/brand-icons/penpot.png',
   'pixso.cn': '/brand-icons/pixso.png',
+  // 2026-11-19（C 类第 11 批 C11，17/20）：Mixkit / Storyblocks / iStock /
+  // Pinterest / Awwwards / Mobbin / Iconify / Dafont / Lucide / Uiverse /
+  // Chakra UI / npmmirror / Turbo / 中国天气网 / 生态环境部 /
+  // 全国排污许可证管理信息平台 / AWS WAF。
+  // 3 站阻塞未入：Pexels / Pixabay（403 Cloudflare 机器人墙）、
+  // SiteInspire（429 Vercel 检查点），本次不接线、不放占位图。
+  // 17 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
+  // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 全库 367 站核对：本批 17 个 map 键各只命中 1 站，无后缀串站。
+  // 同域两站用完整 hostname 各建键，不互相覆盖：'mee.gov.cn'（生态环境部）
+  // 与 'permit.mee.gov.cn'（排污平台）；精确查找先于后缀匹配，
+  // permit.mee.gov.cn 命中自有键，不会串到 mee.png。
+  // 'aws.amazon.com' 键安全：'amazon.com' 未进 map（C6 注释钉死，
+  // 亚马逊走标题规则 '亚马逊'），后缀匹配无串站。
+  // npmmirror：源取 npmmirror.com 的 /favicon.ico；href 域名
+  // registry.npmmirror.com 的 /favicon.ico 回 73 B JSON（egg 默认路径
+  // 指针，非图标），已弃用，键仍按 href hostname 建
+  // 'registry.npmmirror.com'。
+  // AWS WAF：站方 favicon 为通用 AWS 标（非 WAF 专属），按 Adobe Color
+  // 判例未用；落盘为官方 AWS Architecture Icons 包内专属服务标
+  // Arch_AWS-WAF_64.svg 原样，来源类别待复审裁决（接受或改阻塞）。
+  // permit-mee.png 为灰色齿轮标（站方 /favicon.ico 实测返回），待复审
+  // 确认接受或阻塞。pinterest.svg 的 P 无 fill（默认黑色），深色主题
+  // 可见性风险留待规范 §9 统一处理轮，不擅自改。mobbin.svg 内嵌
+  // base64 PNG + 深色反色滤镜，按规范原样落盘。
+  // 小尺寸原样站（源 <128 不放大）：16×16（Mixkit / 生态环境部）、
+  // 32×32（Storyblocks / npmmirror / 中国天气网）、48×48（Dafont /
+  // Lucide / Uiverse / Chakra UI / 排污平台）。
+  'mixkit.co': '/brand-icons/mixkit.png',
+  'storyblocks.com': '/brand-icons/storyblocks.png',
+  'istockphoto.com': '/brand-icons/istockphoto.png',
+  'pinterest.com': '/brand-icons/pinterest.svg',
+  'awwwards.com': '/brand-icons/awwwards.svg',
+  'mobbin.com': '/brand-icons/mobbin.svg',
+  'iconify.design': '/brand-icons/iconify.svg',
+  'dafont.com': '/brand-icons/dafont.png',
+  'lucide.dev': '/brand-icons/lucide.png',
+  'uiverse.io': '/brand-icons/uiverse.png',
+  'chakra-ui.com': '/brand-icons/chakra-ui.png',
+  'registry.npmmirror.com': '/brand-icons/npmmirror.png',
+  'turborepo.dev': '/brand-icons/turborepo.png',
+  'weather.com.cn': '/brand-icons/weather.png',
+  'mee.gov.cn': '/brand-icons/mee.png',
+  'permit.mee.gov.cn': '/brand-icons/permit-mee.png',
+  'aws.amazon.com': '/brand-icons/aws-waf.svg',
 }
 
 /**

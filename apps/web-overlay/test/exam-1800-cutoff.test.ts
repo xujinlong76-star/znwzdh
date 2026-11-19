@@ -81,6 +81,21 @@
  * Date.UTC(2026, 10, 19, 10, 0, 0)。陷阱：绝不是京考/文职 11-18 18:00
  * （date 不同）；eol.cn 2025 口径（11-19 09:00–11-20 12:00 现场办理）
  * 与 2026 三处实质冲突，绝不复刻。
+ *
+ * U-222 追加（12 月峰值周末，2026-11-19）：查表加七行——浙江志愿确认
+ * 11-29 17:00、上海省考准考证 12-05 18:00、京考准考证 12-06 16:30、
+ * 山东准考证 12-06 14:15、浙江准考证 12-06 17:00、江苏准考证 12-06
+ * 15:00、文职准考证 12-13 14:00（七者 detail 原文所载窗口末时刻）。
+ * 上海自考成绩查询 12-18 16:00 不入表（U-163 定论：入表会在 11-19 当天
+ * 渲染「剩 700+ 小时」chip）。七目标时刻：11-29 17:00 =
+ * Date.UTC(2026, 10, 29, 9, 0, 0)；12-05 18:00 = Date.UTC(2026, 11, 5,
+ * 10, 0, 0)；12-06 16:30 = Date.UTC(2026, 11, 6, 8, 30, 0)；12-06
+ * 14:15 = Date.UTC(2026, 11, 6, 6, 15, 0)；12-06 17:00 =
+ * Date.UTC(2026, 11, 6, 9, 0, 0)；12-06 15:00 = Date.UTC(2026, 11, 6,
+ * 7, 0, 0)；12-13 14:00 = Date.UTC(2026, 11, 13, 6, 0, 0)。
+ * 陷阱：浙江志愿 17:00 绝不是浙江准考证 17:00（键与日期均不同）；京考
+ * 16:30 绝不是国考 11-29 15:00；山东 14:15 / 浙江 17:00 / 江苏 15:00
+ * 同场不同 label，键不同。
  */
 import { describe, expect, it } from 'vitest'
 import type { ExamInfo, ExamNode } from '../src/lib/exam-calendar'
@@ -337,9 +352,12 @@ describe('todayNodeDeadlineMs：七项目标时刻与日期守卫', () => {
   })
 
   it('表外节点与日期守卫：不在表里返回 undefined / null；同 label 但日期不覆盖 11-18 也不命中', () => {
-    const jingkaoAdmit = jingkao.nodes.find((n) => n.label === '准考证打印')!
-    expect(todayNodeDeadlineMs({ exam: jingkao, node: jingkaoAdmit, kind: 'endsToday' })).toBeUndefined()
-    expect(examNodeDeadlineLabel(jingkao, jingkaoAdmit, NOV_18_180000_CST)).toBeNull()
+    // U-222：京考准考证打印已入表（12-06 16:30），不再作表外例；改用教资面试
+    // 准考证打印（11-30→12-06，仅北京口径 16:00、各省不一，无全省统一截止）作表外例。
+    const jiaoshi = EXAMS.find((e) => e.id === 'jiaoshi-mianshi')!
+    const jiaoshiAdmit = jiaoshi.nodes.find((n) => n.label === '准考证打印')!
+    expect(todayNodeDeadlineMs({ exam: jiaoshi, node: jiaoshiAdmit, kind: 'endsToday' })).toBeUndefined()
+    expect(examNodeDeadlineLabel(jiaoshi, jiaoshiAdmit, NOV_18_180000_CST)).toBeNull()
     // 同 label「报名」但窗口在 11-19：守卫按 startISO/endISO 拦，不以 label 裸匹配
     const otherDayApply = { label: '报名', detail: '', startISO: '2026-11-19', endISO: '2026-11-19' }
     expect(todayNodeDeadlineMs({ exam: jingkao, node: otherDayApply, kind: 'today' })).toBeUndefined()
@@ -927,5 +945,235 @@ describe('U-158 成考三省复核 11-20 时刻门控（todayNodeDeadlineMs / ex
     expect(isNodeActionable(jxReview(), chengkao, NOV_20_173000_CST)).toBe(true)
     // 按 startISO 排序，首个可办的是新疆复核（11-18 起始的三省查分行均已 done）
     expect(nextExamNode(chengkao, NOV_20_173000_CST)?.label).toBe('新疆成绩复核')
+  })
+})
+
+describe('U-222 12 月峰值周末七节点时刻门控（todayNodeDeadlineMs / examNodeDeadlineLabel）', () => {
+  // 查找包成函数：实现未落盘时顶层 find 会在收集期抛错、整文件 0 跑；
+  // 各 it 内调用，失败只落本 it。
+  const shengkao = () => EXAMS.find((e) => e.id === 'shengkao')!
+  const shanghaiZikao = () => EXAMS.find((e) => e.id === 'shanghai-zikao')!
+  const zhejiangVolunteer = () => chengkao.nodes.find((n) => n.label === '浙江志愿确认')!
+  const shanghaiAdmit = () => shengkao().nodes.find((n) => n.label === '上海准考证打印')!
+  const shandongAdmit = () => shengkao().nodes.find((n) => n.label === '山东准考证打印')!
+  const zhejiangAdmit = () => shengkao().nodes.find((n) => n.label === '浙江准考证打印')!
+  const jiangsuAdmit = () => shengkao().nodes.find((n) => n.label === '江苏准考证打印')!
+  const jingkaoAdmit = () => jingkao.nodes.find((n) => n.label === '准考证打印')!
+  const junduiAdmit = () => jundui.nodes.find((n) => n.label === '准考证打印')!
+  const shanghaiQuery = () => shanghaiZikao().nodes.find((n) => n.label === '成绩查询')!
+  /** 2026-11-29 08:00 北京时间（浙江志愿确认末日白天） */
+  const NOV_29_0800_CST = Date.UTC(2026, 10, 29, 0, 0, 0)
+  /** 2026-11-29 16:59:59 北京时间 = UTC 08:59:59（浙江志愿确认边界前 1 秒） */
+  const NOV_29_165959_CST = Date.UTC(2026, 10, 29, 8, 59, 59)
+  /** 2026-11-29 17:00:00 北京时间 = UTC 09:00:00（浙江志愿确认目标时刻） */
+  const NOV_29_170000_CST = Date.UTC(2026, 10, 29, 9, 0, 0)
+  /** 2026-11-29 17:00:01 北京时间 = UTC 09:00:01（浙江志愿确认边界后 1 秒） */
+  const NOV_29_170001_CST = Date.UTC(2026, 10, 29, 9, 0, 1)
+  /** 2026-12-05 08:00 北京时间（上海省考准考证末日白天） */
+  const DEC_05_0800_CST = Date.UTC(2026, 11, 5, 0, 0, 0)
+  /** 2026-12-05 17:59:59 北京时间 = UTC 09:59:59（上海省考准考证边界前 1 秒） */
+  const DEC_05_175959_CST = Date.UTC(2026, 11, 5, 9, 59, 59)
+  /** 2026-12-05 18:00:00 北京时间 = UTC 10:00:00（上海省考准考证目标时刻） */
+  const DEC_05_180000_CST = Date.UTC(2026, 11, 5, 10, 0, 0)
+  /** 2026-12-05 18:00:01 北京时间 = UTC 10:00:01（上海省考准考证边界后 1 秒） */
+  const DEC_05_180001_CST = Date.UTC(2026, 11, 5, 10, 0, 1)
+  /** 2026-12-06 08:00 北京时间（12-06 峰值日白天） */
+  const DEC_06_0800_CST = Date.UTC(2026, 11, 6, 0, 0, 0)
+  /** 2026-12-06 14:14:59 北京时间 = UTC 06:14:59（山东准考证边界前 1 秒） */
+  const DEC_06_141459_CST = Date.UTC(2026, 11, 6, 6, 14, 59)
+  /** 2026-12-06 14:15:00 北京时间 = UTC 06:15:00（山东准考证目标时刻） */
+  const DEC_06_141500_CST = Date.UTC(2026, 11, 6, 6, 15, 0)
+  /** 2026-12-06 14:15:01 北京时间 = UTC 06:15:01（山东准考证边界后 1 秒） */
+  const DEC_06_141501_CST = Date.UTC(2026, 11, 6, 6, 15, 1)
+  /** 2026-12-06 14:59:59 北京时间 = UTC 06:59:59（江苏准考证边界前 1 秒） */
+  const DEC_06_145959_CST = Date.UTC(2026, 11, 6, 6, 59, 59)
+  /** 2026-12-06 15:00:00 北京时间 = UTC 07:00:00（江苏准考证目标时刻） */
+  const DEC_06_150000_CST = Date.UTC(2026, 11, 6, 7, 0, 0)
+  /** 2026-12-06 15:00:01 北京时间 = UTC 07:00:01（江苏准考证边界后 1 秒） */
+  const DEC_06_150001_CST = Date.UTC(2026, 11, 6, 7, 0, 1)
+  /** 2026-12-06 16:29:59 北京时间 = UTC 08:29:59（京考准考证边界前 1 秒） */
+  const DEC_06_162959_CST = Date.UTC(2026, 11, 6, 8, 29, 59)
+  /** 2026-12-06 16:30:00 北京时间 = UTC 08:30:00（京考准考证目标时刻） */
+  const DEC_06_163000_CST = Date.UTC(2026, 11, 6, 8, 30, 0)
+  /** 2026-12-06 16:30:01 北京时间 = UTC 08:30:01（京考准考证边界后 1 秒） */
+  const DEC_06_163001_CST = Date.UTC(2026, 11, 6, 8, 30, 1)
+  /** 2026-12-06 16:59:59 北京时间 = UTC 08:59:59（浙江准考证边界前 1 秒） */
+  const DEC_06_165959_CST = Date.UTC(2026, 11, 6, 8, 59, 59)
+  /** 2026-12-06 17:00:00 北京时间 = UTC 09:00:00（浙江准考证目标时刻） */
+  const DEC_06_170000_CST = Date.UTC(2026, 11, 6, 9, 0, 0)
+  /** 2026-12-06 17:00:01 北京时间 = UTC 09:00:01（浙江准考证边界后 1 秒） */
+  const DEC_06_170001_CST = Date.UTC(2026, 11, 6, 9, 0, 1)
+  /** 2026-12-13 08:00 北京时间（文职准考证末日白天） */
+  const DEC_13_0800_CST = Date.UTC(2026, 11, 13, 0, 0, 0)
+  /** 2026-12-13 13:59:59 北京时间 = UTC 05:59:59（文职准考证边界前 1 秒） */
+  const DEC_13_135959_CST = Date.UTC(2026, 11, 13, 5, 59, 59)
+  /** 2026-12-13 14:00:00 北京时间 = UTC 06:00:00（文职准考证目标时刻） */
+  const DEC_13_140000_CST = Date.UTC(2026, 11, 13, 6, 0, 0)
+  /** 2026-12-13 14:00:01 北京时间 = UTC 06:00:01（文职准考证边界后 1 秒） */
+  const DEC_13_140001_CST = Date.UTC(2026, 11, 13, 6, 0, 1)
+  /** 2026-12-18 08:00 北京时间（上海自考成绩查询末日白天） */
+  const DEC_18_0800_CST = Date.UTC(2026, 11, 18, 0, 0, 0)
+  /** 2026-12-18 16:00:00 北京时间 = UTC 08:00:00（上海自考成绩查询窗口关闭时刻，不入表） */
+  const DEC_18_160000_CST = Date.UTC(2026, 11, 18, 8, 0, 0)
+
+  it('七目标时刻毫秒值：浙江志愿 11-29 17:00、上海省考 12-05 18:00、京考 12-06 16:30、山东 12-06 14:15、浙江 12-06 17:00、江苏 12-06 15:00、文职 12-13 14:00', () => {
+    const byKey29 = new Map(
+      todayNodes(NOV_29_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey29.get('chengkao:浙江志愿确认')!)).toBe(
+      Date.UTC(2026, 10, 29, 9, 0, 0),
+    )
+    const byKey05 = new Map(
+      todayNodes(DEC_05_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey05.get('shengkao:上海准考证打印')!)).toBe(
+      Date.UTC(2026, 11, 5, 10, 0, 0),
+    )
+    const byKey06 = new Map(
+      todayNodes(DEC_06_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey06.get('jingkao:准考证打印')!)).toBe(
+      Date.UTC(2026, 11, 6, 8, 30, 0),
+    )
+    expect(todayNodeDeadlineMs(byKey06.get('shengkao:山东准考证打印')!)).toBe(
+      Date.UTC(2026, 11, 6, 6, 15, 0),
+    )
+    expect(todayNodeDeadlineMs(byKey06.get('shengkao:浙江准考证打印')!)).toBe(
+      Date.UTC(2026, 11, 6, 9, 0, 0),
+    )
+    expect(todayNodeDeadlineMs(byKey06.get('shengkao:江苏准考证打印')!)).toBe(
+      Date.UTC(2026, 11, 6, 7, 0, 0),
+    )
+    const byKey13 = new Map(
+      todayNodes(DEC_13_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey13.get('jundui-wenzhi:准考证打印')!)).toBe(
+      Date.UTC(2026, 11, 13, 6, 0, 0),
+    )
+  })
+
+  it('陷阱守卫四则：浙江志愿 17:00 ≠ 浙江准考证 17:00；京考 16:30 ≠ 国考 11-29 15:00；山东 14:15 / 浙江 17:00 / 江苏 15:00 键不同；上海省考 12-05 18:00 ≠ 上海自考 12-18 16:00（后者不入表）', () => {
+    const byKey29 = new Map(
+      todayNodes(NOV_29_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    const volunteer = todayNodeDeadlineMs(byKey29.get('chengkao:浙江志愿确认')!)
+    expect(volunteer).toBe(Date.UTC(2026, 10, 29, 9, 0, 0))
+    // 同为 17:00、不同键不同日期：志愿确认 11-29，准考证 12-06
+    expect(volunteer).not.toBe(Date.UTC(2026, 11, 6, 9, 0, 0))
+    const byKey06 = new Map(
+      todayNodes(DEC_06_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    const jingkaoMs = todayNodeDeadlineMs(byKey06.get('jingkao:准考证打印')!)
+    expect(jingkaoMs).toBe(Date.UTC(2026, 11, 6, 8, 30, 0))
+    // 京考 12-06 16:30 绝不是国考准考证 11-29 15:00（键与日期均不同）
+    expect(jingkaoMs).not.toBe(Date.UTC(2026, 10, 29, 7, 0, 0))
+    const shandong = todayNodeDeadlineMs(byKey06.get('shengkao:山东准考证打印')!)
+    const zhejiang = todayNodeDeadlineMs(byKey06.get('shengkao:浙江准考证打印')!)
+    const jiangsu = todayNodeDeadlineMs(byKey06.get('shengkao:江苏准考证打印')!)
+    expect(shandong).toBe(Date.UTC(2026, 11, 6, 6, 15, 0))
+    expect(zhejiang).toBe(Date.UTC(2026, 11, 6, 9, 0, 0))
+    expect(jiangsu).toBe(Date.UTC(2026, 11, 6, 7, 0, 0))
+    expect(shandong).not.toBe(zhejiang)
+    expect(shandong).not.toBe(jiangsu)
+    expect(zhejiang).not.toBe(jiangsu)
+    // 上海省考 12-05 18:00 与上海自考 12-18 16:00 是两场考试的两个窗口
+    const byKey05 = new Map(
+      todayNodes(DEC_05_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey05.get('shengkao:上海准考证打印')!)).toBe(
+      Date.UTC(2026, 11, 5, 10, 0, 0),
+    )
+    const byKey18 = new Map(
+      todayNodes(DEC_18_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey18.get('shanghai-zikao:成绩查询')!)).toBeUndefined()
+  })
+
+  it('边界七则：浙江志愿 16:59:59 null → 17:00:00「已截止」；上海省考 17:59:59 null → 18:00:00「已截止」；山东 14:14:59 null → 14:15:00「已截止」；江苏 14:59:59 null → 15:00:00「已截止」；京考 16:29:59 null → 16:30:00「已截止」；浙江 16:59:59 null → 17:00:00「已截止」；文职 13:59:59 null → 14:00:00「已截止」（各含后 1 秒）', () => {
+    expect(examNodeDeadlineLabel(chengkao, zhejiangVolunteer(), NOV_29_165959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, zhejiangVolunteer(), NOV_29_170000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(chengkao, zhejiangVolunteer(), NOV_29_170001_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(shengkao(), shanghaiAdmit(), DEC_05_175959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(shengkao(), shanghaiAdmit(), DEC_05_180000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(shengkao(), shanghaiAdmit(), DEC_05_180001_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(shengkao(), shandongAdmit(), DEC_06_141459_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(shengkao(), shandongAdmit(), DEC_06_141500_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(shengkao(), shandongAdmit(), DEC_06_141501_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(shengkao(), jiangsuAdmit(), DEC_06_145959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(shengkao(), jiangsuAdmit(), DEC_06_150000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(shengkao(), jiangsuAdmit(), DEC_06_150001_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(jingkao, jingkaoAdmit(), DEC_06_162959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(jingkao, jingkaoAdmit(), DEC_06_163000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(jingkao, jingkaoAdmit(), DEC_06_163001_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(shengkao(), zhejiangAdmit(), DEC_06_165959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(shengkao(), zhejiangAdmit(), DEC_06_170000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(shengkao(), zhejiangAdmit(), DEC_06_170001_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(jundui, junduiAdmit(), DEC_13_135959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(jundui, junduiAdmit(), DEC_13_140000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(jundui, junduiAdmit(), DEC_13_140001_CST)).toBe('已截止')
+    // 组合文案：七者皆为多日窗口末日 active → 边界前「进行中」、整点起「已截止」
+    expect(nodeDeadlineDisplayLabel(chengkao, zhejiangVolunteer(), NOV_29_165959_CST)).toBe('进行中')
+    expect(nodeDeadlineDisplayLabel(chengkao, zhejiangVolunteer(), NOV_29_170000_CST)).toBe('已截止')
+    expect(nodeDeadlineDisplayLabel(shengkao(), shanghaiAdmit(), DEC_05_175959_CST)).toBe('进行中')
+    expect(nodeDeadlineDisplayLabel(shengkao(), shanghaiAdmit(), DEC_05_180000_CST)).toBe('已截止')
+    expect(nodeDeadlineDisplayLabel(jingkao, jingkaoAdmit(), DEC_06_162959_CST)).toBe('进行中')
+    expect(nodeDeadlineDisplayLabel(jingkao, jingkaoAdmit(), DEC_06_163000_CST)).toBe('已截止')
+    expect(nodeDeadlineDisplayLabel(jundui, junduiAdmit(), DEC_13_135959_CST)).toBe('进行中')
+    expect(nodeDeadlineDisplayLabel(jundui, junduiAdmit(), DEC_13_140000_CST)).toBe('已截止')
+  })
+
+  it('上海自考成绩查询 12-18 16:00 不入表（U-163 定论，U-222 复核）：11-19 与 12-18 两日 todayNodeDeadlineMs 均为 undefined；12-18 16:00 helper 仍为 null', () => {
+    // U-163 复审必改 1 已定论：11-19 当天 chip 会渲染「剩 700+ 小时」；
+    // 12-18 16:00 虽是查询窗口真截止，但须先把 chip 改为仅目标日渲染方可入表。
+    const byKey19 = new Map(
+      todayNodes(NOV_19_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey19.get('shanghai-zikao:成绩查询')!)).toBeUndefined()
+    const byKey18 = new Map(
+      todayNodes(DEC_18_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey18.get('shanghai-zikao:成绩查询')!)).toBeUndefined()
+    expect(examNodeDeadlineLabel(shanghaiZikao(), shanghaiQuery(), DEC_18_160000_CST)).toBeNull()
+    expect(nodeDeadlineDisplayLabel(shanghaiZikao(), shanghaiQuery(), DEC_18_160000_CST)).toBe('进行中')
+  })
+
+  it('四日今日行 kind 分流：11-29 3 项、12-05 4 项、12-06 8 项、12-13 2 项（七节点末日皆为 endsToday）', () => {
+    const items29 = todayNodes(NOV_29_0800_CST)
+    expect(items29).toHaveLength(3)
+    const byKey29 = new Map(
+      items29.map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(byKey29.get('chengkao:浙江志愿确认')?.kind).toBe('endsToday')
+    const items05 = todayNodes(DEC_05_0800_CST)
+    expect(items05).toHaveLength(4)
+    const byKey05 = new Map(
+      items05.map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(byKey05.get('shengkao:上海准考证打印')?.kind).toBe('endsToday')
+    const items06 = todayNodes(DEC_06_0800_CST)
+    expect(items06).toHaveLength(8)
+    const byKey06 = new Map(
+      items06.map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(byKey06.get('jingkao:准考证打印')?.kind).toBe('endsToday')
+    expect(byKey06.get('shengkao:山东准考证打印')?.kind).toBe('endsToday')
+    expect(byKey06.get('shengkao:浙江准考证打印')?.kind).toBe('endsToday')
+    expect(byKey06.get('shengkao:江苏准考证打印')?.kind).toBe('endsToday')
+    const items13 = todayNodes(DEC_13_0800_CST)
+    expect(items13).toHaveLength(2)
+    const byKey13 = new Map(
+      items13.map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(byKey13.get('jundui-wenzhi:准考证打印')?.kind).toBe('endsToday')
+  })
+
+  it('时刻门控只在渲染层：目标时刻 examNodeStatus 仍按日期口径（七节点末日皆为 active）', () => {
+    expect(examNodeStatus(zhejiangVolunteer(), NOV_29_170000_CST)).toBe('active')
+    expect(examNodeStatus(shanghaiAdmit(), DEC_05_180000_CST)).toBe('active')
+    expect(examNodeStatus(shandongAdmit(), DEC_06_141500_CST)).toBe('active')
+    expect(examNodeStatus(jiangsuAdmit(), DEC_06_150000_CST)).toBe('active')
+    expect(examNodeStatus(jingkaoAdmit(), DEC_06_163000_CST)).toBe('active')
+    expect(examNodeStatus(zhejiangAdmit(), DEC_06_170000_CST)).toBe('active')
+    expect(examNodeStatus(junduiAdmit(), DEC_13_140000_CST)).toBe('active')
   })
 })

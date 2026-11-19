@@ -267,6 +267,48 @@ export const sitePrices = sqliteTable("site_prices", {
   index("site_prices_owner_site_idx").on(t.ownerIdentity, t.siteId),
 ]);
 
+/**
+ * 结构化档案字段（02-site-profiles §3.1）：一站一行。
+ *
+ * 自由文本与关系字段：best_for / not_for（≤140 字、禁最高级）、
+ * license（SPDX 或 LICENSE 文件 URL）、alternatives（JSON 数组，站内 id，
+ * ≤5 个）；行级 profile_source_url / profile_verified_at / verified_by。
+ * profile_status 只有 draft / verified 两态，默认 draft；过期不另设状态，
+ * 由 profile_verified_at 的年龄派生。档案字段绝不进 navigation.json。
+ */
+export const siteProfiles = sqliteTable("site_profiles", {
+  siteId: text("site_id").primaryKey().references(() => sites.id, { onDelete: "cascade" }),
+  bestFor: text("best_for"),
+  notFor: text("not_for"),
+  license: text("license"),
+  alternatives: text("alternatives"),
+  profileSourceUrl: text("profile_source_url").notNull(),
+  profileVerifiedAt: integer("profile_verified_at").notNull(),
+  verifiedBy: text("verified_by").notNull(),
+  profileStatus: text("profile_status").notNull().default("draft"),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+});
+
+/**
+ * 分面类字段的四元组载体（02-site-profiles §3.2）。
+ *
+ * site_facets 只有 (site_id, facet_key, facet_value) 三列，装不下来源与
+ * 核查日期；分面类字段的 {source_url, verified_at, verified_by} 住这里，
+ * 不改 site_facets 结构。pricing_model 的值住 site_facets.pricing，
+ * 其溯源行同样写这里。
+ */
+export const siteProfileProvenance = sqliteTable("site_profile_provenance", {
+  siteId: text("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+  fieldKey: text("field_key").notNull(),
+  sourceUrl: text("source_url").notNull(),
+  verifiedAt: integer("verified_at").notNull(),
+  verifiedBy: text("verified_by").notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.siteId, t.fieldKey] }),
+  index("site_profile_provenance_site_idx").on(t.siteId),
+]);
+
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   username: text("username").notNull(),
@@ -924,5 +966,6 @@ export const schema = {
   // 「schema 是单一事实源」名不副实——迁移脚本与 DDL 各写一份，drift 无从校验。
   identityAliases, identityMerges, userLlmConfigs, userSettings,
   comparisonSnapshots, sitePrices, comparisonSnapshotShares,
+  siteProfiles, siteProfileProvenance,
 };
 

@@ -56,6 +56,12 @@ export interface FacetBackfillReport {
   filledPricing: number;
   /** 本次新写入的 platform=web 行数。 */
   filledPlatform: number;
+  /** 本次新写入的 requires_account=unknown 行数（02-site-profiles）。 */
+  filledRequiresAccount: number;
+  /** 本次新写入的 free_trial=unknown 行数（02-site-profiles）。 */
+  filledFreeTrial: number;
+  /** 本次新写入的 data_export=unknown 行数（02-site-profiles）。 */
+  filledDataExport: number;
   /** 已有 pricing、本次跳过的站点数（保护人工标注）。 */
   alreadyLabeled: number;
   /** 新写入 pricing 的值分布。 */
@@ -72,6 +78,9 @@ export async function backfillDerivedFacets(
     scanned: sites.length,
     filledPricing: 0,
     filledPlatform: 0,
+    filledRequiresAccount: 0,
+    filledFreeTrial: 0,
+    filledDataExport: 0,
     alreadyLabeled: 0,
     byValue: {},
     bySource: { override: 0, rule: 0, unknown: 0 },
@@ -99,6 +108,20 @@ export async function backfillDerivedFacets(
       await ctx.repo.fillSiteFacetIfAbsent(site.id, "platform", "web");
       report.filledPlatform += 1;
     }
+    // 结构化档案新键（02-site-profiles §7.1）：缺省 unknown，已有人类标注
+    // 永不覆盖（fillSiteFacetIfAbsent 的 fill-if-absent 纪律）。
+    // unknown 是合法值：拿不准填 unknown，绝不猜——回填只补“未核实”标记，
+    // 确定值一律由人工核实流程写。
+    for (const [key, counter] of [
+      ["requires_account", "filledRequiresAccount"],
+      ["free_trial", "filledFreeTrial"],
+      ["data_export", "filledDataExport"],
+    ] as const) {
+      if ((facets[key]?.length ?? 0) === 0) {
+        await ctx.repo.fillSiteFacetIfAbsent(site.id, key, "unknown");
+        report[counter] += 1;
+      }
+    }
   }
   return report;
 }
@@ -108,6 +131,10 @@ export function formatFacetBackfillReport(report: FacetBackfillReport): string {
   return (
     `扫描 ${report.scanned} 站：补 pricing ${report.filledPricing} 条` +
     `（人工核实表 ${report.bySource.override} / 强信号规则 ${report.bySource.rule} / 未标注 ${report.bySource.unknown}），` +
-    `补 platform=web ${report.filledPlatform} 条，已有标注跳过 ${report.alreadyLabeled} 站`
+    `补 platform=web ${report.filledPlatform} 条，` +
+    `补 requires_account=unknown ${report.filledRequiresAccount} 条、` +
+    `补 free_trial=unknown ${report.filledFreeTrial} 条、` +
+    `补 data_export=unknown ${report.filledDataExport} 条，` +
+    `已有标注跳过 ${report.alreadyLabeled} 站`
   );
 }

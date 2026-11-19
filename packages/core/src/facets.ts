@@ -8,7 +8,15 @@
  * 3. 渐进式披露：支持与主分类树 (Categories) 及领域标签 (Tags) 自由交叉叠加。
  */
 
-export type BuiltinFacetKey = "pricing" | "platform" | "form" | "language" | "scene";
+export type BuiltinFacetKey =
+  | "pricing"
+  | "platform"
+  | "form"
+  | "language"
+  | "scene"
+  | "requires_account"
+  | "free_trial"
+  | "data_export";
 export type FacetKey = BuiltinFacetKey | (string & {});
 
 export interface FacetOption {
@@ -122,6 +130,58 @@ export const CONTROLLED_FACETS: FacetDefinition[] = [
       { value: "ops", label: "运维与云原生", labelEn: "DevOps & Cloud", description: "容器、监控、网络与安全" },
     ],
   },
+  {
+    // 结构化档案字段（02-site-profiles §2.2 P0 #2）：是否需要账号。
+    // 判定依据写死：官网打开即用 → none；核心功能须登录 → required；
+    // 仅同步/高级功能须登录 → optional；三种情形都无法确认 → unknown。
+    key: "requires_account",
+    label: "是否需要账号",
+    labelEn: "Account Required",
+    description: "使用核心功能是否需要注册登录账号",
+    multiselect: false,
+    options: [
+      { value: "none", label: "免登录", labelEn: "No account needed", description: "官网打开即用" },
+      { value: "optional", label: "登录可选", labelEn: "Optional", description: "仅同步或高级功能须登录" },
+      { value: "required", label: "须登录", labelEn: "Required", description: "核心功能须登录" },
+      { value: "unknown", label: "未核实", labelEn: "Not verified", description: "是否需要账号尚未核实" },
+    ],
+  },
+  {
+    // 结构化档案字段（02-site-profiles §2.2 P0 #3）：免费试用。
+    // 天数以官网定价页原文为准；trial_other 须在备注写明天数。
+    key: "free_trial",
+    label: "免费试用",
+    labelEn: "Free Trial",
+    description: "官网定价页注明的免费试用期",
+    multiselect: false,
+    options: [
+      { value: "none", label: "无试用", labelEn: "No trial", description: "无免费试用" },
+      { value: "trial_7d", label: "试用 7 天", labelEn: "7-day trial", description: "免费试用 7 天" },
+      { value: "trial_14d", label: "试用 14 天", labelEn: "14-day trial", description: "免费试用 14 天" },
+      { value: "trial_30d", label: "试用 30 天", labelEn: "30-day trial", description: "免费试用 30 天" },
+      { value: "trial_other", label: "其他试用期", labelEn: "Other trial", description: "有试用但天数不在上述档位，备注写明天数" },
+      { value: "unknown", label: "未核实", labelEn: "Not verified", description: "试用情况尚未核实" },
+    ],
+  },
+  {
+    // 结构化档案字段（02-site-profiles §2.2 P0 #4）：数据导出。
+    // 多值；none 与其他值互斥；unknown 单独出现时不与其他值并存。
+    // api 指官方提供导出/读取 API，不是“有 API 就能导出”。
+    key: "data_export",
+    label: "数据导出",
+    labelEn: "Data Export",
+    description: "官方支持的数据导出格式",
+    multiselect: true,
+    options: [
+      { value: "csv", label: "CSV", labelEn: "CSV", description: "可导出 CSV 文件" },
+      { value: "json", label: "JSON", labelEn: "JSON", description: "可导出 JSON 文件" },
+      { value: "pdf", label: "PDF", labelEn: "PDF", description: "可导出 PDF 文件" },
+      { value: "markdown", label: "Markdown", labelEn: "Markdown", description: "可导出 Markdown 文件" },
+      { value: "api", label: "官方 API", labelEn: "Official API", description: "官方提供导出/读取 API" },
+      { value: "none", label: "不支持导出", labelEn: "No export", description: "不支持数据导出" },
+      { value: "unknown", label: "未核实", labelEn: "Not verified", description: "导出能力尚未核实" },
+    ],
+  },
 ];
 
 /**
@@ -190,6 +250,9 @@ export function normalizeFacets(
  * 同一份预算同时约束「写进 site_facets 的内容」与「查询时提交的条件」。
  * 分开定两份的后果实测过：存储允许 50 个维度、过滤只认 16 个，
  * 于是同一份条件在 /api/sites 通过、在 /api/search 却 400。
+ *
+ * 受控维度 5 → 8（新增 requires_account / free_trial / data_export），
+ * 预算 20 不变：8 个受控维 + 自定义键仍共用这 20 个名额。
  */
 export const FACET_MAX_KEYS = 20;
 export const FACET_MAX_VALUES_PER_KEY = 200;

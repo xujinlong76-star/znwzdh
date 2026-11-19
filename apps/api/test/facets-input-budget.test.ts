@@ -249,3 +249,46 @@ describe("facets 预算三处统一（存储写入 / 列表过滤 / 检索过滤
     expect(atLimit.statusCode).toBe(200);
   });
 });
+
+describe("新分面键预算（batch0-02：受控维 5→8，预算 20 不变）", () => {
+  it("8 个受控维 + 12 个自定义键 = 20 维放行，21 维 400", async () => {
+    const twenty: Record<string, string[]> = {
+      pricing: ["free"],
+      platform: ["web"],
+      form: ["saas"],
+      language: ["zh"],
+      scene: ["dev"],
+      requires_account: ["none"],
+      free_trial: ["trial_14d"],
+      data_export: ["csv"],
+    };
+    for (let i = 0; i < 12; i++) twenty[`x${i}`] = ["v"];
+    expect(Object.keys(twenty)).toHaveLength(FACET_MAX_KEYS);
+
+    const ok = await app.inject({
+      method: "PUT",
+      url: `/api/sites/${freeSiteId}/facets`,
+      payload: { facets: twenty },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().facets.requires_account).toEqual(["none"]);
+    expect(ok.json().facets.data_export).toEqual(["csv"]);
+
+    const tooMany = { ...twenty, extra: ["v"] };
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/sites/${freeSiteId}/facets`,
+      payload: { facets: tooMany },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("新键参与列表过滤：requires_account=none 只回免登录站", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/sites?facets=${encodeURIComponent(JSON.stringify({ requires_account: ["none"] }))}`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().map((s: { title: string }) => s.title)).toEqual(["免费站点"]);
+  });
+});

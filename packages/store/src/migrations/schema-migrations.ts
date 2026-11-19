@@ -19,6 +19,7 @@ import {
   migrateWorkspaceBlobs,
   migrateWantedSearches,
   migrateUserSyncState,
+  migrateSiteProfiles,
   cleanTaxonomyAndDuplicates,
   normalizeSiteCreatedAt,
 } from "../migrate.ts";
@@ -268,6 +269,16 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
       await migrateUserSyncState(db);
     },
     checksum: "v1_user_sync_state",
+  },
+  {
+    // 2026-11-19（batch0-02）：结构化档案字段——site_profiles + site_profile_provenance 建表。
+    // 只建表，不进 COLUMN_ALTERS；与 W1 的 20261119_exam_verifications 各用各的版本号。
+    version: "20261119_site_profiles",
+    name: "结构化档案字段 site_profiles / site_profile_provenance 建表",
+    up: async (db: Db) => {
+      await migrateSiteProfiles(db);
+    },
+    checksum: "v1_site_profiles",
   },
 ];
 

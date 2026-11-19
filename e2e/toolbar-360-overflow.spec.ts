@@ -9,6 +9,11 @@ import { test, expect, type Page } from '@playwright/test';
  * 修复（02:22 轮）：<390px 隐藏次要入口「外观排版」（同一小窗仍可由首页微胶囊行
  * 「新手向导」打开），行宽 366→320；390px（366=366 恰好占满）与 1280px 布局不变。
  * 阈值取 390 而非 380：366+24=390 是行恰好占满的边界，<390 一律隐藏才全覆盖。
+ * 意图变更（U-155 方案 A，88fce3f2，2026-11-19）：外观按钮改回全宽度可见
+ * （图标 +「DIY 排版」文字，<sm 上下叠排仍占 44px），360px 不溢出改由小组件盒
+ * 按钮 <390px 收进探索菜单保证（行内 7×44px + 6×2px 间隙 = 320px ≤ 336px 可用宽）；
+ * 本文件「外观按钮 <390px 隐藏」的旧断言随之改为「可见、可点开同一小窗」，
+ * 溢出断言（行不溢出、按钮在视口内）与 390px/1280px 用例不变。
  */
 
 async function measureToolbarRow(page: Page) {
@@ -52,7 +57,7 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
       expect(m.found).toBe(true);
       if (!m.found) return;
       // 实测数进日志：改前 360px 为 scrollWidth=366 > clientWidth=336；
-      // 改后应为 320 ≤ 336（隐藏外观入口省 46px）。
+      // 改后应为 320 ≤ 336（U-155：小组件盒 <390px 收进菜单省 46px，外观按钮保留）。
       console.log(
         `[toolbar360] ${width}px: rowScrollWidth=${m.rowScrollWidth} rowClientWidth=${m.rowClientWidth} buttons=${m.boxes.length} menuRight=${m.boxes.find((b) => b.label === '打开菜单')?.right}`,
       );
@@ -80,10 +85,13 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     await expect(label).toHaveText(/^今日( \d+ 项)?$/);
   });
 
-  test('360px：外观入口仍可达——首页微胶囊行「向导与设首页」开同一小窗', async ({ page }) => {
-    // 修复把工具栏外观按钮在 <390px 隐藏，它的替代入口必须还在：
-    // 首页微胶囊行「向导与设首页」开的是同一 appearance-guide-dialog，
-    // 默认新手向导 tab，tab 可切到「外观与排版」，皮肤/DIY 不丢。
+  test('360px：工具栏外观按钮可见，点开同一小窗「外观与排版」tab 可切', async ({ page }) => {
+    // 意图变更（U-155 方案 A，88fce3f2）：02:22 轮修复曾把工具栏外观按钮在 <390px
+    // 隐藏、只留微胶囊行作替代入口；U-155 把该按钮改回全宽度可见（图标 +「DIY 排版」
+    // 文字叠排），360px 不溢出改由小组件盒按钮 <390px 收进探索菜单保证。
+    // 因此本用例改断言按钮可见、点开即同一 appearance-guide-dialog，
+    // 默认新手向导 tab，tab 可切到「外观与排版」，皮肤/DIY 不丢；
+    // 微胶囊行「向导与设首页」仍作为第二入口保留覆盖。
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto('/');
     const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
@@ -92,7 +100,18 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
       name: '打开外观排版与新手向导小窗',
       exact: true,
     });
-    await expect(toolbarAppearance).toBeHidden();
+    await expect(toolbarAppearance).toBeVisible({ timeout: 60_000 });
+    await toolbarAppearance.click();
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('tab', { name: '外观与排版' })).toBeVisible();
+    await page.getByRole('tab', { name: '外观与排版' }).click();
+    await expect(page.getByRole('tab', { name: '外观与排版' })).toHaveAttribute(
+      'data-state',
+      'active',
+    );
+    // 第二入口仍在：关窗后微胶囊行「向导与设首页」开同一小窗。
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     const capsule = page.getByRole('button', { name: '向导与设首页', exact: true });
     // 胶囊由客户端水合后据 localStorage 决定是否渲染（guidePending 默认 false，
     // useEffect 读存储后才置 true），冷启动水合长尾下 15 秒默认超时不够；
@@ -101,10 +120,5 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     await capsule.click();
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole('tab', { name: '外观与排版' })).toBeVisible();
-    await page.getByRole('tab', { name: '外观与排版' }).click();
-    await expect(page.getByRole('tab', { name: '外观与排版' })).toHaveAttribute(
-      'data-state',
-      'active',
-    );
   });
 });

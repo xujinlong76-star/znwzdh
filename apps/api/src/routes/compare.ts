@@ -12,18 +12,56 @@
  * 维度组装走 core 的纯函数 buildSiteComparison（与 MCP compare_sites 共用）：
  * 7 维 × 每格 { value, source, verified, verifiedAt }，缺失标“未验证”，不排名、不打分。
  * 价格数值格（P2-2）由 site_prices 一次批量取数后传入组装。
+ * 档案四格（Batch0-02 R10）：对照最多 4 站，调用前用仓库已有的单站
+ * getSiteProfile 并行取各站档案行，只把 profile_status='verified' 的行
+ * 传进组装；draft 行与无行一律按缺失处理（verified:false），不编造值。
+ * 基线里没有批量取档案的方法（F4 未合流），不跨分支引用不存在的代码。
  *
  * 缓存：private, max-age=60 + etag；Vary 含全部身份头（防串用户）；
  * 401/404/400 由 server.ts 的 onSend hook 强制 no-store。
  */
 import type { FastifyPluginAsync } from "fastify";
-import { buildSiteComparison, CompareSitesInput } from "@navhub/core";
+import { buildSiteComparison, CompareSitesInput, type SiteProfileEntry } from "@navhub/core";
 import type { AppContext } from "../context.ts";
 import { sendError } from "../error-envelope.ts";
 import { requireAskIdentity } from "./ask.ts";
 
 /** 与 /api/search 的 SEARCH_VARY 同款：响应因人而异，必须逐身份头分缓存键。 */
 const COMPARE_VARY = ["x-navhub-anon-id", "x-user-id", "x-navhub-user-id", "authorization", "cookie"];
+
+/**
+ * 加载对照各站的档案行（Batch0-02 R10，compare 与 compare-snapshots 两路由共用）。
+ *
+ * 只认 verified 行：draft 行即使库里有值也不传（按缺失处理），
+ * buildSiteComparison 内的 status 守卫是第二道防线。
+ * 单站 getSiteProfile 是基线里已有的唯一取档案方法；对照上限 4 站，
+ * Promise.all 并行取 2–4 行，不另立批量方法。
+ */
+export async function loadVerifiedProfiles(
+  ctx: AppContext,
+  siteIds: string[],
+): Promise<Map<string, SiteProfileEntry | null>> {
+  const rows = await Promise.all(siteIds.map((id) => ctx.repo.getSiteProfile(id)));
+  const out = new Map<string, SiteProfileEntry | null>();
+  siteIds.forEach((id, i) => {
+    const row = rows[i]!;
+    out.set(
+      id,
+      row && row.profileStatus === "verified"
+        ? {
+            bestFor: row.bestFor,
+            notFor: row.notFor,
+            license: row.license,
+            alternatives: row.alternatives,
+            sourceUrl: row.profileSourceUrl,
+            verifiedAt: row.profileVerifiedAt,
+            status: "verified",
+          }
+        : null,
+    );
+  });
+  return out;
+}
 
 export const compareRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -70,6 +108,8 @@ export const compareRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
 
       // 第三次取数（P2-2 价格数值）：一次批量取价格记录，按 siteId 传进组装。
       const prices = await ctx.repo.getSitePricesBySiteIds(identity, siteIds);
+      // 第四次取数（Batch0-02 R10 档案四格）：只传 verified 行，draft/无行按缺失。
+      const profiles = await loadVerifiedProfiles(ctx, siteIds);
 
       const items = buildSiteComparison(
         siteIds.map((id) => {
@@ -79,6 +119,7 @@ export const compareRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
             site,
             favorite: { siteId: id, note: fav.note, tags: fav.tags, updatedAt: fav.updatedAt },
             price: prices.get(id) ?? null,
+            profile: profiles.get(id) ?? null,
           };
         }),
       );

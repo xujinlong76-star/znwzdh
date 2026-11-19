@@ -26,6 +26,7 @@ import type { ComparisonSnapshot } from "@navhub/store";
 import type { AppContext } from "../context.ts";
 import { sendError } from "../error-envelope.ts";
 import { requireAskIdentity } from "./ask.ts";
+import { loadVerifiedProfiles } from "./compare.ts";
 
 /** 与 /api/compare 的 COMPARE_VARY 同款：响应因人而异，必须逐身份头分缓存键。 */
 const COMPARE_VARY = ["x-navhub-anon-id", "x-user-id", "x-navhub-user-id", "authorization", "cookie"];
@@ -182,6 +183,8 @@ export const compareSnapshotsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = a
       // 价格数值（P2-2）：与 GET /api/compare 同口径一次批量取数，快照存下的
       // items 自带 price 格；diff 按 SNAPSHOT_DIMENSIONS 遍历（含 'price'）。
       const prices = await ctx.repo.getSitePricesBySiteIds(identity, siteIds);
+      // 档案四格（Batch0-02 R10）：与 GET /api/compare 同口径，只传 verified 行。
+      const profiles = await loadVerifiedProfiles(ctx, siteIds);
 
       const items = buildSiteComparison(
         siteIds.map((id) => {
@@ -191,6 +194,7 @@ export const compareSnapshotsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = a
             site,
             favorite: { siteId: id, note: fav.note, tags: fav.tags, updatedAt: fav.updatedAt },
             price: prices.get(id) ?? null,
+            profile: profiles.get(id) ?? null,
           };
         }),
       );

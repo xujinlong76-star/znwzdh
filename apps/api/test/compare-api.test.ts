@@ -130,6 +130,32 @@ async function seed() {
   await ctx.repo.addFavorite({ userId: USER, siteId: siteBId, note: null, tags: ["PPT", "付费"] });
   await ctx.repo.addFavorite({ userId: USER, siteId: siteCId });
   await ctx.repo.addFavorite({ userId: USER, siteId: siteDId, note: "免费档每月 20 次", tags: ["PPT", "新"] });
+
+  // Batch0-02 R10 档案行：A verified（四格应带值）、B draft（四格按缺失）、
+  // C/D 无行（四格按缺失）。alternatives 目标站存在，写时校验通过。
+  const profileVerifiedAt = Date.now();
+  await ctx.repo.upsertSiteProfile({
+    siteId: siteAId,
+    bestFor: "个人轻量做演示文稿",
+    notFor: "不支持多人实时协作",
+    license: "MIT",
+    alternatives: [siteBId],
+    profileSourceUrl: "https://ppt-a.example.com/pricing",
+    profileStatus: "verified",
+    verifiedBy: "seed",
+    profileVerifiedAt,
+  });
+  await ctx.repo.upsertSiteProfile({
+    siteId: siteBId,
+    bestFor: "草稿适用陈述不应出现",
+    notFor: "草稿边界不应出现",
+    license: "草稿协议不应出现",
+    alternatives: [siteAId],
+    profileSourceUrl: "https://ppt-b.example.com/pricing",
+    profileStatus: "draft",
+    verifiedBy: "seed",
+    profileVerifiedAt,
+  });
   await ctx.repo.addFavorite({ userId: USER, siteId: pendingSiteId });
   await ctx.repo.addFavorite({ userId: USER, siteId: archivedSiteId });
   await ctx.repo.addFavorite({ userId: OTHER, siteId: otherSiteId });
@@ -154,6 +180,7 @@ type Cell = { value: unknown; source: string; verified: boolean; verifiedAt: num
 type Item = {
   siteId: string; title: string; url: string;
   pricing: Cell; platform: Cell; form: Cell; maintenance: Cell; note: Cell; migration: Cell;
+  best_for: Cell; not_for: Cell; license: Cell; alternatives: Cell;
 };
 
 function itemsOf(body: unknown): Item[] {
@@ -265,6 +292,45 @@ describe("未验证：pricing unknown 与 lastCheckedAt null 的站仍 200", () 
     expect(c.maintenance).toMatchObject({ value: null, source: "健康巡检", verified: false, verifiedAt: null, lastCheckedAt: null });
     expect(c.note).toMatchObject({ value: null, verified: false, verifiedAt: null });
     expect(c.migration).toMatchObject({ value: null, verified: false, verifiedAt: null });
+  });
+});
+
+describe("档案四格（Batch0-02 R10）：verified 带值、draft/无行未验证、无 winner", () => {
+  it("A verified：四格带值且 verified:true；B draft 与 C 无行：四格 verified:false 且不编造值", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/compare?siteIds=${siteAId},${siteBId},${siteCId}`,
+      headers: userHeaders,
+    });
+    expect(res.statusCode).toBe(200);
+    const items = itemsOf(res.json());
+    const [a, b, c] = items as [Item, Item, Item];
+
+    // A：verified 行四格全部带值，来源“站点档案”，核实时间为数字
+    expect(a.best_for).toMatchObject({ value: "个人轻量做演示文稿", source: "站点档案", verified: true });
+    expect(typeof a.best_for.verifiedAt).toBe("number");
+    expect(a.not_for).toMatchObject({ value: "不支持多人实时协作", source: "站点档案", verified: true });
+    expect(typeof a.not_for.verifiedAt).toBe("number");
+    expect(a.license).toMatchObject({ value: "MIT", source: "站点档案", verified: true });
+    expect(typeof a.license.verifiedAt).toBe("number");
+    expect(a.alternatives).toMatchObject({ value: [siteBId], source: "站点档案", verified: true });
+    expect(typeof a.alternatives.verifiedAt).toBe("number");
+
+    // B：draft 行按缺失处理——值一律 null，不泄露草稿文案
+    for (const cell of [b.best_for, b.not_for, b.license, b.alternatives]) {
+      expect(cell).toMatchObject({ value: null, verified: false, verifiedAt: null });
+    }
+    expect(JSON.stringify(b)).not.toContain("草稿");
+
+    // C：无档案行——四格同样 verified:false，不编造值
+    for (const cell of [c.best_for, c.not_for, c.license, c.alternatives]) {
+      expect(cell).toMatchObject({ value: null, verified: false, verifiedAt: null });
+    }
+
+    // 裁决 19：不设 winner，任何一站都不出现 winner 字段
+    for (const item of items) {
+      expect(item).not.toHaveProperty("winner");
+    }
   });
 });
 

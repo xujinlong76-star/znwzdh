@@ -24,6 +24,7 @@ import {
   latestVerificationForNode,
   listCorrectionsForNode,
   listVerificationsByHash,
+  recordConflictRuling,
 } from "../src/exam-verification-store.ts";
 
 const EXAM_ID = "jingkao";
@@ -247,5 +248,165 @@ describe("考试核验数据层（01-verification-workflow §2.5/§2.6）", () =
         .get(table) as { c: number };
       expect(count.c).toBe(1);
     }
+  });
+});
+
+describe("A8 更正流程闭环（R1）：verdict=false 行 → 最新行可查 → 更正行落库", () => {
+  let db: Db;
+
+  beforeAll(async () => {
+    db = await openDb({ dialect: "sqlite", sqlitePath: ":memory:" });
+  });
+
+  afterAll(async () => {
+    await db.close();
+  });
+
+  // 演练用例：correctedText 为虚构的演练值，仅验证 original_text 与旧节点文案
+  // 逐字一致 + 行可查，不代表真实口径；真实更正须走七步流水线核查。
+  const JINGKAO_APPLY_DETAIL =
+    "11 月 12 日 9:00 至 11 月 18 日 18:00，登录北京市人事考试通用平台提交报考申请；未通过资格审查者可在 11 月 18 日 18:00 前改报其他职位";
+
+  it("false 核查行写入后 latestVerificationForNode 可查到 verdict='false'（下架信号）", async () => {
+    const row = await insertExamVerification(
+      db,
+      verificationInput({
+        nodeLabel: "演练节点",
+        assertion: "演练断言：京考报名窗口 11-12 9:00–11-18 18:00",
+        verificationLevel: "reprint",
+        verdict: "false",
+        rating: "false",
+        confidence: "low",
+        checkedAt: CHECKED_AT + 500_000,
+      }),
+    );
+    expect(row.verdict).toBe("false");
+    const latest = await latestVerificationForNode(db, EXAM_ID, "演练节点");
+    expect(latest?.id).toBe(row.id);
+    expect(latest?.verdict).toBe("false");
+  });
+
+  it("写 exam_corrections 行：original_text 与旧节点文案逐字一致，且行可查", async () => {
+    const hash = assertionHash("演练断言：京考报名窗口 11-12 9:00–11-18 18:00");
+    const corrected = await insertExamCorrection(db, {
+      examId: EXAM_ID,
+      nodeLabel: "演练节点",
+      assertionHash: hash,
+      originalText: JINGKAO_APPLY_DETAIL,
+      correctedText: JINGKAO_APPLY_DETAIL.replaceAll("18:00", "17:00"),
+      errorType: "date",
+      reason: "演练：截止时刻核查为 false，按 §6 更正流程公开更正",
+      howDiscovered: "internal_review",
+      originalPublishedAt: Date.parse("2026-11-17T10:00:00+08:00"),
+      correctionPublishedAt: Date.parse("2026-11-19T15:00:00+08:00"),
+      correctedBy: "evolve-2026-11-19",
+    });
+    expect(corrected.originalText).toBe(JINGKAO_APPLY_DETAIL);
+    const rows = await listCorrectionsForNode(db, EXAM_ID, "演练节点");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.originalText).toBe(JINGKAO_APPLY_DETAIL);
+    expect(rows[0]?.correctedText).toContain("17:00");
+  });
+});
+
+describe("A9 双源冲突裁决记录（R2）：recordConflictRuling", () => {
+  let db: Db;
+
+  beforeAll(async () => {
+    db = await openDb({ dialect: "sqlite", sqlitePath: ":memory:" });
+  });
+
+  afterAll(async () => {
+    await db.close();
+  });
+
+  // 天津 D2 裁决（2026-11-20 02:35 紧急核实结论 A，已核实内容）：
+  // 采信库内值，窗口确为 11-19 09:00–18:00、已关闭；11-20 12:00 是 eol.cn
+  // 所标的 2025 年窗口；节点仍为 reprint 级（zhaokao.net 官方原文仍未直读到）。
+  const TIANJIN_RULING = {
+    examId: "chengkao",
+    nodeLabel: "天津成绩复核",
+    assertion: "天津成考复核 11-19 09:00–18:00",
+    verificationLevelBefore: "reprint" as const,
+    verificationLevelAfter: "reprint" as const,
+    sourceAUrl: "https://www.hqwx.com/chengrengk-kaoshi/news/17859084897258.html",
+    sourceAClaim: "天津成考复核 11 月 19 日 9 时至 18 时网上申请缴费；复核结果 11 月 25 日 9 时至 11 月 30 日 17 时可查",
+    sourceBUrl: "https://www.eol.cn/chengkao/ck-tjckdy/20261022152837.html",
+    sourceBClaim: "2025 年的复核时段为 11 月 19 日 9 时至 20 日 12 时；2026 年沿用同一节奏，具体时段以当次公告为准；复核申请为现场办理",
+    ruling: "采信库内值：天津成考复核窗口确为 11-19 09:00–18:00、已关闭；PEAK 与 chip 的“已截止”显示正确，无需改动",
+    rulingBasis:
+      "11-20 12:00 已证实是 eol.cn 所标的 2025 年窗口——eol.cn 2026-10-22 原文自述“2025年的复核时段为11月19日9时至20日12时；2026年沿用同一节奏，具体时段以当次公告为准”；其“现场办理”描述与 2026 年实际“网上申请缴费”矛盾；全网无信源称 2026 年窗口到 11-20 12:00；zhaokao.net 官方原文仍未直读到，节点仍为转载级",
+    checkedAt: Date.parse("2026-11-20T02:35:00+08:00"),
+    checkedBy: "batch0-fix-f1",
+  };
+
+  it("裁决写入后 notes 与 audit 行均可查（天津 D2）", async () => {
+    const { verification, auditId } = await recordConflictRuling(db, TIANJIN_RULING);
+    expect(verification.verdict).toBe("verified");
+    expect(verification.verificationLevel).toBe("reprint");
+    expect(verification.notes).toContain(TIANJIN_RULING.sourceAUrl);
+    expect(verification.notes).toContain(TIANJIN_RULING.sourceAClaim);
+    expect(verification.notes).toContain(TIANJIN_RULING.sourceBUrl);
+    expect(verification.notes).toContain(TIANJIN_RULING.sourceBClaim);
+    expect(verification.notes).toContain(TIANJIN_RULING.ruling);
+    expect(verification.notes).toContain(TIANJIN_RULING.rulingBasis);
+
+    const audits = db.sqlite!
+      .prepare("SELECT id, actor, action, target, diff FROM audit_logs WHERE action = 'exam_verification_conflict_ruling' AND id = ?")
+      .all(auditId) as Array<{ id: number; actor: string; action: string; target: string; diff: string }>;
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.target).toBe("exam:chengkao:天津成绩复核");
+    const diff = JSON.parse(audits[0]!.diff) as Record<string, unknown>;
+    expect(diff["assertion_hash"]).toBe(verification.assertionHash);
+    expect(diff["verification_level_before"]).toBe("reprint");
+    expect(diff["verification_level_after"]).toBe("reprint");
+  });
+
+  it("裁决降级记入 diff：official → reprint 的裁决前后级别可查", async () => {
+    const { verification, auditId } = await recordConflictRuling(db, {
+      ...TIANJIN_RULING,
+      assertion: "演练断言：双源冲突降级",
+      verificationLevelBefore: "official",
+      verificationLevelAfter: "reprint",
+      ruling: "演练裁决：冲突时降级为转载级并标注",
+    });
+    const audits = db.sqlite!
+      .prepare("SELECT diff FROM audit_logs WHERE id = ?")
+      .all(auditId) as Array<{ diff: string }>;
+    const diff = JSON.parse(audits[0]!.diff) as Record<string, unknown>;
+    expect(diff["assertion_hash"]).toBe(verification.assertionHash);
+    expect(diff["verification_level_before"]).toBe("official");
+    expect(diff["verification_level_after"]).toBe("reprint");
+  });
+
+  it("守卫：无 notes 要素的裁决拒绝写入（0 条无记录裁决）", async () => {
+    const hash = assertionHash("演练断言：无记录裁决应被拒绝");
+    await expect(
+      recordConflictRuling(db, {
+        ...TIANJIN_RULING,
+        assertion: "演练断言：无记录裁决应被拒绝",
+        rulingBasis: "",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      recordConflictRuling(db, {
+        ...TIANJIN_RULING,
+        assertion: "演练断言：无记录裁决应被拒绝",
+        sourceBClaim: "   ",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      recordConflictRuling(db, {
+        ...TIANJIN_RULING,
+        assertion: "演练断言：无记录裁决应被拒绝",
+        ruling: "",
+      }),
+    ).rejects.toThrow();
+    // 三次拒绝均未落库：该断言无核查行、无 audit 行
+    expect(await listVerificationsByHash(db, hash)).toHaveLength(0);
+    const audits = db.sqlite!
+      .prepare("SELECT COUNT(*) AS c FROM audit_logs WHERE action = 'exam_verification_conflict_ruling' AND diff LIKE ?")
+      .get(`%${hash}%`) as { c: number };
+    expect(audits.c).toBe(0);
   });
 });

@@ -21,12 +21,15 @@ import {
 } from './exam-calendar'
 import {
   deriveConfidence,
+  formatCorrectionNote,
+  hasFalseVerification,
   isIcsDownloadEligible,
   isIcsFeedEligible,
   isPeakEligible,
   isVerificationExpired,
   validateExamNodeVerification,
   verificationBadgeProps,
+  type ExamCorrectionNote,
   type ExamNodeVerificationInput,
 } from './exam-verification'
 
@@ -398,5 +401,74 @@ describe('A7：准入闸行为（unverified 节点）', () => {
       expect(node.verification_level, `${key} 应为 unverified`).toBe('unverified')
       expect(peakDayDeadlineMs(exam, node, NOW_MS), `${key} 准入闸应返回 undefined`).toBeUndefined()
     }
+  })
+})
+
+describe('A8 更正流程闭环（R1）：verdict=false → 下架 → 更正行 → 更正注渲染', () => {
+  // 演练用例：以下 correctedText 为虚构的演练值，仅验证 original_text 与旧节点
+  // 文案逐字一致 + 更正注渲染，不代表真实口径；真实更正须走七步流水线核查。
+  const JINGKAO_APPLY_DETAIL =
+    '11 月 12 日 9:00 至 11 月 18 日 18:00，登录北京市人事考试通用平台提交报考申请；未通过资格审查者可在 11 月 18 日 18:00 前改报其他职位'
+  const FALSE_LATEST = { verdict: 'false' }
+  const VERIFIED_LATEST = { verdict: 'verified' }
+
+  it('第 1 步：hasFalseVerification 只认 verdict === false', () => {
+    expect(hasFalseVerification(FALSE_LATEST)).toBe(true)
+    expect(hasFalseVerification(VERIFIED_LATEST)).toBe(false)
+    expect(hasFalseVerification({ verdict: 'unverifiable' })).toBe(false)
+    expect(hasFalseVerification(null)).toBe(false)
+    expect(hasFalseVerification(undefined)).toBe(false)
+  })
+
+  it('第 2 步：verdict=false 的最新核查行 → 准入闸全部返回 false（节点下架）', () => {
+    // reprint + medium + 新鲜的节点本身可准入（对照），false 行一到即下架。
+    expect(isPeakEligible(reprintNode(), NOW_MS)).toBe(true)
+    expect(isPeakEligible(reprintNode(), NOW_MS, FALSE_LATEST)).toBe(false)
+    expect(isPeakEligible(reprintNode(), NOW_MS, VERIFIED_LATEST)).toBe(true)
+    expect(isIcsFeedEligible(officialNode(), NOW_MS, FALSE_LATEST)).toBe(false)
+    expect(isIcsDownloadEligible(reprintNode(), NOW_MS, FALSE_LATEST)).toBe(false)
+  })
+
+  it('第 2 步（时刻）：verdict=false 时 peakDayDeadlineMs 返回 undefined（对照：无 false 行时返回 11-18 18:00）', () => {
+    const exam = EXAMS.find((e) => e.id === 'jingkao') as ExamInfo
+    const node = exam.nodes.find((n) => n.label === '报名') as ExamNode
+    expect(node.verification_level).toBe('reprint')
+    expect(peakDayDeadlineMs(exam, node, NOW_MS)).toBe(Date.parse('2026-11-18T18:00:00+08:00'))
+    expect(peakDayDeadlineMs(exam, node, NOW_MS, FALSE_LATEST)).toBeUndefined()
+    expect(
+      todayNodeDeadlineMs({ exam, node, kind: 'endsToday' }, NOW_MS, FALSE_LATEST),
+    ).toBeUndefined()
+  })
+
+  it('第 3–4 步：写 exam_corrections 行后，节点字段更新 + 更正注渲染含逐字原文与更正后文案', () => {
+    const exam = EXAMS.find((e) => e.id === 'jingkao') as ExamInfo
+    const node = exam.nodes.find((n) => n.label === '报名') as ExamNode
+    // original_text 须与旧节点文案逐字一致（store 层单测另行断言行已落库）。
+    expect(node.detail).toBe(JINGKAO_APPLY_DETAIL)
+    const correctedDetail = JINGKAO_APPLY_DETAIL.replaceAll('18:00', '17:00')
+    const correction: ExamCorrectionNote = {
+      originalText: node.detail,
+      correctedText: correctedDetail,
+      correctionPublishedAt: Date.parse('2026-11-19T15:00:00+08:00'),
+      reason: '演练：截止时刻核查为 false，按 §6 更正流程公开更正',
+    }
+    const note = formatCorrectionNote(correction)
+    expect(note).not.toBeNull()
+    expect(note).toContain('更正 2026-11-19：')
+    expect(note).toContain(`本文早前版本称“${JINGKAO_APPLY_DETAIL}”`)
+    expect(note).toContain(`实际情况是“${correctedDetail}”`)
+    expect(note).toContain('我们对错误深表歉意')
+    expect(note).toContain('更正原因：演练：截止时刻核查为 false')
+  })
+
+  it('更正注守卫：草稿行（correctedText / correctionPublishedAt 为空）不渲染', () => {
+    const base: ExamCorrectionNote = {
+      originalText: JINGKAO_APPLY_DETAIL,
+      correctedText: '更正后文案',
+      correctionPublishedAt: Date.parse('2026-11-19T15:00:00+08:00'),
+    }
+    expect(formatCorrectionNote({ ...base, correctedText: null })).toBeNull()
+    expect(formatCorrectionNote({ ...base, correctedText: '' })).toBeNull()
+    expect(formatCorrectionNote({ ...base, correctionPublishedAt: null })).toBeNull()
   })
 })

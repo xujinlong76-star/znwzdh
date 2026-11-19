@@ -75,13 +75,13 @@ describe('U-155：11-19 今日行 3 项（海南成绩查询纯文本 + 天津�
     expect(hainan.kind).toBe('today')
     expect(hainan.node.url).toBeUndefined()
     expect(hainan.node.detail).toBe('11 月 19 日 17:00 起可查（海南省成人高考报名系统）')
-    // U-162：天津成绩复核单日 today、无 url，detail 逐字（转载级标注）
+    // U-162：天津成绩复核单日 today、无 url，detail 逐字（事实描述，不含级别断言）
     const tianjin = byKey.get('chengkao:天津成绩复核')!
     expect(tianjin.exam.shortName).toBe('成考')
     expect(tianjin.kind).toBe('today')
     expect(tianjin.node.url).toBeUndefined()
     expect(tianjin.node.detail).toBe(
-      '11 月 19 日 9:00 至 18:00 网上申请缴费；复核结果 11 月 25 日 9:00 至 11 月 30 日 17:00 可查（转载级、未见官方原文，待官方原文核实后升级）',
+      '11 月 19 日 9:00 至 18:00 网上申请缴费；复核结果 11 月 25 日 9:00 至 11 月 30 日 17:00 可查',
     )
     const shanghai = byKey.get('shanghai-zikao:成绩查询')!
     expect(shanghai.exam.shortName).toBe('上海自考')

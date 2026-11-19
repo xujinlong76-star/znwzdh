@@ -382,6 +382,122 @@ export async function insertExamCorrection(
   return rowToCorrection(await getRowById(db, "exam_corrections", CORRECTION_COLUMNS, id));
 }
 
+export interface RecordConflictRulingInput {
+  examId: string;
+  nodeLabel: string;
+  /** 被裁决的断言原文（如 '天津成考复核 11-19 09:00–18:00'）。 */
+  assertion: string;
+  /** 裁决前 verification_level（§13 diff 用）。 */
+  verificationLevelBefore: ExamVerificationLevel;
+  /** 裁决后 verification_level（§13 diff 用；§5.1 第 2 条：裁决后强制 reprint，例外挂起时为 unverified）。 */
+  verificationLevelAfter: ExamVerificationLevel;
+  /** 冲突一方：来源 URL + 该来源的主张（逐字，不拼贴、不取平均，§5.1 第 3 条）。 */
+  sourceAUrl: string;
+  sourceAClaim: string;
+  /** 冲突另一方：来源 URL + 该来源的主张。 */
+  sourceBUrl: string;
+  sourceBClaim: string;
+  /** 裁决结论（如 '采信库内值：天津成考复核窗口确为 11-19 09:00–18:00、已关闭'）。 */
+  ruling: string;
+  /** 裁决依据（如 'eol.cn 2026-10-22 原文自述 11-20 12:00 是 2025 年窗口…'）。 */
+  rulingBasis: string;
+  /** 裁决后该断言的定级；缺省 verified/true（采信一方主张时）。 */
+  verdict?: ExamVerdict;
+  rating?: ExamRating | null;
+  confidence?: ExamConfidence;
+  /** 裁决所依据的来源 URL（缺省取 sourceAUrl，即被采信方）；sourceKind 缺省 'reprint'。 */
+  sourceUrl?: string | null;
+  sourceKind?: ExamSourceKind;
+  checkedAt: number;
+  checkedBy: string;
+  reviewedBy?: string | null;
+  evidenceJson?: string;
+  /** audit_logs actor（缺省 checkedBy）；actorKind 缺省 'agent'。 */
+  actor?: string;
+  actorKind?: string;
+}
+
+export interface RecordConflictRulingResult {
+  verification: ExamVerificationRecord;
+  auditId: number;
+}
+
+/**
+ * 双源冲突裁决记录（01-verification-workflow §5.1 第 4 条 + §13 审计日志契约）。
+ *
+ * 一次写两处，缺一不可：
+ *  - exam_verifications 一行：notes 为裁决正文（冲突双方来源 URL + 各自主张 +
+ *    裁决结论 + 裁决依据），verdict/rating 按裁决后定级写；
+ *  - audit_logs 一行：action='exam_verification_conflict_ruling'，target=
+ *    'exam:<exam_id>:<node_label>'，diff 含 assertion_hash 与裁决前后
+ *    verification_level（verification_level_before / verification_level_after）。
+ *
+ * 守卫：裁决正文的任一要素（双方 URL/主张、裁决结论、裁决依据）为空即拒绝写入，
+ * 绝不产生“只降级、无记录”的裁决（§10 A9：0 条无记录裁决）。
+ */
+export async function recordConflictRuling(
+  db: Db,
+  input: RecordConflictRulingInput,
+): Promise<RecordConflictRulingResult> {
+  const examId = requireNonEmpty(input.examId, "examId");
+  const nodeLabel = requireNonEmpty(input.nodeLabel, "nodeLabel");
+  const assertion = requireNonEmpty(input.assertion, "assertion");
+  requireEnum(input.verificationLevelBefore, VERIFICATION_LEVELS, "verificationLevelBefore");
+  requireEnum(input.verificationLevelAfter, VERIFICATION_LEVELS, "verificationLevelAfter");
+  const sourceAUrl = requireNonEmpty(input.sourceAUrl, "sourceAUrl");
+  const sourceAClaim = requireNonEmpty(input.sourceAClaim, "sourceAClaim");
+  const sourceBUrl = requireNonEmpty(input.sourceBUrl, "sourceBUrl");
+  const sourceBClaim = requireNonEmpty(input.sourceBClaim, "sourceBClaim");
+  const ruling = requireNonEmpty(input.ruling, "ruling");
+  const rulingBasis = requireNonEmpty(input.rulingBasis, "rulingBasis");
+  const verdict = input.verdict ?? "verified";
+  const rating = input.rating === undefined ? (verdict === "unverifiable" ? null : "true") : input.rating;
+  const confidence = input.confidence ?? "medium";
+  const checkedAt = requireFiniteNumber(input.checkedAt, "checkedAt");
+  const checkedBy = requireNonEmpty(input.checkedBy, "checkedBy");
+  const actor = input.actor ?? checkedBy;
+  const actorKind = input.actorKind ?? "agent";
+
+  const notes =
+    `双源冲突裁决（固定规则 D2：官方原文优先；冲突时降级并标注；不取平均、不拼贴）：\n` +
+    `来源 A：${sourceAUrl}\n主张 A：${sourceAClaim}\n` +
+    `来源 B：${sourceBUrl}\n主张 B：${sourceBClaim}\n` +
+    `裁决：${ruling}\n裁决依据：${rulingBasis}\n` +
+    `裁决后级别：${input.verificationLevelBefore} → ${input.verificationLevelAfter}。`;
+
+  const verification = await insertExamVerification(db, {
+    examId,
+    nodeLabel,
+    assertion,
+    verificationLevel: input.verificationLevelAfter,
+    verdict,
+    rating,
+    confidence,
+    sourceUrl: input.sourceUrl === undefined ? sourceAUrl : input.sourceUrl,
+    sourceKind: input.sourceKind ?? "reprint",
+    checkedAt,
+    checkedBy,
+    reviewedBy: input.reviewedBy ?? null,
+    evidenceJson: input.evidenceJson ?? "[]",
+    notes,
+  });
+
+  const diff = JSON.stringify({
+    assertion_hash: verification.assertionHash,
+    verification_level_before: input.verificationLevelBefore,
+    verification_level_after: input.verificationLevelAfter,
+    verdict,
+    rating,
+    ruling,
+  });
+  const auditId = await insertAndGetId(
+    db,
+    "INSERT INTO audit_logs (actor, actor_kind, action, target, diff, ip, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [actor, actorKind, "exam_verification_conflict_ruling", `exam:${examId}:${nodeLabel}`, diff, null, Date.now()],
+  );
+  return { verification, auditId };
+}
+
 // ---------- 读 ----------
 
 /** 该节点最新一条核查（按 checked_at 取最新；无记录返回 null）。 */

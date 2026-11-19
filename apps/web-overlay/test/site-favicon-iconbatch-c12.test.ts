@@ -219,7 +219,7 @@ describe('resolveSiteIcon（图标修复 C 类第 12 批）', () => {
     // （C11 未上 main）在本基线上仍解析为空，待各自批次落地后复核；
     // nhsa / 12333 各有精确键，不受影响。
     expect(resolveSiteIcon('https://www.gov.cn', '中国政府网', 'https://www.gov.cn/favicon.ico')).toBe('/brand-icons/gov.png')
-    expect(resolveSiteIcon('http://www.scs.gov.cn', '国家公务员局', 'http://www.scs.gov.cn/favicon.ico')).not.toBe('/brand-icons/gov.png')
+    expect(resolveSiteIcon('http://www.scs.gov.cn/gkIndex.html', '国家公务员局', 'http://www.scs.gov.cn/favicon.ico')).not.toBe('/brand-icons/gov.png')
     expect(resolveSiteIcon('http://bm.scs.gov.cn/kl2027', '2027年国家公务员考试专题', 'http://www.scs.gov.cn/favicon.ico')).not.toBe('/brand-icons/gov.png')
     expect(resolveSiteIcon('http://subb.scs.gov.cn/lx2027', '中央机关公开遴选和公开选调专题', 'http://www.scs.gov.cn/favicon.ico')).not.toBe('/brand-icons/gov.png')
     expect(resolveSiteIcon('https://www.mee.gov.cn', '生态环境部', 'https://www.mee.gov.cn/favicon.ico')).not.toBe('/brand-icons/gov.png')

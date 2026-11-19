@@ -178,7 +178,7 @@ describe('resolveSiteIcon（图标修复 C 类第 9 批）', () => {
 
   it('事实钉死：5 站阻塞站本次不接线，仍解析为空串（字母徽标兜底）', () => {
     // scs.gov.cn 3 站（机器人验证墙）、中公教育（403 WAF）、廖雪峰教程（无 favicon）
-    expect(resolveSiteIcon('http://www.scs.gov.cn', '国家公务员局', 'http://www.scs.gov.cn/favicon.ico')).toBe('')
+    expect(resolveSiteIcon('http://www.scs.gov.cn/gkIndex.html', '国家公务员局', 'http://www.scs.gov.cn/favicon.ico')).toBe('')
     expect(resolveSiteIcon('http://bm.scs.gov.cn/kl2027', '2027年国家公务员考试专题', 'http://www.scs.gov.cn/favicon.ico')).toBe('')
     expect(resolveSiteIcon('http://subb.scs.gov.cn/lx2027', '中央机关公开遴选和公开选调专题', 'http://www.scs.gov.cn/favicon.ico')).toBe('')
     expect(resolveSiteIcon('https://www.offcn.com', '中公教育', 'https://www.offcn.com/favicon.ico')).toBe('')

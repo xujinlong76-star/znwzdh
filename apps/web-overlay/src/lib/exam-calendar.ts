@@ -122,7 +122,7 @@ export const SHANGHAI_SHENGKAO_ADMISSION_URL = 'https://www.shacs.gov.cn/'
  *    与站内节点窗口一致；
  *  - 门户（GUOKAO_PORTAL_URL，见下）：bm.scs.gov.cn/kl2027，国家公务员局
  *    2027 年度招考专题网站，是报名/审查的门户入口，不是打印系统直达
- *    地址——实测仅 335 B JS 跳转页，当前直接访问会跳到 scs.gov.cn 首页，
+ *    地址——实测仅 334 B JS 跳转页，当前直接访问会跳到招考专题 gkIndex.html，
  *    点它找不到打印系统，故不作准考证节点的点击目标。
  *
  * 事实来源：官方 2026-10-25 单独公告《报名确认及准考证打印网址》所载
@@ -140,8 +140,8 @@ export const GUOKAO_ADMISSION_URL = 'http://gwy.cpta.com.cn'
 /**
  * 国考专题网站门户入口（报名/审查）：国家公务员局 2027 年度招考专题
  * 网站 http://bm.scs.gov.cn/kl2027。保留作门户引用，不作准考证打印
- * 节点与提醒的点击目标（见 GUOKAO_ADMISSION_URL 注释：仅 335 B JS
- * 跳转页，当前直接访问会跳到 scs.gov.cn 首页、找不到打印系统）。
+ * 节点与提醒的点击目标（见 GUOKAO_ADMISSION_URL 注释：仅 334 B JS
+ * 跳转页，当前直接访问会跳到招考专题 gkIndex.html、找不到打印系统）。
  */
 export const GUOKAO_PORTAL_URL = 'http://bm.scs.gov.cn/kl2027'
 

@@ -3778,8 +3778,8 @@
             {
               "id": "nav-c6c24bd6dc9e",
               "title": "国家公务员局",
-              "href": "http://www.scs.gov.cn",
-              "description": "国家公务员考试官方网站：招考公告、职位表、报名入口与成绩查询",
+              "href": "http://www.scs.gov.cn/gkIndex.html",
+              "description": "国家公务员局考试录用公务员引导页：考务入口（报名确认、打印准考证）与 2027 年度招考专题入口",
               "icon": "http://www.scs.gov.cn/favicon.ico",
               "enabled": true,
               "tags": [

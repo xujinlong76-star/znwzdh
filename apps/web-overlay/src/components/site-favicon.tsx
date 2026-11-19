@@ -393,6 +393,35 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'apify.com': '/brand-icons/apify.svg',
   'devin.ai': '/brand-icons/devin.svg',
   'topview.ai': '/brand-icons/topview.png',
+  // 2026-11-19（C 类第 3 批 C3）：Jasper / Copy.ai / Writesonic / Grammarly /
+  // 秘塔写作猫 / Wordtune / Baidu Comate / Continue.dev / 讯飞开放平台 /
+  // Udio / Soundraw / AIVA / Boomy / Mubert / Loudly / Murf AI /
+  // Speechify / WellSaid / NaturalReader / 魔音工坊。
+  // 20 站 icon 字段均含 favicon（远端 …/favicon.ico、…/favicon.png 或
+  // CDN …_favicon.png / …_favicon.ico），被 isRemoteRawFavicon 拦截，
+  // map 生效，navigation.json 不动。'xfyun.cn'（讯飞开放平台）与已有
+  // 'xinghuo.xfyun.cn'（讯飞星火）互不干扰：精确查找先命中各自键。
+  // 'comate.baidu.com' 用完整子域建键，不建 'baidu.com' 键。
+  'jasper.ai': '/brand-icons/jasper.png',
+  'copy.ai': '/brand-icons/copy-ai.png',
+  'writesonic.com': '/brand-icons/writesonic.svg',
+  'grammarly.com': '/brand-icons/grammarly.png',
+  'xiezuocat.com': '/brand-icons/xiezuocat.png',
+  'wordtune.com': '/brand-icons/wordtune.png',
+  'comate.baidu.com': '/brand-icons/comate.png',
+  'continue.dev': '/brand-icons/continue.png',
+  'xfyun.cn': '/brand-icons/xfyun.png',
+  'udio.com': '/brand-icons/udio.png',
+  'soundraw.io': '/brand-icons/soundraw.png',
+  'aiva.ai': '/brand-icons/aiva.png',
+  'boomy.com': '/brand-icons/boomy.png',
+  'mubert.com': '/brand-icons/mubert.png',
+  'loudly.com': '/brand-icons/loudly.png',
+  'murf.ai': '/brand-icons/murf.png',
+  'speechify.com': '/brand-icons/speechify.png',
+  'wellsaid.io': '/brand-icons/wellsaid.png',
+  'naturalreaders.com': '/brand-icons/naturalreader.png',
+  'moyin.com': '/brand-icons/moyin.png',
 }
 
 /**

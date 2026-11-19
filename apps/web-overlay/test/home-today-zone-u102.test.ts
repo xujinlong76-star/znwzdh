@@ -23,6 +23,7 @@ import {
 import { formatRemaining } from '../src/components/home-today-countdown'
 import { computeHomeTodayBadge } from '../src/lib/home-today-summary'
 import { HomeTodayZone } from '../src/components/home-today-zone'
+import { withEligibleVerificationFor } from './exam-verification-fixture'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
@@ -202,12 +203,12 @@ describe('U-136：startsToday 行补「今日开始」徽章（徽章 only，不
     return hit!
   }
 
-  it('11-19 08:00：上海行有 emerald「今日开始」徽章，海南行（today）无徽章、无 chip，天津行（today，U-162）无徽章、有倒计时 chip；全页无「今日截止」', () => {
+  it('11-19 08:00：上海行有 emerald「今日开始」徽章，海南行（today）无徽章、无 chip，天津行（today，U-162）无徽章、无 chip 标「待核实」（§7.2，D2 例外未核实）；全页无「今日截止」', () => {
     const items = todayNodes(NOV_19_0800_CST)
     expect(items).toHaveLength(3)
     const html = unesc(renderZone(NOV_19_0800_CST))
     // U-164 之后 11-19 今日行构成变：海南成绩查询（today）+ 上海自考成绩查询（startsToday）；
-    // U-162 再加天津成绩复核（today，18:00 截止入表、有倒计时 chip）；江西成绩复核退接续区。
+    // U-162 再加天津成绩复核（today）；江西成绩复核退接续区。
     // 徽章只覆盖 startsToday 行，故「今日开始」恰好 1 个（上海行）。
     expect(html.match(/今日开始/g)?.length).toBe(1)
     expect(html).not.toContain('今日截止')
@@ -215,37 +216,40 @@ describe('U-136：startsToday 行补「今日开始」徽章（徽章 only，不
     expect(hn).not.toContain('今日开始')
     expect(hn).not.toContain('bg-emerald-500/10')
     expect(hn).not.toContain('role="timer"')
+    expect(hn).toContain('待核实')
     expect(hn).toContain('11 月 19 日 17:00 起可查')
-    // U-162：天津行 kind today、无徽章；18:00 截止入 PEAK 表，08:00 有倒计时 chip
+    // U-162：天津行 kind today、无徽章；D2 例外未核实，PEAK 表 18:00 暂不准入、无 chip、标「待核实」
     const tj = liFor(html, '成考 · 天津成绩复核')
     expect(tj).not.toContain('今日开始')
     expect(tj).not.toContain('bg-emerald-500/10')
-    expect(tj).toContain('role="timer"')
-    expect(tj).toContain('倒计时')
+    expect(tj).not.toContain('role="timer"')
+    expect(tj).toContain('待核实')
     expect(tj).toContain('11 月 19 日 9:00 至 18:00 网上申请缴费')
     const sh = liFor(html, '上海自考 · 成绩查询')
     expect(sh).toContain('今日开始')
     expect(sh).toContain('bg-emerald-500/10')
     expect(sh).toContain('text-emerald-700')
     expect(sh).not.toContain('role="timer"')
+    expect(sh).toContain('待核实')
     // 接续区内的江西复核行无徽章：接续区 <li> 只有 TodayNodeLabel + detail，无徽章分支（代码核实）
     const jxFollowUp = liFor(html, '成考 · 江西成绩复核')
     expect(jxFollowUp).not.toContain('今日开始')
     expect(jxFollowUp).not.toContain('bg-emerald-500/10')
   })
 
-  it('11-19 10:30（上海窗口已开、海南 17:00 未到）：上海徽章不变，海南行仍无徽章、无「已截止」，天津行仍有倒计时 chip', () => {
+  it('11-19 10:30（上海窗口已开、海南 17:00 未到）：上海徽章不变，海南行仍无徽章、无「已截止」，天津行仍无倒计时 chip、标「待核实」', () => {
     const html = unesc(renderZone(NOV_19_1030_CST))
     expect(html.match(/今日开始/g)?.length).toBe(1)
     expect(html).not.toContain('今日截止')
     expect(html).not.toContain('已截止')
     expect(liFor(html, '上海自考 · 成绩查询')).toContain('今日开始')
     expect(liFor(html, '成考 · 海南成绩查询')).not.toContain('今日开始')
-    // U-162：天津 18:00 未到，倒计时 chip 仍在
-    expect(liFor(html, '成考 · 天津成绩复核')).toContain('role="timer"')
+    // U-162：天津行未核实（§7.2），18:00 未到也不挂 chip
+    expect(liFor(html, '成考 · 天津成绩复核')).not.toContain('role="timer"')
+    expect(liFor(html, '成考 · 天津成绩复核')).toContain('待核实')
   })
 
-  it('11-19 18:30（海南 17:00、天津 18:00 均已过）：三行 UI 零变化——上海徽章仍在，海南行无 chip、天津行 SSR 仍出「倒计时」占位（挂载后消失），无「已截止」；urgentCount 为 2', () => {
+  it('11-19 18:30（海南 17:00、天津 18:00 均已过）：三行 UI 零变化——上海徽章仍在，海南行无 chip、天津行无 chip 标「待核实」，无「已截止」；角标只计准入节点、todayCount 与 urgentCount 均为 0（§7.2）', () => {
     const html = unesc(renderZone(NOV_19_1830_CST))
     expect(html.match(/今日开始/g)?.length).toBe(1)
     expect(html).not.toContain('今日截止')
@@ -254,32 +258,31 @@ describe('U-136：startsToday 行补「今日开始」徽章（徽章 only，不
     const hn = liFor(html, '成考 · 海南成绩查询')
     expect(hn).not.toContain('今日开始')
     expect(hn).not.toContain('role="timer"')
-    // U-162：天津行 kind today + hideWhenPassed，挂载后目标已过 chip 直接消失、
-    // 不显示「已截止」；SSR 只出「倒计时」占位（组件源码：挂载前的占位不受影响，
-    // SSR 测试依赖它），故 SSR 仍含 role="timer"、文案仍为「倒计时」占位
+    // U-162：天津行未核实（§7.2），无 chip、不显示「已截止」，标「待核实」
     const tj = liFor(html, '成考 · 天津成绩复核')
     expect(tj).not.toContain('今日开始')
-    expect(tj).toContain('role="timer"')
-    expect(tj).toContain('倒计时')
+    expect(tj).not.toContain('role="timer"')
     expect(tj).not.toContain('已截止')
+    expect(tj).toContain('待核实')
     const countdown = read('src/components/home-today-countdown.tsx')
     expect(countdown).toContain('if (hideWhenPassed && targetMs <= nowMs) return null')
     const zone = read('src/components/home-today-zone.tsx')
     expect(zone).toContain("kind === 'today' ? { hideWhenPassed: true }")
-    // U-164：海南 today 行计入紧急数；U-162：天津 today 行同样计入，11-19 urgentCount 1 → 2（todayCount 2 → 3）
+    // 11-19 三行今日节点均未核实，角标只计准入节点（§7.2）：todayCount 0、urgentCount 0。
     const badge = computeHomeTodayBadge(NOV_19_1830_CST)
-    expect(badge.todayCount).toBe(3)
-    expect(badge.urgentCount).toBe(2)
+    expect(badge.todayCount).toBe(0)
+    expect(badge.urgentCount).toBe(0)
   })
 
-  it('11-20 回归：江西行变 amber「今日截止」+ chip，上海复核行新入今日行带「今日开始」无 chip，山西复核行末日入今日行带「今日截止」无 chip', () => {
+  it('11-20 回归：江西行变 amber「今日截止」但无 chip、标「待核实」（§7.2 未核实），上海复核行新入今日行带「今日开始」无 chip，山西复核行末日入今日行带「今日截止」无 chip', () => {
     const items = todayNodes(NOV_20_0800_CST)
     expect(items).toHaveLength(6)
     const html = unesc(renderZone(NOV_20_0800_CST))
     const jx = liFor(html, '成考 · 江西成绩复核')
     expect(jx).toContain('今日截止')
     expect(jx).toContain('bg-amber-500/10')
-    expect(jx).toContain('role="timer"')
+    expect(jx).not.toContain('role="timer"')
+    expect(jx).toContain('待核实')
     const shReview = liFor(html, '上海自考 · 成绩复核')
     expect(shReview).toContain('今日开始')
     expect(shReview).toContain('bg-emerald-500/10')
@@ -292,14 +295,18 @@ describe('U-136：startsToday 行补「今日开始」徽章（徽章 only，不
     expect(sxReview).not.toContain('role="timer"')
   })
 
-  it('11-20 17:30：江西 chip 读「已截止」（helper 层；SSR 只出「倒计时」占位，不直接断言 SSR 文案）', () => {
+  it('11-20 17:30：江西真实节点未核实、helper 恒为 null（§7.2）；eligible 包装对照 chip 读「已截止」（helper 层；SSR 只出「倒计时」占位，不直接断言 SSR 文案）', () => {
     const chengkao = todayNodes(NOV_20_1730_CST).find((t) => t.exam.id === 'chengkao')!.exam
     const jxReview = chengkao.nodes.find((n) => n.label === '江西成绩复核')!
-    expect(todayNodeDeadlineMs({ exam: chengkao, node: jxReview, kind: 'endsToday' })).toBe(
+    expect(todayNodeDeadlineMs({ exam: chengkao, node: jxReview, kind: 'endsToday' })).toBeUndefined()
+    expect(examNodeDeadlineLabel(chengkao, jxReview, NOV_20_1730_CST)).toBeNull()
+    // 对照：PEAK 表项仍在，eligible 包装返回 11-20 17:00，helper 读「已截止」。
+    const eligible = withEligibleVerificationFor('chengkao', jxReview)
+    expect(todayNodeDeadlineMs({ exam: chengkao, node: eligible, kind: 'endsToday' })).toBe(
       Date.UTC(2026, 10, 20, 9, 0, 0),
     )
     expect(formatRemaining(Date.UTC(2026, 10, 20, 9, 0, 0), NOV_20_1730_CST)).toBe('已截止')
-    expect(examNodeDeadlineLabel(chengkao, jxReview, NOV_20_1730_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(chengkao, eligible, NOV_20_1730_CST)).toBe('已截止')
   })
 
   it('390px 不溢出（类守卫，SSR + 源码双重）：徽章 shrink-0、chip whitespace-nowrap、li flex-wrap、detail basis-full', () => {

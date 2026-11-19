@@ -121,6 +121,13 @@ export function HomeExamStripView({
                   </>
                 ) : null}
                 下一步：{nextNode.label} · {nextNode.detail}
+                {/* §7.1：条带上的下一步节点只显示已准入节点的倒计时（时刻 chip 在
+                    ExamCountdown 岛内按准入闸渲染）；这里只补级别文案，未核实标“待核实”。 */}
+                {nextNode.verification_level === 'unverified' ? (
+                  <span className="font-medium text-muted-foreground"> · 待核实</span>
+                ) : nextNode.verification_level === 'reprint' ? (
+                  <span className="font-medium text-amber-700 dark:text-amber-400"> · 转载级</span>
+                ) : null}
               </p>
             ) : null}
           </div>

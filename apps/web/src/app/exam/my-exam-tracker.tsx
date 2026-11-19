@@ -16,6 +16,11 @@ import {
   isFollowed,
 } from '@/lib/my-exams'
 import { safeHref } from '@/lib/safe-url'
+import { ExamVerificationBadge } from '@/components/exam-verification-badge'
+import { isPeakEligible } from '@/lib/exam-verification'
+
+/** 时刻提醒本地开关（本机 localStorage，与关注/勾选同款存放；未核实节点不提供入口）。 */
+const REMINDER_STORAGE_KEY = 'exam-node-reminders-v1'
 
 const NODE_DOT_CLASS: Record<string, string> = {
   done: 'bg-muted-foreground/40',
@@ -68,6 +73,29 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
   }, [])
 
   const followed = state !== null && isFollowed(state, exam.id)
+  const [reminders, setReminders] = useState<Record<string, boolean>>(() => {
+    try {
+      if (typeof window === 'undefined') return {}
+      return JSON.parse(localStorage.getItem(REMINDER_STORAGE_KEY) ?? '{}') as Record<
+        string,
+        boolean
+      >
+    } catch {
+      return {}
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem(REMINDER_STORAGE_KEY, JSON.stringify(reminders))
+    } catch {
+      // 存储不可用时静默放弃，不阻塞看时间轴。
+    }
+  }, [reminders])
+
+  function toggleReminder(nodeLabel: string) {
+    const key = `${exam.id}:${nodeLabel}`
+    setReminders((prev) => ({ ...prev, [key]: !prev[key] }))
+  }
   const ended = examStatus(exam, now) === 'ended'
   // R1（2026-11-17）：统考已过但节点仍可办时（成考 11-18 的成绩查询），
   // 卡片行文不写裸「已结束」，改按统考 scoped 文案并指向下方节点；
@@ -123,6 +151,9 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
           const status = examNodeStatus(node, now)
           const checked = followed && checkedLabels.includes(node.label)
           const linkCopy = nodeLinkCopy(node.label)
+          const reminderKey = `${exam.id}:${node.label}`
+          const reminderOn = reminders[reminderKey] === true
+          const reminderEligible = isPeakEligible(node, now)
           // U-237：行文本（label + detail）与复选框槽位共用一个 span；已关注态
           // 它被 <label> 包着（点行文字即勾选），未关注态它与圆点槽位并列。
           const text = (
@@ -132,7 +163,8 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
               >
                 {node.label}
               </span>
-              <span className="text-muted-foreground"> · {node.detail}</span>
+              <span className="text-muted-foreground"> · {node.detail}</span>{' '}
+              <ExamVerificationBadge node={node} />
             </span>
           )
           return (
@@ -183,6 +215,31 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
                   {linkCopy.text}
                   <ArrowUpRight className="h-4 w-4" aria-hidden />
                 </a>
+              ) : null}
+              {/* 时刻提醒入口（§7.1）：只在已关注时提供；unverified 节点禁用
+                  （待核实后可用），准入节点可本地开关（本机保存）。 */}
+              {followed ? (
+                reminderEligible ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleReminder(node.label)}
+                    aria-pressed={reminderOn}
+                    aria-label={reminderOn ? `取消${node.label}时刻提醒` : `设置${node.label}时刻提醒`}
+                    className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap text-sm font-medium text-sky-700 hover:underline dark:text-sky-400"
+                  >
+                    {reminderOn ? '已设提醒' : '设提醒'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    title="该节点待核实，暂不提供时刻提醒"
+                    aria-label={`${node.label}待核实，暂不提供时刻提醒`}
+                    className="inline-flex min-h-11 shrink-0 cursor-not-allowed items-center whitespace-nowrap text-sm text-muted-foreground opacity-60"
+                  >
+                    设提醒
+                  </button>
+                )
               ) : null}
               <span className="shrink-0 text-xs text-muted-foreground">
                 {/* 峰值日包 W10：11-18 七项目标时刻已过时文案读「已截止」

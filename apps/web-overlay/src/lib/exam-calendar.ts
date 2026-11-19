@@ -21,6 +21,12 @@
  *  - 2026 下半年软考（10-24–27）与教资笔试（11-01）已考完，不列入倒计时。
  */
 
+import {
+  isPeakEligible,
+  type VerificationConfidence,
+  type VerificationLevel,
+} from './exam-verification'
+
 export interface ExamNode {
   label: string
   detail: string
@@ -35,6 +41,24 @@ export interface ExamNode {
   endISO: string
   /** 预计日期：官方未公布确切日，状态不按日期自动翻转为「已结束」 */
   estimated?: boolean
+  /**
+   * 核验级别（01-verification-workflow §2.1，必填，全部节点逐个填写）：
+   * official 须 source_url + archived_url 双全且域名在白名单内，否则校验层强制降级；
+   * reprint 须有真实 source_url（archived_url 允许为空，见 exam-verification.ts 文件头
+   * 裁决记录：任务书 PoC 填值规则 + §12.3 覆盖 §2.1“reprint 存档必填”一行）；
+   * 无来源的节点只能标 unverified（此时 source_url / archived_url / checked_at 必须为空）。
+   * 2026-11-19 PoC 核查：CDX 反查 10 个 PoC 节点的公告原文页均无 Wayback 快照，
+   * 故本轮 8 节点 reprint、其余 35 节点 unverified（诚实值，见 exam-verification.ts 文件头）。
+   */
+  verification_level: VerificationLevel
+  /** 事实来源 URL（公告原文页）；unverified 时为空。禁止短链、本站自身 URL、http 改 https。 */
+  source_url?: string
+  /** Wayback 存档 URL（须 CDX 反查确认 14 位时间戳真实存在）；unverified 时为空。 */
+  archived_url?: string
+  /** 核查时间（ISO 8601 北京时间，须含时刻）；unverified 时为空。 */
+  checked_at?: string
+  /** 置信度（由 deriveConfidence() 推导，非手填自由值；本文件填值须等于推导值）。 */
+  confidence: VerificationConfidence
 }
 
 export interface ExamInfo {
@@ -229,6 +253,8 @@ export const EXAMS: ExamInfo[] = [
     nodes: [
       {
         label: '准考证打印',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 23 日 0:00 至 11 月 29 日 15:00',
         startISO: '2026-11-23',
         endISO: '2026-11-29',
@@ -236,12 +262,16 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '专业科目笔试',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 28 日 14:00–16:00（部分岗位）',
         startISO: '2026-11-28',
         endISO: '2026-11-28',
       },
       {
         label: '公共科目笔试',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '行测 9:00–11:00，申论 14:00–17:00',
         startISO: '2026-11-29',
         endISO: '2026-11-29',
@@ -259,12 +289,16 @@ export const EXAMS: ExamInfo[] = [
     nodes: [
       {
         label: '口试',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '四级 11 月 21 日，六级 11 月 22 日',
         startISO: '2026-11-21',
         endISO: '2026-11-22',
       },
       {
         label: '口试准考证打印',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 17 日 9:00 起',
         startISO: '2026-11-17',
         endISO: '2026-11-22',
@@ -272,6 +306,8 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '笔试准考证打印',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '12 月 1 日 9:00 起',
         startISO: '2026-12-01',
         endISO: '2026-12-12',
@@ -279,6 +315,8 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '笔试',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '四级 9:00–11:20，六级 15:00–17:25',
         startISO: '2026-12-12',
         endISO: '2026-12-12',
@@ -300,6 +338,8 @@ export const EXAMS: ExamInfo[] = [
       // 无截止两省的 endISO 取笔试日 12-06 作末日占位（estimated 下状态不受影响）。
       {
         label: '天津准考证打印',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 28 日 8:30 起，公告未写截止，以报名系统为准',
         startISO: '2026-11-28',
         endISO: '2026-12-06',
@@ -308,6 +348,8 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '山东准考证打印',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '12 月 1 日 9:00 至 12 月 6 日 14:15',
         startISO: '2026-12-01',
         endISO: '2026-12-06',
@@ -315,6 +357,8 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '四川准考证打印',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '12 月 1 日至 12 月 6 日，公告未写时刻',
         startISO: '2026-12-01',
         endISO: '2026-12-06',
@@ -323,6 +367,8 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '浙江准考证打印',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '12 月 1 日 9:00 至 12 月 6 日 17:00',
         startISO: '2026-12-01',
         endISO: '2026-12-06',
@@ -330,6 +376,8 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '江苏准考证打印',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '12 月 2 日 9:00 至 12 月 6 日 15:00',
         startISO: '2026-12-02',
         endISO: '2026-12-06',
@@ -337,6 +385,8 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '广东准考证打印',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '12 月 2 日 9:00 起，公告未写截止，以报名系统为准',
         startISO: '2026-12-02',
         endISO: '2026-12-06',
@@ -345,6 +395,8 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '上海准考证打印',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '12 月 2 日 10:00 至 12 月 5 日 18:00',
         startISO: '2026-12-02',
         endISO: '2026-12-05',
@@ -352,12 +404,16 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '专业科目笔试',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '12 月 5 日（多省）',
         startISO: '2026-12-05',
         endISO: '2026-12-05',
       },
       {
         label: '公共科目笔试',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '12 月 6 日：四川、江苏、广东、上海、天津、浙江、山东',
         startISO: '2026-12-06',
         endISO: '2026-12-06',
@@ -386,6 +442,8 @@ export const EXAMS: ExamInfo[] = [
     nodes: [
       {
         label: '准考证打印',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 30 日至 12 月 6 日（北京：11 月 30 日 10:00 至 12 月 6 日 16:00；各省以本省公告为准），登录中小学教师资格考试网下载打印准考证',
         startISO: '2026-11-30',
         endISO: '2026-12-06',
@@ -393,6 +451,8 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '面试',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '12 月 5–6 日，具体时间与地点以准考证为准',
         startISO: '2026-12-05',
         endISO: '2026-12-06',
@@ -418,6 +478,12 @@ export const EXAMS: ExamInfo[] = [
     nodes: [
       {
         label: '准考证打印',
+        // reprint（2026-11-19 PoC 核查）：来源为 eol.cn 公告全文转载（与新浪/央视通稿三源一致）；
+        // CDX 反查无 Wayback 快照，archived_url 留空。
+        verification_level: 'reprint',
+        source_url: 'https://www.eol.cn/news/yaowen/202611/t20261104_2790191.shtml',
+        checked_at: '2026-11-19T23:30:00+08:00',
+        confidence: 'medium',
         detail: '12 月 7 日 9:00 至 12 月 13 日 14:00，登录军队人才网报名系统下载打印准考证',
         startISO: '2026-12-07',
         endISO: '2026-12-13',
@@ -425,12 +491,19 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '缴费',
+        // reprint（2026-11-19 PoC 核查）：来源与军队文职准考证打印同一 eol.cn 公告全文转载；CDX 无存档。
+        verification_level: 'reprint',
+        source_url: 'https://www.eol.cn/news/yaowen/202611/t20261104_2790191.shtml',
+        checked_at: '2026-11-19T23:30:00+08:00',
+        confidence: 'medium',
         detail: '通过报名资格条件初审的报考人员，于 2026 年 11 月 17 日 8:00 至 18 日 18:00 缴纳报名费和选择考试城市，每门考试科目人民币 50 元；缴费成功并打印报名回执方为有效报名。文体岗位（艺术、体育、播音）先面试合格人员同一窗口缴费。免笔试直接面试岗位不需要缴纳报名费。',
         startISO: '2026-11-17',
         endISO: '2026-11-18',
       },
       {
         label: '全军统一笔试',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '12 月 13 日：公共科目 9:00–11:00，专业科目 14:00–16:00',
         startISO: '2026-12-13',
         endISO: '2026-12-13',
@@ -476,6 +549,12 @@ export const EXAMS: ExamInfo[] = [
     nodes: [
       {
         label: '报名',
+        // reprint（2026-11-19 PoC 核查）：来源为首都之窗官方公告原文（2026-11-17 直访全文逐字核实）；
+        // CDX 反查无 Wayback 快照，按任务书规则降级 reprint（archived_url 留空）。
+        verification_level: 'reprint',
+        source_url: JINGKAO_NOTICE_URL,
+        checked_at: '2026-11-19T23:30:00+08:00',
+        confidence: 'medium',
         detail: '11 月 12 日 9:00 至 11 月 18 日 18:00，登录北京市人事考试通用平台提交报考申请；未通过资格审查者可在 11 月 18 日 18:00 前改报其他职位',
         startISO: '2026-11-12',
         endISO: '2026-11-18',
@@ -483,6 +562,11 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '准考证打印',
+        // reprint（2026-11-19 PoC 核查）：来源与京考报名同一首都之窗官方公告原文；CDX 无存档，降级 reprint。
+        verification_level: 'reprint',
+        source_url: JINGKAO_NOTICE_URL,
+        checked_at: '2026-11-19T23:30:00+08:00',
+        confidence: 'medium',
         detail: '12 月 1 日 9:00 至 12 月 6 日 16:30，缴费成功后从北京市人事考试通用平台自行下载打印准考证',
         startISO: '2026-12-01',
         endISO: '2026-12-06',
@@ -490,12 +574,16 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '公安专业科目笔试',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '12 月 5 日 14:00–16:00（仅公安机关人民警察职位）',
         startISO: '2026-12-05',
         endISO: '2026-12-05',
       },
       {
         label: '公共科目笔试',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '12 月 6 日：行测 9:00–11:00，申论 14:00–16:30',
         startISO: '2026-12-06',
         endISO: '2026-12-06',
@@ -515,6 +603,8 @@ export const EXAMS: ExamInfo[] = [
     nodes: [
       {
         label: '准考证下载',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '考前 10 天左右开通（预计 12 月 9 日前后）',
         startISO: '2026-12-09',
         endISO: '2026-12-10',
@@ -522,6 +612,8 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '初试',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '12 月 19–20 日',
         startISO: '2026-12-19',
         endISO: '2026-12-20',
@@ -608,12 +700,16 @@ export const EXAMS: ExamInfo[] = [
     nodes: [
       {
         label: '江西成绩查询',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 18 日 9:00 起可查（江西省教育考试院网服务大厅「成绩查询」栏目）',
         startISO: '2026-11-18',
         endISO: '2026-11-18',
       },
       {
         label: '江西成绩复核',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 19 日 9:00 至 11 月 20 日 17:00 登录江西省成人高考网上报名系统申请，复核结果 11 月 24 日通过报名系统反馈',
         url: JIANGXI_CHENGKAO_REVIEW_URL,
         startISO: '2026-11-19',
@@ -621,48 +717,71 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '广东成绩查询',
+        // reprint（2026-11-19 PoC 核查）：来源为东莞市政府转发的省考试院 2026-11-09 通知 PDF
+        //（16:00 推送 / 16:20 小程序自查，与节点一致）；CDX 反查无 Wayback 快照，archived_url 留空。
+        verification_level: 'reprint',
+        source_url: 'https://edu.dg.gov.cn/attachment/0/447/447620/4604654.pdf',
+        checked_at: '2026-11-19T23:30:00+08:00',
+        confidence: 'medium',
         detail: '11 月 18 日 16:00 起短信推送，16:20 起官微（gdsksy）/支付宝/百度小程序可查',
         startISO: '2026-11-18',
         endISO: '2026-11-18',
       },
       {
         label: '广东成绩复核',
+        // reprint（2026-11-19 PoC 核查，同源相邻节点）：来源与广东成绩查询同一省考试院通知 PDF；CDX 无存档。
+        verification_level: 'reprint',
+        source_url: 'https://edu.dg.gov.cn/attachment/0/447/447620/4604654.pdf',
+        checked_at: '2026-11-19T23:30:00+08:00',
+        confidence: 'medium',
         detail: '复查须在 11 月 20 日 15:00 前凭身份证件、准考证到当地县（市、区）招生办书面申请，逾期不予受理',
         startISO: '2026-11-20',
         endISO: '2026-11-20',
       },
       {
         label: '新疆成绩查询',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 18 日 12:00 起可查（新疆教育考试院官网"新疆招生网"公众服务大厅"成绩查询"，输入身份证号、密码、短信验证码）',
         startISO: '2026-11-18',
         endISO: '2026-11-18',
       },
       {
         label: '新疆成绩复核',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 18 日 12:00 至 11 月 20 日 12:00，下载《2026年自治区成人高考复核成绩申请表》，填好发送至所在地（州、市）教育考试机构指定邮箱（具体邮箱见公告附件2），逾期不再受理',
         startISO: '2026-11-18',
         endISO: '2026-11-20',
       },
       {
         label: '山西成绩复核',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '成绩已于 11 月 18 日公布；对成绩有疑义的考生，可于 11 月 19 日、20 日的工作时间内，到考试所在市的招生考试机构办理成绩复核手续，逾期不予受理；11 月 27 日前，各市招生考试机构通知考生成绩复核结果（转载级：山西省招生考试管理中心 2026-11-16 通知，凤凰网与新浪财经转载一致，本站未在山西招生考试网直读到官方原文）',
         startISO: '2026-11-19',
         endISO: '2026-11-20',
       },
       {
         label: '海南成绩查询',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 19 日 17:00 起可查（海南省成人高考报名系统）',
         startISO: '2026-11-19',
         endISO: '2026-11-19',
       },
       {
         label: '天津成绩复核',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 19 日 9:00 至 18:00 网上申请缴费；复核结果 11 月 25 日 9:00 至 11 月 30 日 17:00 可查（转载级、未见官方原文，待官方原文核实后升级）',
         startISO: '2026-11-19',
         endISO: '2026-11-19',
       },
       {
         label: '浙江成绩查询',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 20 日左右公布成绩与分数线（浙江省教育考试院成人高校招生报名系统）',
         startISO: '2026-11-20',
         endISO: '2026-11-20',
@@ -670,6 +789,8 @@ export const EXAMS: ExamInfo[] = [
       },
       {
         label: '浙江志愿确认',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 25 日 8:30 至 11 月 29 日 17:00，登录成人高校招生报名系统确认或修改志愿',
         startISO: '2026-11-25',
         endISO: '2026-11-29',
@@ -696,12 +817,23 @@ export const EXAMS: ExamInfo[] = [
     nodes: [
       {
         label: '成绩查询',
+        // reprint（2026-11-19 PoC 核查）：来源为常州网转载江苏省教育考试院通告
+        //（11-18 10:00 发布、复核登记 11-18/19/20 17:00 截止，与节点一致）；CDX 反查无 Wayback 快照。
+        verification_level: 'reprint',
+        source_url: 'https://www.cz001.com.cn/article/403918',
+        checked_at: '2026-11-19T23:30:00+08:00',
+        confidence: 'medium',
         detail: '11 月 18 日 10:00 起可查（江苏省教育考试院门户网站 www.jseea.cn「招考业务」栏目「自学考试」页面）',
         startISO: '2026-11-18',
         endISO: '2026-11-18',
       },
       {
         label: '成绩复核',
+        // reprint（2026-11-19 PoC 核查，同源相邻节点）：来源与江苏成绩查询同一常州网转载；CDX 无存档。
+        verification_level: 'reprint',
+        source_url: 'https://www.cz001.com.cn/article/403918',
+        checked_at: '2026-11-19T23:30:00+08:00',
+        confidence: 'medium',
         detail: '11 月 18 日、19 日、20 日（17:00 截止）持本人身份证、准考证到所属区县考办登记并提交复核申请，逾期不予受理',
         startISO: '2026-11-18',
         endISO: '2026-11-20',
@@ -730,6 +862,8 @@ export const EXAMS: ExamInfo[] = [
     nodes: [
       {
         label: '成绩查询',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 18 日 15:00 起可查：官微小程序（gdsksy）、支付宝小程序、百度智能小程序、广东省自学考试管理系统（查合格成绩与当次违规处理情况）',
         startISO: '2026-11-18',
         endISO: '2026-11-18',
@@ -755,12 +889,16 @@ export const EXAMS: ExamInfo[] = [
     nodes: [
       {
         label: '成绩查询',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 19 日 10:00 至 12 月 18 日 16:00 可查（上海市教育考试院官网首页「成绩查询」栏目，或上海市高等教育自学考试考生服务平台，凭准考证号 / 证件号查询）',
         startISO: '2026-11-19',
         endISO: '2026-12-18',
       },
       {
         label: '成绩复核',
+        verification_level: 'unverified',
+        confidence: 'low',
         detail: '11 月 20 日至 22 日向主考高校申请成绩复核，具体复核时间与复核方式见主考高校网站通知',
         startISO: '2026-11-20',
         endISO: '2026-11-22',
@@ -1140,16 +1278,23 @@ const PEAK_DAY_DEADLINE_MINUTES: Readonly<Record<string, { date: string; minutes
 }
 
 /** 表内节点的目标时刻（UTC 毫秒数）；表外或节点日期不覆盖目标日期的返回 undefined */
-function peakDayDeadlineMs(exam: ExamInfo, node: ExamNode): number | undefined {
+export function peakDayDeadlineMs(
+  exam: ExamInfo,
+  node: ExamNode,
+  nowMs: number = Date.now(),
+): number | undefined {
+  // §7.2 准入闸：未准入节点（unverified / low / 过期）返回 undefined，与表外节点同等处理。
+  if (!isPeakEligible(node, nowMs)) return undefined
   const target = PEAK_DAY_DEADLINE_MINUTES[`${exam.id}:${node.label}`]
   if (target === undefined) return undefined
   if (node.startISO > target.date || node.endISO < target.date) return undefined
   return shanghaiMidnightMs(target.date) + target.minutes * 60 * 1000
 }
 
-/** 今日行条目的目标时刻（UTC 毫秒数）：表外节点返回 undefined，供倒计时组件传 target 用 */
-export function todayNodeDeadlineMs(item: TodayNodeItem): number | undefined {
-  return peakDayDeadlineMs(item.exam, item.node)
+/** 今日行条目的目标时刻（UTC 毫秒数）：表外节点返回 undefined，供倒计时组件传 target 用；
+ * 未准入节点同步返回 undefined（§7.2，与 peakDayDeadlineMs 同闸）。 */
+export function todayNodeDeadlineMs(item: TodayNodeItem, nowMs: number = Date.now()): number | undefined {
+  return peakDayDeadlineMs(item.exam, item.node, nowMs)
 }
 
 /**
@@ -1160,7 +1305,7 @@ export function todayNodeDeadlineMs(item: TodayNodeItem): number | undefined {
  * 只读已核实 detail，不给 ExamNode 加时刻字段、不改 todayNodes 入选口径。
  */
 export function todayNodeTargetMs(item: TodayNodeItem, nowMs: number = Date.now()): number | undefined {
-  const peak = todayNodeDeadlineMs(item)
+  const peak = todayNodeDeadlineMs(item, nowMs)
   if (peak !== undefined) return peak
   const todayISO = new Date(shanghaiTodayStartMs(nowMs) + SHANGHAI_OFFSET_MS)
     .toISOString()
@@ -1201,7 +1346,7 @@ export function examNodeDeadlineLabel(
   node: ExamNode,
   nowMs: number = Date.now(),
 ): '已截止' | null {
-  const deadlineMs = peakDayDeadlineMs(exam, node)
+  const deadlineMs = peakDayDeadlineMs(exam, node, nowMs)
   if (deadlineMs === undefined) return null
   return nowMs >= deadlineMs ? '已截止' : null
 }

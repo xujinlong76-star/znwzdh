@@ -437,6 +437,99 @@ export const auditLogs = sqliteTable("audit_logs", {
   createdAt: integer("created_at").notNull().$defaultFn(now),
 }, (t) => [index("audit_logs_created_idx").on(t.createdAt), index("audit_logs_actor_idx").on(t.actor)]);
 
+/**
+ * 考试节点核验记录（01-verification-workflow §2.5）。
+ *
+ * 去重/关联规则：同一 (exam_id, node_label, assertion_hash) 多次核查各存一行
+ * （不覆盖、不 UPDATE），以 checked_at 最新为准；节点 5 字段快照只存最新一条。
+ * verdict / rating 合法组合见 exam-verification-store.ts 的校验（§2.5 表）。
+ */
+export const examVerifications = sqliteTable("exam_verifications", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  /** 考试 id，对应 ExamInfo.id（如 'chengkao' / 'jingkao'） */
+  examId: text("exam_id").notNull(),
+  /** 节点 label（如 '天津成绩复核'）；与 examId 组成业务键 */
+  nodeLabel: text("node_label").notNull(),
+  /** 断言原文：被核查的那一句话（如 '天津成考复核 11-19 09:00–18:00'），≤75 字符为佳（ClaimReview claimReviewed 口径） */
+  assertion: text("assertion").notNull(),
+  /** 断言指纹：assertion 规范化后（去首尾空白、连续空白折叠为单空格）的 SHA-256 hex 小写，用于去重与关联同一断言的多次核查 */
+  assertionHash: text("assertion_hash").notNull(),
+  /** 核查级别：official | reprint | unverified */
+  verificationLevel: text("verification_level").notNull(),
+  /** 定级（内部二值，照抄 fact-check-workflow）：verified | false | unverifiable */
+  verdict: text("verdict").notNull(),
+  /** 对外六级（照抄 PolitiFact / fact-check-workflow）：true | mostly_true | half_true | mostly_false | false | pants_on_fire；verdict='unverifiable' 时为空 */
+  rating: text("rating"),
+  /** 置信度：high | medium | low（推导规则见 §2.3） */
+  confidence: text("confidence").notNull(),
+  /** 事实来源 URL（公告原文页） */
+  sourceUrl: text("source_url"),
+  /** 来源性质：official_announcement | reprint | snapshot | other */
+  sourceKind: text("source_kind").notNull().default("official_announcement"),
+  /** Wayback 存档 URL（SPN2 回填） */
+  archivedUrl: text("archived_url"),
+  /** 存档时间戳（14 位，SPN2 status 返回的 timestamp） */
+  archivedTimestamp: text("archived_timestamp"),
+  /** 存档页 digest（CDX 返回的 SHA-1）：存档事后消失/被下线时凭此比对 */
+  archivedDigest: text("archived_digest"),
+  /** 核查时间（毫秒时间戳） */
+  checkedAt: integer("checked_at").notNull(),
+  /** 核查人：agent 轮次 id 或人工编辑名（如 'evolve-2026-11-19' / 人名） */
+  checkedBy: text("checked_by").notNull(),
+  /** 复核人：第二人复核（fact-check-workflow 要求第二双眼睛；无人复核时为空，confidence 上限 medium） */
+  reviewedBy: text("reviewed_by"),
+  /** 证据 JSON：[{ kind, url, note }]，kind ∈ official_document | primary_data | expert | secondary | social */
+  evidenceJson: text("evidence_json").notNull().default("[]"),
+  /** 备注：矛盾点、未查到的缺口（对应 fact-check-workflow 的 Gaps in evidence）；双源冲突裁决记录写这里 */
+  notes: text("notes"),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+}, (t) => [
+  index("exam_verifications_exam_node_idx").on(t.examId, t.nodeLabel),
+  index("exam_verifications_hash_idx").on(t.assertionHash),
+  index("exam_verifications_checked_idx").on(t.checkedAt),
+]);
+
+/**
+ * 考试节点更正日志（01-verification-workflow §2.6，字段照抄 fact-check-workflow Step 7）。
+ *
+ * 注意：corrected_text 与 correction_published_at 在 §2.6 里标 NOT NULL，但 §9.3
+ * 要求报错入口先以 how_discovered='reader_tip' 建一条草稿行（两者都为空），核查确认后
+ * 才补全并发布。两处口径冲突时以 §9.3 的草稿流程为准：这两列可空，正式更正行仍由
+ * insertExamCorrection() 强制要求两者必填。
+ */
+export const examCorrections = sqliteTable("exam_corrections", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  examId: text("exam_id").notNull(),
+  nodeLabel: text("node_label").notNull(),
+  /** 关联被更正的断言（exam_verifications.assertion_hash） */
+  assertionHash: text("assertion_hash").notNull(),
+  /** 原文逐字（被更正前的节点文案 / 断言原文） */
+  originalText: text("original_text").notNull(),
+  /** 更正后逐字；草稿行（reader_tip）为空，正式更正行必填 */
+  correctedText: text("corrected_text"),
+  /** 错误类型：factual | date | url | attribution | context */
+  errorType: text("error_type").notNull(),
+  /** 原因（为什么错，如“跨年份拼贴：2025 年公告刊出日与 2026 年公布时点拼错”） */
+  reason: text("reason").notNull(),
+  /** 发现方式：reader_tip | internal_review | source_complaint */
+  howDiscovered: text("how_discovered").notNull(),
+  /** 原文首次发布时间（毫秒时间戳） */
+  originalPublishedAt: integer("original_published_at").notNull(),
+  /** 更正发布时间（毫秒时间戳）；草稿行未发布时为空 */
+  correctionPublishedAt: integer("correction_published_at"),
+  /** 更正注位置：in_article | corrections_page | both */
+  location: text("location").notNull().default("both"),
+  /** 更正执行人 */
+  correctedBy: text("corrected_by").notNull(),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+}, (t) => [
+  index("exam_corrections_exam_node_idx").on(t.examId, t.nodeLabel),
+  index("exam_corrections_hash_idx").on(t.assertionHash),
+  index("exam_corrections_published_idx").on(t.correctionPublishedAt),
+]);
+
 export const jobs = sqliteTable("jobs", {
   id: text("id").primaryKey(),
   kind: text("kind").notNull(),

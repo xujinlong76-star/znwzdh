@@ -224,7 +224,7 @@ describe('T5：全量计数（防漏网/防多改）', () => {
 })
 
 describe('T6：无数据改动（数据层守卫）', () => {
-  it('十一场 id、节点总数 43、17 个 url 逐字一致，无新增 url，ExamNode 无新增字段', () => {
+  it('十一场 id、节点总数 43、17 个 url 逐字一致，无新增 url；ExamNode 仅新增 5 个核验字段（§2.1），其余字段不变', () => {
     expect(EXAMS.map((e) => e.id)).toEqual([
       'guokao',
       'cet',
@@ -261,12 +261,31 @@ describe('T6：无数据改动（数据层守卫）', () => {
     expect(byKey.get('chengkao:海南成绩查询')?.url).toBeUndefined()
     for (const node of EXAMS.flatMap((e) => e.nodes)) {
       for (const key of Object.keys(node)) {
-        expect(['label', 'detail', 'url', 'startISO', 'endISO', 'estimated']).toContain(key)
+        // 01-verification-workflow §2.1：ExamNode 只新增 verification_level /
+        // source_url / archived_url / checked_at / confidence 五个核验字段，
+        // 旧字段（label / detail / url / startISO / endISO / estimated）一字不动。
+        expect([
+          'label',
+          'detail',
+          'url',
+          'startISO',
+          'endISO',
+          'estimated',
+          'verification_level',
+          'source_url',
+          'archived_url',
+          'checked_at',
+          'confidence',
+        ]).toContain(key)
       }
       expect(node.label).toBeTruthy()
       expect(node.detail).toBeTruthy()
       expect(node.startISO).toBeTruthy()
       expect(node.endISO).toBeTruthy()
+      // §2.1：两字段必填、其余三字段的空值口径由 exam-verification.test.ts 的 A4 锁死，
+      // 这里只锁“字段存在且级别取值合法”。
+      expect(['official', 'reprint', 'unverified', 'estimated']).toContain(node.verification_level)
+      expect(['high', 'medium', 'low']).toContain(node.confidence)
     }
     // label 键安全性锁死：国考/省考的「公共科目笔试」无 url，不渲染链接。
     expect(byKey.get('guokao:公共科目笔试')?.url).toBeUndefined()

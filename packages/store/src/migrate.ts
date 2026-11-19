@@ -354,6 +354,31 @@ export async function migrateUserSyncState(db: { dialect: string; sqlite?: any; 
   for (const sql of stmts) await execSql(db, sql);
 }
 
+/**
+ * 考试核验两张表（01-verification-workflow §2.5/§2.6，版本 20261119_exam_verifications）。
+ * 与 migrateUserSyncState 同款三处幂等：新库由 driver.ts 建、旧库由语句表补，
+ * 这里是台账可审计的版本化入口。DDL 与 schema.ts / driver.ts 保持逐字一致。
+ *
+ * 注意：corrected_text 与 correction_published_at 可空——§2.6 标 NOT NULL，但 §9.3
+ * 要求 reader_tip 草稿行两者都为空；以草稿流程为准（见 schema.ts 的 examCorrections 注释）。
+ */
+export async function migrateExamVerifications(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  const isPg = db.dialect === "pg";
+  const idDef = isPg ? "id BIGSERIAL PRIMARY KEY" : "id INTEGER PRIMARY KEY AUTOINCREMENT";
+  const ts = isPg ? "BIGINT" : "INTEGER";
+  const stmts = [
+    `CREATE TABLE IF NOT EXISTS exam_verifications (${idDef}, exam_id TEXT NOT NULL, node_label TEXT NOT NULL, assertion TEXT NOT NULL, assertion_hash TEXT NOT NULL, verification_level TEXT NOT NULL, verdict TEXT NOT NULL, rating TEXT, confidence TEXT NOT NULL, source_url TEXT, source_kind TEXT NOT NULL DEFAULT 'official_announcement', archived_url TEXT, archived_timestamp TEXT, archived_digest TEXT, checked_at ${ts} NOT NULL, checked_by TEXT NOT NULL, reviewed_by TEXT, evidence_json TEXT NOT NULL DEFAULT '[]', notes TEXT, created_at ${ts} NOT NULL, updated_at ${ts} NOT NULL)`,
+    "CREATE INDEX IF NOT EXISTS exam_verifications_exam_node_idx ON exam_verifications(exam_id, node_label)",
+    "CREATE INDEX IF NOT EXISTS exam_verifications_hash_idx ON exam_verifications(assertion_hash)",
+    "CREATE INDEX IF NOT EXISTS exam_verifications_checked_idx ON exam_verifications(checked_at)",
+    `CREATE TABLE IF NOT EXISTS exam_corrections (${idDef}, exam_id TEXT NOT NULL, node_label TEXT NOT NULL, assertion_hash TEXT NOT NULL, original_text TEXT NOT NULL, corrected_text TEXT, error_type TEXT NOT NULL, reason TEXT NOT NULL, how_discovered TEXT NOT NULL, original_published_at ${ts} NOT NULL, correction_published_at ${ts}, location TEXT NOT NULL DEFAULT 'both', corrected_by TEXT NOT NULL, created_at ${ts} NOT NULL, updated_at ${ts} NOT NULL)`,
+    "CREATE INDEX IF NOT EXISTS exam_corrections_exam_node_idx ON exam_corrections(exam_id, node_label)",
+    "CREATE INDEX IF NOT EXISTS exam_corrections_hash_idx ON exam_corrections(assertion_hash)",
+    "CREATE INDEX IF NOT EXISTS exam_corrections_published_idx ON exam_corrections(correction_published_at)",
+  ];
+  for (const sql of stmts) await execSql(db, sql);
+}
+
 export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
   await ensureMigrationFailures(db);
   /**

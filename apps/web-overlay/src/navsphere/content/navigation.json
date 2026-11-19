@@ -459,19 +459,6 @@
               ]
             },
             {
-              "id": "nav-c4670df71778",
-              "title": "剪映专业版",
-              "href": "https://www.capcut.cn/",
-              "description": "AI驱动的音视频创作平台，含配音与识别。",
-              "icon": "https://www.capcut.cn/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "视频剪辑",
-                "AI配音",
-                "语音识别"
-              ]
-            },
-            {
               "id": "nav-0627c7db33ef",
               "title": "讯飞开放平台",
               "href": "https://www.xfyun.cn/",
@@ -1157,6 +1144,19 @@
                 "短视频",
                 "AI剪辑",
                 "字幕"
+              ]
+            },
+            {
+              "id": "nav-c4670df71778",
+              "title": "剪映专业版",
+              "href": "https://www.capcut.cn/",
+              "description": "AI驱动的音视频创作平台，含配音与识别。",
+              "icon": "https://www.capcut.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "视频剪辑",
+                "AI配音",
+                "语音识别"
               ]
             }
           ]

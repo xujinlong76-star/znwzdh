@@ -2349,6 +2349,65 @@ export const SiteFacetsResponse = z.looseObject({
   facets: z.record(z.string(), z.array(z.string())),
 });
 
+/**
+ * 站点结构化档案（GET/PUT /api/sites/:id/profile，02-site-profiles §3.3，
+ * batch0-02）：profileView 的对外形态。profileStatus 与
+ * SiteProfileRecord 同口径（draft/verified）；草稿行按缺失处理，
+ * GET 回 profile:null、verified:false；verified 行才回 profile 与溯源段。
+ * price 是 site_prices 最新行的摘要（SitePricePayload 的子集，不含
+ * id/siteId/createdAt/updatedAt）；verified_at 一律服务端生成。
+ */
+export const SiteProfilePayload = z.looseObject({
+  siteId: z.string(),
+  bestFor: z.string().nullable(),
+  notFor: z.string().nullable(),
+  license: z.string().nullable(),
+  alternatives: z.array(z.string()),
+  profileSourceUrl: z.string(),
+  profileVerifiedAt: z.number(),
+  verifiedBy: z.string(),
+  profileStatus: z.enum(["draft", "verified"]),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+/** 档案溯源段的一行（site_profile_provenance 四元组载体，§9.3）。 */
+export const SiteProfileProvenancePayload = z.looseObject({
+  fieldKey: z.string(),
+  sourceUrl: z.string(),
+  verifiedAt: z.number(),
+  verifiedBy: z.string(),
+});
+
+/** GET 档案行里的价格摘要：priceSummaryView 的对外形态。 */
+export const SiteProfilePriceSummaryPayload = z.looseObject({
+  amountMinor: z.number(),
+  currency: z.string(),
+  period: z.string(),
+  freeTierLimit: z.string().nullable(),
+  sourceType: z.enum(["manual", "official_scrape"]),
+  sourceUrl: z.string().nullable(),
+  verifiedAt: z.number(),
+});
+
+/** GET /api/sites/{id}/profile：档案行 + 溯源段 + 价格行摘要。 */
+export const SiteProfileResponse = z.looseObject({
+  ok: z.literal(true),
+  siteId: z.string(),
+  verified: z.boolean(),
+  profile: SiteProfilePayload.nullable(),
+  provenance: z.array(SiteProfileProvenancePayload),
+  price: SiteProfilePriceSummaryPayload.nullable(),
+});
+
+/** PUT /api/sites/{id}/profile：写回执（不回溯源段与价格摘要）。 */
+export const SiteProfileUpdateResponse = z.looseObject({
+  ok: z.literal(true),
+  siteId: z.string(),
+  verified: z.boolean(),
+  profile: SiteProfilePayload,
+});
+
 /** GET /api/plugins/{slug}：详情页需要的插件卡片 + 私有状态 */
 export const PluginDetailResponse = z.looseObject({
   plugin: PluginMutationPayload.extend({
@@ -2657,6 +2716,8 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "GET /api/tags/resolve": { schema: ResolveTagResponse, name: "ResolveTagResponse" },
   "GET /api/facets": { schema: FacetsResponse, name: "FacetsResponse" },
   "GET /api/sites/{id}/facets": { schema: SiteFacetsResponse, name: "SiteFacetsResponse" },
+  // 站点结构化档案（02-site-profiles §3.3，batch0-02）：读回档案行 + 溯源段 + 价格摘要
+  "GET /api/sites/{id}/profile": { schema: SiteProfileResponse, name: "SiteProfileResponse" },
   // 详情页相似推荐：与站点列表同形（直接返回站点数组，没有外壳）
   "GET /api/sites/{id}/similar": { schema: SiteListResponse, name: "SiteListResponse" },
   "GET /api/tags/{id}/related": { schema: RelatedTagsResponse, name: "RelatedTagsResponse" },
@@ -2716,6 +2777,7 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "POST /api/tags/{id}/aliases": { schema: TagMutationResponse, name: "TagMutationResponse" },
   "DELETE /api/tags/{id}/aliases/{alias}": { schema: OkResponse, name: "OkResponse" },
   "PUT /api/sites/{id}/facets": { schema: SiteFacetsResponse, name: "SiteFacetsResponse" },
+  "PUT /api/sites/{id}/profile": { schema: SiteProfileUpdateResponse, name: "SiteProfileUpdateResponse" },
   "PUT /api/sites/{id}/relations": { schema: RelationsUpdateResponse, name: "RelationsUpdateResponse" },
 
   /* 类目/标签治理 */

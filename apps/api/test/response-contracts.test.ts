@@ -64,6 +64,8 @@ import {
   SearchResponse,
   SiteListResponse,
   SitePayload,
+  SiteProfileResponse,
+  SiteProfileUpdateResponse,
   SiteReportCreateResponse,
   SiteReportReviewResponse,
   SiteReportsListResponse,
@@ -659,6 +661,21 @@ describe("真实响应满足契约", () => {
     expect(Array.isArray(body.tags)).toBe(true);
   });
 
+  it("GET /api/sites/{id}/profile：未建档的站回 verified:false、profile:null", async () => {
+    const sites = (await app.inject({ method: "GET", url: "/api/sites" })).json() as Array<{ id: string; title: string }>;
+    const site = sites.find((s) => s.title === "GitHub Copilot");
+    if (!site) throw new Error("seed site GitHub Copilot missing");
+    const res = await app.inject({ method: "GET", url: "/api/sites/" + encodeURIComponent(site.id) + "/profile" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(SiteProfileResponse, body, "GET /api/sites/{id}/profile");
+    expect(body.siteId).toBe(site.id);
+    expect(body.verified).toBe(false);
+    expect(body.profile).toBeNull();
+    expect(body.provenance).toEqual([]);
+    expect(body.price).toBeNull();
+  });
+
   it("GET /api/search-history：键集分页壳 + 零结果记录可辨识", async () => {
     const res = await app.inject({ method: "GET", url: "/api/search-history?limit=10", headers: ME_HEADERS });
     expect(res.statusCode).toBe(200);
@@ -844,6 +861,41 @@ describe("写路由真实响应满足契约（状态码 + 形状）", () => {
     const updated = patched.json();
     expectRoutedContract("PATCH /api/sites/{id}", SitePayload, updated);
     expect(updated.title).toBe("写契约站点（改）");
+  });
+
+  it("PUT /api/sites/{id}/profile：档案写回执满足契约，GET 读回 verified 行", async () => {
+    const sites = (await app.inject({ method: "GET", url: "/api/sites" })).json() as Array<{ id: string; title: string }>;
+    const site = sites.find((s) => s.title === "Cursor");
+    if (!site) throw new Error("seed site Cursor missing");
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/sites/" + encodeURIComponent(site.id) + "/profile",
+      headers: ADMIN_HEADERS,
+      payload: {
+        bestFor: "个人轻量写作",
+        notFor: "不支持团队协作",
+        license: "MIT",
+        profileSourceUrl: "https://cursor.com/pricing",
+        profileStatus: "verified",
+      },
+    });
+    expect(put.statusCode).toBe(200);
+    const saved = put.json();
+    expectRoutedContract("PUT /api/sites/{id}/profile", SiteProfileUpdateResponse, saved);
+    expect(saved.siteId).toBe(site.id);
+    expect(saved.verified).toBe(true);
+    expect(saved.profile.profileStatus).toBe("verified");
+    expect(typeof saved.profile.profileVerifiedAt).toBe("number");
+
+    const got = await app.inject({ method: "GET", url: "/api/sites/" + encodeURIComponent(site.id) + "/profile" });
+    expect(got.statusCode).toBe(200);
+    const body = got.json();
+    expectContract(SiteProfileResponse, body, "GET /api/sites/{id}/profile（verified 行）");
+    expect(body.verified).toBe(true);
+    expect(body.profile).not.toBeNull();
+    expect(body.profile.bestFor).toBe("个人轻量写作");
+    expect(body.provenance).toEqual([]);
+    expect(body.price).toBeNull();
   });
 
   it("POST /api/search-history：只记历史、不跑检索", async () => {

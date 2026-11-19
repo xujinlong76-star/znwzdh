@@ -261,6 +261,9 @@ GET /api/sites/{id}/health-history
 HEAD /api/sites/{id}/health-history
 GET /api/sites/{id}/localize
 HEAD /api/sites/{id}/localize
+# HEAD 由 Fastify 为 GET 自动产生，绑定表只登记 GET（同 HEAD /api/sites/{id}/facets）；
+# GET /api/sites/{id}/profile 已登记 SiteProfileResponse，此行只覆盖其 HEAD 孪生路由
+HEAD /api/sites/{id}/profile
 GET /api/sites/{id}/radar
 HEAD /api/sites/{id}/radar
 GET /api/intent/action

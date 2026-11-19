@@ -12,7 +12,9 @@ import {
  *
  * 三态均为真实文本，不得只用颜色区分：
  *  - official：实底「官方原文已核实 · {日期}」
- *  - reprint：描边「转载级 · 未直读官方原文」（与 official 同等醒目，不得弱化）
+ *  - reprint：描边两档（2026-11-20 修订 R4，按 source_url 是否落在该考试白名单内区分）：
+ *    官方源已读只缺存档 →「官方源已读 · 未存档」；白名单外转载来源 →「转载级 · 未直读官方原文」
+ *    （与 official 同等醒目，不得弱化）
  *  - unverified：灰态「待核实」
  * 点击展开核查信息：来源 URL（外链）+ 存档 URL（Wayback 外链）+ 核查时间 + 置信度。
  */
@@ -32,11 +34,15 @@ const CONFIDENCE_LABEL: Record<string, string> = {
 
 export function ExamVerificationBadge({
   node,
+  examId,
 }: {
   node: ExamNodeVerificationInput
+  /** 该节点所属考试 id（ExamInfo.id）：供 verificationBadgeProps 按该考试的
+   * 官方域名白名单区分 reprint 两档文案；未传时保守地按白名单外来源展示。 */
+  examId?: string
 }) {
   const [open, setOpen] = useState(false)
-  const props = verificationBadgeProps(node)
+  const props = verificationBadgeProps(node, examId)
   const hasSource = node.source_url !== undefined && node.source_url !== ''
   const hasArchive = node.archived_url !== undefined && node.archived_url !== ''
   return (

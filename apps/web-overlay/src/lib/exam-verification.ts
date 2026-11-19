@@ -314,8 +314,11 @@ function formatCheckedLabel(checkedAt: string | undefined): string | null {
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`
 }
 
-/** §7.1 徽标文案（写死）。 */
-export function verificationBadgeProps(node: ExamNodeVerificationInput): VerificationBadgeProps {
+/** §7.1 徽标文案（写死；2026-11-20 修订 R4：reprint 按 source_url 是否落在该考试白名单内分两档，见下）。 */
+export function verificationBadgeProps(
+  node: ExamNodeVerificationInput,
+  examId?: string,
+): VerificationBadgeProps {
   if (node.verification_level === 'official') {
     const date = formatCheckedLabel(node.checked_at)?.slice(0, 10) ?? ''
     return {
@@ -326,6 +329,21 @@ export function verificationBadgeProps(node: ExamNodeVerificationInput): Verific
     }
   }
   if (node.verification_level === 'reprint') {
+    // R4（2026-11-20）：reprint 分两档，判定一律用白名单域名比对，不写死考试特例。
+    //  - source_url 域名落在该考试 EXAM_OFFICIAL_DOMAINS 白名单内 → 官方原文已直读、
+    //    缺的只是 Wayback 存档，文案“官方源已读 · 未存档”（首例：京考报名/准考证打印，
+    //    source_url 为首都之窗公告原文，2026-11-17 直访逐字核实）。
+    //  - 白名单外来源 → 保留“转载级 · 未直读官方原文”。
+    // examId 未传 / 该考试未登记白名单 / source_url 不可解析时保守地保留旧文案，
+    // 不断言官方源已读。两档均为 reprint 级，tone 保持描边 outline，§7.2 准入不变。
+    if (isOfficialSourceUrl(examId, node.source_url)) {
+      return {
+        level: 'reprint',
+        text: '官方源已读 · 未存档',
+        tone: 'outline',
+        checkedLabel: formatCheckedLabel(node.checked_at),
+      }
+    }
     return {
       level: 'reprint',
       text: '转载级 · 未直读官方原文',
@@ -334,6 +352,29 @@ export function verificationBadgeProps(node: ExamNodeVerificationInput): Verific
     }
   }
   return { level: 'unverified', text: '待核实', tone: 'muted', checkedLabel: null }
+}
+
+/**
+ * R4 判定 helper：source_url 的域名是否落在该考试的官方域名白名单内。
+ * 只做域名比对（URL 解析后取 hostname，与白名单逐项全等比对）；任一输入缺失、
+ * 考试未登记白名单、URL 不可解析时一律返回 false（不断言官方源已读）。
+ */
+export function isOfficialSourceUrl(
+  examId: string | undefined,
+  sourceUrl: string | undefined,
+): boolean {
+  if (examId === undefined || examId === '' || sourceUrl === undefined || sourceUrl === '') {
+    return false
+  }
+  const allowed = EXAM_OFFICIAL_DOMAINS[examId]
+  if (allowed === undefined) return false
+  let hostname: string
+  try {
+    hostname = new URL(sourceUrl).hostname
+  } catch {
+    return false
+  }
+  return allowed.includes(hostname)
 }
 
 /**

@@ -124,7 +124,7 @@ export function ExamCountdown({ exam }: { exam: ExamInfo }) {
       {nextNode !== undefined ? (
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="text-muted-foreground">下一步：{nextNode.label}</span>
-          <ExamVerificationBadge node={nextNode} />
+          <ExamVerificationBadge node={nextNode} examId={exam.id} />
           {nextParts !== undefined && nextDeadlineMs !== undefined ? (
             <span aria-live="off" className="font-mono tabular-nums text-muted-foreground">
               距截止 {nextParts.days > 0 ? `${nextParts.days} 天 ` : ''}

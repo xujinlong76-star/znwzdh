@@ -164,7 +164,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
                 {node.label}
               </span>
               <span className="text-muted-foreground"> · {node.detail}</span>{' '}
-              <ExamVerificationBadge node={node} />
+              <ExamVerificationBadge node={node} examId={exam.id} />
             </span>
           )
           return (

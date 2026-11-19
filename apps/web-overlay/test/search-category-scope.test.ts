@@ -126,11 +126,10 @@ describe('U-183：分类芯片可见且可清除，标签清除只清自己', ()
 
   it('标签清除链接与放宽横幅清除链接只去 tag、保留 category/facets', () => {
     expect(src).toContain('searchHref({ q, category, facets })')
-    // 两处（标签芯片、放宽横幅）都只清 tag，不再顺带清分类/分面
+    // 三处（标签芯片、放宽横幅、零结果「去掉标签筛选」）都只清 tag，不再顺带清分类/分面
     const count = src.split('searchHref({ q, category, facets })').length - 1
-    expect(count).toBe(2)
-    // 注意：EmptyResults :349「去掉标签筛选」仍用 searchHref({ q })，
-    // 按任务书留给 U-112 追补轮，本轮不动，故这里不断言全文件清零。
+    expect(count).toBe(3)
+    // U-112 残留已修：EmptyResults「去掉标签筛选」现为 searchHref({ q, category, facets })。
   })
 })
 

@@ -132,3 +132,116 @@ describe('U-112：翻页/重试/重搜不丢分类/分面', () => {
     expect(searchHref({ q: '笔记', page: 2 })).toBe('/search?q=%E7%AC%94%E8%AE%B0&page=2')
   })
 })
+
+describe('U-112 残留：横幅/零结果/相关标签/结果行 chip 不丢分类与分面', () => {
+  const results = overlaySource('src/app/search/search-results.tsx')
+  const cat = 'ai-tools'
+  const facets = { pricing: ['free'] }
+
+  it('纠正横幅「已替你纠正为」：纠正后词保留 category/facets，tag 仍走 tagApplied 口径', () => {
+    expect(results).toContain(
+      'searchHref({ q: correction.corrected, tag: tagApplied ? tag : null, category, facets })',
+    )
+    expect(results).not.toContain(
+      'searchHref({ q: correction.corrected, tag: tagApplied ? tag : null })',
+    )
+    const href = searchHref({ q: '笔记工具', tag: 'ai', category: cat, facets })
+    expect(href).toContain('category=ai-tools')
+    expect(href).toContain('f_pricing=free')
+    expect(href).toContain('tag=ai')
+  })
+
+  it('纠正横幅回退「搜原来的」：保留 category/facets 与 nocorrect=1', () => {
+    expect(results).toContain(
+      'searchHref({ q: correction.original, tag: tagApplied ? tag : null, category, facets, nocorrect: true })',
+    )
+    const href = searchHref({ q: '笔记工俱', tag: 'ai', category: cat, facets, nocorrect: true })
+    expect(href).toContain('category=ai-tools')
+    expect(href).toContain('f_pricing=free')
+    expect(href).toContain('nocorrect=1')
+  })
+
+  it('纠正横幅 didYouMean：保留 category/facets，tag 仍走 tagApplied 口径', () => {
+    expect(results).toContain(
+      'searchHref({ q: didYouMean, tag: tagApplied ? tag : null, category, facets })',
+    )
+    expect(results).not.toContain('searchHref({ q: didYouMean, tag: tagApplied ? tag : null })')
+  })
+
+  it('零结果「去掉标签筛选」：只丢 tag，保留 category/facets', () => {
+    const label = results.indexOf('去掉标签筛选')
+    expect(label, 'search-results.tsx 缺少「去掉标签筛选」链接').toBeGreaterThan(-1)
+    const link = results.slice(Math.max(0, label - 300), label)
+    expect(link).toContain('searchHref({ q, category, facets })')
+    expect(results).not.toContain('searchHref({ q })')
+    // URL 口径：不传 tag 时 tag 参数消失，category 与 f_* 仍在
+    const href = searchHref({ q: '笔记', category: cat, facets })
+    expect(href).toBe('/search?q=%E7%AC%94%E8%AE%B0&category=ai-tools&f_pricing=free')
+    expect(href).not.toContain('tag=')
+  })
+
+  it('零结果「换个词试试」：新词保留 category/facets（!tag 守卫下本无 tag 可丢）', () => {
+    const label = results.indexOf('换个词试试</p>')
+    expect(label, 'search-results.tsx 缺少「换个词试试」').toBeGreaterThan(-1)
+    const block = results.slice(label, label + 800)
+    expect(block).toContain('searchHref({ q: item, category, facets })')
+    const href = searchHref({ q: '备忘录', category: cat, facets })
+    expect(href).toContain('category=ai-tools')
+    expect(href).toContain('f_pricing=free')
+  })
+
+  it('零结果「大家在搜」：透传 tag 保留热门词入口，不加 !tag 守卫', () => {
+    const label = results.indexOf('大家在搜</p>')
+    expect(label, 'search-results.tsx 缺少「大家在搜」').toBeGreaterThan(-1)
+    const block = results.slice(label, label + 800)
+    expect(block).toContain('searchHref({ q: item, tag, category, facets })')
+    // 裁决：不加 !tag 守卫——守卫会整段隐藏热门词、丢掉发现入口；
+    // EmptyResults 的 tag 已是 tagApplied 口径（调用处传 tagApplied ? tag : null），
+    // 透传 tag 既保作用域又保入口。
+    expect(results).toContain('{!hideGenericRecommendations && popular.length > 0 ? (')
+    // URL 口径：带 tag 点热门词，tag/category/f_* 全保留
+    const href = searchHref({ q: '备忘录', tag: 'ai', category: cat, facets })
+    expect(href).toContain('tag=ai')
+    expect(href).toContain('category=ai-tools')
+    expect(href).toContain('f_pricing=free')
+  })
+
+  it('相关标签 SearchRelatedTags：签名与调用处接 category/facets，换 tag 保留作用域', () => {
+    const start = results.indexOf('function SearchRelatedTags({')
+    expect(start, 'search-results.tsx 缺少 function SearchRelatedTags').toBeGreaterThan(-1)
+    const sig = results.slice(start, results.indexOf('}) {', start))
+    expect(sig).toContain('category = null,')
+    expect(sig).toContain('facets = {},')
+    expect(sig).toContain('category?: string | null')
+    expect(sig).toContain('facets?: Record<string, string[]>')
+    expect(results).toContain('searchHref({ q: q || undefined, tag: t.slug, category, facets })')
+    const call = results.indexOf('<SearchRelatedTags')
+    expect(call, 'search-results.tsx 缺少 <SearchRelatedTags 调用').toBeGreaterThan(-1)
+    const callText = results.slice(call, results.indexOf('/>', call))
+    expect(callText).toContain('category={category}')
+    expect(callText).toContain('facets={facets}')
+    const href = searchHref({ q: '笔记', tag: 'opensource', category: cat, facets })
+    expect(href).toContain('tag=opensource')
+    expect(href).toContain('category=ai-tools')
+    expect(href).toContain('f_pricing=free')
+  })
+
+  it('结果行标签 chip：只丢 q（既有注释在案的有意行为），保留 category/facets', () => {
+    // 裁决依据：U-112「透传」口径——站内导航不得静默丢掉用户已设的作用域；
+    // q 的丢弃是有意行为（「按这个标签浏览」比「在本次查询里再收窄」更符合预期）。
+    const start = results.indexOf('export function ResultRow({')
+    expect(start, 'search-results.tsx 缺少 export function ResultRow').toBeGreaterThan(-1)
+    const sig = results.slice(start, results.indexOf('}) {', start))
+    expect(sig).toContain('category?: string | null')
+    expect(sig).toContain('facets?: Record<string, string[]>')
+    expect(results).toContain('href={searchHref({ tag, category, facets })}')
+    expect(results).not.toContain('href={searchHref({ tag })}')
+    // 三处调用点（正常结果 / 巡检打不开分区 / 零结果今日热榜）均透传作用域
+    expect(results).toContain('<ResultRow key={hit.siteId} hit={hit} q={q} category={category} facets={facets} externalRel={externalRel} />')
+    expect(results).toContain('<UnavailableSection hits={unavailable} q={q} category={category} facets={facets} />')
+    // URL 口径：只带 tag+scope 时无 q 参数，category 与 f_* 仍在
+    const href = searchHref({ tag: 'ai', category: cat, facets })
+    expect(href).toBe('/search?tag=ai&category=ai-tools&f_pricing=free')
+    expect(href).not.toContain('q=')
+  })
+})

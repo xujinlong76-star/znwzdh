@@ -181,8 +181,8 @@ describe('/search 页面契约', () => {
     expect(overlaySource('src/lib/server/search.ts')).toContain('searchApiPath(q, page, tag,')
 
     const view = overlaySource('src/app/search/search-results.tsx')
-    // 结果行的标签是筛选入口：点标签看该标签下的全部站点
-    expect(view).toContain('href={searchHref({ tag })}')
+    // 结果行的标签是筛选入口：点标签看该标签下的全部站点（保留分类/分面，只丢 q）
+    expect(view).toContain('href={searchHref({ tag, category, facets })}')
     expect(view).toContain('标签：{tag}')
     expect(view).toContain('去掉筛选')
     // 隐藏域不进无障碍树，标成装饰性控件（field-names 门禁同口径）
@@ -254,7 +254,7 @@ describe('/search 页面契约', () => {
     expect(view).toContain('不代表站点已下线')
     // 有匹配的不可用站点时不得同时渲染「没有找到」空态，否则自相矛盾
     expect(view).toContain('hits.length === 0 && unavailable.length === 0')
-    expect(view).toContain('<UnavailableSection hits={unavailable} q={q} />')
+    expect(view).toContain('<UnavailableSection hits={unavailable} q={q} category={category} facets={facets} />')
   })
 
   it('/me/history 的「再次搜索」指向真实存在的 /search，而不是无人消费的 /?q=', () => {

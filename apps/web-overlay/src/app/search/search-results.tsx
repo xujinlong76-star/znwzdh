@@ -167,10 +167,16 @@ function RelationBand({
 export function ResultRow({
   hit,
   q,
+  category = null,
+  facets = {},
   externalRel = 'nofollow noopener noreferrer',
 }: {
   hit: HubSearchHit
   q: string
+  /** 当前分类（U-112 残留：结果行标签 chip 保留作用域，只丢 q） */
+  category?: string | null
+  /** 当前分面筛选（同上） */
+  facets?: Record<string, string[]>
   externalRel?: string
 }) {
   const site = hit.site
@@ -219,9 +225,11 @@ export function ResultRow({
             {site.tags?.slice(0, 4).map((tag) => (
               // 标签即筛选：点一下看该标签下的全部站点。不保留当前关键词——
               // 「按这个标签浏览」比「在本次查询里再收窄」更符合点击标签的预期。
+              // U-112 残留裁决：只丢 q（有意行为，注释在案），分类与分面保留——
+              // 站内导航不得静默丢掉用户已设的作用域。
               <Link
                 key={tag}
-                href={searchHref({ tag })}
+                href={searchHref({ tag, category, facets })}
                 className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary hover:bg-primary/20"
               >
                 {tag}
@@ -374,7 +382,7 @@ function EmptyResults({
       ) : null}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         {tag ? (
-          <Link href={searchHref({ q })} className="text-xs text-primary hover:underline">
+          <Link href={searchHref({ q, category, facets })} className="text-xs text-primary hover:underline">
             去掉标签筛选
           </Link>
         ) : null}
@@ -386,7 +394,7 @@ function EmptyResults({
             {suggestions.map((item) => (
               <Link
                 key={item}
-                href={searchHref({ q: item })}
+                href={searchHref({ q: item, category, facets })}
                 className="rounded-full bg-primary/10 px-2.5 py-1 text-xs text-primary transition-colors hover:bg-primary/20"
               >
                 {item}
@@ -402,7 +410,7 @@ function EmptyResults({
             {popular.map((item) => (
               <Link
                 key={item}
-                href={searchHref({ q: item })}
+                href={searchHref({ q: item, tag, category, facets })}
                 className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent"
               >
                 {item}
@@ -428,6 +436,8 @@ function EmptyResults({
                 key={site.id}
                 hit={{ siteId: site.id, score: 0, contributions: {}, site }}
                 q={q}
+                category={category}
+                facets={facets}
                 externalRel={externalRel}
               />
             ))}
@@ -505,7 +515,19 @@ function EmptyResults({
  * 下线，混进正常结果会让用户以为它们"匹配度低"；整段藏起来又会造成
  * 「大站搜不到」。名字照常可点，说明如实给出。
  */
-function UnavailableSection({ hits, q }: { hits: HubSearchHit[]; q: string }) {
+function UnavailableSection({
+  hits,
+  q,
+  category = null,
+  facets = {},
+}: {
+  hits: HubSearchHit[]
+  q: string
+  /** 当前分类（U-112 残留：内层结果行标签 chip 保留作用域） */
+  category?: string | null
+  /** 当前分面筛选（同上） */
+  facets?: Record<string, string[]>
+}) {
   const externalRel = 'nofollow noopener noreferrer'
   return (
     <section aria-label="最近巡检打不开的匹配站点" className="space-y-2">
@@ -520,7 +542,7 @@ function UnavailableSection({ hits, q }: { hits: HubSearchHit[]; q: string }) {
         </span>
       </div>
       <ul className="space-y-2">
-        {hits.map((hit) => (hit.site ? <ResultRow key={hit.siteId} hit={hit} q={q} externalRel={externalRel} /> : null))}
+        {hits.map((hit) => (hit.site ? <ResultRow key={hit.siteId} hit={hit} q={q} category={category} facets={facets} externalRel={externalRel} /> : null))}
       </ul>
     </section>
   )
@@ -650,10 +672,16 @@ function SearchRelatedTags({
   tags,
   currentTag,
   q,
+  category = null,
+  facets = {},
 }: {
   tags: Array<{ name: string; slug: string; count: number }>
   currentTag: string | null
   q: string
+  /** 当前分类（U-112 残留：换标签保留作用域） */
+  category?: string | null
+  /** 当前分面筛选（同上） */
+  facets?: Record<string, string[]>
 }) {
   const displayTags = tags.filter((t) => t.slug !== currentTag?.toLowerCase())
   if (displayTags.length === 0) return null
@@ -665,7 +693,7 @@ function SearchRelatedTags({
       {displayTags.map((t) => (
         <Link
           key={t.slug}
-          href={searchHref({ q: q || undefined, tag: t.slug })}
+          href={searchHref({ q: q || undefined, tag: t.slug, category, facets })}
           className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs bg-muted/60 hover:bg-primary/10 hover:text-primary border border-border/60 transition-colors text-muted-foreground"
           title={`${t.count} 个命中站点包含此标签`}
         >
@@ -997,14 +1025,14 @@ export function SearchResults({
                 >
                   <span>已替你纠正为：</span>
                   <Link
-                    href={searchHref({ q: correction.corrected, tag: tagApplied ? tag : null })}
+                    href={searchHref({ q: correction.corrected, tag: tagApplied ? tag : null, category, facets })}
                     className="font-bold text-primary underline hover:text-primary/80"
                   >
                     {correction.corrected}
                   </Link>
                   <span>不是这个？</span>
                   <Link
-                    href={searchHref({ q: correction.original, tag: tagApplied ? tag : null, nocorrect: true })}
+                    href={searchHref({ q: correction.original, tag: tagApplied ? tag : null, category, facets, nocorrect: true })}
                     className="font-medium text-primary underline underline-offset-2 hover:no-underline"
                   >
                     搜原来的「{correction.original}」
@@ -1013,7 +1041,7 @@ export function SearchResults({
               ) : !failed && didYouMean ? (
                 <div className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs text-foreground">
                   <span>您是不是想搜：</span>
-                  <Link href={searchHref({ q: didYouMean, tag: tagApplied ? tag : null })} className="font-bold text-primary underline hover:text-primary/80">
+                  <Link href={searchHref({ q: didYouMean, tag: tagApplied ? tag : null, category, facets })} className="font-bold text-primary underline hover:text-primary/80">
                     {didYouMean}
                   </Link>
                   <span>？</span>
@@ -1021,14 +1049,14 @@ export function SearchResults({
               ) : null}
 
               {!failed && relatedTags.length > 0 ? (
-                <SearchRelatedTags tags={relatedTags} currentTag={tag} q={q} />
+                <SearchRelatedTags tags={relatedTags} currentTag={tag} q={q} category={category} facets={facets} />
               ) : null}
 
               {!failed && relations.length > 0 ? <RelationBand relations={relations} externalRel={externalRel} /> : null}
 
               {!failed && hits.length > 0 ? (
                 <ul className="space-y-2">
-                  {hits.map((hit) => (hit.site ? <ResultRow key={hit.siteId} hit={hit} q={q} externalRel={externalRel} /> : null))}
+                  {hits.map((hit) => (hit.site ? <ResultRow key={hit.siteId} hit={hit} q={q} category={category} facets={facets} externalRel={externalRel} /> : null))}
                 </ul>
               ) : null}
 
@@ -1061,7 +1089,7 @@ export function SearchResults({
               ) : null}
 
               {!failed && unavailable.length > 0 ? (
-                <UnavailableSection hits={unavailable} q={q} />
+                <UnavailableSection hits={unavailable} q={q} category={category} facets={facets} />
               ) : null}
 
               {!failed && hits.length > 0 && (page > 1 || hasMore) ? (

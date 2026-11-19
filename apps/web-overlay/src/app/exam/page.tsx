@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { revalidatePath } from 'next/cache'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -19,9 +20,7 @@ import { Footer } from '@/components/footer'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { JsonLd } from '@/components/json-ld'
 import { SiteFavicon } from '@/components/site-favicon'
-import { getFileContent } from '@/lib/github'
-import { loadNavigationCatalog } from '@/lib/navigation-catalog-read'
-import { getProcessedData } from '@/lib/data-loader'
+import { loadExamPrepSites } from '@/lib/exam-prep-sites'
 import { safeHref } from '@/lib/safe-url'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { absUrl } from '@/lib/seo/json-ld'
@@ -29,15 +28,12 @@ import { pageShareMetadata } from '@/lib/seo/metadata'
 import {
   EXAMS,
   EXAM_DATA_NOTE,
-  EXAM_PREP_CATEGORY_ID,
-  EXAM_PREP_SUB_ID,
   activeExamReminders,
   nearestExam,
 } from '@/lib/exam-calendar'
 import { ExamCountdown } from './exam-countdown'
 import { GuokaoAdmissionReminderIsland } from '@/components/guokao-admission-reminder'
 import { MyExamTracker } from './my-exam-tracker'
-import type { NavigationSubItem } from '@/types/navigation'
 
 /**
  * 考试日历页（/exam，服务端渲染 + 倒计时客户端岛）。
@@ -61,7 +57,6 @@ const INDEX_TITLE = `考试日历 - ${EXAMS.map((e) => e.shortName).join('、')}
 const DESCRIPTION = `${EXAMS.map((e) => e.shortName).join('、')}的倒计时与关键节点：准考证打印、笔试时间、成绩查询一次看全，附报名与备考入口。`
 const EMPTY_TITLE = `考试日历 - ${EXAMS.map((e) => e.shortName).join('、')}`
 const EMPTY_DESCRIPTION = `本轮${EXAMS.length}场考试已结束，时间与关键节点备查；新日程以官方公告为准。`
-const SITE_PATH = 'src/navsphere/content/site.json'
 
 const EXAM_ICONS: Record<string, LucideIcon> = {
   guokao: Briefcase,
@@ -86,21 +81,10 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
-/** 备考站点区：读站内「学习成长 / 考试备考」分类（12 站），失败时返回空数组降级 */
-async function loadExamPrepSites(): Promise<NavigationSubItem[]> {
-  try {
-    // U-36：与首页同款，导航改读中枢派生的分片，不再读 2MB 整包
-    const [navigationLoad, siteRaw] = await Promise.all([
-      loadNavigationCatalog(),
-      getFileContent(SITE_PATH),
-    ])
-    const { navigationData } = getProcessedData(navigationLoad.data as never, siteRaw as never)
-    const category = navigationData.navigationItems.find((c) => c.id === EXAM_PREP_CATEGORY_ID)
-    const sub = category?.subCategories?.find((s) => s.id === EXAM_PREP_SUB_ID)
-    return sub?.items ?? []
-  } catch {
-    return []
-  }
+/** 备考站点区重试（U-238）：服务端重新取数，不新造取数链路。 */
+async function retryExamPrepSites() {
+  'use server'
+  revalidatePath('/exam')
 }
 
 export default async function ExamPage() {
@@ -266,9 +250,12 @@ export default async function ExamPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             来自站内「考试备考」分类的报名与备考平台，按分类原顺序排列。
           </p>
-          {prepSites.length > 0 ? (
+          {/* U-238：三态空态——失败给重试（服务端 revalidatePath 重新取数），
+              分类空指往 /sites；失败不再被说成「分类为空」，分类空不再被
+              说成「服务不可用」。revalidate 3600 下服务恢复后重试即取新数。 */}
+          {prepSites.status === 'ok' ? (
             <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-              {prepSites.map((site) => (
+              {prepSites.sites.map((site) => (
                 <li key={site.id} className="min-w-0 rounded-xl border border-border bg-card">
                   <a
                     href={safeHref(site.href)}
@@ -292,12 +279,33 @@ export default async function ExamPage() {
                 </li>
               ))}
             </ul>
-          ) : (
+          ) : prepSites.status === 'error' ? (
             <div className="mt-4 rounded-2xl border border-border bg-card p-5">
               <p className="text-base font-medium text-foreground">备考站点暂时加载不出来</p>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
                 站内数据服务暂时不可用，备考入口清单没能取到。考试时间与关键节点不受影响。
               </p>
+              <form action={retryExamPrepSites} className="mt-3">
+                <button
+                  type="submit"
+                  className="inline-flex min-h-11 items-center rounded-full border border-sky-500/25 bg-sky-500/5 px-3.5 text-sm font-medium text-sky-700 dark:text-sky-400"
+                >
+                  重试
+                </button>
+              </form>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-2xl border border-border bg-card p-5">
+              <p className="text-base font-medium text-foreground">备考分类暂无站点</p>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                「考试备考」分类下暂时没有站点，考试时间与关键节点不受影响。可以去全部站点里找备考入口。
+              </p>
+              <Link
+                href="/sites"
+                className="mt-3 inline-flex min-h-11 items-center rounded-full border border-sky-500/25 bg-sky-500/5 px-3.5 text-sm font-medium text-sky-700 dark:text-sky-400"
+              >
+                去全部站点找备考入口
+              </Link>
             </div>
           )}
           <p className="mt-4 text-xs leading-relaxed text-muted-foreground">{EXAM_DATA_NOTE}</p>

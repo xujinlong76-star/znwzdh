@@ -582,8 +582,12 @@ describe('考试日历页源码守卫', () => {
     // 注意：国考卡片的准考证打印提醒也链官方打印系统直达，但那是已核实的单条
     // 提醒入口（事实源在 exam-calendar 常量 GUOKAO_ADMISSION_URL 里），
     // 不属于 12 条备考站点，页面仍不许写死它的域名。
-    expect(page).toContain("EXAM_PREP_CATEGORY_ID")
-    expect(page).toContain("EXAM_PREP_SUB_ID")
+    // U-238：取数逻辑在 lib/exam-prep-sites.ts（分类常量随 loader 走），
+    // 页面只 import loader，不直接读目录。
+    const loader = read('src/lib/exam-prep-sites.ts')
+    expect(loader).toContain('EXAM_PREP_CATEGORY_ID')
+    expect(loader).toContain('EXAM_PREP_SUB_ID')
+    expect(page).toContain("import { loadExamPrepSites } from '@/lib/exam-prep-sites'")
     expect(page).not.toContain('cet.neea.edu.cn')
     expect(page).not.toContain('yz.chsi.com.cn')
     expect(page).not.toContain('scs.gov.cn')

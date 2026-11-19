@@ -69,21 +69,49 @@ import {
 
 function EpisodeStepper({ entry, onSet }: { entry: WatchEntry; onSet: (episode: number) => void }) {
   const [draft, setDraft] = useState<string | null>(null)
+  // U-230 残留：非法输入的行内反馈。本页无 toast 基建，行内文案与出错的行
+  // 一一对应；拒绝后不抢焦点（提交发生在 blur 时，抢焦点会打断切行操作）。
+  const [error, setError] = useState<string | null>(null)
   const shown = draft ?? String(entry.episode)
   const commit = () => {
     if (draft === null) return
     // U-230：空值/空白直接恢复原值、不调 onSet——Number('') === 0，
     // 失焦/回车会把集数静默清零，下游 setEpisode 又把 0 当合法值写盘。
     if (draft.trim() === '') {
+      setError(null)
       setDraft(null)
       return
     }
-    const n = Math.trunc(Number(draft))
+    const raw = Number(draft)
+    // 非数字（如程序化传入的 'abc'）：拒绝，不调 onSet、不动原值。
+    if (!Number.isFinite(raw)) {
+      setError('请输入数字')
+      setDraft(null)
+      return
+    }
+    const n = Math.trunc(raw)
+    // 负数拒绝：下游 setEpisode 会把负数 clamp 成 0 写盘，一次手误就把
+    // 整部剧的进度静默归零；这里拦住，onSet 零调用、原值不变。
+    if (n < 0) {
+      setError(`集数不能为负数，已恢复为第 ${entry.episode} 集`)
+      setDraft(null)
+      return
+    }
+    // 超上限截断并明示：max 属性拦不住手输，下游会静默截断到 100000。
+    if (n > 100000) {
+      setError('最多 100000 集，已记为 100000 集')
+      setDraft(null)
+      onSet(100000)
+      return
+    }
+    // 小数保留取整（Math.trunc，常规整数输入语义，与改前一致，不另提示）。
+    setError(null)
     setDraft(null)
-    if (Number.isFinite(n)) onSet(n)
+    onSet(n)
   }
   return (
-    <span className="inline-flex items-center gap-1" aria-label={`《${entry.title}》看到第几集`}>
+    <span className="inline-flex flex-col items-start">
+      <span className="inline-flex items-center gap-1" aria-label={`《${entry.title}》看到第几集`}>
       <button
         type="button"
         aria-label="少一集"
@@ -100,7 +128,10 @@ function EpisodeStepper({ entry, onSet }: { entry: WatchEntry; onSet: (episode: 
         inputMode="numeric"
         aria-label="集数"
         value={shown}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => {
+          setDraft(e.target.value)
+          setError(null)
+        }}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
@@ -115,6 +146,12 @@ function EpisodeStepper({ entry, onSet }: { entry: WatchEntry; onSet: (episode: 
       >
         <Plus className="h-3.5 w-3.5" aria-hidden />
       </button>
+      </span>
+      {error !== null && (
+        <p role="alert" className="mt-1 text-xs text-destructive-text">
+          {error}
+        </p>
+      )}
     </span>
   )
 }

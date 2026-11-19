@@ -135,9 +135,11 @@ describe("drama page structure", () => {
   // 2026-11-20 修复 U-251：500f3cf4 补 FlexTV/MoboReels 2 站进
   // 「免费短剧」，平台区 15→17 条，App-only 仍 7 家（断言未同步致
   // 分片 1/3 红，见 evolution-round-2026-11-20-0422-research-a.md）。
-  it("平台区收满 17 条，7 家 App-only 文案写了需在 App 内观看", () => {
+  // 2026-11-20 修复 U-252：补 Melolo 1 站进「免费短剧」，
+  // 平台区 17→18 条，App-only 仍 7 家。
+  it("平台区收满 18 条，7 家 App-only 文案写了需在 App 内观看", () => {
     const sites = collectDramaSites(baselineNavigation.navigationItems);
-    expect(sites).toHaveLength(17);
+    expect(sites).toHaveLength(18);
     const appOnly = sites.filter((s) =>
       (s.description ?? "").includes("需在") &&
       (s.description ?? "").includes("App 内观看"),

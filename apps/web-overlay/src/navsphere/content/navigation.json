@@ -5086,6 +5086,19 @@
                 "免费",
                 "海外"
               ]
+            },
+            {
+              "id": "nav-4d8f2a6c91e3",
+              "title": "Melolo",
+              "href": "https://melolo.com",
+              "description": "海外短剧平台，竖屏短剧全集免费看，无需注册、多语言字幕",
+              "icon": "https://melolo.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧",
+                "免费",
+                "海外"
+              ]
             }
           ]
         },

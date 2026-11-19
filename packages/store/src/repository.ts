@@ -93,6 +93,7 @@ export type {
   SiteProfileRecord,
   SiteProfileStatus,
   UpsertSiteProfileInput,
+  VerifiedProfileShardFields,
 } from "./repository/site-profiles.ts";
 import * as analyticsRepo from "./repository/analytics.ts";
 import * as jobsRepo from "./repository/jobs.ts";
@@ -1864,6 +1865,17 @@ async revokeAllSessions(userId: string): Promise<number> {
    */
   async getSiteProfile(siteId: string): Promise<siteProfilesRepo.SiteProfileRecord | null> {
     return siteProfilesRepo.getSiteProfile(this, siteId);
+  }
+
+  /**
+   * 卡片分片 join 的批量加载（Batch0-02 R9）：一次查询返回给定站 id 中
+   * 已 verified 的档案行子集（pricing / requires_account / best_for），
+   * draft 行永不返回。空列表返回空 Map。
+   */
+  async listVerifiedProfilesBySiteIds(
+    siteIds: string[],
+  ): Promise<Map<string, siteProfilesRepo.VerifiedProfileShardFields>> {
+    return siteProfilesRepo.listVerifiedProfilesBySiteIds(this, siteIds);
   }
 
   async upsertSiteProfile(

@@ -20,7 +20,7 @@ import { backfillDerivedFacets, formatFacetBackfillReport } from "./facet-backfi
 import { indexSitesBatch } from "./index-site.ts";
 import { loadVideoCatalogFromDb, resolveVideoStoreMode, syncReplacementHistorySafely, syncVideoCatalogSafely, VIDEO_REPLACEMENTS_PATH } from "./video-catalog.ts";
 import { deriveVideoShards } from "./video-shards.ts";
-import { deriveNavigationShards } from "./navigation-shards.ts";
+import { deriveNavigationShards, type SiteProfileShardFields } from "./navigation-shards.ts";
 
 /** 外置替换审计文档的 basename（路径事实源在 video-catalog.ts，避免两处硬编码漂移） */
 const REPLACEMENTS_BASENAME = VIDEO_REPLACEMENTS_PATH.split("/").pop()!;
@@ -734,7 +734,19 @@ export async function writeNavigationData(
     if (version !== null) {
       invalidateSnapshotCache();
       const publicDoc = await readNavigationSnapshot(ctx, "public", version);
-      const derived = deriveNavigationShards(publicDoc, version);
+      // Batch0-02 R9（细化方案 §6.2 step 4）：写路径调用方从库里加载已
+      // verified 的档案行后传入 join。库为空时（开发库 sites /
+      // site_profiles / site_facets 三表 0 行）批量方法返回空 Map，分片
+      // 与现状一致（三个字段缺省），不抛错、不编造；加载失败同样回落到
+      // 无档案分片，只记 warn——派生失败不连带写失败（见上方纪律）。
+      let profiles: Map<string, SiteProfileShardFields> | undefined;
+      try {
+        profiles = await ctx.repo.listVerifiedProfilesBySiteIds(collectPublicSiteIds(publicDoc));
+      } catch (err) {
+        console.warn("[navigation] 档案分片 join 加载失败（分片将不带档案字段）:", err);
+        profiles = undefined;
+      }
+      const derived = deriveNavigationShards(publicDoc, version, profiles);
       for (const w of derived.writes) {
         await writeKv(ctx, pathToKey(w.path), w.data);
       }
@@ -745,6 +757,34 @@ export async function writeNavigationData(
     console.error("[navigation] 分片派生失败（读路径将回落整包读）:", err);
   }
   return result;
+}
+
+/**
+ * 从 public 快照里收集全部站点 id（顶层 items + 子分类 items），供分片
+ * join 的档案批量加载用。形状不对时返回已收集到的部分，不抛错——调用方
+ * 在库为空/加载失败时与现状一致回落，不连带写失败。
+ */
+export function collectPublicSiteIds(doc: unknown): string[] {
+  const ids: string[] = [];
+  const root = doc as { navigationItems?: unknown } | null;
+  if (!root || !Array.isArray(root.navigationItems)) return ids;
+  const collectItems = (items: unknown): void => {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      const rec = item as { id?: unknown } | null;
+      if (rec && typeof rec.id === "string" && rec.id !== "") ids.push(rec.id);
+    }
+  };
+  for (const cat of root.navigationItems as Array<Record<string, unknown>>) {
+    if (!cat || typeof cat !== "object") continue;
+    collectItems(cat.items);
+    if (Array.isArray(cat.subCategories)) {
+      for (const sub of cat.subCategories as Array<Record<string, unknown>>) {
+        if (sub && typeof sub === "object") collectItems(sub.items);
+      }
+    }
+  }
+  return [...new Set(ids)];
 }
 
 type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];

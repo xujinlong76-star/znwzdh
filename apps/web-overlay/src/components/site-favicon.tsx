@@ -752,6 +752,19 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 不做单站补丁，深色底块问题留待统一处理轮；接线/复审如需
   // 定夺深色变体，请裁决（见 C13 测试事实钉死）。
   ['zeabur.com', 'zeabur.svg'],
+  // 2026-11-20（C 类第 13 批 C13 续，尾巴 1 站）：Midjourney。
+  // 原属 C1 清单，当时被 Cloudflare 墙阻塞未入；设计经 Wayback 路线
+  // 取回后解堵（staging specials/midjourney.png，128×128、9,084 B，
+  // SHA-1 与 CDX 摘要一致，md5 685a01a27d7876273584052dd06f846e）。
+  // 站 icon 字段为远端 https://midjourney.com/favicon.ico，被
+  // isRemoteRawFavicon 拦截（pathname '/favicon.ico'），map 生效，
+  // navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 全库 373 站核对：'midjourney.com' 键只命中 Midjourney 一站，
+  // 无后缀串站、无子域站。落盘为白底不透明 PNG 原样（128×128，
+  // 全图不透明像素 16,384/16,384，深色帆船标 bbox x18–109 y19–96），
+  // 浅/深主题下均显白底方块，无底块（resolveLogoTile 为 null），
+  // 不做单站补丁，留待统一处理轮。
+  ['midjourney.com', 'midjourney.png'],
  ];
 
 /**

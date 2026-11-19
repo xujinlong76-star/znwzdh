@@ -25,6 +25,7 @@ import {
   hasFalseVerification,
   isIcsDownloadEligible,
   isIcsFeedEligible,
+  isOfficialSourceUrl,
   isPeakEligible,
   isVerificationExpired,
   validateExamNodeVerification,
@@ -298,16 +299,84 @@ describe('§7.1 verificationBadgeProps', () => {
     expect(props.text).toMatch(/2026-11-19/)
   })
 
-  it('reprint：描边文案带“转载级”字样', () => {
-    const props = verificationBadgeProps(reprintNode())
+  it('reprint + 白名单外来源：描边文案带“转载级”字样（旧文案保留）', () => {
+    const props = verificationBadgeProps(reprintNode(), 'chengkao')
+    expect(props.level).toBe('reprint')
     expect(props.tone).toBe('outline')
-    expect(props.text).toMatch(/转载级/)
+    expect(props.text).toBe('转载级 · 未直读官方原文')
+  })
+
+  it('R4：reprint + source_url 在该考试白名单内 →“官方源已读 · 未存档”（仍为 reprint 级、描边）', () => {
+    // 京考首例：source_url 为首都之窗公告原文（www.beijing.gov.cn，在 jingkao 白名单内），
+    // 官方原文已直读、只缺 Wayback 存档，不得再写“未直读官方原文”。
+    const props = verificationBadgeProps(
+      reprintNode({ source_url: OFFICIAL_SOURCE, archived_url: '' }),
+      'jingkao',
+    )
+    expect(props.level).toBe('reprint')
+    expect(props.tone).toBe('outline')
+    expect(props.text).toBe('官方源已读 · 未存档')
+  })
+
+  it('R4：同一官方域名、换到未登记该域名的考试 → 仍为“转载级”（按该考试白名单判定，不按全库并集）', () => {
+    const props = verificationBadgeProps(
+      reprintNode({ source_url: OFFICIAL_SOURCE, archived_url: '' }),
+      'chengkao',
+    )
+    expect(props.text).toBe('转载级 · 未直读官方原文')
+  })
+
+  it('R4：reprint + 官方源但未传 examId → 保守地保留“转载级”（不断言官方源已读）', () => {
+    const props = verificationBadgeProps(reprintNode({ source_url: OFFICIAL_SOURCE, archived_url: '' }))
+    expect(props.text).toBe('转载级 · 未直读官方原文')
+  })
+
+  it('R4 库内实测：8 个 reprint 节点中京考 2 节点 →“官方源已读 · 未存档”，其余 6 节点 →“转载级”', () => {
+    const badges: Array<{ key: string; text: string }> = []
+    for (const exam of EXAMS) {
+      for (const node of exam.nodes) {
+        if (node.verification_level !== 'reprint') continue
+        badges.push({ key: `${exam.id}:${node.label}`, text: verificationBadgeProps(node, exam.id).text })
+      }
+    }
+    expect(badges).toHaveLength(8)
+    expect(
+      badges
+        .filter((b) => b.text === '官方源已读 · 未存档')
+        .map((b) => b.key)
+        .sort(),
+    ).toEqual(['jingkao:准考证打印', 'jingkao:报名'])
+    expect(badges.filter((b) => b.text === '转载级 · 未直读官方原文')).toHaveLength(6)
   })
 
   it('unverified：灰态“待核实”', () => {
     const props = verificationBadgeProps(unverifiedNode())
     expect(props.tone).toBe('muted')
     expect(props.text).toBe('待核实')
+  })
+})
+
+describe('R4 isOfficialSourceUrl（白名单域名比对）', () => {
+  it('jingkao + www.beijing.gov.cn → true', () => {
+    expect(isOfficialSourceUrl('jingkao', OFFICIAL_SOURCE)).toBe(true)
+  })
+
+  it('chengkao + www.beijing.gov.cn → false（该考试未登记此域名）', () => {
+    expect(isOfficialSourceUrl('chengkao', OFFICIAL_SOURCE)).toBe(false)
+  })
+
+  it('未登记的考试 id → false', () => {
+    expect(isOfficialSourceUrl('not-an-exam', OFFICIAL_SOURCE)).toBe(false)
+  })
+
+  it('source_url 为空 / 不可解析 → false', () => {
+    expect(isOfficialSourceUrl('jingkao', undefined)).toBe(false)
+    expect(isOfficialSourceUrl('jingkao', '')).toBe(false)
+    expect(isOfficialSourceUrl('jingkao', 'not a url')).toBe(false)
+  })
+
+  it('子域名不算命中：www.beijing.gov.cn.evil.example → false', () => {
+    expect(isOfficialSourceUrl('jingkao', 'https://www.beijing.gov.cn.evil.example/x.html')).toBe(false)
   })
 })
 

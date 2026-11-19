@@ -680,7 +680,7 @@ describe('U-164 海南成考成绩查询时刻门控（todayNodeDeadlineMs / exa
   })
 })
 
-describe('U-160 山西成考成绩复核（转载级，不入 PEAK 表）', () => {
+describe('U-160 山西成考成绩复核（未核实，不入 PEAK 表）', () => {
   // 查找包成函数：实现未落盘时顶层 find 会在收集期抛错、整文件 0 跑；
   // 各 it 内调用，失败只落本 it。
   const shanxiNode = () => chengkao.nodes.find((n) => n.label === '山西成绩复核')!
@@ -691,7 +691,7 @@ describe('U-160 山西成考成绩复核（转载级，不入 PEAK 表）', () =
   /** 2026-11-21 08:00 北京时间（复核窗口已过） */
   const NOV_21_0800_CST = Date.UTC(2026, 10, 21, 0, 0, 0)
 
-  it('节点落库：11-19→11-20 多日窗口，无 url；detail 逐字口径 + 转载级标注', () => {
+  it('节点落库：11-19→11-20 多日窗口，无 url；detail 逐字口径 + 来源说明（不标级别）', () => {
     const node = shanxiNode()
     expect(node.startISO).toBe('2026-11-19')
     expect(node.endISO).toBe('2026-11-20')
@@ -700,8 +700,12 @@ describe('U-160 山西成考成绩复核（转载级，不入 PEAK 表）', () =
     expect(node.detail).toContain('11 月 19 日、20 日的工作时间内')
     expect(node.detail).toContain('到考试所在市的招生考试机构办理成绩复核手续，逾期不予受理')
     expect(node.detail).toContain('11 月 27 日前，各市招生考试机构通知考生成绩复核结果')
-    // 转载级如实标注：写明来源通知与两路转载一致，并写明未在官方站直读到原文
-    expect(node.detail).toContain('转载级')
+    // R5：节点级别为 unverified，detail 只写事实来源说明，不作级别断言——
+    // 不得出现“转载级”字样（与级别矛盾）；来源三要素逐项保留。
+    expect(node.detail).not.toContain('转载级')
+    expect(node.detail).toContain(
+      '（山西省招生考试管理中心 2026-11-16 通知，凤凰网与新浪财经转载一致，本站未在山西招生考试网直读到官方原文）',
+    )
     expect(node.detail).toContain('山西省招生考试管理中心 2026-11-16 通知')
     expect(node.detail).toContain('凤凰网与新浪财经转载一致')
     expect(node.detail).toContain('本站未在山西招生考试网直读到官方原文')

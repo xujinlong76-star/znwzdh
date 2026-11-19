@@ -129,9 +129,12 @@ describe("loadDramaFeatured", () => {
   });
 });
 describe("drama page structure", () => {
-  it("平台区收满 12 条，7 家 App-only 文案写了需在 App 内观看", () => {
+  // 2026-11-19 修复 U-247：U-08 补站 11 站中的 3 家免费短剧平台
+  // （ShortMax/GoodShort/NetShort）进入「短剧 > 免费短剧」子分类，
+  // collectDramaSites 按分类摊平后平台区 12→15 条，App-only 仍 7 家。
+  it("平台区收满 15 条，7 家 App-only 文案写了需在 App 内观看", () => {
     const sites = collectDramaSites(baselineNavigation.navigationItems);
-    expect(sites).toHaveLength(12);
+    expect(sites).toHaveLength(15);
     const appOnly = sites.filter((s) =>
       (s.description ?? "").includes("需在") &&
       (s.description ?? "").includes("App 内观看"),

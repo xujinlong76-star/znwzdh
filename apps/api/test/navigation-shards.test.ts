@@ -19,7 +19,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
-import { readStoragePath, readStorageVersion, writeNavigationData } from "../src/storage.ts";
+import { collectPublicSiteIds, readStoragePath, readStorageVersion, writeNavigationData } from "../src/storage.ts";
 import {
   deriveNavigationShards,
   NAVIGATION_INDEX_PATH,
@@ -337,6 +337,83 @@ describe("writeNavigationData 分片挂钩", () => {
     const index = (await readStoragePath(ctx, NAVIGATION_INDEX_PATH)) as { totalItems: number };
     // 公开分片只数可见站：n-1、n-2 在，停用的 n-3 不在
     expect(index.totalItems).toBe(2);
+  });
+
+  it("Batch0-02 R9：verified 档案行 join 进分片，draft 行不进（写路径调用方）", async () => {
+    // 先写一版建站：site_profiles.site_id 外键指向 sites.id，档案行须在
+    // 站点存在后写；本用例不依赖同 describe 里其他用例的执行顺序。
+    await writeNavigationData(ctx, docV1 as never);
+    const now = Date.now();
+    await ctx.repo.upsertSiteProfile({
+      siteId: "n-1",
+      bestFor: "个人轻量写作",
+      notFor: null,
+      license: null,
+      alternatives: [],
+      profileSourceUrl: "https://example.com/1/about",
+      profileStatus: "verified",
+      verifiedBy: "shard-join-test",
+      profileVerifiedAt: now,
+    });
+    await ctx.repo.upsertProfileFacets("n-1", {
+      pricing: ["freemium"],
+      requires_account: ["required"],
+    });
+    // draft 行同样写了分面与 best_for：写路径只加载 verified 行，它必须不进分片。
+    await ctx.repo.upsertSiteProfile({
+      siteId: "n-2",
+      bestFor: "草稿不渲染",
+      notFor: null,
+      license: null,
+      alternatives: [],
+      profileSourceUrl: "https://example.com/2/about",
+      profileStatus: "draft",
+      verifiedBy: "shard-join-test",
+      profileVerifiedAt: now,
+    });
+    await ctx.repo.upsertProfileFacets("n-2", {
+      pricing: ["paid"],
+      requires_account: ["none"],
+    });
+
+    await writeNavigationData(ctx, docV1 as never);
+    const shard = (await readStoragePath(ctx, navigationShardPath("cat-x"))) as {
+      sourceVersion: number;
+      category: {
+        items: Array<Record<string, unknown>>;
+        subCategories: Array<{ items: Array<Record<string, unknown>> }>;
+      };
+    };
+    const top = shard.category.items[0];
+    expect(top.id).toBe("n-1");
+    expect(top.pricing).toBe("freemium");
+    expect(top.requires_account).toBe("required");
+    expect(top.best_for).toBe("个人轻量写作");
+    const sub = shard.category.subCategories[0].items[0];
+    expect(sub.id).toBe("n-2");
+    expect(sub.pricing).toBeUndefined();
+    expect(sub.requires_account).toBeUndefined();
+    expect(sub.best_for).toBeUndefined();
+  });
+});
+
+describe("collectPublicSiteIds（分片 join 的站点 id 收集）", () => {
+  it("顶层 + 子分类去重收集；形状不对返回空数组，不抛错", () => {
+    expect(
+      collectPublicSiteIds({
+        navigationItems: [
+          {
+            id: "c1",
+            items: [{ id: "a" }, { id: "b" }],
+            subCategories: [{ items: [{ id: "a" }, { id: "c" }] }],
+          },
+          { id: "c2", items: [{ id: "d" }] },
+        ],
+      }),
+    ).toEqual(["a", "b", "c", "d"]);
+    expect(collectPublicSiteIds(null)).toEqual([]);
+    expect(collectPublicSiteIds({ navigationItems: "bogus" })).toEqual([]);
+    expect(collectPublicSiteIds({})).toEqual([]);
   });
 });
 

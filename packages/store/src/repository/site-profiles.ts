@@ -1,5 +1,5 @@
 import type { Repository } from "../repository.ts";
-import { inPredicate } from "../sql-in.ts";
+import { chunkList, inPredicate } from "../sql-in.ts";
 
 /**
  * 结构化档案字段（02-site-profiles §3，batch0-02）。
@@ -171,6 +171,71 @@ export async function getSiteProfile(
     [siteId],
   ))[0] as SiteProfileRow | undefined;
   return row ? rowToProfile(row) : null;
+}
+
+/**
+ * 卡片分片 join 用的 verified 档案行子集（Batch0-02 R9，细化方案 §6.2 step 4）。
+ *
+ * 与 `apps/api/src/navigation-shards.ts` 的 `SiteProfileShardFields` 同形，
+ * 只含卡片直接画的三个字段；其余档案字段走 GET /api/sites/:id/profile 懒取。
+ *
+ * 值口径（不另发明）：
+ * - `pricing` / `requires_account` 取自 `site_facets` 的同名键——
+ *   `pricing_model` 的值就住 `site_facets.pricing`（§3.2/§3.3），
+ *   `site_profile_provenance` 只存来源与核查戳、不存值；
+ * - `best_for` 取自 `site_profiles.best_for`。
+ *
+ * 过滤铁律：只返回 `profile_status='verified'` 的行，`draft` 行永不返回
+ * （草稿态永不进渲染白名单，细化方案 §6.1）。某站 verified 行存在但三字段
+ * 全缺时仍返回该站的一个空对象（行存在本身即事实；slim 侧只叠加已给字段）。
+ *
+ * 一次查询（按 SQL_IN_CHUNK=500 切片，见 sql-in.ts）：给定 id 列表外的站
+ * 不返回；空列表直接返回空 Map，不发 SQL。
+ */
+export interface VerifiedProfileShardFields {
+  pricing?: string;
+  requires_account?: string;
+  best_for?: string;
+}
+
+type VerifiedProfileShardRow = {
+  site_id: string;
+  best_for: string | null;
+  pricing: string | null;
+  requires_account: string | null;
+};
+
+export async function listVerifiedProfilesBySiteIds(
+  repo: Repository,
+  siteIds: string[],
+): Promise<Map<string, VerifiedProfileShardFields>> {
+  const out = new Map<string, VerifiedProfileShardFields>();
+  const uniq = [...new Set(siteIds.filter(Boolean))];
+  if (uniq.length === 0) return out;
+  for (const chunk of chunkList(uniq)) {
+    const pred = inPredicate("sp.site_id", chunk);
+    const rows = (await repo.raw(
+      `SELECT sp.site_id, sp.best_for,
+              MAX(CASE WHEN sf.facet_key = 'pricing' THEN sf.facet_value END) AS pricing,
+              MAX(CASE WHEN sf.facet_key = 'requires_account' THEN sf.facet_value END) AS requires_account
+         FROM site_profiles sp
+         LEFT JOIN site_facets sf
+           ON sf.site_id = sp.site_id
+          AND sf.facet_key IN ('pricing', 'requires_account')
+        WHERE sp.profile_status = 'verified' AND ${pred.sql}
+        GROUP BY sp.site_id, sp.best_for`,
+      pred.params,
+    )) as VerifiedProfileShardRow[];
+    for (const row of rows) {
+      const fields: VerifiedProfileShardFields = {};
+      if (row.pricing != null && row.pricing !== "") fields.pricing = String(row.pricing);
+      if (row.requires_account != null && row.requires_account !== "")
+        fields.requires_account = String(row.requires_account);
+      if (row.best_for != null && row.best_for !== "") fields.best_for = String(row.best_for);
+      out.set(String(row.site_id), fields);
+    }
+  }
+  return out;
 }
 
 export async function upsertSiteProfile(

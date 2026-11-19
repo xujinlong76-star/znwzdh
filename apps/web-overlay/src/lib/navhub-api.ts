@@ -2963,6 +2963,52 @@ export function trackVaultEvent(
 }
 
 /**
+ * DIY 入口漏斗（U-155）埋点的事件字典：外观点击（分母）/ 开启 DIY（分子）/
+ * Ctrl+E 快捷键使用占比。纯计数事件，无失败分支可报，故无 outcome/code。
+ *
+ * 与 trackVaultEvent 的两处差别（研究笔记 §1e）：
+ * （a）不带 eventId、不进出箱：失败即丢弃，不重放、不多计；
+ * （b）身份按 reportClick 口径做客户端剥离：匿名遥测开关关时 identity = undefined，
+ * header 与 body 均不带身份，只计匿名数。只靠服务端剥离是不够的——匿名用户
+ * 在服务端没有 user_settings 行，查不到 telemetryEnabled === false。
+ * 开关读取本身永不抛（readLocalUserSettings 内部已兜底），这里再包一层 try/catch
+ * 作安全网：读开关失败也只退化为匿名计数，绝不阻断上报本身。
+ */
+export const DIY_TELEMETRY_KINDS = ['diy_appearance_click', 'diy_open_click', 'diy_shortcut_e'] as const
+
+export type DiyTelemetryKind = (typeof DIY_TELEMETRY_KINDS)[number]
+
+/** 运行期词表视图，供守卫测试逐项与服务端白名单比对 */
+export const diyTelemetryVocabulary = {
+  kinds: DIY_TELEMETRY_KINDS,
+}
+
+export function trackDiyEvent(kind: DiyTelemetryKind): void {
+  if (typeof window === 'undefined') return
+  let identity: string | undefined
+  try {
+    identity = readLocalUserSettings().telemetryEnabled ? getIdentity() : undefined
+  } catch {
+    identity = undefined
+  }
+  const body = JSON.stringify({ kind, ...(identity ? { anonId: identity } : {}) })
+  try {
+    // 身份优先走 header（shared.ts 的 identityOf 是 Header 优先、body 回退）；
+    // DIY 入口点击不是页面卸载，用 fetch(keepalive) 比 sendBeacon 更能带上 header。
+    void fetch(hubUrl('/api/events'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...anonHeaders(identity) },
+      body,
+      keepalive: true,
+    }).catch(() => {
+      // 埋点失败绝不冒泡：DIY 入口点击本身已经发生，这一层不改变任何事实
+    })
+  } catch {
+    // 构造请求即失败（极端环境）：静默，与 reportClick / trackPluginEvent 同口径
+  }
+}
+
+/**
  * 「本机偏好 → 云端」交接的埋点字典（run45）。
  *
  * 只有被尝试过的交接才上报：云端已经有行是正常运行时，每次都发会把漏斗

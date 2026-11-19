@@ -505,6 +505,38 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'podman.io': '/brand-icons/podman.png',
   'docs.docker.com': '/brand-icons/compose.png',
   'developer.hashicorp.com': '/brand-icons/terraform.svg',
+  // 2026-11-19（C 类第 6 批 C6）：天猫 / 唯品会 / 苏宁易购 / 1688 /
+  // 支付宝 / 全球速卖通 / Temu / SHEIN / eBay / Shopify / 百度地图 /
+  // 铁路 12306 / 高德地图 / 携程旅行 / 滴滴出行 / 大众点评 / 顺丰速运 /
+  // 圆通速递 / 微博（亚马逊不进 map，见下方 '亚马逊' 标题规则）。
+  // 20 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
+  // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 子域站用完整 hostname 建键，不建裸域键：'map.baidu.com'。
+  // 全库 365 站核对：本批 19 个 map 键各只命中 1 站，无后缀串站。
+  // 支付宝：落盘 alipay.png 为首页 shortcut icon 的 2600×1950 官方“支”字标
+  // 裁透明边距后缩至 128×109（原样，未改画）；同一首页另有 32px 蓝底白“支”
+  // ICO 方标（备选）未采用，待复审裁决，见 C6 测试事实钉死。
+  // 唯品会 / 全球速卖通 / 携程旅行：官网只有 16px 单帧 favicon，按规范
+  // §1.1 原样落盘 16×16、绝不放大；是否接受待裁决，见 C6 测试事实钉死。
+  'tmall.com': '/brand-icons/tmall.png',
+  'vip.com': '/brand-icons/vip.png',
+  'suning.com': '/brand-icons/suning.png',
+  '1688.com': '/brand-icons/1688.png',
+  'alipay.com': '/brand-icons/alipay.png',
+  'aliexpress.com': '/brand-icons/aliexpress.png',
+  'temu.com': '/brand-icons/temu.png',
+  'shein.com': '/brand-icons/shein.png',
+  'ebay.com': '/brand-icons/ebay.png',
+  'shopify.com': '/brand-icons/shopify.png',
+  'map.baidu.com': '/brand-icons/baidumap.png',
+  '12306.cn': '/brand-icons/12306.png',
+  'amap.com': '/brand-icons/amap.png',
+  'ctrip.com': '/brand-icons/ctrip.png',
+  'didiglobal.com': '/brand-icons/didi.png',
+  'dianping.com': '/brand-icons/dianping.png',
+  'sf-express.com': '/brand-icons/sf-express.png',
+  'yto.net.cn': '/brand-icons/yto.png',
+  'weibo.com': '/brand-icons/weibo.png',
 }
 
 /**
@@ -717,6 +749,12 @@ export function resolveSiteIcon(
     // 其中 Copilot 已由上方 'copilot' 规则（:515）先行命中，不受本条影响；GitHub Trending（C4）暂由本条命中、解析为 github.svg，
     // C4 为 Trending 加 'trending' 规则时必须放在本条之前。来源：官网首页 <link rel="icon"> 声明的 favicon.svg（github.githubassets.com），SVG 原样。
     if (lowerTitle.includes('github')) return '/brand-icons/github.svg'
+    // 2026-11-19（C 类第 6 批 C6）：亚马逊。'amazon.com' 严禁进 map：
+    // 后缀匹配会让 C11 的 AWS WAF（aws.amazon.com）串站解析为 amazon.png。
+    // 子串 '亚马逊' 在 navigation.json 全库 365 站标题中仅命中亚马逊一站，
+    // 故走标题规则（map 精确查找之前）；AWS WAF 标题不含该子串，不受影响。
+    // 来源：www.amazon.com/favicon.ico 最大帧 48×48 转 PNG 原样。
+    if (lowerTitle.includes('亚马逊')) return '/brand-icons/amazon.png'
 
     if (LOCAL_LOGO_MAP[hostname]) {
       return LOCAL_LOGO_MAP[hostname]!

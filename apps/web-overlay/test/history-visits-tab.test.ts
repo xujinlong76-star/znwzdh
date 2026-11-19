@@ -148,3 +148,43 @@ describe('A6：搜索加载更多失败静默消失', () => {
     expect(body.indexOf('if (degraded) {')).toBeLessThan(body.indexOf('} finally {'))
   })
 })
+
+describe('U-192：历史「再次搜索」只带 q——根因在数据模型，web 侧修不好', () => {
+  it('断言 1：两处「再次搜索」都只拼 q（现状如实保留，不硬凑 scope）', () => {
+    expect(PAGE).toContain("href={`/search?q=${encodeURIComponent(item.query)}`}")
+    // 标题链接与图标按钮各一处，共两处；没有第三处拼 category/tag 的链接。
+    expect(PAGE.split("href={`/search?q=${encodeURIComponent(item.query)}`}").length - 1).toBe(2)
+    expect(PAGE).not.toContain('category=${')
+    expect(PAGE).not.toContain('tag=${')
+  })
+
+  it('断言 2：旧条目如实标「仅关键词」降级展示，不伪装完整', () => {
+    expect(PAGE).toContain('再次搜索仅按关键词重搜，不保留当时的分类/标签筛选')
+  })
+
+  it('断言 3：GET 契约 items 无 scope 具名字段——没值可拼，不是链接写漏了', () => {
+    const contracts = overlaySource('src/lib/rest-contracts.generated.ts')
+    const start = contracts.indexOf('export interface SearchHistoryPageResponse {')
+    expect(start, 'SearchHistoryPageResponse 应存在').toBeGreaterThanOrEqual(0)
+    const block = contracts.slice(start, contracts.indexOf('\n}\n', start))
+    expect(block).toContain('id: number')
+    expect(block).toContain('query: string')
+    expect(block).toContain('resultCount: number')
+    expect(block).toContain('createdAt: number')
+    expect(block).not.toContain('category')
+    expect(block).not.toContain('tag')
+    expect(block).not.toContain('facet')
+  })
+
+  it('断言 4：写入侧 POST 体无 scope——recordLocalSearchHistory 只发 q/结果数/开关', () => {
+    const writer = overlaySource('src/lib/search-history-record.ts')
+    const start = writer.indexOf("'/api/search-history',")
+    expect(start, 'POST /api/search-history 调用应存在').toBeGreaterThanOrEqual(0)
+    const call = writer.slice(start, start + 600)
+    expect(call).toContain('q,')
+    expect(call).toContain('resultCount:')
+    expect(call).toContain('searchHistoryEnabled:')
+    expect(call).not.toContain('category')
+    expect(call).not.toContain('facets')
+  })
+})

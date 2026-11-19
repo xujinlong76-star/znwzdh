@@ -610,6 +610,13 @@ export default function SearchHistoryPage() {
             仅检索已加载的 {items.length} 条，加载更多可扩大检索范围
           </p>
 
+          {/* U-192：历史记录未存作用域——「再次搜索」只带关键词，不保留
+              当时的分类/标签筛选；如实标注，不伪装完整。作用域存取需中枢
+              契约变更（search_history 表无 scope 列，见轮次报告）。 */}
+          <p className="text-[11px] text-muted-foreground">
+            再次搜索仅按关键词重搜，不保留当时的分类/标签筛选
+          </p>
+
           {filteredItems.length === 0 ? (
             <section className="rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center text-xs text-muted-foreground">
               当前筛选条件下没有匹配的搜索历史。

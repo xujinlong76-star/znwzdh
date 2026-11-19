@@ -637,7 +637,7 @@ export default function SearchHistoryPage() {
         </>
       )}
 
-      {state === 'ready' && hasMore && (
+      {tab === 'searches' && state === 'ready' && hasMore && (
         <div className="flex justify-center">
           <Button
             variant="outline"

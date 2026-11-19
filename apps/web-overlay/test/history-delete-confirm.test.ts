@@ -119,3 +119,64 @@ describe('U-145：单条删除两步确认', () => {
     expect(PAGE).toContain('confirmDeleteId !== id')
   })
 })
+
+/** 底部搜索「加载更多」块：从其渲染条件起截取到按钮闭合。 */
+function bottomSearchLoadMoreBlock(src: string): string {
+  const idx = src.indexOf("state === 'ready' && hasMore")
+  expect(idx, '底部搜索加载更多条件应存在').toBeGreaterThanOrEqual(0)
+  const start = src.lastIndexOf('{', idx)
+  const end = src.indexOf('</Button>', idx)
+  expect(end, '底部搜索加载更多按钮应闭合').toBeGreaterThan(idx)
+  return src.slice(start, end)
+}
+
+/** 访问 tab 的「加载更多」块：从 visitHasMore 条件起截取到按钮闭合。 */
+function visitLoadMoreBlock(src: string): string {
+  const idx = src.indexOf('visitHasMore && (')
+  expect(idx, '访问加载更多条件应存在').toBeGreaterThanOrEqual(0)
+  const start = src.lastIndexOf('{', idx)
+  const end = src.indexOf('</Button>', idx)
+  expect(end, '访问加载更多按钮应闭合').toBeGreaterThan(idx)
+  return src.slice(start, end)
+}
+
+/** tab 切换 onClick 体：从 role="tab" 的 onClick 起截到 setTab(key) 之后。 */
+function tabSwitchHandler(src: string): string {
+  const tabIdx = src.indexOf('setTab(key)')
+  expect(tabIdx, 'tab 切换应存在').toBeGreaterThanOrEqual(0)
+  const start = src.lastIndexOf('onClick', tabIdx)
+  return src.slice(start, tabIdx + 'setTab(key)'.length)
+}
+
+describe('U-228：访问 tab 下不出现搜索历史「加载更多」', () => {
+  it('断言 1：底部搜索加载更多块的渲染条件含 tab === \'searches\'', () => {
+    const block = bottomSearchLoadMoreBlock(PAGE)
+    expect(block).toContain("tab === 'searches'")
+    expect(block).toContain("state === 'ready' && hasMore")
+    expect(block).toContain('onClick={() => void loadMore()}')
+  })
+
+  it('断言 2：搜索 tab 下唯一加载更多——访问块守 visitHasMore 且接 loadVisits', () => {
+    const visitBlock = visitLoadMoreBlock(PAGE)
+    expect(visitBlock).toContain('onClick={() => void loadVisits(visitNextOffset)}')
+    expect(visitBlock).not.toContain('loadMore()')
+    // 访问块在 visits 分支内：其前最近的 tab 分支条件是 visits。
+    const visitIdx = PAGE.indexOf('visitHasMore && (')
+    const visitsBranch = PAGE.lastIndexOf("tab === 'visits'", visitIdx)
+    expect(visitsBranch, '访问块应在 visits 分支内').toBeGreaterThanOrEqual(0)
+    // 两按钮各守各的 hasMore：搜索块用 hasMore，访问块用 visitHasMore。
+    expect(bottomSearchLoadMoreBlock(PAGE)).toContain('hasMore')
+    expect(bottomSearchLoadMoreBlock(PAGE)).not.toContain('visitHasMore')
+  })
+
+  it('断言 3：切 tab 不丢另一 tab 已加载数据（只清武装 + 切 tab，无重置）', () => {
+    const handler = tabSwitchHandler(PAGE)
+    expect(handler).toContain('setConfirmDeleteId(null)')
+    expect(handler).toContain('setTab(key)')
+    expect(handler).not.toContain('setItems([])')
+    expect(handler).not.toContain('setVisits([])')
+    expect(handler).not.toContain('setHasMore(false)')
+    expect(handler).not.toContain('setVisitHasMore(false)')
+    expect(handler).not.toContain('setNextOffset(0)')
+  })
+})

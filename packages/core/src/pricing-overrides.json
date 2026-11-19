@@ -1883,5 +1883,15 @@
   "pricing": "free",
   "evidence": "全站色板免费浏览使用、无付费档、无需账号（www.happyhues.co/ 200，标题 Happy Hues - Curated colors in context.），官网无定价页",
   "title": "Happy Hues"
+ },
+ "moboreels.com": {
+  "pricing": "freemium",
+  "evidence": "首页与单剧详情页免登录可读（www.moboreels.com/ 200，标题 MoboReels - Free Short Dramas and Movies Watch Online；单剧 53 集详情页 200）；剧集数据含逐集 isFree/isLock 标记、部分集数锁定，开头集数免费、后续需解锁",
+  "title": "MoboReels"
+ },
+ "flextv.cc": {
+  "pricing": "freemium",
+  "evidence": "官网 FAQ 明示：前期集数免费，后期集数需金币/订阅/广告/VIP（Early episodes unlocked at no cost; later ones may need coins, a subscription, ads, or VIP）；首页 200 可读、无登录墙",
+  "title": "FlexTV"
  }
 }

@@ -5036,6 +5036,32 @@
                 "免费",
                 "无广告"
               ]
+            },
+            {
+              "id": "nav-3fa1f550b73f",
+              "title": "FlexTV",
+              "href": "https://www.flextv.cc",
+              "description": "海外短剧平台，竖屏短剧在线看，前期集数免费、多语言字幕",
+              "icon": "https://www.flextv.cc/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧",
+                "免费",
+                "海外"
+              ]
+            },
+            {
+              "id": "nav-a2d257aac372",
+              "title": "MoboReels",
+              "href": "https://www.moboreels.com",
+              "description": "海外短剧与电影在线看，开头集数免费、多语言字幕",
+              "icon": "https://www.moboreels.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧",
+                "免费",
+                "海外"
+              ]
             }
           ]
         },

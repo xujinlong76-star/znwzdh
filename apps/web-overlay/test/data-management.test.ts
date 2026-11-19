@@ -4,7 +4,7 @@
  * 锁住三件事：
  *   1. 灌入判定是纯函数、可枚举：0 = 空、(0, 基线) = 低于基线、≥ 基线 = 已灌入。
  *   2. 基线数字不是拍脑袋的：每次跑测试都重数一遍仓库事实源——
- *      navigation.json（371 站 / 48 二级 / 14 一级）与 videos.json（2265 条）。
+ *      navigation.json（373 站 / 48 二级 / 14 一级）与 videos.json（2265 条）。
  *      仓库扩容时这里会先红，提醒人同步改基线，而不是页面悄悄拿旧数比较。
  *      2026-11-15 T5 元宝收录：新增「AI 搜索」二级与元宝搜索一站。
  *      2026-11-15 卸载合集：补 github.com/trending 一站，基线 334→335。
@@ -18,6 +18,7 @@
  *      2026-11-19 进化轮 22:22：补站 U-08（影视评分 2 站），基线 365→367。
  *      2026-11-19 进化轮 23:22：补站 U-08（官方文档 2 站），基线 367→369。
  *      2026-11-20 进化轮 00:22：补站 U-08（配色与色板 2 站），基线 369→371。
+ *      2026-11-20 进化轮 01:22：补站 U-08（免费短剧：FlexTV/MoboReels 2 站），基线 371→373。
  *   3. 页面只展示从中枢取回的 live 数：页面源码里不许出现 346/2265 的
  *      字面量（基线只能来自 lib 常量），两个计数端点与三个管理入口必须在位，
  *      冷备导出必须走带 token 的 hubGet（普通 <a href> 带不上 admin token）。
@@ -97,7 +98,7 @@ describe('灌入判定 seedStatus', () => {
 })
 
 describe('基线数字钉住仓库事实源', () => {
-  it('站点基线 = navigation.json 实测（14 一级 / 48 二级 / 371 站）', () => {
+  it('站点基线 = navigation.json 实测（14 一级 / 48 二级 / 373 站）', () => {
     const nav = overlayJson('src/navsphere/content/navigation.json') as {
       navigationItems: Array<{ subCategories?: unknown[] }>
     }
@@ -108,8 +109,8 @@ describe('基线数字钉住仓库事实源', () => {
     )
     expect(nav.navigationItems.length).toBe(14)
     expect(subs).toBe(48)
-    expect(sites).toBe(371)
-    expect(BASELINE_SITES).toBe(371)
+    expect(sites).toBe(373)
+    expect(BASELINE_SITES).toBe(373)
   })
 
   it('视频基线 = videos.json 实测 2265 条', () => {

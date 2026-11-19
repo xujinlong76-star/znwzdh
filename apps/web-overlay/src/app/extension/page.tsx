@@ -1,6 +1,15 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { ArrowLeft, Chrome, Compass, Download, MousePointerClick, Search, Star } from "lucide-react"
+import { ArrowLeft, Compass, Download, MousePointerClick, Search, Star } from "lucide-react"
+
+/** Google Chrome mark（Simple Icons 官方路径）：lucide v1 已删全部品牌图标，改用内联 SVG。 */
+function ChromeIcon({ className, ...props }: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true" {...props}>
+      <path d="M12 0C8.21 0 4.831 1.757 2.632 4.501l3.953 6.848A5.454 5.454 0 0 1 12 6.545h10.691A12 12 0 0 0 12 0zM1.931 5.47A11.943 11.943 0 0 0 0 12c0 6.012 4.42 10.991 10.189 11.864l3.953-6.847a5.45 5.45 0 0 1-6.865-2.29zm13.342 2.166a5.446 5.446 0 0 1 1.45 7.09l.002.001h-.002l-5.344 9.257c.206.01.413.016.621.016 6.627 0 12-5.373 12-12 0-1.54-.29-3.011-.818-4.364zM12 16.364a4.364 4.364 0 1 1 0-8.728 4.364 4.364 0 0 1 0 8.728Z" />
+    </svg>
+  )
+}
 
 export const metadata: Metadata = {
   title: "浏览器扩展",
@@ -13,8 +22,7 @@ export default function ExtensionGuidePage() {
       <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-6 sm:p-8 shadow-xs">
         <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-56 h-56 bg-indigo-400/10 rounded-full blur-3xl" />
         <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-44 h-44 bg-emerald-400/10 rounded-full blur-3xl" />
-        <Chrome
-          aria-hidden
+        <ChromeIcon
           strokeWidth={1}
           className="pointer-events-none absolute right-5 top-5 hidden sm:block w-16 h-16 text-border/70"
         />

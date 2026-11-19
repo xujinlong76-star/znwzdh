@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { ArrowLeft, Chrome, Compass, Download, MousePointerClick, Search, Star } from "lucide-react"
+import { ArrowLeft, Globe, Compass, Download, MousePointerClick, Search, Star } from "lucide-react"
 
 export const metadata: Metadata = {
   title: "浏览器扩展",
@@ -13,7 +13,7 @@ export default function ExtensionGuidePage() {
       <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-6 sm:p-8 shadow-xs">
         <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-56 h-56 bg-indigo-400/10 rounded-full blur-3xl" />
         <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-44 h-44 bg-emerald-400/10 rounded-full blur-3xl" />
-        <Chrome
+        <Globe
           aria-hidden
           strokeWidth={1}
           className="pointer-events-none absolute right-5 top-5 hidden sm:block w-16 h-16 text-border/70"

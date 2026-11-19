@@ -8,7 +8,7 @@
  * 界面上无处可改；模拟矩阵现在只在用户显式点「预览模拟布局」时出现，并常驻「模拟数据」标记。
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertCircle, FlaskConical, Flame, Github, Loader2, RefreshCw, Settings2, ExternalLink } from 'lucide-react'
+import { AlertCircle, FlaskConical, Flame, FolderGit2, Loader2, RefreshCw, Settings2, ExternalLink } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
   HEATMAP_WEEKS,
@@ -169,7 +169,7 @@ export function GithubHeatmapWidget({ config }: GithubHeatmapWidgetProps) {
       <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-6 h-6 rounded-lg bg-muted flex items-center justify-center text-foreground shrink-0 border border-border/60">
-            <Github className="w-3.5 h-3.5" />
+            <FolderGit2 className="w-3.5 h-3.5" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">

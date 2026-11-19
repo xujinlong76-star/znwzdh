@@ -20,7 +20,7 @@ import {
   Folder,
   FolderOpen,
   Gift,
-  Github,
+  FolderGit2,
   Globe,
   GripVertical,
   Headphones,
@@ -100,7 +100,7 @@ export const Icons = {
   folder: Folder,
   folderOpen: FolderOpen,
   gift: Gift,
-  github: Github,
+  github: FolderGit2, // lucide 1.x 已移除品牌图标 Github，改用 FolderGit2（仓库语义）
   globe: Globe,
   gripVertical: GripVertical,
   headphones: Headphones,

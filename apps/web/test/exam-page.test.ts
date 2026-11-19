@@ -3,8 +3,8 @@
  *  - 倒计时天数按北京时间自然日算，午夜边界正确；
  *  - 考试/节点状态只按已核实的日期翻转，预计日期（考研准考证）不自动标「已结束」；
  *  - 国考卡片挂准考证打印提醒岛（只在 11-22–11-29 15:00 渲染，官方链接在
- *    exam-calendar 常量里，不在页面写死域名；15:00 准点下线靠客户端岛，
- *    服务端页 revalidate 1 小时会迟到 1 小时）；
+ *    exam-calendar 常量里，不在页面写死域名；15:00 边界 60 秒 tick 重算、
+ *    最长迟 1 分钟下线（U-235），服务端页 revalidate 1 小时会迟到 1 小时）；
  *  - 考试清单只含已核实的十一场：国考、四六级、省考、京考、考研、成考、军队文职、教资面试、江苏自考、广东自考、上海自考，不含已考完的
  *    经济师（11-07–08）等过期场次；省考文案不写「联考」；
  *    成考是例外：统考 10-17–18 已结束，但成绩节点 11-18 未过，故列入清单。
@@ -582,8 +582,12 @@ describe('考试日历页源码守卫', () => {
     // 注意：国考卡片的准考证打印提醒也链官方打印系统直达，但那是已核实的单条
     // 提醒入口（事实源在 exam-calendar 常量 GUOKAO_ADMISSION_URL 里），
     // 不属于 12 条备考站点，页面仍不许写死它的域名。
-    expect(page).toContain("EXAM_PREP_CATEGORY_ID")
-    expect(page).toContain("EXAM_PREP_SUB_ID")
+    // U-238：取数逻辑在 lib/exam-prep-sites.ts（分类常量随 loader 走），
+    // 页面只 import loader，不直接读目录。
+    const loader = read('src/lib/exam-prep-sites.ts')
+    expect(loader).toContain('EXAM_PREP_CATEGORY_ID')
+    expect(loader).toContain('EXAM_PREP_SUB_ID')
+    expect(page).toContain("import { loadExamPrepSites } from '@/lib/exam-prep-sites'")
     expect(page).not.toContain('cet.neea.edu.cn')
     expect(page).not.toContain('yz.chsi.com.cn')
     expect(page).not.toContain('scs.gov.cn')

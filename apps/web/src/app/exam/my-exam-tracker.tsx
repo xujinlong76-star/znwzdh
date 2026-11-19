@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { ArrowUpRight } from 'lucide-react'
 import { useMyExams } from '@/hooks/useMyExams'
 import {
@@ -57,8 +58,17 @@ function nodeLinkCopy(label: string): { text: string; ariaAction: string } {
 export function MyExamTracker({ exam }: { exam: ExamInfo }) {
   const { state, storageBlocked, toggleFollow, toggleNodeCheck } = useMyExams()
 
+  // U-235：60 秒 tick——常驻 /exam 过 18:00 不翻「已截止」是旧 bug；每分钟
+  // 按绝对截止时刻重算行文案（examNodeDeadlineLabel），非累减倒计时。
+  // 禁用口径不动（U-106 未定：18:00 后复选框是否随之禁用无定论，仍按日期口径）。
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+
   const followed = state !== null && isFollowed(state, exam.id)
-  const ended = examStatus(exam) === 'ended'
+  const ended = examStatus(exam, now) === 'ended'
   // R1（2026-11-17）：统考已过但节点仍可办时（成考 11-18 的成绩查询），
   // 卡片行文不写裸「已结束」，改按统考 scoped 文案并指向下方节点；
   // 节点全过后（11-30 起）仍是「本场考试已结束」，行为不变。
@@ -66,7 +76,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
   // 时未关注用户仍可关注、已关注可继续勾选：按钮 disabled 是 ended &&
   // !hasPendingNodes && !followed（已关注者恒可取消关注），复选框是
   // ended && !hasPendingNodes；节点全过后恢复禁用。
-  const hasPendingNodes = ended && hasActionableNodes(exam)
+  const hasPendingNodes = ended && hasActionableNodes(exam, now)
   const done = state === null ? 0 : checkedCount(state, exam)
   const checkedLabels = state === null ? [] : (state.checked[exam.id] ?? [])
 
@@ -110,57 +120,76 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
       ) : null}
       <ol className="mt-3 space-y-2.5">
         {exam.nodes.map((node) => {
-          const status = examNodeStatus(node)
+          const status = examNodeStatus(node, now)
           const checked = followed && checkedLabels.includes(node.label)
           const linkCopy = nodeLinkCopy(node.label)
+          // U-237：行文本（label + detail）与复选框槽位共用一个 span；已关注态
+          // 它被 <label> 包着（点行文字即勾选），未关注态它与圆点槽位并列。
+          const text = (
+            <span className="min-w-0 flex-1">
+              <span
+                className={`font-medium ${checked ? 'text-muted-foreground line-through' : 'text-foreground'}`}
+              >
+                {node.label}
+              </span>
+              <span className="text-muted-foreground"> · {node.detail}</span>
+            </span>
+          )
           return (
             <li key={node.label} className="flex items-start gap-2.5 text-sm">
               {followed ? (
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => handleCheck(node.label)}
-                  aria-label={checked ? `${node.label}已完成` : `将${node.label}标记为已完成`}
-                  disabled={ended && !hasPendingNodes}
-                  className="mt-0.5 h-5 w-5 shrink-0"
-                />
-              ) : (
-                <span
-                  aria-hidden
-                  className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${NODE_DOT_CLASS[status]}`}
-                />
-              )}
-              <span className="min-w-0 flex-1">
-                <span
-                  className={`font-medium ${checked ? 'text-muted-foreground line-through' : 'text-foreground'}`}
+                // U-237：<label> 包复选框 + 行文本，点行文字即勾选；行内外链
+                // 移出 label（label 内不嵌交互元素），仍是同行兄弟节点。
+                // 复选框视觉保持 20px，::after 隐形扩区到 44×44（站内 U-27 同款）。
+                <label
+                  className={`flex min-w-0 flex-1 items-start gap-2.5 ${ended && !hasPendingNodes ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                 >
-                  {node.label}
-                </span>
-                <span className="text-muted-foreground"> · {node.detail}</span>
-                {/* 带官方入口的节点（如四六级准考证打印）挂直达链接：入口
-                    在 exam-calendar 常量里，岛内不写死域名；外链过 safeHref。 */}
-                {node.url ? (
-                  <>
-                    {' '}
-                    <a
-                      href={safeHref(node.url)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={`${node.label}${linkCopy.ariaAction}入口（新窗口打开）`}
-                      className="inline-flex min-h-11 items-center gap-0.5 whitespace-nowrap text-sm font-medium text-sky-700 underline decoration-sky-700/40 underline-offset-2 hover:decoration-sky-700 dark:text-sky-400"
-                    >
-                      {linkCopy.text}
-                      <ArrowUpRight className="h-4 w-4" aria-hidden />
-                    </a>
-                  </>
-                ) : null}
-              </span>
+                  <span className="relative mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center after:absolute after:-inset-3 after:content-['']">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => handleCheck(node.label)}
+                      aria-label={checked ? `${node.label}已完成` : `将${node.label}标记为已完成`}
+                      disabled={ended && !hasPendingNodes}
+                      className="h-5 w-5 shrink-0"
+                    />
+                  </span>
+                  {text}
+                </label>
+              ) : (
+                <>
+                  {/* U-237：未关注态圆点与复选框同一 20px 槽位（mt-0.5 + 居中），
+                      切换关注时行首标记不跳变。 */}
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+                    <span
+                      aria-hidden
+                      className={`h-2 w-2 shrink-0 rounded-full ${NODE_DOT_CLASS[status]}`}
+                    />
+                  </span>
+                  {text}
+                </>
+              )}
+              {/* 带官方入口的节点（如四六级准考证打印）挂直达链接：入口
+                  在 exam-calendar 常量里，岛内不写死域名；外链过 safeHref。
+                  U-237：链接在 label 外，与行文本并列、可点、不误触发勾选。 */}
+              {node.url ? (
+                <a
+                  href={safeHref(node.url)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`${node.label}${linkCopy.ariaAction}入口（新窗口打开）`}
+                  className="inline-flex min-h-11 shrink-0 items-center gap-0.5 whitespace-nowrap text-sm font-medium text-sky-700 underline decoration-sky-700/40 underline-offset-2 hover:decoration-sky-700 dark:text-sky-400"
+                >
+                  {linkCopy.text}
+                  <ArrowUpRight className="h-4 w-4" aria-hidden />
+                </a>
+              ) : null}
               <span className="shrink-0 text-xs text-muted-foreground">
                 {/* 峰值日包 W10：11-18 七项目标时刻已过时文案读「已截止」
                     （examNodeDeadlineLabel，渲染层时刻口径）；其余节点
                     沿用日期口径的状态文案。只改文案，不改状态、圆点、
                     关注/勾选禁用逻辑（门控仍按日期口径，午夜才翻）。 */}
-                {examNodeDeadlineLabel(exam, node) ?? EXAM_NODE_STATUS_LABEL[status]}
+                {examNodeDeadlineLabel(exam, node, now) ?? EXAM_NODE_STATUS_LABEL[status]}
               </span>
             </li>
           )

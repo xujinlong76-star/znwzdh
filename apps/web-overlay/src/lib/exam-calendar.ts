@@ -1341,8 +1341,18 @@ export interface GuokaoAdmissionReminder {
   stripLine: string
   /** /exam 卡片文案（A 版全句） */
   cardLine: string
+  /** 开放期卡片瘦身行（U-236）：只留节点行没有的增量（入场新规 + 多打两份），
+   *  11-23–11-29 开放期（open / last-call）才有；11-15–11-22 不设，行为不变。 */
+  slimCardLine?: string
   url: string
 }
+
+/**
+ * 开放期卡片瘦身行（U-236）：只留节点行没有的增量——入场新规 + 多打两份备用；
+ * 窗口（11 月 29 日 15:00 截止）与打印入口已在时间轴节点行完整出现，这里不再重复。
+ */
+const GUOKAO_ADMISSION_SLIM_CARD_LINE =
+  '多打两份备用。今年新规（据国家公务员局 2027 年度招考公告）：开考 15 分钟后不得入场（去年为 30 分钟）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。'
 
 const GUOKAO_ADMISSION_COPY: Record<
   Exclude<GuokaoAdmissionPhase, 'countdown'>,
@@ -1380,5 +1390,14 @@ export function admissionReminderFor(
     return { phase, stripLine: strip, cardLine: card, url: GUOKAO_ADMISSION_URL }
   }
   const copy = GUOKAO_ADMISSION_COPY[phase]
-  return { phase, stripLine: copy.strip, cardLine: copy.card, url: GUOKAO_ADMISSION_URL }
+  // U-236：开放期（open / last-call）卡片收敛为瘦身行；倒计时 / 预热期不设。
+  const slimCardLine =
+    phase === 'open' || phase === 'last-call' ? GUOKAO_ADMISSION_SLIM_CARD_LINE : undefined
+  return {
+    phase,
+    stripLine: copy.strip,
+    cardLine: copy.card,
+    slimCardLine,
+    url: GUOKAO_ADMISSION_URL,
+  }
 }

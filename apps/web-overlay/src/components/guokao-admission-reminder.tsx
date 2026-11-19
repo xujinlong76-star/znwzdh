@@ -52,6 +52,18 @@ export function GuokaoAdmissionReminder({
     )
   }
 
+  // U-236：开放期（open / last-call）卡片收敛为一行瘦身提示——窗口与入口
+  // 已在时间轴节点行完整出现，提醒块只留节点行没有的增量（入场新规 +
+  // 多打两份）；11-15–11-22（countdown / warmup）无 slimCardLine，走全句。
+  if (reminder.slimCardLine) {
+    return (
+      <div className="mt-4 rounded-xl border border-red-500/25 bg-red-500/5 p-3.5">
+        <p className="text-sm font-semibold text-red-700 dark:text-red-400">准考证打印提醒</p>
+        <p className="mt-1 text-sm leading-relaxed text-foreground">{reminder.slimCardLine}</p>
+      </div>
+    )
+  }
+
   return (
     <div className="mt-4 rounded-xl border border-red-500/25 bg-red-500/5 p-3.5">
       <p className="text-sm font-semibold text-red-700 dark:text-red-400">准考证打印提醒</p>

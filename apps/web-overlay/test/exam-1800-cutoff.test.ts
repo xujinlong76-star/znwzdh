@@ -763,6 +763,28 @@ describe('U-160 山西成考成绩复核（未核实，不入 PEAK 表）', () =
   })
 })
 
+describe('R11 云南成考成绩查询（未核实：detail 不标级别，R5 同款）', () => {
+  const yunnanNode = () => chengkao.nodes.find((n) => n.label === '云南成绩查询')!
+
+  it('节点落库：11-20 单日窗口，无 url，estimated；detail 逐字口径 + 来源说明（不标级别）', () => {
+    const node = yunnanNode()
+    expect(node.verification_level).toBe('unverified')
+    expect(node.startISO).toBe('2026-11-20')
+    expect(node.endISO).toBe('2026-11-20')
+    expect(node.url).toBeUndefined()
+    expect(node.estimated).toBe(true)
+    // R11：节点级别为 unverified，detail 只写事实来源说明，不作级别断言——
+    // 不得出现“转载级”字样（与级别矛盾）；来源要素逐项保留。
+    expect(node.detail).not.toContain('转载级')
+    expect(node.detail).toContain('11 月 20 日起可查')
+    expect(node.detail).toContain('云南省招考频道')
+    expect(node.detail).toContain('云南省招生考试院官方微信公众号/小程序')
+    expect(node.detail).toContain('环球青藤 2026-11-18 汇总与教育在线 2026-11-03 往年预估一致为「11 月 20 日起」')
+    expect(node.detail).toContain('本站未在云南省招考频道直读到 2026 年成绩公布官方公告')
+    expect(node.detail).toContain('待官方原文核实后升级')
+  })
+})
+
 describe('U-162 天津成考成绩复核（节点 reprint 转载级已核实：PEAK 表 11-19 18:00 已准入；02:35 裁决已落定，F1b 快照一致化）', () => {
   // 查找包成函数：实现未落盘时顶层 find 会在收集期抛错、整文件 0 跑；
   // 各 it 内调用，失败只落本 it。

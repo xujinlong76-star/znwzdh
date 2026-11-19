@@ -252,7 +252,7 @@ describe('T6：无数据改动（数据层守卫）', () => {
     // U-164：海南查分不挂 url（U-102 口径），url 总数仍 17。
     // U-160：山西复核不挂 url（sxkszx.cn 未证实可达），url 总数仍 17，节点总数 41→42。
     // U-162：天津复核不挂 url（招考资讯网未直读到官方原文），url 总数仍 17，节点总数 42→43。
-    // U-252：云南成绩查询不挂 url（转载级，未见官方原文），url 总数仍 17，节点总数 43→44。
+    // U-252：云南成绩查询不挂 url（未核实，未见官方原文），url 总数仍 17，节点总数 43→44。
     expect(byKey.get('chengkao:天津成绩复核')?.url).toBeUndefined()
     expect(byKey.get('jiangsu-zikao:成绩查询')?.url).toBeUndefined()
     expect(byKey.get('jiangsu-zikao:成绩复核')?.url).toBeUndefined()

@@ -365,11 +365,13 @@ describe("A9 双源冲突裁决记录（R2）：recordConflictRuling", () => {
   // 天津 D2 裁决（2026-11-20 02:35 紧急核实结论 A，已核实内容）：
   // 采信库内值，窗口确为 11-19 09:00–18:00、已关闭；11-20 12:00 是 eol.cn
   // 所标的 2025 年窗口；节点仍为 reprint 级（zhaokao.net 官方原文仍未直读到）。
+  // Y10：裁决前级别不写死——缺省由 recordConflictRuling() 按库内快照推导；
+  // 天津裁决时无既往核查行，故 before 为 unverified（F1b 自认快照仍为
+  // unverified/low），diff 应为 unverified → reprint。
   const TIANJIN_RULING = {
     examId: "chengkao",
     nodeLabel: "天津成绩复核",
     assertion: "天津成考复核 11-19 09:00–18:00",
-    verificationLevelBefore: "reprint" as const,
     verificationLevelAfter: "reprint" as const,
     sourceAUrl: "https://www.hqwx.com/chengrengk-kaoshi/news/17859084897258.html",
     sourceAClaim: "天津成考复核 11 月 19 日 9 时至 18 时网上申请缴费；复核结果 11 月 25 日 9 时至 11 月 30 日 17 时可查",
@@ -400,8 +402,39 @@ describe("A9 双源冲突裁决记录（R2）：recordConflictRuling", () => {
     expect(audits[0]?.target).toBe("exam:chengkao:天津成绩复核");
     const diff = JSON.parse(audits[0]!.diff) as Record<string, unknown>;
     expect(diff["assertion_hash"]).toBe(verification.assertionHash);
-    expect(diff["verification_level_before"]).toBe("reprint");
+    // Y10：裁决时快照为 unverified（无既往核查行），diff 须为 unverified → reprint，
+    // 不得是 reprint → reprint 空转。
+    expect(diff["verification_level_before"]).toBe("unverified");
     expect(diff["verification_level_after"]).toBe("reprint");
+    expect(verification.notes).toContain("裁决后级别：unverified → reprint。");
+  });
+
+  it("before 缺省时读快照：有既往核查行取行值（official → reprint）", async () => {
+    // 既往行：演练节点先有一行 official 核查，裁决时快照即为 official。
+    await insertExamVerification(
+      db,
+      verificationInput({
+        nodeLabel: "演练节点",
+        assertion: "演练断言：快照取行值",
+        verificationLevel: "official" as const,
+      }),
+    );
+    const { verification, auditId } = await recordConflictRuling(db, {
+      ...TIANJIN_RULING,
+      examId: EXAM_ID,
+      nodeLabel: "演练节点",
+      assertion: "演练断言：快照取行值",
+      verificationLevelAfter: "reprint",
+      ruling: "演练裁决：快照 official → reprint",
+    });
+    const audits = db.sqlite!
+      .prepare("SELECT diff FROM audit_logs WHERE id = ?")
+      .all(auditId) as Array<{ diff: string }>;
+    const diff = JSON.parse(audits[0]!.diff) as Record<string, unknown>;
+    expect(diff["assertion_hash"]).toBe(verification.assertionHash);
+    expect(diff["verification_level_before"]).toBe("official");
+    expect(diff["verification_level_after"]).toBe("reprint");
+    expect(verification.notes).toContain("裁决后级别：official → reprint。");
   });
 
   it("裁决降级记入 diff：official → reprint 的裁决前后级别可查", async () => {

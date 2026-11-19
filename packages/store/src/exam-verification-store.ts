@@ -403,8 +403,13 @@ export interface RecordConflictRulingInput {
   nodeLabel: string;
   /** 被裁决的断言原文（如 '天津成考复核 11-19 09:00–18:00'）。 */
   assertion: string;
-  /** 裁决前 verification_level（§13 diff 用）。 */
-  verificationLevelBefore: ExamVerificationLevel;
+  /**
+   * 裁决前 verification_level（§13 diff 用）。缺省时取裁决时快照：该节点
+   * 最新核查行的级别；无既往核查行即从未核实过，before 为 'unverified'
+   *（Y10：不得写死字面值——有既往行时取行值；也不得以 exam-calendar.ts
+   * 当前文件值作 before，该文件在裁决落定后已是裁决后级别）。
+   */
+  verificationLevelBefore?: ExamVerificationLevel;
   /** 裁决后 verification_level（§13 diff 用；§5.1 第 2 条：裁决后强制 reprint，例外挂起时为 unverified）。 */
   verificationLevelAfter: ExamVerificationLevel;
   /** 冲突一方：来源 URL + 该来源的主张（逐字，不拼贴、不取平均，§5.1 第 3 条）。 */
@@ -458,7 +463,13 @@ export async function recordConflictRuling(
   const examId = requireNonEmpty(input.examId, "examId");
   const nodeLabel = requireNonEmpty(input.nodeLabel, "nodeLabel");
   const assertion = requireNonEmpty(input.assertion, "assertion");
-  requireEnum(input.verificationLevelBefore, VERIFICATION_LEVELS, "verificationLevelBefore");
+  // Y10：before 缺省时读裁决时快照——取该节点最新核查行的级别；无既往
+  // 核查行即从未核实过，before 为 'unverified'。显式传入时以传入值为准。
+  const verificationLevelBefore =
+    input.verificationLevelBefore ??
+    (await latestVerificationForNode(db, examId, nodeLabel))?.verificationLevel ??
+    "unverified";
+  requireEnum(verificationLevelBefore, VERIFICATION_LEVELS, "verificationLevelBefore");
   requireEnum(input.verificationLevelAfter, VERIFICATION_LEVELS, "verificationLevelAfter");
   const sourceAUrl = requireNonEmpty(input.sourceAUrl, "sourceAUrl");
   const sourceAClaim = requireNonEmpty(input.sourceAClaim, "sourceAClaim");
@@ -479,7 +490,7 @@ export async function recordConflictRuling(
     `来源 A：${sourceAUrl}\n主张 A：${sourceAClaim}\n` +
     `来源 B：${sourceBUrl}\n主张 B：${sourceBClaim}\n` +
     `裁决：${ruling}\n裁决依据：${rulingBasis}\n` +
-    `裁决后级别：${input.verificationLevelBefore} → ${input.verificationLevelAfter}。`;
+    `裁决后级别：${verificationLevelBefore} → ${input.verificationLevelAfter}。`;
 
   const verification = await insertExamVerification(db, {
     examId,
@@ -500,7 +511,7 @@ export async function recordConflictRuling(
 
   const diff = JSON.stringify({
     assertion_hash: verification.assertionHash,
-    verification_level_before: input.verificationLevelBefore,
+    verification_level_before: verificationLevelBefore,
     verification_level_after: input.verificationLevelAfter,
     verdict,
     rating,

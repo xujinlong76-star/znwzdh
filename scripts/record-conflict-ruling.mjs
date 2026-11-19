@@ -18,6 +18,12 @@
  *  - 级别：节点仍为 reprint 级（zhaokao.net 官方原文仍未直读到，U-162 仍为
  *    转载级，升级仍待人工直访核对）；复核结果查询窗口 11-25 09:00–11-30 17:00
  *    同为转载级。
+ *  - 裁决前级别（Y10）：不写死——recordConflictRuling() 缺省取目标库里该
+ *    节点最新核查行的级别；天津裁决时无既往核查行（F1b 自认快照仍为
+ *    unverified/low），故 before 为 unverified，diff 应为 unverified →
+ *    reprint。显式 --before-level 可覆盖。注意：不得以 exam-calendar.ts
+ *    当前文件值作 before——该文件裁决落定后已是 reprint，读它会重演
+ *    reprint → reprint 空转。
  *
  * 惯例（仿 scripts/exam-verify.mjs）：
  *  - 默认试运行：只打印将写入的 notes 与 audit diff，不写库。加 --apply 才写库。
@@ -35,12 +41,12 @@
 import { openDb } from "../packages/store/src/driver.ts";
 import { recordConflictRuling } from "../packages/store/src/exam-verification-store.ts";
 
-/** 天津 D2 裁决（2026-11-20 02:35 紧急核实结论 A）。 */
+/** 天津 D2 裁决（2026-11-20 02:35 紧急核实结论 A）。裁决前级别不写死，
+ *  由 recordConflictRuling() 按目标库快照推导（Y10），见文件头注释。 */
 const TIANJIN_RULING = {
   examId: "chengkao",
   nodeLabel: "天津成绩复核",
   assertion: "天津成考复核 11-19 09:00–18:00",
-  verificationLevelBefore: "reprint",
   verificationLevelAfter: "reprint",
   sourceAUrl: "https://www.hqwx.com/chengrengk-kaoshi/news/17859084897258.html",
   sourceAClaim:
@@ -64,6 +70,7 @@ function parseArgs(argv) {
     else if (a === "--help" || a === "-h") args.help = true;
     else if (a === "--db") args.db = argv[++i];
     else if (a === "--url") args.url = argv[++i];
+    else if (a === "--before-level") args.beforeLevel = argv[++i];
     else if (a === "--checked-by") args.checkedBy = argv[++i];
     else if (a.startsWith("--")) throw new Error(`未知参数：${a}（用 --help 查看用法）`);
   }
@@ -82,11 +89,16 @@ async function openTargetDb(args) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
-    console.log("用法：node scripts/record-conflict-ruling.mjs [--apply] [--db <path>] [--url <pg>] [--checked-by <name>]");
+    console.log("用法：node scripts/record-conflict-ruling.mjs [--apply] [--db <path>] [--url <pg>] [--before-level <level>] [--checked-by <name>]");
     console.log("默认试运行（只打印裁决正文与 audit diff，不写库）；--apply 才写库。");
+    console.log("裁决前级别缺省由 recordConflictRuling() 按目标库快照推导；--before-level 可显式覆盖。");
     return 0;
   }
-  const ruling = { ...TIANJIN_RULING, checkedBy: args.checkedBy ?? TIANJIN_RULING.checkedBy };
+  const ruling = {
+    ...TIANJIN_RULING,
+    checkedBy: args.checkedBy ?? TIANJIN_RULING.checkedBy,
+    ...(args.beforeLevel ? { verificationLevelBefore: args.beforeLevel } : {}),
+  };
   if (!args.apply) {
     console.warn("[record-conflict-ruling] 试运行模式：不写库。加 --apply 才真正写入。");
     console.log(JSON.stringify({ mode: "dry-run", ruling }, null, 2));

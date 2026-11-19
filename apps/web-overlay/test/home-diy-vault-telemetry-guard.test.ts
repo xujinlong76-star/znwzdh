@@ -23,7 +23,22 @@ import { fileURLToPath } from 'node:url';
 const mockedGetIdentity = vi.hoisted(() => vi.fn((): string => 'anon-vaulttrack01234567'));
 vi.mock('../src/lib/identity', () => ({ getIdentity: mockedGetIdentity }));
 
-const { trackVaultEvent, vaultTelemetryVocabulary } = await import('../src/lib/navhub-api');
+// U-155：trackDiyEvent 用 readLocalUserSettings().telemetryEnabled 做客户端剥离。
+// 真函数在 node 环境下安全（无 window 时返回默认值，见 user-settings.ts resolveStore），
+// 这里 mock 只是为了能确定性地拨动开关、断言「关时不带身份」；其余导出原样透传，
+// 避免改动 navhub-api 其它导入链的行为。
+const mockedReadLocalUserSettings = vi.hoisted(() =>
+  vi.fn((): { telemetryEnabled: boolean } => ({ telemetryEnabled: true })),
+);
+vi.mock('../src/lib/user-settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/lib/user-settings')>();
+  return {
+    ...actual,
+    readLocalUserSettings: mockedReadLocalUserSettings as unknown as typeof actual.readLocalUserSettings,
+  };
+});
+
+const { trackVaultEvent, vaultTelemetryVocabulary, trackDiyEvent, diyTelemetryVocabulary } = await import('../src/lib/navhub-api');
 const {
   checkCloudVaultStatus,
   clearCloudVault,
@@ -93,6 +108,7 @@ const lastEventBody = () => JSON.parse(events().at(-1)!.body) as Record<string, 
 
 beforeEach(() => {
   mockedGetIdentity.mockReturnValue('anon-vaulttrack01234567');
+  mockedReadLocalUserSettings.mockReturnValue({ telemetryEnabled: true });
   // trackVaultEvent 的 `typeof window === 'undefined'` 是 SSR 护栏，不是业务分支。
   // 根 vitest 跑在 node 环境里，不点亮这个开关就只能读源码猜「有没有上报」。
   ;(globalThis as { window?: unknown }).window = {};
@@ -123,6 +139,48 @@ describe('词表两侧一致（服务端白名单是唯一真相源）', () => {
     for (const code of vaultTelemetryVocabulary.codes) {
       expect(code.length, `原因码超出 32 字符：${code}`).toBeLessThanOrEqual(32);
     }
+  });
+});
+
+describe('DIY 入口漏斗词表两侧一致（U-155）', () => {
+  const server = readFileSync(resolve(HERE, '..', '..', 'api', 'src', 'routes', 'telemetry.ts'), 'utf8');
+
+  it('kind：客户端三个 diy_* 全部在服务端 EVENT_KINDS 白名单内，且数组精确等于三项', () => {
+    const serverKinds = constArrayLiterals(server, 'const EVENT_KINDS = [');
+    for (const kind of diyTelemetryVocabulary.kinds) {
+      expect(serverKinds, `服务端未登记 kind：${kind}`).toContain(kind);
+    }
+    expect([...diyTelemetryVocabulary.kinds]).toEqual(['diy_appearance_click', 'diy_open_click', 'diy_shortcut_e']);
+  });
+});
+
+describe('trackDiyEvent：纯计数事件，只上报 kind 与身份', () => {
+  it('POST 到 /api/events，带匿名身份 header，body 只有 kind/anonId（无 outcome/code）', () => {
+    stubFetch(() => ({ status: 204, body: {} }));
+    trackDiyEvent('diy_appearance_click');
+    expect(events()).toHaveLength(1);
+    const call = events()[0]!;
+    expect(call.method).toBe('POST');
+    expect(call.url).toContain('/events');
+    expect(call.headers['X-Navhub-Anon-Id']).toBe('anon-vaulttrack01234567');
+    expect(Object.keys(lastEventBody()).sort()).toEqual(['anonId', 'kind']);
+  });
+
+  it('埋点请求抛错绝不冒泡 —— 入口点击的结果不由观测层决定', () => {
+    globalThis.fetch = (() => {
+      throw new Error('浏览器拒绝发起请求');
+    }) as typeof fetch;
+    expect(() => trackDiyEvent('diy_open_click')).not.toThrow();
+  });
+
+  it('遥测开关关时事件仍发、但不带身份（匿名计数；header 与 body 均剥离）', () => {
+    mockedReadLocalUserSettings.mockReturnValue({ telemetryEnabled: false });
+    stubFetch(() => ({ status: 204, body: {} }));
+    trackDiyEvent('diy_shortcut_e');
+    expect(events()).toHaveLength(1);
+    const call = events()[0]!;
+    expect(call.headers['X-Navhub-Anon-Id']).toBeUndefined();
+    expect(Object.keys(lastEventBody()).sort()).toEqual(['kind']);
   });
 });
 
@@ -431,6 +489,37 @@ describe('弹窗上报点（源码级钉子）', () => {
     }
     expect(cloudVaultBadgeLabel(null)).toBe('尚未与云端对表');
     expect(cloudVaultBadgeLabel({ hasCloudVault: false, code: 'check_failed' })).toContain('云端状态未知');
+  });
+});
+
+describe('DIY 三处落点（源码级钉子，U-155）', () => {
+  const toolbar = readFileSync(overlayFile('src/components/navigation-toolbar.tsx'), 'utf8');
+  const guide = readFileSync(overlayFile('src/components/home-windows/appearance-guide-dialog.tsx'), 'utf8');
+  const shortcuts = readFileSync(overlayFile('src/components/keyboard-shortcuts-dialog.tsx'), 'utf8');
+
+  it('三处落点各有且仅有一次上报', () => {
+    expect(toolbar.match(/trackDiyEvent\('diy_appearance_click'\)/g)).toHaveLength(1);
+    expect(guide.match(/trackDiyEvent\('diy_open_click'\)/g)).toHaveLength(1);
+    expect(shortcuts.match(/trackDiyEvent\('diy_shortcut_e'\)/g)).toHaveLength(1);
+  });
+
+  it('外观按钮先报后开：上报在 onOpenAppearanceGuide() 调用之前', () => {
+    const reportAt = toolbar.indexOf("trackDiyEvent('diy_appearance_click')");
+    const openAt = toolbar.indexOf('onOpenAppearanceGuide()', reportAt);
+    expect(openAt).toBeGreaterThan(reportAt);
+    expect(openAt - reportAt).toBeLessThan(120);
+  });
+
+  it('「开启 DIY」只在 !isEditingLayout 时计：调用写在条件内，退出不计入分子', () => {
+    expect(guide).toContain("if (!isEditingLayout) trackDiyEvent('diy_open_click')");
+  });
+
+  it('Ctrl+E 分支内上报：调用落在 Ctrl+E 判定之后、toggle 之前', () => {
+    const branchAt = shortcuts.indexOf("e.key.toLowerCase() === 'e'");
+    const reportAt = shortcuts.indexOf("trackDiyEvent('diy_shortcut_e')", branchAt);
+    const toggleAt = shortcuts.indexOf('toggleEditingLayout()', branchAt);
+    expect(reportAt).toBeGreaterThan(branchAt);
+    expect(reportAt).toBeLessThan(toggleAt);
   });
 });
 

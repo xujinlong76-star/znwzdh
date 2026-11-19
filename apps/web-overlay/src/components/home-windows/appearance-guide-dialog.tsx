@@ -26,6 +26,7 @@ import { SkinPicker } from '@/components/skin-picker'
 import { ModeToggle } from '@/components/mode-toggle'
 import { OnboardingCard } from '@/components/onboarding-card'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import { trackDiyEvent } from '@/lib/navhub-api'
 import {
   claimHomepageAction,
   HOMEPAGE_BANNER_DISMISSED_KEY,
@@ -173,6 +174,9 @@ export function AppearanceGuideDialog({
                   size="sm"
                   variant={isEditingLayout ? 'default' : 'outline'}
                   onClick={() => {
+                    // U-155：只在开启时计入分子；isEditingLayout=true 时文案是「退出 DIY」，
+                    // 无条件上报会把退出也计入开启分子
+                    if (!isEditingLayout) trackDiyEvent('diy_open_click')
                     toggleEditingLayout()
                     onOpenChange(false)
                   }}

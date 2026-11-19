@@ -124,6 +124,31 @@ async function seed() {
   await ctx.repo.addFavorite({ userId: USER, siteId: siteBId, note: null, tags: ["PPT", "付费"] });
   await ctx.repo.addFavorite({ userId: USER, siteId: siteCId });
   await ctx.repo.addFavorite({ userId: USER, siteId: siteDId });
+
+  // Batch0-02 R10：A verified（快照四格应带值）、B draft（四格按缺失）。
+  const profileVerifiedAt = Date.now();
+  await ctx.repo.upsertSiteProfile({
+    siteId: siteAId,
+    bestFor: "个人轻量做演示文稿",
+    notFor: "不支持多人实时协作",
+    license: "MIT",
+    alternatives: [siteBId],
+    profileSourceUrl: "https://ppt-a.example.com/pricing",
+    profileStatus: "verified",
+    verifiedBy: "seed",
+    profileVerifiedAt,
+  });
+  await ctx.repo.upsertSiteProfile({
+    siteId: siteBId,
+    bestFor: "草稿适用陈述不应出现",
+    notFor: "草稿边界不应出现",
+    license: "草稿协议不应出现",
+    alternatives: [siteAId],
+    profileSourceUrl: "https://ppt-b.example.com/pricing",
+    profileStatus: "draft",
+    verifiedBy: "seed",
+    profileVerifiedAt,
+  });
   await ctx.repo.addFavorite({ userId: USER, siteId: pendingSiteId });
   await ctx.repo.addFavorite({ userId: USER, siteId: archivedSiteId });
   await ctx.repo.addFavorite({ userId: OTHER, siteId: otherSiteId });
@@ -190,6 +215,24 @@ describe("保存：201 + 与 GET /api/compare 逐格一致", () => {
     const saved = await saveSnapshot([siteAId, siteBId, siteCId, siteDId]);
     expect(saved.statusCode).toBe(201);
     expect(saved.json().snapshot.items).toHaveLength(4);
+  });
+
+  it("档案四格（Batch0-02 R10）：快照冻结 verified 行的四格，draft 行按缺失", async () => {
+    const saved = await saveSnapshot([siteAId, siteBId]);
+    expect(saved.statusCode).toBe(201);
+    const items = saved.json().snapshot.items as Array<Record<string, { value: unknown; verified: boolean; verifiedAt: number | null }>>;
+    const [a, b] = items as [Record<string, { value: unknown; verified: boolean; verifiedAt: number | null }>, Record<string, { value: unknown; verified: boolean; verifiedAt: number | null }>];
+    expect(a.best_for).toMatchObject({ value: "个人轻量做演示文稿", verified: true });
+    expect(typeof a.best_for.verifiedAt).toBe("number");
+    expect(a.not_for).toMatchObject({ value: "不支持多人实时协作", verified: true });
+    expect(a.license).toMatchObject({ value: "MIT", verified: true });
+    expect(a.alternatives).toMatchObject({ value: [siteBId], verified: true });
+    for (const key of ["best_for", "not_for", "license", "alternatives"]) {
+      expect(b[key]).toMatchObject({ value: null, verified: false, verifiedAt: null });
+    }
+    expect(JSON.stringify(saved.json())).not.toContain("草稿");
+    expect(a).not.toHaveProperty("winner");
+    expect(b).not.toHaveProperty("winner");
   });
 
   it.each([

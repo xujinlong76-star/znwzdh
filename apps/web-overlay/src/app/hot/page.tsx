@@ -6,6 +6,7 @@ import { hubGet } from '@/lib/server/hub'
 import type { HubSite, HubPluginItem } from '@/lib/navhub-api'
 import type { PluginRankGroups } from '@/lib/plugins/marketplace-rankings'
 import { pageShareMetadata } from '@/lib/seo/metadata'
+import { normalizeSearchQuery } from '@/lib/search-page'
 import HotView from './hot-view'
 
 /**
@@ -79,7 +80,19 @@ async function loadHot() {
   }
 }
 
-export default async function HotPage() {
+export default async function HotPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const sp = await searchParams
+  // U-239 + U-240：深链首帧初值——?tab= 决定首帧页签、?fq= 决定首帧筛选词，
+  // 服务端直出，不再等挂载 effect 才恢复（消掉深链先 trending/全量再闪切）。
+  // 非法 tab 回落 trending；fq 走 normalizeSearchQuery 口径（截断 256）。
+  // canonical 仍固定 /hot，?fq=/?tab= 变体由 canonical 收敛，无需新增 robots 规则。
+  const tabParam = Array.isArray(sp.tab) ? sp.tab[0] : sp.tab
+  const initialTab = tabParam === 'new' ? 'new' : tabParam === 'plugins' ? 'plugins' : 'trending'
+  const initialFilterQuery = normalizeSearchQuery(sp.fq)
   const { trending, fresh, recomputedAt, degraded, pluginRankings, pluginDegraded } = await loadHot()
   return (
     <Container as="main" id="main-content">
@@ -97,6 +110,8 @@ export default async function HotPage() {
           degraded={degraded}
           initialPluginRankings={pluginRankings}
           pluginDegraded={pluginDegraded}
+          initialTab={initialTab}
+          initialFilterQuery={initialFilterQuery}
         />
       </div>
       <Footer />

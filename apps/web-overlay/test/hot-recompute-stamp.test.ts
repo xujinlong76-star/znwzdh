@@ -26,7 +26,8 @@ describe('/hot 热度重算时间戳接线', () => {
   it('page.tsx：loadHot 取 trending 响应的 recomputedAt 并透传给 HotView', () => {
     expect(page).toContain("hubGet<{ hits: RankHit[]; recomputedAt?: number | null }>('/api/rank/trending?limit=30', 60)")
     expect(page).toContain('recomputedAt: trendingRes?.recomputedAt ?? null')
-    // P2-10 起 HotView 多了插件排行两个 prop，JSX 随之换行；透传本身不变
+    // P2-10 起 HotView 多了插件排行两个 prop，JSX 随之换行；U-239+U-240
+    // 又加 initialTab / initialFilterQuery 两个首帧初值 prop；透传本身不变
     expect(page).toContain(
       `<HotView
           initialTrending={trending}
@@ -35,6 +36,8 @@ describe('/hot 热度重算时间戳接线', () => {
           degraded={degraded}
           initialPluginRankings={pluginRankings}
           pluginDegraded={pluginDegraded}
+          initialTab={initialTab}
+          initialFilterQuery={initialFilterQuery}
         />`,
     )
   })

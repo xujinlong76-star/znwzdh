@@ -36,6 +36,7 @@ import { SiteFavicon } from '@/components/site-favicon'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useSiteViewModel } from '@/components/site-view-context'
 import { externalLinkRelAttr } from '@/lib/site-settings'
+import { normalizeSearchQuery } from '@/lib/search-page'
 
 export default function HotView({
   initialTrending = [],
@@ -44,6 +45,8 @@ export default function HotView({
   degraded = false,
   initialPluginRankings = { trending: [], popular: [], rating: [], fresh: [] },
   pluginDegraded = false,
+  initialTab = 'trending',
+  initialFilterQuery = '',
 }: {
   initialTrending?: HubSite[]
   initialFresh?: HubSite[]
@@ -54,6 +57,10 @@ export default function HotView({
   initialPluginRankings?: PluginRankGroups
   /** 任一组插件排行取数失败时为 true：插件 tab 空态据此区分「没取回」与「市场没数据」 */
   pluginDegraded?: boolean
+  /** U-240：服务端从 ?tab= 读回的首帧页签，消掉深链先 trending 再闪切 */
+  initialTab?: 'trending' | 'new' | 'plugins'
+  /** U-239：服务端从 ?fq= 读回的首帧筛选词，消掉深链先全量再过滤 */
+  initialFilterQuery?: string
 }) {
   const externalRel = externalLinkRelAttr(useSiteViewModel()?.externalLinkRel)
   const [trending, setTrending] = useState<HubSite[]>(initialTrending)
@@ -73,9 +80,13 @@ export default function HotView({
   /**
    * 榜单页签写进 URL（?tab=new / ?tab=plugins）：点开站点再返回、刷新、分享链接都能停在同一榜。
    * 原来 defaultValue 只存在 Radix 内部，返回即回到「访问量榜」。
+   * U-240：首帧页签由服务端 page.tsx 从 ?tab= 读回作初值（initialTab），
+   * 挂载 effect 只负责 popstate 同步，不再晚一拍改 tab。
    */
-  const [tab, setTab] = useState<'trending' | 'new' | 'plugins'>('trending')
-  const [filterQuery, setFilterQuery] = useState('')
+  const [tab, setTab] = useState<'trending' | 'new' | 'plugins'>(initialTab)
+  const [filterQuery, setFilterQuery] = useState(initialFilterQuery)
+  /** U-239：fq 读回完成前不写回 URL，免得把进页的 ?fq= 冲掉（照抄 /drama 的 filterReady 守门）。 */
+  const [fqReady, setFqReady] = useState(false)
 
   const filteredTrending = useMemo(() => {
     if (!filterQuery.trim()) return trending
@@ -137,14 +148,34 @@ export default function HotView({
     tab === 'trending' ? filteredTrending.length : tab === 'new' ? filteredFresh.length : filteredPluginTotal,
   )
   useEffect(() => {
+    // U-239：挂载读回 ?tab= 与 ?fq=；同一个 popstate 同步两者，后退时
+    // tab 变了、筛选词不能留旧值。fq 走 normalizeSearchQuery 口径
+    // （去控制字符、折叠空白、截断 256，与 /search 同口径）。
     const syncFromUrl = () => {
-      const t = new URLSearchParams(window.location.search).get('tab')
+      const params = new URLSearchParams(window.location.search)
+      const t = params.get('tab')
       setTab(t === 'new' ? 'new' : t === 'plugins' ? 'plugins' : 'trending')
+      setFilterQuery(normalizeSearchQuery(params.get('fq') ?? undefined))
+      setFqReady(true)
     }
     syncFromUrl()
     window.addEventListener('popstate', syncFromUrl)
     return () => window.removeEventListener('popstate', syncFromUrl)
   }, [])
+  // U-239：筛选词变化时写回 URL（?fq=，replaceState，不产生历史记录）。
+  // fqReady 守门（读回前不写）+ 写前比较（与当前地址逐字相同就不写），
+  // 空值 delete('fq')，不留 ?fq= 残留。changeTab 全量保留参数，fq 自动保留。
+  useEffect(() => {
+    if (!fqReady) return
+    const params = new URLSearchParams(window.location.search)
+    const q = normalizeSearchQuery(filterQuery)
+    if (q) params.set('fq', q)
+    else params.delete('fq')
+    const qs = params.toString()
+    const next = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash
+    const current = window.location.pathname + window.location.search + window.location.hash
+    if (next !== current) window.history.replaceState(window.history.state, '', next)
+  }, [filterQuery, fqReady])
   const changeTab = (value: string) => {
     const nextTab = value === 'new' ? 'new' : value === 'plugins' ? 'plugins' : 'trending'
     setTab(nextTab)

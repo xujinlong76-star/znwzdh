@@ -223,6 +223,10 @@ export default function SearchHistoryPage() {
     })
   }, [items, keyword, filterMode])
 
+  // U-193 方案①：检索只筛已加载页，筛选态不是「全量无结果」，按钮保留、
+  // 只改文案说明它能扩大检索范围；根治（服务端检索）另立项。
+  const isFiltering = keyword.trim() !== '' || filterMode !== 'all'
+
   const handleCleanZeroResults = useCallback(async () => {
     if (!identity || zeroResultItems.length === 0 || cleaningZero) return
     setCleaningZero(true)
@@ -548,6 +552,11 @@ export default function SearchHistoryPage() {
             </div>
           </div>
 
+          {/* U-193 方案①：检索范围说明——只筛已加载页，加载更多可扩大范围。 */}
+          <p className="text-[11px] text-muted-foreground">
+            仅检索已加载的 {items.length} 条，加载更多可扩大检索范围
+          </p>
+
           {filteredItems.length === 0 ? (
             <section className="rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center text-xs text-muted-foreground">
               当前筛选条件下没有匹配的搜索历史。
@@ -647,7 +656,7 @@ export default function SearchHistoryPage() {
             onClick={() => void loadMore()}
           >
             {loadingMore ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-            加载更多
+            {isFiltering ? '加载更多记录以扩大检索范围' : '加载更多'}
           </Button>
         </div>
       )}

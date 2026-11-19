@@ -180,3 +180,29 @@ describe('U-228：访问 tab 下不出现搜索历史「加载更多」', () => 
     expect(handler).not.toContain('setNextOffset(0)')
   })
 })
+
+describe('U-193 方案①：筛选态下按钮不藏、只改文案 + 检索范围说明', () => {
+  it('断言 1：检索框下方有范围说明文案，N 为已加载动态条数', () => {
+    expect(PAGE).toContain('仅检索已加载的 {items.length} 条，加载更多可扩大检索范围')
+    // 文案在搜索 tab 分支内（检索工具栏之后、列表之前）。
+    const branchIdx = PAGE.indexOf("tab === 'searches' && state === 'ready' && items.length > 0")
+    const noteIdx = PAGE.indexOf('仅检索已加载的 {items.length} 条')
+    expect(branchIdx, '搜索分支应存在').toBeGreaterThanOrEqual(0)
+    expect(noteIdx, '范围说明应在搜索分支内').toBeGreaterThan(branchIdx)
+  })
+
+  it('断言 2：筛选态（keyword 非空或 filterMode 非 all）下按钮文案为扩大检索范围', () => {
+    expect(PAGE).toContain("const isFiltering = keyword.trim() !== '' || filterMode !== 'all'")
+    const block = bottomSearchLoadMoreBlock(PAGE)
+    expect(block).toContain("{isFiltering ? '加载更多记录以扩大检索范围' : '加载更多'}")
+  })
+
+  it('断言 3：筛选态不藏按钮——底部按钮渲染条件里无筛选态门控', () => {
+    const condIdx = PAGE.indexOf("state === 'ready' && hasMore")
+    const condStart = PAGE.lastIndexOf('{', condIdx)
+    const condition = PAGE.slice(condStart, condIdx + "state === 'ready' && hasMore".length)
+    expect(condition).not.toContain('isFiltering')
+    expect(condition).not.toContain('keyword')
+    expect(condition).not.toContain('filterMode')
+  })
+})

@@ -49,6 +49,7 @@ import { ModeToggle } from '@/components/mode-toggle'
 import { FontSizeToggle } from '@/components/font-size-toggle'
 import { WorkspaceFilter, type WorkspaceId } from '@/components/workspace-filter'
 import { cn } from '@/lib/utils'
+import { trackDiyEvent } from '@/lib/navhub-api'
 import { summarizeSelection } from '@/lib/selection'
 
 /**
@@ -476,7 +477,11 @@ export function NavigationToolbar({
                 <Button
                   type="button"
                   variant="ghost"
-                  onClick={onOpenAppearanceGuide}
+                  // U-155：先报后开（fire-and-forget，绝不阻塞向导打开）
+                  onClick={() => {
+                    trackDiyEvent('diy_appearance_click')
+                    onOpenAppearanceGuide()
+                  }}
                   className="relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-0 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors sm:w-auto sm:flex-row sm:gap-1.5 sm:px-2.5"
                   title="DIY 排版、外观与皮肤（打开外观向导小窗）"
                   aria-label="打开外观排版与新手向导小窗"

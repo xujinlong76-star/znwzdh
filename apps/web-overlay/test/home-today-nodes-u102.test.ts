@@ -13,7 +13,7 @@
  *  - estimated 节点永不进今日集合（A2）。
  * 抑制规则（startsToday 仅当本场无 today / endsToday 时收录）是 11-18「恰好 7 项」的
  * 承重条件：若无该抑制，新疆成绩复核与江苏成绩复核会在 11-18 各多收 1 项，变成 9 项。
- * 11-18 恰好 7 项，11-19 海南成绩查询 + 上海自考成绩查询 2 项，11-20 不含浙江成绩查询。
+ * 11-18 恰好 7 项，11-19 海南成绩查询 + 天津成绩复核 + 上海自考成绩查询 3 项，11-20 不含浙江成绩查询。
  * 接续节点（A5）与今日节点都取自节点数据，不写死日期、不新造节点。
  */
 import { readFileSync } from 'node:fs'
@@ -46,7 +46,7 @@ const NOV_25_0800_CST = Date.UTC(2026, 10, 25, 0, 0, 0)
 
 const labels = (items: { node: { label: string } }[]) => items.map((i) => i.node.label)
 
-describe('A1：todayNodes（11-18 恰好 7 项，11-19 海南成绩查询 + 上海自考成绩查询 2 项）', () => {
+describe('A1：todayNodes（11-18 恰好 7 项，11-19 海南成绩查询 + 天津成绩复核 + 上海自考成绩查询 3 项）', () => {
   it('11-18 返回恰好 7 项：三省成绩查询 + 京考报名 + 文职缴费 + 江苏成绩查询 + 广东成绩查询（自考）', () => {
     const items = todayNodes(NOV_18_0800_CST)
     expect(items).toHaveLength(7)
@@ -91,13 +91,17 @@ describe('A1：todayNodes（11-18 恰好 7 项，11-19 海南成绩查询 + 上�
     expect(labels(todayFollowUpNodes(NOV_19_0800_CST))).toContain('山西成绩复核')
   })
 
-  it('11-19 不再含 11-18 的 7 项，含海南成绩查询（单日 today）与上海自考成绩查询（多日窗口首日 startsToday）；江西成绩复核退接续区', () => {
+  it('11-19 不再含 11-18 的 7 项，含海南成绩查询（单日 today）、天津成绩复核（单日 today，U-162）与上海自考成绩查询（多日窗口首日 startsToday）；江西成绩复核退接续区', () => {
     const items = todayNodes(NOV_19_0800_CST)
-    expect(items).toHaveLength(2)
+    expect(items).toHaveLength(3)
     const byKey = new Map(items.map((i) => [`${i.exam.id}:${i.node.label}`, i]))
     expect(byKey.get('chengkao:海南成绩查询')?.exam.id).toBe('chengkao')
     expect(byKey.get('chengkao:海南成绩查询')?.kind).toBe('today')
     expect(byKey.get('chengkao:海南成绩查询')?.node.url).toBeUndefined()
+    // U-162：天津单日节点是成考当天的直接节点（与海南同款），不受抑制、进今日行
+    expect(byKey.get('chengkao:天津成绩复核')?.exam.id).toBe('chengkao')
+    expect(byKey.get('chengkao:天津成绩复核')?.kind).toBe('today')
+    expect(byKey.get('chengkao:天津成绩复核')?.node.url).toBeUndefined()
     expect(byKey.get('shanghai-zikao:成绩查询')?.exam.id).toBe('shanghai-zikao')
     expect(byKey.get('shanghai-zikao:成绩查询')?.kind).toBe('startsToday')
     // U-164 抑制规则：海南单日节点是成考当天的直接节点，江西成绩复核
@@ -187,13 +191,14 @@ describe('A5 纯函数：接续节点取自节点数据（文职 / 京考）', (
     for (const u of ups) expect(dataNodes.has(u.node)).toBe(true)
   })
 
-  it('成考接续含四省复核、海南成绩查询与浙江志愿确认，不含 estimated 的浙江成绩查询', () => {
+  it('成考接续含四省复核、海南成绩查询、天津成绩复核与浙江志愿确认，不含 estimated 的浙江成绩查询', () => {
     const ups = todayFollowUpNodes(NOV_18_0800_CST)
     const chengkao = ups.filter((u) => u.exam.id === 'chengkao').map((u) => u.node.label)
     // U-164：海南成绩查询 11-19 即将开通，11-18 当天已可办（upcoming），成考已有今日节点，
     // 故进接续区；U-160：山西成绩复核 11-19 开启，11-18 当天同样已可办（upcoming）进接续区。
-    // 按 startISO 排：新疆 11-18、江西/山西/海南 11-19（数组序）、广东 11-20、浙江 11-25。
-    expect(chengkao).toEqual(['新疆成绩复核', '江西成绩复核', '山西成绩复核', '海南成绩查询', '广东成绩复核', '浙江志愿确认'])
+    // U-162：天津成绩复核 11-19 单日，11-18 当天同样已可办（upcoming）进接续区。
+    // 按 startISO 排：新疆 11-18、江西/山西/海南/天津 11-19（数组序）、广东 11-20、浙江 11-25。
+    expect(chengkao).toEqual(['新疆成绩复核', '江西成绩复核', '山西成绩复核', '海南成绩查询', '天津成绩复核', '广东成绩复核', '浙江志愿确认'])
   })
 })
 

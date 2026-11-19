@@ -194,6 +194,13 @@ const CHENGKAO_REVIEW_DEADLINE_MS = {
 } as const
 
 /**
+ * 天津成绩复核目标时刻（北京时间，毫秒）：11-19 18:00（U-162，today 行，hideWhenPassed）。
+ * 不进 DEADLINE_MS：C3 在 11-18 遍历 DEADLINE_MS 断言每行挂徽章，11-19
+ * 行不在 11-18 今日行内；与 CHENGKAO_REVIEW_DEADLINE_MS 同款独立常量。
+ */
+const TIANJIN_REVIEW_DEADLINE_MS = Date.UTC(2026, 10, 19, 10, 0, 0)
+
+/**
  * liFor 按 label 子串取行：行内写「${shortName} · ${label}」，故用该全串定位；
  * 裸 label「成绩查询」会先命中「江西成绩查询」行，江苏与广东自考两行
  * 必须用「江苏自考 · 成绩查询」「广东自考 · 成绩查询」全串定位。
@@ -625,16 +632,62 @@ describe('C8 U-158 成考三省复核 chip 行为：广东 today 行过期消失
   })
 })
 
-describe('C9 U-164 海南成考成绩查询 11-19 SSR：两行均无倒计时徽章', () => {
-  /** 2026-11-19 08:00 北京时间：海南查分公布日 */
+describe('C9 U-164 海南成考成绩查询 11-19 SSR：海南与上海两行无倒计时徽章，天津行（U-162）有倒计时徽章', () => {
+  /** 2026-11-19 08:00 北京时间：海南查分公布日、天津复核日 */
   const NOV_19_0800_CST = Date.UTC(2026, 10, 19, 0, 0, 0)
+  /** 2026-11-19 17:59:59 北京时间 = UTC 09:59:59（天津 18:00 边界前 1 秒） */
+  const NOV_19_175959_CST = Date.UTC(2026, 10, 19, 9, 59, 59)
+  /** 2026-11-19 18:00 北京时间：天津复核目标时刻（边界：恰到即截止） */
+  const NOV_19_1800_CST = Date.UTC(2026, 10, 19, 10, 0, 0)
+  /** 2026-11-19 18:30 北京时间：天津复核截止后半小时 */
+  const NOV_19_1830_CST = Date.UTC(2026, 10, 19, 10, 30, 0)
 
-  it('11-19 SSR：今日行 2 项，两行均无倒计时徽章（海南不入表、上海不入表）', () => {
+  it('11-19 SSR：今日行 3 项，天津行挂倒计时徽章（入表 18:00）、海南与上海两行无徽章（均不入表）', () => {
     const items = todayNodes(NOV_19_0800_CST)
-    expect(items).toHaveLength(2)
+    expect(items).toHaveLength(3)
     const html = unesc(renderZone(NOV_19_0800_CST))
-    expect(timerBadgeCount(html)).toBe(0)
+    expect(timerBadgeCount(html)).toBe(1)
     expect(liFor(html, '成考 · 海南成绩查询')).not.toContain('role="timer"')
     expect(liFor(html, '上海自考 · 成绩查询')).not.toContain('role="timer"')
+    // U-162：天津行 kind today、入表，08:00 距 18:00 剩 10 小时，挂倒计时徽章
+    expect(liFor(html, '成考 · 天津成绩复核')).toContain('role="timer"')
+    expect(liFor(html, '成考 · 天津成绩复核')).toContain('倒计时')
+    expect(formatRemaining(TIANJIN_REVIEW_DEADLINE_MS, NOV_19_0800_CST)).toBe('剩10小时0分')
+    const byKey19 = new Map(
+      items.map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey19.get('chengkao:天津成绩复核')!)).toBe(
+      TIANJIN_REVIEW_DEADLINE_MS,
+    )
+  })
+
+  it('天津复核行 11-19 18:00 边界：08:00 剩10小时0分、17:59:59 剩不到 1 分、18:00 恰到即「已截止」', () => {
+    expect(formatRemaining(TIANJIN_REVIEW_DEADLINE_MS, NOV_19_0800_CST)).toBe('剩10小时0分')
+    expect(formatRemaining(TIANJIN_REVIEW_DEADLINE_MS, NOV_19_175959_CST)).toBe('剩不到 1 分')
+    expect(formatRemaining(TIANJIN_REVIEW_DEADLINE_MS, NOV_19_1800_CST)).toBe('已截止')
+    expect(formatRemaining(TIANJIN_REVIEW_DEADLINE_MS, NOV_19_1830_CST)).toBe('已截止')
+  })
+
+  it('hideWhenPassed 分流：天津行 kind today（挂载后过期 chip 消失）；渲染层文案 17:59:59 为 null、18:00 起「已截止」', () => {
+    const tj = todayNodes(NOV_19_0800_CST).find(
+      (t) => t.exam.id === 'chengkao' && t.node.label === '天津成绩复核',
+    )!
+    expect(tj.kind).toBe('today')
+    const chengkao = EXAMS.find((e) => e.id === 'chengkao')!
+    expect(examNodeDeadlineLabel(chengkao, tj.node, NOV_19_175959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, tj.node, NOV_19_1800_CST)).toBe('已截止')
+    // 接线与组件语义由 C3/C6 锁定：kind today 才传 hideWhenPassed，
+    // 组件内挂载后目标已过直接 return null（不渲染 endedLabel）。
+    const zone = read('src/components/home-today-zone.tsx')
+    expect(zone).toContain("kind === 'today' ? { hideWhenPassed: true }")
+    const src = read('src/components/home-today-countdown.tsx')
+    expect(src).toContain('if (hideWhenPassed && targetMs <= nowMs) return null')
+    // SSR 只出「倒计时」占位：18:30 天津行仍含 role="timer" 占位（挂载后才消失），
+    // 文案仍为「倒计时」占位、不显示「已截止」
+    const html = unesc(renderZone(NOV_19_1830_CST))
+    expect(timerBadgeCount(html)).toBe(1)
+    expect(liFor(html, '成考 · 天津成绩复核')).toContain('role="timer"')
+    expect(liFor(html, '成考 · 天津成绩复核')).toContain('倒计时')
+    expect(liFor(html, '成考 · 天津成绩复核')).not.toContain('已截止')
   })
 })

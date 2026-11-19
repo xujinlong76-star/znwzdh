@@ -72,6 +72,15 @@
  * 陷阱：广东成考复核 15:00 绝不是广东自考 11-18 15:00（键不同）；新疆复核
  * 12:00 绝不是新疆查分 11-18 12:00（date 不同）；江西复核 17:00 绝不是
  * 11-18 17:00。
+ *
+ * U-162 追加（天津成考复核，2026-11-19）：查表加一行——天津成绩复核
+ * 11-19 18:00（单日节点，kind today，过期 chip 消失）；11-19 18:00 是截止
+ * 时刻（转载级：hqwx 环球青藤 2026-11-18 资讯梳理，非官方公告原文），与
+ * 海南 17:00、上海 10:00 的开通时刻性质相反；结果窗口 11-25 09:00 是开通
+ * 时刻、11-30 17:00 是结果窗口末端，均不入表。目标时刻：11-19 18:00 =
+ * Date.UTC(2026, 10, 19, 10, 0, 0)。陷阱：绝不是京考/文职 11-18 18:00
+ * （date 不同）；eol.cn 2025 口径（11-19 09:00–11-20 12:00 现场办理）
+ * 与 2026 三处实质冲突，绝不复刻。
  */
 import { describe, expect, it } from 'vitest'
 import type { ExamInfo, ExamNode } from '../src/lib/exam-calendar'
@@ -687,9 +696,10 @@ describe('U-160 山西成考成绩复核（转载级，不入 PEAK 表）', () =
     expect(examNodeStatus(shanxiNode(), NOV_21_0800_CST)).toBe('done')
   })
 
-  it('11-19 今日行仍 2 项（山西首日 startsToday 被海南直接节点抑制、退接续区）；11-20 山西以 endsToday 进今日行（第一遍不抑制），无 PEAK 表项故全天「进行中」', () => {
+  it('11-19 今日行 3 项（U-162 天津单日 today 进今日行；山西首日 startsToday 被海南直接节点抑制、退接续区）；11-20 山西以 endsToday 进今日行（第一遍不抑制），无 PEAK 表项故全天「进行中」', () => {
     const items19 = todayNodes(NOV_19_0800_CST)
-    expect(items19).toHaveLength(2)
+    expect(items19).toHaveLength(3)
+    expect(items19.map((t) => t.node.label)).toEqual(['海南成绩查询', '天津成绩复核', '成绩查询'])
     expect(items19.map((t) => t.node.label)).not.toContain('山西成绩复核')
     expect(todayFollowUpNodes(NOV_19_0800_CST).map((t) => t.node.label)).toContain('山西成绩复核')
     // 11-20：山西末日 endsToday 进今日行，不再进接续区；今日行 6 项（广东 today +
@@ -702,6 +712,106 @@ describe('U-160 山西成考成绩复核（转载级，不入 PEAK 表）', () =
     // 无表项：末日全天 examNodeDeadlineLabel 为 null，组合文案恒为状态文案「进行中」
     expect(examNodeDeadlineLabel(chengkao, shanxiNode(), NOV_20_0800_CST)).toBeNull()
     expect(todayNodeDeadlineMs(shanxi20!)).toBeUndefined()
+  })
+})
+
+describe('U-162 天津成考成绩复核（转载级，入 PEAK 表 11-19 18:00）', () => {
+  // 查找包成函数：实现未落盘时顶层 find 会在收集期抛错、整文件 0 跑；
+  // 各 it 内调用，失败只落本 it。
+  const tianjinNode = () => chengkao.nodes.find((n) => n.label === '天津成绩复核')!
+  /** 2026-11-19 08:00 北京时间（复核单日） */
+  const NOV_19_0800_CST = Date.UTC(2026, 10, 19, 0, 0, 0)
+  /** 2026-11-19 17:59:59 北京时间 = UTC 09:59:59（18:00 边界前 1 秒） */
+  const NOV_19_175959_CST = Date.UTC(2026, 10, 19, 9, 59, 59)
+  /** 2026-11-19 18:00:00 北京时间 = UTC 10:00:00（复核截止目标时刻） */
+  const NOV_19_180000_CST = Date.UTC(2026, 10, 19, 10, 0, 0)
+  /** 2026-11-19 18:00:01 北京时间 = UTC 10:00:01（边界后 1 秒） */
+  const NOV_19_180001_CST = Date.UTC(2026, 10, 19, 10, 0, 1)
+  /** 2026-11-20 08:00 北京时间（复核单日已过） */
+  const NOV_20_0800_CST = Date.UTC(2026, 10, 20, 0, 0, 0)
+  /** 2026-11-21 08:00 北京时间（复核单日已过次日） */
+  const NOV_21_0800_CST = Date.UTC(2026, 10, 21, 0, 0, 0)
+
+  it('节点落库：单日 11-19，无 url；detail 逐字口径 + 转载级标注', () => {
+    const node = tianjinNode()
+    expect(node.startISO).toBe('2026-11-19')
+    expect(node.endISO).toBe('2026-11-19')
+    expect(node.url).toBeUndefined()
+    expect(node.detail).toBe(
+      '11 月 19 日 9:00 至 18:00 网上申请缴费；复核结果 11 月 25 日 9:00 至 11 月 30 日 17:00 可查（转载级、未见官方原文，待官方原文核实后升级）',
+    )
+    expect(node.detail).toContain('转载级')
+    expect(node.detail).toContain('未见官方原文')
+    expect(node.detail).toContain('待官方原文核实后升级')
+  })
+
+  it('底线守卫：不写「据官网公告」、不写「逾期不予受理」、不写「现场办理」、不写 2025 口径、不写来源 URL 与移动端限制', () => {
+    const node = tianjinNode()
+    expect(node.detail).not.toContain('官网公告')
+    expect(node.detail).not.toContain('逾期不予受理')
+    expect(node.detail).not.toContain('现场办理')
+    // eol.cn 2025 口径（11-19 09:00–11-20 12:00 现场办理）绝不复刻：
+    // 2026 节点是单日，不写 11 月 20 日
+    expect(node.detail).not.toContain('11 月 20 日')
+    expect(node.detail).not.toMatch(/11 月 20 日 12:00/)
+    // 来源 URL 与移动端限制只进源码注释，不进面向用户的 detail
+    expect(node.detail).not.toContain('hqwx')
+    expect(node.detail).not.toContain('zhaokao')
+    expect(node.detail).not.toContain('移动端')
+    expect(node.detail).not.toContain('招考资讯网')
+  })
+
+  it('天津入 PEAK 表：todayNodeDeadlineMs 为 11-19 18:00（北京时间 = UTC 10:00）', () => {
+    const byKey19 = new Map(
+      todayNodes(NOV_19_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey19.get('chengkao:天津成绩复核')!)).toBe(
+      Date.UTC(2026, 10, 19, 10, 0, 0),
+    )
+    // 陷阱守卫：绝不是京考/文职 11-18 18:00（date 不同）；绝不是海南 11-19
+    // 17:00 开通时刻；绝不是结果窗口 11-25 09:00 开通时刻与 11-30 17:00 末端
+    const ms = todayNodeDeadlineMs(byKey19.get('chengkao:天津成绩复核')!)
+    expect(ms).not.toBe(Date.UTC(2026, 10, 18, 10, 0, 0))
+    expect(ms).not.toBe(Date.UTC(2026, 10, 19, 9, 0, 0))
+    expect(ms).not.toBe(Date.UTC(2026, 10, 25, 1, 0, 0))
+    expect(ms).not.toBe(Date.UTC(2026, 10, 30, 9, 0, 0))
+  })
+
+  it('边界三则：17:59:59 null → 18:00:00「已截止」→ 18:00:01「已截止」；组合文案 18:00 前「今天」', () => {
+    expect(examNodeDeadlineLabel(chengkao, tianjinNode(), NOV_19_175959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, tianjinNode(), NOV_19_180000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(chengkao, tianjinNode(), NOV_19_180001_CST)).toBe('已截止')
+    expect(nodeDeadlineDisplayLabel(chengkao, tianjinNode(), NOV_19_175959_CST)).toBe('今天')
+    // helper 层 18:00 起返回「已截止」；渲染层 kind today + hideWhenPassed，
+    // chip 挂载后直接消失、不显示该「已截止」（见 countdown C9 与 zone 接线，
+    // 与广东复核 11-20 15:00 同款）
+    expect(nodeDeadlineDisplayLabel(chengkao, tianjinNode(), NOV_19_180000_CST)).toBe('已截止')
+  })
+
+  it('时刻门控只在渲染层：examNodeStatus 按日期口径（11-19 today、11-20 / 11-21 done）', () => {
+    expect(examNodeStatus(tianjinNode(), NOV_19_180000_CST)).toBe('today')
+    expect(examNodeStatus(tianjinNode(), NOV_20_0800_CST)).toBe('done')
+    expect(examNodeStatus(tianjinNode(), NOV_21_0800_CST)).toBe('done')
+  })
+
+  it('11-19 今日行 3 项（海南 today → 天津 today → 上海 startsToday）；天津不进接续区；11-20 今日行仍 6 项、天津已 done 不进', () => {
+    const items19 = todayNodes(NOV_19_0800_CST)
+    expect(items19).toHaveLength(3)
+    expect(items19.map((t) => `${t.exam.id}:${t.node.label}`)).toEqual([
+      'chengkao:海南成绩查询',
+      'chengkao:天津成绩复核',
+      'shanghai-zikao:成绩查询',
+    ])
+    const tj19 = items19.find((t) => t.exam.id === 'chengkao' && t.node.label === '天津成绩复核')
+    expect(tj19?.kind).toBe('today')
+    expect(tj19?.node.url).toBeUndefined()
+    expect(todayNodeDeadlineMs(tj19!)).toBe(Date.UTC(2026, 10, 19, 10, 0, 0))
+    expect(todayFollowUpNodes(NOV_19_0800_CST).map((t) => t.node.label)).not.toContain('天津成绩复核')
+    expect(todayFollowUpNodes(NOV_19_0800_CST)).toHaveLength(6)
+    const items20 = todayNodes(NOV_20_0800_CST)
+    expect(items20).toHaveLength(6)
+    expect(items20.map((t) => t.node.label)).not.toContain('天津成绩复核')
+    expect(todayFollowUpNodes(NOV_20_0800_CST).map((t) => t.node.label)).not.toContain('天津成绩复核')
   })
 })
 

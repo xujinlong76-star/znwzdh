@@ -46,7 +46,7 @@ afterAll(() => {
 
 /** 2026-11-18 08:00 北京时间：今日行 7 项，其中 2 项带 url（京考报名、广东自考成绩查询） */
 const NOV_18_0800_CST = Date.UTC(2026, 10, 18, 0, 0, 0)
-/** 2026-11-19 08:00 北京时间：今日行海南成绩查询 + 上海自考成绩查询 2 项，江西成绩复核退接续区 */
+/** 2026-11-19 08:00 北京时间：今日行海南成绩查询 + 天津成绩复核 + 上海自考成绩查询 3 项，江西成绩复核退接续区 */
 const NOV_19_0800_CST = Date.UTC(2026, 10, 19, 0, 0, 0)
 /** 2026-11-19 09:30 北京时间：江西复核开窗后半小时 */
 const NOV_19_0930_CST = Date.UTC(2026, 10, 19, 1, 30, 0)
@@ -65,16 +65,24 @@ const expectPlainTextRow = (html: string, displayLabel: string) => {
   expect(html).not.toMatch(new RegExp(`<a[^>]*>[^<]*${displayLabel}`))
 }
 
-describe('U-155：11-19 今日行 2 项（海南成绩查询纯文本 + 上海自考成绩查询纯文本），江西成绩复核退接续区（带官方 URL）', () => {
-  it('todayNodes(11-19 08:00) 长度 2：成考·海南成绩查询（today，纯文本）+ 上海自考·成绩查询（startsToday，无 url）', () => {
+describe('U-155：11-19 今日行 3 项（海南成绩查询纯文本 + 天津成绩复核纯文本 + 上海自考成绩查询纯文本），江西成绩复核退接续区（带官方 URL）', () => {
+  it('todayNodes(11-19 08:00) 长度 3：成考·海南成绩查询（today，纯文本）+ 成考·天津成绩复核（today，纯文本，U-162）+ 上海自考·成绩查询（startsToday，无 url）', () => {
     const items = todayNodes(NOV_19_0800_CST)
-    expect(items).toHaveLength(2)
+    expect(items).toHaveLength(3)
     const byKey = new Map(items.map((i) => [`${i.exam.id}:${i.node.label}`, i]))
     const hainan = byKey.get('chengkao:海南成绩查询')!
     expect(hainan.exam.shortName).toBe('成考')
     expect(hainan.kind).toBe('today')
     expect(hainan.node.url).toBeUndefined()
     expect(hainan.node.detail).toBe('11 月 19 日 17:00 起可查（海南省成人高考报名系统）')
+    // U-162：天津成绩复核单日 today、无 url，detail 逐字（转载级标注）
+    const tianjin = byKey.get('chengkao:天津成绩复核')!
+    expect(tianjin.exam.shortName).toBe('成考')
+    expect(tianjin.kind).toBe('today')
+    expect(tianjin.node.url).toBeUndefined()
+    expect(tianjin.node.detail).toBe(
+      '11 月 19 日 9:00 至 18:00 网上申请缴费；复核结果 11 月 25 日 9:00 至 11 月 30 日 17:00 可查（转载级、未见官方原文，待官方原文核实后升级）',
+    )
     const shanghai = byKey.get('shanghai-zikao:成绩查询')!
     expect(shanghai.exam.shortName).toBe('上海自考')
     expect(shanghai.kind).toBe('startsToday')
@@ -98,6 +106,8 @@ describe('U-155：11-19 今日行 2 项（海南成绩查询纯文本 + 上海�
     expect(html).toContain('target="_blank"')
     // 海南行无 url，是纯文本
     expectPlainTextRow(html, '成考 · 海南成绩查询')
+    // U-162：天津行无 url，同样是纯文本（倒计时 chip 不带链接）
+    expectPlainTextRow(html, '成考 · 天津成绩复核')
   })
 
   it('11-19 href 集合：/exam、国考准考证直链、江西复核直链，别无其他', () => {

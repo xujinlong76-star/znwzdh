@@ -19,6 +19,7 @@
  *    2026-11-19 进化轮 23:22：补站 U-08（官方文档：Python 官方文档/Go 官方文档）并入 pricing-overrides（free 2），确定值 367→369、未标注仍 0。
  *    2026-11-20 进化轮 00:22：补站 U-08（配色与色板：Colormind/Happy Hues）并入 pricing-overrides（free 2），确定值 369→371、未标注仍 0。
  *    2026-11-20 进化轮 01:22：补站 U-08（免费短剧：FlexTV/MoboReels）并入 pricing-overrides（freemium 2），确定值 371→373、未标注仍 0。注：首选 ReelShort 已在平台短剧叶入库；第二站弃 Melolo（官网仅 App 下载页、无网页端在线看）改用 MoboReels（网页端可直接看剧）。
+ *    2026-11-19 batch0/W5（02 定价缺口 + 孤儿清理）：Gitee AI 入表（freemium，官网计费文档核实）、The Odin Project 入表（free，官网 About 页核实；此前仅经强信号规则命中 open_source，人工核实后以 free 为准，与 freeCodeCamp 同类学习平台口径一致）；删 8 条孤儿键（子路径/旧域名残留，所指站点均已有站级键覆盖），覆盖表 373→367 条，确定值仍 367、未标注仍 0、孤儿 0。
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -118,5 +119,19 @@ describe("导航 373 站全量推导（数据完整性基线）", () => {
     }
     expect(determinate).toBe(373);
     expect(unknownTitles).toEqual([]);
+  });
+
+  it("覆盖表无孤儿键：每条键都对应至少一个当前站点（2026-11-19 batch0/W5 清理 8 条子路径/旧域名残留后为 0）；合流后 373 条（379 main +2 W5 新增 −8 W5 清理）", () => {
+    const siteKeys = new Set(sites.map((s) => pricingOverrideKey(s.href)));
+    const orphans = Object.keys(PRICING_OVERRIDES).filter((k) => !siteKeys.has(k));
+    expect(orphans).toEqual([]);
+    expect(Object.keys(PRICING_OVERRIDES).length).toBe(373);
+  });
+
+  it("两站缺口闭合：Gitee AI 与 The Odin Project 均命中人工核实覆盖表", () => {
+    expect(derivePricing({ url: "https://moark.com" }, PRICING_OVERRIDES).value).toBe("freemium");
+    expect(derivePricing({ url: "https://moark.com" }, PRICING_OVERRIDES).source).toBe("override");
+    expect(derivePricing({ url: "https://www.theodinproject.com" }, PRICING_OVERRIDES).value).toBe("free");
+    expect(derivePricing({ url: "https://www.theodinproject.com" }, PRICING_OVERRIDES).source).toBe("override");
   });
 });

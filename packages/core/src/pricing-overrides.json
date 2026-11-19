@@ -1778,5 +1778,25 @@
   "pricing": "freemium",
   "evidence": "官网应用包：分镜创建「首次免费」「限时免费」，另设会员订阅与会员专属模板",
   "title": "讯飞绘镜"
+ },
+ "paletton.com": {
+  "pricing": "free",
+  "evidence": "全功能免费、无付费档，广告支撑（官网无定价页）",
+  "title": "Paletton"
+ },
+ "colorhunt.co": {
+  "pricing": "free",
+  "evidence": "网站全部色板免费浏览使用、无付费档（官网无定价页）",
+  "title": "Color Hunt"
+ },
+ "khroma.co": {
+  "pricing": "free",
+  "evidence": "全功能免费、无付费档、无需账号（官网无定价页）",
+  "title": "Khroma"
+ },
+ "edx.org": {
+  "pricing": "freemium",
+  "evidence": "课程可免费旁听，认证证书付费（约 $50–300/门）",
+  "title": "edX"
  }
 }

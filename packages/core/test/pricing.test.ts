@@ -3,7 +3,7 @@
  * 1. 人工核实覆盖表优先，键归一化（www./大小写/尾斜杠）不影响命中；
  * 2. 强信号规则收紧：裸「免费」不判 free、「免费试用」判 freemium 而非 free；
  * 3. 无证据一律 unknown，绝不猜；
- * 4. 数据完整性：线上导航 349 站逐站过推导，确定值/未标注集合与撰写时的
+ * 4. 数据完整性：线上导航 354 站逐站过推导，确定值/未标注集合与撰写时的
  *    核实结论一致（新增站点落 unknown 是预期——提醒后来者先核实再入表）。
  *    2026-11-15 T5 元宝收录：元宝搜索已核实并入 pricing-overrides（free），确定值 303→304、未标注仍 30。
  *    2026-11-15 卸载合集：GitHub Trending 已在 pricing-overrides（free），确定值 304→305、未标注仍 30。
@@ -13,6 +13,7 @@
  *    2026-11-17 进化轮 U-22：补 5 站（Todoist/Make/Descript/OpusClip/Gemini Notebook）并入 pricing-overrides（freemium 5），确定值 341→346、未标注仍 0。
  *    2026-11-18 进化轮 05:22：补站微博并入 pricing-overrides（freemium），确定值 346→347、未标注仍 0。
  *    2026-11-19 进化轮 16:22：补站 U-08（SkyReels/讯飞绘镜）并入 pricing-overrides（freemium 2），确定值 347→349、未标注仍 0。
+ *    2026-11-19 修复 U-246：补站 U-08（配色与色板：Paletton/Color Hunt/Khroma；编程学习：The Odin Project；在线课程：edX），Paletton/Color Hunt/Khroma 入 pricing-overrides（free 3）、edX 入表（freemium 1），The Odin Project 经强信号规则命中 open_source，确定值 349→354、未标注仍 0。
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -89,7 +90,7 @@ describe("derivePricing 强信号规则（收紧版）", () => {
   });
 });
 
-describe("导航 349 站全量推导（数据完整性基线）", () => {
+describe("导航 354 站全量推导（数据完整性基线）", () => {
   const navPath = fileURLToPath(new URL("../../../apps/web-overlay/src/navsphere/content/navigation.json", import.meta.url));
   const nav = JSON.parse(readFileSync(navPath, "utf8")) as {
     navigationItems: Array<{
@@ -98,11 +99,11 @@ describe("导航 349 站全量推导（数据完整性基线）", () => {
   };
   const sites = nav.navigationItems.flatMap((c) => c.subCategories.flatMap((s) => s.items));
 
-  it("共 349 站", () => {
-    expect(sites.length).toBe(349);
+  it("共 354 站", () => {
+    expect(sites.length).toBe(354);
   });
 
-  it("确定值 349 站、未标注为 0（30 站已于 2026-11-15 逐站核实入表）", () => {
+  it("确定值 354 站、未标注为 0（30 站已于 2026-11-15 逐站核实入表）", () => {
     const unknownTitles: string[] = [];
     let determinate = 0;
     for (const s of sites) {
@@ -110,7 +111,7 @@ describe("导航 349 站全量推导（数据完整性基线）", () => {
       if (r.value === "unknown") unknownTitles.push(s.title);
       else determinate++;
     }
-    expect(determinate).toBe(349);
+    expect(determinate).toBe(354);
     expect(unknownTitles).toEqual([]);
   });
 });

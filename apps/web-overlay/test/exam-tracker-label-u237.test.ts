@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it, vi } from 'vitest'
-import { EXAMS, type ExamInfo } from '../src/lib/exam-calendar'
+import { EXAMS } from '../src/lib/exam-calendar'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')

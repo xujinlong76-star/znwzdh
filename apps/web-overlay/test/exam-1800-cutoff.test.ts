@@ -275,15 +275,15 @@ describe('回归：18:00 过后今日行 / 可办 / 下一步仍按日期口径�
   // 午夜才翻；18:00–24:00 两节点仍可关注、仍在今日行，是已接受的设计取舍
   // （与既往所有当日截止节点一致：时刻截止只改渲染层文案与倒计时，不改可办
   // 判断），不在本轮改。W10 接线后 18:30 的今日行文案显示「已截止」，但行本身不下线。
-  it('18:30 今日行仍 7 项：两 endsToday 项不下线，与 08:00 同序同项（U-144 广东成绩查询追加在末尾）', () => {
+  it('18:30 今日行仍 7 项：两 endsToday 项不下线，与 08:00 同序同项（U-234：按目标时刻升序，江西 09:00 → 江苏 10:00 → 新疆 12:00 → 广东自考 15:00 → 广东成考 16:20 → 文职/京考 18:00 同刻保原序）', () => {
     const expected = [
+      '成考/江西成绩查询/today',
+      '江苏自考/成绩查询/today',
+      '成考/新疆成绩查询/today',
+      '广东自考/成绩查询/today',
+      '成考/广东成绩查询/today',
       '军队文职/缴费/endsToday',
       '京考/报名/endsToday',
-      '成考/江西成绩查询/today',
-      '成考/广东成绩查询/today',
-      '成考/新疆成绩查询/today',
-      '江苏自考/成绩查询/today',
-      '广东自考/成绩查询/today',
     ]
     expect(
       todayNodes(NOV_18_0800_CST).map((t) => `${t.exam.shortName}/${t.node.label}/${t.kind}`),
@@ -717,7 +717,9 @@ describe('U-160 山西成考成绩复核（转载级，不入 PEAK 表）', () =
   it('11-19 今日行 3 项（U-162 天津单日 today 进今日行；山西首日 startsToday 被海南直接节点抑制、退接续区）；11-20 山西以 endsToday 进今日行（第一遍不抑制），无 PEAK 表项故全天「进行中」', () => {
     const items19 = todayNodes(NOV_19_0800_CST)
     expect(items19).toHaveLength(3)
-    expect(items19.map((t) => t.node.label)).toEqual(['海南成绩查询', '天津成绩复核', '成绩查询'])
+    // U-234：按目标时刻升序——上海自考 10:00 开通排首位、海南 17:00、天津 18:00；
+    // startsToday 不再无条件沉底。
+    expect(items19.map((t) => t.node.label)).toEqual(['成绩查询', '海南成绩查询', '天津成绩复核'])
     expect(items19.map((t) => t.node.label)).not.toContain('山西成绩复核')
     expect(todayFollowUpNodes(NOV_19_0800_CST).map((t) => t.node.label)).toContain('山西成绩复核')
     // 11-20：山西末日 endsToday 进今日行，不再进接续区；今日行 6 项（广东 today +
@@ -812,13 +814,13 @@ describe('U-162 天津成考成绩复核（转载级，入 PEAK 表 11-19 18:00�
     expect(examNodeStatus(tianjinNode(), NOV_21_0800_CST)).toBe('done')
   })
 
-  it('11-19 今日行 3 项（海南 today → 天津 today → 上海 startsToday）；天津不进接续区；11-20 今日行仍 6 项、天津已 done 不进', () => {
+  it('11-19 今日行 3 项（U-234：上海 10:00 → 海南 17:00 → 天津 18:00）；天津不进接续区；11-20 今日行仍 6 项、天津已 done 不进', () => {
     const items19 = todayNodes(NOV_19_0800_CST)
     expect(items19).toHaveLength(3)
     expect(items19.map((t) => `${t.exam.id}:${t.node.label}`)).toEqual([
+      'shanghai-zikao:成绩查询',
       'chengkao:海南成绩查询',
       'chengkao:天津成绩复核',
-      'shanghai-zikao:成绩查询',
     ])
     const tj19 = items19.find((t) => t.exam.id === 'chengkao' && t.node.label === '天津成绩复核')
     expect(tj19?.kind).toBe('today')

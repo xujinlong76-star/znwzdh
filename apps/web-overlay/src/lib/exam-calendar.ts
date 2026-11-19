@@ -890,8 +890,11 @@ export function examNodeStatus(node: ExamNode, nowMs: number = Date.now()): Exam
  *    三省查询三个今日节点，复核进接续区，不抢今日行。
  *  - estimated 节点永不进今日集合（examNodeStatus 恒返回 'estimated'，
  *    如浙江成绩查询 11-20 当天也不出现）。
- * 顺序：直接节点（today / endsToday）按 EXAMS 数组序、考试内节点数组序；
- * startsToday 为第二遍追加，排在全部直接节点之后；两遍内部均不另排序。
+ * 顺序（U-234）：返回前按「目标时刻」升序（todayNodeTargetMs：有 PEAK
+ * 表项按表内时刻，无表项按 detail 里当天已核实时刻，同刻与无时刻的保持
+ * 原相对次序、无时刻的沉底）；startsToday 不再无条件沉底（如 11-19
+ * 上海自考 10:00 开通排首位、海南 17:00、天津 18:00）。入选口径不变，
+ * 排序只改返回顺序。
  * exams 参数只为测试注入合成数据，调用方不传。11-18 恰好 7 项，11-19 海南成绩查询（today）+ 天津成绩复核（today，U-162）+ 上海自考成绩查询（startsToday）3 项；
  * 江西成绩复核因成考已有今日节点退接续区（U-164，与新疆复核 11-18 同款抑制）。
  */
@@ -929,7 +932,15 @@ export function todayNodes(
       }
     }
   }
-  return items
+  // U-234：按目标时刻升序返回（同刻与无时刻的保原相对次序、无时刻沉底）。
+  const keyed = items.map((item, index) => ({ item, index, target: todayNodeTargetMs(item, nowMs) }))
+  keyed.sort((a, b) => {
+    if (a.target === undefined && b.target === undefined) return a.index - b.index
+    if (a.target === undefined) return 1
+    if (b.target === undefined) return -1
+    return a.target - b.target || a.index - b.index
+  })
+  return keyed.map((k) => k.item)
 }
 
 /**
@@ -1139,6 +1150,44 @@ function peakDayDeadlineMs(exam: ExamInfo, node: ExamNode): number | undefined {
 /** 今日行条目的目标时刻（UTC 毫秒数）：表外节点返回 undefined，供倒计时组件传 target 用 */
 export function todayNodeDeadlineMs(item: TodayNodeItem): number | undefined {
   return peakDayDeadlineMs(item.exam, item.node)
+}
+
+/**
+ * 今日行条目的排序目标时刻（U-234，排序键，不参与入选判定）：
+ * PEAK 表内时刻优先；表外节点取 detail 里当天日期后出现的第一个时刻
+ * （如海南成绩查询 11-19 17:00 公布、上海自考成绩查询 11-19 10:00 开通）；
+ * detail 里当天无时刻的返回 undefined，排序时沉底、保持原相对次序。
+ * 只读已核实 detail，不给 ExamNode 加时刻字段、不改 todayNodes 入选口径。
+ */
+export function todayNodeTargetMs(item: TodayNodeItem, nowMs: number = Date.now()): number | undefined {
+  const peak = todayNodeDeadlineMs(item)
+  if (peak !== undefined) return peak
+  const todayISO = new Date(shanghaiTodayStartMs(nowMs) + SHANGHAI_OFFSET_MS)
+    .toISOString()
+    .slice(0, 10)
+  const todayMonth = Number(todayISO.slice(5, 7))
+  const todayDay = Number(todayISO.slice(8, 10))
+  const detail = item.node.detail
+  const dates: Array<{ month: number; day: number; start: number; end: number }> = []
+  const dateRe = /(\d{1,2}) 月 (\d{1,2}) 日/g
+  let dateMatch: RegExpExecArray | null
+  while ((dateMatch = dateRe.exec(detail)) !== null) {
+    dates.push({
+      month: Number(dateMatch[1]),
+      day: Number(dateMatch[2]),
+      start: dateMatch.index,
+      end: dateMatch.index + dateMatch[0].length,
+    })
+  }
+  for (let i = 0; i < dates.length; i++) {
+    const d = dates[i]
+    if (d.month !== todayMonth || d.day !== todayDay) continue
+    const segment = detail.slice(d.end, i + 1 < dates.length ? dates[i + 1].start : detail.length)
+    const timeMatch = /(\d{1,2}):(\d{2})/.exec(segment)
+    if (timeMatch === null) continue
+    return shanghaiMidnightMs(todayISO) + (Number(timeMatch[1]) * 60 + Number(timeMatch[2])) * 60 * 1000
+  }
+  return undefined
 }
 
 /**

@@ -1798,5 +1798,60 @@
   "pricing": "freemium",
   "evidence": "课程可免费旁听，认证证书付费（约 $50–300/门）",
   "title": "edX"
+ },
+ "photopea.com": {
+  "pricing": "freemium",
+  "evidence": "免费版全功能带广告，Premium 约 $5/月或 $50/年去广告+5GB 云盘+AI 点数（官网无独立定价页，Account 窗口内定价；2026 年多家评测一致）",
+  "title": "Photopea"
+ },
+ "windy.com": {
+  "pricing": "freemium",
+  "evidence": "免费版可用，Windy Premium 约 $24.99/年（App Store £2.99 起），解锁 1 小时步长与 15 天预报",
+  "title": "Windy"
+ },
+ "archive.org": {
+  "pricing": "free",
+  "evidence": "官网首页标题即 Digital Library of Free & Borrowable Texts，非营利公益图书馆，无付费档",
+  "title": "Internet Archive"
+ },
+ "openlibrary.org": {
+  "pricing": "free",
+  "evidence": "官网首页：Read Free Library Books Online，Every record, free to download；Internet Archive 运营的非营利项目",
+  "title": "Open Library"
+ },
+ "shorttv.live": {
+  "pricing": "freemium",
+  "evidence": "前 6 集免费，之后每集 50 金币约 $0.50，Weekly Pass Pro $9.99–$19.99、年卡 $149.99（2026-10-09 应用内实测价）",
+  "title": "ShortMax"
+ },
+ "goodshort.com": {
+  "pricing": "freemium",
+  "evidence": "免费看开头集数，金币 $4.99/500 起，周 VIP $5.99–$19.99（美国应用商店 2026-10 价目）",
+  "title": "GoodShort"
+ },
+ "netshort.com": {
+  "pricing": "freemium",
+  "evidence": "网站前 9 集免费，之后每集 50 金币，周 VIP $19.99–$29.99（美国应用商店 2026-10 价目）",
+  "title": "NetShort"
+ },
+ "csdiy.wiki": {
+  "pricing": "open_source",
+  "evidence": "官网首页：本书的内容是完全开源免费的（GitHub 仓库 PKUFlyingPig/cs-self-learning）",
+  "title": "CS自学指南"
+ },
+ "javaguide.cn": {
+  "pricing": "open_source",
+  "evidence": "GitHub 仓库 Snailclimb/JavaGuide，Apache-2.0，约 158K Star（官网首页挂 GitHub 链接）",
+  "title": "JavaGuide"
+ },
+ "w3schools.com": {
+  "pricing": "freemium",
+  "evidence": "官网定价页：Free $0 档 + Plus $299 一次性 + Pro $6.99/月（order.w3schools.com/plans）",
+  "title": "W3Schools"
+ },
+ "exercism.org": {
+  "pricing": "free",
+  "evidence": "官网首页：100% free, forever；社区资助的非营利组织",
+  "title": "Exercism"
  }
 }

@@ -2348,6 +2348,54 @@
                 "路线图",
                 "规划"
               ]
+            },
+            {
+              "id": "nav-d24d2d6546fe",
+              "title": "CS自学指南",
+              "href": "https://csdiy.wiki",
+              "description": "计算机自学路线图与资源汇总，覆盖各方向课程与书籍",
+              "icon": "https://csdiy.wiki/images/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "路线图",
+                "自学"
+              ]
+            },
+            {
+              "id": "nav-244e42296c5c",
+              "title": "JavaGuide",
+              "href": "https://javaguide.cn",
+              "description": "Java 学习与面试知识体系，后端通用学习路线",
+              "icon": "https://javaguide.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "Java",
+                "面试"
+              ]
+            },
+            {
+              "id": "nav-da4fc876df85",
+              "title": "W3Schools",
+              "href": "https://www.w3schools.com",
+              "description": "循序渐进的 Web 开发教程，从 HTML 到后端全覆盖",
+              "icon": "https://www.w3schools.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "教程",
+                "Web 开发"
+              ]
+            },
+            {
+              "id": "nav-87ce93944653",
+              "title": "Exercism",
+              "href": "https://exercism.org",
+              "description": "按学习路径免费练编程的平台，习题带导师点评",
+              "icon": "https://assets.exercism.org/meta/favicon-32x32.png",
+              "enabled": true,
+              "tags": [
+                "编程",
+                "练习"
+              ]
             }
           ]
         },
@@ -2593,6 +2641,18 @@
               "tags": [
                 "资源",
                 "交易"
+              ]
+            },
+            {
+              "id": "nav-5377e0424a7f",
+              "title": "Photopea",
+              "href": "https://www.photopea.com",
+              "description": "免费在线修图工具，浏览器里直接用，免安装可做基础修图",
+              "icon": "https://www.photopea.com/promo/icon512.png",
+              "enabled": true,
+              "tags": [
+                "修图",
+                "图片处理"
               ]
             }
           ]
@@ -3473,6 +3533,30 @@
               "tags": [
                 "电子书",
                 "公共领域"
+              ]
+            },
+            {
+              "id": "nav-1f210e7486a2",
+              "title": "Internet Archive",
+              "href": "https://archive.org",
+              "description": "全球最大的公益数字图书馆，免费图书、影片、音乐与 Wayback Machine",
+              "icon": "https://archive.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "电子书",
+                "档案"
+              ]
+            },
+            {
+              "id": "nav-0227fcccf382",
+              "title": "Open Library",
+              "href": "https://openlibrary.org",
+              "description": "开放图书借阅馆，上百万册图书可免费借读",
+              "icon": "https://openlibrary.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "电子书",
+                "借阅"
               ]
             }
           ]
@@ -4786,6 +4870,18 @@
                 "许可",
                 "环保"
               ]
+            },
+            {
+              "id": "nav-c4a923505682",
+              "title": "Windy",
+              "href": "https://www.windy.com",
+              "description": "全球风场与天气可视化地图，可看风、降雨与温度分层预报",
+              "icon": "https://www.windy.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "天气",
+                "预报"
+              ]
             }
           ]
         }
@@ -4829,6 +4925,44 @@
                 "短剧",
                 "免费",
                 "海外"
+              ]
+            },
+            {
+              "id": "nav-24dd8c461f0f",
+              "title": "ShortMax",
+              "href": "https://www.shorttv.live/",
+              "description": "海外热门免费短剧平台，竖屏短剧在线看",
+              "icon": "https://www.shorttv.live/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧",
+                "免费",
+                "海外"
+              ]
+            },
+            {
+              "id": "nav-e1f94cbcac9a",
+              "title": "GoodShort",
+              "href": "https://www.goodshort.com",
+              "description": "免费短剧与短片在线观看平台",
+              "icon": "https://www.goodshort.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧",
+                "免费"
+              ]
+            },
+            {
+              "id": "nav-8d6140ddc03d",
+              "title": "NetShort",
+              "href": "https://netshort.com",
+              "description": "免费短剧在线看，主打无广告",
+              "icon": "https://netshort.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "短剧",
+                "免费",
+                "无广告"
               ]
             }
           ]

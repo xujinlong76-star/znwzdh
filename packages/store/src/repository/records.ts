@@ -69,6 +69,10 @@ export interface DashboardOverview {
     searches: number;
     clicks: number;
     zeroResults: number;
+    /** U-155：DIY 入口漏斗 24h 计数（外观点击 / 开启 DIY / Ctrl+E 使用） */
+    diyAppearanceClicks: number;
+    diyOpenClicks: number;
+    diyShortcutE: number;
   };
   storage: {
     dbSizeBytes: number | null;

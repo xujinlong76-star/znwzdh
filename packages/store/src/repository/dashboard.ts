@@ -18,6 +18,7 @@ export async function dashboardOverview(repo: Repository): Promise<DashboardOver
     jobsTotal24h, jobsCompleted24h, jobsFailed24h, jobsPending, jobsRunning,
     auditLogs24h, authFailures24h,
     eventsTotal24h, searches24h, clicks24h, zeroResults24h,
+    diyAppearanceClicks24h, diyOpenClicks24h, diyShortcutE24h,
     storageMetrics,
   ] = await Promise.all([
     one("SELECT COUNT(*) AS c FROM sites WHERE deleted_at IS NULL"),
@@ -63,6 +64,10 @@ export async function dashboardOverview(repo: Repository): Promise<DashboardOver
     one("SELECT COUNT(*) AS c FROM events WHERE kind = 'search' AND created_at >= ?", [since24h]),
     one("SELECT COUNT(*) AS c FROM events WHERE kind = 'click' AND created_at >= ?", [since24h]),
     one("SELECT COUNT(*) AS c FROM events WHERE kind = 'zero_result' AND created_at >= ?", [since24h]),
+    // U-155：DIY 入口漏斗三数，与既有三 kind 计数同一查询模式、同一 Promise.all
+    one("SELECT COUNT(*) AS c FROM events WHERE kind = 'diy_appearance_click' AND created_at >= ?", [since24h]),
+    one("SELECT COUNT(*) AS c FROM events WHERE kind = 'diy_open_click' AND created_at >= ?", [since24h]),
+    one("SELECT COUNT(*) AS c FROM events WHERE kind = 'diy_shortcut_e' AND created_at >= ?", [since24h]),
     repo.dbStorageMetrics(),
   ]);
 
@@ -96,6 +101,10 @@ export async function dashboardOverview(repo: Repository): Promise<DashboardOver
       searches: searches24h,
       clicks: clicks24h,
       zeroResults: zeroResults24h,
+      // U-155：DIY 入口漏斗三数（管理页 KPI 展示为可选后续，本轮只进返回体）
+      diyAppearanceClicks: diyAppearanceClicks24h,
+      diyOpenClicks: diyOpenClicks24h,
+      diyShortcutE: diyShortcutE24h,
     },
     storage: storageMetrics,
     userCenter: await userCenterMetrics(repo),

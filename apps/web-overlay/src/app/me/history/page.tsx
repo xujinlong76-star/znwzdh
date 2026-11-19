@@ -322,7 +322,7 @@ export default function SearchHistoryPage() {
         back={{ href: '/me', label: '用户中心' }}
         description="历史记录用于「最近搜索」快捷入口与个性化画像。支持关键词检索、一键再次搜索与零结果记录批量清理。"
         actions={
-          items.length > 0 ? (
+          tab === 'searches' && items.length > 0 ? (
             <div className="flex flex-wrap items-center gap-2">
               {zeroResultItems.length > 0 && (
                 <Button
@@ -373,6 +373,9 @@ export default function SearchHistoryPage() {
             onClick={() => {
               // U-145：切 tab 清武装，避免武装态跨 tab 残留。
               setConfirmDeleteId(null)
+              // A2：同款清「清空全部」武装——页头操作栏是搜索历史专属，
+              // 武装态若跨 tab 残留，在访问 tab 点「确认清空全部」会删搜索历史。
+              setConfirmClear(false)
               setTab(key)
             }}
             className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${

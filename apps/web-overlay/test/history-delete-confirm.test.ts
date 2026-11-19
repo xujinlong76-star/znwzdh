@@ -206,3 +206,21 @@ describe('U-193 方案①：筛选态下按钮不藏、只改文案 + 检索范�
     expect(condition).not.toContain('filterMode')
   })
 })
+
+describe('A2：页头清理/清空操作栏只属于搜索 tab', () => {
+  it('断言 1：页头操作栏渲染条件含 tab === \'searches\'（访问 tab 下不显示）', () => {
+    expect(PAGE).toContain("tab === 'searches' && items.length > 0 ? (")
+    // 操作栏内仍是搜索历史专属按钮：清理零结果、清空全部。
+    const actionsIdx = PAGE.indexOf("tab === 'searches' && items.length > 0 ? (")
+    const actionsBlock = PAGE.slice(actionsIdx, actionsIdx + 1200)
+    expect(actionsBlock).toContain('清理零结果记录')
+    expect(actionsBlock).toContain('清空全部')
+  })
+
+  it('断言 2：切 tab 时清 confirmClear 武装态（与清 confirmDeleteId 同款）', () => {
+    const handler = tabSwitchHandler(PAGE)
+    expect(handler).toContain('setConfirmDeleteId(null)')
+    expect(handler).toContain('setConfirmClear(false)')
+    expect(handler).toContain('setTab(key)')
+  })
+})

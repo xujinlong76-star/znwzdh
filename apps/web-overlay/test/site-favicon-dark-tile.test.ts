@@ -22,6 +22,9 @@ import {
  * Notion 自带白底圆角方块（tile 为冗余加固）；Radix 为黑方块 + 白字形；
  * Haiper 为白字 wordmark（本地 SVG 的 fill 已钉死 #ffffff）。
  * Luma 自带白底（白像素 73%），不在点名清单内，不进 map。
+ * 2026-11-19（C 类第 10 批 C10）：中国知网追加——cnki.svg 为白色反白
+ * 宽版标（viewBox 0 0 2941.51×685.5，白字/白标 + 一颗橙点），给深色块
+ * （Haiper 同款机制）；底块色为 LOGO_TILE_CLASSES.dark 的 bg-neutral-900。
  *
  * 这个测试直接执行 resolveLogoTile / resolveSiteIcon：map 键写错一个字符
  * 都不会报错，只会静默回落无底块——只有跑起来才看得见。
@@ -44,6 +47,11 @@ const LIGHT_CASES: Array<{ url: string; title: string }> = [
 const DARK_CASES: Array<{ url: string; title: string }> = [
   { url: 'https://haiper.ai', title: 'Haiper' },
   { url: 'https://www.haiper.ai', title: 'Haiper' },
+  // 2026-11-19（C 类第 10 批 C10）：中国知网 cnki.svg 为白色反白宽版标
+  // （viewBox 0 0 2941.51×685.5，白字/白标 + 一颗橙点），浅色主题下
+  // 白字不可见，故给深色块（Haiper 白字标同款机制）。
+  { url: 'https://cnki.net', title: '中国知网' },
+  { url: 'https://www.cnki.net', title: '中国知网' },
 ]
 
 const NO_TILE_CASES: Array<{ url: string | undefined; title: string }> = [
@@ -82,8 +90,9 @@ describe('resolveLogoTile（深色底块统一处理）', () => {
     expect(LOGO_TILE_CLASSES.dark).toContain('p-0.5')
   })
 
-  it('map 只含点名清单的 7 站：Luma（自带白底）不在内；极客公园 2026-11-17 由“暂缓”改为落地（见下）', () => {
+  it('map 只含点名清单的 8 站：Luma（自带白底）不在内；极客公园 2026-11-17 由“暂缓”改为落地（见下）；中国知网 2026-11-19（C10）白字标追加深色块', () => {
     expect(Object.keys(LOGO_TILE_MAP).sort()).toEqual([
+      'cnki.net',
       'geekpark.net',
       'haiper.ai',
       'notion.com',

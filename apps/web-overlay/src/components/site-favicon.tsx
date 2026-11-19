@@ -610,6 +610,44 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   '500d.me': '/brand-icons/500d.png',
   'codecademy.com': '/brand-icons/codecademy.png',
   'zh.wikipedia.org': '/brand-icons/wikipedia.png',
+  // 2026-11-19（C 类第 10 批 C10）：arXiv / 中国知网 / 万方数据 /
+  // Web of Science / Semantic Scholar / IEEE Xplore / JSTOR /
+  // 国家数字图书馆 / 36氪 / 虎嗅 / 爱范儿 / Canva / Creative Market /
+  // Sketch / Penpot / Pixso。17/20 站，Scopus / 读秀 /
+  // Project Gutenberg 阻塞未入（见 C10 测试事实钉死）。
+  // 17 站 icon 字段均为远端 …/favicon.ico（含 NLC 的模板路径
+  // …/img/favicon.ico），被 isRemoteRawFavicon 拦截，map 生效，
+  // navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 子域站用完整 hostname 建键：'ieeexplore.ieee.org'（IEEE Xplore，
+  // 不建 'ieee.org' 裸域键）。Hugging Face Papers 不进 map（见下方
+  // 'hugging face papers' 标题规则，huggingface.co 键已被 Hugging Face
+  // 主站占用）。全库 367 站核对：本批 16 个 map 键各只命中 1 站，
+  // 无后缀串站。中国知网 cnki.svg 为白色反白宽版标（viewBox
+  // 0 0 2941.51×685.5，白字/白标 + 一颗橙点），宽版原样不裁；
+  // 浅/深两主题下白字可见靠下方 LOGO_TILE_MAP 的 'dark' 深色底块
+  // （Haiper 白字标同款机制），不另起分支。
+  // IEEE Xplore 仅 16×16 官方 favicon（ieeexplore.ieee.org 唯一声明），
+  // 按规范 §1.1 原样落盘、绝不放大；是否另寻更大官方标待裁决，见
+  // C10 测试事实钉死。36氪首页内嵌 base64 山峰图与品牌不符未用，
+  // 以 32×32 官方 favicon（蓝 Kr）为准；虎嗅以首页声明的 120×120
+  // apple-touch-icon 为准（favicon.ico 100×100 PNG 未用）；Pixso 以
+  // 官网首页引用的 512 品牌标缩至 128 为准（favicon.ico 仅 32×32 未用）。
+  'arxiv.org': '/brand-icons/arxiv.png',
+  'cnki.net': '/brand-icons/cnki.svg',
+  'wanfangdata.com.cn': '/brand-icons/wanfang.png',
+  'webofscience.com': '/brand-icons/webofscience.png',
+  'semanticscholar.org': '/brand-icons/semanticscholar.png',
+  'ieeexplore.ieee.org': '/brand-icons/ieee.png',
+  'jstor.org': '/brand-icons/jstor.png',
+  'nlc.cn': '/brand-icons/nlc.png',
+  '36kr.com': '/brand-icons/36kr.png',
+  'huxiu.com': '/brand-icons/huxiu.png',
+  'ifanr.com': '/brand-icons/ifanr.png',
+  'canva.com': '/brand-icons/canva.png',
+  'creativemarket.com': '/brand-icons/creativemarket.png',
+  'sketch.com': '/brand-icons/sketch.png',
+  'penpot.app': '/brand-icons/penpot.png',
+  'pixso.cn': '/brand-icons/pixso.png',
 }
 
 /**
@@ -654,6 +692,18 @@ export const LOGO_TILE_MAP: Record<string, LogoTileTone> = {
   'tianyin.163.com': 'light',
   'haiper.ai': 'dark',
   'geekpark.net': 'light',
+  // 2026-11-19（C 类第 10 批 C10）：中国知网。cnki.svg 为白色反白宽版标
+  // （viewBox 0 0 2941.51×685.5，白字/白标 + 一颗橙点，SVG 内唯一 hex
+  // 为橙点 #f29600），浅色主题下白字不可见，故给 'dark' 深色底块
+  // （Haiper 白字标同款机制，统一规范 §3 深色底块例外）。
+  // 底块色值来源：下方 LOGO_TILE_CLASSES.dark = 'bg-neutral-900 …'
+  // （Tailwind neutral-900 #171717，代码内已有定值，非新猜色值）。
+  // 未擅自挪用 SVG 内橙点 #f29600 作底块色，也未沿用统一规范 §3
+  // 旧版极客公园计划值 #101828（该值为计划稿色值，落地代码未采用；
+  // 极客公园落地为 'light' 块，因其落盘是黑底方块标）。如复审裁决
+  // 改用橙底 #f29600 或 #101828，改一处 LOGO_TILE_CLASSES 即可。
+  // 宽版不裁：object-contain + 底块 p-0.5 渲染，不进 isWideLogoSite。
+  'cnki.net': 'dark',
 }
 
 /** 底块 class：主题无关固定底色 + 与 Cursor 芯片同款的内边距、描边与圆角。 */
@@ -848,6 +898,16 @@ export function resolveSiteIcon(
     if (lowerTitle.includes('四六级成绩查询')) return '/brand-icons/cet-query.png'
     if (lowerTitle.includes('全国大学英语四、六级考试官网')) return '/brand-icons/cet.png'
     if (lowerTitle.includes('中国教育考试网')) return '/brand-icons/neea.png'
+    // 2026-11-19（C 类第 10 批 C10）：Hugging Face Papers。
+    // huggingface.co 键已被 Hugging Face 主站占用（→ huggingface.png），
+    // hostname map 无法区分；且其 navigation.json icon 字段是错域的
+    // paperswithcode.com/favicon.ico（被 isRemoteRawFavicon 拦截，未用）。
+    // 子串 'hugging face papers' 在 navigation.json 全库 367 站标题中
+    // 仅命中 Hugging Face Papers 一站，故走标题规则，必须放在 map 精确
+    // 查找之前。落盘 huggingface-papers.svg 为 huggingface.co 官方 HF 标
+    // SVG 原样（width 95 height 88，viewBox 缺省），与 huggingface.png
+    // 不同名、不同文件。
+    if (lowerTitle.includes('hugging face papers')) return '/brand-icons/huggingface-papers.svg'
 
     if (LOCAL_LOGO_MAP[hostname]) {
       return LOCAL_LOGO_MAP[hostname]!

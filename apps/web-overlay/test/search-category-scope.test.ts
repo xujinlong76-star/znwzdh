@@ -115,7 +115,8 @@ describe('U-183：分类芯片可见且可清除，标签清除只清自己', ()
 
   it('分类芯片与标签芯片同容器，复用标签芯片样式', () => {
     expect(src).toContain('分类：{categoryName}')
-    expect(src).toContain('{tagApplied || category ? (')
+    // U-210：门条件扩为 tag/category/已选分面三者任一即渲染（此前只有前两项）
+    expect(src).toContain('{tagApplied || category || facetChips.length > 0 ? (')
   })
 
   it('分类清除链接只去 category、保留 q/tag/facets，且带 aria-label 区分读屏', () => {

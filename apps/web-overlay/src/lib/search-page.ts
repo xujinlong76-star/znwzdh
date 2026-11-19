@@ -243,23 +243,6 @@ export function describeSelectedFacets(facets: Record<string, string[]>): Select
 }
 
 /**
- * U-210：去掉某轴上的一个已选值；去掉后该轴为空则删 key。
- * 返回新对象，不改入参；空轴不进 URL（appendFacetParams 不写空轴）。
- */
-export function removeFacetValue(
-  facets: Record<string, string[]>,
-  key: string,
-  value: string,
-): Record<string, string[]> {
-  const next: Record<string, string[]> = {}
-  for (const [k, values] of Object.entries(facets)) {
-    const rest = k === key ? values.filter((v) => v !== value) : values
-    if (rest.length > 0) next[k] = rest
-  }
-  return next
-}
-
-/**
  * A3：付费条件被放宽时的点名提示。
  *
  * 中枢在「带分面筛选却零命中」时会放宽筛选重试并回 relaxedFacets 点名被

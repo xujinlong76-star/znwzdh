@@ -9,11 +9,11 @@ import {
   describeSelectedFacets,
   inferredConditionLabels,
   relaxedPricingNotice,
-  removeFacetValue,
   searchHref,
   searchMaxPage,
   searchPageWindow,
 } from '@/lib/search-page'
+import { removeFacetValue } from '@/lib/facet-editing'
 import type { HubPluginSearchResponse, HubSearchHit, HubSearchResult, HubSite } from '@/lib/navhub-api'
 import { pluginDetailHref } from '@/lib/plugins/detail-href'
 import { Fragment } from 'react'

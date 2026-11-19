@@ -21,7 +21,6 @@ import {
   normalizeSearchQuery,
   normalizeSearchTag,
   overLimitSearchPage,
-  removeFacetValue,
   searchApiPath,
   searchHref,
   searchMaxPage,
@@ -385,30 +384,14 @@ describe('U-210：已选分面 chips 不依赖 /api/facets 分布', () => {
     expect(describeSelectedFacets({ pricing: [] })).toEqual([])
   })
 
-  it('去掉多选轴上的一个值，保留其余值', () => {
-    const input = { pricing: ['free'], platform: ['web', 'linux'] }
-    expect(removeFacetValue(input, 'platform', 'web')).toEqual({ pricing: ['free'], platform: ['linux'] })
-    expect(input).toEqual({ pricing: ['free'], platform: ['web', 'linux'] })
-  })
-
-  it('去掉某轴最后一个值即删 key，不留空轴进 URL', () => {
-    expect(removeFacetValue({ pricing: ['free'], platform: ['web'] }, 'pricing', 'free')).toEqual({
-      platform: ['web'],
-    })
-    expect(removeFacetValue({ pricing: ['free'] }, 'pricing', 'free')).toEqual({})
-  })
-
-  it('去掉不存在的键/值返回等值对象', () => {
-    expect(removeFacetValue({ pricing: ['free'] }, 'platform', 'web')).toEqual({ pricing: ['free'] })
-    expect(removeFacetValue({ pricing: ['free'] }, 'pricing', 'paid')).toEqual({ pricing: ['free'] })
-  })
-
   it('chips 只依赖 facets prop：容器门条件不含 facetGroups', () => {
     expect(view).toContain('{tagApplied || category || facetChips.length > 0 ? (')
     expect(view).toContain('const facetChips = describeSelectedFacets(facets)')
   })
 
   it('每枚 chip 点后只去掉该值，「清空分面」只清 f_*', () => {
+    // 单清复用 lib/facet-editing 已有的 removeFacetValue（facet-editing.test.ts 已单测），不另写一份
+    expect(view).toContain("import { removeFacetValue } from '@/lib/facet-editing'")
     expect(view).toContain('facets: removeFacetValue(facets, chip.key, chip.value)')
     expect(view).toContain('href={searchHref({ q, tag, category })}')
     expect(view).toContain('清空分面')

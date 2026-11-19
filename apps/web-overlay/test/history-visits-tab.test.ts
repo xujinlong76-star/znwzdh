@@ -115,3 +115,36 @@ describe('A5：身份变化后访问历史不重取、旧身份残留', () => {
     expect(body).toContain("if (visitState === 'idle') void Promise.resolve().then(() => loadVisits(0))")
   })
 })
+
+describe('A6：搜索加载更多失败静默消失', () => {
+  it('断言 1：loadMore 传降级回调——失败事实不再被 degrade 吞掉', () => {
+    const body = callbackBody(PAGE, 'loadMore')
+    expect(body).toContain('fetchSearchHistoryPage(identity, { limit: PAGE_SIZE, offset: nextOffset }, () => {')
+    expect(body).toContain('let degraded = false')
+    expect(body).toContain('degraded = true')
+  })
+
+  it('断言 2：降级分支先 toast、再 return——setHasMore/setItems 到不了', () => {
+    const body = callbackBody(PAGE, 'loadMore')
+    const degIdx = body.indexOf('if (degraded) {')
+    expect(degIdx, 'loadMore 应有降级分支').toBeGreaterThanOrEqual(0)
+    const degBlock = body.slice(degIdx, body.indexOf('}', body.indexOf('return', degIdx)) + 1)
+    expect(degBlock).toContain("title: '加载失败'")
+    expect(degBlock).toContain('return')
+    expect(degBlock).not.toContain('setHasMore')
+    expect(degBlock).not.toContain('setItems')
+    expect(degBlock).not.toContain('setNextOffset')
+    // 成功路径仍追加 + 更新分页：失败保留与成功推进是两条互斥分支。
+    const okIdx = body.indexOf('setItems((prev) => [...prev, ...page.items])')
+    expect(okIdx, '成功路径仍追加').toBeGreaterThan(degIdx)
+    expect(body.slice(okIdx)).toContain('setHasMore(page.hasMore)')
+    expect(body.slice(okIdx)).toContain('setNextOffset(page.nextOffset)')
+  })
+
+  it('断言 3：降级分支在 finally 之前——失败后 loadingMore 仍复位，按钮可再点', () => {
+    const body = callbackBody(PAGE, 'loadMore')
+    expect(body).toContain('} finally {')
+    expect(body).toContain('setLoadingMore(false)')
+    expect(body.indexOf('if (degraded) {')).toBeLessThan(body.indexOf('} finally {'))
+  })
+})

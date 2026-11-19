@@ -155,14 +155,24 @@ export default function SearchHistoryPage() {
     if (!identity || loadingMore) return
     setLoadingMore(true)
     try {
-      const page = await fetchSearchHistoryPage(identity, { limit: PAGE_SIZE, offset: nextOffset })
+      // A6：加载更多失败不再静默消失——此前不传降级回调，degrade 兜底
+      // 返回 { items: [], hasMore: false }，按钮直接消失、无反馈、无重试。
+      // 现在降级时 toast 给反馈、hasMore/nextOffset 原样保留，按钮仍在、可重试。
+      let degraded = false
+      const page = await fetchSearchHistoryPage(identity, { limit: PAGE_SIZE, offset: nextOffset }, () => {
+        degraded = true
+      })
+      if (degraded) {
+        toast({ title: '加载失败', description: '云端暂不可用，请稍后重试', variant: 'destructive' })
+        return
+      }
       setItems((prev) => [...prev, ...page.items])
       setHasMore(page.hasMore)
       setNextOffset(page.nextOffset)
     } finally {
       setLoadingMore(false)
     }
-  }, [identity, loadingMore, nextOffset])
+  }, [identity, loadingMore, nextOffset, toast])
 
   const removeItem = useCallback(async (id: number) => {
     // U-145：离线快照守卫前置到武装之前——快照态点删除不武装、不静默吞第二击。

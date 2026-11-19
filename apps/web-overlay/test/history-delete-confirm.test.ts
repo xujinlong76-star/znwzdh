@@ -333,7 +333,9 @@ describe('U-239（页面接线）：历史页访问 tab 用当前身份取数', 
 
   it('断言 3：搜索 tab 取数不受影响——仍用 fetchSearchHistoryPage(identity, …)', () => {
     expect(PAGE).toContain('fetchSearchHistoryPage(id, { limit: PAGE_SIZE, offset: 0 }')
-    expect(PAGE).toContain('fetchSearchHistoryPage(identity, { limit: PAGE_SIZE, offset: nextOffset })')
+    // A6 起 loadMore 传降级回调（失败 toast + 保留 hasMore）：调用仍是同一
+    // 函数/同一身份/同一分页，回调只接失败事实，不改变取数口径。
+    expect(PAGE).toContain('fetchSearchHistoryPage(identity, { limit: PAGE_SIZE, offset: nextOffset }, () => {')
     // 访问取数不走搜索接口、不复用搜索分页状态。
     const body = loadVisitsBody(PAGE)
     expect(body).not.toContain('fetchSearchHistoryPage')

@@ -286,6 +286,11 @@ export default function SearchHistoryPage() {
 
   const clearVisits = useCallback(async () => {
     if (!identity || visitBusy) return
+    // 与 clearAll 同款两步确认：第一击只武装、不调接口；第二击才执行删除。
+    if (!confirmClearVisits) {
+      setConfirmClearVisits(true)
+      return
+    }
     setVisitBusy(true)
     const ok = await clearProfileSignals(identity, 'click')
     setVisitBusy(false)
@@ -299,7 +304,7 @@ export default function SearchHistoryPage() {
     setVisitHasMore(false)
     setVisitNextOffset(0)
     toast({ title: '访问记录已清空', description: '画像已按剩余行为重建；收藏与搜索历史不受影响。' })
-  }, [identity, toast, visitBusy])
+  }, [confirmClearVisits, identity, toast, visitBusy])
 
   const handleCopyQuery = useCallback(
     async (queryText: string) => {
@@ -379,6 +384,8 @@ export default function SearchHistoryPage() {
               // A2：同款清「清空全部」武装——页头操作栏是搜索历史专属，
               // 武装态若跨 tab 残留，在访问 tab 点「确认清空全部」会删搜索历史。
               setConfirmClear(false)
+              // 访问侧同款：切 tab 清「清空访问记录」武装，避免武装态跨 tab 残留。
+              setConfirmClearVisits(false)
               setTab(key)
             }}
             className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${

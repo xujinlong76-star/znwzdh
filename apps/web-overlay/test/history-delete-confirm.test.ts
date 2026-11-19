@@ -97,7 +97,9 @@ describe('U-145：单条删除两步确认', () => {
   it('断言 5：切 tab 时清武装', () => {
     const tabIdx = PAGE.indexOf('setTab(key)')
     expect(tabIdx, 'tab 切换应存在').toBeGreaterThanOrEqual(0)
-    const before = PAGE.slice(Math.max(0, tabIdx - 200), tabIdx)
+    const before = PAGE.slice(Math.max(0, tabIdx - 400), tabIdx)
+    // 窗口 400：切 tab 处理器随武装复位项增多而变长（访问侧 setConfirmClearVisits(false)），
+    // 200 已装不下首项 setConfirmDeleteId(null)；窗口仍只覆盖本处理器。
     expect(before).toContain('setConfirmDeleteId(null)')
   })
 
@@ -336,5 +338,97 @@ describe('U-239（页面接线）：历史页访问 tab 用当前身份取数', 
     const body = loadVisitsBody(PAGE)
     expect(body).not.toContain('fetchSearchHistoryPage')
     expect(body).not.toContain('setItems(')
+  })
+})
+
+/** 截取 clearVisits 的 useCallback 体（从声明起到其依赖数组结尾）。 */
+function clearVisitsBody(src: string): string {
+  const start = src.indexOf('const clearVisits = useCallback')
+  expect(start, 'clearVisits 应存在').toBeGreaterThanOrEqual(0)
+  const end = src.indexOf('}, [', start)
+  expect(end, 'clearVisits 应有依赖数组').toBeGreaterThan(start)
+  return src.slice(start, end)
+}
+
+describe('访问历史清空两步确认（clearVisits 与 clearAll 同构）', () => {
+  it('断言 1：confirmClearVisits 状态存在（false = 无武装）', () => {
+    expect(PAGE).toContain('const [confirmClearVisits, setConfirmClearVisits] = useState(false)')
+    // 武装调用必须存在且仅在武装分支——此前全仓零调用 setConfirmClearVisits(true)，
+    // 「确认清空访问记录」文案是死代码，首击即删。
+    expect(PAGE).toContain('setConfirmClearVisits(true)')
+  })
+
+  it('断言 2：武装分支先于接口调用——第一击只武装、不调 clearProfileSignals', () => {
+    const body = clearVisitsBody(PAGE)
+    // 武装分支：条件 → 置武装 → return，且该 return 之前没有接口调用。
+    assertOrder(
+      body,
+      ['if (!confirmClearVisits) {', 'setConfirmClearVisits(true)', 'return'],
+      'clearVisits 武装分支',
+    )
+    const armReturn = body.indexOf('return', body.indexOf('setConfirmClearVisits(true)'))
+    const apiCall = body.indexOf('clearProfileSignals')
+    expect(apiCall, '接口调用应在武装分支的 return 之后').toBeGreaterThan(armReturn)
+    // 武装分支内无删除调用：第一击零网络请求。
+    expect(body.slice(0, armReturn)).not.toContain('clearProfileSignals')
+    // 依赖数组含武装态，否则闭包读到旧值、第二击仍走武装分支。
+    const depStart = PAGE.indexOf('}, [', PAGE.indexOf('const clearVisits = useCallback'))
+    const depEnd = PAGE.indexOf('])', depStart)
+    expect(PAGE.slice(depStart, depEnd)).toContain('confirmClearVisits')
+  })
+
+  it('断言 3：第二击才调接口删 click 信号，成功清空列表、失败保留记录', () => {
+    const body = clearVisitsBody(PAGE)
+    expect(body).toContain("clearProfileSignals(identity, 'click')")
+    // 成功/失败两路：失败先 toast 并 return，列表清空只在成功之后。
+    assertOrder(
+      body,
+      [
+        "clearProfileSignals(identity, 'click')",
+        'setConfirmClearVisits(false)',
+        "title: '清空访问记录失败'",
+        'setVisits([])',
+        "title: '访问记录已清空'",
+      ],
+      'clearVisits 成功/失败两路',
+    )
+    expect(body).toContain('setVisitTotal(0)')
+    expect(body).toContain('setVisitHasMore(false)')
+    // 失败不清空、不重建画像提示：失败 toast 后 return，setVisits 在其后。
+    const failReturn = body.indexOf('return', body.indexOf("title: '清空访问记录失败'"))
+    expect(body.indexOf('setVisits([])'), '失败 return 之后才清空列表').toBeGreaterThan(failReturn)
+  })
+
+  it('断言 4：清空按钮武装态——文案「确认清空访问记录」+ destructive，执行中 disabled', () => {
+    expect(PAGE).toContain("variant={confirmClearVisits ? 'destructive' : 'outline'}")
+    expect(PAGE).toContain('确认清空访问记录')
+    expect(PAGE).toContain('disabled={visitBusy}')
+    expect(PAGE).toContain('清空访问记录')
+  })
+
+  it('断言 5：切 tab 时清 confirmClearVisits 武装（与 A2 的 confirmClear 同款）', () => {
+    const handler = tabSwitchHandler(PAGE)
+    expect(handler).toContain('setConfirmDeleteId(null)')
+    expect(handler).toContain('setConfirmClear(false)')
+    expect(handler).toContain('setConfirmClearVisits(false)')
+    expect(handler).toContain('setTab(key)')
+  })
+
+  it('断言 6：回归面——搜索清空 clearAll 与单条删除仍是两步确认', () => {
+    // 搜索历史清空：武装分支仍在，接口仍在武装 return 之后。
+    const clearAllStart = PAGE.indexOf('const clearAll = useCallback')
+    expect(clearAllStart, 'clearAll 应存在').toBeGreaterThanOrEqual(0)
+    const clearAllBody = PAGE.slice(clearAllStart, PAGE.indexOf('}, [', clearAllStart))
+    assertOrder(
+      clearAllBody,
+      ['if (!confirmClear) {', 'setConfirmClear(true)', 'return'],
+      'clearAll 武装分支',
+    )
+    expect(clearAllBody).toContain('clearCloudSearchHistory(identity)')
+    // 单条删除：武装分支仍在（U-145）。
+    const body = removeItemBody(PAGE)
+    expect(body).toContain('if (confirmDeleteId !== id) {')
+    expect(body).toContain('setConfirmDeleteId(id)')
+    expect(body).toContain('deleteSearchHistoryItem(identity, id)')
   })
 })

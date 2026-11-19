@@ -1927,6 +1927,47 @@ export interface SiteFacetsResponse {
 }
 
 /**
+ * GET /api/sites/{id}/profile
+ */
+export interface SiteProfileResponse {
+  ok: true;
+  siteId: string;
+  verified: boolean;
+  profile: {
+    siteId: string;
+    bestFor: string | null;
+    notFor: string | null;
+    license: string | null;
+    alternatives: string[];
+    profileSourceUrl: string;
+    profileVerifiedAt: number;
+    verifiedBy: string;
+    profileStatus: "draft" | "verified";
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  } | null;
+  provenance: {
+    fieldKey: string;
+    sourceUrl: string;
+    verifiedAt: number;
+    verifiedBy: string;
+    [key: string]: unknown;
+  }[];
+  price: {
+    amountMinor: number;
+    currency: string;
+    period: string;
+    freeTierLimit: string | null;
+    sourceType: "manual" | "official_scrape";
+    sourceUrl: string | null;
+    verifiedAt: number;
+    [key: string]: unknown;
+  } | null;
+  [key: string]: unknown;
+}
+
+/**
  * GET /api/tags/{id}/related
  */
 export interface RelatedTagsResponse {
@@ -2592,6 +2633,30 @@ export interface TagMutationResponse {
   unbound?: number;
   moved?: number;
   alias?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * PUT /api/sites/{id}/profile
+ */
+export interface SiteProfileUpdateResponse {
+  ok: true;
+  siteId: string;
+  verified: boolean;
+  profile: {
+    siteId: string;
+    bestFor: string | null;
+    notFor: string | null;
+    license: string | null;
+    alternatives: string[];
+    profileSourceUrl: string;
+    profileVerifiedAt: number;
+    verifiedBy: string;
+    profileStatus: "draft" | "verified";
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 }
 
@@ -3632,6 +3697,7 @@ export interface RestContractRoutes {
   "GET /api/sites": SiteListResponse;
   "GET /api/sites/{id}": SitePayload;
   "GET /api/sites/{id}/facets": SiteFacetsResponse;
+  "GET /api/sites/{id}/profile": SiteProfileResponse;
   "GET /api/sites/{id}/similar": SiteListResponse;
   "GET /api/sites/{id}/verify": SiteVerifyStatusResponse;
   "GET /api/storage/list": StorageAssetListResponse;
@@ -3736,6 +3802,7 @@ export interface RestContractRoutes {
   "POST /api/workspaces": WorkspaceCreateResponse;
   "POST /api/workspaces/{id}/members": WorkspaceMembersResponse;
   "PUT /api/sites/{id}/facets": SiteFacetsResponse;
+  "PUT /api/sites/{id}/profile": SiteProfileUpdateResponse;
   "PUT /api/sites/{id}/relations": RelationsUpdateResponse;
   "PUT /api/storage": StorageWriteResponse;
 }

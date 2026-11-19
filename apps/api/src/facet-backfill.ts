@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { derivePricing, type PricingOverride, type PricingOverrides, type PricingValue } from "@navhub/core";
+import { chunkList, inPredicate } from "@navhub/store";
 import type { AppContext } from "./context.ts";
 
 /**
@@ -85,6 +86,18 @@ export async function backfillDerivedFacets(
     byValue: {},
     bySource: { override: 0, rule: 0, unknown: 0 },
   };
+  // 结构化档案新键（02-site-profiles §7.1）：缺省 unknown，已有人类标注
+  // 永不覆盖（fill-if-absent 纪律）。批量写：逐站逐键 fill 会在一次 8k
+  // 站写回里发 ~2.4 万条语句（每条自带一次提交/fsync），实测把
+  // navigation-write-bulk 的 8k 原样保存从 ~9.5s 拖到 ~23s（L3，
+  // 2026-11-20）；改成每键按 500 切片的 INSERT...SELECT，语义与逐站
+  // fill-if-absent 逐字一致（同一批 id 集合、同一 NOT EXISTS 判据，
+  // 复活站点仍由调用方在 healSites 里排除，本函数不另扩范围）。
+  const missingByKey: Record<"requires_account" | "free_trial" | "data_export", string[]> = {
+    requires_account: [],
+    free_trial: [],
+    data_export: [],
+  };
   for (const site of sites) {
     const facets = site.facets ?? {};
     if ((facets.pricing?.length ?? 0) > 0) {
@@ -108,19 +121,31 @@ export async function backfillDerivedFacets(
       await ctx.repo.fillSiteFacetIfAbsent(site.id, "platform", "web");
       report.filledPlatform += 1;
     }
-    // 结构化档案新键（02-site-profiles §7.1）：缺省 unknown，已有人类标注
-    // 永不覆盖（fillSiteFacetIfAbsent 的 fill-if-absent 纪律）。
     // unknown 是合法值：拿不准填 unknown，绝不猜——回填只补“未核实”标记，
-    // 确定值一律由人工核实流程写。
-    for (const [key, counter] of [
-      ["requires_account", "filledRequiresAccount"],
-      ["free_trial", "filledFreeTrial"],
-      ["data_export", "filledDataExport"],
-    ] as const) {
-      if ((facets[key]?.length ?? 0) === 0) {
-        await ctx.repo.fillSiteFacetIfAbsent(site.id, key, "unknown");
-        report[counter] += 1;
-      }
+    // 确定值一律由人工核实流程写。这里只收集缺失站 id，循环结束后再批量写。
+    for (const key of ["requires_account", "free_trial", "data_export"] as const) {
+      if ((facets[key]?.length ?? 0) === 0) missingByKey[key].push(site.id);
+    }
+  }
+  for (const [key, counter] of [
+    ["requires_account", "filledRequiresAccount"],
+    ["free_trial", "filledFreeTrial"],
+    ["data_export", "filledDataExport"],
+  ] as const) {
+    const ids = [...new Set(missingByKey[key])];
+    for (const chunk of chunkList(ids)) {
+      const pred = inPredicate("s.id", chunk);
+      await ctx.repo.run(
+        `INSERT INTO site_facets (site_id, facet_key, facet_value)
+         SELECT s.id, ?, ? FROM sites s
+          WHERE ${pred.sql}
+            AND NOT EXISTS (
+              SELECT 1 FROM site_facets f
+               WHERE f.site_id = s.id AND f.facet_key = ?
+            )`,
+        [key, "unknown", ...pred.params, key],
+      );
+      report[counter] += chunk.length;
     }
   }
   return report;

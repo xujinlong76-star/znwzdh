@@ -432,7 +432,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 'adobe.com' 键绝不加。子域站用完整 hostname 建键，不建裸域键：
   // 'codeup.aliyun.com'、'developer.mozilla.org'、'docs.oracle.com'、
   // 'ui.shadcn.com'。'leetcode.cn' 与 'leetcode.com' 各自建键、互不干扰。
-  // 全库 354 站核对：本批 19 个 map 键各只命中 1 站，无后缀串站
+  // 全库 369 站核对：本批 19 个 map 键各只命中 1 站，无后缀串站
   // （Gitee AI 的 href 是 moark.com，不在 gitee.com 名下）。
   // Java 官方文档：站方 favicon 即红色 Oracle 椭圆 O 标（120×120），
   // 不是 Java 咖啡杯；按“官网在用图标”原样接线，未擅自换标，只记录。
@@ -468,7 +468,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
   // 子域站用完整 hostname 建键，不建裸域键：'orm.drizzle.team'、
   // 'hub.docker.com'、'docs.docker.com'、'developer.hashicorp.com'。
-  // 全库 354 站核对：本批 20 个 map 键各只命中 1 站，无后缀串站。
+  // 全库 369 站核对：本批 20 个 map 键各只命中 1 站，无后缀串站。
   // Java：java.png 为 16×16 咖啡杯原样（java.com 唯一官方 favicon，
   // 其余候选 apple-touch-icon / favicon-32x32 均为 404）；备选 Duke
   // 48px（dev.java favicon，另一图形）未擅自替换，待用户裁决，未决点。
@@ -512,7 +512,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 20 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
   // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
   // 子域站用完整 hostname 建键，不建裸域键：'map.baidu.com'。
-  // 全库 365 站核对：本批 19 个 map 键各只命中 1 站，无后缀串站。
+  // 全库 369 站核对：本批 19 个 map 键各只命中 1 站，无后缀串站。
   // 支付宝：落盘 alipay.png 为首页 shortcut icon 的 2600×1950 官方“支”字标
   // 裁透明边距后缩至 128×109（原样，未改画）；同一首页另有 32px 蓝底白“支”
   // ICO 方标（备选）未采用，待复审裁决，见 C6 测试事实钉死。
@@ -545,7 +545,7 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
   // 子域站用完整 hostname 建键：'app.diagrams.net'（Draw.io）；
   // 'b3log.org' 键只命中思源笔记一站（href 为 b3log.org/siyuan，
-  // 全库 365 站核对无其他 b3log.org 站）；其余 17 键各只命中 1 站，
+  // 全库 369 站核对无其他 b3log.org 站）；其余 17 键各只命中 1 站，
   // 无后缀串站。
   // 网易云课堂阻塞未接线：站方 /favicon.ico 仅 16×16（1150 B）质量不达标；
   // 吉祥物图不是 logo；站点头部 logo 是雪碧图区域且直链超时；图标字体无
@@ -906,20 +906,20 @@ export function resolveSiteIcon(
     if (lowerTitle.includes('vllm')) return '/brand-icons/vllm.svg'
     // 2026-11-19（C 类第 4 批 C4）：GitHub Trending。github.com 为 7 站共享域名，
     // 严禁加 'github.com' 域名映射键（见上方 cline/copilot 规则与 C1 github 规则）。
-    // 子串 'trending' 在 navigation.json 全库 354 站标题中仅命中 GitHub Trending
+    // 子串 'trending' 在 navigation.json 全库 369 站标题中仅命中 GitHub Trending
     // 一站，故走标题规则；本条必须放在下方 'github' 规则之前，否则 Trending
     // 会先被 'github' 规则命中、解析为 github.svg。落盘 github-trending.svg
     // 与既有 github.svg 逐字节相同（同为 GitHub 官方 favicon.svg），按任务要求
     // 单独落盘、未复用 github.svg。来源：github.githubassets.com/favicons/favicon.svg。
     if (lowerTitle.includes('trending')) return '/brand-icons/github-trending.svg'
     // 2026-11-18（C 类第 1 批 c1g2）：GitHub 主站。github.com 为 7 站共享域名（GitHub、GitHub Trending、Cline、Copilot、LangGraph、Qwen 3、vLLM），严禁加 'github.com' 域名映射键。
-    // 子串 'github' 在 navigation.json 全库 349 站标题中仅命中 3 站：GitHub、GitHub Trending、GitHub Copilot；
+    // 子串 'github' 在 navigation.json 全库 369 站标题中仅命中 3 站：GitHub、GitHub Trending、GitHub Copilot；
     // 其中 Copilot 已由上方 'copilot' 规则（:515）先行命中，不受本条影响；GitHub Trending（C4）暂由本条命中、解析为 github.svg，
     // C4 为 Trending 加 'trending' 规则时必须放在本条之前。来源：官网首页 <link rel="icon"> 声明的 favicon.svg（github.githubassets.com），SVG 原样。
     if (lowerTitle.includes('github')) return '/brand-icons/github.svg'
     // 2026-11-19（C 类第 6 批 C6）：亚马逊。'amazon.com' 严禁进 map：
     // 后缀匹配会让 C11 的 AWS WAF（aws.amazon.com）串站解析为 amazon.png。
-    // 子串 '亚马逊' 在 navigation.json 全库 365 站标题中仅命中亚马逊一站，
+    // 子串 '亚马逊' 在 navigation.json 全库 369 站标题中仅命中亚马逊一站，
     // 故走标题规则（map 精确查找之前）；AWS WAF 标题不含该子串，不受影响。
     // 来源：www.amazon.com/favicon.ico 最大帧 48×48 转 PNG 原样。
     if (lowerTitle.includes('亚马逊')) return '/brand-icons/amazon.png'

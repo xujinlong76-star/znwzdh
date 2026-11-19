@@ -2327,6 +2327,30 @@
                 "ISO",
                 "规范"
               ]
+            },
+            {
+              "id": "nav-a61ae5a351d4",
+              "title": "Python 官方文档",
+              "href": "https://docs.python.org/3/",
+              "description": "Python 官方文档，语言教程与标准库参考",
+              "icon": "https://docs.python.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "Python",
+                "文档"
+              ]
+            },
+            {
+              "id": "nav-b8d9c5887738",
+              "title": "Go 官方文档",
+              "href": "https://go.dev/doc/",
+              "description": "Go 官方文档，入门教程与标准库参考",
+              "icon": "https://go.dev/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "Go",
+                "文档"
+              ]
             }
           ]
         },

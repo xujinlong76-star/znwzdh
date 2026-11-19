@@ -168,13 +168,18 @@ export function NavigationToolbar({
               ) : null}
 
               {/* 🧩 桌面小组件盒小窗入口（A3：按需小窗与角落固定微件） */}
+              {/* U-155（2026-11-19）：<390px 时收进探索菜单（下方「桌面小组件盒」条目），
+                  只为给外观/DIY 按钮腾出 44px——360px 下 8×44px + 7×2px 间隙 = 366px
+                  > 360−24px 可用宽，菜单按钮会被挤出视野；≥390px 恢复显示，
+                  8×44px + 14px = 366px 恰好占满 390−24px。小组件盒是桌面向功能
+                  （钉到桌面角落），小屏低频，且菜单条目保留入口，不丢功能。 */}
               {onOpenWidgetBox ? (
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
                   onClick={onOpenWidgetBox}
-                  className="relative h-11 w-11 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                  className="relative hidden h-11 w-11 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors min-[390px]:inline-flex"
                   title="打开桌面小组件盒（支持钉到桌面角落）"
                   aria-label="打开桌面小组件盒"
                 >
@@ -230,6 +235,17 @@ export function NavigationToolbar({
                       <span className="text-xs text-muted-foreground">全景快捷键列表 (?)</span>
                     </div>
                   </DropdownMenuItem>
+                  {/* U-155（2026-11-19）：小组件盒 <390px 的工具栏内替代入口（工具栏按钮
+                      在该宽度下隐藏，见上方注释）；≥390px 该条目隐藏，按钮恢复显示。 */}
+                  {onOpenWidgetBox ? (
+                    <DropdownMenuItem onClick={() => onOpenWidgetBox()} className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent min-[390px]:hidden">
+                      <Puzzle className="h-4 w-4 text-violet-500 shrink-0" />
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">桌面小组件盒</span>
+                        <span className="text-xs text-muted-foreground">按需小窗与角落固定微件</span>
+                      </div>
+                    </DropdownMenuItem>
+                  ) : null}
                   <DropdownMenuItem asChild className="xl:hidden">
                     <Link href="/hot" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
                       <Flame className="h-4 w-4 text-amber-500 shrink-0" />
@@ -449,25 +465,24 @@ export function NavigationToolbar({
               {/* 字号切换全尺寸可见（A13）：保留手机 1 键放大，不把长辈高频需求埋深 */}
               <div className="inline-flex"><FontSizeToggle /></div>
               <ModeToggle />
+              {/* U-155 方案 A（2026-11-19）：纯图标改为图标 + 可见文字标签「DIY 排版」，
+                  让 DIY 入口首屏可见可识别；<sm 沿用「今日」按钮的上下叠排（图标上、
+                  文字下），仍占 44px 宽；≥sm 横排，与「AI 找站」按钮同式。
+                  360px 宽度账：小组件盒 <390px 已收进探索菜单，行内 7×44px + 6×2px
+                  间隙 = 320px ≤ 360−24px 可用宽，菜单按钮不再被挤出；390px 时
+                  8×44px + 14px = 366px 恰好占满 390−24px。点击路径不动：仍打开
+                  外观向导小窗（默认 appearance 页签），底部「开启 DIY」进编排态。 */}
               {onOpenAppearanceGuide ? (
                 <Button
                   type="button"
                   variant="ghost"
-                  size="icon"
                   onClick={onOpenAppearanceGuide}
-                  // 360px 溢出修复（2026-11-19 02:22 轮，方案 a：隐藏次要入口）：
-                  // <md 时按钮行 8×44px + 间隙 = 366px > 360−24px 可用宽，菜单按钮挤出 18px。
-                  // 外观是 8 个入口中唯一有替代入口的次要项：同一小窗仍可由首页微胶囊行
-                  // 「向导与设首页」打开（tab 可切到外观，皮肤/DIY 不丢）。
-                  // 阈值取 390：366+24=390 是行恰好占满的边界，<390 隐藏全覆盖 360–389；
-                  // ≥390 与桌面布局逐像素不变。隐藏后行宽 366→320，360px 余 16px。
-                  // 不动其他入口：字号（A13 长辈高频）、主题、今日（A1）、菜单（侧栏唯一入口）、
-                  // 探索矩阵（主导航 hub）、小组件盒（无任何替代入口）全部保留 44px 触摸目标。
-                  className="hidden h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors min-[390px]:inline-flex"
-                  title="外观排版、皮肤、DIY 与新手向导"
+                  className="relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-0 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors sm:w-auto sm:flex-row sm:gap-1.5 sm:px-2.5"
+                  title="DIY 排版、外观与皮肤（打开外观向导小窗）"
                   aria-label="打开外观排版与新手向导小窗"
                 >
-                  <SlidersHorizontal className="h-4 w-4" />
+                  <SlidersHorizontal className="h-4 w-4 shrink-0" />
+                  <span className="whitespace-nowrap text-[10px] leading-none sm:text-xs">DIY 排版</span>
                 </Button>
               ) : null}
               <div className="h-4 w-px bg-border/60 mx-1 hidden min-[1536px]:block" />

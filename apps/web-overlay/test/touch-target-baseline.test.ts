@@ -63,8 +63,10 @@ describe("顶栏触达尺寸（navigation-toolbar）", () => {
     const src = overlayFile("src/components/navigation-toolbar.tsx");
     const parts = src.split('size="icon"');
     // 98635cb2 有意把今日中心按钮从纯图标按钮改成带可见文字标签「今日 N 项」的按钮
-    // （删 size="icon"，className 保留 h-11 w-11），故 size="icon" 基线 11 → 10；源码不动。
-    expect(parts.length - 1, "应有 10 个 icon 按钮（今日中心已改为文字按钮，见 98635cb2）").toBe(10);
+    // （删 size="icon"，className 保留 h-11 w-11），故 size="icon" 基线 11 → 10；
+    // U-155（2026-11-19）外观按钮同理改为带文字标签「DIY 排版」（删 size="icon"，
+    // className 保留 h-11 w-11），基线 10 → 9；h-11 w-11 总数仍为 11，见上一项。
+    expect(parts.length - 1, "应有 9 个 icon 按钮（今日中心与外观按钮已改为文字按钮，见 98635cb2 与 U-155）").toBe(9);
     for (let i = 1; i < parts.length; i++) {
       // 从 size="icon" 起，到对应 </Button> 为止的块（JSX 块最大 ~40 行）
       const block = parts[i].slice(0, 2000);

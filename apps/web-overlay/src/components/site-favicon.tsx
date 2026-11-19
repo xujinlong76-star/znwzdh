@@ -740,6 +740,18 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   ['cloud.tencent.com', 'tencent-cloud.png'],
   ['huaweicloud.com', 'huaweicloud.png'],
   ['coolify.io', 'coolify.png'],
+  // 2026-11-19（C 类第 13 批 C13，尾巴 1 站）：Zeabur。
+  // 站 icon 字段为远端 https://zeabur.com/favicon.svg，被
+  // isRemoteRawFavicon 拦截（pathname '/favicon.svg'），map 生效，
+  // navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 全库 371 站核对：'zeabur.com' 键只命中 Zeabur 一站，无后缀串站。
+  // 落盘 zeabur.svg 为官网声明的浅色 favicon /logo.svg 原样
+  // （370 B，viewBox 0 0 32 32，三色 #19181B / #6300FF / #EE430E，
+  // 见 C13 测试事实钉死）。深色变体 /logo-dark.svg（368 B，仅黑
+  // 元素改为白色）未另行落盘：按统一规范 §9，只落默认浅色标、
+  // 不做单站补丁，深色底块问题留待统一处理轮；接线/复审如需
+  // 定夺深色变体，请裁决（见 C13 测试事实钉死）。
+  ['zeabur.com', 'zeabur.svg'],
  ];
 
 /**

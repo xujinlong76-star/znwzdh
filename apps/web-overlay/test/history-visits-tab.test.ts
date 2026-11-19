@@ -76,3 +76,42 @@ describe('A4：访问 tab 不被搜索 state 绑架', () => {
     expect(PAGE).toContain("{tab === 'searches' && state === 'ready' && hasMore && (")
   })
 })
+
+describe('A5：身份变化后访问历史不重取、旧身份残留', () => {
+  it('断言 1：3c2470e3 未覆盖——本轮补身份变化 effect，清列表并回 idle', () => {
+    const start = PAGE.indexOf('// A5：身份变化后访问历史必须失效')
+    expect(start, 'A5 身份变化 effect 应存在').toBeGreaterThanOrEqual(0)
+    const body = PAGE.slice(start, PAGE.indexOf('// 切到访问 tab 时首次加载', start))
+    // 未变直接 return；变了才更新 ref + 清空。
+    assertOrder(
+      body,
+      ['if (identityRef.current === identity) return', 'identityRef.current = identity'],
+      'A5 身份变化守卫',
+    )
+    expect(body).toContain('setVisits([])')
+    expect(body).toContain('setVisitTotal(0)')
+    expect(body).toContain('setVisitHasMore(false)')
+    expect(body).toContain('setVisitNextOffset(0)')
+    expect(body).toContain("setVisitState('idle')")
+    // effect 只认 identity：切 tab 不触发清空，已加载列表不被误删。
+    const depStart = body.indexOf('}, [', body.indexOf('useEffect'))
+    expect(body.slice(depStart, depStart + 20)).toContain('[identity]')
+  })
+
+  it('断言 2：旧身份在途响应到达时丢弃，不写回列表', () => {
+    const body = callbackBody(PAGE, 'loadVisits')
+    assertOrder(
+      body,
+      ['const requestIdentity = identity', 'fetchVisitsPage(identity,', 'setVisitBusy(false)', 'if (identityRef.current !== requestIdentity) return', 'setVisits('],
+      'loadVisits 归属比对顺序',
+    )
+  })
+
+  it('断言 3：回 idle 后下次切入按新身份重取（切 tab effect 不变）', () => {
+    const start = PAGE.indexOf('// 切到访问 tab 时首次加载')
+    expect(start, '切 tab effect 应存在').toBeGreaterThanOrEqual(0)
+    const body = PAGE.slice(start, PAGE.indexOf('const clearVisits', start))
+    expect(body).toContain("if (tab !== 'visits') return")
+    expect(body).toContain("if (visitState === 'idle') void Promise.resolve().then(() => loadVisits(0))")
+  })
+})

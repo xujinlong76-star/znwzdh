@@ -6,7 +6,7 @@
  * 数据在终端用户的身份下（登录身份或本机匿名 id），分页用 offset + hasMore。
  * 删除单条不会重排其余记录；「清空」是显式两步确认，避免误触。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { Button } from '@/components/ui/button'
@@ -105,6 +105,8 @@ export default function SearchHistoryPage() {
   const [confirmClearVisits, setConfirmClearVisits] = useState(false)
   /** 非空 = 当前展示的是离线快照（时间戳用于如实标注） */
   const [offlineSnapshotAt, setOfflineSnapshotAt] = useState<number | null>(null)
+  /** A5：当前身份的最新值（ref 形式，供在途请求的归属比对） */
+  const identityRef = useRef('')
 
   const load = useCallback(async (id: string) => {
     setIdentity(id)
@@ -257,6 +259,8 @@ export default function SearchHistoryPage() {
     // 否则 /api/me/visits 直接 401。身份未就绪时不发请求：保持 idle，
     // identity 就绪后 effect 重跑再取，避免一次无意义的 401 落 error。
     if (visitBusy || !identity) return
+    // A5：记下本次请求归属的身份；await 后若身份已变，响应直接丢弃。
+    const requestIdentity = identity
     if (offset === 0) setVisitState('loading')
     setVisitBusy(true)
     let degraded = false
@@ -264,6 +268,8 @@ export default function SearchHistoryPage() {
       degraded = true
     })
     setVisitBusy(false)
+    // A5：身份已变（登录/退出/合并）——旧身份的在途响应不得写回列表。
+    if (identityRef.current !== requestIdentity) return
     if (degraded || page === null) {
       // 降级 ≠ 空：首次加载失败落 error（带重试），加载更多失败保持原列表
       if (offset === 0) setVisitState('error')
@@ -276,6 +282,24 @@ export default function SearchHistoryPage() {
     setVisitNextOffset(page.nextOffset)
     setVisitState('ready')
   }, [visitBusy, identity])
+
+  // A5：身份变化后访问历史必须失效——3c2470e3（U-239）只修了取数时传
+  // 当前身份，没修「旧身份已加载的列表残留」：visitState 仍是 ready，
+  // 切 tab 的 effect 因不是 idle 不重取，旧身份记录一直展示。
+  // 这里只清列表并回 idle；取数仍由切 tab 的 effect 在下次切入时按新
+  // 身份执行（当前就在访问 tab 时，idle 会立即触发重取）。
+  useEffect(() => {
+    if (identityRef.current === identity) return
+    identityRef.current = identity
+    // 取数放微任务：effect 同步段不触碰 setState（set-state-in-effect）
+    void Promise.resolve().then(() => {
+      setVisits([])
+      setVisitTotal(0)
+      setVisitHasMore(false)
+      setVisitNextOffset(0)
+      setVisitState('idle')
+    })
+  }, [identity])
 
   // 切到访问 tab 时首次加载；身份变化后回 idle（下次切入按新身份取）
   useEffect(() => {

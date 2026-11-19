@@ -1768,5 +1768,15 @@
   "pricing": "freemium",
   "evidence": "基础功能免费使用，微博会员/SVIP 为付费增值服务",
   "title": "微博"
+ },
+ "skyreels.ai": {
+  "pricing": "freemium",
+  "evidence": "新用户 100 免费积分，另有 Basic/Pro/Plus/Max 付费订阅档",
+  "title": "SkyReels"
+ },
+ "typemovie.art": {
+  "pricing": "freemium",
+  "evidence": "官网应用包：分镜创建「首次免费」「限时免费」，另设会员订阅与会员专属模板",
+  "title": "讯飞绘镜"
  }
 }

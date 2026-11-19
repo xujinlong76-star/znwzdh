@@ -593,7 +593,7 @@ export function resolveSiteIcon(
     // 规范 §1.1 SVG 优先）；ICO 版为同一标的白底不透明载体，已裁决废弃。
     if (lowerTitle.includes('vllm')) return '/brand-icons/vllm.svg'
     // 2026-11-18（C 类第 1 批 c1g2）：GitHub 主站。github.com 为 7 站共享域名（GitHub、GitHub Trending、Cline、Copilot、LangGraph、Qwen 3、vLLM），严禁加 'github.com' 域名映射键。
-    // 子串 'github' 在 navigation.json 全库 347 站标题中仅命中 3 站：GitHub、GitHub Trending、GitHub Copilot；
+    // 子串 'github' 在 navigation.json 全库 349 站标题中仅命中 3 站：GitHub、GitHub Trending、GitHub Copilot；
     // 其中 Copilot 已由上方 'copilot' 规则（:515）先行命中，不受本条影响；GitHub Trending（C4）暂由本条命中、解析为 github.svg，
     // C4 为 Trending 加 'trending' 规则时必须放在本条之前。来源：官网首页 <link rel="icon"> 声明的 favicon.svg（github.githubassets.com），SVG 原样。
     if (lowerTitle.includes('github')) return '/brand-icons/github.svg'

@@ -1893,5 +1893,15 @@
   "pricing": "freemium",
   "evidence": "官网 FAQ 明示：前期集数免费，后期集数需金币/订阅/广告/VIP（Early episodes unlocked at no cost; later ones may need coins, a subscription, ads, or VIP）；首页 200 可读、无登录墙",
   "title": "FlexTV"
+ },
+ "v2ex.com": {
+  "pricing": "free",
+  "evidence": "首页/主题页/About 页均免登录可读（200）；About 页无会员/VIP/付费/定价字样，注册免费、无付费档；750,000+ 创意工作者社区",
+  "title": "V2EX"
+ },
+ "zhidao.baidu.com": {
+  "pricing": "free",
+  "evidence": "首页 200 免登录可读（问题列表与答案可见）；问答详情页 200 免登录可读（99 个回答全文）；全站无会员/VIP/付费/订阅/金币/定价入口；提问需免费百度账号登录，与知乎同口径",
+  "title": "百度知道"
  }
 }

@@ -2254,6 +2254,30 @@
                 "问答",
                 "社区"
               ]
+            },
+            {
+              "id": "nav-5e352ab7c838",
+              "title": "V2EX",
+              "href": "https://www.v2ex.com",
+              "description": "创意工作者社区，技术问答、分享发现与职场讨论",
+              "icon": "https://www.v2ex.com/static/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "问答",
+                "社区"
+              ]
+            },
+            {
+              "id": "nav-6b73f63473a9",
+              "title": "百度知道",
+              "href": "https://zhidao.baidu.com",
+              "description": "中文互动问答平台，生活与专业知识一问一答",
+              "icon": "https://zhidao.baidu.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "问答",
+                "社区"
+              ]
             }
           ]
         },

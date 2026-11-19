@@ -234,6 +234,52 @@ describe('U-233：11-19 今日行注释为 3 项（含天津成绩复核）', ()
   })
 })
 
+const NAVHUB_API = overlaySource('src/lib/navhub-api.ts')
+const RESURFACE_VISITS = overlaySource('src/lib/resurface-visits.ts')
+
+/** 截取 fetchVisitsPage 体（从导出声明起到下一节「画像」注释之前）。 */
+function fetchVisitsPageBody(src: string): string {
+  const start = src.indexOf('export async function fetchVisitsPage(')
+  expect(start, 'fetchVisitsPage 应存在').toBeGreaterThanOrEqual(0)
+  const end = src.indexOf('/* ------------------------------ 画像 ------------------------------ */', start)
+  expect(end, 'fetchVisitsPage 之后应有画像节').toBeGreaterThan(start)
+  return src.slice(start, end)
+}
+
+describe('U-239：匿名访问历史 401——fetchVisitsPage 自报 anon 身份头', () => {
+  it('断言 1：fetchVisitsPage 首参是 identity（与 fetchSearchHistoryPage 同款签名）', () => {
+    const body = fetchVisitsPageBody(NAVHUB_API)
+    expect(body).toContain('export async function fetchVisitsPage(\n  identity: string,')
+    expect(body).not.toContain('不需要自报 anonId')
+  })
+
+  it('断言 2：GET /api/me/visits 带 anonHeaders(identity)——匿名态代理才能签名转发，否则 401', () => {
+    const body = fetchVisitsPageBody(NAVHUB_API)
+    assertOrder(
+      body,
+      ["'/api/me/visits?limit=' + limit + '&offset=' + offset,", 'anonHeaders(identity)'],
+      'fetchVisitsPage 取数',
+    )
+    // getJson 第三参就是 extraHeaders：头不到代理，verdict 即 anonymous。
+    expect(body).toContain('anonHeaders(identity),')
+  })
+
+  it('断言 3：fetchCloudVisits（登录态唯一调用方）同步传 getIdentity()，登录行为不变', () => {
+    expect(RESURFACE_VISITS).toContain("import { getIdentity } from './identity'")
+    expect(RESURFACE_VISITS).toContain('fetchVisitsPage(getIdentity(), { limit: CLOUD_VISITS_LIMIT })')
+    // 仍只在登录态发云端请求：匿名用户不产生任何云端请求。
+    expect(RESURFACE_VISITS).toContain('isLoggedIn ? fetchCloudVisits() : Promise.resolve(null)')
+    expect(RESURFACE_VISITS).not.toContain('走 BFF 会话身份')
+  })
+
+  it('断言 4：搜索历史取数不受影响——仍传 anonHeaders(identity)', () => {
+    expect(NAVHUB_API).toContain('export async function fetchSearchHistoryPage(\n  identity: string,')
+    const start = NAVHUB_API.indexOf('export async function fetchSearchHistoryPage(')
+    const body = NAVHUB_API.slice(start, NAVHUB_API.indexOf('export async function deleteSearchHistoryItem', start))
+    expect(body).toContain('anonHeaders(identity),')
+  })
+})
+
 const WATCHLIST = overlaySource('src/app/me/watchlist/page.tsx')
 
 describe('U-230：集数步进空值不调 onSet、不静默清零', () => {

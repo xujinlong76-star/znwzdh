@@ -1549,10 +1549,16 @@ export interface HubVisitItem {
 }
 
 /**
- * 访问历史分页（/api/me/visits 走 BFF 会话身份，不需要自报 anonId）。
+ * 访问历史分页（U-239：匿名态必须自报 anon 身份头）。
+ *
+ * 走 /api/hub/me/visits（代理转发到中枢），不是 BFF /api/me——代理无会话
+ * 时只认客户端自报的 anon 身份（签名后转发）；不带头即 verdict anonymous，
+ * 中枢 identityTrusted 不过，直接 401。登录态代理用会话身份覆盖客户端
+ * 自报头，传 identity 不影响登录行为。与 fetchSearchHistoryPage 同款。
  * 降级返回 null：调用方据此区分「确实没有访问记录」与「云端取不到」。
  */
 export async function fetchVisitsPage(
+  identity: string,
   options: { limit?: number; offset?: number } = {},
   onDegraded?: DegradedHandler,
 ): Promise<{ items: HubVisitItem[]; total: number; hasMore: boolean; nextOffset: number } | null> {
@@ -1563,6 +1569,8 @@ export async function fetchVisitsPage(
     async () => {
       const data = await getJson<{ items?: HubVisitItem[]; total?: number; hasMore?: boolean; nextOffset?: number }>(
         '/api/me/visits?limit=' + limit + '&offset=' + offset,
+        undefined,
+        anonHeaders(identity),
       )
       return {
         items: Array.isArray(data.items) ? data.items : [],

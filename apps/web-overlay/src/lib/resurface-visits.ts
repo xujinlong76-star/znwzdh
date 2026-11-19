@@ -11,7 +11,8 @@
  * 做法（调用方合并，resurface.ts 本体不动）：
  *
  *   - 本机 visits（readOfflineVisits，50 条）+ 云端 visits
- *     （fetchVisitsPage，limit 50，走 BFF 会话身份）拼成一个数组喂给
+ *     （fetchVisitsPage，limit 50，走 /api/hub 代理身份：登录态会话优先，
+ *     匿名态自报 anon 头，见 U-239）拼成一个数组喂给
  *     selectDailyResurface / selectStaleFavorites / latestVisitsById——
  *     取最新一次的 Math.max 语义让较新的一方自动胜出。
  *   - 云端取不到（fetchVisitsPage 返回 null）时静默回落本机-only：
@@ -26,6 +27,7 @@
 
 import { useEffect, useState } from 'react'
 import { fetchVisitsPage, type HubVisitItem } from './navhub-api'
+import { getIdentity } from './identity'
 import { readOfflineVisits, type RecentVisit } from './offline-recent'
 import type { ResurfaceVisitLike } from './resurface'
 
@@ -53,12 +55,13 @@ export function mergeVisits(
 }
 
 /**
- * 取云端 visits（limit 50，走 BFF 会话身份）：成功返回 items，任何失败
+ * 取云端 visits（limit 50，走 /api/hub 代理身份）：成功返回 items，任何失败
  * （未登录 401、网络失败、降级）返回 null——调用方据此回落本机-only。
  * 匿名用户不要调它（调用方用 isLoggedIn 守门，不产生任何云端请求）。
+ * 登录态下代理用会话身份覆盖这里自报的 identity，行为与 U-239 前一致。
  */
 export async function fetchCloudVisits(): Promise<HubVisitItem[] | null> {
-  const page = await fetchVisitsPage({ limit: CLOUD_VISITS_LIMIT })
+  const page = await fetchVisitsPage(getIdentity(), { limit: CLOUD_VISITS_LIMIT })
   return page === null ? null : page.items
 }
 

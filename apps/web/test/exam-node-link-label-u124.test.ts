@@ -224,7 +224,7 @@ describe('T5：全量计数（防漏网/防多改）', () => {
 })
 
 describe('T6：无数据改动（数据层守卫）', () => {
-  it('十一场 id、节点总数 43、17 个 url 逐字一致，无新增 url，ExamNode 无新增字段', () => {
+  it('十一场 id、节点总数 44、17 个 url 逐字一致，无新增 url，ExamNode 无新增字段', () => {
     expect(EXAMS.map((e) => e.id)).toEqual([
       'guokao',
       'cet',
@@ -238,11 +238,11 @@ describe('T6：无数据改动（数据层守卫）', () => {
       'guangdong-zikao',
       'shanghai-zikao',
     ])
-    expect(EXAMS.flatMap((e) => e.nodes)).toHaveLength(43)
+    expect(EXAMS.flatMap((e) => e.nodes)).toHaveLength(44)
     const byKey = new Map(
       EXAMS.flatMap((e) => e.nodes.map((n) => [`${e.id}:${n.label}`, n] as const)),
     )
-    expect(byKey.size).toBe(43)
+    expect(byKey.size).toBe(44)
     for (const [examId, label, url] of EXPECTED_URLS) {
       expect(byKey.get(`${examId}:${label}`)?.url).toBe(url)
     }
@@ -252,6 +252,7 @@ describe('T6：无数据改动（数据层守卫）', () => {
     // U-164：海南查分不挂 url（U-102 口径），url 总数仍 17。
     // U-160：山西复核不挂 url（sxkszx.cn 未证实可达），url 总数仍 17，节点总数 41→42。
     // U-162：天津复核不挂 url（招考资讯网未直读到官方原文），url 总数仍 17，节点总数 42→43。
+    // U-252：云南成绩查询不挂 url（转载级，未见官方原文），url 总数仍 17，节点总数 43→44。
     expect(byKey.get('chengkao:天津成绩复核')?.url).toBeUndefined()
     expect(byKey.get('jiangsu-zikao:成绩查询')?.url).toBeUndefined()
     expect(byKey.get('jiangsu-zikao:成绩复核')?.url).toBeUndefined()
@@ -259,6 +260,7 @@ describe('T6：无数据改动（数据层守卫）', () => {
     expect(byKey.get('shanghai-zikao:成绩查询')?.url).toBeUndefined()
     expect(byKey.get('shanghai-zikao:成绩复核')?.url).toBeUndefined()
     expect(byKey.get('chengkao:海南成绩查询')?.url).toBeUndefined()
+    expect(byKey.get('chengkao:云南成绩查询')?.url).toBeUndefined()
     for (const node of EXAMS.flatMap((e) => e.nodes)) {
       for (const key of Object.keys(node)) {
         expect(['label', 'detail', 'url', 'startISO', 'endISO', 'estimated']).toContain(key)

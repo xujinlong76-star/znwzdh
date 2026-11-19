@@ -190,7 +190,7 @@ export function DramaContent({
       <header className="max-w-3xl">
         <h1 className="text-3xl font-bold">短剧专区</h1>
         <p className="mt-3 text-zinc-600 dark:text-zinc-400">
-          12 个短剧平台入口与热门剧追剧清单。平台卡只带你到平台入口：标了
+          {sites.length} 个短剧平台入口与热门剧追剧清单。平台卡只带你到平台入口：标了
           “需在 App 内观看”的平台没有可直达的短剧频道页，点开是平台首页，
           需要在 App 内搜来看。
         </p>

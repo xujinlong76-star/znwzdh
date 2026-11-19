@@ -19,6 +19,7 @@ import {
   migrateWorkspaceBlobs,
   migrateWantedSearches,
   migrateUserSyncState,
+  migrateExamVerifications,
   cleanTaxonomyAndDuplicates,
   normalizeSiteCreatedAt,
 } from "../migrate.ts";
@@ -268,6 +269,15 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
       await migrateUserSyncState(db);
     },
     checksum: "v1_user_sync_state",
+  },
+  {
+    // 2026-11-19：考试核验两张表 exam_verifications / exam_corrections（01-verification-workflow §2.5/§2.6）。
+    version: "20261119_exam_verifications",
+    name: "考试核验记录与更正日志建表",
+    up: async (db: Db) => {
+      await migrateExamVerifications(db);
+    },
+    checksum: "v1_exam_verifications",
   },
 ];
 

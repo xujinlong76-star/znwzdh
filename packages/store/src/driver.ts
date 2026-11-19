@@ -316,6 +316,31 @@ CREATE INDEX IF NOT EXISTS audit_logs_created_idx ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS audit_logs_actor_idx ON audit_logs(actor);
 CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action, id DESC);
 
+CREATE TABLE IF NOT EXISTS exam_verifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, exam_id TEXT NOT NULL, node_label TEXT NOT NULL,
+  assertion TEXT NOT NULL, assertion_hash TEXT NOT NULL, verification_level TEXT NOT NULL,
+  verdict TEXT NOT NULL, rating TEXT, confidence TEXT NOT NULL, source_url TEXT,
+  source_kind TEXT NOT NULL DEFAULT 'official_announcement', archived_url TEXT,
+  archived_timestamp TEXT, archived_digest TEXT, checked_at INTEGER NOT NULL,
+  checked_by TEXT NOT NULL, reviewed_by TEXT, evidence_json TEXT NOT NULL DEFAULT '[]',
+  notes TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS exam_verifications_exam_node_idx ON exam_verifications(exam_id, node_label);
+CREATE INDEX IF NOT EXISTS exam_verifications_hash_idx ON exam_verifications(assertion_hash);
+CREATE INDEX IF NOT EXISTS exam_verifications_checked_idx ON exam_verifications(checked_at);
+
+CREATE TABLE IF NOT EXISTS exam_corrections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, exam_id TEXT NOT NULL, node_label TEXT NOT NULL,
+  assertion_hash TEXT NOT NULL, original_text TEXT NOT NULL, corrected_text TEXT,
+  error_type TEXT NOT NULL, reason TEXT NOT NULL, how_discovered TEXT NOT NULL,
+  original_published_at INTEGER NOT NULL, correction_published_at INTEGER,
+  location TEXT NOT NULL DEFAULT 'both', corrected_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS exam_corrections_exam_node_idx ON exam_corrections(exam_id, node_label);
+CREATE INDEX IF NOT EXISTS exam_corrections_hash_idx ON exam_corrections(assertion_hash);
+CREATE INDEX IF NOT EXISTS exam_corrections_published_idx ON exam_corrections(correction_published_at);
+
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT, status TEXT NOT NULL DEFAULT 'pending',
   attempts INTEGER NOT NULL DEFAULT 0, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
@@ -1079,6 +1104,31 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE INDEX IF NOT EXISTS audit_logs_created_idx ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS audit_logs_actor_idx ON audit_logs(actor);
 CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action, id DESC);
+
+CREATE TABLE IF NOT EXISTS exam_verifications (
+  id BIGSERIAL PRIMARY KEY, exam_id TEXT NOT NULL, node_label TEXT NOT NULL,
+  assertion TEXT NOT NULL, assertion_hash TEXT NOT NULL, verification_level TEXT NOT NULL,
+  verdict TEXT NOT NULL, rating TEXT, confidence TEXT NOT NULL, source_url TEXT,
+  source_kind TEXT NOT NULL DEFAULT 'official_announcement', archived_url TEXT,
+  archived_timestamp TEXT, archived_digest TEXT, checked_at BIGINT NOT NULL,
+  checked_by TEXT NOT NULL, reviewed_by TEXT, evidence_json TEXT NOT NULL DEFAULT '[]',
+  notes TEXT, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS exam_verifications_exam_node_idx ON exam_verifications(exam_id, node_label);
+CREATE INDEX IF NOT EXISTS exam_verifications_hash_idx ON exam_verifications(assertion_hash);
+CREATE INDEX IF NOT EXISTS exam_verifications_checked_idx ON exam_verifications(checked_at);
+
+CREATE TABLE IF NOT EXISTS exam_corrections (
+  id BIGSERIAL PRIMARY KEY, exam_id TEXT NOT NULL, node_label TEXT NOT NULL,
+  assertion_hash TEXT NOT NULL, original_text TEXT NOT NULL, corrected_text TEXT,
+  error_type TEXT NOT NULL, reason TEXT NOT NULL, how_discovered TEXT NOT NULL,
+  original_published_at BIGINT NOT NULL, correction_published_at BIGINT,
+  location TEXT NOT NULL DEFAULT 'both', corrected_by TEXT NOT NULL,
+  created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS exam_corrections_exam_node_idx ON exam_corrections(exam_id, node_label);
+CREATE INDEX IF NOT EXISTS exam_corrections_hash_idx ON exam_corrections(assertion_hash);
+CREATE INDEX IF NOT EXISTS exam_corrections_published_idx ON exam_corrections(correction_published_at);
 
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT, status TEXT NOT NULL DEFAULT 'pending',

@@ -44,28 +44,28 @@ describe('U-234：11-18 今日行按时刻升序（PEAK 表时刻）', () => {
 })
 
 describe('U-234：11-19 今日行按时刻升序（startsToday 不再沉底）', () => {
-  it('3 项顺序为天津 09:00（detail 开通时刻）→ 上海自考 10:00 → 海南 17:00（天津 PEAK 表 18:00 因节点未核实被 §7.2 准入闸拦下，排序键回落到 detail 时刻）', () => {
+  it('3 项顺序为上海自考 10:00 → 海南 17:00 → 天津 18:00（天津 PEAK 表 18:00 已准入，F1b reprint，排序键取 PEAK 时刻）', () => {
     const items = todayNodes(NOV_19_0800_CST)
     expect(items.map(key)).toEqual([
-      'chengkao:天津成绩复核',
       'shanghai-zikao:成绩查询',
       'chengkao:海南成绩查询',
+      'chengkao:天津成绩复核',
     ])
     expect(items.map((t) => todayNodeTargetMs(t, NOV_19_0800_CST))).toEqual([
-      Date.UTC(2026, 10, 19, 1, 0, 0),
       Date.UTC(2026, 10, 19, 2, 0, 0),
       Date.UTC(2026, 10, 19, 9, 0, 0),
+      Date.UTC(2026, 10, 19, 10, 0, 0),
     ])
   })
 
-  it('排序键来源：天津 PEAK 表 18:00 因未核实被 §7.2 拦下、回落到 detail 09:00；海南与上海取 detail 当天时刻', () => {
+  it('排序键来源：天津 PEAK 表 18:00 已准入（F1b reprint），排序键取 PEAK 18:00；海南与上海取 detail 当天时刻', () => {
     const items = todayNodes(NOV_19_0800_CST)
     const byKey = new Map(items.map((t) => [key(t), t] as const))
-    // 天津 18:00 在 PEAK 表内但节点 unverified，准入闸拦下后 todayNodeTargetMs
-    // 回落到 detail 里当天第一个时刻 09:00（复核窗口 9:00–18:00 的开始时刻）；
+    // 天津 18:00 在 PEAK 表内且节点已核实 reprint，准入闸通过后 todayNodeTargetMs
+    // 取 PEAK 18:00（不再回落到 detail 里当天第一个时刻 09:00）；
     // 海南 17:00 / 上海 10:00 不在表内、取自 detail 原文。
     expect(todayNodeTargetMs(byKey.get('chengkao:天津成绩复核')!, NOV_19_0800_CST)).toBe(
-      Date.UTC(2026, 10, 19, 1, 0, 0),
+      Date.UTC(2026, 10, 19, 10, 0, 0),
     )
     expect(byKey.get('chengkao:海南成绩查询')!.node.detail).toContain('11 月 19 日 17:00')
     expect(byKey.get('shanghai-zikao:成绩查询')!.node.detail).toContain('11 月 19 日 10:00')

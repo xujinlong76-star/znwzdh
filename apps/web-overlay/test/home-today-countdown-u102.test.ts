@@ -684,7 +684,7 @@ describe('C8 U-158 成考三省复核 chip 行为：广东 today 行过期消失
   })
 })
 
-describe('C9 U-164 海南成考成绩查询 11-19 SSR：海南与上海两行无倒计时徽章，天津行（U-162）亦无倒计时徽章（D2 例外未核实）', () => {
+describe('C9 U-164 海南成考成绩查询 11-19 SSR：海南与上海两行无倒计时徽章，天津行（U-162）有倒计时徽章（F1b reprint 已准入）', () => {
   /** 2026-11-19 08:00 北京时间：海南查分公布日、天津复核日 */
   const NOV_19_0800_CST = Date.UTC(2026, 10, 19, 0, 0, 0)
   /** 2026-11-19 17:59:59 北京时间 = UTC 09:59:59（天津 18:00 边界前 1 秒） */
@@ -694,22 +694,26 @@ describe('C9 U-164 海南成考成绩查询 11-19 SSR：海南与上海两行无
   /** 2026-11-19 18:30 北京时间：天津复核截止后半小时 */
   const NOV_19_1830_CST = Date.UTC(2026, 10, 19, 10, 30, 0)
 
-  it('11-19 SSR：今日行 3 项，0 个倒计时徽章——天津行未核实、无 chip 标「待核实」（§7.2，D2 例外）；海南与上海两行无徽章（均不入表）', () => {
+  it('11-19 SSR：今日行 3 项，1 个倒计时徽章——天津行已核实 reprint、有 chip、旁标「转载」（§7.2 已准入，F1b）；海南与上海两行无徽章（均不入表）', () => {
     const items = todayNodes(NOV_19_0800_CST)
     expect(items).toHaveLength(3)
     const html = unesc(renderZone(NOV_19_0800_CST))
-    expect(timerBadgeCount(html)).toBe(0)
+    expect(timerBadgeCount(html)).toBe(1)
     expect(liFor(html, '成考 · 海南成绩查询')).not.toContain('role="timer"')
     expect(liFor(html, '上海自考 · 成绩查询')).not.toContain('role="timer"')
-    // U-162：天津行 kind today；真实节点未核实、无 chip、标「待核实」。
-    expect(liFor(html, '成考 · 天津成绩复核')).not.toContain('role="timer"')
-    expect(liFor(html, '成考 · 天津成绩复核')).toContain('待核实')
+    // U-162：天津行 kind today；F1b 已核实 reprint、有 chip、chip 旁标「转载」小字
+    //（今日行 chip 只标短字「转载」，完整徽标文案「转载级 · 未直读官方原文」只在 /exam 卡片）。
+    expect(liFor(html, '成考 · 天津成绩复核')).toContain('role="timer"')
+    expect(liFor(html, '成考 · 天津成绩复核')).toContain('转载')
+    expect(liFor(html, '成考 · 天津成绩复核')).not.toContain('待核实')
     expect(formatRemaining(TIANJIN_REVIEW_DEADLINE_MS, NOV_19_0800_CST)).toBe('剩10小时0分')
     const byKey19 = new Map(
       items.map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
     )
-    expect(todayNodeDeadlineMs(byKey19.get('chengkao:天津成绩复核')!)).toBeUndefined()
-    // 对照：PEAK 表项仍在，eligible 包装返回 18:00。
+    expect(todayNodeDeadlineMs(byKey19.get('chengkao:天津成绩复核')!)).toBe(
+      TIANJIN_REVIEW_DEADLINE_MS,
+    )
+    // 对照：PEAK 表项仍在，eligible 包装返回 18:00，与真实节点返回值一致。
     const eligibleByKey19 = new Map(
       todayNodes(NOV_19_0800_CST, eligibleExams()).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
     )
@@ -725,15 +729,15 @@ describe('C9 U-164 海南成考成绩查询 11-19 SSR：海南与上海两行无
     expect(formatRemaining(TIANJIN_REVIEW_DEADLINE_MS, NOV_19_1830_CST)).toBe('已截止')
   })
 
-  it('hideWhenPassed 分流：天津行 kind today（挂载后过期 chip 消失）；真实节点 helper 恒为 null（§7.2），eligible 包装对照 17:59:59 为 null、18:00 起「已截止」', () => {
+  it('hideWhenPassed 分流：天津行 kind today（挂载后过期 chip 消失）；真实节点已核实 reprint、17:59:59 为 null、18:00 起「已截止」，eligible 包装对照与真实节点一致', () => {
     const tj = todayNodes(NOV_19_0800_CST).find(
       (t) => t.exam.id === 'chengkao' && t.node.label === '天津成绩复核',
     )!
     expect(tj.kind).toBe('today')
     const chengkao = EXAMS.find((e) => e.id === 'chengkao')!
     expect(examNodeDeadlineLabel(chengkao, tj.node, NOV_19_175959_CST)).toBeNull()
-    expect(examNodeDeadlineLabel(chengkao, tj.node, NOV_19_1800_CST)).toBeNull()
-    // 对照：PEAK 表机制本身未变，eligible 包装的边界与旧断言一致。
+    expect(examNodeDeadlineLabel(chengkao, tj.node, NOV_19_1800_CST)).toBe('已截止')
+    // 对照：PEAK 表机制本身未变，eligible 包装的边界与真实节点一致。
     const node = withEligibleVerificationFor('chengkao', tj.node)
     expect(examNodeDeadlineLabel(chengkao, node, NOV_19_175959_CST)).toBeNull()
     expect(examNodeDeadlineLabel(chengkao, node, NOV_19_1800_CST)).toBe('已截止')
@@ -743,11 +747,14 @@ describe('C9 U-164 海南成考成绩查询 11-19 SSR：海南与上海两行无
     expect(zone).toContain("kind === 'today' ? { hideWhenPassed: true }")
     const src = read('src/components/home-today-countdown.tsx')
     expect(src).toContain('if (hideWhenPassed && targetMs <= nowMs) return null')
-    // SSR：18:30 今日行 0 个倒计时徽章——天津行无 chip（§7.2），不显示「已截止」，标「待核实」。
+    // SSR：18:30 今日行仍有 1 个倒计时徽章——天津行 chip 是 SSR 占位「倒计时」
+    //（hideWhenPassed 只在挂载后生效，挂载前占位不动，见 countdown 文件头水合安全注释；
+    // 挂载后目标已过直接 return null、chip 消失。占位不显示「已截止」）。
     const html = unesc(renderZone(NOV_19_1830_CST))
-    expect(timerBadgeCount(html)).toBe(0)
-    expect(liFor(html, '成考 · 天津成绩复核')).not.toContain('role="timer"')
+    expect(timerBadgeCount(html)).toBe(1)
+    expect(liFor(html, '成考 · 天津成绩复核')).toContain('role="timer"')
     expect(liFor(html, '成考 · 天津成绩复核')).not.toContain('已截止')
-    expect(liFor(html, '成考 · 天津成绩复核')).toContain('待核实')
+    expect(liFor(html, '成考 · 天津成绩复核')).toContain('转载')
+    expect(liFor(html, '成考 · 天津成绩复核')).not.toContain('待核实')
   })
 })

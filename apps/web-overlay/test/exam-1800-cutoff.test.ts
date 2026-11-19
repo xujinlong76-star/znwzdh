@@ -741,10 +741,9 @@ describe('U-160 山西成考成绩复核（转载级，不入 PEAK 表）', () =
   it('11-19 今日行 3 项（U-162 天津单日 today 进今日行；山西首日 startsToday 被海南直接节点抑制、退接续区）；11-20 山西以 endsToday 进今日行（第一遍不抑制），无 PEAK 表项故全天「进行中」', () => {
     const items19 = todayNodes(NOV_19_0800_CST)
     expect(items19).toHaveLength(3)
-    // U-234：按目标时刻升序——天津 PEAK 表 18:00 因节点未核实被 §7.2 准入闸拦下，
-    // 排序键回落到 detail 里当天第一个时刻 09:00，排首位；上海自考 10:00、海南 17:00；
-    // startsToday 不再无条件沉底。
-    expect(items19.map((t) => t.node.label)).toEqual(['天津成绩复核', '成绩查询', '海南成绩查询'])
+    // U-234：按目标时刻升序——天津 PEAK 表 18:00 已准入（F1b reprint，排序键取 PEAK
+    // 18:00、排末位），上海自考 10:00、海南 17:00；startsToday 不再无条件沉底。
+    expect(items19.map((t) => t.node.label)).toEqual(['成绩查询', '海南成绩查询', '天津成绩复核'])
     expect(items19.map((t) => t.node.label)).not.toContain('山西成绩复核')
     expect(todayFollowUpNodes(NOV_19_0800_CST).map((t) => t.node.label)).toContain('山西成绩复核')
     // 11-20：山西末日 endsToday 进今日行，不再进接续区；今日行 6 项（广东 today +
@@ -760,7 +759,7 @@ describe('U-160 山西成考成绩复核（转载级，不入 PEAK 表）', () =
   })
 })
 
-describe('U-162 天津成考成绩复核（节点 unverified 未核实：PEAK 表 11-19 18:00 暂不准入；02:35 裁决已落定）', () => {
+describe('U-162 天津成考成绩复核（节点 reprint 转载级已核实：PEAK 表 11-19 18:00 已准入；02:35 裁决已落定，F1b 快照一致化）', () => {
   // 查找包成函数：实现未落盘时顶层 find 会在收集期抛错、整文件 0 跑；
   // 各 it 内调用，失败只落本 it。
   const tianjinNode = () => chengkao.nodes.find((n) => n.label === '天津成绩复核')!
@@ -777,7 +776,7 @@ describe('U-162 天津成考成绩复核（节点 unverified 未核实：PEAK �
   /** 2026-11-21 08:00 北京时间（复核单日已过次日） */
   const NOV_21_0800_CST = Date.UTC(2026, 10, 21, 0, 0, 0)
 
-  it('节点落库：单日 11-19，无 url；detail 逐字口径（事实描述，不含级别断言）', () => {
+  it('节点落库：单日 11-19，无 url；detail 逐字口径（事实描述，不含级别断言）；5 字段快照与 02:35 裁决一致（F1b）', () => {
     const node = tianjinNode()
     expect(node.startISO).toBe('2026-11-19')
     expect(node.endISO).toBe('2026-11-19')
@@ -785,9 +784,14 @@ describe('U-162 天津成考成绩复核（节点 unverified 未核实：PEAK �
     expect(node.detail).toBe(
       '11 月 19 日 9:00 至 18:00 网上申请缴费；复核结果 11 月 25 日 9:00 至 11 月 30 日 17:00 可查',
     )
-    // R5 同款（F1 补修）：节点 verification_level 为 unverified，detail 不得以
-    // unverified 级别自称“转载级”，不写级别断言，只保留事实描述。
-    expect(node.verification_level).toBe('unverified')
+    // F1b：裁决记录 exam_verifications id=1（level reprint，verdict verified，
+    // rating true，confidence medium）已落定，节点 5 字段快照与裁决一致。
+    expect(node.verification_level).toBe('reprint')
+    expect(node.source_url).toBe('https://www.hqwx.com/chengrengk-kaoshi/news/17859084897258.html')
+    expect(node.archived_url).toBeUndefined()
+    expect(node.checked_at).toBe('2026-11-20T02:35:00+08:00')
+    expect(node.confidence).toBe('medium')
+    // R5 同款（F1 补修）：detail 不得以任何级别自称“转载级”，不写级别断言，只保留事实描述。
     expect(node.detail).not.toContain('转载级')
     expect(node.detail).not.toContain('未见官方原文')
     expect(node.detail).not.toContain('待官方原文核实后升级')
@@ -809,12 +813,15 @@ describe('U-162 天津成考成绩复核（节点 unverified 未核实：PEAK �
     expect(node.detail).not.toContain('招考资讯网')
   })
 
-  it('天津 PEAK 表项仍在但真实节点未核实：todayNodeDeadlineMs 为 undefined（§7.2，节点 unverified 未准入；02:35 裁决已落定，窗口 11-19 09:00–18:00 正确）；eligible 包装对照为 11-19 18:00', () => {
+  it('天津 PEAK 表项已准入：真实节点 reprint，todayNodeDeadlineMs 为 11-19 18:00（§7.2，F1b 快照一致化；02:35 裁决已落定，窗口 11-19 09:00–18:00 正确）；eligible 包装对照同为 11-19 18:00', () => {
     const byKey19 = new Map(
       todayNodes(NOV_19_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
     )
-    expect(todayNodeDeadlineMs(byKey19.get('chengkao:天津成绩复核')!)).toBeUndefined()
-    // 对照：PEAK 表项仍在，eligible 包装返回 11-19 18:00（北京时间 = UTC 10:00）。
+    expect(todayNodeDeadlineMs(byKey19.get('chengkao:天津成绩复核')!)).toBe(
+      Date.UTC(2026, 10, 19, 10, 0, 0),
+    )
+    // 对照：PEAK 表项仍在，eligible 包装返回 11-19 18:00（北京时间 = UTC 10:00），
+    // 与真实节点返回值一致（F1b 之前真实节点未核实、返回 undefined）。
     const eligibleByKey19 = new Map(
       todayNodes(NOV_19_0800_CST, eligibleExams()).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
     )
@@ -830,12 +837,12 @@ describe('U-162 天津成考成绩复核（节点 unverified 未核实：PEAK �
     expect(ms).not.toBe(Date.UTC(2026, 10, 30, 9, 0, 0))
   })
 
-  it('边界三则：真实节点未核实、helper 三点恒为 null（§7.2）；eligible 包装对照 17:59:59 null → 18:00:00「已截止」→ 18:00:01「已截止」；组合文案 18:00 前「今天」', () => {
+  it('边界三则：真实节点已核实 reprint、helper 17:59:59 null → 18:00:00「已截止」→ 18:00:01「已截止」（§7.2 已准入）；eligible 包装对照与真实节点一致；组合文案 18:00 前「今天」', () => {
     expect(examNodeDeadlineLabel(chengkao, tianjinNode(), NOV_19_175959_CST)).toBeNull()
-    expect(examNodeDeadlineLabel(chengkao, tianjinNode(), NOV_19_180000_CST)).toBeNull()
-    expect(examNodeDeadlineLabel(chengkao, tianjinNode(), NOV_19_180001_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, tianjinNode(), NOV_19_180000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(chengkao, tianjinNode(), NOV_19_180001_CST)).toBe('已截止')
     expect(nodeDeadlineDisplayLabel(chengkao, tianjinNode(), NOV_19_175959_CST)).toBe('今天')
-    expect(nodeDeadlineDisplayLabel(chengkao, tianjinNode(), NOV_19_180000_CST)).toBe('今天')
+    expect(nodeDeadlineDisplayLabel(chengkao, tianjinNode(), NOV_19_180000_CST)).toBe('已截止')
     // 对照：PEAK 表机制本身未变，eligible 包装的边界三则与旧断言一致。
     const node = withEligibleVerificationFor('chengkao', tianjinNode())
     expect(examNodeDeadlineLabel(chengkao, node, NOV_19_175959_CST)).toBeNull()
@@ -854,19 +861,20 @@ describe('U-162 天津成考成绩复核（节点 unverified 未核实：PEAK �
     expect(examNodeStatus(tianjinNode(), NOV_21_0800_CST)).toBe('done')
   })
 
-  it('11-19 今日行 3 项（U-234：天津 09:00 detail 回落 → 上海 10:00 → 海南 17:00）；天津不进接续区；11-20 今日行仍 6 项、天津已 done 不进', () => {
+  it('11-19 今日行 3 项（U-234：上海 10:00 → 海南 17:00 → 天津 18:00，天津 PEAK 表 18:00 已准入 F1b）；天津不进接续区；11-20 今日行仍 6 项、天津已 done 不进', () => {
     const items19 = todayNodes(NOV_19_0800_CST)
     expect(items19).toHaveLength(3)
     expect(items19.map((t) => `${t.exam.id}:${t.node.label}`)).toEqual([
-      'chengkao:天津成绩复核',
       'shanghai-zikao:成绩查询',
       'chengkao:海南成绩查询',
+      'chengkao:天津成绩复核',
     ])
     const tj19 = items19.find((t) => t.exam.id === 'chengkao' && t.node.label === '天津成绩复核')
     expect(tj19?.kind).toBe('today')
     expect(tj19?.node.url).toBeUndefined()
-    // 真实节点未核实：PEAK 目标时刻暂不准入（§7.2）；表项本身仍在，eligible 对照返回 18:00。
-    expect(todayNodeDeadlineMs(tj19!)).toBeUndefined()
+    // 真实节点已核实 reprint：PEAK 目标时刻已准入（§7.2），返回 11-19 18:00；
+    // eligible 对照同为 18:00（F1b 之前真实节点未核实、返回 undefined）。
+    expect(todayNodeDeadlineMs(tj19!)).toBe(Date.UTC(2026, 10, 19, 10, 0, 0))
     const eligibleTj = todayNodes(NOV_19_0800_CST, eligibleExams()).find(
       (t) => t.exam.id === 'chengkao' && t.node.label === '天津成绩复核',
     )

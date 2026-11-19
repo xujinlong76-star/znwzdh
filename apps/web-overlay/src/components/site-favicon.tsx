@@ -587,6 +587,29 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'imooc.com': '/brand-icons/imooc.png',
   'xuexi.cn': '/brand-icons/xuexi.png',
   'runoob.com': '/brand-icons/runoob.png',
+  // 2026-11-19（C 类第 9 批 C9，15/20）：粉笔 / 华图教育 / 新东方在线 /
+  // BOSS直聘 / 拉勾网 / 前程无忧 / 猎聘 / 五百丁 / Codecademy / 维基百科
+  // （研招网 / 考研网上报名 / 全国大学英语四、六级考试官网 /
+  // 四六级成绩查询 / 中国教育考试网不进 map，见下方 C9 标题规则）。
+  // 15 站已设计，5 站阻塞未入：国家公务员局 / 2027年国家公务员考试专题 /
+  // 中央机关公开遴选和公开选调专题（scs.gov.cn 机器人验证墙）、
+  // 中公教育（403 WAF）、廖雪峰教程（无 favicon），本次不接线、不放占位图。
+  // 10 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
+  // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 子域站用完整 hostname 建键，不建裸域键：'zh.wikipedia.org'。
+  // 全库 367 站核对：本批 10 个 map 键各只命中 1 站，无后缀串站。
+  // 6 站为 16×16 原样小图（huatu / zhipin / lagou；另 3 站走标题规则，
+  // 见下方），按规范 §1.1 原样落盘、绝不放大，卡片上显小是合规状态。
+  'fenbi.com': '/brand-icons/fenbi.png',
+  'huatu.com': '/brand-icons/huatu.png',
+  'koolearn.com': '/brand-icons/koolearn.png',
+  'zhipin.com': '/brand-icons/zhipin.png',
+  'lagou.com': '/brand-icons/lagou.png',
+  '51job.com': '/brand-icons/51job.png',
+  'liepin.com': '/brand-icons/liepin.png',
+  '500d.me': '/brand-icons/500d.png',
+  'codecademy.com': '/brand-icons/codecademy.png',
+  'zh.wikipedia.org': '/brand-icons/wikipedia.png',
 }
 
 /**
@@ -805,6 +828,26 @@ export function resolveSiteIcon(
     // 故走标题规则（map 精确查找之前）；AWS WAF 标题不含该子串，不受影响。
     // 来源：www.amazon.com/favicon.ico 最大帧 48×48 转 PNG 原样。
     if (lowerTitle.includes('亚马逊')) return '/brand-icons/amazon.png'
+    // 2026-11-19（C 类第 9 批 C9，15/20）：研招网 / 考研网上报名 /
+    // 全国大学英语四、六级考试官网 / 四六级成绩查询 / 中国教育考试网。
+    // 同域共享官方源、文件名不同，hostname map 无法区分，仿 C1 GitHub
+    // 模式走标题规则，必须放在 map 精确查找之前：
+    // - yz.chsi.com.cn 仅此 2 站：'研招网' 与 '考研网上报名' 互不为子串，
+    //   各命中 1 站；'chsi.com.cn' 键绝不加。
+    // - cet.neea.edu.cn 仅此 2 站 + www.neea.edu.cn 1 站：三条标题子串
+    //   在全库 367 站中各仅命中 1 站；'neea.edu.cn' / 'cet.neea.edu.cn'
+    //   键绝不加。注意官网标题用 '四、六级'（顿号），与成绩查询的
+    //   '四六级' 不重叠，故两条规则互不干扰。
+    // 同源像素相同是官方源本身同一文件（yz.png 与 yz-yzwb.png 逐字节
+    // 相同；cet.png / cet-query.png / neea.png 逐字节相同），按设计
+    // 证据分别落盘、不得复用同一文件名。
+    // 16×16 原样小图：cet.png / cet-query.png / neea.png，按规范 §1.1
+    // 原样保留、绝不放大，卡片上显小是合规状态而非质量问题。
+    if (lowerTitle.includes('考研网上报名')) return '/brand-icons/yz-yzwb.png'
+    if (lowerTitle.includes('研招网')) return '/brand-icons/yz.png'
+    if (lowerTitle.includes('四六级成绩查询')) return '/brand-icons/cet-query.png'
+    if (lowerTitle.includes('全国大学英语四、六级考试官网')) return '/brand-icons/cet.png'
+    if (lowerTitle.includes('中国教育考试网')) return '/brand-icons/neea.png'
 
     if (LOCAL_LOGO_MAP[hostname]) {
       return LOCAL_LOGO_MAP[hostname]!

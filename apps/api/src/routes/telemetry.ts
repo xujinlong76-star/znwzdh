@@ -39,6 +39,8 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
     "plugin_view", "plugin_install_click", "plugin_uninstall_click", "plugin_share",
     // 云端金库漏斗：对表（分母）/ 推送 / 拉取解密 / 永久删除
     "vault_status", "vault_sync", "vault_pull", "vault_delete",
+    // DIY 入口漏斗（U-155）：外观点击=分母、开启=分子、Ctrl+E=快捷键使用占比
+    "diy_appearance_click", "diy_open_click", "diy_shortcut_e",
     // 登录后「本机偏好 → 云端」交接：只在交接被尝试时上报，
     // 云端已有行的正常运行不发消息（否则分母会被每次页面加载灌满）。
     "settings_handoff",

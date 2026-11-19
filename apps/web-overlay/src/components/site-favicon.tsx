@@ -663,7 +663,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // SiteInspire（429 Vercel 检查点），本次不接线、不放占位图。
   // 17 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
   // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
-  // 全库 367 站核对：本批 17 个 map 键各只命中 1 站，无后缀串站。
+  // 全库 369 站核对：本批 17 个 map 键各只命中 1 站，无后缀串站。
   // 同域两站用完整 hostname 各建键，不互相覆盖：'mee.gov.cn'（生态环境部）
   // 与 'permit.mee.gov.cn'（排污平台）；精确查找先于后缀匹配，
   // permit.mee.gov.cn 命中自有键，不会串到 mee.png。

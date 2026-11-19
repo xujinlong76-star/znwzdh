@@ -207,6 +207,9 @@
       }
     }
   } catch (e) { /* 脏数据静默退化为默认视频 */ }
+  /* U-169：恢复后立即挂到 store 上——否则加载期/交互路径的裸 persist()
+     会把不带 avatar 的 store 写回，连续 reload 两次后用户自选形象永久丢失。 */
+  store.avatar = avatarPick;
   function persistAvatar() { store.avatar = avatarPick; persist(); }
   /* 取图唯一出口：只有用户上传的自改形象（单张定格图 data URL），没有默认静态图。
      小图标（面板头/收起圆标）默认用待机 WebP（动图）；上传用户优先用自己的图。 */

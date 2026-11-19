@@ -711,7 +711,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 被 isRemoteRawFavicon 拦截，map 生效，navigation.json 不动。
   // 'github.com' / 'adobe.com' 键绝不加。子域站用完整 hostname 建键：
   // 'cloud.tencent.com'（腾讯云，不建 'tencent.com' 裸域键）。
-  // 全库 369 站核对：本批 16 个 map 键中 14 个各只命中 1 站；
+  // 全库 371 站核对：本批 16 个 map 键中 14 个各只命中 1 站；
   // 'aliyun.com' 命中 4 站但其 3 个子域站（通义千问 qianwen /
   // Tongyi Lingma lingma / Codeup codeup）各有精确键先行命中，
   // 故只剩 Alibaba Cloud 一站落到本键，无后缀串站；'redhat.com'
@@ -1019,7 +1019,7 @@ export function resolveSiteIcon(
     // C9 阻塞未入）、生态环境部 2 站（mee.gov.cn，C11 未上 main）均无
     // 精确键兜底，会被错指为中国政府网国徽标。仿 C6 亚马逊 / C9 标题
     // 规则先例走标题规则，必须放在 map 精确查找之前。子串 '中国政府网'
-    // 在 navigation.json 全库 369 站标题中仅命中中国政府网一站。
+    // 在 navigation.json 全库 371 站标题中仅命中中国政府网一站。
     // 来源：www.gov.cn 首页声明的 trs_favicon.ico（内容实为 PNG 16×16，
     // 按内容解码落盘 gov.png，原样不放大，见 C12 测试事实钉死）。
     if (lowerTitle.includes('中国政府网')) return '/brand-icons/gov.png'

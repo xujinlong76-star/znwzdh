@@ -103,6 +103,8 @@ export default function SearchHistoryPage() {
   const [visitNextOffset, setVisitNextOffset] = useState(0)
   const [visitBusy, setVisitBusy] = useState(false)
   const [confirmClearVisits, setConfirmClearVisits] = useState(false)
+  /** A7：访问 tab 检索关键词（与搜索 tab 的 keyword 同款，跨 tab 保留） */
+  const [visitKeyword, setVisitKeyword] = useState('')
   /** 非空 = 当前展示的是离线快照（时间戳用于如实标注） */
   const [offlineSnapshotAt, setOfflineSnapshotAt] = useState<number | null>(null)
   /** A5：当前身份的最新值（ref 形式，供在途请求的归属比对） */
@@ -238,6 +240,19 @@ export default function SearchHistoryPage() {
   // U-193 方案①：检索只筛已加载页，筛选态不是「全量无结果」，按钮保留、
   // 只改文案说明它能扩大检索范围；根治（服务端检索）另立项。
   const isFiltering = keyword.trim() !== '' || filterMode !== 'all'
+
+  // A7：访问 tab 检索——与 U-193 方案①同口径，只筛已加载页（站名/链接），
+  // 加载更多可扩大检索范围；服务端检索另立项。
+  const filteredVisits = useMemo(() => {
+    const q = visitKeyword.trim().toLowerCase()
+    if (!q) return visits
+    return visits.filter(
+      (v) =>
+        (v.site?.title ?? '').toLowerCase().includes(q) ||
+        (v.site?.url ?? '').toLowerCase().includes(q),
+    )
+  }, [visits, visitKeyword])
+  const isVisitFiltering = visitKeyword.trim() !== ''
 
   const handleCleanZeroResults = useCallback(async () => {
     if (!identity || zeroResultItems.length === 0 || cleaningZero) return
@@ -485,6 +500,23 @@ export default function SearchHistoryPage() {
                 )}
               </div>
 
+              {/* A7：访问 tab 检索框（站名/链接）+ 范围说明，与搜索 tab 同口径。 */}
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                <Input
+                  aria-label="筛选访问历史"
+                  value={visitKeyword}
+                  onChange={(e) => setVisitKeyword(e.target.value)}
+                  placeholder="输入站名或链接筛选访问记录…"
+                  className="h-9 pl-8 text-xs"
+                />
+              </div>
+              {isVisitFiltering && (
+                <p className="text-[11px] text-muted-foreground">
+                  仅检索已加载的 {visits.length} 条，加载更多可扩大检索范围
+                </p>
+              )}
+
               {visits.length === 0 ? (
                 <SectionState
                   variant="empty"
@@ -492,10 +524,14 @@ export default function SearchHistoryPage() {
                   title="还没有站点访问记录"
                   description="浏览站点后这里会按时间列出最近访问（只记录站点点击，不含搜索内容）。"
                 />
+              ) : filteredVisits.length === 0 ? (
+                <section className="rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center text-xs text-muted-foreground">
+                  当前筛选条件下没有匹配的访问记录。
+                </section>
               ) : (
                 <>
                   <ul className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/70 bg-card/60">
-                    {visits.map((v) => (
+                    {filteredVisits.map((v) => (
                       <li key={v.id} className="flex items-center justify-between gap-3 px-4 py-3">
                         <div className="min-w-0 flex-1">
                           {v.site ? (

@@ -188,3 +188,43 @@ describe('U-192：历史「再次搜索」只带 q——根因在数据模型，
     expect(call).not.toContain('facets')
   })
 })
+
+describe('A7：访问 tab 无检索', () => {
+  it('断言 1：filteredVisits 只筛已加载页（站名/链接），空关键词返回全部', () => {
+    const start = PAGE.indexOf('const filteredVisits = useMemo')
+    expect(start, 'filteredVisits 应存在').toBeGreaterThanOrEqual(0)
+    const body = PAGE.slice(start, PAGE.indexOf('const isVisitFiltering', start))
+    expect(body).toContain("if (!q) return visits")
+    expect(body).toContain("(v.site?.title ?? '').toLowerCase().includes(q)")
+    expect(body).toContain("(v.site?.url ?? '').toLowerCase().includes(q)")
+    expect(PAGE).toContain("const [visitKeyword, setVisitKeyword] = useState('')")
+    expect(PAGE).toContain("const isVisitFiltering = visitKeyword.trim() !== ''")
+  })
+
+  it('断言 2：检索框 + 范围说明——与 U-193 方案①同口径', () => {
+    expect(PAGE).toContain('aria-label="筛选访问历史"')
+    expect(PAGE).toContain('placeholder="输入站名或链接筛选访问记录…"')
+    expect(PAGE).toContain('仅检索已加载的 {visits.length} 条，加载更多可扩大检索范围')
+  })
+
+  it('断言 3：列表渲染 filteredVisits；筛空与无记录是两个互斥空态', () => {
+    const visitIdx = PAGE.indexOf("{tab === 'visits' && (")
+    const visitBlock = PAGE.slice(visitIdx)
+    expect(visitBlock).toContain('{filteredVisits.map((v) => (')
+    expect(visitBlock).toContain('当前筛选条件下没有匹配的访问记录。')
+    expect(visitBlock).toContain('还没有站点访问记录')
+    // 筛空分支在无记录分支之后、列表之前：顺序即语义。
+    assertOrder(
+      visitBlock,
+      ['visits.length === 0 ?', '还没有站点访问记录', 'filteredVisits.length === 0 ?', '当前筛选条件下没有匹配的访问记录。', '{filteredVisits.map((v) => ('],
+      '访问 tab 空态顺序',
+    )
+  })
+
+  it('断言 4：筛选态不藏「加载更多」——仍接 loadVisits，可扩大检索范围', () => {
+    const visitIdx = PAGE.indexOf("{tab === 'visits' && (")
+    const visitBlock = PAGE.slice(visitIdx)
+    expect(visitBlock).toContain('onClick={() => void loadVisits(visitNextOffset)}')
+    expect(visitBlock).toContain('{visitHasMore && (')
+  })
+})

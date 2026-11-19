@@ -93,6 +93,7 @@ import { videoBiliSummaryRoutes } from "./routes/video-bili-summary.ts";
 import { askRoutes } from "./routes/ask.ts";
 import { compareRoutes } from "./routes/compare.ts";
 import { sitePriceRoutes } from "./routes/site-prices.ts";
+import { siteProfileRoutes } from "./routes/site-profiles.ts";
 import { verifyRoutes } from "./routes/verify.ts";
 import { compareSnapshotsRoutes } from "./routes/compare-snapshots.ts";
 import { compareShareRoutes } from "./routes/compare-share.ts";
@@ -769,6 +770,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(askRoutes, { ctx });
   await app.register(compareRoutes, { ctx });
   await app.register(sitePriceRoutes, { ctx });
+  await app.register(siteProfileRoutes, { ctx });
   await app.register(verifyRoutes, { ctx });
   await app.register(compareSnapshotsRoutes, { ctx });
   await app.register(compareShareRoutes, { ctx });

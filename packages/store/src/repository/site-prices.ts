@@ -170,6 +170,22 @@ export async function listSitePricesByOwner(
 }
 
 /**
+ * 按站取全部价格记录（GET /api/sites/:id/profile 的价格行摘要用）。
+ * 不按 owner 过滤：档案是站点的公开属性，摘要取最近核查的一条；
+ * owner_identity 不出路由层（priceView 只含价格字段）。
+ */
+export async function listSitePricesBySite(
+  repo: Repository,
+  siteId: string,
+): Promise<SitePriceRecord[]> {
+  const rows = (await repo.raw(
+    "SELECT * FROM site_prices WHERE site_id = ? ORDER BY verified_at DESC, updated_at DESC, id DESC",
+    [siteId],
+  )) as SitePriceRow[];
+  return rows.map(rowToPrice);
+}
+
+/**
  * 删除一条价格记录（幂等由路由层保证：无记录返回 false，路由仍回 200）。
  * 先读后删：repo.run 不回行数，读一次即可判定是否真的删过。
  */

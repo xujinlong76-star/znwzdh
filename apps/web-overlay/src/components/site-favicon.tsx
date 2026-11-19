@@ -85,7 +85,14 @@ export function extractFaviconMonogram(title: string, _url?: string): string {
   return '山'
 }
 
-export const LOCAL_LOGO_MAP: Record<string, string> = {
+/**
+ * 品牌图标本地映射的紧凑表（2026-11-19 U-248 体积压缩）。
+ * 317 条里 274 条的值共享 '/brand-icons/' 前缀；前缀只写一次、条目只存
+ * 裸文件名，首屏少发约 2.8 KB。值里带 '/' 的是完整路径（/assets/... 或
+ * https://...），原样使用，不加前缀。新增条目时裸文件名进 brand-icons，
+ * 完整路径照写即可。
+ */
+const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 2026-11-09：高频开发工具的品牌图标本地静态化。
   // 这些站点原先走 /api/hub/assets/icon 代理，而代理在拿不到外网 favicon 时会
   // 回落到「渐变底 + 首字母」的生成 SVG，视觉上和纯字母色块没有区别。
@@ -97,18 +104,18 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 本地 Simple Icons 资产优先（零运行时依赖）；无 Simple Icons 的站用
   // 站方自有 favicon 或官方应用图标本地化文件（public/brand-icons/），
   // 每个远程地址与本地文件均经 curl 逐个验证（200 + image MIME + >32B）。
-  'dify.ai': '/brand-icons/dify.svg',
-  'ant.design': '/brand-icons/antdesign.png',
-  'kubernetes.io': '/brand-icons/kubernetes.svg',
-  'spring.io': '/brand-icons/springboot.svg',
-  'notion.com': '/brand-icons/notion.png',
-  'radix-ui.com': '/brand-icons/radix-ui.svg',
-  'boardmix.cn': '/brand-icons/boardmix.jpg',
-  'docs.qq.com': '/brand-icons/tencent-docs.jpg',
-  'kdocs.cn': '/brand-icons/kdocs.jpg',
-  'sspai.com': '/brand-icons/sspai.png',
-  'pinduoduo.com': '/brand-icons/pinduoduo.png',
-  'hongguoduanju.com': '/brand-icons/hongguo.jpg',
+  ['dify.ai', 'dify.svg'],
+  ['ant.design', 'antdesign.png'],
+  ['kubernetes.io', 'kubernetes.svg'],
+  ['spring.io', 'springboot.svg'],
+  ['notion.com', 'notion.png'],
+  ['radix-ui.com', 'radix-ui.svg'],
+  ['boardmix.cn', 'boardmix.jpg'],
+  ['docs.qq.com', 'tencent-docs.jpg'],
+  ['kdocs.cn', 'kdocs.jpg'],
+  ['sspai.com', 'sspai.png'],
+  ['pinduoduo.com', 'pinduoduo.png'],
+  ['hongguoduanju.com', 'hongguo.jpg'],
   // 2026-11-17（进化轮第二批 2a）：48 站缺失清单里的 Simple Icons 18 站。
   // 全部 curl 重新验证（200 + SVG 魔数 + <title> 品牌一致）后本地落盘，
   // 与第一批同款做法。Ollama / SourceHut 为纯黑标（fill #000000）：
@@ -116,24 +123,24 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 仅普通 map 条目，无白底色块、无组件改动），此处照抄；深色模式下
   // 黑标对比度弱是已知局限，留待深色底块统一处理轮（研究笔记 §3/§5）。
   // 2026-11-17 深色底块轮：已处理，见下方 LOGO_TILE_MAP（light）。
-  'rollupjs.org': '/brand-icons/rollupdotjs.png',
-  'webpack.js.org': '/brand-icons/webpack.png',
-  'esbuild.github.io': '/brand-icons/esbuild.svg',
-  'storybook.js.org': '/brand-icons/storybook.svg',
-  'min.io': '/brand-icons/minio.svg',
-  'helm.sh': '/brand-icons/helm.svg',
-  'pulumi.com': '/brand-icons/pulumi.png',
-  'dribbble.com': '/brand-icons/dribbble.svg',
-  'behance.net': '/brand-icons/behance.svg',
-  'logseq.com': '/brand-icons/logseq.svg',
-  'ollama.com': '/brand-icons/ollama.svg',
-  'shopee.com': '/brand-icons/shopee.svg',
-  'infoq.cn': '/brand-icons/infoq.svg',
-  'qianwen.aliyun.com': '/brand-icons/qwen.svg',
-  'mantine.dev': '/brand-icons/mantine.svg',
-  'sourcehut.org': '/brand-icons/sourcehut.png',
-  'coze.cn': '/brand-icons/coze.svg',
-  'lintcode.com': '/brand-icons/lintcode.svg',
+  ['rollupjs.org', 'rollupdotjs.png'],
+  ['webpack.js.org', 'webpack.png'],
+  ['esbuild.github.io', 'esbuild.svg'],
+  ['storybook.js.org', 'storybook.svg'],
+  ['min.io', 'minio.svg'],
+  ['helm.sh', 'helm.svg'],
+  ['pulumi.com', 'pulumi.png'],
+  ['dribbble.com', 'dribbble.svg'],
+  ['behance.net', 'behance.svg'],
+  ['logseq.com', 'logseq.svg'],
+  ['ollama.com', 'ollama.svg'],
+  ['shopee.com', 'shopee.svg'],
+  ['infoq.cn', 'infoq.svg'],
+  ['qianwen.aliyun.com', 'qwen.svg'],
+  ['mantine.dev', 'mantine.svg'],
+  ['sourcehut.org', 'sourcehut.png'],
+  ['coze.cn', 'coze.svg'],
+  ['lintcode.com', 'lintcode.svg'],
   // 2026-11-17（进化轮第二批 2b 之开发设计类）：48 站缺失清单里的站方自有
   // 图标 10 站。全部 curl 重新验证（200 + image MIME + 魔数 + 尺寸与研究
   // 笔记逐个相符）后本地落盘，与第一批/2a 同款做法。Naive UI 的远程路径
@@ -142,16 +149,16 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 不可热链。CodeGeeX 自带黑底（312x312 PNG），深色模式可用；其余按 2a
   // 对 Ollama / SourceHut 的做法——不做特殊处理，已知局限留待深色底块
   // 统一处理轮（研究笔记 §3/§5）。
-  'codegeex.cn': '/brand-icons/codegeex.png',
-  'coding.net': '/brand-icons/coding.png',
-  'element-plus.org': '/brand-icons/element-plus.svg',
-  'naiveui.com': '/brand-icons/naiveui.svg',
-  'go-zero.dev': '/brand-icons/go-zero.svg',
-  'coolors.co': '/brand-icons/coolors.png',
-  'squoosh.app': '/brand-icons/squoosh.png',
-  'segmentfault.com': '/brand-icons/segmentfault.png',
-  'gogs.io': '/brand-icons/gogs.png',
-  'datatracker.ietf.org': '/brand-icons/ietf.png',
+  ['codegeex.cn', 'codegeex.png'],
+  ['coding.net', 'coding.png'],
+  ['element-plus.org', 'element-plus.svg'],
+  ['naiveui.com', 'naiveui.svg'],
+  ['go-zero.dev', 'go-zero.svg'],
+  ['coolors.co', 'coolors.png'],
+  ['squoosh.app', 'squoosh.png'],
+  ['segmentfault.com', 'segmentfault.png'],
+  ['gogs.io', 'gogs.png'],
+  ['datatracker.ietf.org', 'ietf.png'],
   // 2026-11-17（进化轮第二批 2b 剩余 + 2c）：48 站缺失清单里站方自有
   // 图标 12 站（剪映/即梦/天音/中国大学 MOOC/极客时间/智联/番茄小说/
   // 探探/ReelShort/中央气象台/国家哲学/有戏 AI）+ iTunes 128px 应用
@@ -164,28 +171,28 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 对 Ollama / SourceHut 的做法——不做特殊处理，已知局限留待深色
   // 底块统一处理轮（研究笔记 §3/§5）。海珀/国家公务员局不在本批，
   // 未动；极客公园由 B 批合批新入 map（见下方 geekpark.net）。
-  'capcut.cn': '/brand-icons/capcut.png',
-  'jimeng.jianying.com': '/brand-icons/jimeng.png',
-  'tianyin.163.com': '/brand-icons/tianyin.png',
-  'icourse163.org': '/brand-icons/icourse163.png',
-  'time.geekbang.org': '/brand-icons/geekbang.jpg',
-  'zhaopin.com': '/brand-icons/zhaopin.png',
-  'fanqienovel.com': '/brand-icons/fanqie.png',
-  'tantanapp.com': '/brand-icons/tantan.png',
-  'reelshort.com': '/brand-icons/reelshort.png',
-  'nmc.cn': '/brand-icons/nmc.png',
-  'ncpssd.org': '/brand-icons/ncpssd.png',
-  'youxi.fullpeace.net': '/brand-icons/youxi.png',
-  'mtime.com': '/brand-icons/mtime.jpg',
-  'wondercv.com': '/brand-icons/wondercv.jpg',
-  'nhsa.gov.cn': '/brand-icons/nhsa.jpg',
-  '12333.gov.cn': '/brand-icons/12333.jpg',
-  'xiaoyunque.com': '/brand-icons/xiaoyunque.jpg',
+  ['capcut.cn', 'capcut.png'],
+  ['jimeng.jianying.com', 'jimeng.png'],
+  ['tianyin.163.com', 'tianyin.png'],
+  ['icourse163.org', 'icourse163.png'],
+  ['time.geekbang.org', 'geekbang.jpg'],
+  ['zhaopin.com', 'zhaopin.png'],
+  ['fanqienovel.com', 'fanqie.png'],
+  ['tantanapp.com', 'tantan.png'],
+  ['reelshort.com', 'reelshort.png'],
+  ['nmc.cn', 'nmc.png'],
+  ['ncpssd.org', 'ncpssd.png'],
+  ['youxi.fullpeace.net', 'youxi.png'],
+  ['mtime.com', 'mtime.jpg'],
+  ['wondercv.com', 'wondercv.jpg'],
+  ['nhsa.gov.cn', 'nhsa.jpg'],
+  ['12333.gov.cn', '12333.jpg'],
+  ['xiaoyunque.com', 'xiaoyunque.jpg'],
   // 2026-11-17（深色底块统一处理轮）：Haiper。站方首页只有内联 SVG
   // wordmark（无可热链 URL、176x72、7 条 path 全跟随文字颜色），本轮
   // 重取首页（200）提取后本地落盘为 haiper.svg：fill 钉死 #ffffff，
   // 配下方 LOGO_TILE_MAP 的 dark 底块。
-  'haiper.ai': '/brand-icons/haiper.svg',
+  ['haiper.ai', 'haiper.svg'],
   // 2026-11-17（同轮追加）：极客公园。1361x261 白字宽版 wordmark 仍不
   // 可用（24px 卡片内只剩 3.8px 高，比渐变字母更差，不进 map）；但并行
   // 研究线找到站方 /about 页 head 三重官方指定的方形标
@@ -193,83 +200,83 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 实测 100×100（文件名按实测尺寸，不沿用虚标 196）：黑底白 G、全
   // 10000 像素不透明，24/36/64 三档 G 高 9.8/15.7/29.4px 均可读。
   // 黑底方块配下方 LOGO_TILE_MAP 的 light 底块（与 Ollama 黑标同款处理）。
-  'geekpark.net': '/brand-icons/geekpark.png',
-  'vuejs.org': '/brand-icons/vue.svg',
-  'npmjs.com': '/brand-icons/npm.svg',
-  'vite.dev': '/brand-icons/vite.svg',
-  'pnpm.io': '/brand-icons/pnpm.svg',
-  'video.hunyuan.tencent.com': 'https://hunyuan.tencent.com/favicon.ico',
-  'hunyuan.tencent.com': 'https://hunyuan.tencent.com/favicon.ico',
-  'tongyi.aliyun.com': 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png',
-  'wan2.aliyun.com': 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png',
+  ['geekpark.net', 'geekpark.png'],
+  ['vuejs.org', 'vue.svg'],
+  ['npmjs.com', 'npm.svg'],
+  ['vite.dev', 'vite.svg'],
+  ['pnpm.io', 'pnpm.svg'],
+  ['video.hunyuan.tencent.com', 'https://hunyuan.tencent.com/favicon.ico'],
+  ['hunyuan.tencent.com', 'https://hunyuan.tencent.com/favicon.ico'],
+  ['tongyi.aliyun.com', 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'],
+  ['wan2.aliyun.com', 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'],
   // 2026-11-16：旧值 https://zhiwen.xfyun.cn/favicon.ico 经 curl 验证 404，
   // 改用同站验证过的 favicon.png（200 image/png 14725B）。
-  'zhiwen.xfyun.cn': 'https://zhiwen.xfyun.cn/favicon.png',
-  'cursor.com': '/brand-icons/cursor.png',
-  'bolt.new': 'https://bolt.new/favicon.ico',
-  'v0.dev': '/assets/images/logos/vercel.webp',
-  'kimi.moonshot.cn': '/brand-icons/kimi-search.png',
-  'doubao.com': '/brand-icons/doubao.png',
-  'www.doubao.com': '/brand-icons/doubao.png',
-  'yiyan.baidu.com': 'https://www.baidu.com/favicon.ico',
-  'lingma.aliyun.com': '/brand-icons/lingma.png',
-  'runwayml.com': 'https://runwayml.com/icon.png',
-  'deepseek.com': '/brand-icons/deepseek.png',
-  'chat.deepseek.com': '/brand-icons/deepseek.png',
-  'klingai.com': '/brand-icons/klingai.png',
-  'klingai.kuaishou.com': 'https://klingai.com/favicon.ico',
+  ['zhiwen.xfyun.cn', 'https://zhiwen.xfyun.cn/favicon.png'],
+  ['cursor.com', 'cursor.png'],
+  ['bolt.new', 'https://bolt.new/favicon.ico'],
+  ['v0.dev', '/assets/images/logos/vercel.webp'],
+  ['kimi.moonshot.cn', 'kimi-search.png'],
+  ['doubao.com', 'doubao.png'],
+  ['www.doubao.com', 'doubao.png'],
+  ['yiyan.baidu.com', 'https://www.baidu.com/favicon.ico'],
+  ['lingma.aliyun.com', 'lingma.png'],
+  ['runwayml.com', 'https://runwayml.com/icon.png'],
+  ['deepseek.com', 'deepseek.png'],
+  ['chat.deepseek.com', 'deepseek.png'],
+  ['klingai.com', 'klingai.png'],
+  ['klingai.kuaishou.com', 'https://klingai.com/favicon.ico'],
   // 2026-11-16：旧值 https://lumalabs.ai/favicon.ico 经 curl 验证 404，
   // 改用 Luma 官方备用域名 luma.ai 的同名 favicon（200 image/x-icon 15086B，
   // 内容为 Luma 四角星品牌标）。
-  'lumalabs.ai': '/brand-icons/luma.png',
-  'vidu.studio': 'https://www.vidu.studio/favicon.ico',
-  'hailuoai.com': '/brand-icons/hailuoai.png',
-  'chatgpt.com': '/brand-icons/chatgpt.svg',
-  'chat.openai.com': '/brand-icons/chatgpt.svg',
-  'openai.com': '/brand-icons/openai.png',
-  'claude.ai': '/brand-icons/claude.svg',
-  'anthropic.com': '/assets/images/logos/claude.webp',
-  'cloudflare.com': '/brand-icons/cloudflare.png',
-  'figma.com': '/brand-icons/figma.svg',
-  'tinypng.com': '/brand-icons/tinypng.png',
-  'unsplash.com': '/brand-icons/unsplash.png',
-  'vercel.com': '/brand-icons/vercel.png',
-  'fonts.google.com': '/brand-icons/google-fonts.svg',
-  'material.io': '/assets/images/logos/Materialicons.webp',
-  'colorhunt.co': '/assets/images/logos/colorhunt.webp',
-  'flinto.com': '/assets/images/logos/flinto.webp',
-  'flaticon.com': '/brand-icons/flaticon.png',
-  'fontawesome.com': '/brand-icons/font-awesome.svg',
-  'framer.com': '/assets/images/logos/framer.webp',
-  'freepik.com': '/assets/images/logos/freepik.webp',
-  'gemini.google.com': '/brand-icons/gemini.svg',
-  'iconarchive.com': '/assets/images/logos/iconarchive.webp',
-  'iconfinder.com': '/assets/images/logos/Iconfinder.webp',
-  'iconfont.cn': '/assets/images/logos/iconfont.webp',
-  'iconmonstr.com': '/assets/images/logos/iconmonstr.webp',
-  'ionicons.com': '/assets/images/logos/ionicons.webp',
-  'leonardo.ai': '/brand-icons/leonardo.png',
-  'poe.com': '/assets/images/logos/poe.svg',
-  'producthunt.com': '/assets/images/logos/producthunt.webp',
-  'tensor.art': '/assets/images/logos/tensorart.webp',
-  'icomoon.io': '/assets/images/logos/IcoMoonApp.webp',
-  'findicons.com': '/assets/images/logos/FindIcons.webp',
-  'principleformac.com': '/assets/images/logos/principle.webp',
-  'worldvectorlogo.com': '/assets/images/logos/worldvectorlogo.webp',
-  'shots.so': '/assets/images/logos/shots.webp',
-  'simplelineicons.com': '/assets/images/logos/simplelineicons.webp',
-  'sqlformat.org': '/assets/images/logos/sqlformat.webp',
-  'tableconvert.com': '/assets/images/logos/tableconvert.webp',
-  'json.cn': '/assets/images/logos/json.webp',
-  'beautifier.io': '/assets/images/logos/beautifier.webp',
-  'ui-cloud.com': '/assets/images/logos/UICloud.webp',
-  'ads.google.com': '/assets/images/logos/gads.webp',
-  'analytics.google.com': '/assets/images/logos/analytics.webp',
-  'photoshop.com': '/assets/images/logos/photoshop.webp',
-  'affinity.serif.com': '/assets/images/logos/AffinityDesigner.webp',
-  'instantlogosearch.com': '/assets/images/logos/InstantLogoSearch.webp',
-  'iconsfeed.com': '/assets/images/logos/iconsfeed.webp',
-  'iosicongallery.com': '/assets/images/logos/iosicongallery.webp',
+  ['lumalabs.ai', 'luma.png'],
+  ['vidu.studio', 'https://www.vidu.studio/favicon.ico'],
+  ['hailuoai.com', 'hailuoai.png'],
+  ['chatgpt.com', 'chatgpt.svg'],
+  ['chat.openai.com', 'chatgpt.svg'],
+  ['openai.com', 'openai.png'],
+  ['claude.ai', 'claude.svg'],
+  ['anthropic.com', '/assets/images/logos/claude.webp'],
+  ['cloudflare.com', 'cloudflare.png'],
+  ['figma.com', 'figma.svg'],
+  ['tinypng.com', 'tinypng.png'],
+  ['unsplash.com', 'unsplash.png'],
+  ['vercel.com', 'vercel.png'],
+  ['fonts.google.com', 'google-fonts.svg'],
+  ['material.io', '/assets/images/logos/Materialicons.webp'],
+  ['colorhunt.co', '/assets/images/logos/colorhunt.webp'],
+  ['flinto.com', '/assets/images/logos/flinto.webp'],
+  ['flaticon.com', 'flaticon.png'],
+  ['fontawesome.com', 'font-awesome.svg'],
+  ['framer.com', '/assets/images/logos/framer.webp'],
+  ['freepik.com', '/assets/images/logos/freepik.webp'],
+  ['gemini.google.com', 'gemini.svg'],
+  ['iconarchive.com', '/assets/images/logos/iconarchive.webp'],
+  ['iconfinder.com', '/assets/images/logos/Iconfinder.webp'],
+  ['iconfont.cn', '/assets/images/logos/iconfont.webp'],
+  ['iconmonstr.com', '/assets/images/logos/iconmonstr.webp'],
+  ['ionicons.com', '/assets/images/logos/ionicons.webp'],
+  ['leonardo.ai', 'leonardo.png'],
+  ['poe.com', '/assets/images/logos/poe.svg'],
+  ['producthunt.com', '/assets/images/logos/producthunt.webp'],
+  ['tensor.art', '/assets/images/logos/tensorart.webp'],
+  ['icomoon.io', '/assets/images/logos/IcoMoonApp.webp'],
+  ['findicons.com', '/assets/images/logos/FindIcons.webp'],
+  ['principleformac.com', '/assets/images/logos/principle.webp'],
+  ['worldvectorlogo.com', '/assets/images/logos/worldvectorlogo.webp'],
+  ['shots.so', '/assets/images/logos/shots.webp'],
+  ['simplelineicons.com', '/assets/images/logos/simplelineicons.webp'],
+  ['sqlformat.org', '/assets/images/logos/sqlformat.webp'],
+  ['tableconvert.com', '/assets/images/logos/tableconvert.webp'],
+  ['json.cn', '/assets/images/logos/json.webp'],
+  ['beautifier.io', '/assets/images/logos/beautifier.webp'],
+  ['ui-cloud.com', '/assets/images/logos/UICloud.webp'],
+  ['ads.google.com', '/assets/images/logos/gads.webp'],
+  ['analytics.google.com', '/assets/images/logos/analytics.webp'],
+  ['photoshop.com', '/assets/images/logos/photoshop.webp'],
+  ['affinity.serif.com', '/assets/images/logos/AffinityDesigner.webp'],
+  ['instantlogosearch.com', '/assets/images/logos/InstantLogoSearch.webp'],
+  ['iconsfeed.com', '/assets/images/logos/iconsfeed.webp'],
+  ['iosicongallery.com', '/assets/images/logos/iosicongallery.webp'],
   // 2026-11-17（图标 A 类第 1 批 a1a + a1b，独立复审 R1–R6 后合批）：
   // 本批 8 个键均为原地替换旧值（旧值指向不存在的 /assets/images/logos/*，
   // 不另起重复块）：chatgpt.com → chatgpt.svg；chat.openai.com → chatgpt.svg
@@ -290,15 +297,15 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   //（精确键优先于 adobe.com 后缀匹配）。Illustrator 无 hostname 键，改走
   // map 查找前的标题规则（复审裁决 (a)）。Adobe Color 阻塞未落盘：资产、
   // map 值、测试用例均未合入，待 429 冷却后重取验过再补（复审裁决 (c)）。
-  'fonts.adobe.com': '/brand-icons/adobe-fonts.png',
-  'helpx.adobe.com': '/brand-icons/adobe-xd.svg',
+  ['fonts.adobe.com', 'adobe-fonts.png'],
+  ['helpx.adobe.com', 'adobe-xd.svg'],
   // 2026-11-17（图标 B 类第 1 批 b1a）：DeepSeek / Kimi / 文心一言 / Kimi 搜索。
   // 旧键替换（勿重复落键）：'deepseek.com' / 'chat.deepseek.com' /
   // 'kimi.moonshot.cn' 原为热链值，本批改为本地路径；'kimi.com' /
   // 'wenxin.baidu.com' 为新键。来源均经 curl 重新验证（见 map-block-b1a.txt）。
   // chat.deepseek.com/favicon.ico 回的是 SPA HTML 壳页，旧热链值已失效。
-  'kimi.com': '/brand-icons/kimi.png',
-  'wenxin.baidu.com': '/brand-icons/wenxin.png',
+  ['kimi.com', 'kimi.png'],
+  ['wenxin.baidu.com', 'wenxin.png'],
   // 2026-11-17（图标 B 类第 1 批 b1b）：Cline / GitHub Copilot 走 map 前
   // 标题规则（见上方 cline / copilot 规则），此处不建 github.com 键；
   // Cursor 与 Tongyi Lingma 为旧键原地替换值（热链 → 本地路径）。
@@ -307,13 +314,13 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 2026-11-17（图标 B 类 B2a）：Beatoven.ai / Sudowrite 新建键。
   // R1 裁决：这两站 navigation.json 的 icon 为远程热链且不触发拦截，
   // customIcon 优先于 map，单加 map 键不可达——已同步清空两站 icon 字段。
-  'beatoven.ai': '/brand-icons/beatoven.png',
-  'sudowrite.com': '/brand-icons/sudowrite.png',
+  ['beatoven.ai', 'beatoven.png'],
+  ['sudowrite.com', 'sudowrite.png'],
   // 2026-11-17（图标 B 类第 4 批 B2b）
   // klingai.com / hailuoai.com 为替换旧键（旧值热链 ICO）；runway.com 为
   // 新建键（旧键 runwayml.com 为死键，全库无站命中，不动；兄弟键
   // klingai.kuaishou.com 全库无站命中，不动）。
-  'runway.com': '/brand-icons/runway.png',
+  ['runway.com', 'runway.png'],
   // 2026-11-17（B 类第 5 批之 B3a：Luma AI / Radix UI / Notion / freeCodeCamp）：
   // 4 站热链本地化。lumalabs.ai / radix-ui.com / notion.com 为原地替换旧值
   //（旧值均为远程热链，勿重复建键）；freecodecamp.org 为新键（须与
@@ -321,48 +328,48 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // Radix 为近黑标（fill #1C2024，透明底），与 Ollama / SourceHut 同款处理：
   // 只加普通 map 条目，不做白底色块；深色模式黑标对比度弱是已知局限，
   // 留待深色底块统一处理轮。
-  'freecodecamp.org': '/brand-icons/freecodecamp.png',
+  ['freecodecamp.org', 'freecodecamp.png'],
   // 2026-11-17（图标 B 类第 3 批 b3b）：少数派 / 拼多多 / 微信，本地化。
   // sspai.com、pinduoduo.com 为旧键原地替换值（上方已改，勿重复建键）；
   // weixin.qq.com 为新键（微信 icon 已同步清空，见 navigation-icon-clear-b3b.patch，
   // 仅改这一行）。少数派/拼多多的 customIcon 均为 …/favicon.ico，会被
   // isRemoteRawFavicon 拦截后回落 map，无需清空。
-  'weixin.qq.com': '/brand-icons/weixin.png',
+  ['weixin.qq.com', 'weixin.png'],
   // 2026-11-18（C 类第 1 批 c1g1）：Perplexity / Hugging Face / Suno / ElevenLabs。
   // 4 站 icon 均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
   // navigation.json 不动。Midjourney 阻塞未落盘（见批次笔记），无条目。
-  'perplexity.ai': '/brand-icons/perplexity.svg',
-  'huggingface.co': '/brand-icons/huggingface.png',
-  'suno.com': '/brand-icons/suno.png',
-  'elevenlabs.io': '/brand-icons/elevenlabs.svg',
+  ['perplexity.ai', 'perplexity.svg'],
+  ['huggingface.co', 'huggingface.png'],
+  ['suno.com', 'suno.png'],
+  ['elevenlabs.io', 'elevenlabs.svg'],
   // 2026-11-18（C 类第 1 批 c1g2）：智谱清言 / 讯飞星火 / n8n。
   // 3 站 icon 均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
   // navigation.json 不动。GitHub 走下方标题规则，不建 'github.com' 键。
-  'chatglm.cn': '/brand-icons/zhipu.png',
-  'xinghuo.xfyun.cn': '/brand-icons/xinghuo.png',
-  'n8n.io': '/brand-icons/n8n.png',
+  ['chatglm.cn', 'zhipu.png'],
+  ['xinghuo.xfyun.cn', 'xinghuo.png'],
+  ['n8n.io', 'n8n.png'],
   // 2026-11-18（C 类第 1 批 c1g3）：淘宝 / 京东 / 抖音 / 快手 / 哔哩哔哩。
   // 5 站 icon 均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
   // navigation.json 不动。京东取帧提醒：ICO 最大帧为第 7 帧 48×48 32bpp，
   // PIL 默认帧是 4bpp 抖动帧，复核不要用 PIL 默认帧。
-  'taobao.com': '/brand-icons/taobao.png',
-  'jd.com': '/brand-icons/jd.png',
-  'douyin.com': '/brand-icons/douyin.png',
-  'kuaishou.com': '/brand-icons/kuaishou.png',
-  'bilibili.com': '/brand-icons/bilibili.png',
+  ['taobao.com', 'taobao.png'],
+  ['jd.com', 'jd.png'],
+  ['douyin.com', 'douyin.png'],
+  ['kuaishou.com', 'kuaishou.png'],
+  ['bilibili.com', 'bilibili.png'],
   // 2026-11-18（C 类第 1 批 c1g4：办公 + 内容社区）：飞书 / Stack Overflow / 知乎 / 豆瓣 / 小红书。
   // 5 站 icon 均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
   // navigation.json 不动。
-  'feishu.cn': '/brand-icons/feishu.png',
-  'stackoverflow.com': '/brand-icons/stackoverflow.png',
-  'zhihu.com': '/brand-icons/zhihu.png',
-  'douban.com': '/brand-icons/douban.png',
-  'xiaohongshu.com': '/brand-icons/xiaohongshu.png',
+  ['feishu.cn', 'feishu.png'],
+  ['stackoverflow.com', 'stackoverflow.png'],
+  ['zhihu.com', 'zhihu.png'],
+  ['douban.com', 'douban.png'],
+  ['xiaohongshu.com', 'xiaohongshu.png'],
   // 2026-11-18（C 类第 1 批 Trae 补救）：Trae。
   // icon 为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
   // navigation.json 不动。源为 docs.trae.ai 首页声明的 shortcut icon
   //（trae.cn 地域墙 403，见批次笔记）；trae.ai 不在站内，不加键。
-  'trae.cn': '/brand-icons/trae.png',
+  ['trae.cn', 'trae.png'],
   // 2026-11-18（C 类第 2 批 c2g1–c2g7）：元宝搜索 / 秘塔搜索 / 天工AI搜索 /
   // Pika / Viggle AI / Genmo / Vidu / Krea / Deep Dream Generator /
   // Remove.bg / 魔搭 ModelScope / 百度飞桨 / Stability AI / Mistral AI /
@@ -373,26 +380,26 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 绝不建 windsurf 键。Meta AI 只建完整子域 'dev.meta.ai'，禁写 'meta.ai'。
   // vidu.studio 旧键（指远程 favicon，不在 navigation.json 中）不动，与
   // 'vidu.cn' 互不干扰。Meta AI 源为 Wayback 存档（官网直连 403，见 C2 测试注释）。
-  'so.qq.com': '/brand-icons/yuanbao.png',
-  'metaso.cn': '/brand-icons/metaso.png',
-  'tiangong.cn': '/brand-icons/tiangong.png',
-  'pika.art': '/brand-icons/pika.svg',
-  'viggle.ai': '/brand-icons/viggle.svg',
-  'genmo.ai': '/brand-icons/genmo.png',
-  'vidu.cn': '/brand-icons/vidu.svg',
-  'krea.ai': '/brand-icons/krea.png',
-  'deepdreamgenerator.com': '/brand-icons/deepdreamgenerator.png',
-  'remove.bg': '/brand-icons/removebg.png',
-  'modelscope.cn': '/brand-icons/modelscope.png',
-  'paddlepaddle.org.cn': '/brand-icons/paddlepaddle.png',
-  'stability.ai': '/brand-icons/stability.png',
-  'mistral.ai': '/brand-icons/mistral.svg',
-  'dev.meta.ai': '/brand-icons/meta-ai.png',
-  'moark.com': '/brand-icons/moark.png',
-  'flowiseai.com': '/brand-icons/flowise.png',
-  'apify.com': '/brand-icons/apify.svg',
-  'devin.ai': '/brand-icons/devin.svg',
-  'topview.ai': '/brand-icons/topview.png',
+  ['so.qq.com', 'yuanbao.png'],
+  ['metaso.cn', 'metaso.png'],
+  ['tiangong.cn', 'tiangong.png'],
+  ['pika.art', 'pika.svg'],
+  ['viggle.ai', 'viggle.svg'],
+  ['genmo.ai', 'genmo.png'],
+  ['vidu.cn', 'vidu.svg'],
+  ['krea.ai', 'krea.png'],
+  ['deepdreamgenerator.com', 'deepdreamgenerator.png'],
+  ['remove.bg', 'removebg.png'],
+  ['modelscope.cn', 'modelscope.png'],
+  ['paddlepaddle.org.cn', 'paddlepaddle.png'],
+  ['stability.ai', 'stability.png'],
+  ['mistral.ai', 'mistral.svg'],
+  ['dev.meta.ai', 'meta-ai.png'],
+  ['moark.com', 'moark.png'],
+  ['flowiseai.com', 'flowise.png'],
+  ['apify.com', 'apify.svg'],
+  ['devin.ai', 'devin.svg'],
+  ['topview.ai', 'topview.png'],
   // 2026-11-19（C 类第 3 批 C3）：Jasper / Copy.ai / Writesonic / Grammarly /
   // 秘塔写作猫 / Wordtune / Baidu Comate / Continue.dev / 讯飞开放平台 /
   // Udio / Soundraw / AIVA / Boomy / Mubert / Loudly / Murf AI /
@@ -402,26 +409,26 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // map 生效，navigation.json 不动。'xfyun.cn'（讯飞开放平台）与已有
   // 'xinghuo.xfyun.cn'（讯飞星火）互不干扰：精确查找先命中各自键。
   // 'comate.baidu.com' 用完整子域建键，不建 'baidu.com' 键。
-  'jasper.ai': '/brand-icons/jasper.png',
-  'copy.ai': '/brand-icons/copy-ai.png',
-  'writesonic.com': '/brand-icons/writesonic.svg',
-  'grammarly.com': '/brand-icons/grammarly.png',
-  'xiezuocat.com': '/brand-icons/xiezuocat.png',
-  'wordtune.com': '/brand-icons/wordtune.png',
-  'comate.baidu.com': '/brand-icons/comate.png',
-  'continue.dev': '/brand-icons/continue.png',
-  'xfyun.cn': '/brand-icons/xfyun.png',
-  'udio.com': '/brand-icons/udio.png',
-  'soundraw.io': '/brand-icons/soundraw.png',
-  'aiva.ai': '/brand-icons/aiva.png',
-  'boomy.com': '/brand-icons/boomy.png',
-  'mubert.com': '/brand-icons/mubert.png',
-  'loudly.com': '/brand-icons/loudly.png',
-  'murf.ai': '/brand-icons/murf.png',
-  'speechify.com': '/brand-icons/speechify.png',
-  'wellsaid.io': '/brand-icons/wellsaid.png',
-  'naturalreaders.com': '/brand-icons/naturalreader.png',
-  'moyin.com': '/brand-icons/moyin.png',
+  ['jasper.ai', 'jasper.png'],
+  ['copy.ai', 'copy-ai.png'],
+  ['writesonic.com', 'writesonic.svg'],
+  ['grammarly.com', 'grammarly.png'],
+  ['xiezuocat.com', 'xiezuocat.png'],
+  ['wordtune.com', 'wordtune.png'],
+  ['comate.baidu.com', 'comate.png'],
+  ['continue.dev', 'continue.png'],
+  ['xfyun.cn', 'xfyun.png'],
+  ['udio.com', 'udio.png'],
+  ['soundraw.io', 'soundraw.png'],
+  ['aiva.ai', 'aiva.png'],
+  ['boomy.com', 'boomy.png'],
+  ['mubert.com', 'mubert.png'],
+  ['loudly.com', 'loudly.png'],
+  ['murf.ai', 'murf.png'],
+  ['speechify.com', 'speechify.png'],
+  ['wellsaid.io', 'wellsaid.png'],
+  ['naturalreaders.com', 'naturalreader.png'],
+  ['moyin.com', 'moyin.png'],
   // 2026-11-19（C 类第 4 批 C4）：Gitee 码云 / GitHub Trending / GitLab /
   // GitCode / Codeup / Bitbucket / 掘金 / CSDN / 力扣 LeetCode / 牛客网 /
   // 洛谷 / Codeforces / AtCoder / LeetCode 国际版 / MDN Web Docs /
@@ -441,25 +448,25 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 未能核实具体色值（www.iso.org curl 空回复、官方品牌页无 hex、
   // 候选 #D22630 经查是 Saudi Aramco 的 SA Red、与 ISO 无关），
   // 故本次不加底块分支、不猜 hex，记为未决点，见 C4 测试事实钉死。
-  'gitee.com': '/brand-icons/gitee.png',
-  'gitlab.com': '/brand-icons/gitlab.png',
-  'gitcode.com': '/brand-icons/gitcode.png',
-  'codeup.aliyun.com': '/brand-icons/codeup.png',
-  'bitbucket.org': '/brand-icons/bitbucket.png',
-  'juejin.cn': '/brand-icons/juejin.png',
-  'csdn.net': '/brand-icons/csdn.png',
-  'leetcode.cn': '/brand-icons/leetcode-cn.png',
-  'nowcoder.com': '/brand-icons/nowcoder.png',
-  'luogu.com.cn': '/brand-icons/luogu.png',
-  'codeforces.com': '/brand-icons/codeforces.png',
-  'atcoder.jp': '/brand-icons/atcoder.png',
-  'leetcode.com': '/brand-icons/leetcode.png',
-  'developer.mozilla.org': '/brand-icons/mdn.svg',
-  'docs.oracle.com': '/brand-icons/java-docs.png',
-  'w3.org': '/brand-icons/w3c.svg',
-  'iso.org': '/brand-icons/iso.svg',
-  'roadmap.sh': '/brand-icons/roadmap.png',
-  'ui.shadcn.com': '/brand-icons/shadcn.png',
+  ['gitee.com', 'gitee.png'],
+  ['gitlab.com', 'gitlab.png'],
+  ['gitcode.com', 'gitcode.png'],
+  ['codeup.aliyun.com', 'codeup.png'],
+  ['bitbucket.org', 'bitbucket.png'],
+  ['juejin.cn', 'juejin.png'],
+  ['csdn.net', 'csdn.png'],
+  ['leetcode.cn', 'leetcode-cn.png'],
+  ['nowcoder.com', 'nowcoder.png'],
+  ['luogu.com.cn', 'luogu.png'],
+  ['codeforces.com', 'codeforces.png'],
+  ['atcoder.jp', 'atcoder.png'],
+  ['leetcode.com', 'leetcode.png'],
+  ['developer.mozilla.org', 'mdn.svg'],
+  ['docs.oracle.com', 'java-docs.png'],
+  ['w3.org', 'w3c.svg'],
+  ['iso.org', 'iso.svg'],
+  ['roadmap.sh', 'roadmap.png'],
+  ['ui.shadcn.com', 'shadcn.png'],
   // 2026-11-19（C 类第 5 批 C5）：Bun / Node.js / Python / Rust / Go /
   // Java / Drizzle ORM / MySQL / PostgreSQL / Redis / MongoDB / Fastify /
   // Express / NestJS / Laravel / Django / Docker Hub / Podman / Compose /
@@ -485,26 +492,26 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 解码落盘 .png，无 .ico 残留。
   // 非方标等比缩略（不拉伸不裁切）：nodejs.png 112×128、
   // postgresql.png 124×128、compose.png 117×128。
-  'bun.sh': '/brand-icons/bun.svg',
-  'nodejs.org': '/brand-icons/nodejs.png',
-  'python.org': '/brand-icons/python.png',
-  'rust-lang.org': '/brand-icons/rust.svg',
-  'go.dev': '/brand-icons/go.svg',
-  'java.com': '/brand-icons/java.png',
-  'orm.drizzle.team': '/brand-icons/drizzle.png',
-  'mysql.com': '/brand-icons/mysql.png',
-  'postgresql.org': '/brand-icons/postgresql.png',
-  'redis.io': '/brand-icons/redis.png',
-  'mongodb.com': '/brand-icons/mongodb.png',
-  'fastify.dev': '/brand-icons/fastify.svg',
-  'expressjs.com': '/brand-icons/express.svg',
-  'nestjs.com': '/brand-icons/nestjs.svg',
-  'laravel.com': '/brand-icons/laravel.png',
-  'djangoproject.com': '/brand-icons/django.png',
-  'hub.docker.com': '/brand-icons/docker-hub.png',
-  'podman.io': '/brand-icons/podman.png',
-  'docs.docker.com': '/brand-icons/compose.png',
-  'developer.hashicorp.com': '/brand-icons/terraform.svg',
+  ['bun.sh', 'bun.svg'],
+  ['nodejs.org', 'nodejs.png'],
+  ['python.org', 'python.png'],
+  ['rust-lang.org', 'rust.svg'],
+  ['go.dev', 'go.svg'],
+  ['java.com', 'java.png'],
+  ['orm.drizzle.team', 'drizzle.png'],
+  ['mysql.com', 'mysql.png'],
+  ['postgresql.org', 'postgresql.png'],
+  ['redis.io', 'redis.png'],
+  ['mongodb.com', 'mongodb.png'],
+  ['fastify.dev', 'fastify.svg'],
+  ['expressjs.com', 'express.svg'],
+  ['nestjs.com', 'nestjs.svg'],
+  ['laravel.com', 'laravel.png'],
+  ['djangoproject.com', 'django.png'],
+  ['hub.docker.com', 'docker-hub.png'],
+  ['podman.io', 'podman.png'],
+  ['docs.docker.com', 'compose.png'],
+  ['developer.hashicorp.com', 'terraform.svg'],
   // 2026-11-19（C 类第 6 批 C6）：天猫 / 唯品会 / 苏宁易购 / 1688 /
   // 支付宝 / 全球速卖通 / Temu / SHEIN / eBay / Shopify / 百度地图 /
   // 铁路 12306 / 高德地图 / 携程旅行 / 滴滴出行 / 大众点评 / 顺丰速运 /
@@ -518,25 +525,25 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // ICO 方标（备选）未采用，待复审裁决，见 C6 测试事实钉死。
   // 唯品会 / 全球速卖通 / 携程旅行：官网只有 16px 单帧 favicon，按规范
   // §1.1 原样落盘 16×16、绝不放大；是否接受待裁决，见 C6 测试事实钉死。
-  'tmall.com': '/brand-icons/tmall.png',
-  'vip.com': '/brand-icons/vip.png',
-  'suning.com': '/brand-icons/suning.png',
-  '1688.com': '/brand-icons/1688.png',
-  'alipay.com': '/brand-icons/alipay.png',
-  'aliexpress.com': '/brand-icons/aliexpress.png',
-  'temu.com': '/brand-icons/temu.png',
-  'shein.com': '/brand-icons/shein.png',
-  'ebay.com': '/brand-icons/ebay.png',
-  'shopify.com': '/brand-icons/shopify.png',
-  'map.baidu.com': '/brand-icons/baidumap.png',
-  '12306.cn': '/brand-icons/12306.png',
-  'amap.com': '/brand-icons/amap.png',
-  'ctrip.com': '/brand-icons/ctrip.png',
-  'didiglobal.com': '/brand-icons/didi.png',
-  'dianping.com': '/brand-icons/dianping.png',
-  'sf-express.com': '/brand-icons/sf-express.png',
-  'yto.net.cn': '/brand-icons/yto.png',
-  'weibo.com': '/brand-icons/weibo.png',
+  ['tmall.com', 'tmall.png'],
+  ['vip.com', 'vip.png'],
+  ['suning.com', 'suning.png'],
+  ['1688.com', '1688.png'],
+  ['alipay.com', 'alipay.png'],
+  ['aliexpress.com', 'aliexpress.png'],
+  ['temu.com', 'temu.png'],
+  ['shein.com', 'shein.png'],
+  ['ebay.com', 'ebay.png'],
+  ['shopify.com', 'shopify.png'],
+  ['map.baidu.com', 'baidumap.png'],
+  ['12306.cn', '12306.png'],
+  ['amap.com', 'amap.png'],
+  ['ctrip.com', 'ctrip.png'],
+  ['didiglobal.com', 'didi.png'],
+  ['dianping.com', 'dianping.png'],
+  ['sf-express.com', 'sf-express.png'],
+  ['yto.net.cn', 'yto.png'],
+  ['weibo.com', 'weibo.png'],
   // 2026-11-19（C 类第 8 批 C8）：石墨文档 / 语雀 / Obsidian / AppFlowy /
   // AFFiNE / 思源笔记 / Excalidraw / XMind / MindManager / ProcessOn /
   // GitMind / tldraw / Draw.io / Miro / Khan Academy / Skillshare /
@@ -568,25 +575,25 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 96×96（AFFiNE）、50×45（MindManager）、64×64（ProcessOn）、
   // 72×72（GitMind）、120×120（Skillshare）、48×48（慕课网）、
   // 30×30（学习强国）。
-  'shimo.im': '/brand-icons/shimo.png',
-  'yuque.com': '/brand-icons/yuque.png',
-  'obsidian.md': '/brand-icons/obsidian.svg',
-  'appflowy.com': '/brand-icons/appflowy.png',
-  'affine.pro': '/brand-icons/affine.png',
-  'b3log.org': '/brand-icons/siyuan.png',
-  'excalidraw.com': '/brand-icons/excalidraw.png',
-  'xmind.cn': '/brand-icons/xmind.svg',
-  'mindmanager.com': '/brand-icons/mindmanager.png',
-  'processon.com': '/brand-icons/processon.png',
-  'gitmind.com': '/brand-icons/gitmind.png',
-  'tldraw.com': '/brand-icons/tldraw.svg',
-  'app.diagrams.net': '/brand-icons/diagrams.png',
-  'miro.com': '/brand-icons/miro.png',
-  'khanacademy.org': '/brand-icons/khanacademy.png',
-  'skillshare.com': '/brand-icons/skillshare.png',
-  'imooc.com': '/brand-icons/imooc.png',
-  'xuexi.cn': '/brand-icons/xuexi.png',
-  'runoob.com': '/brand-icons/runoob.png',
+  ['shimo.im', 'shimo.png'],
+  ['yuque.com', 'yuque.png'],
+  ['obsidian.md', 'obsidian.svg'],
+  ['appflowy.com', 'appflowy.png'],
+  ['affine.pro', 'affine.png'],
+  ['b3log.org', 'siyuan.png'],
+  ['excalidraw.com', 'excalidraw.png'],
+  ['xmind.cn', 'xmind.svg'],
+  ['mindmanager.com', 'mindmanager.png'],
+  ['processon.com', 'processon.png'],
+  ['gitmind.com', 'gitmind.png'],
+  ['tldraw.com', 'tldraw.svg'],
+  ['app.diagrams.net', 'diagrams.png'],
+  ['miro.com', 'miro.png'],
+  ['khanacademy.org', 'khanacademy.png'],
+  ['skillshare.com', 'skillshare.png'],
+  ['imooc.com', 'imooc.png'],
+  ['xuexi.cn', 'xuexi.png'],
+  ['runoob.com', 'runoob.png'],
   // 2026-11-19（C 类第 9 批 C9，15/20）：粉笔 / 华图教育 / 新东方在线 /
   // BOSS直聘 / 拉勾网 / 前程无忧 / 猎聘 / 五百丁 / Codecademy / 维基百科
   // （研招网 / 考研网上报名 / 全国大学英语四、六级考试官网 /
@@ -600,16 +607,16 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 全库 369 站核对：本批 10 个 map 键各只命中 1 站，无后缀串站。
   // 6 站为 16×16 原样小图（huatu / zhipin / lagou；另 3 站走标题规则，
   // 见下方），按规范 §1.1 原样落盘、绝不放大，卡片上显小是合规状态。
-  'fenbi.com': '/brand-icons/fenbi.png',
-  'huatu.com': '/brand-icons/huatu.png',
-  'koolearn.com': '/brand-icons/koolearn.png',
-  'zhipin.com': '/brand-icons/zhipin.png',
-  'lagou.com': '/brand-icons/lagou.png',
-  '51job.com': '/brand-icons/51job.png',
-  'liepin.com': '/brand-icons/liepin.png',
-  '500d.me': '/brand-icons/500d.png',
-  'codecademy.com': '/brand-icons/codecademy.png',
-  'zh.wikipedia.org': '/brand-icons/wikipedia.png',
+  ['fenbi.com', 'fenbi.png'],
+  ['huatu.com', 'huatu.png'],
+  ['koolearn.com', 'koolearn.png'],
+  ['zhipin.com', 'zhipin.png'],
+  ['lagou.com', 'lagou.png'],
+  ['51job.com', '51job.png'],
+  ['liepin.com', 'liepin.png'],
+  ['500d.me', '500d.png'],
+  ['codecademy.com', 'codecademy.png'],
+  ['zh.wikipedia.org', 'wikipedia.png'],
   // 2026-11-19（C 类第 10 批 C10）：arXiv / 中国知网 / 万方数据 /
   // Web of Science / Semantic Scholar / IEEE Xplore / JSTOR /
   // 国家数字图书馆 / 36氪 / 虎嗅 / 爱范儿 / Canva / Creative Market /
@@ -632,22 +639,22 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 以 32×32 官方 favicon（蓝 Kr）为准；虎嗅以首页声明的 120×120
   // apple-touch-icon 为准（favicon.ico 100×100 PNG 未用）；Pixso 以
   // 官网首页引用的 512 品牌标缩至 128 为准（favicon.ico 仅 32×32 未用）。
-  'arxiv.org': '/brand-icons/arxiv.png',
-  'cnki.net': '/brand-icons/cnki.svg',
-  'wanfangdata.com.cn': '/brand-icons/wanfang.png',
-  'webofscience.com': '/brand-icons/webofscience.png',
-  'semanticscholar.org': '/brand-icons/semanticscholar.png',
-  'ieeexplore.ieee.org': '/brand-icons/ieee.png',
-  'jstor.org': '/brand-icons/jstor.png',
-  'nlc.cn': '/brand-icons/nlc.png',
-  '36kr.com': '/brand-icons/36kr.png',
-  'huxiu.com': '/brand-icons/huxiu.png',
-  'ifanr.com': '/brand-icons/ifanr.png',
-  'canva.com': '/brand-icons/canva.png',
-  'creativemarket.com': '/brand-icons/creativemarket.png',
-  'sketch.com': '/brand-icons/sketch.png',
-  'penpot.app': '/brand-icons/penpot.png',
-  'pixso.cn': '/brand-icons/pixso.png',
+  ['arxiv.org', 'arxiv.png'],
+  ['cnki.net', 'cnki.svg'],
+  ['wanfangdata.com.cn', 'wanfang.png'],
+  ['webofscience.com', 'webofscience.png'],
+  ['semanticscholar.org', 'semanticscholar.png'],
+  ['ieeexplore.ieee.org', 'ieee.png'],
+  ['jstor.org', 'jstor.png'],
+  ['nlc.cn', 'nlc.png'],
+  ['36kr.com', '36kr.png'],
+  ['huxiu.com', 'huxiu.png'],
+  ['ifanr.com', 'ifanr.png'],
+  ['canva.com', 'canva.png'],
+  ['creativemarket.com', 'creativemarket.png'],
+  ['sketch.com', 'sketch.png'],
+  ['penpot.app', 'penpot.png'],
+  ['pixso.cn', 'pixso.png'],
   // 2026-11-19（C 类第 11 批 C11，17/20）：Mixkit / Storyblocks / iStock /
   // Pinterest / Awwwards / Mobbin / Iconify / Dafont / Lucide / Uiverse /
   // Chakra UI / npmmirror / Turbo / 中国天气网 / 生态环境部 /
@@ -676,24 +683,37 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   // 小尺寸原样站（源 <128 不放大）：16×16（Mixkit / 生态环境部）、
   // 32×32（Storyblocks / npmmirror / 中国天气网）、48×48（Dafont /
   // Lucide / Uiverse / Chakra UI / 排污平台）。
-  'mixkit.co': '/brand-icons/mixkit.png',
-  'storyblocks.com': '/brand-icons/storyblocks.png',
-  'istockphoto.com': '/brand-icons/istockphoto.png',
-  'pinterest.com': '/brand-icons/pinterest.svg',
-  'awwwards.com': '/brand-icons/awwwards.svg',
-  'mobbin.com': '/brand-icons/mobbin.svg',
-  'iconify.design': '/brand-icons/iconify.svg',
-  'dafont.com': '/brand-icons/dafont.png',
-  'lucide.dev': '/brand-icons/lucide.png',
-  'uiverse.io': '/brand-icons/uiverse.png',
-  'chakra-ui.com': '/brand-icons/chakra-ui.png',
-  'registry.npmmirror.com': '/brand-icons/npmmirror.png',
-  'turborepo.dev': '/brand-icons/turborepo.png',
-  'weather.com.cn': '/brand-icons/weather.png',
-  'mee.gov.cn': '/brand-icons/mee.png',
-  'permit.mee.gov.cn': '/brand-icons/permit-mee.png',
-  'aws.amazon.com': '/brand-icons/aws-waf.svg',
-}
+  ['mixkit.co', 'mixkit.png'],
+  ['storyblocks.com', 'storyblocks.png'],
+  ['istockphoto.com', 'istockphoto.png'],
+  ['pinterest.com', 'pinterest.svg'],
+  ['awwwards.com', 'awwwards.svg'],
+  ['mobbin.com', 'mobbin.svg'],
+  ['iconify.design', 'iconify.svg'],
+  ['dafont.com', 'dafont.png'],
+  ['lucide.dev', 'lucide.png'],
+  ['uiverse.io', 'uiverse.png'],
+  ['chakra-ui.com', 'chakra-ui.png'],
+  ['registry.npmmirror.com', 'npmmirror.png'],
+  ['turborepo.dev', 'turborepo.png'],
+  ['weather.com.cn', 'weather.png'],
+  ['mee.gov.cn', 'mee.png'],
+  ['permit.mee.gov.cn', 'permit-mee.png'],
+  ['aws.amazon.com', 'aws-waf.svg'],
+ ];
+
+/**
+ * 由紧凑表展开成原来的 Record<string, string>：精确查找与后缀匹配、
+ * 全部 iconbatch 测试断言的行为都不变（见下方 resolveSiteIcon）。
+ */
+export const LOCAL_LOGO_MAP: Record<string, string> = Object.fromEntries(
+  LOCAL_LOGO_ENTRIES.map(
+    ([host, file]): [string, string] => [
+      host,
+      file.startsWith('/') || file.startsWith('http') ? file : '/brand-icons/' + file,
+    ],
+  ),
+);
 
 /**
  * 品牌图标底块（2026-11-17，深色底块统一处理轮）。

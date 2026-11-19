@@ -41,10 +41,11 @@ const CASES: Case[] = [
   { url: 'https://github.com/QwenLM/Qwen3', title: 'Qwen 3', expected: '/brand-icons/qwen3.png' },
   { url: 'https://github.com/QwenLM/Qwen3', title: 'Qwen 3', customIcon: 'https://github.com/favicon.ico', expected: '/brand-icons/qwen3.png' },
   // R2 不受影响断言：GitHub 主站与 Trending 的标题不含 langgraph / qwen，
-  // 不被本批标题规则截胡；C1 c1g2 新增 'github' 标题规则后，两站解析为本地
-  // github.svg（先前为空串，见 U-149），故期望改为本地路径。
+  // 不被本批标题规则截胡；C1 c1g2 新增 'github' 标题规则后，主站解析为本地
+  // github.svg（先前为空串，见 U-149）；Trending 随 C4 的 'trending' 规则
+  // 解析为本地 github-trending.svg，期望已随 C4 同步改。
   { url: 'https://github.com', title: 'GitHub', customIcon: 'https://github.com/favicon.ico', expected: '/brand-icons/github.svg' },
-  { url: 'https://github.com/trending', title: 'GitHub Trending', customIcon: 'https://github.com/favicon.ico', expected: '/brand-icons/github.svg' },
+  { url: 'https://github.com/trending', title: 'GitHub Trending', customIcon: 'https://github.com/favicon.ico', expected: '/brand-icons/github-trending.svg' },
 ]
 
 const LOCAL_ASSETS = ['beatoven.png', 'sudowrite.png', 'qwen3.png', 'langgraph.svg']

@@ -65,13 +65,14 @@ describe('resolveSiteIcon（图标修复 B 类第 1 批 b1b）', () => {
     expect(resolveSiteIcon(url, title)).toBe(expected)
   })
 
-  it('R2 未波及：LangGraph / Qwen 3 随 B2a 合入后走本地路径；GitHub 主站 / Trending 随 C1 c1g2 走 github.svg', () => {
+  it('R2 未波及：LangGraph / Qwen 3 随 B2a 合入后走本地路径；GitHub 主站随 C1 c1g2 走 github.svg，Trending 随 C4 走 github-trending.svg', () => {
     // map 里无 'github.com' 键（见下断言）；LangGraph / Qwen 3 不被
-    // cline / copilot 标题规则误伤。GitHub 主站 / Trending 原先为空串，
-    // C1 c1g2 新增 'github' 标题规则后解析为本地 github.svg（site-favicon.tsx，
-    // C4 为 Trending 加 'trending' 规则时须放在该条之前），故此处期望改为本地路径。
+    // cline / copilot 标题规则误伤。GitHub 主站原先为空串，
+    // C1 c1g2 新增 'github' 标题规则后解析为本地 github.svg；Trending
+    // 随 C4 的 'trending' 规则（排在 'github' 规则之前）解析为本地
+    // github-trending.svg，故此处期望随 C4 同步改。
     expect(resolveSiteIcon('https://github.com', 'GitHub')).toBe('/brand-icons/github.svg')
-    expect(resolveSiteIcon('https://github.com/trending', 'GitHub Trending')).toBe('/brand-icons/github.svg')
+    expect(resolveSiteIcon('https://github.com/trending', 'GitHub Trending')).toBe('/brand-icons/github-trending.svg')
     // LangGraph / Qwen 3 的期望值随 B2a 合入后更新（B2a 标题规则，基线 R2
     // 补充裁决）：B1b 落盘时这两站仍走组织头像，B2 合入后改为本地路径。
     expect(resolveSiteIcon('https://github.com/langchain-ai/langgraph', 'LangGraph')).toBe(

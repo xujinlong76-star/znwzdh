@@ -20,9 +20,9 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
  * GitHub 标题规则（见 site-favicon.tsx）：github.com 为 7 站共享域名，
  * 严禁加 'github.com' 域名映射键；子串 'github' 全库仅命中 3 个标题
  * （GitHub、GitHub Trending、GitHub Copilot），其中 Copilot 由上方
- * 'copilot' 规则先行命中；GitHub Trending（C4）暂由本条命中、解析为
- * github.svg，C4 为 Trending 加 'trending' 规则时必须放在本条之前，
- * 届时本文件的 Trending 期望也要同步改。
+ * 'copilot' 规则先行命中；GitHub Trending（C4）已由 C4 的 'trending'
+ * 规则（排在 'github' 规则之前）命中、解析为 github-trending.svg，
+ * 本文件 Trending 期望已随 C4（2026-11-19）同步改。
  *
  * 深色事实钉死（只记、不加底块、不改组件）：
  * - github.svg 为 #24292E 深色标透明底，深色下对比度弱是已知局限
@@ -51,8 +51,8 @@ const CASES: Array<{ url: string; title: string; customIcon?: string; expected: 
   { url: 'https://xinghuo.xfyun.cn', title: '讯飞星火', customIcon: 'https://xinghuo.xfyun.cn/favicon.ico', expected: '/brand-icons/xinghuo.png' },
   { url: 'https://n8n.io', title: 'n8n', customIcon: 'https://n8n.io/favicon.ico', expected: '/brand-icons/n8n.png' },
   { url: 'https://github.com', title: 'GitHub', customIcon: 'https://github.com/favicon.ico', expected: '/brand-icons/github.svg' },
-  // Trending 暂由 github 规则命中；C4 加 'trending' 规则后改期望
-  { url: 'https://github.com/trending', title: 'GitHub Trending', customIcon: 'https://github.com/favicon.ico', expected: '/brand-icons/github.svg' },
+  // Trending 由 C4 的 'trending' 规则（排在 'github' 规则之前）命中；期望已随 C4 同步改
+  { url: 'https://github.com/trending', title: 'GitHub Trending', customIcon: 'https://github.com/favicon.ico', expected: '/brand-icons/github-trending.svg' },
   // Copilot 由上方 'copilot' 规则先行命中，不受 github 规则影响，作回归钉死
   { url: 'https://github.com/features/copilot', title: 'GitHub Copilot', customIcon: 'https://github.com/favicon.ico', expected: '/brand-icons/copilot.svg' },
   // G3：域名映射；淘宝/京东/抖音/快手/哔哩哔哩的 customIcon 均为远端 …/favicon.ico

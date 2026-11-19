@@ -422,6 +422,44 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'wellsaid.io': '/brand-icons/wellsaid.png',
   'naturalreaders.com': '/brand-icons/naturalreader.png',
   'moyin.com': '/brand-icons/moyin.png',
+  // 2026-11-19（C 类第 4 批 C4）：Gitee 码云 / GitHub Trending / GitLab /
+  // GitCode / Codeup / Bitbucket / 掘金 / CSDN / 力扣 LeetCode / 牛客网 /
+  // 洛谷 / Codeforces / AtCoder / LeetCode 国际版 / MDN Web Docs /
+  // Java 官方文档 / W3C 标准 / ISO/IEC 标准 / roadmap.sh / Shadcn/UI。
+  // 20 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
+  // map 生效，navigation.json 不动。GitHub Trending 不进 map（见下方
+  // 'trending' 标题规则，须排在 'github' 规则之前）；'github.com' /
+  // 'adobe.com' 键绝不加。子域站用完整 hostname 建键，不建裸域键：
+  // 'codeup.aliyun.com'、'developer.mozilla.org'、'docs.oracle.com'、
+  // 'ui.shadcn.com'。'leetcode.cn' 与 'leetcode.com' 各自建键、互不干扰。
+  // 全库 354 站核对：本批 19 个 map 键各只命中 1 站，无后缀串站
+  // （Gitee AI 的 href 是 moark.com，不在 gitee.com 名下）。
+  // Java 官方文档：站方 favicon 即红色 Oracle 椭圆 O 标（120×120），
+  // 不是 Java 咖啡杯；按“官网在用图标”原样接线，未擅自换标，只记录。
+  // ISO/IEC 标准：iso.svg 为白字透明底（fill 仅 #fff，无底色），
+  // 浅色主题下不可见；红色底块须用 ISO 品牌红，但 iso.org 站点头色
+  // 未能核实具体色值（www.iso.org curl 空回复、官方品牌页无 hex、
+  // 候选 #D22630 经查是 Saudi Aramco 的 SA Red、与 ISO 无关），
+  // 故本次不加底块分支、不猜 hex，记为未决点，见 C4 测试事实钉死。
+  'gitee.com': '/brand-icons/gitee.png',
+  'gitlab.com': '/brand-icons/gitlab.png',
+  'gitcode.com': '/brand-icons/gitcode.png',
+  'codeup.aliyun.com': '/brand-icons/codeup.png',
+  'bitbucket.org': '/brand-icons/bitbucket.png',
+  'juejin.cn': '/brand-icons/juejin.png',
+  'csdn.net': '/brand-icons/csdn.png',
+  'leetcode.cn': '/brand-icons/leetcode-cn.png',
+  'nowcoder.com': '/brand-icons/nowcoder.png',
+  'luogu.com.cn': '/brand-icons/luogu.png',
+  'codeforces.com': '/brand-icons/codeforces.png',
+  'atcoder.jp': '/brand-icons/atcoder.png',
+  'leetcode.com': '/brand-icons/leetcode.png',
+  'developer.mozilla.org': '/brand-icons/mdn.svg',
+  'docs.oracle.com': '/brand-icons/java-docs.png',
+  'w3.org': '/brand-icons/w3c.svg',
+  'iso.org': '/brand-icons/iso.svg',
+  'roadmap.sh': '/brand-icons/roadmap.png',
+  'ui.shadcn.com': '/brand-icons/shadcn.png',
 }
 
 /**
@@ -621,6 +659,14 @@ export function resolveSiteIcon(
     // 载体裁决（B2 复审 §5.3）：落盘 vllm.svg（官网 SVG 双声明、透明底，
     // 规范 §1.1 SVG 优先）；ICO 版为同一标的白底不透明载体，已裁决废弃。
     if (lowerTitle.includes('vllm')) return '/brand-icons/vllm.svg'
+    // 2026-11-19（C 类第 4 批 C4）：GitHub Trending。github.com 为 7 站共享域名，
+    // 严禁加 'github.com' 域名映射键（见上方 cline/copilot 规则与 C1 github 规则）。
+    // 子串 'trending' 在 navigation.json 全库 354 站标题中仅命中 GitHub Trending
+    // 一站，故走标题规则；本条必须放在下方 'github' 规则之前，否则 Trending
+    // 会先被 'github' 规则命中、解析为 github.svg。落盘 github-trending.svg
+    // 与既有 github.svg 逐字节相同（同为 GitHub 官方 favicon.svg），按任务要求
+    // 单独落盘、未复用 github.svg。来源：github.githubassets.com/favicons/favicon.svg。
+    if (lowerTitle.includes('trending')) return '/brand-icons/github-trending.svg'
     // 2026-11-18（C 类第 1 批 c1g2）：GitHub 主站。github.com 为 7 站共享域名（GitHub、GitHub Trending、Cline、Copilot、LangGraph、Qwen 3、vLLM），严禁加 'github.com' 域名映射键。
     // 子串 'github' 在 navigation.json 全库 349 站标题中仅命中 3 站：GitHub、GitHub Trending、GitHub Copilot；
     // 其中 Copilot 已由上方 'copilot' 规则（:515）先行命中，不受本条影响；GitHub Trending（C4）暂由本条命中、解析为 github.svg，

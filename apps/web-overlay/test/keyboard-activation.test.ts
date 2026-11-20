@@ -362,7 +362,12 @@ describe("这一版补齐的管理端两处", () => {
 
   it("导航卡片紧凑模式的操作行：键盘聚焦时可见（否则聚焦到看不见的按钮）", () => {
     const text = overlaySource("src/components/navigation-card.tsx");
-    const rows = text.match(/sm:group-hover(?:\/card)?:opacity-100/g) || [];
+    // 订正（dee0c333 卡片悬浮修复）：标准/丰富卡操作栏由右上角药丸移到底部通栏
+    // 后，hover 显形不再加 sm: 前缀（group-hover/card:opacity-100 全宽生效；
+    // 触屏显形改由 globals.css 的 @media (hover: none) .nav-card-actionbar 未分层
+    // 规则兜底），紧凑行仍保留 sm: 前缀与 pointer-coarse 显形。键盘行为未变：
+    // 三处操作栏仍各带 focus-within:opacity-100，聚焦必显形。
+    const rows = text.match(/(?:sm:)?group-hover(?:\/card)?:opacity-100/g) || [];
     const focused = text.match(/focus-within:opacity-100/g) || [];
     expect(rows.length).toBeGreaterThanOrEqual(3);
     // 每一处 hover 才显形的地方，都必须同时支持 focus-within

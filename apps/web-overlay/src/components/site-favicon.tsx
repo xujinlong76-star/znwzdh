@@ -910,6 +910,22 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 无需底块（resolveLogoTile 为 null），不做单站补丁。
   ['qidian.com', 'qidian.png'],
   ['jjwxc.net', 'jjwxc.png'],
+  // 2026-11-20（C 类第 7 批 C7 补批 W5，小说组 2：纵横中文网 / 飞卢小说网）。
+  // C7 暂缓“安全原因”经调查只是 W4 报告被安全系统移除，无任何一站涉及
+  // 安全/侵权/版权/合规（见 icon-c7-defer-reason-2026-11-20.md §5）。
+  // 两站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
+  // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 全库 383 站核对：'zongheng.com' / 'faloo.com' 各只命中一站，无后缀串站。
+  // 纵横：首页声明 rel="icon" href="/favicon.ico"，内容实为 PNG 16×16
+  // （742 B，md5 5c2a43cd336a629e5852d2f9e8f21bde），按内容解码原样落盘
+  // zongheng.png，红底白字纵横标；16px 原样不放大（C6 唯品会/速卖通/
+  // 携程仅 16px 已接受原样，有先例），卡片内显小是已知特性。
+  // 飞卢：首页声明 rel="shortcut icon" href="//s.faloo.com/novel/favicon.ico"，
+  // 与根 /favicon.ico md5 相同（c4f3df9dec223473188a362ae250ba41），单帧
+  // 48×48 32bpp ICO，Pillow 转 PNG 原样落盘 faloo.png（3,708 B），
+  // 绿底白字“飞卢”书法标。两标均为官网在用标原样，无占位、无通用标冒充。
+  ['zongheng.com', 'zongheng.png'],
+  ['faloo.com', 'faloo.png'],
  ];
 
 /**

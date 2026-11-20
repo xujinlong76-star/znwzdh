@@ -55,7 +55,10 @@ describe("搜索面板键盘导航", () => {
     // 组件真的用它组装导航列表：插件 id 与站点 id 都从这里传进去
     expect(src).toContain("return buildPaletteNavItems({");
     expect(src).toContain("pluginIds: pluginItems.map((p) => `plugin-${p.id}`)");
-    expect(src).toContain("siteIds: hits.filter((h) => h.site).map((h) => `site-${h.siteId}`)");
+    // a44d8212 搜索修复引入 rankSearchHits 重排：displayHits 是重排后的唯一展示列表
+    //（rankedHits.ordered），组件改从 displayHits 取站点 id；导航顺序（插件在前、站点
+    // 在后）由 buildPaletteNavItems 的 kind 顺序决定，不受此改动影响。
+    expect(src).toContain("siteIds: displayHits.map((h) => `site-${h.siteId}`)");
     // DOM 侧仍按导航索引渲染：站点行 id 与 navIndexById 对齐
     expect(src).toContain("id={`navhub-search-opt-${navIndexById.get('site-' + site.id) ?? -1}`}");
   });

@@ -43,7 +43,7 @@ export interface CardElementsMask {
 }
 
 export interface FeatureMaskState {
-  hiddenModules: string[] // L1: ['mod:hero-header', 'mod:speed-dial', ...]
+  hiddenModules: string[] // L1: ['mod:speed-dial', 'mod:onboarding-card', ...]
   hiddenCategories: string[] // L2: ['cat:shopping', ...]
   hiddenSubcategories: string[] // L2: ['sub:ai-audio', ...]
   hiddenSites: string[] // L3: ['site:1024', ...]
@@ -83,13 +83,6 @@ export const L1_MODULE_CATALOG: readonly FeatureCatalogDefinition[] = [
     level: 'L1_MODULE',
     title: '次顶栏视角条（全部探索 ~ 自适应工作区）',
     description: '顶部角色工作台切换与快捷分类跳板条',
-    parentTitle: 'L1 全局功能组件',
-  },
-  {
-    id: 'mod:hero-header',
-    level: 'L1_MODULE',
-    title: 'Hero 标题横幅（山羊胡网址导航大全）',
-    description: '首屏主标题、副标题与站点统计摘要横幅',
     parentTitle: 'L1 全局功能组件',
   },
   {

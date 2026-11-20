@@ -283,7 +283,10 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
             </div>
           )}
           <div className="flex flex-col min-w-0 shrink-0">
-            <span className="leading-tight font-bold text-foreground text-[14px] tracking-tight whitespace-nowrap">{siteInfo.basic.title}</span>
+            {/* 首屏瘦身：侧边栏品牌为页面唯一 h1（主内容区大号 H1 已移除；
+                不走 sr-only 隐藏术）。侧边栏在桌面与移动抽屉各渲染一次，
+                但同一视口下仅一个可见（hidden md:block / md:hidden）。 */}
+            <h1 className="leading-tight font-bold text-foreground text-[14px] tracking-tight whitespace-nowrap">{siteInfo.basic.title}</h1>
             <span className="text-[11px] text-muted-foreground font-mono font-normal">AI-Native Hub</span>
           </div>
         </Link>

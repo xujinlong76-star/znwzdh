@@ -12,7 +12,7 @@
  * 3. 死链时间机器（Wayback Machine）快照一键自愈。
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
@@ -96,6 +96,7 @@ import { submitPrefillHref } from '@/lib/submit-prefill'
 import { WantedActions } from '@/components/search/wanted-actions'
 import { searchChannelStatus } from '@/lib/search-degrade'
 import { searchHref } from '@/lib/search-page'
+import { rankSearchHits } from '@/lib/search-rerank'
 import { getModifierKey } from '@/lib/platform'
 import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
 import { recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
@@ -916,6 +917,16 @@ export function SpotlightModal({
     setOpen(false)
   }, [quicklinkMatch, favorites, identity])
 
+  /**
+   * 客户端重排（2026-11-20 搜索假空态与相关性修复，与顶栏下拉同口径）：
+   * 失效站点（status=broken）剔除；精确名称匹配置顶；语义联想降权进 related 组；
+   * 没有强匹配时 ordered 为空 → 走真空态（"没有找到相关站点"），不拿弱相关填充。
+   * 原始 hits 只留给检索 effect（setHits），不参与渲染、键盘导航与回车打开。
+   */
+  const rankedHits = useMemo(() => rankSearchHits(hits, query), [hits, query])
+  const displayHits = rankedHits.ordered
+  const relatedStartIndex = rankedHits.exact.length + rankedHits.keyword.length
+
   const handleSelectCurrent = useCallback(() => {
     if (isCommandMode) {
       const cmd = filteredCommands[selectedIndex]
@@ -946,10 +957,10 @@ export function SpotlightModal({
 
     // 默认检索：站点优先，视频次之，插件再次之（quicklink 行占位时整体后移一位）
     const index = selectedIndex - quicklinkOffset
-    const totalSiteHits = hits.length
+    const totalSiteHits = displayHits.length
     const totalVideoHits = videoHits.length
     if (index < totalSiteHits) {
-      const hit = hits[index]
+      const hit = displayHits[index]
       if (hit?.site?.url) {
         openSite(hit.site, hit)
         setOpen(false)
@@ -969,14 +980,14 @@ export function SpotlightModal({
         router.push(`/marketplace/${encodeURIComponent(plugin.slug)}`)
       }
     }
-  }, [isCommandMode, isAiMode, filteredCommands, selectedIndex, cleanAiPrompt, hits, videoHits, pluginHits, router, openSite, quicklinkActive, quicklinkMatch, quicklinkOffset, openQuicklink])
+  }, [isCommandMode, isAiMode, filteredCommands, selectedIndex, cleanAiPrompt, displayHits, videoHits, pluginHits, router, openSite, quicklinkActive, quicklinkMatch, quicklinkOffset, openQuicklink])
 
   // 9. 键盘导航 (上下箭头 / 回车)
   const totalItemCount = useMemo(() => {
     if (isCommandMode) return filteredCommands.length
     if (isAiMode) return 1
-    return quicklinkOffset + hits.length + videoHits.length + (pluginHits?.items.length ?? 0)
-  }, [isCommandMode, isAiMode, filteredCommands.length, hits.length, videoHits.length, pluginHits?.items.length, quicklinkOffset])
+    return quicklinkOffset + displayHits.length + videoHits.length + (pluginHits?.items.length ?? 0)
+  }, [isCommandMode, isAiMode, filteredCommands.length, displayHits.length, videoHits.length, pluginHits?.items.length, quicklinkOffset])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -994,7 +1005,7 @@ export function SpotlightModal({
   /**
    * 焦点始终留在搜索框，所以当前行只能通过 aria-activedescendant 告诉读屏。
    * 三种模式的行 id 共用一套扁平编号：指令行是 0..n、站点行是 0..n、
-   * 插件行是 hits.length + idx —— 与 selectedIndex 的定义完全一致。
+   * 插件行是 displayHits.length + idx —— 与 selectedIndex 的定义完全一致。
    */
   const optionIdOf = (index: number) => `spotlight-option-${index}`
   const activeOptionId = totalItemCount > 0 ? optionIdOf(selectedIndex) : undefined
@@ -1005,9 +1016,9 @@ export function SpotlightModal({
     ? 'spotlight-cmd-listbox'
     : selectedIndex < quicklinkOffset
       ? 'spotlight-quicklink-listbox'
-      : selectedIndex < quicklinkOffset + hits.length
+      : selectedIndex < quicklinkOffset + displayHits.length
         ? 'spotlight-site-listbox'
-        : selectedIndex < quicklinkOffset + hits.length + videoHits.length
+        : selectedIndex < quicklinkOffset + displayHits.length + videoHits.length
           ? 'spotlight-video-listbox'
           : 'spotlight-plugin-listbox'
 
@@ -1087,7 +1098,8 @@ export function SpotlightModal({
         </div>
 
         {/* 核心内容区 */}
-        <div ref={listRef} className="overflow-y-auto p-2 space-y-2 flex-1">
+        {/* 底部留白 pb-2：最后一行不被弹窗底边截断（2026-11-20 搜索修复） */}
+        <div ref={listRef} className="overflow-y-auto p-2 pb-3 space-y-2 flex-1">
           {/* A. 指令模式 */}
           {isCommandMode && (
             isGeekToolActive ? (
@@ -1514,15 +1526,15 @@ export function SpotlightModal({
               ) : null}
 
               {/* 站点检索结果列表 (RRF 混合召回) */}
-              {hits.length > 0 && (
-                <div role="listbox" id="spotlight-site-listbox" aria-label={`站点检索结果，共 ${hits.length} 条`} className="space-y-1">
+              {displayHits.length > 0 && (
+                <div role="listbox" id="spotlight-site-listbox" aria-label={`站点检索结果，共 ${displayHits.length} 条`} className="space-y-1">
                   <div role="presentation" className="px-3 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <Layers className="w-3.5 h-3.5" />
                       <span>导航站点（RRF 混合多通道排序）</span>
                     </span>
                     <span className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono text-muted-foreground/70">{hits.length} 条命中</span>
+                      <span className="text-[11px] font-mono text-muted-foreground/70">{displayHits.length} 条命中</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -1536,7 +1548,9 @@ export function SpotlightModal({
                     </span>
                   </div>
 
-                  {hits.map((hit, idx) => {
+                  {/* 展示列表是重排后的 displayHits（失效站点已剔除、精确名称置顶、
+                      无强匹配时为空→走真空态）。语义联想组（related）单独标注"相关推荐"。 */}
+                  {displayHits.map((hit, idx) => {
                     const isSelected = idx + quicklinkOffset === selectedIndex
                     const site = hit.site
                     if (!site) return null
@@ -1548,8 +1562,14 @@ export function SpotlightModal({
                     const channels = Object.keys(hit.contributions)
 
                     return (
+                      <Fragment key={hit.siteId}>
+                        {idx === relatedStartIndex && rankedHits.related.length > 0 && (
+                          <div role="presentation" className="px-3 pt-2 pb-1 text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5 text-violet-500" />
+                            <span>相关推荐</span>
+                          </div>
+                        )}
                       <div
-                        key={hit.siteId}
                         onClick={() => {
                           openSite(site, hit)
                           setOpen(false)
@@ -1649,6 +1669,7 @@ export function SpotlightModal({
                           <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
                         </div>
                       </div>
+                      </Fragment>
                     )
                   })}
                 </div>
@@ -1678,7 +1699,7 @@ export function SpotlightModal({
                   </div>
 
                   {videoHits.map((video, idx) => {
-                    const itemIndex = quicklinkOffset + hits.length + idx
+                    const itemIndex = quicklinkOffset + displayHits.length + idx
                     const isSelected = itemIndex === selectedIndex
                     const platform = video.videoConfig?.type || 'bilibili'
                     const author = video.videoConfig?.author
@@ -1769,7 +1790,7 @@ export function SpotlightModal({
                   </div>
 
                   {pluginHits.items.map((plugin, idx) => {
-                    const itemIndex = quicklinkOffset + hits.length + videoHits.length + idx
+                    const itemIndex = quicklinkOffset + displayHits.length + videoHits.length + idx
                     const isSelected = itemIndex === selectedIndex
                     return (
                       <div
@@ -1808,7 +1829,7 @@ export function SpotlightModal({
               )}
 
               {/* 零结果提示：「没搜到」和「没搜成」是两句话，不能混着说 */}
-              {!loading && query.trim() && hits.length === 0 && (!pluginHits || pluginHits.items.length === 0) && (
+              {!loading && query.trim() && displayHits.length === 0 && (!pluginHits || pluginHits.items.length === 0) && (
                 <div className="py-12 text-center space-y-2">
                   {sitesUnavailable ? (
                     <>
@@ -1844,8 +1865,39 @@ export function SpotlightModal({
                     </>
                   ) : (
                     <>
+                      {/* 2026-11-20 搜索假空态修复（William 点名）：真空态文案固定为
+                          "没有找到相关站点"，并明示 0 条结果；弱语义填充不再冒充结果。
+                          两个出口：换关键词（清空并聚焦输入框）、去 AI 找站（查询词自动发过去）。 */}
+                      <div className="text-sm text-foreground font-medium">
+                        没有找到相关站点
+                      </div>
                       <div className="text-xs text-muted-foreground">
-                        未找到与 “<span className="text-foreground font-medium">{query}</span>” 相关的站点或插件
+                        0 条结果。没有与 “<span className="text-foreground font-medium">{query}</span>” 匹配的站点或插件
+                      </div>
+                      <div className="pt-2 flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQuery('')
+                            setSelectedIndex(0)
+                            inputRef.current?.focus()
+                          }}
+                          className="text-[11px] px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-muted/60 transition-colors"
+                        >
+                          换关键词
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const q = query.trim()
+                            if (!q) return
+                            setOpen(false)
+                            openCopilot({ query: q, source: 'spotlight' })
+                          }}
+                          className="text-[11px] px-2.5 py-1 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
+                        >
+                          去 AI 找站
+                        </button>
                       </div>
                       {correction ? (
                         <div className="pt-1">
@@ -1994,19 +2046,19 @@ export function SpotlightModal({
                 </div>
               )}
               {/* 站点通道挂了但插件有结果：说清「下面不完整」，不要让用户以为整站就这些 */}
-              {!loading && sitesUnavailable && hits.length === 0 && !!pluginHits && pluginHits.items.length > 0 && (
+              {!loading && sitesUnavailable && displayHits.length === 0 && !!pluginHits && pluginHits.items.length > 0 && (
                 <div className="px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
                   站点检索通道暂时不可用，以下只有插件结果。
                 </div>
               )}
               {/* 插件通道挂了但站点有结果：不能让「插件市场没有匹配」冒充事实 */}
-              {!loading && pluginUnavailable && hits.length > 0 && (
+              {!loading && pluginUnavailable && displayHits.length > 0 && (
                 <div className="px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400 border-t border-border/40">
                   插件检索通道暂时不可用，以下只有站点结果。
                 </div>
               )}
               {/* 当有检索结果时，在列表底部也常驻提供全网聚合搜索入口 */}
-              {query.trim() && hits.length > 0 && (
+              {query.trim() && displayHits.length > 0 && (
                 <div className="pt-2.5 pb-1 px-2 border-t border-border/40 mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-muted-foreground">
                   <div className="flex items-center gap-1.5 text-[11px]">
                     <ExternalLink className="h-3 w-3 text-primary shrink-0" />

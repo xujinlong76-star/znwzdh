@@ -819,6 +819,19 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 全库 383 站核对：'learn.microsoft.com' 键只命中 Microsoft Learn 一站，无后缀串站。
   // 四色方块明亮、无需底块（resolveLogoTile 为 null），不做单站补丁。
   ['learn.microsoft.com', 'microsoft-learn.png'],
+  // 2026-11-20（C 类第 7 批 C7 补批，W8 单站）：Coursera。
+  // 站 icon 字段为远端 https://coursera.org/favicon.ico，被
+  // isRemoteRawFavicon 拦截（pathname '/favicon.ico'），map 生效，
+  // navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 全库 383 站核对：'coursera.org' 键只命中 Coursera 一站，无后缀串站、
+  // 无子域站。落盘 coursera.png 为官网首页声明的最大尺寸 favicon
+  // favicon-v2-194x194.png（15,476 B，md5
+  // 7169eafb412bf2df21fd61a482a2c136，CloudFront 直链）经 Pillow
+  // LANCZOS 只缩小至 128×128（9,529 B）；根 /favicon.ico 最大帧仅
+  // 48×48 未用。蓝 #0056D2 主色 + 白字镂空、四角透明，浅/深两主题下
+  // 均可见，无底块（resolveLogoTile 为 null），不做单站补丁，留待
+  // 统一处理轮。
+  ['coursera.org', 'coursera.png'],
  ];
 
 /**

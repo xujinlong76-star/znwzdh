@@ -47,7 +47,7 @@ import {
   type RecentSearchItem,
 } from '@/lib/recent-search'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
-import { mruScore, recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
+import { mruScore, recordOfflineVisit, readOfflineVisits, splitRecentVisitsForBoost, type RecentVisit } from '@/lib/offline-recent'
 import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
 import { openCopilot } from '@/lib/ai-entry'
@@ -1196,6 +1196,15 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       }),
     [query, favorites.items, hits, quicklinkMatch, mruNormBySiteId],
   )
+  /**
+   * 空查询「最近访问」分区顺序（04 §3.3，C2 前半）：count≥3 的 boosted
+   * 段按 mruScore 置顶在前，count<3 的 rest 段按时间倒序排在后段；两段
+   * 并起来就是原快照，不删除、不隐藏任何记录。
+   */
+  const orderedRecentVisits = useMemo(() => {
+    const { boosted, rest } = splitRecentVisitsForBoost(recentVisits)
+    return [...boosted, ...rest]
+  }, [recentVisits])
   /** 空查询面板直接展示的四操作（matchPaletteActions('') 即全部）与收藏 */
   const emptyPanelActions = useMemo(
     () => matchPaletteActions('', paletteActionOpts),
@@ -1708,7 +1717,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           )}
 
           {/* 常用与最近常去站点快捷直达 */}
-          {recentVisits.length > 0 && (
+          {orderedRecentVisits.length > 0 && (
             <div className="p-2.5 bg-muted/20">
               <div className="text-[11px] font-semibold text-muted-foreground flex items-center justify-between mb-2 px-1">
                 <span className="flex items-center gap-1.5">
@@ -1718,7 +1727,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 <span className="text-[10px] font-mono text-muted-foreground">一键直达</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                {recentVisits.map((visit) => (
+                {orderedRecentVisits.map((visit) => (
                   <a
                     key={visit.id}
                     href={safeHref(visit.href)}

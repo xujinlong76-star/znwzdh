@@ -37,22 +37,22 @@ describe("站点巡检徽标", () => {
     ).toEqual({ tone: "ok", label: "可访问", latencyMs: 87 });
   });
 
-  it("巡检失败优先显示真实 HTTP 状态码，没有状态码只说检测异常", () => {
+  it("巡检失败按分级写种类词（03 §3.2）：单次 5xx 是疑似服务端错误，无状态码只说检测异常", () => {
     expect(
       siteHealthBadge({ ok: false, httpStatus: 503, latencyMs: null, lastCheckedAt: 1792581464978 }),
-    ).toEqual({ tone: "warn", label: "HTTP 503", latencyMs: null });
+    ).toEqual({ tone: "warn", label: "服务端错误 (503)", latencyMs: null });
     expect(
       siteHealthBadge({ ok: false, httpStatus: null, latencyMs: 10004, lastCheckedAt: 1792581464978 }),
     ).toEqual({ tone: "warn", label: "近期检测异常", latencyMs: 10004 });
   });
 
-  it("详情页与速览弹窗共用该口径，不再出现 SLA 文案", () => {
+  it("详情页与速览弹窗共用该口径（03 §3.1：直接调 siteHealthState），不再出现 SLA 文案", () => {
     for (const rel of [
       "src/components/site-detail-view.tsx",
       "src/components/site-peek-dialog.tsx",
     ]) {
       const src = overlayFile(rel);
-      expect(src).toContain("siteHealthBadge(");
+      expect(src).toContain("siteHealthState(");
       expect(src).not.toContain("SLA 正常");
       expect(src).not.toContain("SLA:");
     }

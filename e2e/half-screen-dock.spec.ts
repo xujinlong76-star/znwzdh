@@ -179,6 +179,24 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
     test.setTimeout(180_000);
     await gotoHome(page, 700);
     await expectDockVisible(page);
+    // U-260 前置（2026-11-20）：首屏默认收起后，全新 profile 下挂件默认是收起态
+    // （closed: true），dockBlocked() 把 xm-closed 列为守门条件，doDock() 一进就
+    // return，translateX 永不写入——收起态不贴边是既定设计
+    // （xiaomaomao.js:2321 dockBlocked、2358 行注释「聊天/游戏/收起态不缩」），不是 bug。
+    // 故先点收起徽标（.xm-tab，aria-label「叫出小猫猫」）把猫展开，等 xm-closed 摘掉、
+    // 入场动画落定后再开始 60 秒闲置计时，测「展开态贴边」；其余断言一字不动。
+    // 点徽标本身会调 markActive() 重置闲置计时，60 秒从展开后算起。
+    const isClosed = await page.evaluate(
+      () => document.querySelector('#xiaomaomao')?.classList.contains('xm-closed') ?? false,
+    );
+    if (isClosed) {
+      await page.locator(`${CAT} .xm-tab`).click({ timeout: 10_000 });
+      await page.waitForFunction(
+        () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-closed'),
+        { timeout: 10_000 },
+      );
+      await page.waitForTimeout(600); // 入场动画（xm-enter .32s）落定
+    }
     // 不动鼠标、不碰键盘：60 秒后猫应横向贴边（只写 transform，不动 bottom）
     await page.waitForFunction(
       () => {

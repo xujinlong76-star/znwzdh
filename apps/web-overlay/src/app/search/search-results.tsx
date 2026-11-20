@@ -1008,7 +1008,7 @@ export function SearchResults({
               <p className="text-sm text-muted-foreground">输入关键词开始搜索；也可以先按分类或标签浏览。</p>
               {/* W4-0622-1 收尾③：空态热词点选直达（取数失败为空数组时整块不渲染）。 */}
               <HotwordChips hotwords={hotwords} />
-              {/* U-332：空态最近搜索点选重搜（客户端岛，见 recent-search-chips.tsx 顶部注释：
+              {/* U-335：空态最近搜索点选重搜（客户端岛，见 recent-search-chips.tsx 顶部注释：
                   身份只在浏览器 localStorage，服务端取不到个人历史；无历史/取数失败不渲染；
                   与热词共存、重叠词排重）。放热词之后，避免后加载的个人区把已渲染的热词顶下去。 */}
               <RecentSearchChips hotwords={hotwords} />

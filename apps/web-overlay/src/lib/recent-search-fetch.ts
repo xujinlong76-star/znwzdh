@@ -1,5 +1,5 @@
 /**
- * 最近搜索轻量读取端（U-332）。
+ * 最近搜索轻量读取端（U-335）。
  *
  * 为什么单立一个模块而不复用 `fetchSearchHistoryPage`（lib/navhub-api.ts）：
  * 那个函数没错，但 import 它会把 134KB 的中枢客户端整个值拉进 /search 首屏

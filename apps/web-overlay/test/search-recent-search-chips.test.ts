@@ -1,5 +1,5 @@
 /**
- * /search 空态「最近搜索」chips 一键重搜（U-332）。
+ * /search 空态「最近搜索」chips 一键重搜（U-335）。
  *
  * 锁：
  * 1. 空态最近搜索 chips 由 RecentSearchChipsList 渲染：每枚 chip 都是指向

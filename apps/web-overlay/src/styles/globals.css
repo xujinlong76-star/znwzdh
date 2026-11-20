@@ -747,6 +747,18 @@
   }
 }
 
+/* 卡片底部操作栏（卡片悬浮修复 2026-11-20）：触屏（无 hover 能力）默认
+   可见，不依赖 hover。桌面端仍由 group-hover/card:opacity-100 控制显隐。
+   刻意写在任何 @layer 之外：未分层声明优先于全部分层工具类，与上面
+   移动字号同一机制，opacity: 1 与 pointer-events: auto 能压过卡片内联
+   的 opacity-0 / pointer-events-none。 */
+@media (hover: none) {
+  .nav-card-actionbar {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 /* F4/P1 自定义壁纸文字可读性兜底：卡片底色 alpha 由 DIY 配置经 --card-alpha 驱动，
    缺省回退 0.88（实测最坏 4.60:1；0.85 时描述文字外推 ≈4.4:1，故下限定 0.88）。
    卡片的 bg-card/85、dark:bg-card/45 写法保留；这里用**未分层**规则压过全部分层工具类

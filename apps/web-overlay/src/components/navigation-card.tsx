@@ -724,12 +724,9 @@ export const NavigationCard = memo(function NavigationCard({
                   <Copy className="w-3 h-3" />
                 </Button>
                 </span>
-                {/* 收藏星标（首屏瘦身）：默认降透明度，悬停/聚焦/触屏时可见，编排态常显；
-                    与药丸操作区同款显隐（键盘聚焦经操作区方向键导航可达）。 */}
-                <span className={cn(
-                  "transition-opacity",
-                  isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
-                )}>
+                {/* 收藏星标（卡片悬浮修复 2026-11-20）：常驻可见可点，不再随悬停
+                    显隐；旧 opacity-0 + pointer-events-none 致非悬浮态点星标无反应。 */}
+                <span className="transition-opacity opacity-100 pointer-events-auto">
                   <FavoriteButton
                     tabIndex={-1}
                     cardAction
@@ -740,7 +737,7 @@ export const NavigationCard = memo(function NavigationCard({
             </div>
           </TooltipTrigger>
           {!isFeatureHidden('feat:tooltips') && (
-            <TooltipContent side="bottom" align="center" className="max-w-[280px] text-xs">
+            <TooltipContent side="bottom" align="center" className="max-w-[280px] max-h-40 overflow-y-auto text-xs">
               <p>{item.description || item.title}</p>
               <p className="text-[10px] text-muted-foreground pt-1 border-t mt-1">按 Space 空格键沙箱速览</p>
             </TooltipContent>
@@ -770,12 +767,15 @@ export const NavigationCard = memo(function NavigationCard({
                 </div>
               )}
 
-              {/* 数字快捷键角标（首屏瘦身）：由图标/缩略图角标移至卡片右上角极简
-                  <kbd>，悬停/聚焦时隐去让位给右上角操作区。digit 为空时组件
+              {/* 数字快捷键角标（卡片悬浮修复 2026-11-20）：星标改为常驻后，
+                  角标不能再与星标同位（top-2 right-2）——会被星标盖住；
+                  改放星标左侧（right-11），标题行同步按 dialDigit 留位
+                  （有数字时 pr-14、无数字时 pr-10）。
+                  悬停/聚焦时隐去让位给右上角操作区。digit 为空时组件
                   自身返回 null；sm 以下隐藏（见 number-dial-badge）。 */}
               <NumberDialBadge
                 digit={dialDigit}
-                className="top-2 right-2 z-20 transition-opacity duration-150 group-hover/card:opacity-0 group-focus-within/card:opacity-0"
+                className="top-2 right-11 z-20 transition-opacity duration-150 group-hover/card:opacity-0 group-focus-within/card:opacity-0"
               />
 
               {/* 外链覆盖层：唯一 Tab 停留点（Enter 打开站点 / Space 速览 / → 进操作区） */}
@@ -824,7 +824,10 @@ export const NavigationCard = memo(function NavigationCard({
                     </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1.5 min-w-0 transition-all duration-150 ">
+                      {/* 标题行（卡片悬浮修复 2026-11-20）：右端给常驻星标留位
+                          （pr-10）；有数字快捷键角标时改 pr-14，给角标
+                          （right-11）+ 星标各留 10px 间隙。 */}
+                      <div className={cn("flex items-center justify-between gap-1.5 min-w-0 transition-all duration-150", dialDigit ? "pr-14" : "pr-10")}>
                         <CardTitle className="text-sm sm:text-base font-bold tracking-tight text-foreground group-hover/card:text-primary transition-colors min-w-0 flex-1">
                           {hasSiteDetail ? (
                             <Link
@@ -898,20 +901,26 @@ export const NavigationCard = memo(function NavigationCard({
                 )}
               </div>
 
-              {/* 操作区：右上角悬浮药丸胶囊；收藏星常显（留存钩子），其余操作仍悬停/聚焦/触屏才显 */}
-              <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5" onKeyDown={handleActionsKeyDown}>
-                <span className={cn(
-                  "flex items-center gap-0.5 p-0.5 rounded-full bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs transition-all duration-150",
-                  isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
-                )}>
-                {renderDragControls('h-7 w-7 rounded-full')}
+              {/* 操作栏（卡片悬浮修复 2026-11-20）：由右上角药丸移到底部通栏，
+                  与标准卡同款——悬浮时不再遮挡标题；卡片高度固定，操作栏
+                  absolute 不参与布局、不产生 CLS；只用 opacity 过渡。
+                  触屏（hover: none）默认可见，见 globals.css .nav-card-actionbar。 */}
+              <div
+                className={cn(
+                  "nav-card-actionbar absolute bottom-0 left-0 right-0 z-10 flex items-center gap-0.5 px-1.5 pt-1.5 pb-1 bg-card/95 dark:bg-card/90 backdrop-blur-md before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-border before:to-transparent transition-opacity duration-150",
+                  isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 group-hover/card:opacity-100 group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto"
+                )}
+                onKeyDown={handleActionsKeyDown}
+              >
+                <span className="flex flex-1 items-center gap-0.5">
+                {renderDragControls('h-11 w-11 rounded-lg')}
                 <Button
                   type="button"
                   tabIndex={-1}
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "h-7 w-7 rounded-full transition-colors",
+                    "h-11 min-w-11 flex-1 rounded-lg transition-colors",
                     isEditingLayout
                       ? "text-rose-700 hover:text-rose-700 hover:bg-rose-500/15 dark:text-rose-400 dark:hover:text-rose-400"
                       : "hidden sm:inline-flex text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
@@ -920,7 +929,7 @@ export const NavigationCard = memo(function NavigationCard({
                   aria-label={`隐藏站点：${item.title}`}
                   onClick={handlePruneSite}
                 >
-                  <EyeOff className="w-3.5 h-3.5" />
+                  <EyeOff className="w-4 h-4" />
                 </Button>
                 {isEditingLayout && (
                   <Button
@@ -929,14 +938,14 @@ export const NavigationCard = memo(function NavigationCard({
                     variant="ghost"
                     size="icon"
                     className={cn(
-                      "h-7 w-7 rounded-full transition-colors",
+                      "h-11 min-w-11 flex-1 rounded-lg transition-colors",
                       isSpeedDialPinned ? "text-amber-500 bg-amber-500/15" : "text-muted-foreground hover:text-amber-500"
                     )}
                     title={isSpeedDialPinned ? "从首屏速览坞取消固定" : "📌 钉入首屏速览坞"}
                     aria-label={isSpeedDialPinned ? `从速览坞取消固定：${item.title}` : `钉入速览坞：${item.title}`}
                     onClick={handleToggleSpeedDial}
                   >
-                    <Zap className={cn("w-3.5 h-3.5", isSpeedDialPinned && "fill-amber-500")} />
+                    <Zap className={cn("w-4 h-4", isSpeedDialPinned && "fill-amber-500")} />
                   </Button>
                 )}
                 {onTogglePinInCategory && (
@@ -946,23 +955,23 @@ export const NavigationCard = memo(function NavigationCard({
                     variant="ghost"
                     size="icon"
                     className={cn(
-                      "h-7 w-7 rounded-full transition-colors",
+                      "h-11 min-w-11 flex-1 rounded-lg transition-colors",
                       isPinnedInCategory ? "text-amber-500 bg-amber-500/10" : "text-muted-foreground hover:text-amber-500"
                     )}
                     title={isPinnedInCategory ? "取消分类内置顶" : "置顶在当前分类首位"}
                     aria-label={isPinnedInCategory ? `取消分类内置顶：${item.title}` : `置顶在当前分类首位：${item.title}`}
                     onClick={handleCategoryPin}
                   >
-                    <ArrowUpToLine className={cn("w-3.5 h-3.5", isPinnedInCategory && "fill-amber-500")} />
+                    <ArrowUpToLine className={cn("w-4 h-4", isPinnedInCategory && "fill-amber-500")} />
                   </Button>
                 )}
-                {detailAction('h-7 w-7 rounded-full')}
+                {detailAction('h-11 min-w-11 flex-1 rounded-lg')}
                 <Button
                   tabIndex={-1}
                   data-card-action=""
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent"
+                  className="h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent"
                   title="速览与行动"
                   aria-label={`速览与行动：${item.title}`}
                   onClick={(e) => {
@@ -971,51 +980,49 @@ export const NavigationCard = memo(function NavigationCard({
                     onPeek?.(item)
                   }}
                 >
-                  <Eye className="w-3.5 h-3.5" />
+                  <Eye className="w-4 h-4" />
                 </Button>
                 <Button
                   tabIndex={-1}
                   data-card-action=""
                   variant="ghost"
                   size="icon"
-                  className="hidden sm:inline-flex h-7 w-7 rounded-full text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
+                  className="hidden sm:inline-flex h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
                   title="📌 固定到工作台"
                   aria-label={`固定到工作台：${item.title}`}
                   onClick={handleWorkbenchPin}
                 >
-                  <Pin className="w-3.5 h-3.5" />
+                  <Pin className="w-4 h-4" />
                 </Button>
                 <Button
                   tabIndex={-1}
                   data-card-action=""
                   variant="ghost"
                   size="icon"
-                  className="hidden sm:inline-flex h-7 w-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  className="hidden sm:inline-flex h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                   title="复制网址链接"
                   aria-label={`复制链接：${item.title}`}
                   onClick={handleCopyLink}
                 >
-                  <Copy className="w-3.5 h-3.5" />
+                  <Copy className="w-4 h-4" />
                 </Button>
                 </span>
-                {/* 收藏星标（首屏瘦身）：默认降透明度，悬停/聚焦/触屏时可见，编排态常显；
-                    与药丸操作区同款显隐（键盘聚焦经操作区方向键导航可达）。 */}
-                <span className={cn(
-                  "transition-opacity",
-                  isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
-                )}>
-                  <FavoriteButton
-                    tabIndex={-1}
-                    cardAction
-                    className="bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs"
-                    site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
-                  />
-                </span>
+              </div>
+              {/* 收藏星标（卡片悬浮修复 2026-11-20）：常驻右上角、恒可见可点，
+                  不再随悬停显隐；外层容器 pointer-events-none、按钮自身
+                  pointer-events-auto，确保点击区域不被任何浮层覆盖。 */}
+              <div className="absolute top-2 right-2 z-20 pointer-events-none">
+                <FavoriteButton
+                  tabIndex={-1}
+                  cardAction
+                  className="pointer-events-auto bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs"
+                  site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
+                />
               </div>
             </Card>
           </TooltipTrigger>
           {!isFeatureHidden('feat:tooltips') && (
-            <TooltipContent side="bottom" align="center" className="max-w-[280px] text-xs">
+            <TooltipContent side="bottom" align="center" className="max-w-[280px] max-h-40 overflow-y-auto text-xs">
               <p>{item.description || item.title}</p>
               <p className="text-[10px] text-muted-foreground pt-1 border-t mt-1">💡 按 Space 空格键呼出沙箱速览与微动作</p>
             </TooltipContent>
@@ -1072,13 +1079,15 @@ export const NavigationCard = memo(function NavigationCard({
               </div>
             )}
 
-            {/* 数字快捷键角标（首屏瘦身）：由图标/缩略图角标移至卡片右上角极简
-                <kbd>，与「Space 速览」徽章同位互换——默认显示，Tab 聚焦时隐去
-                让位给 Space 徽章，悬停/聚焦时隐去让位给右上角操作区。
-                digit 为空时组件自身返回 null；sm 以下隐藏（见 number-dial-badge）。 */}
+            {/* 数字快捷键角标（卡片悬浮修复 2026-11-20）：星标改为常驻后，
+                角标不能再与星标同位（top-2 right-2）——会被星标盖住；
+                改放星标左侧（right-11），标题行同步按 dialDigit 留位
+                （有数字时 pr-14、无数字时 pr-10，见下方标题行）。
+                默认显示，Tab 聚焦时隐去让位给 Space 徽章，悬停/聚焦时隐去。
+                digit 为空时组件自身返回 null；sm 以下隐藏。 */}
             <NumberDialBadge
               digit={dialDigit}
-              className="top-2 right-2 transition-opacity duration-150 group-hover/card:opacity-0 group-focus-within/card:opacity-0"
+              className="top-2 right-11 transition-opacity duration-150 group-hover/card:opacity-0 group-focus-within/card:opacity-0"
             />
 
             <div className={cn(
@@ -1088,8 +1097,11 @@ export const NavigationCard = memo(function NavigationCard({
               // [data-density]），视觉默认值与 p-3.5 完全一致。
               isCapsuleCollapsed ? "px-3 py-2" : "p-[var(--density-card-padding,0.875rem)]"
             )}>
-              {/* Header 层：图标与标题同行，释放左侧死区 */}
-              <div className="flex items-center gap-2.5 min-w-0 pr-14">
+              {/* Header 层：图标与标题同行，释放左侧死区；右端只给常驻星标留位
+                  （卡片悬浮修复 2026-11-20：操作栏已移到底部，标题不再需要
+                  给 172px 药丸预留 pr-14，pr-10 够星标即可；有数字快捷键角标
+                  时改 pr-14，给角标（right-11）+ 星标各留 10px 间隙）。 */}
+              <div className={cn("flex items-center gap-2.5 min-w-0", dialDigit ? "pr-14" : "pr-10")}>
                 {/* 视觉大图标（P1 #9）：有真实缩略图时把 28px 小图标换成 48px
                     视觉 tile；无缩略图时保持现有渲染不变。盒子尺寸固定，
                     图片懒加载、失败回落首字母徽标，不产生布局偏移。 */}
@@ -1187,20 +1199,29 @@ export const NavigationCard = memo(function NavigationCard({
               )}
             </div>
 
-            {/* 操作区：右上角悬浮药丸胶囊；收藏星常显（留存钩子），其余操作仍悬停/聚焦/触屏才显 */}
-            <div className="absolute top-1.5 right-1.5 z-20 @[280px]:top-2 @[280px]:right-2 flex items-center gap-0.5" onKeyDown={handleActionsKeyDown}>
-              <span className={cn(
-                "flex items-center gap-0.5 p-0.5 rounded-full bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs transition-all duration-150",
-                isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
-              )}>
-              {renderDragControls('h-6.5 w-6.5 rounded-full')}
+            {/* 操作栏（卡片悬浮修复 2026-11-20）：由右上角药丸移到底部通栏。
+                悬浮时不再遮挡标题（标题在卡片顶部、操作栏在底部，两者无重叠）；
+                卡片高度固定，操作栏 absolute 不参与布局、不产生 CLS；
+                出现/消失只用 opacity 过渡，不用 display 切换。
+                触屏（hover: none）默认可见，见 globals.css .nav-card-actionbar。
+                z-10 与内容同层但位于底部，与标题层无重叠；背景用卡片底色，
+                顶部一条渐隐分隔线（before 渐变）与内容区隔开。 */}
+            <div
+              className={cn(
+                "nav-card-actionbar absolute bottom-0 left-0 right-0 z-10 flex items-center gap-0.5 px-1.5 pt-1.5 pb-1 bg-card/95 dark:bg-card/90 backdrop-blur-md before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-border before:to-transparent transition-opacity duration-150",
+                isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 group-hover/card:opacity-100 group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto"
+              )}
+              onKeyDown={handleActionsKeyDown}
+            >
+              <span className="flex flex-1 items-center gap-0.5">
+              {renderDragControls('h-11 w-11 rounded-lg')}
               <Button
                 type="button"
                 tabIndex={-1}
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "h-6.5 w-6.5 rounded-full transition-colors",
+                  "h-11 min-w-11 flex-1 rounded-lg transition-colors",
                   isEditingLayout
                     ? "text-rose-700 hover:text-rose-700 hover:bg-rose-500/15 dark:text-rose-400 dark:hover:text-rose-400"
                     : "hidden sm:inline-flex text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
@@ -1209,7 +1230,7 @@ export const NavigationCard = memo(function NavigationCard({
                 aria-label={`隐藏站点：${item.title}`}
                 onClick={handlePruneSite}
               >
-                <EyeOff className="w-3.5 h-3.5" />
+                <EyeOff className="w-4 h-4" />
               </Button>
               {isEditingLayout && (
                 <Button
@@ -1218,14 +1239,14 @@ export const NavigationCard = memo(function NavigationCard({
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "h-6.5 w-6.5 rounded-full transition-colors",
+                    "h-11 min-w-11 flex-1 rounded-lg transition-colors",
                     isSpeedDialPinned ? "text-amber-500 bg-amber-500/15" : "text-muted-foreground hover:text-amber-500"
                   )}
                   title={isSpeedDialPinned ? "从首屏速览坞取消固定" : "📌 钉入首屏速览坞"}
                   aria-label={isSpeedDialPinned ? `从速览坞取消固定：${item.title}` : `钉入速览坞：${item.title}`}
                   onClick={handleToggleSpeedDial}
                 >
-                  <Zap className={cn("w-3.5 h-3.5", isSpeedDialPinned && "fill-amber-500")} />
+                  <Zap className={cn("w-4 h-4", isSpeedDialPinned && "fill-amber-500")} />
                 </Button>
               )}
               {onTogglePinInCategory && (
@@ -1235,23 +1256,23 @@ export const NavigationCard = memo(function NavigationCard({
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "h-6.5 w-6.5 rounded-full transition-colors",
+                    "h-11 min-w-11 flex-1 rounded-lg transition-colors",
                     isPinnedInCategory ? "text-amber-500 bg-amber-500/10" : "text-muted-foreground hover:text-amber-500"
                   )}
                   title={isPinnedInCategory ? "取消分类内置顶" : "置顶在当前分类首位"}
                   aria-label={isPinnedInCategory ? `取消分类内置顶：${item.title}` : `置顶在当前分类首位：${item.title}`}
                   onClick={handleCategoryPin}
                 >
-                  <ArrowUpToLine className={cn("w-3.5 h-3.5", isPinnedInCategory && "fill-amber-500")} />
+                  <ArrowUpToLine className={cn("w-4 h-4", isPinnedInCategory && "fill-amber-500")} />
                 </Button>
               )}
-              {detailAction('h-6.5 w-6.5 rounded-full')}
+              {detailAction('h-11 min-w-11 flex-1 rounded-lg')}
               <Button
                   tabIndex={-1}
                   data-card-action=""
                 variant="ghost"
                 size="icon"
-                className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent"
+                className="h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent"
                 title="按空格键或点击速览详情与行动"
                 aria-label={`速览与行动：${item.title}`}
                 onClick={(e) => {
@@ -1260,56 +1281,56 @@ export const NavigationCard = memo(function NavigationCard({
                   onPeek?.(item)
                 }}
               >
-                <Eye className="w-3.5 h-3.5" />
+                <Eye className="w-4 h-4" />
               </Button>
               <Button
                   tabIndex={-1}
                   data-card-action=""
                 variant="ghost"
                 size="icon"
-                className="hidden sm:inline-flex h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
+                className="hidden sm:inline-flex h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
                 title="📌 固定到模块化工作台快捷启动坞"
                 aria-label={`固定到工作台：${item.title}`}
                 onClick={handleWorkbenchPin}
               >
-                <Pin className="w-3.5 h-3.5" />
+                <Pin className="w-4 h-4" />
               </Button>
               <Button
                 tabIndex={-1}
                 data-card-action=""
                 variant="ghost"
                 size="icon"
-                className="hidden sm:inline-flex h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                className="hidden sm:inline-flex h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                 title="复制网址链接"
                 aria-label={`复制链接：${item.title}`}
                 onClick={handleCopyLink}
               >
-                <Copy className="w-3.5 h-3.5" />
+                <Copy className="w-4 h-4" />
               </Button>
               </span>
-              {/* 收藏星标（首屏瘦身）：默认降透明度，悬停/聚焦/触屏时可见，编排态常显；
-                  与药丸操作区同款显隐（键盘聚焦经操作区方向键导航可达）。 */}
-              <span className={cn(
-                "transition-opacity",
-                isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
-              )}>
-                <FavoriteButton
-                  tabIndex={-1}
-                  cardAction
-                  className="bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs"
-                  site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
-                />
-              </span>
+            </div>
+            {/* 收藏星标（卡片悬浮修复 2026-11-20）：常驻右上角、恒可见可点，
+                不再随悬停显隐（旧 opacity-0 + pointer-events-none 致非悬浮态
+                点星标无反应，实测 elementFromPoint 落在容器 div 上）；
+                外层容器 pointer-events-none、按钮自身 pointer-events-auto，
+                确保点击区域不被任何浮层覆盖。 */}
+            <div className="absolute top-2 right-2 z-20 pointer-events-none">
+              <FavoriteButton
+                tabIndex={-1}
+                cardAction
+                className="pointer-events-auto bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs"
+                site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
+              />
             </div>
           </Card>
         </TooltipTrigger>
 
         {!isFeatureHidden('feat:tooltips') && (
-          <TooltipContent 
-            side="bottom" 
+          <TooltipContent
+            side="bottom"
             align="center"
             sideOffset={8}
-            className="max-w-[280px] text-xs sm:text-sm"
+            className="max-w-[280px] max-h-40 overflow-y-auto text-xs sm:text-sm"
           >
             <p>{item.description || item.title}</p>
             <p className="text-xs text-muted-foreground pt-1 border-t mt-1">💡 聚焦时按 Space 空格键呼出沙箱速览与微动作</p>

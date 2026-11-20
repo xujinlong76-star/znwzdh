@@ -134,15 +134,58 @@ describe("无障碍细节（footer 分隔符与移动表单字号）", () => {
     expect(media).toMatch(/select/);
   });
 
-  it("站点卡片操作在触屏（无 hover）时强制可见（pointer-coarse，V13）", () => {
+  it("站点卡片操作在触屏（无 hover）时强制可见（卡片悬浮修复，2026-11-20）", () => {
     const src = overlayFile("src/components/navigation-card.tsx");
+    const css = overlayFile("src/styles/globals.css");
+    // 新机制（卡片悬浮修复 2026-11-20，Playwright 实测依据）：
+    //   · 标准/丰富卡：操作栏由右上角药丸移到底部通栏（nav-card-actionbar），
+    //     触屏默认可见改走 globals.css 的 @media (hover: none) 未分层规则，
+    //     不再用 pointer-coarse:opacity-100；
+    //   · 紧凑行：行布局无底部空间，操作簇保留 pointer-coarse:opacity-100，
+    //     故全文件仅剩 1 处；
+    //   · 收藏星标：三变体全部常驻可见，不再包在 opacity-0 的 hover-reveal
+    //     簇里（旧模式非悬浮态点星标无反应，elementFromPoint 落在容器上）。
     const hits = src.split("pointer-coarse:opacity-100").length - 1;
     expect(
       hits,
-      // 6 = 3 种卡片渲染变体（compact / rich / standard）× 每变体 2 处操作簇
-      // （操作按钮簇 + 收藏星标簇）；首屏瘦身批把星标拆为独立 hover-reveal
-      // 簇后由 3 增至 6，守卫计数同步更新（U-261，2026-11-20 实测）。
-      "六处 hover-reveal 操作簇都应带 pointer-coarse:opacity-100——否则触屏用户永远看不到收藏/置顶按钮",
-    ).toBe(6);
+      "仅紧凑行操作簇保留 pointer-coarse:opacity-100（标准/丰富卡底部操作栏已改走 globals.css 的 @media (hover: none)）",
+    ).toBe(1);
+    // 底部操作栏确实存在于标准/丰富卡：className 里 "nav-card-actionbar
+    // absolute bottom-0" 出现 2 次（两处注释提及不计）。
+    const bars = src.split('"nav-card-actionbar absolute bottom-0').length - 1;
+    expect(bars, "标准卡与丰富卡各应有一处底部操作栏 nav-card-actionbar").toBe(2);
+    // 触屏可见规则必须落在 globals.css 的非分层区（任何块之外，含 @layer）：
+    // 未分层声明才能压过卡片内联的 opacity-0 / pointer-events-none。
+    // 注意：文件里另有一处 "@media (hover: none) or (pointer: coarse)" 在
+    // @layer utilities 内（.nav-card-glow 触屏反馈，:528），indexOf 会先
+    // 命中它——须定位到后面带 .nav-card-actionbar 的那一处（:755）。
+    const marker = "@media (hover: none)";
+    let hoverNoneIdx = -1;
+    for (let i = css.indexOf(marker); i !== -1; i = css.indexOf(marker, i + 1)) {
+      if (css.slice(i, i + 300).includes(".nav-card-actionbar")) {
+        hoverNoneIdx = i;
+        break;
+      }
+    }
+    expect(hoverNoneIdx, "globals.css 应有带 .nav-card-actionbar 的 @media (hover: none) 触屏规则").toBeGreaterThan(-1);
+    const before = css.slice(0, hoverNoneIdx);
+    let depth = 0;
+    for (const ch of before) {
+      if (ch === "{") depth++;
+      else if (ch === "}") depth--;
+    }
+    expect(
+      depth,
+      "操作栏触屏可见规则必须写在任何块之外（含 @layer），否则压不过卡片内联的 opacity-0",
+    ).toBe(0);
+    const media = css.slice(hoverNoneIdx, hoverNoneIdx + 300);
+    expect(media).toContain(".nav-card-actionbar");
+    expect(media).toContain("opacity: 1");
+    expect(media).toContain("pointer-events: auto");
+    // 星标不得再包在 opacity-0 的 hover-reveal 簇里：三处星标容器均须是
+    // 常驻可见（标准/丰富卡为 absolute top-2 right-2 + pointer-events-none
+    // 容器配 pointer-events-auto 按钮；紧凑行为 opacity-100 容器）。
+    const starWrappers = src.split("收藏星标（卡片悬浮修复 2026-11-20）").length - 1;
+    expect(starWrappers, "三变体的星标注释都应更新为卡片悬浮修复版（常驻可见）").toBe(3);
   });
 });

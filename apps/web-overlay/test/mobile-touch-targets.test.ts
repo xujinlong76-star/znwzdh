@@ -13,9 +13,10 @@ import { describe, expect, it } from 'vitest'
  *      mobile-nav.tsx 四入口 + /videos 避让、use-home-diy.ts §3.3 的
  *      beforeunload + pagehide + visibilitychange 三重刷盘。
  *   2. 本轮修掉的触控目标：各组件的 min-h-11 / h-11 w-11 / ::after 隐形扩区。
- *   3. 有意不动的项：卡片内星标（操作区 26px 间距装不下 44px，需布局决策）、
- *      顶部工具栏的 180px 收缩容器、DIY 工具栏右侧撤销簇——只锁现状防回归，
- *      不伪装成已修好（见各处注释与本轮报告的跟进项）。
+ *   3. 有意不动的项：顶部工具栏的 180px 收缩容器、DIY 工具栏右侧撤销簇——
+ *      只锁现状防回归，不伪装成已修好（见各处注释与本轮报告的跟进项）。
+ *      （卡片内星标原属此项，卡片悬浮修复 2026-11-20 已随布局决策释放：
+ *      星标移出密集按钮簇独立居右上角，::after 扩到 44px，见下文星标项。）
  *
  * 约定：44px 用 Tailwind 的 min-h-11 / h-11（11 * 4px）表达，与
  * daily-focus.tsx 等既有写法一致；视觉不能动的 24px 以下小钮用
@@ -193,12 +194,13 @@ describe('P1 #10 触控目标：卡片星标与分类区', () => {
     expect(src).toContain('min-h-11 min-w-11')
   })
 
-  it('favorite-button：卡片内星标仍是 26px（有意不动，等布局决策）', () => {
+  it('favorite-button：卡片内星标视觉 26px，::after 扩到 44×44 点击区（卡片悬浮修复 2026-11-20 释放布局决策）', () => {
     const src = read('src/components/favorite-button.tsx')
-    // 卡片操作区是 26px 间距的密集按钮簇（navigation-card.tsx），44px 命中区
-    // 会盖住邻钮；这里锁死现状，改动必须先做布局决策（见本轮报告跟进项）。
+    // 旧跟进项「卡片内星标 26px 有意不动，等布局决策」已释放：卡片悬浮修复把
+    // 星标移出 26px 密集按钮簇、独立居卡片右上角，::after 扩区不再盖邻钮；
+    // 视觉仍是 26px（h-6.5 w-6.5），点击区 26 + 9×2 = 44px。
     expect(src).toContain('h-6.5 w-6.5')
-    expect(src).toContain('26px 间距的密集按钮簇')
+    expect(src).toContain("after:absolute after:-inset-[9px] after:content-['']")
   })
 
   it('navigation-category-section：折叠/复制/图谱/筛选/子分类页签 44px', () => {

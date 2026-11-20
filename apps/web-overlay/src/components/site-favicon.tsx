@@ -972,6 +972,20 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 无后缀串站、无子域站。黄底不透明、黑猫醒目，浅/深主题均可见，
   // 无需底块（resolveLogoTile 为 null），不做单站补丁。
   ['qimao.com', 'qimao.png'],
+  // 2026-11-20（C 类第 7 批 C7 补批 W10，猫眼电影 1 站）。
+  // C7 暂缓的“安全原因”经调查只是 W4 一份报告被安全系统移除，无任何一站
+  // 涉及安全/侵权/版权/合规（见 icon-c7-defer-reason-2026-11-20.md）。
+  // m 站 favicon 直链 200，image/x-icon，67,646 B，单帧 128×128 32 位
+  // DIB（ICO 魔数 00 00 01 00），转 RGBA PNG 原样落盘 maoyan.png
+  // （9,080 B，md5 5789648065fa2e8d7f8a19892c1a03c8）；红圆底 #E5342A
+  // + 白猫脸 #F5F5F5，四角透明，像素采样目视确认与官网标一致。
+  // www.maoyan.com/favicon.ico 本身打不开（curl -L 50 次重定向未收敛），
+  // 必须用 m 站地址；导航条目 icon 字段为远端 favicon.ico，被
+  // isRemoteRawFavicon 拦截后走 map，navigation.json 不动。
+  // 全库 383 站核对：'maoyan.com' 键只命中 猫眼电影 一站，无后缀串站。
+  // 红圆底 + 白猫脸在浅/深主题下均可辨识（resolveLogoTile 为 null），
+  // 不做单站补丁。
+  ['maoyan.com', 'maoyan.png'],
  ];
 
 /**

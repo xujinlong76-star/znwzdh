@@ -464,6 +464,11 @@
   "evidence": "BUSL 1.1（GitHub README 徽章 + LICENSE 原文 + 官网 CE 许可页）；免费社区版 + 付费 Nomad Enterprise（README 与官网企业版页）",
   "title": "Nomad"
  },
+ "openshift.com": {
+  "pricing": "freemium",
+  "evidence": "免费 Developer Sandbox（官网定价页：最小预配置开发测试环境即时可用）+ 付费订阅（OpenShift Container Platform / Kubernetes Engine / ROSA；另有免费 8 小时 ROSA 体验）",
+  "title": "OpenShift"
+ },
  "docs.docker.com/compose": {
   "pricing": "open_source",
   "evidence": "开源多容器编排工具",

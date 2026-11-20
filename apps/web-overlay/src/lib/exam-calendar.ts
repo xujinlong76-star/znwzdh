@@ -1329,8 +1329,8 @@ export const EXAM_REMINDER_TIER_LABEL: Record<ExamReminderTier, string> = {
  *    打印网址》所载，教育在线 2026-10-26 逐字转载；根路径实测 405，
  *    表单系统常见响应，非死链；链接写 http）；
  *  - 专题网站门户 http://bm.scs.gov.cn/kl2027（报名/审查入口，见
- *    GUOKAO_PORTAL_URL）实测仅 335 B JS 跳转页，当前直接访问会跳到
- *    scs.gov.cn 首页、找不到打印系统，故不作提醒的点击目标；
+ *    GUOKAO_PORTAL_URL）实测仅 334 B JS 跳转页，当前直接访问会跳到
+ *    招考专题 www.scs.gov.cn/gkIndex.html、找不到打印系统，故不作提醒的点击目标；
  * 文案（U-98）：card/strip 双写两层——登录专题网站 bm.scs.gov.cn/kl2027，
  * 选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn）；点击目标仍只
  * 挂 gwy 直链，不挂门户。

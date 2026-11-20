@@ -117,10 +117,11 @@
 
   /* ---------- 持久化（只存本机：语音开关 + 拖动位置） ----------
      K2：closed/closedAt 记录亲手收起（收起后 7 天内刷新/跳页仍收着，过期自动恢复展开）。 */
-  var store = { voice: true, pos: null, hinted: false, closed: false, closedAt: 0, play: false };
+  var store = { alwaysDynamic: true, voice: true, pos: null, hinted: false, closed: false, closedAt: 0, play: false };
   try {
     var saved = JSON.parse(window.localStorage.getItem(STORE_KEY) || 'null');
     if (saved && typeof saved === 'object') {
+      if (typeof saved.alwaysDynamic === 'boolean') store.alwaysDynamic = saved.alwaysDynamic;
       if (typeof saved.voice === 'boolean') store.voice = saved.voice;
       if (typeof saved.hinted === 'boolean') store.hinted = saved.hinted;
       if (typeof saved.closed === 'boolean') store.closed = saved.closed;
@@ -144,6 +145,7 @@
   }
   function persist() {
     try { window.localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) { reportStorageFailure(e); }
+    try { window.dispatchEvent(new CustomEvent('navhub:xiaomaomao-state', { detail: { alwaysDynamic: !!store.alwaysDynamic, closed: !!store.closed, play: typeof play === 'object' && play ? !!play.on : !!store.play } })); } catch (err) { /* 状态同步事件异常不阻断落盘 */ }
   }
 
   /* ---------- v4 玩法状态（摸猫/喂食/游戏/成长见证，全存本机同一个键，向后兼容 v3） ---------- */
@@ -310,8 +312,8 @@
     fish: SVG_OPEN + '<path d="M20.8 12c-2.4 3.3-5.5 5-9.1 5-3.2 0-6-1.6-7.9-4.1-.3-.4-.3-1 0-1.4C5.7 8.6 8.5 7 11.7 7c3.6 0 6.7 1.7 9.1 5z"/><path d="M4.6 9.4 7.4 12l-2.8 2.6"/><circle cx="16.9" cy="10.7" r="1" fill="currentColor" stroke="none"/></svg>',
     /* 游戏：圆角五角星 */
     star: SVG_OPEN + '<path d="M12 3.8l2.4 5 5.5.7-4.1 3.8 1.1 5.4L12 16l-4.9 2.7 1.1-5.4L4.1 9.5l5.5-.7z"/></svg>',
-    /* 游戏里掉落的星星（内容图形，填色版）：普通 / 金色 */
-    starSoft: '<svg viewBox="0 0 24 24" fill="#ffd166" stroke="#eda33a" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.8l2.4 5 5.5.7-4.1 3.8 1.1 5.4L12 16l-4.9 2.7 1.1-5.4L4.1 9.5l5.5-.7z"/></svg>',
+    /* 游戏里掉落的星星（内容图形，填色版）：普通 / 金色（加深描边在浅底也清晰） */
+    starSoft: '<svg viewBox="0 0 24 24" fill="#ffd166" stroke="#b45309" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.8l2.4 5 5.5.7-4.1 3.8 1.1 5.4L12 16l-4.9 2.7 1.1-5.4L4.1 9.5l5.5-.7z"/></svg>',
     starGold: '<svg viewBox="0 0 24 24" fill="#ffb703" stroke="#d97706" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.8l2.4 5 5.5.7-4.1 3.8 1.1 5.4L12 16l-4.9 2.7 1.1-5.4L4.1 9.5l5.5-.7z"/><circle cx="9.2" cy="9.6" r="1.1" fill="#ffe9a8" stroke="none"/></svg>',
     /* 语音开：喇叭（实心）+ 两道声波 */
     volOn: SVG_OPEN + '<path d="M11 5.2 6.6 9H3.2v6h3.4L11 18.8z" fill="currentColor" stroke="none"/><path d="M15.2 9.4a3.8 3.8 0 0 1 0 5.2"/><path d="M17.9 7a7.6 7.6 0 0 1 0 10"/></svg>',
@@ -330,182 +332,181 @@
     /* 归位：逆时针回转箭头（K4 一键回默认位置） */
     reset: SVG_OPEN + '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>',
     /* 游乐场：鼠标指针 + 两道追风线（追鼠标开关，互动玩法第一批 Top 3） */
-    chase: SVG_OPEN + '<path d="M5.5 3.2 19 10.6l-6.3 1.6L9.8 19z" fill="currentColor" stroke="none"/><path d="M3.5 19.8h4M5 15.8h2.5"/></svg>'
+    chase: SVG_OPEN + '<path d="M5.5 3.2 19 10.6l-6.3 1.6L9.8 19z" fill="currentColor" stroke="none"/><path d="M3.5 19.8h4M5 15.8h2.5"/></svg>',
+    /* 清空对话：简洁垃圾桶线条 */
+    clear: SVG_OPEN + '<path d="M4 7h16M9 7V4.6c0-.6.4-1 1-1h4c.6 0 1 .4 1 1V7M6.5 7l.9 12.2c.1.9.8 1.6 1.7 1.6h5.8c.9 0 1.6-.7 1.7-1.6L17.5 7"/><path d="M10 11v5M14 11v5"/></svg>',
+    /* 更多功能：水平三点（单行操作条收起低频键） */
+    more: SVG_OPEN + '<circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>'
   };
 
   /* ---------- DOM 骨架 ---------- */
   var css =
     /* v5 设计令牌：颜色/阴影/缓动收敛成变量，深色只换令牌值（站点 .dark 挂在 html 上） */
-    '#xiaomaomao{--xm-accent:#f4507e;--xm-accent-deep:#d6336c;--xm-ink:#77243f;--xm-ink-soft:#b06a84;--xm-surface:rgba(255,255,255,.94);--xm-solid:#fffafc;--xm-chip:rgba(255,240,245,.92);--xm-ring:rgba(214,51,108,.16);--xm-stage-ring:#ffd9e7;--xm-shadow-panel:0 24px 48px -12px rgba(43,10,24,.25),0 4px 12px rgba(43,10,24,.08);--xm-shadow-pop:0 8px 20px -6px rgba(43,10,24,.22);--xm-ease:cubic-bezier(.16,1,.3,1);--xm-spring:cubic-bezier(.34,1.56,.64,1);position:fixed;right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(112px + env(safe-area-inset-bottom,0px));z-index:60;font-family:inherit;color:var(--xm-ink);-webkit-tap-highlight-color:transparent}' +
-    'html.dark #xiaomaomao{--xm-accent:#ff7096;--xm-accent-deep:#ff8fab;--xm-ink:#f7e3ea;--xm-ink-soft:#d8a7ba;--xm-surface:rgba(30,27,38,.93);--xm-solid:#1e1b26;--xm-chip:rgba(255,112,150,.13);--xm-ring:rgba(255,255,255,.10);--xm-stage-ring:rgba(255,255,255,.14);--xm-shadow-panel:0 24px 48px -12px rgba(0,0,0,.7),0 4px 12px rgba(0,0,0,.4);--xm-shadow-pop:0 8px 20px -6px rgba(0,0,0,.55)}' +
+    /* 黑白极简令牌：猫本体全透明无边框无光影，气泡/悬浮胶囊/聊天与游戏窗统一素白（深色自适应纯深）实底 + 1px 细框，零阴影零毛玻璃零渐变 */
+    '#xiaomaomao{--xm-accent:#18181b;--xm-accent-deep:#09090b;--xm-btn-ink:#ffffff;--xm-ink:#18181b;--xm-ink-soft:#52525b;--xm-surface:transparent;--xm-solid:transparent;--xm-chip:transparent;--xm-ring:transparent;--xm-win-bg:#ffffff;--xm-win-muted:#f4f4f5;--xm-win-border:rgba(24,24,27,.14);--xm-win-line:rgba(24,24,27,.08);--xm-shadow-panel:none;--xm-shadow-pop:none;--xm-ease:cubic-bezier(.16,1,.3,1);--xm-spring:cubic-bezier(.34,1.56,.64,1);position:fixed;right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(112px + env(safe-area-inset-bottom,0px));z-index:60;font-family:inherit;color:var(--xm-ink);-webkit-tap-highlight-color:transparent}' +
+    'html.dark #xiaomaomao{--xm-accent:#fafafa;--xm-accent-deep:#ffffff;--xm-btn-ink:#09090b;--xm-ink:#f4f4f5;--xm-ink-soft:#a1a1aa;--xm-surface:transparent;--xm-solid:transparent;--xm-chip:transparent;--xm-ring:transparent;--xm-win-bg:#18181b;--xm-win-muted:#27272a;--xm-win-border:rgba(244,244,245,.16);--xm-win-line:rgba(244,244,245,.10);--xm-shadow-panel:none;--xm-shadow-pop:none}' +
     '#xiaomaomao.xm-enter{animation:xmPop .32s var(--xm-spring)}' +
     '@keyframes xmPop{0%{transform:scale(.9) translateY(10px);opacity:0}100%{transform:scale(1) translateY(0);opacity:1}}' +
     '#xiaomaomao button:focus-visible,#xiaomaomao a:focus-visible{outline:2px solid var(--xm-accent);outline-offset:2px}' +
     /* 主列：宽度恒定 = 舞台宽，气泡与面板都相对它定位，几何不再随气泡文字漂移 */
     '#xiaomaomao .xm-main-col{position:relative;width:112px}' +
-    /* 气泡（绝对定位，不再参与根宽度计算） */
-    '#xiaomaomao .xm-bubble{position:absolute;right:-4px;bottom:calc(100% + 12px);width:max-content;max-width:248px;background:var(--xm-surface);-webkit-backdrop-filter:blur(12px) saturate(1.5);backdrop-filter:blur(12px) saturate(1.5);border:1px solid var(--xm-ring);border-radius:16px;padding:8px 12px;min-height:55px;font-size:13px;line-height:1.5;color:var(--xm-accent-deep);box-shadow:var(--xm-shadow-pop);opacity:0;transform:translateY(6px) scale(.95);transform-origin:bottom right;transition:opacity .24s var(--xm-ease),transform .24s var(--xm-ease);pointer-events:none;word-break:break-word;z-index:9}' +
-    '#xiaomaomao .xm-bubble.xm-show{opacity:1;transform:translateY(0) scale(1)}' +
-    '#xiaomaomao .xm-bubble:after{content:"";position:absolute;right:36px;bottom:-5px;width:10px;height:10px;background:var(--xm-surface);border-right:1px solid var(--xm-ring);border-bottom:1px solid var(--xm-ring);transform:rotate(45deg)}' +
-    /* 舞台：去扫光、去辉光、去粗描边；加一枚地面影，让猫「坐」在页面上 */
+    /* 气泡：纯平极简胶囊（1px 细框，零毛玻璃零阴影），防压卡片透字互撞 */
+    '#xiaomaomao .xm-bubble{position:absolute;right:-4px;bottom:calc(100% + 12px);width:max-content;max-width:224px;background:var(--xm-win-bg);-webkit-backdrop-filter:none;backdrop-filter:none;border:1px solid var(--xm-win-border);border-radius:12px;padding:7px 11px;min-height:38px;font-size:12.5px;font-weight:500;line-height:1.45;color:var(--xm-accent-deep);text-align:left;box-shadow:none;opacity:0;transition:opacity .18s var(--xm-ease);pointer-events:none;word-break:break-word;z-index:9}' +
+    '#xiaomaomao .xm-bubble.xm-show{opacity:1;pointer-events:auto;cursor:pointer}' +
+    '#xiaomaomao.xm-avoid-fab .xm-bubble{right:calc(100% + 10px);bottom:14px;max-width:min(220px,calc(100vw - 120px))}' +
+    /* 舞台与所有猫猫形象图保持纯透明零背景零光影，避免边缘发虚/像贴纸图片 */
     '#xiaomaomao .xm-wrap{position:relative;width:112px;height:112px}' +
-    '#xiaomaomao .xm-wrap:after{content:"";position:absolute;left:10%;right:10%;bottom:-8px;height:14px;border-radius:50%;background:radial-gradient(ellipse at center,rgba(43,10,24,.32),rgba(43,10,24,0) 70%);filter:blur(3px);z-index:0;animation:xmShadow 5.2s ease-in-out infinite;pointer-events:none}' +
-    'html.dark #xiaomaomao .xm-wrap:after{background:radial-gradient(ellipse at center,rgba(0,0,0,.55),rgba(0,0,0,0) 70%)}' +
-    '@keyframes xmShadow{0%,100%{transform:scaleX(1);opacity:.75}50%{transform:scaleX(.9);opacity:.55}}' +
-    '#xiaomaomao .xm-stage{position:absolute;inset:0;z-index:1;border-radius:30%;overflow:hidden;background:#fff;border:1px solid var(--xm-stage-ring);box-shadow:var(--xm-shadow-pop);cursor:pointer;animation:xmFloat 5.2s ease-in-out infinite}' +
+    '#xiaomaomao .xm-stage{position:absolute;inset:0;z-index:1;border-radius:0;overflow:visible;background:transparent;border:none;box-shadow:none;cursor:pointer;animation:xmFloat 5.2s ease-in-out infinite;transition:translate .24s var(--xm-ease),rotate .24s var(--xm-ease)}' +
+    'html.dark #xiaomaomao .xm-stage{background:transparent;border:none;box-shadow:none}' +
+    /* 深色模式：轻微压边降白边毛刺（仅作用于暗色媒体渲染，不加框无阴影） */
+    'html.dark #xiaomaomao .xm-video,html.dark #xiaomaomao .xm-fallback,html.dark #xiaomaomao .xm-tab img{filter:brightness(.93) contrast(1.06)}' +
     /* C-03：视频首帧加载态——脉冲 + 「加载中…」文案，首帧就绪/兜底/停播时摘掉 */
     '#xiaomaomao.xm-loading .xm-stage{animation:xmLoading 1.1s ease-in-out infinite}' +
     '#xiaomaomao.xm-loading .xm-stage::after{content:"加载中…";position:absolute;left:50%;bottom:6px;transform:translateX(-50%);font-size:11px;color:var(--xm-muted);white-space:nowrap;z-index:3}' +
     '@keyframes xmLoading{0%,100%{opacity:1}50%{opacity:.55}}' +
-    /* v8：皇冠图是白底、没有深色变体——深色模式给舞台换柔和奶油底衬 + 暖金光晕影，
-       让白底猫像一张暖色贴纸落在深色页上，而不是一块生硬的白方块；收起圆标同理。 */
-    'html.dark #xiaomaomao .xm-stage{background:linear-gradient(155deg,#fff9ec 0%,#ffeef2 100%);border-color:rgba(255,196,120,.55);box-shadow:0 16px 34px -12px rgba(255,176,102,.45),var(--xm-shadow-pop)}' +
-    'html.dark #xiaomaomao .xm-tab{background:#fff6e6;border-color:rgba(255,196,120,.55)}' +
     '@keyframes xmFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}' +
-    /* 说话态：环形脉动（动效映射语义），不再旋转摇晃；P1：光圈改吃 --xm-accent 令牌（color-mix），深浅色自动跟随 */
+    /* 说话态只做轻缓浮动，不加边缘发光阴影环 */
     '#xiaomaomao .xm-stage.xm-speaking{animation:xmSpeak 1.6s ease-in-out infinite}' +
-    '@keyframes xmSpeak{0%,100%{transform:translateY(0);box-shadow:var(--xm-shadow-pop),0 0 0 0 color-mix(in srgb, var(--xm-accent) 35%, transparent)}50%{transform:translateY(-2px);box-shadow:var(--xm-shadow-pop),0 0 0 7px transparent}}' +
+    '@keyframes xmSpeak{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}' +
     '#xiaomaomao .xm-lean{position:absolute;inset:0;transition:transform .32s var(--xm-ease);will-change:transform}' +
-    '#xiaomaomao .xm-lean img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 18%;opacity:0;transition:opacity .32s var(--xm-ease);pointer-events:none;user-select:none;-webkit-user-drag:none}' +
+    '#xiaomaomao .xm-lean img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:transparent;border:none;border-radius:0;box-shadow:none;filter:none;opacity:0;transition:opacity .32s var(--xm-ease);pointer-events:none;user-select:none;-webkit-user-drag:none}' +
     '#xiaomaomao .xm-lean img.xm-on{opacity:1}' +
     '#xiaomaomao .xm-lean img.xm-pop{animation:xmPosePop .38s var(--xm-spring)}' +
     '@keyframes xmPosePop{0%{transform:scale(.94)}55%{transform:scale(1.025)}100%{transform:scale(1)}}' +
     '#xiaomaomao .xm-wrap.xm-happy{animation:xmBounce .55s var(--xm-spring)}' +
     '@keyframes xmBounce{0%{transform:translateY(0) scale(1)}35%{transform:translateY(-13px) scale(1.05)}70%{transform:translateY(2px) scale(.98)}100%{transform:translateY(0) scale(1)}}' +
-    '#xiaomaomao .xm-wrap.xm-sleep .xm-stage{animation-duration:8.5s;box-shadow:0 10px 22px -8px rgba(43,10,24,.25)}' +
+    '#xiaomaomao .xm-wrap.xm-sleep .xm-stage{animation-duration:8.5s;box-shadow:none}' +
     '#xiaomaomao .xm-zzz{position:absolute;top:-8px;right:-4px;z-index:5;pointer-events:none;display:none}' +
     '#xiaomaomao .xm-wrap.xm-sleep .xm-zzz{display:block}' +
-    '#xiaomaomao .xm-zzz span{position:absolute;color:var(--xm-accent-deep);font-weight:700;opacity:0;text-shadow:0 1px 6px rgba(255,255,255,.95);animation:xmZzz 2.6s ease-in-out infinite}' +
-    'html.dark #xiaomaomao .xm-zzz span{text-shadow:0 1px 6px rgba(0,0,0,.85)}' +
+    '#xiaomaomao .xm-zzz span{position:absolute;color:var(--xm-accent-deep);font-weight:700;opacity:0;animation:xmZzz 2.6s ease-in-out infinite}' +
     '#xiaomaomao .xm-zzz span:nth-child(1){font-size:15px;right:0;top:0}' +
     '#xiaomaomao .xm-zzz span:nth-child(2){font-size:19px;right:12px;top:-12px;animation-delay:.85s}' +
     '#xiaomaomao .xm-zzz span:nth-child(3){font-size:24px;right:26px;top:-26px;animation-delay:1.7s}' +
     '@keyframes xmZzz{0%{opacity:0;transform:translateY(6px) rotate(-6deg)}30%{opacity:1}100%{opacity:0;transform:translateY(-16px) rotate(8deg)}}' +
     '#xiaomaomao .xm-fx{position:absolute;inset:-30px;pointer-events:none;z-index:6;overflow:visible}' +
-    '#xiaomaomao .xm-fx i{position:absolute;left:50%;top:38%;font-style:normal;opacity:0;animation:xmFly .95s ease-out forwards;text-shadow:0 2px 8px rgba(255,255,255,.85)}' +
+    '#xiaomaomao .xm-fx i{position:absolute;left:50%;top:38%;font-style:normal;opacity:0;animation:xmFly .95s ease-out forwards}' +
     '@keyframes xmFly{0%{opacity:0;transform:translate(-50%,-50%) scale(.4) rotate(0deg)}18%{opacity:1}100%{opacity:0;transform:translate(calc(-50% + var(--tx)),calc(-50% + var(--ty))) scale(1.15) rotate(var(--rr))}}' +
-    /* v7 操作区：悬浮坞——平时完全收起（opacity 0 + visibility hidden，零遮挡、不可点、不可聚焦）；
-       展开时悬在猫上方留白处：bottom:calc(100% + 10px) 与舞台纵向零重叠，默认右对齐向左长，
-       猫靠左时由 alignPanel 加 .xm-fan-r 翻向右。按钮入场走 xmDockIn（fill backwards + 逐个延迟，
-       像从猫身上荡开），退场随坞整体淡出；聊天钮只用渐变主色区分主次，不再骑角放大。 */
-    '#xiaomaomao .xm-dock{position:absolute;right:-4px;bottom:calc(100% + 10px);display:flex;width:max-content;max-width:calc(100vw - 24px);flex-direction:row-reverse;gap:6px;padding:6px;border-radius:999px;background:var(--xm-surface);-webkit-backdrop-filter:blur(14px) saturate(1.5);backdrop-filter:blur(14px) saturate(1.5);border:1px solid var(--xm-ring);box-shadow:var(--xm-shadow-pop);z-index:11;opacity:0;visibility:hidden;transform:translateY(8px) scale(.96);transform-origin:bottom right;transition:opacity .22s var(--xm-ease),transform .22s var(--xm-ease),visibility 0s linear .22s;pointer-events:none}' +
-    '#xiaomaomao .xm-dock.xm-fan-r{right:auto;left:-4px;transform-origin:bottom left}' +
-    '#xiaomaomao .xm-dock{flex-wrap:wrap}' +
-    '#xiaomaomao .xm-growth-chip{flex:0 0 100%;display:none;align-items:center;justify-content:center;gap:4px;padding:2px 6px 0;font-size:11px;line-height:1.35;color:var(--xm-ink-soft);white-space:nowrap;letter-spacing:.02em}' +
-    '#xiaomaomao .xm-growth-chip.xm-on{display:flex}' +
-    '#xiaomaomao.xm-ctl .xm-dock{opacity:1;visibility:visible;transform:translateY(0) scale(1);transition:opacity .22s var(--xm-ease),transform .22s var(--xm-ease);pointer-events:auto}' +
-    '#xiaomaomao .xm-btn{width:36px;height:36px;border-radius:50%;border:1px solid var(--xm-ring);background:var(--xm-chip);color:var(--xm-ink);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;box-shadow:0 2px 6px rgba(43,10,24,.10);transition:transform .14s var(--xm-ease),background .12s var(--xm-ease),box-shadow .12s var(--xm-ease),filter .12s var(--xm-ease)}' +
-    '#xiaomaomao .xm-dock .xm-btn{opacity:0;transition:opacity .18s var(--xm-ease),transform .14s var(--xm-ease),background .12s var(--xm-ease),box-shadow .12s var(--xm-ease),filter .12s var(--xm-ease)}' +
-    '#xiaomaomao.xm-ctl .xm-dock .xm-btn{opacity:1;animation:xmDockIn .26s var(--xm-spring) backwards}' +
-    '#xiaomaomao.xm-ctl .xm-dock .xm-btn:nth-child(2){animation-delay:.03s}' +
-    '#xiaomaomao.xm-ctl .xm-dock .xm-btn:nth-child(3){animation-delay:.06s}' +
-    '#xiaomaomao.xm-ctl .xm-dock .xm-btn:nth-child(4){animation-delay:.09s}' +
-    '#xiaomaomao.xm-ctl .xm-dock .xm-btn:nth-child(5){animation-delay:.12s}' +
-    '#xiaomaomao.xm-ctl .xm-dock .xm-btn:nth-child(6){animation-delay:.15s}' +
-    '@keyframes xmDockIn{0%{opacity:0;transform:translateY(10px) scale(.55)}100%{opacity:1;transform:translateY(0) scale(1)}}' +
-    '#xiaomaomao .xm-btn:hover{transform:translateY(-1px);background:var(--xm-solid);box-shadow:0 5px 12px rgba(43,10,24,.18)}' +
+    /* v7 操作区：精简单行 4 键微胶囊（聊天/喂鱼/游戏/更多⋯），素白/纯深实底 + 1px 细框 + 底部隐形桥接防滑脱穿点 */
+    '#xiaomaomao .xm-dock{position:absolute;right:-4px;bottom:calc(100% + 10px);width:max-content;max-width:calc(100vw - 24px);display:flex;flex-direction:row-reverse;flex-wrap:nowrap;align-items:center;gap:4px;padding:4px 6px;border-radius:999px;background:var(--xm-win-bg);-webkit-backdrop-filter:none;backdrop-filter:none;border:1px solid var(--xm-win-border);box-shadow:none;z-index:11;opacity:0;visibility:hidden;transition:opacity .18s var(--xm-ease),visibility 0s linear .18s;pointer-events:none}' +
+    '#xiaomaomao .xm-dock::before{content:"";position:absolute;left:-6px;right:-6px;top:100%;height:14px}' +
+    '#xiaomaomao .xm-dock.xm-dock-more{flex-wrap:wrap;border-radius:16px;padding:5px 6px;width:154px}' +
+    '#xiaomaomao .xm-dock .xm-chat-btn{order:1}#xiaomaomao .xm-dock .xm-fish-btn{order:2}#xiaomaomao .xm-dock .xm-game-btn{order:3}#xiaomaomao .xm-dock .xm-more-btn{order:4}#xiaomaomao .xm-dock .xm-dock-sec{order:5}' +
+    '#xiaomaomao .xm-dock:not(.xm-dock-more) .xm-dock-sec{display:none}' +
+    '#xiaomaomao .xm-dock .xm-close-btn{display:none}' +
+    '#xiaomaomao.xm-avoid-fab .xm-dock{right:calc(100% + 10px);bottom:14px}' +
+    '#xiaomaomao.xm-avoid-fab .xm-dock::before{left:100%;right:auto;top:-6px;bottom:-6px;width:14px;height:auto}' +
+    '#xiaomaomao .xm-dock.xm-fan-r{right:auto;left:-4px}' +
+    '#xiaomaomao .xm-growth-chip{flex:0 0 100%;display:none !important}' +
+    '#xiaomaomao.xm-ctl .xm-dock{opacity:1;visibility:visible;transition:opacity .18s var(--xm-ease);pointer-events:auto}' +
+    '#xiaomaomao .xm-btn{width:32px;height:32px;border-radius:999px;border:none;background:transparent;color:var(--xm-ink);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;box-shadow:none;transition:background .12s var(--xm-ease),transform .14s var(--xm-ease)}' +
+    '#xiaomaomao .xm-dock .xm-btn{opacity:0;transition:opacity .16s var(--xm-ease),background .12s var(--xm-ease),transform .14s var(--xm-ease)}' +
+    '#xiaomaomao.xm-ctl .xm-dock .xm-btn{opacity:1}' +
+    '#xiaomaomao .xm-btn:hover{transform:translateY(-1px);background:var(--xm-win-muted);box-shadow:none}' +
     '#xiaomaomao .xm-btn:active{transform:scale(.93)}' +
-    '#xiaomaomao .xm-btn svg{width:20px;height:20px;flex:none;display:block}' +
-    '#xiaomaomao .xm-chat-btn{background:linear-gradient(135deg,#c2185b,#d81b60);color:#fff;border-color:transparent;box-shadow:0 6px 14px -4px rgba(244,80,126,.5)}' +
-    '#xiaomaomao .xm-chat-btn:hover{background:linear-gradient(135deg,#c2185b,#d81b60);filter:brightness(1.07)}' +
-    /* 收起小圆标：加深度投影，浅底上不再隐形 */
-    '#xiaomaomao .xm-tab{display:none;width:58px;height:58px;border-radius:50%;overflow:visible;border:2px solid var(--xm-stage-ring);background:#fff;cursor:pointer;padding:0;box-shadow:var(--xm-shadow-pop);position:relative;transition:transform .12s var(--xm-ease)}' +
+    '#xiaomaomao .xm-btn svg{width:18px;height:18px;flex:none;display:block}' +
+    '#xiaomaomao .xm-chat-btn{background:linear-gradient(135deg,#18181b,#18181b);background:var(--xm-accent);color:var(--xm-btn-ink);border:none;box-shadow:none}' +
+    '#xiaomaomao .xm-chat-btn:hover{background:var(--xm-accent);box-shadow:none;opacity:.88}' +
+    /* 收起小圆标：48×48 素白/纯深细框可辨入口，内部猫图本身无框无阴影 */
+    '#xiaomaomao .xm-tab{display:none;width:48px;height:48px;border-radius:50%;overflow:visible;border:1px solid var(--xm-win-border);background:var(--xm-win-bg);cursor:pointer;padding:4px;box-shadow:none;position:relative;transition:transform .12s var(--xm-ease)}' +
     '#xiaomaomao .xm-tab:hover{transform:scale(1.06)}' +
-    '#xiaomaomao .xm-tab img{width:100%;height:100%;border-radius:50%;object-fit:cover;object-position:50% 15%;display:block}' +
-    /* v7：收起角标由「聊」字改成 SVG 气泡角标（与全套图标同风格） */
-    '#xiaomaomao .xm-tab-badge{position:absolute;right:-2px;bottom:-2px;width:20px;height:20px;border-radius:50%;background:var(--xm-accent);border:2px solid var(--xm-solid);display:flex;align-items:center;justify-content:center;color:#fff;pointer-events:none}' +
-    '#xiaomaomao .xm-tab-badge svg{width:11px;height:11px;display:block}' +
-    'html.dark #xiaomaomao .xm-tab-badge{background:#d6336c}' +
+    '#xiaomaomao .xm-tab img{width:100%;height:100%;border-radius:0;object-fit:contain;background:transparent;border:none;box-shadow:none;display:block}' +
+    'html.dark #xiaomaomao .xm-tab{background:var(--xm-win-bg);border:1px solid var(--xm-win-border);box-shadow:none}' +
+    /* v7：收起角标——高对比圆形气泡点，一眼识别为可点击唤回按钮 */
+    '#xiaomaomao .xm-tab-badge{position:absolute;right:-3px;bottom:-3px;width:18px;height:18px;border-radius:50%;background:var(--xm-accent);border:2px solid var(--xm-win-bg);box-shadow:none;display:flex;align-items:center;justify-content:center;color:var(--xm-btn-ink);pointer-events:none}' +
+    'html.dark #xiaomaomao .xm-tab-badge{background:#d6336c;background:var(--xm-accent);color:var(--xm-btn-ink)}' +
+    '#xiaomaomao .xm-tab-badge svg{width:10px;height:10px;display:block}' +
     '#xiaomaomao.xm-closed .xm-tab{display:block}' +
     '#xiaomaomao.xm-closed .xm-main-col{display:none}' +
     /* K5：站内弹窗打开时猫暂隐/降层（.xm-behind-modal），免得压住弹窗与发送按钮 */
     '#xiaomaomao.xm-behind-modal{z-index:30;opacity:0;pointer-events:none;transition:opacity .2s var(--xm-ease)}' +
-    /* 聊天面板：锚定主列左侧 14px，玻璃面 + 1px 环 + 中性深影 */
-    '#xiaomaomao .xm-panel{position:absolute;bottom:0;right:calc(100% + 14px);width:336px;max-width:calc(100vw - 156px);height:min(508px,66vh);display:none;flex-direction:column;background:var(--xm-surface);-webkit-backdrop-filter:blur(16px) saturate(1.5);backdrop-filter:blur(16px) saturate(1.5);border:1px solid var(--xm-ring);border-radius:20px;box-shadow:var(--xm-shadow-panel);overflow:hidden;transform-origin:bottom right;z-index:10}' +
-    '#xiaomaomao.xm-open .xm-panel{display:flex;animation:xmPanelIn .24s var(--xm-ease) both}' +
-    '@keyframes xmPanelIn{0%{opacity:0;transform:scale(.97) translateY(8px)}100%{opacity:1;transform:scale(1) translateY(0)}}' +
-    '#xiaomaomao .xm-panel.xm-left{right:auto;left:calc(100% + 14px);transform-origin:bottom left}' +
-    '#xiaomaomao .xm-p-head{display:flex;align-items:center;gap:9px;padding:11px 12px;border-bottom:1px solid var(--xm-ring);color:var(--xm-ink);flex:none}' +
-    '#xiaomaomao .xm-p-head img{width:34px;height:34px;border-radius:50%;object-fit:cover;object-position:50% 15%;border:2px solid var(--xm-accent)}' +
-    '#xiaomaomao .xm-p-title{font-size:14px;font-weight:600;line-height:1.25}' +
-    '#xiaomaomao .xm-p-sub{font-size:11.5px;color:var(--xm-ink-soft);font-weight:400}' +
-    '#xiaomaomao .xm-p-head .xm-hbtn{margin-left:auto;width:28px;height:28px;border-radius:50%;border:1px solid var(--xm-ring);background:var(--xm-chip);color:var(--xm-ink);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:background .12s var(--xm-ease),transform .12s var(--xm-ease)}' +
-    '#xiaomaomao .xm-p-head .xm-hbtn:hover{background:var(--xm-solid)}' +
+    /* 聊天面板：极简素白/纯深实底 + 1px 细框，零阴影零毛玻璃，对话气泡与轻卡分层清晰 */
+    '#xiaomaomao .xm-panel{position:absolute;bottom:0;right:calc(100% + 14px);width:328px;max-width:calc(100vw - 148px);height:min(448px,62vh);display:none;flex-direction:column;padding:12px;background:var(--xm-win-bg);-webkit-backdrop-filter:none;backdrop-filter:none;border:1px solid var(--xm-win-border);border-radius:14px;box-shadow:none;overflow:hidden;z-index:10}' +
+    '#xiaomaomao.xm-open .xm-panel{display:flex}' +
+    '#xiaomaomao .xm-panel.xm-left{right:auto;left:calc(100% + 14px)}' +
+    '#xiaomaomao .xm-p-head{display:flex;align-items:center;gap:4px;padding:0 0 8px;border:none;border-bottom:1px solid var(--xm-win-line);background:transparent;color:var(--xm-ink);flex:none}' +
+    '#xiaomaomao .xm-p-head img{width:28px;height:28px;border-radius:0;object-fit:contain;background:transparent;border:none;box-shadow:none;filter:none;flex:none}' +
+    '#xiaomaomao .xm-p-meta{display:flex;align-items:center;gap:6px;min-width:0;margin-right:auto}' +
+    '#xiaomaomao .xm-p-title{font-size:13.5px;font-weight:700;line-height:1.25;color:var(--xm-accent-deep);white-space:nowrap;flex:none}' +
+    '#xiaomaomao .xm-p-lv{font-size:10.5px;font-weight:500;line-height:1.2;padding:2px 6px;border-radius:999px;background:var(--xm-win-muted);color:var(--xm-ink-soft);white-space:nowrap;flex:none}' +
+    '#xiaomaomao .xm-p-sub{display:none}' +
+    '#xiaomaomao .xm-p-head .xm-hbtn{margin-left:auto;width:26px;height:26px;flex:none;border-radius:999px;border:none;background:transparent;color:var(--xm-ink-soft);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:none;transition:background .12s var(--xm-ease),color .12s var(--xm-ease),transform .12s var(--xm-ease)}' +
+    '#xiaomaomao .xm-p-head .xm-hbtn:hover{background:var(--xm-win-muted);color:var(--xm-accent-deep)}' +
     '#xiaomaomao .xm-p-head .xm-hbtn:active{transform:scale(.93)}' +
     '#xiaomaomao .xm-p-head .xm-hbtn + .xm-hbtn{margin-left:0}' +
     '#xiaomaomao .xm-hbtn svg{width:15px;height:15px;display:block}' +
-    '#xiaomaomao .xm-msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:9px;scrollbar-width:thin;scrollbar-color:var(--xm-ring) transparent}' +
-    '#xiaomaomao .xm-msgs::-webkit-scrollbar{width:5px}#xiaomaomao .xm-msgs::-webkit-scrollbar-thumb{background:var(--xm-ring);border-radius:3px}' +
-    '#xiaomaomao .xm-m{max-width:88%;padding:8px 11px;font-size:13.5px;line-height:1.6;border-radius:16px;word-break:break-word;animation:xmMsgIn .2s var(--xm-ease) both}' +
-    '@keyframes xmMsgIn{0%{opacity:0;transform:translateY(5px)}100%{opacity:1;transform:translateY(0)}}' +
-    '#xiaomaomao .xm-m-u{align-self:flex-end;background:linear-gradient(135deg,var(--xm-accent),#ff8fab);color:#fff;border-bottom-right-radius:6px}' +
-    '#xiaomaomao .xm-m-a{align-self:flex-start;background:var(--xm-solid);border:1px solid var(--xm-ring);color:var(--xm-ink);border-bottom-left-radius:6px;box-shadow:0 2px 8px rgba(43,10,24,.06)}' +
-    '#xiaomaomao .xm-note{align-self:flex-start;font-size:11px;color:var(--xm-ink-soft);margin-top:-4px}' +
-    '#xiaomaomao .xm-dots{display:inline-flex;gap:4px;padding:2px 2px}' +
-    '#xiaomaomao .xm-dots i{width:7px;height:7px;border-radius:50%;background:var(--xm-accent);animation:xmDot 1s ease-in-out infinite}' +
+    '#xiaomaomao .xm-msgs{flex:1;overflow-y:auto;margin-top:4px;padding:8px 2px;display:flex;flex-direction:column;gap:8px;scrollbar-width:thin;scrollbar-color:rgba(113,113,122,.28) transparent;background:transparent}' +
+    '#xiaomaomao .xm-msgs::-webkit-scrollbar{width:4px}#xiaomaomao .xm-msgs::-webkit-scrollbar-thumb{background:rgba(113,113,122,.28);border-radius:2px}' +
+    '#xiaomaomao .xm-m{max-width:88%;padding:7px 11px;font-size:12.5px;line-height:1.5;border-radius:12px;border:none;box-shadow:none;word-break:break-word}' +
+    '#xiaomaomao .xm-m-u{align-self:flex-end;background:var(--xm-accent);color:var(--xm-btn-ink);font-weight:500;border-bottom-right-radius:4px}' +
+    '#xiaomaomao .xm-m-a{align-self:flex-start;background:var(--xm-win-muted);color:var(--xm-ink);font-weight:400;border-bottom-left-radius:4px}' +
+    '#xiaomaomao .xm-note{align-self:flex-start;font-size:11px;color:var(--xm-ink-soft);padding:0 2px}' +
+    '#xiaomaomao .xm-dots{display:inline-flex;gap:4px;padding:3px 2px}' +
+    '#xiaomaomao .xm-dots i{width:6px;height:6px;border-radius:50%;background:var(--xm-accent);animation:xmDot 1s ease-in-out infinite}' +
     '#xiaomaomao .xm-dots i:nth-child(2){animation-delay:.15s}#xiaomaomao .xm-dots i:nth-child(3){animation-delay:.3s}' +
-    '@keyframes xmDot{0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(-5px);opacity:1}}' +
-    '#xiaomaomao .xm-cards{display:flex;flex-direction:column;gap:7px;align-self:flex-start;width:94%;animation:xmMsgIn .2s var(--xm-ease) both}' +
-    '#xiaomaomao .xm-card{display:flex;align-items:center;gap:9px;padding:8px 10px;background:var(--xm-solid);border:1px solid var(--xm-ring);border-radius:14px;text-decoration:none;transition:transform .12s var(--xm-ease),box-shadow .12s var(--xm-ease)}' +
-    '#xiaomaomao .xm-card:hover{transform:translateY(-1px);box-shadow:var(--xm-shadow-pop)}' +
-    '#xiaomaomao .xm-mono{flex:none;width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#ff8fab,#ffc2d4);color:#fff;font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:center}' +
-    '#xiaomaomao .xm-card-t{font-size:13.5px;font-weight:600;color:var(--xm-ink);line-height:1.3}' +
-    '#xiaomaomao .xm-card-r{font-size:12px;color:var(--xm-ink-soft);line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}' +
-    '#xiaomaomao .xm-card-go{flex:none;color:var(--xm-accent);font-size:16px;font-weight:700}' +
-    '#xiaomaomao .xm-card-go svg{width:17px;height:17px;display:block}' +
-    '#xiaomaomao .xm-sugs{display:flex;flex-wrap:wrap;gap:6px;align-self:flex-start;animation:xmMsgIn .2s var(--xm-ease) both}' +
-    '#xiaomaomao .xm-sug{display:inline-flex;align-items:center;min-height:30px;padding:4px 11px;border-radius:999px;background:var(--xm-chip);border:1px solid var(--xm-ring);color:var(--xm-accent-deep);font-size:12.5px;text-decoration:none;cursor:pointer;transition:background .12s var(--xm-ease),transform .12s var(--xm-ease)}' +
-    '#xiaomaomao .xm-sug:hover{background:var(--xm-solid)}' +
+    '@keyframes xmDot{0%,100%{transform:translateY(0);opacity:.4}50%{transform:translateY(-4px);opacity:1}}' +
+    '#xiaomaomao .xm-cards{display:flex;flex-direction:column;gap:6px;align-self:flex-start;width:100%}' +
+    '#xiaomaomao .xm-card{display:flex;align-items:center;gap:8px;padding:7px 9px;background:var(--xm-win-bg);border:1px solid var(--xm-win-line);border-radius:10px;box-shadow:none;text-decoration:none;transition:background .12s var(--xm-ease),border-color .12s var(--xm-ease)}' +
+    '#xiaomaomao .xm-card:hover{background:var(--xm-win-muted);border-color:var(--xm-win-border);box-shadow:none}' +
+    '#xiaomaomao .xm-mono{flex:none;width:24px;height:24px;border-radius:6px;background:var(--xm-win-muted);color:var(--xm-accent-deep);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}' +
+    '#xiaomaomao .xm-card-t{font-size:12.5px;font-weight:600;color:var(--xm-accent-deep);line-height:1.3}' +
+    '#xiaomaomao .xm-card-r{font-size:11.5px;color:var(--xm-ink-soft);line-height:1.35;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}' +
+    '#xiaomaomao .xm-card-go{flex:none;color:var(--xm-ink-soft);font-size:15px;font-weight:600;margin-left:auto}' +
+    '#xiaomaomao .xm-card-go svg{width:14px;height:14px;display:block}' +
+    '#xiaomaomao .xm-sugs{display:flex;flex-wrap:wrap;gap:6px;align-self:flex-start}' +
+    '#xiaomaomao .xm-sug{display:inline-flex;align-items:center;min-height:28px;padding:3px 10px;border-radius:999px;background:var(--xm-win-muted);border:1px solid var(--xm-win-border);box-shadow:none;color:var(--xm-ink);font-size:11.5px;font-weight:500;text-decoration:none;cursor:pointer;transition:border-color .12s var(--xm-ease),color .12s var(--xm-ease)}' +
+    '#xiaomaomao .xm-sug:hover{border-color:var(--xm-accent);color:var(--xm-accent-deep)}' +
     '#xiaomaomao .xm-sug:active{transform:scale(.96)}' +
-    '#xiaomaomao .xm-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 9px;flex:none}' +
-    '#xiaomaomao .xm-form{display:flex;gap:8px;padding:10px 12px 12px;border-top:1px solid var(--xm-ring);flex:none;align-items:center}' +
-    '#xiaomaomao .xm-input{flex:1;min-width:0;height:40px;border-radius:999px;border:1px solid var(--xm-ring);padding:0 15px;font-size:14px;color:var(--xm-ink);outline:none;background:var(--xm-chip)}' +
-    '#xiaomaomao .xm-input:focus{border-color:var(--xm-accent);box-shadow:0 0 0 3px rgba(244,80,126,.18)}' +
+    '#xiaomaomao .xm-chips{display:flex;flex-wrap:wrap;gap:5px;padding:6px 0;flex:none;overflow-x:hidden;scrollbar-width:none;background:transparent}' +
+    '#xiaomaomao .xm-chips::-webkit-scrollbar{display:none}' +
+    '#xiaomaomao .xm-chips .xm-sug{white-space:nowrap;min-height:26px;padding:2px 9px;font-size:11px}' +
+    '#xiaomaomao .xm-form{display:flex;gap:6px;padding:8px 0 0;border:none;border-top:1px solid var(--xm-win-line);flex:none;align-items:center;background:transparent}' +
+    '#xiaomaomao .xm-input{flex:1;min-width:0;height:36px;border-radius:999px;border:1px solid var(--xm-win-border);padding:0 12px;font-size:13px;color:var(--xm-ink);outline:none;background:var(--xm-win-muted);box-shadow:none}' +
+    '#xiaomaomao .xm-input:focus{border-color:var(--xm-accent);background:var(--xm-win-bg);box-shadow:none}' +
     '#xiaomaomao .xm-input::placeholder{color:var(--xm-ink-soft)}' +
-    '#xiaomaomao .xm-send{flex:none;height:40px;padding:0 17px;border:none;border-radius:999px;background:linear-gradient(135deg,#c2185b,#d81b60);color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 16px -4px rgba(244,80,126,.45);transition:transform .12s var(--xm-ease),filter .12s var(--xm-ease)}' +
-    '#xiaomaomao .xm-send:hover{filter:brightness(1.05)}' +
+    '#xiaomaomao .xm-send{flex:none;height:36px;padding:0 14px;border:none;border-radius:999px;background:linear-gradient(135deg,#18181b,#18181b);background:var(--xm-accent);color:var(--xm-btn-ink);font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:none;transition:opacity .12s var(--xm-ease),transform .12s var(--xm-ease)}' +
+    '#xiaomaomao .xm-send:hover{opacity:.88}' +
     '#xiaomaomao .xm-send:active{transform:scale(.96)}' +
-    '#xiaomaomao .xm-send:disabled{opacity:.55;cursor:default;box-shadow:none;filter:saturate(.4)}' +
-    /* 表情符号层 / 节日装饰 / 躲闪 / 喂鱼 / 麦克风 / 接星星（沿用 v4 类名与行为，只换令牌） */
-    '#xiaomaomao .xm-emo{position:absolute;top:-18px;left:0;z-index:8;font-size:23px;font-weight:700;color:var(--xm-accent-deep);opacity:0;pointer-events:none;text-shadow:0 2px 8px rgba(255,255,255,.95)}' +
-    'html.dark #xiaomaomao .xm-emo{text-shadow:0 2px 8px rgba(0,0,0,.7)}' +
+    '#xiaomaomao .xm-send:disabled{opacity:.4;cursor:default;box-shadow:none}' +
+    /* 表情符号层 / 节日装饰 / 躲闪 / 喂鱼 / 麦克风 / 接星星（统一去特效、修复徽标与游戏对比） */
+    '#xiaomaomao .xm-emo{position:absolute;top:-18px;left:0;z-index:8;font-size:22px;font-weight:700;color:var(--xm-accent-deep);opacity:0;pointer-events:none}' +
     '#xiaomaomao .xm-emo.xm-emo-show{animation:xmEmo 1.5s var(--xm-ease) forwards}' +
     '@keyframes xmEmo{0%{opacity:0;transform:translateY(7px) scale(.5) rotate(-10deg)}25%{opacity:1;transform:translateY(0) scale(1.18) rotate(5deg)}70%{opacity:1}100%{opacity:0;transform:translateY(-15px) scale(1) rotate(0deg)}}' +
-    '#xiaomaomao .xm-deco{position:absolute;top:-20px;right:-2px;z-index:8;font-size:20px;display:none;pointer-events:none;animation:xmFloat 5.2s ease-in-out infinite;filter:drop-shadow(0 3px 5px rgba(43,10,24,.25))}' +
+    '#xiaomaomao .xm-deco{position:absolute;top:-20px;right:-2px;z-index:8;font-size:20px;display:none;pointer-events:none;animation:xmFloat 5.2s ease-in-out infinite}' +
     '#xiaomaomao .xm-wrap.xm-dodge .xm-stage{animation:xmDodge .45s var(--xm-ease)}' +
     '@keyframes xmDodge{0%{transform:translateX(0)}30%{transform:translateX(15px) rotate(3deg)}60%{transform:translateX(-6px) rotate(-1deg)}100%{transform:translateX(0)}}' +
-    '#xiaomaomao .xm-fx i.xm-fish-i{animation:xmFish .72s ease-in forwards;font-size:22px;color:#3aa7c7}' +
+    '#xiaomaomao .xm-fx i.xm-fish-i{animation:xmFish .72s ease-in forwards;font-size:22px;color:var(--xm-ink)}' +
     '#xiaomaomao .xm-fx i.xm-fish-i svg{width:24px;height:24px;display:block}' +
     '@keyframes xmFish{0%{opacity:0;transform:translate(-50%,-30px) rotate(-26deg) scale(.7)}30%{opacity:1}100%{opacity:0;transform:translate(-50%,30px) rotate(12deg) scale(1.05)}}' +
     '#xiaomaomao .xm-fish-btn{position:relative}' +
-    '#xiaomaomao .xm-fish-n{position:absolute;top:-5px;right:-5px;min-width:15px;height:15px;border-radius:8px;background:var(--xm-accent);color:#fff;font-size:9px;font-weight:700;line-height:15px;text-align:center;padding:0 3px;box-shadow:0 0 0 1.5px var(--xm-solid),0 2px 6px rgba(244,80,126,.5)}' +
-    '#xiaomaomao .xm-mic{flex:none;width:40px;height:40px;border-radius:50%;border:1px solid var(--xm-ring);background:var(--xm-chip);color:var(--xm-ink);font-size:16px;cursor:pointer;padding:0;line-height:1;transition:transform .12s var(--xm-ease)}' +
+    '#xiaomaomao .xm-fish-n{position:absolute;top:0;right:0;min-width:14px;height:14px;border-radius:999px;background:var(--xm-accent);color:var(--xm-btn-ink);font-size:9px;font-weight:700;line-height:14px;text-align:center;padding:0 3px;pointer-events:none;box-shadow:none}' +
+    '#xiaomaomao .xm-mic{flex:none;width:32px;height:32px;border-radius:999px;border:none;background:transparent;box-shadow:none;color:var(--xm-ink-soft);font-size:16px;cursor:pointer;padding:0;line-height:1;display:flex;align-items:center;justify-content:center;transition:background .12s var(--xm-ease),color .12s var(--xm-ease),transform .12s var(--xm-ease)}' +
+    '#xiaomaomao .xm-mic:hover{background:var(--xm-win-muted);color:var(--xm-accent-deep)}' +
     '#xiaomaomao .xm-mic:active{transform:scale(.93)}' +
-    '#xiaomaomao .xm-mic svg{width:20px;height:20px;display:block}' +
-    '#xiaomaomao .xm-mic.xm-mic-live{background:var(--xm-chip);border-color:var(--xm-accent);animation:xmMicPulse 1.2s ease-in-out infinite}' +
-    '@keyframes xmMicPulse{0%,100%{box-shadow:0 0 0 0 rgba(244,80,126,.4)}50%{box-shadow:0 0 0 6px rgba(244,80,126,0)}}' +
-    '#xiaomaomao .xm-game{position:absolute;bottom:0;right:calc(100% + 14px);width:336px;max-width:calc(100vw - 156px);height:min(436px,62vh);display:none;flex-direction:column;background:var(--xm-surface);-webkit-backdrop-filter:blur(16px) saturate(1.5);backdrop-filter:blur(16px) saturate(1.5);border:1px solid var(--xm-ring);border-radius:20px;box-shadow:var(--xm-shadow-panel);overflow:hidden;transform-origin:bottom right;z-index:10}' +
-    '#xiaomaomao .xm-game.xm-on{display:flex;animation:xmPanelIn .24s var(--xm-ease) both}' +
-    '#xiaomaomao .xm-game.xm-left{right:auto;left:calc(100% + 14px);transform-origin:bottom left}' +
-    '#xiaomaomao .xm-g-head{display:flex;align-items:center;gap:8px;padding:11px 12px;border-bottom:1px solid var(--xm-ring);color:var(--xm-ink);flex:none;font-size:14px;font-weight:700}' +
-    '#xiaomaomao .xm-g-head .xm-hbtn{margin-left:auto;width:28px;height:28px;border-radius:50%;border:1px solid var(--xm-ring);background:var(--xm-chip);color:var(--xm-ink);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:background .12s var(--xm-ease),transform .12s var(--xm-ease)}' +
-    '#xiaomaomao .xm-g-head .xm-hbtn:hover{background:var(--xm-solid)}' +
+    '#xiaomaomao .xm-mic svg{width:17px;height:17px;display:block}' +
+    '#xiaomaomao .xm-mic.xm-mic-live{background:var(--xm-win-muted);border:1px solid var(--xm-accent);color:var(--xm-accent-deep);animation:xmMicPulse 1.2s ease-in-out infinite}' +
+    '@keyframes xmMicPulse{0%,100%{opacity:1}50%{opacity:.4}}' +
+    '#xiaomaomao .xm-game{position:absolute;bottom:0;right:calc(100% + 14px);width:308px;max-width:calc(100vw - 148px);height:min(380px,56vh);display:none;flex-direction:column;padding:12px;background:var(--xm-win-bg);-webkit-backdrop-filter:none;backdrop-filter:none;border:1px solid var(--xm-win-border);border-radius:14px;box-shadow:none;overflow:hidden;z-index:10}' +
+    '#xiaomaomao .xm-game.xm-on{display:flex}' +
+    '#xiaomaomao .xm-game.xm-left{right:auto;left:calc(100% + 14px)}' +
+    '#xiaomaomao .xm-g-head{display:flex;align-items:center;gap:8px;padding:0 0 8px;border:none;border-bottom:1px solid var(--xm-win-line);background:transparent;color:var(--xm-accent-deep);flex:none;font-size:13.5px;font-weight:700}' +
+    '#xiaomaomao .xm-g-head .xm-hbtn{margin-left:auto;width:28px;height:28px;border-radius:999px;border:none;background:transparent;color:var(--xm-ink-soft);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:none;transition:background .12s var(--xm-ease),color .12s var(--xm-ease),transform .12s var(--xm-ease)}' +
+    '#xiaomaomao .xm-g-head .xm-hbtn:hover{background:var(--xm-win-muted);color:var(--xm-accent-deep)}' +
     '#xiaomaomao .xm-g-head .xm-hbtn:active{transform:scale(.93)}' +
-    '#xiaomaomao .xm-g-hud{display:flex;gap:14px;padding:7px 12px;font-size:12.5px;color:var(--xm-accent-deep);background:var(--xm-chip);flex:none}' +
-    '#xiaomaomao .xm-g-hud b{color:var(--xm-accent);font-size:14px}' +
-    '#xiaomaomao .xm-g-area{position:relative;flex:1;overflow:hidden;background:linear-gradient(180deg,#fff0f6,#ffe3ee)}' +
-    'html.dark #xiaomaomao .xm-g-area{background:linear-gradient(180deg,rgba(255,112,150,.10),rgba(255,112,150,.05))}' +
-    '#xiaomaomao .xm-g-star{position:absolute;width:42px;height:42px;margin-left:-21px;border:none;background:transparent;cursor:pointer;padding:0;animation:xmFall linear forwards;line-height:1;filter:drop-shadow(0 2px 5px rgba(255,150,180,.55))}' +
+    '#xiaomaomao .xm-g-hud{display:grid;grid-template-columns:repeat(3,1fr);text-align:center;gap:6px;padding:7px 0;font-size:12px;color:var(--xm-ink-soft);border-bottom:1px solid var(--xm-win-line);background:transparent;flex:none}' +
+    '#xiaomaomao .xm-g-hud b{color:var(--xm-accent-deep);font-size:13px}' +
+    '#xiaomaomao .xm-g-area{position:relative;flex:1;overflow:hidden;margin-top:8px;border-radius:10px;background:var(--xm-win-muted);border:none;box-shadow:none}' +
+    'html.dark #xiaomaomao .xm-g-area{background:var(--xm-win-muted)}' +
+    '#xiaomaomao .xm-g-star{position:absolute;width:42px;height:42px;margin-left:-21px;border:none;background:transparent;cursor:pointer;padding:0;animation:xmFall linear forwards;line-height:1;filter:none}' +
     '#xiaomaomao .xm-g-star svg{width:30px;height:30px;display:block;margin:6px auto 0}' +
     '#xiaomaomao .xm-g-title{display:inline-flex;align-items:center;gap:6px}' +
-    '#xiaomaomao .xm-g-title svg{width:17px;height:17px;color:var(--xm-accent)}' +
+    '#xiaomaomao .xm-g-title svg{width:16px;height:16px;color:var(--xm-accent-deep)}' +
     '@keyframes xmFall{from{transform:translateY(0) rotate(-8deg)}to{transform:translateY(var(--fall,440px)) rotate(46deg)}}' +
-    '#xiaomaomao .xm-g-pop{position:absolute;font-size:14px;font-weight:700;color:var(--xm-accent);pointer-events:none;animation:xmEmo .8s ease-out forwards;z-index:3}' +
-    '#xiaomaomao .xm-g-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;background:var(--xm-surface);text-align:center;padding:18px;z-index:4}' +
-    '#xiaomaomao .xm-g-center .xm-g-big{font-size:19px;font-weight:700;color:var(--xm-accent-deep)}' +
-    '#xiaomaomao .xm-g-center .xm-g-sub{font-size:13px;color:var(--xm-ink-soft);line-height:1.55}' +
-    '#xiaomaomao .xm-g-start{height:40px;padding:0 22px;border:none;border-radius:999px;background:linear-gradient(135deg,var(--xm-accent),#ff8fab);color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 16px -4px rgba(244,80,126,.45);transition:transform .12s var(--xm-ease),filter .12s var(--xm-ease)}' +
-    '#xiaomaomao .xm-g-start:hover{filter:brightness(1.05)}' +
+    '#xiaomaomao .xm-g-pop{position:absolute;font-size:14px;font-weight:700;color:var(--xm-accent-deep);pointer-events:none;animation:xmEmo .8s ease-out forwards;z-index:3}' +
+    '#xiaomaomao .xm-g-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:transparent;border:none;box-shadow:none;text-align:center;padding:14px;z-index:4}' +
+    '#xiaomaomao .xm-g-center .xm-g-big{font-size:16.5px;font-weight:700;color:var(--xm-accent-deep)}' +
+    '#xiaomaomao .xm-g-center .xm-g-sub{font-size:12.5px;color:var(--xm-ink-soft);line-height:1.5}' +
+    '#xiaomaomao .xm-g-start{height:36px;padding:0 18px;border:none;border-radius:999px;background:var(--xm-accent);color:var(--xm-btn-ink);font-size:13px;font-weight:600;cursor:pointer;box-shadow:none;text-decoration:none;transition:opacity .12s var(--xm-ease),transform .12s var(--xm-ease)}' +
+    '#xiaomaomao .xm-g-start:hover{opacity:.88}' +
     '#xiaomaomao .xm-g-start:active{transform:scale(.96)}' +
     /* 移动端：面板改贴底 sheet（猫留在右下不被遮），全部控件永远在屏内 */
     /* v6：触摸拖动——不让浏览器把拖猫手势抢去滚页面 */
@@ -519,7 +520,7 @@
        互动玩法第一批（2026-11-18）：object-fit 改 contain——视频按「整只猫完整入镜、
        四周留白边」生成，cover 会裁边；舞台是 1:1 方形、视频也是 1:1，contain 与 cover
        同屏显示，但 contain 保证任何比例的视频都不裁猫。 */
-    '#xiaomaomao .xm-video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:2;display:none;pointer-events:none}' +
+    '#xiaomaomao .xm-video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:transparent;border:none;border-radius:0;box-shadow:none;filter:none;z-index:2;display:none;pointer-events:none}' +
     '#xiaomaomao .xm-video.xm-on{display:block;animation:xmVideoIn .38s var(--xm-ease) both}' +
     '@keyframes xmVideoIn{from{opacity:0}to{opacity:1}}' +
     /* 互动玩法第一批 Top 3（2026-11-18）：游乐场模式。舞台在游乐场态下去掉白底/描边/
@@ -539,7 +540,7 @@
     /* 删静态图 + WebP 兜底（2026-11-18，William 点选 WebP）：视频播不了时舞台改播
        动画 WebP（再不行 GIF），兜底态舞台同样去白底/描边/圆角、藏起自改形象层，
        与视频态同款透明舞台；兜底图 object-fit:contain，整只猫完整入镜不裁边。 */
-    '#xiaomaomao .xm-fallback{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:2;display:none;pointer-events:none}' +
+    '#xiaomaomao .xm-fallback{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:transparent;border:none;border-radius:0;box-shadow:none;filter:none;z-index:2;display:none;pointer-events:none}' +
     '#xiaomaomao .xm-fallback.xm-on{display:block}' +
     '#xiaomaomao .xm-still{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:2;display:none;pointer-events:none}' +
     '#xiaomaomao .xm-still.xm-on{display:block}' +
@@ -557,33 +558,51 @@
     '#xiaomaomao .xm-video.xm-clip.xm-on{opacity:1}' +
     '#xiaomaomao .xm-wrap.xm-roll{animation:xmRoll .95s var(--xm-ease)}' +
     '@keyframes xmRoll{0%{transform:rotate(0deg)}35%{transform:rotate(200deg) translateY(-14px)}70%{transform:rotate(330deg)}100%{transform:rotate(360deg)}}' +
-    '#xiaomaomao.xm-eat-ready .xm-stage{box-shadow:0 0 0 3px var(--xm-accent),var(--xm-shadow-pop)}' +
+    '#xiaomaomao.xm-eat-ready .xm-wrap{transform:scale(1.06);transition:transform .2s var(--xm-ease)}' +
     '#xiaomaomao .xm-stage:focus-visible{outline:2px solid var(--xm-accent);outline-offset:3px}' +
     /* P1-1：猫身常驻收起角标——「收起小猫猫」不再只藏在默认隐藏的坞里，
        不点猫也看得见、点得到；聊天面板开着时隐藏（面板自有收起钮）。 */
-    '#xiaomaomao .xm-mini-close{position:absolute;top:-7px;right:-7px;width:26px;height:26px;min-width:26px;border-radius:50%;z-index:7;box-shadow:0 2px 8px rgba(43,10,24,.20)}' +
-    '#xiaomaomao .xm-mini-close svg{width:14px;height:14px}' +
+    '#xiaomaomao .xm-mini-close{position:absolute;top:-5px;right:-5px;width:22px;height:22px;min-width:22px;border-radius:50%;background:var(--xm-win-bg);border:1px solid var(--xm-win-border);color:var(--xm-ink-soft);box-shadow:none;z-index:7;opacity:.76}' +
+    '#xiaomaomao .xm-mini-close:hover,#xiaomaomao .xm-wrap:hover .xm-mini-close{opacity:1;color:var(--xm-accent-deep)}' +
+    '#xiaomaomao .xm-mini-close::after{content:"";position:absolute;inset:-11px}' +
+    '#xiaomaomao .xm-dock .xm-btn{position:relative}#xiaomaomao .xm-dock .xm-btn::after{content:"";position:absolute;inset:-4px}' +
+    '#xiaomaomao .xm-p-head .xm-hbtn{position:relative}#xiaomaomao .xm-p-head .xm-hbtn::after{content:"";position:absolute;inset:-8px}' +
+    '#xiaomaomao .xm-mini-close svg{width:12px;height:12px}' +
     '#xiaomaomao.xm-open .xm-mini-close{display:none}' +
-    /* v6：换形象视图（面板内与消息区互斥显示） */
-    '#xiaomaomao .xm-look{display:none;flex:1;flex-direction:column;min-height:0}' +
+    /* v6：换形象视图（居中预览卡 + 对齐胶囊操作栏，消除 4 列 3/4 空洞与裸文字） */
+    '#xiaomaomao .xm-look{display:none;flex:1;flex-direction:column;min-height:0;background:transparent}' +
     '#xiaomaomao .xm-panel.xm-looking .xm-look{display:flex}' +
     '#xiaomaomao .xm-panel.xm-looking .xm-msgs,#xiaomaomao .xm-panel.xm-looking .xm-chips,#xiaomaomao .xm-panel.xm-looking .xm-form{display:none}' +
-    '#xiaomaomao .xm-look-bar{display:flex;align-items:center;padding:11px 12px 2px;font-size:13.5px;font-weight:700;color:var(--xm-ink)}' +
-    '#xiaomaomao .xm-look-back{margin-left:auto;height:28px;padding:0 11px;border-radius:999px;border:1px solid var(--xm-ring);background:var(--xm-chip);color:var(--xm-ink);font-size:12px;cursor:pointer}' +
-    '#xiaomaomao .xm-look-back:hover{background:var(--xm-solid)}' +
-    '#xiaomaomao .xm-look-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 12px;overflow-y:auto;scrollbar-width:thin}' +
-    '#xiaomaomao .xm-look-item{border:2px solid var(--xm-ring);border-radius:14px;padding:3px;background:var(--xm-solid);cursor:pointer;font:inherit}' +
-    '#xiaomaomao .xm-look-item:hover{transform:translateY(-1px)}' +
+    '#xiaomaomao .xm-look-bar{display:flex;align-items:center;padding:6px 0 4px;font-size:13px;font-weight:700;color:var(--xm-accent-deep);background:transparent}' +
+    '#xiaomaomao .xm-look-back{margin-left:auto;height:28px;padding:0 11px;border-radius:999px;border:1px solid var(--xm-win-border);background:var(--xm-win-muted);box-shadow:none;color:var(--xm-ink);font-size:11.5px;font-weight:500;text-decoration:none;cursor:pointer}' +
+    '#xiaomaomao .xm-look-back:hover{border-color:var(--xm-accent);color:var(--xm-accent-deep)}' +
+    '#xiaomaomao .xm-look-grid{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:12px;padding:12px 4px;flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;background:transparent}' +
+    '#xiaomaomao .xm-look-item{width:116px;border:1px solid var(--xm-win-border);border-radius:12px;padding:10px 8px 8px;background:var(--xm-win-bg);box-shadow:none;cursor:pointer;font:inherit;transition:border-color .12s var(--xm-ease),background .12s var(--xm-ease)}' +
+    '#xiaomaomao .xm-look-item:hover{background:var(--xm-win-muted);transform:translateY(-1px)}' +
     '#xiaomaomao .xm-look-item:active{transform:scale(.96)}' +
-    '#xiaomaomao .xm-look-item img{width:100%;aspect-ratio:1;object-fit:cover;object-position:50% 18%;border-radius:10px;display:block;pointer-events:none}' +
-    '#xiaomaomao .xm-look-item span{display:block;font-size:10.5px;color:var(--xm-ink-soft);text-align:center;padding:3px 0 1px;white-space:nowrap;overflow:hidden}' +
-    '#xiaomaomao .xm-look-item.xm-sel{border-color:var(--xm-accent);box-shadow:0 0 0 2px rgba(244,80,126,.25)}' +
-    '#xiaomaomao .xm-look-foot{padding:2px 12px 12px;display:flex;flex-direction:column;gap:8px;flex:none}' +
-    '#xiaomaomao .xm-look-act{height:38px;border-radius:999px;border:1px solid var(--xm-ring);background:var(--xm-chip);color:var(--xm-accent-deep);font-size:13px;font-weight:700;cursor:pointer;font:inherit}' +
-    '#xiaomaomao .xm-look-act:hover{background:var(--xm-solid)}' +
-    '#xiaomaomao .xm-look-act svg{width:16px;height:16px;vertical-align:-3px;margin-right:5px}' +
+    '#xiaomaomao .xm-look-item img{width:84px;height:84px;margin:0 auto;aspect-ratio:1;object-fit:contain;border-radius:0;background:transparent;border:none;box-shadow:none;filter:none;display:block;pointer-events:none}' +
+    '#xiaomaomao .xm-look-item span{display:block;font-size:11.5px;color:var(--xm-ink-soft);text-align:center;padding:5px 0 0;white-space:nowrap;overflow:hidden}' +
+    '#xiaomaomao .xm-look-item.xm-sel{border-color:var(--xm-accent);background:var(--xm-win-muted);box-shadow:none}' +
+    '#xiaomaomao .xm-look-item.xm-sel span{color:var(--xm-accent-deep);font-weight:600}' +
+    '#xiaomaomao .xm-look-foot{padding:6px 0 2px;display:flex;flex-direction:column;gap:8px;flex:none;background:transparent}' +
+    '#xiaomaomao .xm-look-acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}' +
+    '#xiaomaomao .xm-look-act{display:inline-flex;align-items:center;justify-content:center;gap:5px;height:36px;padding:0 10px;border-radius:999px;border:1px solid var(--xm-win-border);background:var(--xm-win-muted);box-shadow:none;color:var(--xm-accent-deep);font-size:12px;font-weight:600;text-decoration:none;cursor:pointer;font:inherit;white-space:nowrap}' +
+    '#xiaomaomao .xm-look-act:hover{border-color:var(--xm-accent)}' +
+    '#xiaomaomao .xm-look-act svg{width:15px;height:15px;flex:none}' +
     '#xiaomaomao .xm-look-act:active{transform:scale(.97)}' +
-    '@media (max-width:640px){#xiaomaomao{right:calc(12px + env(safe-area-inset-right,0px));bottom:calc(68px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-main-col{width:88px}#xiaomaomao .xm-wrap{width:88px;height:88px}#xiaomaomao .xm-dock{gap:5px;padding:5px;bottom:calc(100% + 8px);width:auto}#xiaomaomao .xm-dock .xm-btn{width:34px;height:34px}#xiaomaomao .xm-dock .xm-btn svg{width:19px;height:19px}#xiaomaomao .xm-bubble{max-width:min(248px,calc(100vw - 130px));font-size:12.5px}#xiaomaomao .xm-panel,#xiaomaomao .xm-game{position:fixed;left:12px;right:12px;width:auto;max-width:none;bottom:calc(104px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-panel.xm-left,#xiaomaomao .xm-game.xm-left{left:12px;right:12px}#xiaomaomao .xm-panel{height:min(508px,62vh)}#xiaomaomao .xm-game{height:min(436px,58vh)}}' +
+    /* 细节打磨：交互态可见、长标题不撑破、气泡左缘翻向、防选字/长按菜单、iOS 输入不缩放、触屏热区补足 44px */
+    '#xiaomaomao .xm-play-btn[aria-pressed="true"]{background:var(--xm-accent);color:var(--xm-btn-ink)}' +
+    '#xiaomaomao .xm-play-btn[aria-pressed="true"]:hover{background:var(--xm-accent);opacity:.88}' +
+    '#xiaomaomao .xm-fish-btn.xm-fish-out svg{opacity:.4}' +
+    '#xiaomaomao .xm-card>span:nth-child(2){flex:1;min-width:0}' +
+    '#xiaomaomao .xm-card-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    '#xiaomaomao .xm-bubble.xm-fan-r{right:auto;left:-4px}' +
+    '#xiaomaomao .xm-bubble.xm-bubble-below{bottom:auto;top:calc(100% + 10px)}' +
+    '#xiaomaomao .xm-stage,#xiaomaomao .xm-dock,#xiaomaomao .xm-tab,#xiaomaomao .xm-bubble,#xiaomaomao .xm-mini-close{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}' +
+    '#xiaomaomao .xm-input{min-height:36px}' +
+    '@media (pointer:coarse){#xiaomaomao .xm-dock .xm-btn::after{inset:-6px}#xiaomaomao .xm-p-head .xm-hbtn::after{inset:-8px}#xiaomaomao .xm-sug{min-height:36px}}' +
+    '@media (max-width:640px){#xiaomaomao .xm-input{font-size:16px;height:44px}#xiaomaomao .xm-send{height:44px;padding:0 18px}#xiaomaomao .xm-form{gap:8px}}' +
+    '@media (max-width:640px){#xiaomaomao{right:calc(12px + env(safe-area-inset-right,0px));bottom:calc(68px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-main-col{width:88px}#xiaomaomao .xm-wrap{width:88px;height:88px}#xiaomaomao .xm-mini-close{opacity:1}#xiaomaomao .xm-dock{gap:5px;padding:5px;bottom:calc(100% + 8px);width:auto}#xiaomaomao.xm-avoid-fab .xm-dock{bottom:10px;right:calc(100% + 10px)}#xiaomaomao.xm-avoid-fab .xm-bubble{bottom:10px;right:calc(100% + 10px)}#xiaomaomao .xm-dock .xm-btn{width:32px;height:32px}#xiaomaomao .xm-dock .xm-btn svg{width:18px;height:18px}#xiaomaomao .xm-bubble{max-width:min(220px,calc(100vw - 120px));font-size:12px}#xiaomaomao .xm-panel,#xiaomaomao .xm-game{position:fixed;left:12px;right:12px;width:auto;max-width:none;bottom:calc(68px + 88px + 10px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-panel.xm-left,#xiaomaomao .xm-game.xm-left{left:12px;right:12px}#xiaomaomao .xm-panel{height:min(380px,48vh)}#xiaomaomao .xm-game{height:min(340px,44vh)}}' +
     /* P1-1：市场页窄屏自动收起态——根节点整体滑出视口右侧（transform 只写位移，
        不动 left/top、不覆盖用户拖动位置；圆标本体随根节点一起出视口，点按与包围盒都不再挡页面元素）。
        Q1 返工：位移量不用固定值——拖动过的猫 left 不同，固定 70px 会留一部分在视口内；
@@ -635,7 +654,9 @@
         '<button class="xm-btn xm-close-btn" type="button" title="先把小猫收起来" aria-label="收起小猫猫">' + ICONS.close + '</button>' +
       '</div>' +
       '<div class="xm-panel" role="dialog" aria-modal="true" aria-label="小猫猫聊天">' +
-        '<div class="xm-p-head"><img alt=""><div><div class="xm-p-title">小猫猫</div><div class="xm-p-sub">AI 找站小助手 · 只推站内收录</div></div>' +
+        '<div class="xm-p-head"><img alt=""><div class="xm-p-meta"><div class="xm-p-title">小猫猫</div><span class="xm-p-lv" hidden></span><div class="xm-p-sub">AI 找站小助手 · 只推站内收录</div></div>' +
+        '<button class="xm-hbtn xm-p-clear" type="button" title="清空对话记录" aria-label="清空对话记录">' + ICONS.clear + '</button>' +
+        '<button class="xm-hbtn xm-p-reset" type="button" title="把小猫放回右下角" aria-label="把小猫放回右下角">' + ICONS.reset + '</button>' +
         '<button class="xm-hbtn xm-look-btn" type="button" title="换个伙伴形象" aria-label="换个伙伴形象">' + ICONS.image + '</button>' +
         '<button class="xm-hbtn xm-voice-btn" type="button" title="开关小猫语音" aria-label="开关小猫语音">' + ICONS.volOn + '</button>' +
         '<button class="xm-hbtn xm-p-close" type="button" title="收起聊天" aria-label="收起聊天">' + ICONS.close + '</button></div>' +
@@ -643,13 +664,15 @@
           '<div class="xm-look-bar"><span>我的伙伴形象</span><button class="xm-look-back" type="button">返回聊天</button></div>' +
           '<div class="xm-look-grid"></div>' +
           '<div class="xm-look-foot">' +
-            '<button class="xm-look-act xm-look-upload" type="button">' + ICONS.camera + '上传我的图片</button>' +
-            '<button class="xm-look-act xm-look-default" type="button">恢复默认形象</button>' +
+            '<div class="xm-look-acts">' +
+              '<button class="xm-look-act xm-look-upload" type="button">' + ICONS.camera + '上传我的图片</button>' +
+              '<button class="xm-look-act xm-look-default" type="button">恢复默认形象</button>' +
+            '</div>' +
             '<input class="xm-look-file" type="file" accept="image/*" hidden>' +
-            '<div class="xm-note xm-look-note">从整套在用图里挑一张，或者上传你自己的图。只保存在这台设备的浏览器里，不会上传到任何地方。</div>' +
+            '<div class="xm-note xm-look-note">默认全时动态透明视频形象，也可上传你自己的图。只保存在这台设备的浏览器里，不会上传到任何地方。</div>' +
           '</div>' +
         '</div>' +
-        '<div class="xm-msgs"></div>' +
+        '<div class="xm-msgs" role="log" aria-live="polite" aria-label="对话记录"></div>' +
         '<div class="xm-chips">' +
           '<button class="xm-sug" type="button" data-q="我想看免费短剧">看免费短剧</button>' +
           '<button class="xm-sug" type="button" data-q="我想做短剧，有什么工具">做短剧工具</button>' +
@@ -688,8 +711,6 @@
   var sendBtn = root.querySelector('.xm-send');
   var imgA = root.querySelector('.xm-img-a');
   var imgB = root.querySelector('.xm-img-b');
-  /* B-04：启动时不给面板头像与收起圆标设 WebP src（首屏不拉 3.7MB 兜底图）；
-     面板头像在打开面板时、收起圆标在收起与启动恢复收起态时才懒加载。 */
 
   /* ---------- 姿势状态机（双层交叉淡入淡出） ----------
      2026-11-18 删静态图：默认姿势图已删；这条换图路径只服务用户上传的自改形象
@@ -728,10 +749,21 @@
     if (probe.complete && probe.naturalWidth > 0) swap();
   }
   /* ---------- v6：形象刷新（换形象/站点深浅主题切换时统一重绘三处用图） ---------- */
+  var headIconLoaded = false, tabIconLoaded = false;
+  function ensureHeadIcon() {
+    if (headIconLoaded) return;
+    headIconLoaded = true;
+    setIconImg(root.querySelector('.xm-p-head img'));
+  }
+  function ensureTabIcon() {
+    if (tabIconLoaded) return;
+    tabIconLoaded = true;
+    setIconImg(root.querySelector('.xm-tab img'));
+  }
+  if (root.classList.contains('xm-closed') || customImageUrl()) ensureTabIcon();
   var lastDark = isDarkTheme();
   function refreshAvatarImages() {
     lastDark = isDarkTheme();
-    /* B-04：只动已加载过的图标——没设过 src 的不提前拉取 WebP 兜底。 */
     var headImg = root.querySelector('.xm-p-head img');
     if (headImg && headImg.hasAttribute('src')) setIconImg(headImg);
     var tabImg = root.querySelector('.xm-tab img');
@@ -944,6 +976,7 @@
         return;
       }
     } catch (e) { /* 忽略，走皇冠动画 */ }
+    if (!window.XIAOMAOMAO_MEDIA || !window.XIAOMAOMAO_MEDIA.videos) return;
     /* v8：没有外部覆盖时，庆祝改播皇冠静音动画（开心大笑为主，纪录时轮换机灵/眨眼） */
     tryCelebVideo(kind === 'record' ? ['expr-clever', 'expr-happy', 'expr-wink'] : ['expr-happy', 'expr-clever'], { loop: true, ms: 6500 });
   }
@@ -951,6 +984,7 @@
      同一套守卫：减动效/自改形象/睡着时不播；文件不在探活回退，安静无视频。 */
   function playExprVideo(exprKey, withSound) {
     if (reducedMotion || avatarPick || sleeping) return;
+    if (!window.XIAOMAOMAO_MEDIA || !window.XIAOMAOMAO_MEDIA.videos) return;
     /* v8 复审返工：语音总开关管着有声版——关了语音只播静音版；snd 探活失败回退同名静音版
        （webm 本身无音轨，沿用 sound 选项播它也不会出声）。 */
     /* P1（合并后细节）：心情视频补齐回退链——原静音版只探单个文件、失败就没视频；
@@ -1620,6 +1654,7 @@
       root.classList.add('xm-play');
       /* C-12：睡眠态唤醒时可能补发了排队的升级庆祝——已补发就不再出
          通用“好耶”招呼，庆祝优先（庆祝自带气泡）。 */
+      try { stageEl.style.translate = ''; stageEl.style.rotate = ''; } catch (e) { /* 忽略 */ }
       var celebrated = false;
       if (sleeping) celebrated = wakeUp(false);
       var r = playRootRect();
@@ -1809,6 +1844,27 @@
     window.XIAOMAOMAO.togglePlay = function (on) { setPlayMode(typeof on === 'boolean' ? on : !play.on); return play.on; };
     window.XIAOMAOMAO.playing = function () { return play.on; };
     window.XIAOMAOMAO.feedLink = function (url, title) { feedLink({ url: url, title: title || url }); };
+    window.XIAOMAOMAO.getState = function () {
+      return {
+        alwaysDynamic: !!store.alwaysDynamic,
+        closed: root.classList.contains('xm-closed'),
+        play: !!play.on,
+      };
+    };
+    window.XIAOMAOMAO.setAlwaysDynamic = function (on) {
+      store.alwaysDynamic = !!on;
+      if (store.alwaysDynamic && docked) undock();
+      persist();
+      return store.alwaysDynamic;
+    };
+    window.XIAOMAOMAO.setCollapsed = function (closed) {
+      if (closed) {
+        if (!root.classList.contains('xm-closed')) collapseCat();
+      } else if (root.classList.contains('xm-closed')) {
+        root.querySelector('.xm-tab').click();
+      }
+      return root.classList.contains('xm-closed');
+    };
   } catch (e) { /* 忽略 */ }
 
   /* v8：离屏/切后台停播——猫滚出视口就暂停，切到别的标签页直接收视频（声音版尤其不许在后台响）
@@ -1828,7 +1884,14 @@
   document.addEventListener('visibilitychange', function () { if (document.hidden) { stopCelebVideo(); pauseClips(); } else resumeClips(); });
 
   /* ---------- 气泡（打字机） ---------- */
-  var typeTimer = null, bubbleHideTimer = null;
+  var typeTimer = null, bubbleHideTimer = null, lastBubbleAt = 0;
+  bubbleEl.title = '点我跟小猫猫聊天';
+  bubbleEl.addEventListener('click', function (ev) {
+    if (!bubbleEl.classList.contains('xm-show')) return;
+    ev.stopPropagation();
+    hideBubble();
+    openPanel();
+  });
   function showBubble(text, speakIt) {
     /* P1-1：页内输入聚焦期间不冒新气泡——自动招呼/提示/庆祝一律抑制；
        用户主动操作（点猫/摸猫/喂食/唤回）发生时焦点不在页内输入框上，
@@ -1836,6 +1899,9 @@
     if (userTyping) return;
     hideControls(); /* v7：气泡与悬浮坞互斥——猫说话时坞先退场，不许两样东西一起围着猫 */
     if (root.classList.contains('xm-open')) return;
+    lastBubbleAt = Date.now();
+    if (typeof syncFabAvoid === 'function') syncFabAvoid();
+    try { bubbleEl.classList.toggle('xm-bubble-below', root.getBoundingClientRect().top < 80); } catch (e) { /* 忽略 */ }
     window.clearTimeout(bubbleHideTimer);
     window.clearInterval(typeTimer);
     bubbleEl.classList.add('xm-show');
@@ -2100,7 +2166,7 @@
     }, 3200);
   });
   window.setInterval(function () {
-    if (root.classList.contains('xm-open') || root.classList.contains('xm-closed')) return;
+    if (document.hidden || root.classList.contains('xm-open') || root.classList.contains('xm-closed')) return;
     var idleFor = Date.now() - lastActive;
     if (idleFor > 180000 || (isNight() && idleFor > 60000)) { goSleep(); return; }
     if (sleeping) return;
@@ -2112,14 +2178,16 @@
     }
   }, 5000);
 
-  /* ---------- 鼠标靠近探头跟随（仅精细指针） ---------- */
+  /* ---------- 鼠标靠近探头跟随（仅精细指针；同时作用于动态视频舞台） ---------- */
   var leanRaf = 0;
   try {
     if (window.matchMedia('(pointer: fine)').matches && !reducedMotion) {
       document.addEventListener('mousemove', function (ev) {
         if (leanRaf) return;
+        if (document.hidden || docked || play.on || root.classList.contains('xm-closed') || root.classList.contains('xm-behind-modal')) return;
         leanRaf = window.requestAnimationFrame(function () {
           leanRaf = 0;
+          if (docked || play.on || root.classList.contains('xm-closed')) return;
           var r = stageEl.getBoundingClientRect();
           var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
           var dx = ev.clientX - cx, dy = ev.clientY - cy;
@@ -2128,9 +2196,17 @@
             var tx = Math.max(-5, Math.min(5, dx * 0.022));
             var ty = Math.max(-4, Math.min(4, dy * 0.022));
             var rr = Math.max(-4.5, Math.min(4.5, dx * 0.018));
-            leanEl.style.transform = 'translate(' + tx + 'px,' + ty + 'px) rotate(' + rr + 'deg) scale(1.03)';
+            if (root.classList.contains('xm-has-video') || root.classList.contains('xm-has-fallback')) {
+              stageEl.style.translate = tx.toFixed(1) + 'px ' + ty.toFixed(1) + 'px';
+              stageEl.style.rotate = rr.toFixed(2) + 'deg';
+              leanEl.style.transform = '';
+            } else {
+              leanEl.style.transform = 'translate(' + tx + 'px,' + ty + 'px) rotate(' + rr + 'deg) scale(1.03)';
+            }
           } else {
             leanEl.style.transform = '';
+            stageEl.style.translate = '';
+            stageEl.style.rotate = '';
           }
         });
       }, { passive: true });
@@ -2184,6 +2260,7 @@
   /* K4：一键归位——清掉已存拖动位置并摘掉行内定位，回到样式表的默认右下角。
      先 undock（贴边写的是行内 transform，会压过定位）；只清位置，不管形象。 */
   function resetCatPos() {
+    if (play && play.on) setPlayMode(false);
     if (docked) undock();
     store.pos = null;
     persist();
@@ -2203,6 +2280,11 @@
     /* v7：悬浮坞同理——猫靠左（左侧放不下一条坞）时翻向右展开 */
     var dock = root.querySelector('.xm-dock');
     if (dock) { if (cx < 300) dock.classList.add('xm-fan-r'); else dock.classList.remove('xm-fan-r'); }
+    /* 气泡同理：猫拖到左缘时气泡向右展开，免得被视口左边裁掉；靠顶时翻到猫下方 */
+    if (bubbleEl) {
+      if (cx < 260) bubbleEl.classList.add('xm-fan-r'); else bubbleEl.classList.remove('xm-fan-r');
+      bubbleEl.classList.toggle('xm-bubble-below', r.top < 80);
+    }
   }
   window.addEventListener('resize', function () {
     undock();
@@ -2229,7 +2311,7 @@
   function noteXmAct() { xmLastAct = Date.now(); }
   function dockBlocked() {
     return docked || root.classList.contains('xm-open') || root.classList.contains('xm-closed') ||
-      gameEl.classList.contains('xm-on') || !!busy || !!document.hidden ||
+      gameEl.classList.contains('xm-on') || !!busy || !!document.hidden || !!store.alwaysDynamic ||
       (typeof play === 'object' && play !== null && play.on); /* 互动玩法：游乐场模式下不贴边（用户在主动玩猫） */
   }
   function doDock() {
@@ -2272,6 +2354,7 @@
     var down = y > lastScrollY + 4;
     lastScrollY = y;
     if (down && y > 300) doDock();
+    if (typeof syncFabAvoid === 'function') syncFabAvoid();
     syncMarketPark(); /* P1-1：滚动即重新判断市场页收起/露出 */
   }, { passive: true });
 
@@ -2326,7 +2409,7 @@
        ≤1023px（页脚避让）。窄屏下本条件与 P1-1 原式逐字等价，≤640px 行为零变化。 */
     if ((y <= 30 && isNarrowViewport()) || nearPageBottom()) {
       if (docked) undock(); /* 贴边写的是行内 transform，会压过 .xm-parked 的位移，先清掉 */
-      if (!root.classList.contains('xm-closed')) { root.classList.add('xm-closed'); autoClosed = true; }
+      if (!root.classList.contains('xm-closed')) { ensureTabIcon(); root.classList.add('xm-closed'); autoClosed = true; }
       /* 竞态修复（独立复审问题 1）+ 视口变宽重算（问题 2）：每次进入收起区都重算位移。
          量取前临时关掉过渡并强制回流——#xiaomaomao 有 .45s transform 过渡，快速下滚
          回顶时量到的是过渡中的 left，位移会算小、猫留一部分在视口内；已收起时先暂时
@@ -2400,6 +2483,10 @@
       for (var i = 0; i < els.length; i++) {
         if (!root.contains(els[i])) return true;
       }
+      var openDialogs = document.querySelectorAll('[role="dialog"][data-state="open"]');
+      for (var j = 0; j < openDialogs.length; j++) {
+        if (!root.contains(openDialogs[j])) return true;
+      }
     } catch (e) { /* 忽略 */ }
     return false;
   }
@@ -2414,15 +2501,24 @@
     /* 兜底：600ms 内没挂上弹窗（网关加载失败），乐观位过期、猫恢复 */
     window.setTimeout(syncModalDim, 600);
   });
+  var _xmModalRaf = 0;
+  function scheduleSyncModalDim() {
+    if (_xmModalRaf) return;
+    _xmModalRaf = window.requestAnimationFrame(function () {
+      _xmModalRaf = 0;
+      syncModalDim();
+    });
+  }
+  window.addEventListener('navhub:modal-change', scheduleSyncModalDim);
   try {
     var _xmModalObs = new MutationObserver(function (muts) {
       for (var i = 0; i < muts.length; i++) {
         var m = muts[i];
-        if (m.type === 'childList') { syncModalDim(); return; }
-        if (m.type === 'attributes' && (m.attributeName === 'aria-modal' || m.attributeName === 'data-state')) { syncModalDim(); return; }
+        if (m.type === 'childList') { scheduleSyncModalDim(); return; }
+        if (m.type === 'attributes' && (m.attributeName === 'aria-modal' || m.attributeName === 'role')) { scheduleSyncModalDim(); return; }
       }
     });
-    _xmModalObs.observe(document.body, { childList: true, attributes: true, subtree: true, attributeFilter: ['aria-modal', 'data-state'] });
+    _xmModalObs.observe(document.body, { childList: true, attributes: true, subtree: true, attributeFilter: ['aria-modal', 'role'] });
   } catch (e) { /* 无 MutationObserver 的环境下降级：只靠 open-spotlight 事件 */ }
 
   /* ---------- v7：控件按需唤出（平时零遮挡） ----------
@@ -2433,10 +2529,19 @@
      面板/游戏开着、收起态时坞不出（各有自己的界面）；与气泡互斥（showBubble 里先收坞）。
      唤出/收起只切 root 的 .xm-ctl 类，猫的 left/top/transform 一概不碰，不跳位不闪烁。 */
   var dockEl = root.querySelector('.xm-dock');
+  var moreBtn = null;
   var ctlShown = false, ctlTimer = 0, ctlLeaveTimer = 0;
   var CTL_HIDE_AFTER = 3000;
   var coarsePointer = false;
   try { coarsePointer = window.matchMedia('(pointer: coarse)').matches; } catch (e) { /* 忽略 */ }
+  function syncFabAvoid() {
+    try {
+      if (!isNarrowViewport()) { root.classList.remove('xm-avoid-fab'); return; }
+      var fab = document.getElementById('navhub-floating-quick-nav');
+      var vis = !!(fab && fab.classList && fab.classList.contains('pointer-events-auto'));
+      root.classList.toggle('xm-avoid-fab', vis);
+    } catch (e) { /* 忽略 */ }
+  }
   function ctlBlocked() {
     return root.classList.contains('xm-open') || root.classList.contains('xm-closed') ||
       (typeof gameEl !== 'undefined' && gameEl && gameEl.classList.contains('xm-on'));
@@ -2450,6 +2555,7 @@
       if (!fromUser) return;
       hideBubble();
     }
+    syncFabAvoid();
     window.clearTimeout(ctlLeaveTimer);
     root.classList.add('xm-ctl');
     ctlShown = true;
@@ -2459,6 +2565,8 @@
     window.clearTimeout(ctlTimer);
     window.clearTimeout(ctlLeaveTimer);
     if (ctlShown) root.classList.remove('xm-ctl');
+    if (dockEl) dockEl.classList.remove('xm-dock-more');
+    if (moreBtn) moreBtn.setAttribute('aria-expanded', 'false');
     ctlShown = false;
   }
   function scheduleCtlHide() {
@@ -2492,11 +2600,13 @@
     else if (container.contains(active)) { /* 容器内正常 Tab，不干预 */ }
     else { first.focus(); ev.preventDefault(); }
   }
+  var suppressFocusCtl = false;
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape') {
       /* B-08：Esc 按游戏 > 面板 > 坞的优先级关闭，不再只收坞。 */
       if (gameEl && gameEl.classList.contains('xm-on')) { closeGame(); return; }
       if (root.classList.contains('xm-open')) { closePanel(); return; }
+      if (play && play.on) setPlayMode(false);
       hideControls();
       return;
     }
@@ -2506,9 +2616,24 @@
       if (root.classList.contains('xm-open')) { trapTabIn(panelEl, ev); }
     }
   });
-  /* 坞内有动静（点按/聚焦）就续命 3 秒，不会在手边自己消失 */
+  root.addEventListener('focusin', function (ev) {
+    if (suppressFocusCtl) return;
+    var t = ev.target;
+    var kbd = false;
+    try { kbd = !!(t && t.matches && t.matches(':focus-visible')); } catch (e) { /* 老浏览器无 :focus-visible */ }
+    if (kbd && (t === stageEl || (dockEl && dockEl.contains(t)))) showControls(true);
+  });
+  /* 坞内有动静（移入/点按/聚焦）就续命 3 秒，不会在手边自己消失；
+     气泡刚收起或指针一直停在猫身上微移时，自动续回操作坞（不必移出猫再移入）。 */
+  dockEl.addEventListener('pointermove', function () { if (ctlShown) scheduleCtlHide(); });
   dockEl.addEventListener('pointerdown', function () { if (ctlShown) scheduleCtlHide(); });
   dockEl.addEventListener('focusin', function () { if (ctlShown) scheduleCtlHide(); });
+  stageEl.addEventListener('pointermove', function () {
+    if (ctlShown || coarsePointer || drag || docked) return;
+    if (root.querySelector('.xm-bubble.xm-show')) return;
+    if (Date.now() - lastBubbleAt < 1100) return;
+    showControls(true);
+  });
 
   /* ---------- v4：摸猫互动（连摸情绪递进，摸太急偶尔躲开） ---------- */
   var petChain = 0, petLastAt = 0, interacted = false;
@@ -2582,6 +2707,7 @@
   /* v10（合并版）：生命力与互动细节——待机眨眼、双击放动画、长按摸猫、键盘可操作 */
   window.setInterval(function () {
     if (reducedMotion || sleeping || document.hidden || userTyping) return;
+    if (!avatarPick || avatarPick.kind !== 'upload') return;
     if (currentPose !== 'main' || root.classList.contains('xm-open') || root.classList.contains('xm-closed')) return;
     if (Math.random() > 0.75) return;
     setPose('making');
@@ -2639,8 +2765,14 @@
   /* ---------- 按钮：语音 / 收起 / 唤回 ---------- */
   function syncVoiceBtns() {
     var icon = voiceOn ? ICONS.volOn : ICONS.volOff;
+    var label = voiceOn ? '小猫语音：已开启（点击关闭）' : '小猫语音：已关闭（点击开启）';
     var btns = root.querySelectorAll('.xm-voice-btn');
-    for (var i = 0; i < btns.length; i++) btns[i].innerHTML = icon;
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].innerHTML = icon;
+      btns[i].setAttribute('aria-pressed', voiceOn ? 'true' : 'false');
+      btns[i].title = label;
+      btns[i].setAttribute('aria-label', label);
+    }
   }
   var voiceBtns = root.querySelectorAll('.xm-voice-btn');
   for (var vi = 0; vi < voiceBtns.length; vi++) {
@@ -2650,7 +2782,11 @@
       store.voice = voiceOn;
       persist();
       syncVoiceBtns();
-      if (!voiceOn) { stopSpeak(); if (videoEl) { try { videoEl.muted = true; } catch (e) { /* 忽略 */ } } } /* v8 复审返工：关语音也静掉正在播的有声视频 */
+      if (!voiceOn) {
+        stopSpeak();
+        if (videoEl) { try { videoEl.muted = true; } catch (e) { /* 忽略 */ } }
+        if (!root.classList.contains('xm-open')) showBubble('声音关掉啦，安静陪你～', false);
+      } /* v8 复审返工：关语音也静掉正在播的有声视频 */
       else if (!root.classList.contains('xm-open')) showBubble('声音打开啦', true);
     });
   }
@@ -2660,21 +2796,20 @@
      滚过搜索行后圆标露出分支也照常生效。 */
   function collapseCat() {
     hideControls();
+    ensureTabIcon();
     if (gameEl && gameEl.classList.contains('xm-on')) closeGame();
-    /* A P1-3/C-10：收起即关游乐场——rAF/定时器停掉，store.play 写盘 false，
-       否则游乐场在圆标后面继续跑、刷新又自启，收起粘不住。 */
     if (play.on) setPlayMode(false);
+    if (!store.pos) root.style.left = root.style.top = root.style.right = root.style.bottom = '';
     root.classList.add('xm-closed');
-    setIconImg(root.querySelector('.xm-tab img')); /* B-04：收起成圆标时才给圆标设 src */
+    setIconImg(root.querySelector('.xm-tab img'));
     root.classList.remove('xm-open');
     hideBubble();
     stopSpeak();
-    stopCelebVideo(); /* v8 复审返工：收起即停视频，滞后的探活链凭令牌丢弃 */
-    pauseClips(); /* 默认视频：收起成圆标即停播，不在圆标里白白解码 */
+    stopCelebVideo();
+    pauseClips();
     autoClosed = false;
     autoParked = false;
     userUnparked = false;
-    /* K2：亲手收起要落盘，否则刷新就回来（旧 bug：collapseCat 不调 persist）。 */
     store.closed = true;
     store.closedAt = Date.now();
     persist();
@@ -2725,11 +2860,37 @@
   var history = [];
   var busy = false;
   var chatted = false;
+  var lastUserQuery = '';
+  var WELCOME_MSG = '你好呀，我是小猫猫！找网站是我的强项，比如「想看免费短剧」「要做 PPT 的工具」「学英语的网站」，直接打字告诉我就行。也可以问我某个分类里有什么、场景包怎么用。';
+  function syncPageChips() {
+    var box = root.querySelector('.xm-chips');
+    if (!box) return;
+    var p = '';
+    try { p = window.location.pathname || ''; } catch (e) { /* 忽略 */ }
+    var item = { label: '独立开发工具', q: '推荐独立开发者常用的工具网站' };
+    if (p.indexOf('/me') === 0) item = { label: '涨经验技巧', q: '怎么快速升级和点亮徽章' };
+    else if (p.indexOf('/marketplace') === 0) item = { label: '效率插件推荐', q: '推荐好用的浏览器效率插件' };
+    else if (p.indexOf('/videos') === 0 || p.indexOf('/drama') === 0) item = { label: '高清追剧站', q: '推荐高清免费的影视和短剧网站' };
+    else if (p.indexOf('/search') === 0) item = { label: '同类替代站', q: '推荐好用的同类替代工具网站' };
+    else if (p.indexOf('/favorites') === 0 || p.indexOf('/collections') === 0) item = { label: '效率工作流', q: '推荐提升日常效率的成套工具网站' };
+    var ctxBtn = box.querySelector('[data-ctx-chip="1"]');
+    if (!ctxBtn) {
+      ctxBtn = document.createElement('button');
+      ctxBtn.className = 'xm-sug';
+      ctxBtn.type = 'button';
+      ctxBtn.setAttribute('data-ctx-chip', '1');
+      box.appendChild(ctxBtn);
+    }
+    ctxBtn.textContent = item.label;
+    ctxBtn.setAttribute('data-q', item.q);
+  }
   function openPanel() {
     undock();
     hideControls();
-    lastFocusBeforeModal = document.activeElement; /* B-08：记触发焦点，关闭时还回去（收坞不挪焦点，放其后仍是开面板前的焦点） */
+    ensureHeadIcon();
+    lastFocusBeforeModal = document.activeElement; /* B-08：记触发焦点，关闭时还回去 */
     closeLook();
+    syncPageChips();
     root.classList.add('xm-open');
     setIconImg(root.querySelector('.xm-p-head img')); /* B-04：面板头像懒加载，打开面板时才设 src */
     root.classList.remove('xm-closed');
@@ -2743,7 +2904,7 @@
     alignPanel();
     if (!chatted) {
       chatted = true;
-      addCatText('你好呀，我是小猫猫！找网站是我的强项，比如「想看免费短剧」「要做 PPT 的工具」「学英语的网站」，直接打字告诉我就行。也可以问我某个分类里有什么、场景包怎么用。');
+      addCatText(WELCOME_MSG);
     }
     /* C-12：开面板时补发排队的升级庆祝（面板开着走 addCatText，不弹气泡；
        睡眠态已在上面 wakeUp 里补发过，这里是空操作，不重复）。 */
@@ -2755,16 +2916,15 @@
     closeLook();
     setPose('main');
     markActive();
-    /* B-08：焦点还给打开面板前的位置。触发钮在坞里、坞收起时 visibility:hidden、
-       直接 focus() 会静默失败——先唤出坞再聚焦；唤不出时退回猫舞台（tabindex=0）。
-       合入注：showControls 已改 showControls(fromUser)（状态线），无参是自动提示
-       会直接 return，这里须传 true 才是亲手唤坞。 */
+    /* B-08：焦点还给打开面板前的位置；若来自坞内按钮，直接把焦点还给猫舞台且不反弹出坞 */
     if (lastFocusBeforeModal && lastFocusBeforeModal.focus) {
+      suppressFocusCtl = true;
       try {
-        if (dockEl && dockEl.contains(lastFocusBeforeModal)) showControls(true);
-        lastFocusBeforeModal.focus();
-        if (document.activeElement !== lastFocusBeforeModal) stageEl.focus();
+        if (dockEl && dockEl.contains(lastFocusBeforeModal)) stageEl.focus({ preventScroll: true });
+        else lastFocusBeforeModal.focus();
+        if (document.activeElement !== lastFocusBeforeModal && document.activeElement !== stageEl) stageEl.focus();
       } catch (e) { try { stageEl.focus(); } catch (e2) { /* 忽略 */ } }
+      suppressFocusCtl = false;
     }
     lastFocusBeforeModal = null;
     /* C-11：关面板按游乐场模式续播——追/漫步续走路视频，扑态按待机续
@@ -2779,6 +2939,28 @@
     ev.stopPropagation();
     closePanel();
   });
+  var pClearBtn = root.querySelector('.xm-p-clear');
+  if (pClearBtn) {
+    pClearBtn.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      if (busy) return;
+      markActive();
+      history = [];
+      msgsEl.innerHTML = '';
+      chatted = true;
+      addCatText(WELCOME_MSG);
+      closeLook();
+      try { inputEl.focus({ preventScroll: true }); } catch (e) { /* 忽略 */ }
+    });
+  }
+  var pResetBtn = root.querySelector('.xm-p-reset');
+  if (pResetBtn) {
+    pResetBtn.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      markActive();
+      resetCatPos();
+    });
+  }
 
   function scrollMsgs() { msgsEl.scrollTop = msgsEl.scrollHeight; }
   function addUserText(text) {
@@ -2919,6 +3101,7 @@
     noteXmAct();
     wakeUp(false);
     addUserText(q);
+    lastUserQuery = q;
     inputEl.value = '';
     var sentHistory = history.slice();
     history.push({ role: 'user', content: q });
@@ -2965,10 +3148,18 @@
     ev.preventDefault();
     sendChat(inputEl.value);
   });
-  var chipBtns = root.querySelectorAll('.xm-chips .xm-sug');
-  for (var ci = 0; ci < chipBtns.length; ci++) {
-    chipBtns[ci].addEventListener('click', function () {
-      sendChat(this.getAttribute('data-q'));
+  inputEl.addEventListener('keydown', function (ev) {
+    if (ev.key === 'ArrowUp' && !inputEl.value && lastUserQuery) {
+      ev.preventDefault();
+      inputEl.value = lastUserQuery;
+      try { inputEl.setSelectionRange(lastUserQuery.length, lastUserQuery.length); } catch (e) { /* 忽略 */ }
+    }
+  });
+  var chipsWrap = root.querySelector('.xm-chips');
+  if (chipsWrap) {
+    chipsWrap.addEventListener('click', function (ev) {
+      var btn = ev.target && ev.target.closest ? ev.target.closest('.xm-sug') : null;
+      if (btn && btn.getAttribute('data-q')) sendChat(btn.getAttribute('data-q'));
     });
   }
 
@@ -3085,8 +3276,17 @@
   }
   var growthChipEl = null;
   function refreshGrowthChip() {
-    if (!growthChipEl) return;
     var s = readGrowthSummary();
+    var pLvEl = root.querySelector('.xm-p-lv');
+    if (pLvEl) {
+      if (s && typeof s.level === 'number') {
+        pLvEl.textContent = 'Lv.' + s.level + (s.streak > 0 ? ' · ' + s.streak + '天' : '');
+        pLvEl.hidden = false;
+      } else {
+        pLvEl.hidden = true;
+      }
+    }
+    if (!growthChipEl) return;
     if (!s || typeof s.level !== 'number') { growthChipEl.classList.remove('xm-on'); return; }
     var tierIcon = s.level <= 4 ? '🐾' : s.level <= 8 ? '🔔' : s.level <= 12 ? '🐟' : '👑';
     var dots = (s.dots || []).map(function (d) { return d ? '●' : '○'; }).join('');
@@ -3184,7 +3384,11 @@
   var FEED_LINES = ['好香！小鱼干最好吃啦', '咔哧咔哧……嗯，满足', '谢谢投喂，今天也元气满满', '一条小鱼干，快乐一整天'];
   var dockBox = root.querySelector('.xm-dock');
   var closeBtnEl = root.querySelector('.xm-close-btn');
-  // 成长等级行：坞内第一行（整行宽，不遮猫本体），只读引擎摘要
+  var dockPetEl = dockBox.querySelector('.xm-pet-btn');
+  if (dockPetEl) dockPetEl.classList.add('xm-dock-sec');
+  var dockVoiceEl = dockBox.querySelector('.xm-voice-btn');
+  if (dockVoiceEl) dockVoiceEl.classList.add('xm-dock-sec');
+  // 成长等级行：只保留 DOM 节点并改在面板头呈现（不再悬浮压卡片）
   var chipEl = document.createElement('div');
   chipEl.className = 'xm-growth-chip';
   chipEl.setAttribute('aria-hidden', 'true');
@@ -3205,10 +3409,10 @@
   gameBtn.title = '和小猫猫玩接星星';
   gameBtn.setAttribute('aria-label', '和小猫猫玩接星星');
   dockBox.insertBefore(gameBtn, closeBtnEl);
-  /* K4：一键归位钮（与喂鱼/接星星同款插入位置：关闭钮之前）。拖乱位置后点它
-     即回默认右下角，并清掉已存拖动位置（见 resetCatPos）。 */
+  /* K4：一键归位钮（与喂鱼/接星星同款插入位置：关闭钮之前，默认折叠进「更多」）。 */
   var resetBtn = document.createElement('button');
   resetBtn.className = 'xm-btn xm-reset-btn';
+  resetBtn.classList.add('xm-dock-sec');
   resetBtn.type = 'button';
   resetBtn.innerHTML = ICONS.reset;
   resetBtn.title = '把小猫放回右下角';
@@ -3219,10 +3423,9 @@
     markActive();
     resetCatPos();
   });
-  /* 互动玩法第一批 Top 3：游乐场开关（与喂鱼/接星星/归位同款插入位置：关闭钮之前）。
-     aria-pressed 反映开关态；点它进/出游乐场（追鼠标 + 扑光标 + 满屏散步）。 */
+  /* 互动玩法第一批 Top 3：游乐场开关（默认折叠进「更多」，保持单排 4 键）。 */
   var playBtn = document.createElement('button');
-  playBtn.className = 'xm-btn xm-play-btn';
+  playBtn.className = 'xm-btn xm-play-btn xm-dock-sec';
   playBtn.type = 'button';
   playBtn.innerHTML = ICONS.chase;
   playBtn.title = '跟小猫猫一起玩（追鼠标）';
@@ -3234,11 +3437,27 @@
     markActive();
     setPlayMode(!play.on);
   });
+  moreBtn = document.createElement('button');
+  moreBtn.className = 'xm-btn xm-more-btn';
+  moreBtn.type = 'button';
+  moreBtn.innerHTML = ICONS.more;
+  moreBtn.title = '展开更多功能（摸猫 / 陪玩 / 语音 / 归位）';
+  moreBtn.setAttribute('aria-label', '展开更多功能');
+  moreBtn.setAttribute('aria-expanded', 'false');
+  dockBox.insertBefore(moreBtn, closeBtnEl);
+  moreBtn.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    markActive();
+    var on = dockBox.classList.toggle('xm-dock-more');
+    moreBtn.setAttribute('aria-expanded', on ? 'true' : 'false');
+    if (ctlShown) scheduleCtlHide();
+  });
   function updateFishBtn() {
     rollFishDay();
     var left = Math.max(0, 5 - v4.fishCount);
     fishNEl.textContent = left;
     fishNEl.style.display = left > 0 ? 'block' : 'none';
+    fishBtn.classList.toggle('xm-fish-out', left <= 0);
     fishBtn.title = left > 0 ? ('喂小猫猫吃小鱼干（今天还剩 ' + left + ' 条）') : '今天的小鱼干喂完啦，明天再来';
   }
   function feedFish() {
@@ -3379,6 +3598,7 @@
       }
       s.remove();
     };
+    s.addEventListener('pointerdown', function (ev) { ev.preventDefault(); kill(true); });
     s.addEventListener('click', function () { kill(true); });
     s._t = window.setTimeout(function () { kill(false); }, dur + 40);
     game.stars.push(s);
@@ -3428,14 +3648,15 @@
   function closeGame() {
     endGame(false);
     gameEl.classList.remove('xm-on');
-    /* B-08：焦点还给打开游戏前的位置（同 closePanel：触发钮在坞里，先唤出坞再聚焦）。
-       合入注：showControls 已改 showControls(fromUser)（状态线），这里须传 true。 */
+    /* B-08：焦点还给打开游戏前的位置；若来自坞内按钮，直接把焦点还给猫舞台且不反弹出坞 */
     if (lastFocusBeforeModal && lastFocusBeforeModal.focus) {
+      suppressFocusCtl = true;
       try {
-        if (dockEl && dockEl.contains(lastFocusBeforeModal)) showControls(true);
-        lastFocusBeforeModal.focus();
-        if (document.activeElement !== lastFocusBeforeModal) stageEl.focus();
+        if (dockEl && dockEl.contains(lastFocusBeforeModal)) stageEl.focus({ preventScroll: true });
+        else lastFocusBeforeModal.focus();
+        if (document.activeElement !== lastFocusBeforeModal && document.activeElement !== stageEl) stageEl.focus();
       } catch (e) { try { stageEl.focus(); } catch (e2) { /* 忽略 */ } }
+      suppressFocusCtl = false;
     }
     lastFocusBeforeModal = null;
   }
@@ -3581,7 +3802,11 @@
   }
   function openLook() { renderLook(); panelEl.classList.add('xm-looking'); }
   function closeLook() { panelEl.classList.remove('xm-looking'); }
-  root.querySelector('.xm-look-btn').addEventListener('click', function (ev) { ev.stopPropagation(); openLook(); });
+  root.querySelector('.xm-look-btn').addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    if (panelEl.classList.contains('xm-looking')) closeLook();
+    else openLook();
+  });
   root.querySelector('.xm-look-back').addEventListener('click', function (ev) { ev.stopPropagation(); closeLook(); });
   root.querySelector('.xm-look-default').addEventListener('click', function () { pickLook('def'); });
   root.querySelector('.xm-look-upload').addEventListener('click', function () { lookFile.click(); });
@@ -3676,11 +3901,9 @@
   }, 850);
   /* 跨会话的升级/新徽章：等招呼说完再庆祝，不抢戏 */
   window.setTimeout(function () { checkGrowth(true); }, 9500);
-  /* 互动玩法第一批：演示页用 window.XIAOMAOMAO_PLAY = true 开局进游乐场；
-     否则按用户上次的选择（store.play）恢复。减动效用户不自动开。 */
-  if (!reducedMotion && (window.XIAOMAOMAO_PLAY === true || store.play)) {
-    /* A P1-3：回调内再查一次收起——1200ms 内用户刚收起过就不再自启，
-       只查外层条件防不住这个竞态。 */
+  /* 互动玩法第一批：仅在演示页显式指定 window.XIAOMAOMAO_PLAY = true 时开局自动进游乐场；
+     普通页面加载默认稳驻右下角，不因历史缓存自动满屏跑挡卡片（用户可随时在更多菜单点开启）。 */
+  if (!reducedMotion && window.XIAOMAOMAO_PLAY === true) {
     window.setTimeout(function () { if (store.closed) return; setPlayMode(true); }, 1200);
   }
   /* 默认显示走透明视频（2026-11-18）：游乐场没开时也播 idle 透明循环；减动效/

@@ -58,6 +58,7 @@ import { PersonalizationCard } from '@/components/user-center/dashboard/personal
 import { RecentActivity, type ActivityItem } from '@/components/user-center/dashboard/recent-activity'
 import { GrowthPanelLazy } from '@/components/user-center/growth-panel-lazy'
 import { EntryGroups } from '@/components/user-center/dashboard/entry-groups'
+import { ThemeQuickToggle } from '@/components/user-center/dashboard/theme-quick-toggle'
 import { ArrowRight, CheckCircle2, RefreshCw, Settings2, User } from 'lucide-react'
 
 /** 设置面板：原地即时交互控件（In-Place Controls），完整表单可前往 /me/settings */
@@ -97,11 +98,13 @@ function SettingsSummary({
   busy?: boolean
 }) {
   return (
-    <section className="flex h-full flex-col rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
+    <section className="flex h-full flex-col rounded-2xl border border-border/70 bg-card/75 p-4 shadow-xs sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="flex items-center gap-2 text-sm font-semibold">
-            <Settings2 className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+          <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/10 text-sky-700 dark:text-sky-300">
+              <Settings2 className="h-4 w-4" aria-hidden />
+            </span>
             偏好设置
           </h2>
           <p className="mt-1 text-[11px] text-muted-foreground">
@@ -407,17 +410,21 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
   const displayAnonId = anonId || (state === 'anonymous' ? getAnonId() : '')
 
   return (
-    <Container as="main" id="main-content" className="space-y-5 pb-8 pt-3 sm:space-y-6 sm:pb-10 sm:pt-4">
+    <Container as="main" id="main-content" className="space-y-4 pb-20 pt-3 sm:space-y-5 sm:pb-14 sm:pt-4">
       <CenterPageHeader
+        compact
         title="用户中心"
         eyebrow="账户与数据"
         icon={User}
         description="账号身份、收藏、历史、插件、个性化偏好与数据管理，从这里统一进入。"
         actions={
-          <Button variant="outline" size="sm" className="w-full text-xs sm:w-auto" onClick={() => void reloadOnce()}>
-            <RefreshCw className="mr-2 h-3.5 w-3.5" />
-            刷新
-          </Button>
+          <>
+            <ThemeQuickToggle />
+            <Button variant="outline" size="sm" className="w-full text-xs sm:w-auto" onClick={() => void reloadOnce()}>
+              <RefreshCw className="mr-2 h-3.5 w-3.5" />
+              刷新
+            </Button>
+          </>
         }
       />
 
@@ -478,19 +485,27 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
 
       {state === 'anonymous' && (
         <div className="space-y-4 sm:space-y-5">
-          <AccountCard
-            anonymous
-            user={null}
-            anonId={displayAnonId}
-            favoritesCount={favorites.items.length}
-          />
-          <SettingsSummary
-            settings={localPrefs}
-            local
-            onPatch={applySettingsPatch}
-            busy={settingsBusy}
-          />
-          <GrowthPanelLazy />
+          {/* 首屏双栏 Bento 驾驶舱：左身份与资产，右高频偏好设置 */}
+          <div className="grid gap-4 lg:grid-cols-12">
+            <div className="min-w-0 lg:col-span-5">
+              <AccountCard
+                anonymous
+                user={null}
+                anonId={displayAnonId}
+                favoritesCount={favorites.items.length}
+              />
+            </div>
+            <div className="min-w-0 lg:col-span-7">
+              <SettingsSummary
+                settings={localPrefs}
+                local
+                onPatch={applySettingsPatch}
+                busy={settingsBusy}
+              />
+            </div>
+          </div>
+
+          {/* 全部功能入口上移至首屏下沿，找收藏/历史/插件/金库不必滚过长成长面板 */}
           <EntryGroups
             favoritesCount={favorites.items.length}
             settings={localPrefs}
@@ -498,6 +513,8 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
             profileReady={false}
             anonymous={true}
           />
+
+          <GrowthPanelLazy />
         </div>
       )}
 
@@ -520,19 +537,28 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
           />
           <StatsGrid counts={overview.counts} />
           <QuickActions />
-          <GrowthPanelLazy />
+
+          {/* 全部功能入口优先展示在个人驾驶舱核心位 */}
+          <EntryGroups
+            favoritesCount={overview.counts.favorites}
+            installedPluginsCount={overview.counts.activePluginInstalls}
+            searchesCount={overview.counts.searches}
+            vaultExists={Boolean(overview.vault)}
+            profileReady={Boolean(overview.profile)}
+            anonymous={false}
+            settings={effectiveSettings}
+          />
 
           <div className="grid gap-4 lg:grid-cols-12">
-            <div className="lg:col-span-7">
-              <PersonalizationCard
-                enabled={overview.settings.personalizationEnabled}
+            <div className="min-w-0 lg:col-span-7">
+              <SettingsSummary
+                settings={effectiveSettings}
+                local={false}
+                onPatch={applySettingsPatch}
                 busy={settingsBusy}
-                explain={explain}
-                onToggle={() => void togglePersonalization()}
-                onClearSignal={(kind) => void clearSignal(kind)}
               />
             </div>
-            <div className="lg:col-span-5">
+            <div className="min-w-0 lg:col-span-5">
               <SyncHealthCard
                 profile={overview.profile}
                 vault={overview.vault}
@@ -544,28 +570,21 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
           </div>
 
           <div className="grid gap-4 lg:grid-cols-12">
-            <div className="lg:col-span-7">
-              <SettingsSummary
-                settings={effectiveSettings}
-                local={false}
-                onPatch={applySettingsPatch}
+            <div className="min-w-0 lg:col-span-7">
+              <PersonalizationCard
+                enabled={overview.settings.personalizationEnabled}
                 busy={settingsBusy}
+                explain={explain}
+                onToggle={() => void togglePersonalization()}
+                onClearSignal={(kind) => void clearSignal(kind)}
               />
             </div>
-            <div className="lg:col-span-5">
+            <div className="min-w-0 lg:col-span-5">
               <RecentActivity items={activity} />
             </div>
           </div>
 
-          <EntryGroups
-            favoritesCount={overview.counts.favorites}
-            installedPluginsCount={overview.counts.activePluginInstalls}
-            searchesCount={overview.counts.searches}
-            vaultExists={Boolean(overview.vault)}
-            profileReady={Boolean(overview.profile)}
-            anonymous={false}
-            settings={effectiveSettings}
-          />
+          <GrowthPanelLazy />
         </div>
       )}
 

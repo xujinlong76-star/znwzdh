@@ -424,19 +424,23 @@ export async function listFavoriteFolders(repo: Repository, userId: string): Pro
 export async function createFavoriteFolder(repo: Repository, userId: string, name: string): Promise<FavoriteFolderRecord> {
   const id = randomUUID();
   const now = Date.now();
-  // 追加到队尾而不是恒写 0：sort 是拖拽/上移下移重排的依据，
-  // 恒 0 会让所有夹子同权、顺序退化为创建序（T16 修复）。
-  const maxRow = (
-    await repo.raw("SELECT MAX(sort) AS m FROM favorite_folders WHERE user_id = ?", [userId])
-  )[0];
-  const sort = Number(maxRow?.m ?? 0) + 1;
-  await repo.run(
-    "INSERT INTO favorite_folders (id, user_id, name, sort, created_at) VALUES (?,?,?,?,?)",
-    [id, userId, name.trim(), sort, now],
-  );
-  const row = (await repo.raw("SELECT * FROM favorite_folders WHERE id = ?", [id]))[0];
-  if (!row) throw new Error("创建收藏夹后无法读回");
-  return rowToFolder(row);
+  // 取号 + 插入必须原子：并发创建文件夹时裸跑会都读到同一个 MAX(sort) 生成重复
+  // 排序值，拖拽/上移下移重排后顺序不稳定（同 custom-sites 的 sort 竞态）。
+  return repo.withTransaction(async () => {
+    // 追加到队尾而不是恒写 0：sort 是拖拽/上移下移重排的依据，
+    // 恒 0 会让所有夹子同权、顺序退化为创建序（T16 修复）。
+    const maxRow = (
+      await repo.raw("SELECT MAX(sort) AS m FROM favorite_folders WHERE user_id = ?", [userId])
+    )[0];
+    const sort = Number(maxRow?.m ?? 0) + 1;
+    await repo.run(
+      "INSERT INTO favorite_folders (id, user_id, name, sort, created_at) VALUES (?,?,?,?,?)",
+      [id, userId, name.trim(), sort, now],
+    );
+    const row = (await repo.raw("SELECT * FROM favorite_folders WHERE id = ?", [id]))[0];
+    if (!row) throw new Error("创建收藏夹后无法读回");
+    return rowToFolder(row);
+  });
 }
 
 export async function deleteFavoriteFolder(repo: Repository, userId: string, folderId: string): Promise<void> {

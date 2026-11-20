@@ -66,6 +66,8 @@ import * as usersRepo from "./repository/users.ts";
 import * as authTokensRepo from "./repository/auth-tokens.ts";
 import * as tokensRepo from "./repository/tokens.ts";
 import * as collectionsRepo from "./repository/collections.ts";
+import * as submissionReviewsRepo from "./repository/submission-reviews.ts";
+export type { SubmissionFeedbackItem, SubmissionReviewRecord } from "./repository/submission-reviews.ts";
 import * as publicPagesRepo from "./repository/public-pages.ts";
 export type { PublicPage, PublicPageStatus } from "./repository/public-pages.ts";
 import * as compareSnapshotsRepo from "./repository/compare-snapshots.ts";
@@ -1415,6 +1417,18 @@ async revokeAllSessions(userId: string): Promise<number> {
 
   async pruneAuthTokens(before: number): Promise<number> {
     return authTokensRepo.pruneAuthTokens(this, before);
+  }
+
+  /* ------------------------- 投稿收录汇报 ------------------------- */
+
+  /** 审核通过/未通过时写「状态 + AI 原因说明」（复审覆盖写，最新结果即汇报） */
+  async recordSubmissionReview(input: { siteId: string; reviewStatus: "approved" | "rejected"; reason: string; reviewerNote?: string | null }): Promise<void> {
+    return submissionReviewsRepo.recordSubmissionReview(this, input);
+  }
+
+  /** 按投稿人查收录汇报列表（反馈目录数据源） */
+  async listSubmissionFeedback(identity: string, limit?: number): Promise<submissionReviewsRepo.SubmissionFeedbackItem[]> {
+    return submissionReviewsRepo.listSubmissionFeedback(this, identity, limit);
   }
 
   /* ------------------------- 身份合并 / 用户中心 ------------------------- */

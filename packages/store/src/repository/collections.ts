@@ -246,35 +246,40 @@ export async function addCollectionItem(
   note?: string | null,
   sort?: number,
 ): Promise<void> {
-  const existing = await repo.raw(
-    "SELECT sort, note FROM collection_items WHERE collection_id = ? AND site_id = ? LIMIT 1",
-    [collectionId, siteId],
-  );
+  // SELECT 判在否 + MAX(sort) 取号 + INSERT 必须原子：裸跑时并发双写会
+  // ① 都读到「不存在」都走 INSERT → 同 (collection,site) 插两行/撞约束
+  // ② 都读到同一个 MAX(sort) → sort 重复、拖拽重排顺序不稳定。
+  await repo.withTransaction(async () => {
+    const existing = await repo.raw(
+      "SELECT sort, note FROM collection_items WHERE collection_id = ? AND site_id = ? LIMIT 1",
+      [collectionId, siteId],
+    );
 
-  const first = existing[0];
-  if (first) {
-    const nextNote = note !== undefined ? note : first.note;
-    const nextSort = sort !== undefined ? sort : first.sort;
+    const first = existing[0];
+    if (first) {
+      const nextNote = note !== undefined ? note : first.note;
+      const nextSort = sort !== undefined ? sort : first.sort;
+      await repo.run(
+        "UPDATE collection_items SET sort = ?, note = ? WHERE collection_id = ? AND site_id = ?",
+        [nextSort, nextNote, collectionId, siteId],
+      );
+      return;
+    }
+
+    let finalSort = sort;
+    if (finalSort === undefined) {
+      const maxSortRow = await repo.raw(
+        "SELECT MAX(sort) AS m FROM collection_items WHERE collection_id = ?",
+        [collectionId],
+      );
+      finalSort = (maxSortRow[0]?.m !== null && maxSortRow[0]?.m !== undefined ? Number(maxSortRow[0].m) : -1) + 1;
+    }
+
     await repo.run(
-      "UPDATE collection_items SET sort = ?, note = ? WHERE collection_id = ? AND site_id = ?",
-      [nextSort, nextNote, collectionId, siteId],
+      "INSERT INTO collection_items (collection_id, site_id, sort, note) VALUES (?,?,?,?)",
+      [collectionId, siteId, finalSort, note ?? null],
     );
-    return;
-  }
-
-  let finalSort = sort;
-  if (finalSort === undefined) {
-    const maxSortRow = await repo.raw(
-      "SELECT MAX(sort) AS m FROM collection_items WHERE collection_id = ?",
-      [collectionId],
-    );
-    finalSort = (maxSortRow[0]?.m !== null && maxSortRow[0]?.m !== undefined ? Number(maxSortRow[0].m) : -1) + 1;
-  }
-
-  await repo.run(
-    "INSERT INTO collection_items (collection_id, site_id, sort, note) VALUES (?,?,?,?)",
-    [collectionId, siteId, finalSort, note ?? null],
-  );
+  });
 }
 
 export async function updateCollectionItem(

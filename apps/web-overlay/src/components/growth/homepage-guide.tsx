@@ -48,10 +48,23 @@ export function HomepageGuideCard({ compact = false }: { compact?: boolean }) {
     setCanInstall(Boolean(window.__navhubInstallPrompt))
     refresh()
     const onInstall = () => setCanInstall(true)
+    const onBeforeInstall = (e: Event) => {
+      e.preventDefault()
+      window.__navhubInstallPrompt = e as Window['__navhubInstallPrompt']
+      setCanInstall(true)
+    }
+    const onInstalled = () => {
+      window.__navhubInstallPrompt = undefined
+      setCanInstall(false)
+    }
     window.addEventListener('navhub:install-available', onInstall)
+    window.addEventListener('beforeinstallprompt', onBeforeInstall)
+    window.addEventListener('appinstalled', onInstalled)
     window.addEventListener(GROWTH_UPDATED_EVENT, refresh)
     return () => {
       window.removeEventListener('navhub:install-available', onInstall)
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall)
+      window.removeEventListener('appinstalled', onInstalled)
       window.removeEventListener(GROWTH_UPDATED_EVENT, refresh)
     }
   }, [refresh])

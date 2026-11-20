@@ -1332,6 +1332,40 @@ describe("投稿审核收编中枢（GET/PATCH /api/submissions）", () => {
     const badAction = await app.inject({ method: "PATCH", url: "/api/submissions/123", payload: { action: "nuke" } });
     expect(badAction.statusCode).toBe(400);
   });
+
+  it("数字编号碰撞：拒绝猜测站点，给出可选 siteId，精确 id 仍可审核", async () => {
+    // 一组实测会撞 djb2 的 24 位 id（Math.abs 后同为 824591195）。
+    // 旧实现 find() 取第一条：管理员点 A 的编号，B 被上架、原因写进 B 的反馈。
+    const idA = "4af990271ed31d907295a334e7";
+    const idB = "f9fc16158820732351e34a4e21";
+    const num = hashNumber(idA);
+    expect(hashNumber(idB)).toBe(num);
+    await ctx.repo.createSiteWithId({
+      id: idA, url: "https://example.com/hash-collision-a", title: "碰撞投稿 A",
+      categoryId: "cat-ai", status: "pending", source: "submission",
+    });
+    await ctx.repo.createSiteWithId({
+      id: idB, url: "https://example.com/hash-collision-b", title: "碰撞投稿 B",
+      categoryId: "cat-ai", status: "pending", source: "submission",
+    });
+
+    const ambiguous = await app.inject({
+      method: "PATCH", url: "/api/submissions/" + num, payload: { action: "approve" },
+    });
+    expect(ambiguous.statusCode).toBe(409);
+    expect(ambiguous.json()).toMatchObject({ success: false, siteIds: expect.arrayContaining([idA, idB]) });
+    // 关键：拒绝时两边都不能被改动（不能「审到一条算一条」）
+    expect((await app.inject({ method: "GET", url: "/api/sites/" + idA })).json().status).toBe("pending");
+    expect((await app.inject({ method: "GET", url: "/api/sites/" + idB })).json().status).toBe("pending");
+
+    const exact = await app.inject({
+      method: "PATCH", url: "/api/submissions/" + idB, payload: { action: "approve" },
+    });
+    expect(exact.statusCode).toBe(200);
+    expect(exact.json().siteId).toBe(idB);
+    expect((await app.inject({ method: "GET", url: "/api/sites/" + idB })).json().status).toBe("active");
+    expect((await app.inject({ method: "GET", url: "/api/sites/" + idA })).json().status).toBe("pending");
+  });
 });
 
 describe("健康巡检趋势", () => {

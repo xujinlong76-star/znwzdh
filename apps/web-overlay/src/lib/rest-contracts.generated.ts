@@ -2798,6 +2798,31 @@ export interface SubmissionReviewResponse {
   success: true;
   message: string;
   siteId: string;
+  reasonSource?: "ai" | "template" | "quota";
+  reasonQuota?: {
+    scope: "identity" | "anonymous" | "system";
+    metric: "calls" | "tokens";
+    limit: number;
+    used: number;
+    blockedBy: "usage" | "reservation" | "both";
+    retryAfterSeconds: number;
+  };
+}
+
+/**
+ * GET /api/submissions/feedback
+ */
+export interface SubmissionFeedbackResponse {
+  success: true;
+  items: ({
+    siteId: string;
+    title: string;
+    url: string;
+    submittedAt: number;
+    status: "pending" | "approved" | "rejected";
+    reason: string;
+    reviewedAt: number | null;
+  })[];
 }
 
 /**
@@ -3635,6 +3660,7 @@ export interface RestContractRoutes {
   "GET /api/sites/{id}/similar": SiteListResponse;
   "GET /api/sites/{id}/verify": SiteVerifyStatusResponse;
   "GET /api/storage/list": StorageAssetListResponse;
+  "GET /api/submissions/feedback": SubmissionFeedbackResponse;
   "GET /api/tags": TagListResponse;
   "GET /api/tags/resolve": ResolveTagResponse;
   "GET /api/tags/{id}/related": RelatedTagsResponse;

@@ -14,6 +14,7 @@
 import { NextResponse } from 'next/server'
 import { getFileContent } from '@/lib/github'
 import { verifyAdminSession } from '@/lib/auth'
+import { findResourceReferences } from '@/lib/resource-references'
 import type { NavigationData } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 
@@ -35,77 +36,8 @@ export async function POST(request: Request) {
     const navigationData = (await getFileContent('src/navsphere/content/navigation.json')) as NavigationData
     const siteData = (await getFileContent('src/navsphere/content/site.json')) as SiteConfig
 
-    const references: Record<string, Array<{ type: string; location: string; title?: string }>> = {}
-
-    for (const resourcePath of resourcePaths) {
-      references[resourcePath] = []
-
-      if (navigationData?.navigationItems) {
-        for (const navItem of navigationData.navigationItems) {
-          if (navItem.icon === resourcePath) {
-            references[resourcePath].push({
-              type: 'navigation',
-              location: `导航项: ${navItem.title}`,
-              title: navItem.title,
-            })
-          }
-
-          if (navItem.items) {
-            for (const subItem of navItem.items) {
-              if (subItem.icon === resourcePath) {
-                references[resourcePath].push({
-                  type: 'navigation',
-                  location: `导航子项: ${navItem.title} > ${subItem.title}`,
-                  title: subItem.title,
-                })
-              }
-            }
-          }
-
-          if (navItem.subCategories) {
-            for (const subCategory of navItem.subCategories) {
-              if (subCategory.icon === resourcePath) {
-                references[resourcePath].push({
-                  type: 'navigation',
-                  location: `导航分类: ${navItem.title} > ${subCategory.title}`,
-                  title: subCategory.title,
-                })
-              }
-
-              if (subCategory.items) {
-                for (const item of subCategory.items) {
-                  if (item.icon === resourcePath) {
-                    references[resourcePath].push({
-                      type: 'navigation',
-                      location: `导航项: ${navItem.title} > ${subCategory.title} > ${item.title}`,
-                      title: item.title,
-                    })
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
-      if (siteData?.appearance) {
-        if (siteData.appearance.logo === resourcePath) {
-          references[resourcePath].push({
-            type: 'site',
-            location: '站点Logo',
-            title: '站点Logo',
-          })
-        }
-
-        if (siteData.appearance.favicon === resourcePath) {
-          references[resourcePath].push({
-            type: 'site',
-            location: '站点图标',
-            title: '站点图标',
-          })
-        }
-      }
-    }
+    // 扫描逻辑抽到 lib/resource-references（DELETE 端点复用做服务端强制引用检查）
+    const references = findResourceReferences(navigationData, siteData, resourcePaths)
 
     return NextResponse.json({ references })
   } catch (error) {

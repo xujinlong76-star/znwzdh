@@ -21,11 +21,13 @@ export function InstallPrompt() {
   const pathname = usePathname()
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null)
   const [visible, setVisible] = useState(false)
-  const isAdmin = Boolean(pathname?.startsWith("/admin"))
+  // 仅在首页按访问阈值接管安装横幅：管理后台、插件详情（/marketplace/*）、投稿表单（/submit）、
+  // 登录页（/auth/*）等专注子页不拦截 beforeinstallprompt，避免打断当前任务并消除浏览器
+  // "Banner not shown: beforeinstallpromptevent.preventDefault() called" 告警。
+  const isHomeRoute = pathname === "/"
 
   useEffect(() => {
-    // 管理后台页面专注系统管理，不拦截或弹出 PWA 桌面端安装提示
-    if (isAdmin) return
+    if (!isHomeRoute) return
     try {
       const counted = sessionStorage.getItem("navhub:install-counted")
       const visitsRaw = localStorage.getItem(INSTALL_VISIT_KEY)
@@ -48,12 +50,16 @@ export function InstallPrompt() {
         const canOffer = shouldOfferInstall({ visits, dismissedUntil, now: Date.now(), standalone, canPrompt: true })
         if (!canOffer) return
         e.preventDefault()
-        setDeferred(e as BeforeInstallPromptEvent)
+        const promptEvent = e as BeforeInstallPromptEvent
+        window.__navhubInstallPrompt = promptEvent
+        window.dispatchEvent(new CustomEvent("navhub:install-available"))
+        setDeferred(promptEvent)
         offer(true)
       }
       const onInstalled = () => {
         setVisible(false)
         setDeferred(null)
+        window.__navhubInstallPrompt = undefined
         localStorage.removeItem(INSTALL_VISIT_KEY)
       }
       window.addEventListener("beforeinstallprompt", onPrompt)
@@ -66,7 +72,7 @@ export function InstallPrompt() {
     } catch {
       // 隐私模式 / 存储被禁用：安装提示是增强，不阻断页面
     }
-  }, [isAdmin])
+  }, [isHomeRoute])
 
   const install = async () => {
     if (!deferred) return

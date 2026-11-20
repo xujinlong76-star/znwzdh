@@ -15,6 +15,8 @@ interface CenterPageHeaderProps {
   actions?: ReactNode
   /** 标题上方的小标签，用于标注分区归属 */
   eyebrow?: string
+  /** 紧凑变体：保留轻量化氛围渐变与彩色图标芯片，同时收紧纵深占位，让首屏呈现更多核心内容 */
+  compact?: boolean
   className?: string
 }
 
@@ -36,12 +38,14 @@ export function CenterPageHeader({
   back,
   actions,
   eyebrow,
+  compact = false,
   className,
 }: CenterPageHeaderProps) {
   return (
     <header
       className={cn(
-        'relative overflow-hidden rounded-3xl border border-border/70 glass-surface market-hero p-5 sm:p-7',
+        'relative overflow-hidden border border-border/70 glass-surface market-hero',
+        compact ? 'rounded-2xl px-4 py-3.5 sm:px-6 sm:py-4' : 'rounded-3xl p-5 sm:p-7',
         className,
       )}
     >
@@ -55,32 +59,58 @@ export function CenterPageHeader({
         aria-hidden
         className="pointer-events-none absolute -bottom-28 -left-20 h-56 w-56 rounded-full bg-sky-400/10 blur-3xl dark:bg-sky-500/10"
       />
-      <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div
+        className={cn(
+          'relative z-10 flex flex-col lg:flex-row lg:justify-between',
+          compact ? 'gap-3 lg:items-center' : 'gap-4 lg:items-end',
+        )}
+      >
         <div className="min-w-0">
           {back ? (
             <Link
               href={back.href}
-              className="mb-2.5 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+              className="mb-2 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               {back.label}
             </Link>
           ) : null}
-          {eyebrow ? (
+          {eyebrow && !compact ? (
             <p className="mb-1.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               <span aria-hidden className="h-px w-4 bg-primary/50" />
               {eyebrow}
             </p>
           ) : null}
           <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 text-primary ring-1 ring-primary/20">
+            <span
+              className={cn(
+                'flex shrink-0 items-center justify-center bg-gradient-to-br from-primary/15 to-primary/5 text-primary ring-1 ring-primary/20',
+                compact ? 'h-10 w-10 rounded-xl' : 'h-11 w-11 rounded-2xl',
+              )}
+            >
               <Icon className="h-5 w-5" aria-hidden />
             </span>
-            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+                {eyebrow && compact ? (
+                  <span className="rounded-full border border-border/60 bg-background/70 px-2 py-0.5 text-[10px] font-medium tracking-wider text-muted-foreground">
+                    {eyebrow}
+                  </span>
+                ) : null}
+              </div>
+              {compact ? (
+                <p className="mt-0.5 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                  {description}
+                </p>
+              ) : null}
+            </div>
           </div>
-          <p className="mt-2.5 max-w-2xl text-xs leading-relaxed text-muted-foreground sm:text-sm">
-            {description}
-          </p>
+          {!compact ? (
+            <p className="mt-2.5 max-w-2xl text-xs leading-relaxed text-muted-foreground sm:text-sm">
+              {description}
+            </p>
+          ) : null}
         </div>
         {actions ? (
           <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto lg:justify-end">

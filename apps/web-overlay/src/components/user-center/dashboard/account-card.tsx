@@ -14,8 +14,10 @@ import { Button } from '@/components/ui/button'
 import {
   ArrowRight,
   Check,
+  Clapperboard,
   Copy,
   Download,
+  FolderHeart,
   HardDrive,
   LogIn,
   ShieldCheck,
@@ -26,6 +28,8 @@ import { readLocalUserSettings } from '@/lib/user-settings'
 import { FAVORITES_STORAGE_KEY, parseFavorites } from '@/lib/favorites-storage'
 import { ANON_ID_STORAGE_KEY } from '@/lib/identity-keys'
 import { LOCAL_FOLDERS_STORAGE_KEY, parseLocalFolders } from '@/lib/favorites-folders'
+import { WATCHLIST_STORAGE_KEY } from '@/lib/watchlist'
+import { countWatchlistEntries } from '@/components/user-center/dashboard/entry-groups'
 import type { LocalFavorite } from '@/hooks/useFavorites'
 import { copyFailureToast, copyText } from '@/lib/clipboard'
 import { useToast } from '@/components/ui/use-toast'
@@ -44,9 +48,18 @@ export function AccountCard({
   const [avatarFailed, setAvatarFailed] = useState(false)
   const [copied, setCopied] = useState(false)
   const [storageText, setStorageText] = useState<string | null>(null)
+  const [watchlistCount, setWatchlistCount] = useState<number>(0)
   const { toast } = useToast()
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const count = countWatchlistEntries(window.localStorage.getItem(WATCHLIST_STORAGE_KEY))
+        void Promise.resolve().then(() => setWatchlistCount(count))
+      } catch {
+        /* 存储不可读时保留默认 0，不影响身份卡展示 */
+      }
+    }
     if (typeof navigator !== 'undefined' && navigator.storage?.estimate) {
       navigator.storage
         .estimate()
@@ -131,37 +144,81 @@ export function AccountCard({
 
   if (anonymous) {
     return (
-      <section className="relative overflow-hidden rounded-2xl border border-dashed border-border/70 bg-card/60 p-4 shadow-sm backdrop-blur-sm sm:p-6">
-        <div className="flex items-start gap-3.5">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <LogIn className="h-5 w-5" aria-hidden />
-          </span>
-          <div className="min-w-0 flex-1 space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold tracking-tight">当前是匿名身份</h2>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Local-First 离线安全舱
-              </span>
+      <section className="relative flex h-full flex-col justify-between overflow-hidden rounded-2xl border border-border/70 bg-card/75 p-4 shadow-xs sm:p-5">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/[0.04] via-transparent to-emerald-400/[0.04]"
+        />
+        <div className="relative space-y-3.5">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 text-primary ring-1 ring-primary/15">
+              <LogIn className="h-5 w-5" aria-hidden />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-base font-semibold tracking-tight">当前是匿名身份</h2>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Local-First 离线安全舱
+                </span>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                数据默认保存在本机，登录后可跨设备同步并自动合并匿名期间的收藏与画像。
+              </p>
             </div>
+          </div>
 
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              收藏与画像已保存在本机（{favoritesCount} 个收藏，匿名标识{' '}
-              <span className="font-mono">{anonId.slice(0, 14)}…</span>）。登录后可跨设备同步，并把本机匿名数据合并到账号。
-            </p>
+          {/* 本机资产速览条：匿名态同样直观呈现本机数据规模 */}
+          <div className="grid grid-cols-3 gap-2">
+            <Link
+              href="/favorites"
+              className="group rounded-xl border border-border/60 bg-background/70 px-2.5 py-2 transition-colors hover:border-primary/40 hover:bg-primary/5"
+            >
+              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                <FolderHeart className="h-3.5 w-3.5 shrink-0 text-rose-700 dark:text-rose-400" aria-hidden />
+                <span className="truncate">本机收藏</span>
+              </span>
+              <p className="mt-1 text-base font-semibold tabular-nums leading-tight">{favoritesCount}</p>
+            </Link>
+            <Link
+              href="/me/watchlist"
+              className="group rounded-xl border border-border/60 bg-background/70 px-2.5 py-2 transition-colors hover:border-primary/40 hover:bg-primary/5"
+            >
+              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                <Clapperboard className="h-3.5 w-3.5 shrink-0 text-sky-700 dark:text-sky-300" aria-hidden />
+                <span className="truncate">追剧清单</span>
+              </span>
+              <p className="mt-1 text-base font-semibold tabular-nums leading-tight">{watchlistCount}</p>
+            </Link>
+            <div className="rounded-xl border border-border/60 bg-background/70 px-2.5 py-2">
+              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                <HardDrive className="h-3.5 w-3.5 shrink-0 text-emerald-700 dark:text-emerald-400" aria-hidden />
+                <span className="truncate">离线占用</span>
+              </span>
+              <p className="mt-1 truncate text-base font-semibold tabular-nums leading-tight">
+                {storageText ?? '检测中'}
+              </p>
+            </div>
+          </div>
 
-            {/* 完整匿名标识与复制 */}
-            <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
-              <span className="text-[11px] text-muted-foreground">完整标识：</span>
-              <code className="anon-badge max-w-full truncate rounded-md border border-border/60 bg-muted/60 px-2 py-0.5 font-mono text-[11px] text-foreground/90 selection:bg-primary/20">
-                {anonId}
-              </code>
+          {/* 精简为单行匿名标识与安全说明（消除原两行重复展示 UUID） */}
+          <div className="min-w-0 space-y-1.5 rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-xs">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span className="shrink-0 text-[11px] text-muted-foreground">匿名标识</span>
+                <code
+                  title={anonId}
+                  className="anon-badge block min-w-0 flex-1 truncate rounded border border-border/60 bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-foreground/90 selection:bg-primary/20"
+                >
+                  {anonId}
+                </code>
+              </div>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 onClick={() => void copyAnonId()}
-                className="h-6 gap-1 px-2 text-[11px] hover:bg-muted"
+                className="h-6 shrink-0 gap-1 px-2 text-[11px] hover:bg-muted"
                 title="复制完整匿名标识到剪贴板"
               >
                 {copied ? (
@@ -172,32 +229,23 @@ export function AccountCard({
                 ) : (
                   <>
                     <Copy className="h-3 w-3 text-muted-foreground" />
-                    <span>复制标识</span>
+                    <span>复制</span>
                   </>
                 )}
               </Button>
             </div>
-
-            {/* 存储健康度指示 */}
-            <div className="flex flex-wrap items-center gap-3 pt-0.5 text-[11px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
-                <HardDrive className="h-3 w-3 text-primary/70" />
-                本地离线占用：{storageText ?? '检测中...'}
-              </span>
-              <span className="text-border" aria-hidden>·</span>
-              <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
-                <ShieldCheck className="h-3 w-3" />
-                E2EE 端到端密钥受设备环境隔离
-              </span>
-            </div>
+            <p className="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400">
+              <ShieldCheck className="h-3 w-3 shrink-0" aria-hidden />
+              E2EE 端到端密钥受本机设备环境隔离
+            </p>
           </div>
         </div>
 
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <div className="relative mt-4 flex flex-wrap items-center gap-2 pt-1">
           <Button asChild size="sm" className="w-full text-xs sm:w-auto">
             <Link href="/auth/signin?callbackUrl=/me">登录 / 创建账号</Link>
           </Button>
-          <Button asChild variant="outline" size="sm" className="w-full text-xs sm:w-auto">
+          <Button asChild variant="outline" size="sm" className="flex-1 text-xs sm:flex-none">
             <Link href="/favorites">查看本机收藏</Link>
           </Button>
           <Button
@@ -205,11 +253,11 @@ export function AccountCard({
             variant="outline"
             size="sm"
             onClick={exportLocalSnapshot}
-            className="w-full text-xs sm:w-auto"
+            className="flex-1 text-xs sm:flex-none"
             title="将本机收藏、设置与匿名状态导出为 JSON 文件备份"
           >
             <Download className="mr-1.5 h-3.5 w-3.5" aria-hidden />
-            导出本机快照 .json
+            导出快照 .json
           </Button>
         </div>
       </section>

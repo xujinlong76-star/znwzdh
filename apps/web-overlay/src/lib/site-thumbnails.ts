@@ -25,7 +25,7 @@
  */
 import { isIconUrl } from './nav-icons'
 import { isSafeHttpUrl } from './safe-url'
-import { resolveSiteIcon } from '@/components/site-favicon'
+import { isRemoteRawFavicon, resolveSiteIcon } from '@/components/site-favicon'
 
 /** 解析只需要站点记录的这几个字段；与 NavigationSubItem 结构兼容 */
 export interface ThumbnailSiteInput {
@@ -91,10 +91,11 @@ export function resolveSiteThumbnail(site: ThumbnailSiteInput): SiteThumbnail | 
     }
   }
 
-  // 2. icon 字段本身是图片地址
+  // 2. icon 字段本身是自定义图片地址（远端裸 /favicon.ico 盲猜地址除外：
+  // 它们常触发 CORP / ORB / TLS / 404 报错，必须交由第 3 步本地品牌标或第 4 步同源代理处理）
   if (typeof site.icon === 'string') {
     const icon = site.icon.trim()
-    if (icon && isIconUrl(icon) && isSafeThumbnailSrc(icon)) {
+    if (icon && isIconUrl(icon) && isSafeThumbnailSrc(icon) && !isRemoteRawFavicon(icon)) {
       return { src: icon, kind: 'custom-icon' }
     }
   }

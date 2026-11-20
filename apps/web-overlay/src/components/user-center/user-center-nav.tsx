@@ -45,6 +45,7 @@ const DOMAINS: readonly DomainItem[] = [
       { href: '/me/watchlist', label: '追剧清单' },
       { href: '/me/sites', label: '我的站点' },
       { href: '/me/wanted', label: '我的待找' },
+      { href: '/me/feedback', label: '收录反馈' },
       { href: '/me/history', label: '搜索历史' },
     ],
   },
@@ -101,9 +102,9 @@ export function UserCenterNav() {
     <div className="space-y-1.5">
       <nav
         aria-label="用户中心导航"
-        className="relative flex items-center justify-between gap-1.5 overflow-x-auto rounded-2xl border border-border/60 bg-card/70 p-1.5 shadow-sm backdrop-blur-md [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:[mask-image:linear-gradient(to_right,black_90%,transparent_100%)]"
+        className="relative flex items-center justify-between gap-1 rounded-2xl border border-border/70 bg-card/95 p-1 shadow-xs sm:gap-1.5 sm:p-1.5"
       >
-        <div className="flex flex-1 items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto pr-4 sm:gap-1 sm:pr-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:[mask-image:linear-gradient(to_right,black_86%,transparent_100%)]">
           {DOMAINS.map((item) => {
             const isExact = pathname === item.href
             const isSub = item.subItems?.some((sub) => pathname === sub.href || pathname.startsWith(sub.href + '/'))
@@ -115,11 +116,11 @@ export function UserCenterNav() {
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'shrink-0 whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-medium transition-all duration-200',
+                  'shrink-0 whitespace-nowrap rounded-xl px-2.5 py-1.5 text-xs font-medium transition-all duration-200 sm:px-3',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                   active
                     ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-foreground/70 hover:bg-muted/60 hover:text-foreground',
+                    : 'text-foreground/75 hover:bg-muted/70 hover:text-foreground',
                 )}
               >
                 {item.label}
@@ -128,7 +129,7 @@ export function UserCenterNav() {
           })}
         </div>
 
-        <div className="shrink-0 pl-1 border-l border-border/50">
+        <div className="shrink-0 border-l border-border/60 pl-1 sm:pl-1.5">
           <Link
             href="/me/notifications"
             aria-current={isNotificationsActive ? 'page' : undefined}

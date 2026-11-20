@@ -8,12 +8,14 @@ import dynamic from 'next/dynamic'
  *
  * 动态边界必须落在这个 'use client' 包装里（`next/dynamic` 写在 Server
  * Component 里不会切 chunk，且 `ssr: false` 在 Server Component 里是构建
- * 错误）；不设 `ssr: false`，服务端仍渲染出设置页首帧，hydration 用的 JS
- * 走异步 chunk。
+ * 错误）；/me/settings 为私密设置页（noindex，且依赖本地偏好状态），开启
+ * `ssr: false` 可避免 Next 16 PreloadChunks 注入多余 `<link rel="preload">`
+ * 触发浏览器未用资源告警。
  */
 const MeSettingsView = dynamic(
   () => import('@/components/user-center/me-settings-view').then((m) => m.MeSettingsView),
   {
+    ssr: false,
     loading: () => (
       <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-8" aria-busy="true" aria-label="正在加载设置">
         <div className="h-8 w-40 animate-pulse rounded-lg bg-muted" />

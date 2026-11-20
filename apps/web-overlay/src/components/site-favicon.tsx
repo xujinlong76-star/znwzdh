@@ -137,6 +137,8 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   ['shopee.com', 'shopee.svg'],
   ['infoq.cn', 'infoq.svg'],
   ['qianwen.aliyun.com', 'qwen.svg'],
+  ['qianwen.com', 'qwen.svg'],
+  ['www.qianwen.com', 'qwen.svg'],
   ['mantine.dev', 'mantine.svg'],
   ['sourcehut.org', 'sourcehut.png'],
   ['coze.cn', 'coze.svg'],
@@ -205,31 +207,28 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   ['npmjs.com', 'npm.svg'],
   ['vite.dev', 'vite.svg'],
   ['pnpm.io', 'pnpm.svg'],
-  ['video.hunyuan.tencent.com', 'https://hunyuan.tencent.com/favicon.ico'],
-  ['hunyuan.tencent.com', 'https://hunyuan.tencent.com/favicon.ico'],
   ['tongyi.aliyun.com', 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'],
   ['wan2.aliyun.com', 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'],
   // 2026-11-16：旧值 https://zhiwen.xfyun.cn/favicon.ico 经 curl 验证 404，
   // 改用同站验证过的 favicon.png（200 image/png 14725B）。
   ['zhiwen.xfyun.cn', 'https://zhiwen.xfyun.cn/favicon.png'],
   ['cursor.com', 'cursor.png'],
-  ['bolt.new', 'https://bolt.new/favicon.ico'],
   ['v0.dev', '/assets/images/logos/vercel.webp'],
   ['kimi.moonshot.cn', 'kimi-search.png'],
   ['doubao.com', 'doubao.png'],
   ['www.doubao.com', 'doubao.png'],
-  ['yiyan.baidu.com', 'https://www.baidu.com/favicon.ico'],
+  ['yiyan.baidu.com', 'wenxin.png'],
   ['lingma.aliyun.com', 'lingma.png'],
-  ['runwayml.com', 'https://runwayml.com/icon.png'],
+  ['runwayml.com', 'runway.png'],
   ['deepseek.com', 'deepseek.png'],
   ['chat.deepseek.com', 'deepseek.png'],
   ['klingai.com', 'klingai.png'],
-  ['klingai.kuaishou.com', 'https://klingai.com/favicon.ico'],
+  ['klingai.kuaishou.com', 'klingai.png'],
   // 2026-11-16：旧值 https://lumalabs.ai/favicon.ico 经 curl 验证 404，
   // 改用 Luma 官方备用域名 luma.ai 的同名 favicon（200 image/x-icon 15086B，
   // 内容为 Luma 四角星品牌标）。
   ['lumalabs.ai', 'luma.png'],
-  ['vidu.studio', 'https://www.vidu.studio/favicon.ico'],
+  ['vidu.studio', 'vidu.svg'],
   ['hailuoai.com', 'hailuoai.png'],
   ['chatgpt.com', 'chatgpt.svg'],
   ['chat.openai.com', 'chatgpt.svg'],
@@ -1102,16 +1101,15 @@ export function resolveSiteIcon(
     }
 
     // lowerTitle 已在上方主机名规范化后声明（Firefly 标题规则需先于 map 查找）。
-    if (lowerTitle.includes('混元')) return 'https://hunyuan.tencent.com/favicon.ico'
     if (lowerTitle.includes('万相') || lowerTitle.includes('wan2')) return 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'
     if (lowerTitle.includes('智文')) return 'https://zhiwen.xfyun.cn/favicon.png'
     if (lowerTitle.includes('roo code')) return 'https://github.com/RooVetGit.png?size=64'
-    if (lowerTitle.includes('kimi')) return 'https://kimi.moonshot.cn/pwa-192.png'
-    if (lowerTitle.includes('豆包')) return 'https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/favicon/new-doubao/128x128.png'
-    if (lowerTitle.includes('文心一言')) return 'https://www.baidu.com/favicon.ico'
+    if (lowerTitle.includes('kimi')) return '/brand-icons/kimi-search.png'
+    if (lowerTitle.includes('豆包')) return '/brand-icons/doubao.png'
+    if (lowerTitle.includes('文心一言')) return '/brand-icons/wenxin.png'
     if (lowerTitle.includes('通义灵码')) return 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'
-    if (lowerTitle.includes('runway')) return 'https://runwayml.com/icon.png'
-    if (lowerTitle.includes('deepseek')) return 'https://chat.deepseek.com/favicon.ico'
+    if (lowerTitle.includes('runway')) return '/brand-icons/runway.png'
+    if (lowerTitle.includes('deepseek')) return '/brand-icons/deepseek.png'
     if (lowerTitle.includes('gemini')) return '/assets/images/logos/gemini.svg'
     if (lowerTitle.includes('chatgpt') || lowerTitle.includes('openai')) return '/assets/images/logos/chatgpt.webp'
     if (lowerTitle.includes('claude')) return '/assets/images/logos/claude.webp'

@@ -502,6 +502,12 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE INDEX IF NOT EXISTS auth_tokens_hash_idx ON auth_tokens(token_hash)",
     "CREATE TABLE IF NOT EXISTS submission_owners (site_id TEXT PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE, identity TEXT NOT NULL, created_at BIGINT NOT NULL)",
     "CREATE INDEX IF NOT EXISTS submission_owners_identity_idx ON submission_owners(identity)",
+    // 投稿收录汇报（提交后网址收录情况）：审核通过/未通过都留一条「状态 + AI 原因
+    // 说明」，用户在反馈目录看自己的投稿结果。reason 是 AI 生成的面向投稿人的说明
+    // （通过=亮点与收录理由，未通过=具体改进建议），reviewer_note 是管理员原始备注。
+    // 审核可复审（先拒后过），本表按 site_id 一行、每次审核覆盖写（最新结果即汇报）。
+    "CREATE TABLE IF NOT EXISTS submission_reviews (site_id TEXT PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE, review_status TEXT NOT NULL CHECK (review_status IN ('approved', 'rejected')), reason TEXT NOT NULL DEFAULT '', reviewer_note TEXT, reviewed_at BIGINT NOT NULL, created_at BIGINT NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS submission_reviews_reviewed_at_idx ON submission_reviews(reviewed_at DESC)",
     // 站点纠错上报（升级第 10 条）：匿名可报，不设登录门槛；上报只进复核队列，
     // 绝不直接改数据。kinds 存 JSON 字符串（与 jobs.payload 同口径，TEXT 双库通用）；
     // status 流转 open → in_progress → resolved / rejected，只走管理员 PATCH。

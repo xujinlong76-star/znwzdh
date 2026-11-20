@@ -9,9 +9,12 @@
  *    进搜索结果页记 search；同一路由键一会话只记一次，避免重复渲染刷计数；
  *  - 点开外站链接记 site_open（经验规则里有每日递减，刷不动）；
  *  - 小猫猫挂件聊天记 ai_chat：挂件只 dispatch navhub:ai-chat-used 事件，
- *    本组件监听后落账（挂件本身不写成长档案）；
- *  - 捕获 PWA 的 beforeinstallprompt，供「设为首页」引导组件使用。
+ *    本组件监听后落账（挂件本身不写成长档案）。
  * 本组件不渲染任何可见 UI。
+ * （注：不再在根布局无条件拦截 beforeinstallprompt 并调用 preventDefault，
+ *  避免在 /marketplace/*、/submit 等无安装引导页触发浏览器
+ *  "Banner not shown: beforeinstallpromptevent.preventDefault() called" 告警；
+ *  改为由实际渲染安装按钮的 InstallPrompt / HomepageGuideCard 按需接管。）
  */
 
 import { useEffect, useRef } from 'react'
@@ -111,15 +114,8 @@ export function GrowthTracker() {
     return () => window.removeEventListener(FAVORITE_ADDED_EVENT, onWidgetFav)
   }, [])
 
-  useEffect(() => {
-    const onBeforeInstall = (e: Event) => {
-      e.preventDefault()
-      window.__navhubInstallPrompt = e as Window['__navhubInstallPrompt']
-      window.dispatchEvent(new CustomEvent('navhub:install-available'))
-    }
-    window.addEventListener('beforeinstallprompt', onBeforeInstall)
-    return () => window.removeEventListener('beforeinstallprompt', onBeforeInstall)
-  }, [])
+  // 注：beforeinstallprompt 不再在此处全局 preventDefault，避免在未展示安装引导的子页触发浏览器告警。
+  // 需要安装入口时由 InstallPrompt（首页满足条件时）与 HomepageGuideCard（实际挂载时）按需监听。
 
   useEffect(() => {
     if (!pathname) return

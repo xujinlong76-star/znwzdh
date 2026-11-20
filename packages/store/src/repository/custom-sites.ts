@@ -57,22 +57,27 @@ export async function createCustomSite(
   repo: Repository,
   input: { userId: string; title: string; url: string; note?: string | null },
 ): Promise<CustomSiteRecord | null> {
-  const count = await countCustomSites(repo, input.userId);
-  if (count >= CUSTOM_SITES_MAX_PER_USER) return null;
-  const now = Date.now();
-  const id = randomUUID();
-  // 新站点排在末尾：序号取当前最大值 + 1（空表从 0 起）
-  const maxRows = await repo.raw(
-    "SELECT COALESCE(MAX(sort_order), -1) AS m FROM user_custom_sites WHERE user_id = ?",
-    [input.userId],
-  );
-  const sortOrder = Number(maxRows[0]?.m ?? -1) + 1;
-  await repo.run(
-    "INSERT INTO user_custom_sites (id, user_id, title, url, note, sort_order, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-    [id, input.userId, input.title, input.url, input.note ?? null, sortOrder, now, now],
-  );
-  const rows = await repo.raw("SELECT * FROM user_custom_sites WHERE id = ?", [id]);
-  return rows[0] ? rowToCustomSite(rows[0]) : null;
+  // 上限检查 + 取最大序号 + 插入必须原子：三步裸跑时并发双写会
+  // ① 都读到 count=199 都通过 200 上限检查（超限）② 都读到同一个 MAX(sort_order)
+  // 生成重复序号（排序不稳定）。包进事务后才是一致的 read-modify-write。
+  return repo.withTransaction(async () => {
+    const count = await countCustomSites(repo, input.userId);
+    if (count >= CUSTOM_SITES_MAX_PER_USER) return null;
+    const now = Date.now();
+    const id = randomUUID();
+    // 新站点排在末尾：序号取当前最大值 + 1（空表从 0 起）
+    const maxRows = await repo.raw(
+      "SELECT COALESCE(MAX(sort_order), -1) AS m FROM user_custom_sites WHERE user_id = ?",
+      [input.userId],
+    );
+    const sortOrder = Number(maxRows[0]?.m ?? -1) + 1;
+    await repo.run(
+      "INSERT INTO user_custom_sites (id, user_id, title, url, note, sort_order, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+      [id, input.userId, input.title, input.url, input.note ?? null, sortOrder, now, now],
+    );
+    const rows = await repo.raw("SELECT * FROM user_custom_sites WHERE id = ?", [id]);
+    return rows[0] ? rowToCustomSite(rows[0]) : null;
+  });
 }
 
 export async function updateCustomSite(
@@ -121,14 +126,18 @@ export async function reorderCustomSites(
   const existingIds = new Set(existing.map((s) => s.id));
   if (ids.length !== existingIds.size || ids.some((id) => !existingIds.has(id))) return null;
   const now = Date.now();
-  for (let i = 0; i < ids.length; i++) {
-    await repo.run("UPDATE user_custom_sites SET sort_order = ?, updated_at = ? WHERE id = ? AND user_id = ?", [
-      i,
-      now,
-      ids[i],
-      userId,
-    ]);
-  }
+  // 循环逐条 UPDATE 必须整体原子：中途崩溃/连接断时裸跑会留下「前半新序、后半旧序」
+  // 的半份状态——正是本函数上方「半份顺序会把序号冲乱」要防的事故，包进事务才防得住。
+  await repo.withTransaction(async () => {
+    for (let i = 0; i < ids.length; i++) {
+      await repo.run("UPDATE user_custom_sites SET sort_order = ?, updated_at = ? WHERE id = ? AND user_id = ?", [
+        i,
+        now,
+        ids[i],
+        userId,
+      ]);
+    }
+  });
   return listCustomSites(repo, userId);
 }
 

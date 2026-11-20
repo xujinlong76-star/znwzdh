@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
+import { findResourceReferences } from '@/lib/resource-references';
 import { commitFile, getFileContent } from '@/lib/github'
 import type { ResourceMetadata } from '@/types/resource-metadata'
 import { uint8ArrayToBase64 } from '@/lib/buffer-utils'
@@ -142,7 +143,9 @@ export async function DELETE(request: Request) {
             return new Response(authCheck.error, { status: authCheck.status });
         }
 
-        const { resourceHashes } = await request.json();
+        // force: 删除确认对话框在展示引用警告后由管理员确认时置 true（知情强删）；
+        // 直连 API 不带 force 则被引用的资源一律拒绝（防误删/滥用绕过前端预检）。
+        const { resourceHashes, force } = await request.json() as { resourceHashes?: unknown; force?: unknown };
 
         if (!Array.isArray(resourceHashes) || resourceHashes.length === 0) {
             return NextResponse.json({ error: 'Invalid resource hashes' }, { status: 400 });
@@ -150,6 +153,34 @@ export async function DELETE(request: Request) {
 
         // 获取当前的资源元数据
         const metadata = await getFileContent('src/navsphere/content/resource-metadata.json') as ResourceMetadata;
+
+        // 服务端强制引用检查（纵深防御）：此前只靠前端删除前预检（check-references），
+        // 直连 DELETE 可绕过、删出悬空引用（导航项 icon/站点 logo 指向已删除资源）。
+        // 被引用的 hash 一律拒绝删除，返回 409 + 引用清单；UI 无「强制删除」语义。
+        const candidates = metadata.metadata.filter(item => resourceHashes.includes(item.hash));
+        const pathByHash = new Map(candidates.map(item => [item.hash, item.path ?? '']));
+        const pathsToCheck = [...new Set([...pathByHash.values()].filter(Boolean))];
+        if (pathsToCheck.length > 0) {
+            const navigationData = (await getFileContent('src/navsphere/content/navigation.json')) as import('@/types/navigation').NavigationData;
+            const siteData = (await getFileContent('src/navsphere/content/site.json')) as import('@/types/site').SiteConfig;
+            const references = findResourceReferences(navigationData, siteData, pathsToCheck);
+            const blocked = candidates
+                .map(item => ({
+                    hash: item.hash,
+                    path: pathByHash.get(item.hash) ?? '',
+                    refs: references[pathByHash.get(item.hash) ?? ''] ?? [],
+                }))
+                .filter(entry => entry.refs.length > 0);
+            if (blocked.length > 0 && force !== true) {
+                return NextResponse.json(
+                    {
+                        error: '部分资源仍被引用，已取消删除（确认强删请传 force: true）',
+                        blocked,
+                    },
+                    { status: 409 },
+                );
+            }
+        }
 
         // 过滤掉要删除的资源
         const originalCount = metadata.metadata.length;

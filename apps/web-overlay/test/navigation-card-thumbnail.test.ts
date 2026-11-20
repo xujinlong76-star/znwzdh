@@ -108,6 +108,44 @@ describe('resolveSiteThumbnail：解析优先级', () => {
     const thumb = resolveSiteThumbnail({ href: 'https://some-unknown-site.example/' })
     expect(thumb?.src).toBe('/api/hub/assets/icon?url=https%3A%2F%2Fsome-unknown-site.example%2F')
   })
+
+  it('远端裸 /favicon.ico 不直接透传给 <img>，改走本地品牌标或同源代理（避免 CORP/ORB/TLS/404 报错）', () => {
+    const qwen = resolveSiteThumbnail({
+      href: 'https://qianwen.aliyun.com',
+      title: '通义千问',
+      icon: 'https://qianwen.aliyun.com/favicon.ico',
+    })
+    expect(qwen).toEqual({ src: '/brand-icons/qwen.svg', kind: 'favicon' })
+
+    const qwenNew = resolveSiteThumbnail({
+      href: 'https://www.qianwen.com',
+      title: '通义千问',
+      icon: 'https://www.qianwen.com/favicon.ico',
+    })
+    expect(qwenNew).toEqual({ src: '/brand-icons/qwen.svg', kind: 'favicon' })
+
+    const midjourney = resolveSiteThumbnail({
+      href: 'https://midjourney.com',
+      title: 'Midjourney',
+      icon: 'https://midjourney.com/favicon.ico',
+    })
+    expect(midjourney).toEqual({ src: '/brand-icons/midjourney.png', kind: 'favicon' })
+
+    for (const site of [
+      { href: 'https://tome.app', title: 'Tome', icon: 'https://tome.app/favicon.ico' },
+      {
+        href: 'https://video.hunyuan.tencent.com',
+        title: '混元视频大模型',
+        icon: 'https://video.hunyuan.tencent.com/favicon.ico',
+      },
+    ]) {
+      const thumb = resolveSiteThumbnail(site)
+      expect(thumb).not.toBeNull()
+      expect(thumb!.kind).toBe('favicon')
+      expect(thumb!.src.startsWith('/api/hub/assets/icon?url=')).toBe(true)
+      expect(thumb!.src).not.toContain('/favicon.ico')
+    }
+  })
 })
 
 describe('resolveSiteThumbnail：无真实图片时返回 null', () => {

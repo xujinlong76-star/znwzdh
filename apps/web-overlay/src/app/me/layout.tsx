@@ -16,9 +16,12 @@ export const metadata: Metadata = {
 export default function MeLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      {/* 子导航与页面同宽；放在 main 之外，读屏可当作独立导航地标。 */}
-      <div className="sticky top-0 z-30 mx-auto w-full max-w-(--breakpoint-2xl) bg-gradient-to-b from-background via-background/95 to-transparent px-3 py-2 pt-3 sm:px-6 sm:pt-4 md:px-8 lg:px-10 xl:px-12">
-        <UserCenterNav />
+      {/* 子导航与页面同宽；放在 main 之外，读屏可当作独立导航地标。
+          高不透明实底 + 柔和毛玻璃 + 细底线，彻底防止滚屏时下方标题文字透字干扰。 */}
+      <div className="sticky top-0 z-30 border-b border-border/50 bg-background/95 backdrop-blur-md">
+        <div className="mx-auto w-full max-w-(--breakpoint-2xl) px-3 py-2 sm:px-6 sm:py-2.5 md:px-8 lg:px-10 xl:px-12">
+          <UserCenterNav />
+        </div>
       </div>
       {children}
     </>

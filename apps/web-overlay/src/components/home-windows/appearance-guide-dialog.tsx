@@ -7,7 +7,7 @@
  * 用时点击弹出、用完关闭。
  */
 import { useEffect, useState } from 'react'
-import { Bookmark, Check, Compass, Palette, SlidersHorizontal } from 'lucide-react'
+import { Bookmark, Cat, Check, Compass, Palette, SlidersHorizontal, Sparkles } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -35,6 +35,18 @@ import {
 } from '@/lib/growth-lazy'
 import { useToast } from '@/components/ui/use-toast'
 
+interface XiaomaomaoBridge {
+  getState?: () => { alwaysDynamic: boolean; closed: boolean; play: boolean }
+  setAlwaysDynamic?: (on: boolean) => boolean
+  setCollapsed?: (closed: boolean) => boolean
+  togglePlay?: (on?: boolean) => boolean
+}
+
+function getCatBridge(): XiaomaomaoBridge | undefined {
+  if (typeof window === 'undefined') return undefined
+  return (window as unknown as { XIAOMAOMAO?: XiaomaomaoBridge }).XIAOMAOMAO
+}
+
 export interface AppearanceGuideDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -50,10 +62,39 @@ export function AppearanceGuideDialog({
   const { toast } = useToast()
   const [tab, setTab] = useState<'appearance' | 'guide'>(defaultTab)
   const [claimedHomepage, setClaimedHomepage] = useState(false)
+  const [catState, setCatState] = useState<{
+    available: boolean
+    alwaysDynamic: boolean
+    closed: boolean
+    play: boolean
+  }>({
+    available: false,
+    alwaysDynamic: true,
+    closed: false,
+    play: false,
+  })
 
   useEffect(() => {
     setTab(defaultTab)
   }, [defaultTab, open])
+
+  useEffect(() => {
+    const syncCat = () => {
+      const api = getCatBridge()
+      if (!api?.getState) return
+      const s = api.getState()
+      setCatState({
+        available: true,
+        alwaysDynamic: s.alwaysDynamic,
+        closed: s.closed,
+        play: s.play,
+      })
+    }
+    syncCat()
+    const handleCatEvent = () => syncCat()
+    window.addEventListener('navhub:xiaomaomao-state', handleCatEvent)
+    return () => window.removeEventListener('navhub:xiaomaomao-state', handleCatEvent)
+  }, [open])
 
   useEffect(() => {
     try {
@@ -159,6 +200,68 @@ export function AppearanceGuideDialog({
                     <SkinPicker />
                     <ModeToggle />
                   </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-card/70 p-3">
+                <div className="flex items-start gap-2">
+                  <Cat className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <div>
+                    <p className="text-xs font-semibold text-foreground">桌面动态萌宠（小猫猫）</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {catState.available
+                        ? '支持开启「全时动态」保持持续动效不休眠，或进入「满屏陪玩」。'
+                        : '挂件按需加载中，加载完成后可直接在此开关动效。'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!catState.available}
+                    variant={catState.alwaysDynamic ? 'default' : 'outline'}
+                    onClick={() => {
+                      const next = getCatBridge()?.setAlwaysDynamic?.(!catState.alwaysDynamic)
+                      if (typeof next === 'boolean') {
+                        setCatState((prev) => ({ ...prev, alwaysDynamic: next }))
+                      }
+                    }}
+                    className="h-9 text-xs"
+                  >
+                    {catState.alwaysDynamic ? '全时动态：开' : '全时动态：关'}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!catState.available}
+                    variant={catState.play ? 'secondary' : 'outline'}
+                    onClick={() => {
+                      const next = getCatBridge()?.togglePlay?.(!catState.play)
+                      if (typeof next === 'boolean') {
+                        setCatState((prev) => ({ ...prev, play: next }))
+                      }
+                    }}
+                    className="h-9 gap-1 text-xs"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>{catState.play ? '退出陪玩' : '满屏陪玩'}</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!catState.available}
+                    variant="outline"
+                    onClick={() => {
+                      const next = getCatBridge()?.setCollapsed?.(!catState.closed)
+                      if (typeof next === 'boolean') {
+                        setCatState((prev) => ({ ...prev, closed: next }))
+                      }
+                    }}
+                    className="h-9 text-xs"
+                  >
+                    {catState.closed ? '唤回小猫' : '收成圆标'}
+                  </Button>
                 </div>
               </div>
 

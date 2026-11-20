@@ -2149,10 +2149,39 @@ export const NotificationReadAllResponse = z.object({
 });
 
 /** PATCH /api/submissions/{number}：审核回执 */
+/** 原因生成被额度挡住时的结构化信息（与 llm-quota 的响应体同口径） */
+export const SubmissionReviewReasonQuota = z.object({
+  scope: z.enum(["identity", "anonymous", "system"]),
+  metric: z.enum(["calls", "tokens"]),
+  limit: z.number().int(),
+  used: z.number().int(),
+  blockedBy: z.enum(["usage", "reservation", "both"]),
+  retryAfterSeconds: z.number().int(),
+});
+
 export const SubmissionReviewResponse = z.object({
   success: z.literal(true),
   message: z.string(),
   siteId: z.string(),
+  /** 原因文本来源：AI 生成 / 通用模板 / 额度用完降级（不许模板冒充 AI） */
+  reasonSource: z.enum(["ai", "template", "quota"]).optional(),
+  reasonQuota: SubmissionReviewReasonQuota.optional(),
+});
+
+/** GET /api/submissions/feedback：收录反馈（提交后网址收录情况汇报） */
+export const SubmissionFeedbackItem = z.object({
+  siteId: z.string(),
+  title: z.string(),
+  url: z.string(),
+  submittedAt: z.number(),
+  status: z.enum(["pending", "approved", "rejected"]),
+  reason: z.string(),
+  reviewedAt: z.number().nullable(),
+});
+
+export const SubmissionFeedbackResponse = z.object({
+  success: z.literal(true),
+  items: z.array(SubmissionFeedbackItem),
 });
 
 /* ------------------------------------------------------------------ *
@@ -2747,6 +2776,7 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   /* 审核与通知 */
   "POST /api/submissions": { schema: SubmissionCreateResponse, name: "SubmissionCreateResponse", status: "201" },
   "PATCH /api/submissions/{number}": { schema: SubmissionReviewResponse, name: "SubmissionReviewResponse" },
+  "GET /api/submissions/feedback": { schema: SubmissionFeedbackResponse, name: "SubmissionFeedbackResponse" },
   /* 站点纠错上报与复核（升级第 10 条） */
   "POST /api/sites/{id}/reports": { schema: SiteReportCreateResponse, name: "SiteReportCreateResponse", status: "201" },
   "GET /api/admin/site-reports": { schema: SiteReportsListResponse, name: "SiteReportsListResponse" },

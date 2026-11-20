@@ -36,12 +36,40 @@ export function StatsGrid({ counts }: { counts: Overview['counts'] }) {
       {STAT_ITEMS.map((item, index) => {
         const Icon = item.icon
         const value = counts[item.key]
+        const isSummaryStrip = index === STAT_ITEMS.length - 1
+        if (isSummaryStrip) {
+          return (
+            <Link
+              key={item.key}
+              href={item.href}
+              className="group col-span-2 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/70 bg-card/75 px-4 py-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm dark:hover:bg-primary/10 md:col-span-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${item.chip}`}>
+                  <Icon className="h-4 w-4" aria-hidden />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-xs font-medium text-foreground">{item.label}</span>
+                  {item.hint ? (
+                    <span className="block truncate text-[11px] text-muted-foreground">{item.hint}</span>
+                  ) : null}
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="text-xl font-semibold leading-none tracking-tight tabular-nums">{value}</span>
+                <ArrowRight
+                  className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-all group-hover:translate-x-0.5 group-hover:text-primary"
+                  aria-hidden
+                />
+              </span>
+            </Link>
+          )
+        }
         return (
           <Link
             key={item.key}
             href={item.href}
-            // 7 项计数在 2 列布局下最后一项会落单：让末项横跨两列填满整行
-            className={`group flex flex-col justify-between gap-3.5 rounded-2xl border border-border/70 bg-card/60 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:shadow-md dark:hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${index === STAT_ITEMS.length - 1 ? 'col-span-2 md:col-span-3' : ''}`}
+            className="group flex flex-col justify-between gap-3 rounded-2xl border border-border/70 bg-card/75 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm dark:hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <div className="flex items-start justify-between gap-2">
               <span className="flex min-w-0 items-center gap-2.5">
@@ -55,14 +83,7 @@ export function StatsGrid({ counts }: { counts: Overview['counts'] }) {
                 aria-hidden
               />
             </div>
-            {item.hint ? (
-              <div className="space-y-1.5">
-                <p className="text-[28px] font-semibold leading-none tracking-tight tabular-nums">{value}</p>
-                <p className="text-[11px] leading-snug text-muted-foreground">{item.hint}</p>
-              </div>
-            ) : (
-              <p className="text-[28px] font-semibold leading-none tracking-tight tabular-nums">{value}</p>
-            )}
+            <p className="text-[26px] font-semibold leading-none tracking-tight tabular-nums">{value}</p>
           </Link>
         )
       })}

@@ -19,7 +19,7 @@ export function PinnedCornerWidgets() {
   return (
     <aside
       aria-label="桌面角落固定微件"
-      className="fixed right-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] lg:bottom-20 z-30 flex w-[min(300px,calc(100vw-2rem))] flex-col gap-2 pointer-events-none"
+      className="fixed left-3 right-auto bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] sm:left-auto sm:right-[146px] sm:bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] lg:bottom-6 z-30 flex w-[min(248px,calc(100vw-8.5rem))] sm:w-[min(300px,calc(100vw-11rem))] flex-col gap-2 pointer-events-none"
     >
       {pinned.map((entry) => {
         const def = WIDGET_REGISTRY[entry.type]

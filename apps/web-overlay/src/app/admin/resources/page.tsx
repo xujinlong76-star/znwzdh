@@ -465,12 +465,15 @@ export default function ResourceManagement() {
       setIsDeleting(true);
       const resourceHashes = Array.from(selectedResources);
 
+      // force: true——到达本函数前删除确认对话框已展示引用警告并由管理员确认
+      // （handleBatchDelete 的引用检查失败时根本不开确认框），属知情强删；
+      // 服务端仅在无 force 时拒绝被引用资源，直连 API 拿不到强删特权。
       const response = await fetch('/api/resource', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ resourceHashes }),
+        body: JSON.stringify({ resourceHashes, force: true }),
       });
 
       if (!response.ok) {

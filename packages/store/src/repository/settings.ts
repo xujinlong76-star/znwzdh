@@ -197,6 +197,8 @@ export async function updateUserSettings(
   identity: string,
   patch: UserSettingsPatch,
 ): Promise<UserSettingsRecord> {
+  // 读-合并-写必须原子：并发各改不同字段时裸跑后写覆盖先写（丢更新）。
+  return repo.withTransaction(async () => {
   const current = await getUserSettings(repo, identity);
   const nextExt: ExtendedUserPreferences = parseExtendedPreferences({
     defaultSearchEngine: patch.defaultSearchEngine ?? current.defaultSearchEngine,
@@ -260,6 +262,7 @@ export async function updateUserSettings(
     );
   }
   return next;
+  });
 }
 
 export async function deleteUserSettings(repo: Repository, identity: string): Promise<void> {

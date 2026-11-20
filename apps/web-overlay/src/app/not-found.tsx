@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { usePathname } from 'next/navigation'
@@ -10,12 +11,15 @@ import { RECOVERY_LINKS, type RecoveryIcon } from '@/lib/recovery-links'
 /**
  * not-found 边界挂在每条路由的客户端树里；静态引入检索面板会让整块
  * SearchPalette（946 行，含收藏/偏好/语义/对比等）随全站首屏一起下发。
- * 面板只在 404 真正渲染时才需要，这里按需加载；SSR 首帧仍由服务端渲染，
+ * 面板只在 404 真正渲染时才需要，这里与 search-palette-lazy / navigation-toolbar
+ * 同口径使用 ssr: false 按需加载：404 本身无需 SEO 收录，避免 Next 16 PreloadChunks
+ * 往 404 文档头注入 12 条低优先级 `<link rel="preload" as="script">` 触发浏览器未用告警；
  * 客户端补块期间的占位保持固定高度，避免 CLS 与「搜索框凭空出现」。
  */
 const SearchPalette = dynamic(
   () => import('@/components/search-palette').then((m) => m.SearchPalette),
   {
+    ssr: false,
     loading: () => (
       <div className="h-11 rounded-xl border border-border/60 bg-muted/30" aria-busy="true">
         <span className="sr-only">正在加载搜索面板…</span>
@@ -50,7 +54,15 @@ const ICONS: Record<RecoveryIcon, LucideIcon> = {
 }
 
 export default function NotFound() {
-  const pathname = usePathname()
+  const rawPathname = usePathname()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+  // 静态预渲染 _not-found.html 时 usePathname() 会返回 '/_not-found'，
+  // 真实 404 路径在客户端水合时与静态 HTML 不一致会触发 React #418 水合报错；
+  // 仅在客户端挂载后展示真实路径，且屏蔽内部占位 '/_not-found'。
+  const pathname = mounted && rawPathname && rawPathname !== '/_not-found' ? rawPathname : null
   const home = RECOVERY_LINKS[0]
   const rest = RECOVERY_LINKS.slice(1)
 

@@ -28,6 +28,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, Clock3, Globe, Play, Tv, X } from 'lucide-react'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
+import { SiteFavicon } from '@/components/site-favicon'
 import { safeHref } from '@/lib/safe-url'
 import {
   adaptLocalPlayback,
@@ -103,13 +104,13 @@ function itemIcon(item: HandoffItem) {
       </span>
     )
   }
-  if (item.kind === 'visit' && item.icon) {
+  if (item.kind === 'visit' && (item.icon || item.url)) {
     return (
-      <img
-        src={item.icon}
-        alt=""
-        loading="lazy"
-        className="h-14 w-14 shrink-0 rounded-lg object-cover"
+      <SiteFavicon
+        title={item.title}
+        url={item.url}
+        icon={item.icon}
+        className="h-14 w-14 shrink-0 rounded-lg"
       />
     )
   }

@@ -171,6 +171,35 @@ export function topFrequentVisits(list: RecentVisit[], limit = 6): RecentVisit[]
     .slice(0, cap)
 }
 
+/**
+ * 空查询「最近访问」分区的两段拆分（04 §3.3 硬门槛，C2 前半；纯函数，可单测）。
+ *
+ * - boosted：`count >= MRU_MIN_USES_FOR_BOOST`（3），按 `mruScore` 降序
+ *   （分数相同差值 < 1e-9 时按 `visitedAt` 降序，与 `topFrequentVisits` 同口径）；
+ * - rest：`count < 3`（count 缺失按 1 计，即进 rest），按 `visitedAt` 倒序。
+ * 门槛只决定「是否参与置顶」，不删除、不隐藏任何记录：两段并起来
+ * 就是原列表（同一条记录不重复、不丢失）。建库起点取全表最早一条，
+ * 与 `mruScore` / `topFrequentVisits` 的频率分同口径。
+ */
+export function splitRecentVisitsForBoost(
+  list: RecentVisit[],
+  now: number = Date.now(),
+): { boosted: RecentVisit[]; rest: RecentVisit[] } {
+  if (list.length === 0) return { boosted: [], rest: [] }
+  const earliestVisitedAt = Math.min(...list.map((v) => v.visitedAt))
+  const boosted = list
+    .filter((v) => (v.count ?? 1) >= MRU_MIN_USES_FOR_BOOST)
+    .sort((a, b) => {
+      const scoreDiff = mruScore(b, now, earliestVisitedAt) - mruScore(a, now, earliestVisitedAt)
+      if (Math.abs(scoreDiff) >= 1e-9) return scoreDiff
+      return b.visitedAt - a.visitedAt
+    })
+  const rest = list
+    .filter((v) => (v.count ?? 1) < MRU_MIN_USES_FOR_BOOST)
+    .sort((a, b) => b.visitedAt - a.visitedAt)
+  return { boosted, rest }
+}
+
 /* ------------------------------ 存储层 ------------------------------ */
 
 let memoryFallback: RecentVisit[] = []

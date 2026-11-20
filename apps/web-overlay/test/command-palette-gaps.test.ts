@@ -69,9 +69,13 @@ describe('命令面板缺口 ①：placeholder 必须提示“按 / 快速搜索
     expect(palette).toContain('aiMode ? SEARCH_AI_PLACEHOLDER : placeholder')
   })
 
-  it('<kbd> 徽标不动：仍由 spotlightHotkeyHint 派生', () => {
+  it('<kbd> 徽标不动：仍由 spotlightHotkeyHint 派生，且是可点击按钮（开超级搜索）', () => {
     const src = read('src/components/search-palette.tsx')
     expect(src).toContain('spotlightHotkeyHint')
+    // 2026-11-20 搜索快捷键分流（William 点名）：徽标改为可点击按钮，
+    // 派发 open-spotlight 打开超级搜索（Ctrl/⌘+Shift+K 之外的另一触发入口）
+    expect(src).toContain("window.dispatchEvent(new CustomEvent('open-spotlight'))")
+    expect(src).toContain('打开超级搜索')
   })
 })
 
@@ -102,12 +106,20 @@ describe('命令面板缺口 ②（退役）：FloatingQuickNav 已移除，三�
     expect(read('src/components/providers.tsx')).toContain('GlobalSpotlightGateway')
   })
 
-  it('搜索可达：顶栏仍有搜索框，命令面板仍走 ⌘K / / 呼出', () => {
+  it('搜索可达：顶栏仍有搜索框，超级搜索改走 ⌘⇧K / / 呼出（⌘K 改为聚焦顶栏）', () => {
     const toolbar = read('src/components/navigation-toolbar.tsx')
     expect(toolbar).toContain('SearchPalette')
     expect(toolbar).toContain('按 / 快速搜索')
     const palette = read('src/components/search-palette.tsx')
     expect(palette).toContain('spotlightHotkeyHint')
+    // 2026-11-20 搜索快捷键分流（William 点名）：⌘K 不再开超级搜索弹窗，
+    // 改为聚焦顶栏搜索框；超级搜索改由 ⌘⇧K / / 呼出。网守与弹窗都要接新判据。
+    const gateway = read('src/components/search/global-spotlight-gateway.tsx')
+    expect(gateway).toContain('spotlightModalHotkeyMatches')
+    expect(gateway).toContain('topSearchHotkeyMatches')
+    const modal = read('src/components/search/spotlight-modal.tsx')
+    expect(modal).toContain('spotlightModalHotkeyMatches')
+    expect(modal).toContain('topSearchHotkeyMatches')
   })
 
   it('回到顶部可达：命令面板新增「回到页面顶部」指令（cmd-scroll-top）', () => {

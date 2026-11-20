@@ -1464,11 +1464,22 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           )}
           {/* <1536px 隐藏：1280px 档徽章 91px 会把输入框压到只剩 18px（复核
               2026-11-20 实测），占位符全截断、核心搜索近乎不可用；改到 min-[1536px]
-              才显示。隐藏后呼出键仍可按 ⌘K / / 使用，title 保留提示。 */}
-          <kbd className="hidden h-5 select-none items-center gap-0.5 rounded-md border border-border/50 bg-muted/60 px-1.5 font-mono text-xs font-semibold text-muted-foreground opacity-100 min-[1536px]:flex min-[1536px]:pointer-coarse:hidden shadow-2xs" title={spotlightHotkeyHint(preferences.spotlightShortcut, modKey) + ' 呼出超级搜索'}>
+              才显示。隐藏后呼出键仍可按 ⌘K / / 使用，title 保留提示。
+              2026-11-20：徽标改为可点击按钮——超级搜索改由 Ctrl/⌘+Shift+K 或
+              此按钮触发（派发 open-spotlight，网守与弹窗都会接），Ctrl/⌘+K
+              改为聚焦顶栏搜索框。 */}
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('open-spotlight'))}
+            className="hidden h-5 select-none items-center gap-0.5 rounded-md border border-border/50 bg-muted/60 px-1.5 font-mono text-xs font-semibold text-muted-foreground opacity-100 min-[1536px]:flex min-[1536px]:pointer-coarse:hidden shadow-2xs hover:bg-muted cursor-pointer"
+            title={spotlightHotkeyHint(preferences.spotlightShortcut, modKey) + ' 呼出超级搜索（点击打开）'}
+            aria-label="打开超级搜索"
+          >
             {/* 徽标必须与真正生效的呼出键一致：选了「仅 /」还显示 ⌘K 就是在骗用户 */}
-            <span>{spotlightHotkeyHint(preferences.spotlightShortcut, modKey)}</span>
-          </kbd>
+            <kbd>
+              <span>{spotlightHotkeyHint(preferences.spotlightShortcut, modKey)}</span>
+            </kbd>
+          </button>
         </div>
       </div>
 

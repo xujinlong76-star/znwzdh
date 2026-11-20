@@ -202,16 +202,36 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * 「/」在输入框里是正文，只有从非输入态按下才算呼出；
- * ⌘/Ctrl+K 不受此限制（组合键不会与打字冲突）。
+ * 2026-11-20 搜索快捷键分流（William 点名）：Ctrl/⌘+K 不再开超级搜索弹窗，
+ * 改为聚焦顶栏搜索框；超级搜索弹窗改由 Ctrl/⌘+Shift+K（或 /）触发。
+ *
+ * - topSearchHotkeyMatches：顶栏搜索框聚焦键——mod+K（无 Shift）。
+ * - spotlightModalHotkeyMatches：超级搜索弹窗呼出键——mod+Shift+K，或
+ *   用户偏好允许的 /（非输入态）。偏好 'mod+k' 只认 mod+Shift+K，
+ *   'slash' 只认 /，'both' 两者都认。
+ * - spotlightHotkeyMatches：保留给历史调用方（统一入口），语义改为
+ *   "本次按键应呼出超级搜索弹窗"——即 mod+Shift+K 或 /，不再含裸 mod+K。
+ *   裸 mod+K 走 topSearchHotkeyMatches。两判据互斥，同一按键不会同时
+ *   聚焦顶栏又开弹窗。
  */
-export function spotlightHotkeyMatches(event: KeyboardEvent, mode: SpotlightShortcutMode): boolean {
+export function topSearchHotkeyMatches(event: KeyboardEvent): boolean {
   const key = typeof event.key === 'string' ? event.key : ''
-  const modK = (event.metaKey || event.ctrlKey) && key.toLowerCase() === 'k'
+  // Shift+K 不算：那是开超级搜索的键；e.shiftKey 时 key 仍是 'k'（小写 k
+  // 还是大写 K 取决于浏览器），所以必须显式排除 shift
+  return (event.metaKey || event.ctrlKey) && !event.shiftKey && key.toLowerCase() === 'k'
+}
+
+export function spotlightModalHotkeyMatches(event: KeyboardEvent, mode: SpotlightShortcutMode): boolean {
+  const key = typeof event.key === 'string' ? event.key : ''
+  const modShiftK = (event.metaKey || event.ctrlKey) && event.shiftKey && key.toLowerCase() === 'k'
   const slash = key === '/' && !isEditableTarget(event.target)
-  if (modK) return mode === 'mod+k' || mode === 'both'
+  if (modShiftK) return mode === 'mod+k' || mode === 'both'
   if (slash) return mode === 'slash' || mode === 'both'
   return false
+}
+
+export function spotlightHotkeyMatches(event: KeyboardEvent, mode: SpotlightShortcutMode): boolean {
+  return spotlightModalHotkeyMatches(event, mode)
 }
 
 export function useSpotlightShortcutMode(): SpotlightShortcutMode {
@@ -222,11 +242,18 @@ export function useSpotlightShortcutMode(): SpotlightShortcutMode {
   )
 }
 
-/** 界面上那枚按键提示：必须与实际生效的呼出键逐字一致，否则又是界面在说假话 */
+/** 界面上那枚按键提示：必须与实际生效的呼出键逐字一致，否则又是界面在说假话。
+ *  2026-11-20：超级搜索弹窗的呼出键改为 Ctrl/⌘+Shift+K（或 /），Ctrl/⌘+K
+ *  改为聚焦顶栏搜索框；这里返回的是弹窗的呼出键提示。 */
 export function spotlightHotkeyHint(mode: SpotlightShortcutMode, modKey = '⌘'): string {
   // ⌘ 直接连写（mac 惯例），Ctrl 要带加号，否则 Windows 上显示成没人这么写的「CtrlK」
-  const combo = modKey === '⌘' ? '⌘K' : `${modKey}+K`
+  const combo = modKey === '⌘' ? '⌘⇧K' : `${modKey}+Shift+K`
   if (mode === 'slash') return '/'
   if (mode === 'mod+k') return combo
   return `${combo} 或 /`
+}
+
+/** 顶栏搜索框的按键提示：Ctrl/⌘+K 聚焦顶栏搜索框 */
+export function topSearchHotkeyHint(modKey = '⌘'): string {
+  return modKey === '⌘' ? '⌘K' : `${modKey}+K`
 }

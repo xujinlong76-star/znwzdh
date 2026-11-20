@@ -68,7 +68,8 @@ import {
   useExternalLinkTarget,
   useSpotlightShortcutMode,
   useUserPreference,
-  spotlightHotkeyMatches,
+  spotlightModalHotkeyMatches,
+  topSearchHotkeyMatches,
 } from '@/lib/user-preferences'
 import { externalSearchEngineName, externalSearchUrl } from '@/lib/user-settings'
 import { toast } from 'sonner'
@@ -262,7 +263,21 @@ export function SpotlightModal({
     const handleKeyDown = (e: KeyboardEvent) => {
       // Esc 不在这里处理：useOverlayBehavior 在 document 捕获阶段拦下它，
       // 既能叠在别的浮层上（只关最上层），又不会漏给全局快捷键。
-      if (spotlightHotkeyMatches(e, shortcutMode)) {
+      // 2026-11-20 搜索快捷键分流（William 点名）：Ctrl/⌘+K 不再开弹窗，
+      // 改为关闭弹窗并聚焦顶栏搜索框（data-search-input）。网守在弹窗挂载后
+      // 已卸载监听，所以这里也要接，否则弹窗一旦打开过、Ctrl+K 就再无响应。
+      // 聚焦用 rAF 推迟到弹窗关闭的焦点还原之后，否则会被还原抢回去。
+      if (topSearchHotkeyMatches(e)) {
+        e.preventDefault()
+        setOpen(false)
+        requestAnimationFrame(() => {
+          const input = document.querySelector<HTMLInputElement>('[data-search-input]')
+          input?.focus()
+          input?.select()
+        })
+        return
+      }
+      if (spotlightModalHotkeyMatches(e, shortcutMode)) {
         // 如果焦点在其他复杂编辑器中，仍允许唤起超级控制台
         e.preventDefault()
         setOpen((prev) => !prev)

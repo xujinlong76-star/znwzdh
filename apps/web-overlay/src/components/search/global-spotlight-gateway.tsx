@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import { useEffect, useState } from 'react'
-import { spotlightHotkeyMatches, useSpotlightShortcutMode } from '@/lib/user-preferences'
+import { spotlightModalHotkeyMatches, topSearchHotkeyMatches, useSpotlightShortcutMode } from '@/lib/user-preferences'
 
 const SpotlightModal = dynamic(
   () => import('@/components/search/spotlight-modal').then((m) => m.SpotlightModal),
@@ -31,7 +31,19 @@ export function GlobalSpotlightGateway({
     if (mounted) return
     const open = () => setMounted(true)
     const onKeyDown = (e: KeyboardEvent) => {
-      if (spotlightHotkeyMatches(e, shortcutMode)) {
+      // 2026-11-20 搜索快捷键分流（William 点名）：Ctrl/⌘+K 不再开超级搜索弹窗，
+      // 改为聚焦顶栏搜索框（data-search-input）；超级搜索弹窗改由 Ctrl/⌘+Shift+K
+      // （或 /）触发。顶栏搜索框不存在时（极少数无顶栏的页面）不拦截，让按键落空。
+      if (topSearchHotkeyMatches(e)) {
+        const input = document.querySelector<HTMLInputElement>('[data-search-input]')
+        if (input) {
+          e.preventDefault()
+          input.focus()
+          input.select()
+        }
+        return
+      }
+      if (spotlightModalHotkeyMatches(e, shortcutMode)) {
         e.preventDefault()
         open()
       }

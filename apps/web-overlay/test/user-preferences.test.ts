@@ -26,6 +26,9 @@ import {
   resolveExternalLinkTarget,
   spotlightHotkeyHint,
   spotlightHotkeyMatches,
+  spotlightModalHotkeyMatches,
+  topSearchHotkeyHint,
+  topSearchHotkeyMatches,
 } from '../src/lib/user-preferences'
 import { planSearchPanel } from '../src/lib/search-panel'
 import {
@@ -141,6 +144,7 @@ function keyEvent(init: {
   key: string
   metaKey?: boolean
   ctrlKey?: boolean
+  shiftKey?: boolean
   target?: unknown
 }): KeyboardEvent {
   return init as unknown as KeyboardEvent
@@ -152,64 +156,91 @@ const SELECT = { tagName: 'SELECT' }
 const CONTENT_EDITABLE = { tagName: 'DIV', isContentEditable: true }
 const BODY = { tagName: 'BODY' }
 
-describe('呼出键：四个入口共用同一判据，斜杠不许抢走打字', () => {
+/**
+ * 呼出键：2026-11-20 搜索快捷键分流（William 点名）——Ctrl/⌘+K 不再开超级搜索
+ * 弹窗，改为聚焦顶栏搜索框；超级搜索弹窗改由 Ctrl/⌘+Shift+K（或 /）触发。
+ * 两个判据互斥：同一按键不会同时聚焦顶栏又开弹窗。斜杠仍不许抢走打字。
+ */
+describe('呼出键分流：Ctrl/⌘+K 聚焦顶栏，Ctrl/⌘+Shift+K（或 /）开超级搜索', () => {
   const modK = { key: 'k', metaKey: true, target: BODY }
   const ctrlK = { key: 'K', ctrlKey: true, target: BODY }
+  const modShiftK = { key: 'k', metaKey: true, shiftKey: true, target: BODY }
+  const ctrlShiftK = { key: 'K', ctrlKey: true, shiftKey: true, target: BODY }
   const slash = { key: '/', target: BODY }
 
-  it('mod+k 档：只认组合键，「/」不算呼出', () => {
+  it('Ctrl/⌘+K 聚焦顶栏搜索框（不分偏好档），Ctrl/⌘+Shift+K 不聚焦', () => {
+    expect(topSearchHotkeyMatches(keyEvent(modK))).toBe(true)
+    expect(topSearchHotkeyMatches(keyEvent(ctrlK))).toBe(true)
+    expect(topSearchHotkeyMatches(keyEvent(modShiftK))).toBe(false)
+    expect(topSearchHotkeyMatches(keyEvent(ctrlShiftK))).toBe(false)
+    expect(topSearchHotkeyMatches(keyEvent(slash))).toBe(false)
+    expect(topSearchHotkeyMatches(keyEvent({ key: 'k', target: BODY }))).toBe(false)
+  })
+
+  it('mod+k 档：超级搜索只认 Ctrl/⌘+Shift+K，裸 Ctrl/⌘+K 不再开弹窗', () => {
     const mode: SpotlightShortcutMode = 'mod+k'
-    expect(spotlightHotkeyMatches(keyEvent(modK), mode)).toBe(true)
-    expect(spotlightHotkeyMatches(keyEvent(ctrlK), mode)).toBe(true)
+    expect(spotlightModalHotkeyMatches(keyEvent(modShiftK), mode)).toBe(true)
+    expect(spotlightModalHotkeyMatches(keyEvent(ctrlShiftK), mode)).toBe(true)
+    // 旧判据 spotlightHotkeyMatches 与新判据同义（历史入口保留）
+    expect(spotlightHotkeyMatches(keyEvent(modShiftK), mode)).toBe(true)
+    expect(spotlightHotkeyMatches(keyEvent(modK), mode)).toBe(false)
+    expect(spotlightHotkeyMatches(keyEvent(ctrlK), mode)).toBe(false)
     expect(spotlightHotkeyMatches(keyEvent(slash), mode)).toBe(false)
   })
 
-  it('slash 档：只认非输入态的「/」，⌘K 不再呼出', () => {
+  it('slash 档：只认非输入态的「/」，Ctrl/⌘+Shift+K 不再呼出', () => {
     const mode: SpotlightShortcutMode = 'slash'
-    expect(spotlightHotkeyMatches(keyEvent(slash), mode)).toBe(true)
-    expect(spotlightHotkeyMatches(keyEvent(modK), mode)).toBe(false)
+    expect(spotlightModalHotkeyMatches(keyEvent(slash), mode)).toBe(true)
+    expect(spotlightModalHotkeyMatches(keyEvent(modShiftK), mode)).toBe(false)
   })
 
-  it('both 档：两者都行', () => {
-    expect(spotlightHotkeyMatches(keyEvent(modK), 'both')).toBe(true)
-    expect(spotlightHotkeyMatches(keyEvent(slash), 'both')).toBe(true)
+  it('both 档：Ctrl/⌘+Shift+K 与 / 都行', () => {
+    expect(spotlightModalHotkeyMatches(keyEvent(modShiftK), 'both')).toBe(true)
+    expect(spotlightModalHotkeyMatches(keyEvent(slash), 'both')).toBe(true)
   })
 
   it('输入态里的「/」是正文，任何档都不算呼出', () => {
     for (const mode of ['slash', 'both'] as SpotlightShortcutMode[]) {
       for (const target of [INPUT, TEXTAREA, SELECT, CONTENT_EDITABLE]) {
-        expect(spotlightHotkeyMatches(keyEvent({ ...slash, target }), mode), `${mode} / ${target.tagName}`).toBe(false)
+        expect(spotlightModalHotkeyMatches(keyEvent({ ...slash, target }), mode), `${mode} / ${target.tagName}`).toBe(false)
       }
     }
   })
 
   it('组合键不受输入态限制（不会和打字冲突）', () => {
     for (const mode of ['mod+k', 'both'] as SpotlightShortcutMode[]) {
-      expect(spotlightHotkeyMatches(keyEvent({ ...modK, target: INPUT }), mode)).toBe(true)
+      expect(spotlightModalHotkeyMatches(keyEvent({ ...modShiftK, target: INPUT }), mode)).toBe(true)
     }
   })
 
   it('缺修饰键的裸 k、以及别的关键字都不算', () => {
-    expect(spotlightHotkeyMatches(keyEvent({ key: 'k', target: BODY }), 'both')).toBe(false)
-    expect(spotlightHotkeyMatches(keyEvent({ key: '?', target: BODY }), 'both')).toBe(false)
-    expect(spotlightHotkeyMatches(keyEvent({ key: '', target: BODY }), 'both')).toBe(false)
+    expect(spotlightModalHotkeyMatches(keyEvent({ key: 'k', target: BODY }), 'both')).toBe(false)
+    expect(spotlightModalHotkeyMatches(keyEvent({ key: '?', target: BODY }), 'both')).toBe(false)
+    expect(spotlightModalHotkeyMatches(keyEvent({ key: '', target: BODY }), 'both')).toBe(false)
   })
 
   it('事件里没有 key 字段（老浏览器 / 伪造事件）时不炸', () => {
-    expect(spotlightHotkeyMatches(keyEvent({ key: undefined as unknown as string, metaKey: true, target: null }), 'both')).toBe(false)
+    expect(spotlightModalHotkeyMatches(keyEvent({ key: undefined as unknown as string, metaKey: true, target: null }), 'both')).toBe(false)
   })
 })
 
 describe('界面那枚按键提示与真实呼出键逐字一致', () => {
-  it('mac 用连写 ⌘K，Windows / Linux 必须写成 Ctrl+K', () => {
-    expect(spotlightHotkeyHint('mod+k', '⌘')).toBe('⌘K')
-    expect(spotlightHotkeyHint('mod+k', 'Ctrl')).toBe('Ctrl+K')
-    expect(spotlightHotkeyHint('both', 'Ctrl')).toBe('Ctrl+K 或 /')
+  // 2026-11-20 搜索快捷键分流：超级搜索的呼出键改为 Ctrl/⌘+Shift+K，
+  // 徽标必须跟着改，否则界面又在说假话
+  it('mac 用连写 ⌘⇧K，Windows / Linux 必须写成 Ctrl+Shift+K', () => {
+    expect(spotlightHotkeyHint('mod+k', '⌘')).toBe('⌘⇧K')
+    expect(spotlightHotkeyHint('mod+k', 'Ctrl')).toBe('Ctrl+Shift+K')
+    expect(spotlightHotkeyHint('both', 'Ctrl')).toBe('Ctrl+Shift+K 或 /')
   })
 
-  it('选了「仅 /」就只写 /，不许再显示 ⌘K', () => {
+  it('选了「仅 /」就只写 /，不许再显示 ⌘⇧K', () => {
     expect(spotlightHotkeyHint('slash', '⌘')).toBe('/')
     expect(spotlightHotkeyHint('slash', 'Ctrl')).toBe('/')
+  })
+
+  it('顶栏搜索框的聚焦键提示仍是 ⌘K / Ctrl+K', () => {
+    expect(topSearchHotkeyHint('⌘')).toBe('⌘K')
+    expect(topSearchHotkeyHint('Ctrl')).toBe('Ctrl+K')
   })
 })
 

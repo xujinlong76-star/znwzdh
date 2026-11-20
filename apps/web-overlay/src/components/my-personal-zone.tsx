@@ -66,7 +66,6 @@ export function MyPersonalZone({ allSites = [], catalog }: MyPersonalZoneProps) 
     if (!mounted || !catalog || catalog.length === 0) return
     if (data.pinned.length === 0 && data.customLinks.length === 0) return
     personal.ensurePresetScenes(catalog)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, catalog, data.pinned.length, data.customLinks.length])
 
   useEffect(() => {
@@ -300,7 +299,6 @@ export function MyPersonalZone({ allSites = [], catalog }: MyPersonalZoneProps) 
                   >
                     <a href={href} target="_blank" rel="noopener noreferrer" onClick={() => personal.recordClick()} className="flex items-center gap-2 min-w-0 flex-1">
                       {localIcon ? (
-                        // eslint-disable-next-line @next/next/no-img-element
                         <img src={localIcon} alt="" className="w-6 h-6 object-contain rounded shrink-0" />
                       ) : (
                         <LetterBadge name={link.name} />

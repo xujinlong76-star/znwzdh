@@ -1038,16 +1038,15 @@ export function NavigationContent({
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
-          {/* 移动抽屉品牌用默认 brandAsHeading（h1）：76b122a0 为「DOM 内恰好一个
-              h1」把它改成 span，但桌面侧边栏是 `hidden md:block`（<md 直接
-              display:none、不进无障碍树），移动端首页随之一个可访问的 h1 都没有，
-              e2e/mobile-layout.spec.ts 的「主标题可见」断言超时（U-263）。
-              改回 h1 后同一视口仍恰好一个可感知 h1（桌面只见侧边栏 h1、移动只见
-              抽屉 h1），即 d69c05c1 的原设计；首页没有 h1 数量守卫（仅管理后台
-              有源码级检查），不引入新红。 */}
+          {/* 移动抽屉品牌保持 span（brandAsHeading={false}）：16e9d40a 曾改回 h1，
+              但关闭态抽屉经 useOverlayBehavior 挂 aria-hidden + inert
+              （ui/overlay.tsx），其 h1 从不进无障碍树，E2E「主标题可见」仍以
+              heading 为 0 超时——抽屉 h1 修不了移动端首页（U-263 实测）。
+              真正的主标题见下方 <main> 内 md:hidden 的 h1。 */}
           <Sidebar
             navigationData={{ navigationItems: sortedCategories as unknown as NavigationItem[] }}
             siteInfo={siteData}
+            brandAsHeading={false}
             onClose={() => setIsSidebarOpen(false)}
           />
         </div>
@@ -1100,6 +1099,18 @@ export function NavigationContent({
           }}
           onOpenAiFinder={() => setToolbarAiOpen(true)}
         />
+
+        {/* 移动端首页主标题（U-263）：<md 时桌面侧边栏 `hidden md:block`
+            （display:none，不进无障碍树），移动抽屉又因关闭态 aria-hidden +
+            inert（ui/overlay.tsx）同样不进无障碍树，首页在移动端一度一个
+            可感知 h1 都没有，e2e/mobile-layout.spec.ts「/ 无横向溢出且主标题
+            可见」以 heading 为 0 超时。抽屉 h1 修不了（见上方注释），故主标题
+            放在正文流里：仅 <md 可见（md:hidden），桌面仍只见侧边栏 h1；
+            同一视口恰好一个可感知 h1。不走 sr-only 隐藏术，是真实可见的
+            页面标题。 */}
+        <h1 className="px-3 pt-3 text-xl font-bold leading-tight tracking-tight text-foreground md:hidden">
+          {siteData.basic.title}
+        </h1>
 
         {/* 半屏下沉栏（Batch 3 第 12 项）：挂在这里而非工具栏内——工具栏没有
             isEditingLayout 这个 prop，编辑态隐藏无法在该文件内直接实现；

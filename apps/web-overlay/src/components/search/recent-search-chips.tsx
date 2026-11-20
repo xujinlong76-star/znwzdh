@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * /search 空态「最近搜索」chips（U-292）。
+ * /search 空态「最近搜索」chips（U-321）。
  *
  * 为什么这里是客户端岛、而热词 chips 是纯服务端组件：最近搜索是**个人**
  * 数据，身份只存在浏览器 localStorage（`lib/identity.ts`，SSR 返回空串），

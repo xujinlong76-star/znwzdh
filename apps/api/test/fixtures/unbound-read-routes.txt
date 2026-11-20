@@ -225,7 +225,7 @@ HEAD /api/scenes
 HEAD /api/scenes/{id}
 HEAD /api/search
 HEAD /api/search-history
-# HEAD /api/search/hotwords：与 GET 同一处理器，未登记契约的基线同步保留
+# HEAD /api/search/hotwords：HEAD 无 body，不登记契约，与 HEAD /api/search 同口径
 HEAD /api/search/hotwords
 HEAD /api/search/linucb
 HEAD /api/shortlinks/{code}

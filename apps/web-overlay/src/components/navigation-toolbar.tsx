@@ -144,16 +144,17 @@ export function NavigationToolbar({
                   type="button"
                   variant="ghost"
                   onClick={onOpenTodayCenter}
-                  className="relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-0 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors xl:w-auto xl:flex-row xl:gap-1.5 xl:px-2.5"
+                  className="relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-0 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors 2xl:w-auto 2xl:flex-row 2xl:gap-1.5 2xl:px-2.5"
                   title={todayBadge?.countdownLabel ? `今日中心（${todayBadge.countdownLabel}）` : '今日中心：专注、考试提醒、简报与连胜'}
                   aria-label="打开今日中心小窗"
                 >
                   <CalendarDays className="h-4 w-4 shrink-0" />
                   {/* 可见文字标签（复用已 SSR 的 todayBadge.todayCount，0 新增请求/JS）：
-                      <xl（<1280px）只留图标 + title Tooltip + 红点徽章，文字标签隐藏——
-                      1024px–1366px 档工具组总宽会挤占搜索框，文字标签是重叠元凶之一；
-                      ≥xl 横排，与「AI 找站」按钮同式。todayCount 为 0 时只写「今日」，不谎报计数。 */}
-                  <span className="hidden whitespace-nowrap text-[10px] leading-none sm:text-xs xl:inline">
+                      <2xl（<1536px）只留图标 + title Tooltip + 红点徽章，文字标签隐藏——
+                      1280px 档文字标签 49px 会把搜索容器压窄、输入框只剩 18px（复核
+                      2026-11-20 实测）；≥2xl 横排，与「AI 找站」按钮同式。todayCount
+                      为 0 时只写「今日」，不谎报计数。 */}
+                  <span className="hidden whitespace-nowrap text-[10px] leading-none sm:text-xs 2xl:inline">
                     {todayBadge && todayBadge.todayCount > 0 ? `今日 ${todayBadge.todayCount} 项` : '今日'}
                   </span>
                   {hasTodayAlert ? (

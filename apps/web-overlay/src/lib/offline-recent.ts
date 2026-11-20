@@ -106,18 +106,66 @@ export function mergeRecentVisit(list: RecentVisit[], visit: RecentVisit, limit 
   return [mergedVisit, ...rest].slice(0, Math.max(1, limit))
 }
 
+export const MRU_MIN_USES_FOR_BOOST = 3
+
+const DAY_MS = 86400000
 /**
- * 纯函数：按「常用」排序（次数降序，次数相同按最近访问降序），取前 limit 条。
+ * 7 天内的时间分表（下标 0..6，对应 7 天前..当天）。
+ *
+ * 方案 §3.2 写死：`fib = [5, 8, 13, 21, 34, 55, 89]`，7 天内取
+ * `fib[7 - daysAgo]`（当天 89、7 天前 5）。7 元表只有下标 0..6，
+ * 因此 daysAgo 在这一支里按 1..7 取：ceil 取整下「当天内」算出
+ * 的 daysAgo 是 0 或 1，两者都按「当天」取 fib[6]=89（visitedAt
+ * 恰好等于 now 的边界也一样，不取 fib[7] 越界）。
+ */
+const MRU_FIB_BONUS = [5, 8, 13, 21, 34, 55, 89]
+
+/**
+ * MRU 分（抄 Wox `calculateMRUScore`，三项相加；纯函数，可单测）。
+ *
+ *   score = log(count) * 15 + fibBonus + min(count / 建库天数 * 10, 50)
+ *
+ * - 次数分：`Math.log(count) * 15`（自然对数；count=1 时为 0）。
+ *   count 缺失按 1 计（与 `topFrequentVisits` 的 `(count ?? 1)` 同口径），
+ *   非法 count（0 / 负数）钳到 1，不让 `log(0)` 拖出 -Infinity。
+ * - 时间分：`daysAgo = ceil((now - visitedAt) / 86400000)`，未来时间戳
+ *   （时钟 skew）钳到 0，按当天计；7 天内取 `fib[7 - daysAgo]`，
+ *   7–30 天统一 +3，>30 天 +0。
+ * - 频率分：`min(count / 建库天数 * 10, 50)`，封顶 50。建库天数 =
+ *   `max(1, ceil((now - 最早一条 visit 的 visitedAt) / 86400000))`，
+ *   由调用方以 `earliestVisitedAt` 传入（`topFrequentVisits` 取全表
+ *   最早一条）；单条调用不传时默认以本条 visit 自身为建库起点
+ *   （即单条列表的建库天数）。空列表没有可打分的 visit，频率分
+ *   无从谈起——`topFrequentVisits([])` 直接返回 []。
+ *
+ * `now` 由调用方传入（默认 `Date.now()`），便于单测固定时间。
+ */
+export function mruScore(visit: RecentVisit, now: number = Date.now(), earliestVisitedAt: number = visit.visitedAt): number {
+  const count = Math.max(1, visit.count ?? 1)
+  const daysAgo = Math.max(0, Math.ceil((now - visit.visitedAt) / DAY_MS))
+  const fibBonus = daysAgo <= 7 ? MRU_FIB_BONUS[7 - Math.max(1, daysAgo)]! : daysAgo <= 30 ? 3 : 0
+  const libraryDays = Math.max(1, Math.ceil((now - earliestVisitedAt) / DAY_MS))
+  const frequency = Math.min((count / libraryDays) * 10, 50)
+  return Math.log(count) * 15 + fibBonus + frequency
+}
+
+/**
+ * 纯函数：按「常用」排序（`mruScore` 降序，分数相同（差值 < 1e-9）时按最近访问降序），取前 limit 条。
  *
  * 速览坞用它挑「最近常用」位：只按时间取前 3 条会把「昨天连点 10 次的站」
  * 排在「刚才误点一次的站」之后。缺 count 的旧数据按 1 计，不丢弃。
+ * 同一调用内只取一次 `now`（不多次取时，避免排序中途时间跳变）；
+ * 建库起点取全表最早一条的 `visitedAt`，与 `mruScore` 的频率分同口径。
  */
 export function topFrequentVisits(list: RecentVisit[], limit = 6): RecentVisit[] {
   const cap = Math.max(0, limit)
+  if (list.length === 0) return []
+  const now = Date.now()
+  const earliestVisitedAt = Math.min(...list.map((v) => v.visitedAt))
   return [...list]
     .sort((a, b) => {
-      const countDiff = (b.count ?? 1) - (a.count ?? 1)
-      if (countDiff !== 0) return countDiff
+      const scoreDiff = mruScore(b, now, earliestVisitedAt) - mruScore(a, now, earliestVisitedAt)
+      if (Math.abs(scoreDiff) >= 1e-9) return scoreDiff
       return b.visitedAt - a.visitedAt
     })
     .slice(0, cap)

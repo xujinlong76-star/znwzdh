@@ -819,6 +819,28 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 全库 383 站核对：'learn.microsoft.com' 键只命中 Microsoft Learn 一站，无后缀串站。
   // 四色方块明亮、无需底块（resolveLogoTile 为 null），不做单站补丁。
   ['learn.microsoft.com', 'microsoft-learn.png'],
+  // 2026-11-20（C 类第 7 批 C7，W1 视频组 1：爱奇艺 / 腾讯视频 / 优酷）。
+  // 3 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
+  // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 来源（2026-11-20 15:01 CST 实测，Chrome UA，见 C7-W1 测试事实钉死）：
+  // 爱奇艺首页声明 //www.iqiyi.com/favicon.ico，200、32,038 B、
+  // image/x-icon，ICO 4 帧（16/32/48/64），最大 64×64 帧 PIL 转 RGBA
+  // PNG 原样落盘 iqiyi.png（7,036 B，绿底白字 iQIYI 爱奇艺标）；
+  // 腾讯视频首页声明 //v.qq.com/favicon.ico，200、4,286 B、
+  // image/x-icon，ICO 单帧 32×32 转 PNG 原样 tencent-video.png
+  // （915 B，蓝绿橙三色播放三角标）；优酷首页无 icon 声明，根
+  // /favicon.ico 直链 200、9,662 B、image/vnd.microsoft.icon，ICO
+  // 单帧 48×48 转 PNG 原样 youku.png（1,904 B，蓝底 YOUKU 优酷标，
+  // 首页无声明、favicon 直链可用即落地，仿 C8 学习强国先例）。
+  // 全库 383 站核对：'iqiyi.com' / 'youku.com' 各只命中一站；
+  // 'v.qq.com' 用完整 hostname 建键（不建 'qq.com' 裸域键）：
+  // so.qq.com（元宝搜索 yuanbao.png）、docs.qq.com（腾讯文档）、
+  // weixin.qq.com（微信）各有精确键，不受影响。3 站均 <128 原样
+  // 保留、绝不放大；均 ≤15 KB。优酷蓝底方块在浅/深主题下均显蓝底，
+  // 不做单站补丁，留待统一处理轮。
+  ['iqiyi.com', 'iqiyi.png'],
+  ['v.qq.com', 'tencent-video.png'],
+  ['youku.com', 'youku.png'],
  ];
 
 /**

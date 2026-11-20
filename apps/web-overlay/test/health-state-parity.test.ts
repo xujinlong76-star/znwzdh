@@ -11,7 +11,6 @@
  */
 import { describe, expect, it } from "vitest";
 import { deriveHealthPanelState as fromCopy } from "../src/lib/health-state";
-// @ts-expect-error 走 vitest alias 指向 packages/core/src/index.ts，无独立类型入口
 import { deriveHealthPanelState as fromCore } from "@navhub/core";
 
 const SNAPSHOTS = [

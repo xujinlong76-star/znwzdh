@@ -926,6 +926,23 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 绿底白字“飞卢”书法标。两标均为官网在用标原样，无占位、无通用标冒充。
   ['zongheng.com', 'zongheng.png'],
   ['faloo.com', 'faloo.png'],
+  // 2026-11-20（C 类第 7 批 C7 补批 W7，影视评分组 2 站）：IMDb / Letterboxd。
+  // C7 暂缓的“安全原因”经调查只是 W4 一份报告被安全系统移除，无任何一站
+  // 涉及安全/侵权/版权/合规（见 icon-c7-defer-reason-2026-11-20.md）。
+  // IMDb：首页 202、0 B（疑似反爬挑战页），favicon 直链 200，内容实为 PNG
+  // 32×32（497 B，md5 a00f507810e886fe683c705a0582cdb2），黄底 #F5C518 +
+  // 黑字 IMDb 标原样落盘 imdb.png。Letterboxd：首页 403 Cloudflare 验证墙
+  // （Just a moment…），favicon 直链 200，3 帧 ICO（16/32/64，22,382 B），
+  // 取最大 64×64 帧转 PNG 原样落盘 letterboxd.png（2,101 B，md5
+  // 5d8c7b3af905a4b820b27c23fa30b57f；深 slate #445566 圆底 + 橙/绿/蓝三色
+  // 圆标，四角透明）。两站 icon 字段均为远端 …/favicon.ico，被
+  // isRemoteRawFavicon 拦截后走 map，navigation.json 不动。
+  // 'github.com' / 'adobe.com' 键绝不加。全库 383 站核对：'imdb.com' /
+  // 'letterboxd.com' 各只命中 1 站，无后缀串站、无子域站。两标在浅/深主题
+  // 下均可辨识（IMDb 不透明黄底方块；Letterboxd 深 slate 底 + 亮色圆标），
+  // 按统一规范 §9 不做单站底块补丁、不配 LOGO_TILE_MAP，留待统一处理轮。
+  ['imdb.com', 'imdb.png'],
+  ['letterboxd.com', 'letterboxd.png'],
  ];
 
 /**

@@ -98,6 +98,15 @@ describe("引擎切换：提交拦截只发生在站外引擎 + 非空查询", (
     expect(src).not.toContain("window.open(");
   });
 
+  it("打开失败不拦截：safeWindowOpen 返回 null 时表单照常 GET 到 /search（站内回落）", () => {
+    // 回归口径：preventDefault 只能发生在新标签页真的打开之后。
+    // 以前是先 preventDefault 再丢弃 safeWindowOpen 的返回值——地址未过
+    // 安全闸 / 弹窗被拦截时用户点完搜索什么都没发生、无任何反馈。
+    expect(src).toMatch(/const\s+\w+\s*=\s*safeWindowOpen\(url\)/);
+    expect(src).toMatch(/if\s*\(\s*\w+\s*\)\s*e\.preventDefault\(\)/);
+    expect(src).not.toMatch(/^\s*safeWindowOpen\(url\);?\s*$/m);
+  });
+
   it("地址不手写：组件里没有引擎域名", () => {
     for (const host of ["baidu.com", "google.com", "bing.com", "sogou.com", "duckduckgo.com"]) {
       expect(src).not.toContain(host);

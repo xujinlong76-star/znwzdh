@@ -19,9 +19,12 @@ import { safeWindowOpen } from '@/lib/safe-url'
  *
  * 行为：
  * - 选「站内」：表单照常 GET 提交到 /search（服务端渲染结果页）。
- * - 选站外引擎：提交时拦截，在新标签页打开该引擎的搜索地址
+ * - 选站外引擎：提交时在新标签页打开该引擎的搜索地址
  *  （`externalSearchUrl`，与 Spotlight 站外出口同一来源，不手写地址）；
  *   空查询不拦截，照常走站内（不跳出一个空搜索结果页）。
+ * - 站外打开失败时回落站内：safeWindowOpen 返回 null（地址未过安全闸 /
+ *   新标签页被浏览器拦截）时不拦截提交，表单照常 GET 到 /search，
+ *   用户至少能看到站内结果——而不是点完搜索什么都没发生。
  * - 无 JS 时本控件不参与提交（没有 name，不进 GET 参数），站内搜索照常可用。
  *
  * 选项文案用短名（站内 / Google / 百度 …）：搜索框旁放不下设置页那套
@@ -43,12 +46,15 @@ export function SearchEngineSwitch() {
       if (!query) return
       const url = externalSearchUrl(engine, query)
       if (!url) return
-      e.preventDefault()
       // URL 卫生：裸 window.open 会被 url-hygiene.test.ts 拦下；
       // safeWindowOpen 先过 safeHref 闸（不过闸返回 null、不开新页），
       // 再以 '_blank' + noopener,noreferrer 打开——行为与原来逐字一致，
       // 地址本身仍由 externalSearchUrl 的引擎白名单 + 编码后查询词构造。
-      safeWindowOpen(url)
+      // 只在新标签页真的打开时才拦截提交：返回 null（地址未过安全闸 /
+      // 弹窗被拦截）时不拦截，表单照常 GET 提交到 /search 回落站内搜索，
+      // 否则用户点完搜索什么都没发生、无任何反馈。
+      const opened = safeWindowOpen(url)
+      if (opened) e.preventDefault()
     }
     form.addEventListener('submit', onSubmit)
     return () => form.removeEventListener('submit', onSubmit)

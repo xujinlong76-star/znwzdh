@@ -819,6 +819,22 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 全库 383 站核对：'learn.microsoft.com' 键只命中 Microsoft Learn 一站，无后缀串站。
   // 四色方块明亮、无需底块（resolveLogoTile 为 null），不做单站补丁。
   ['learn.microsoft.com', 'microsoft-learn.png'],
+  // 2026-11-20（C 类第 7 批 C7，worker W9，七猫中文网 1 站）。
+  // 全库唯一既无 icon 字段又无映射的站（见 icon-c-plan §C7 备注）；
+  // 导航条目省略 icon 字段，解析走 map，navigation.json 不动。
+  // 来源：站点头部 Logo https://cdn-front.qimao.com/qimao/pc/img/header/logo.d026f02.png
+  // （200、image/png、4,072 B、380×88，PNG 魔数已验；curl 空回复为反爬，
+  // 浏览器直读正常；站根 /favicon.ico 仅 1×1 占位图，不可用）。
+  // Logo 为 380×88 横版图文，按品牌图标惯例只取左侧猫剪影方标：
+  // 品牌黄 #FCC800 圆角方块 x0–87 y0–87（88×88，黑猫“7”形剪影 +
+  // 黄眼睛 + 胡须），文字“七猫中文网”不硬塞；88 < 128 按规范 §1.1
+  // 原样保留、不放大，落盘 qimao.png（1,761 B，md5
+  // 7807f1b332c4b34d80af2f6182d09c6f）。U-333“死链”判定应修正为
+  // 不计死链（见 W9 测试事实钉死）。'github.com' / 'adobe.com' 键
+  // 绝不加。全库 383 站核对：'qimao.com' 键只命中七猫中文网一站，
+  // 无后缀串站、无子域站。黄底不透明、黑猫醒目，浅/深主题均可见，
+  // 无需底块（resolveLogoTile 为 null），不做单站补丁。
+  ['qimao.com', 'qimao.png'],
  ];
 
 /**

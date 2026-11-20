@@ -1229,6 +1229,7 @@ export function NavigationContent({
               showDramaCapsule={sectionOn('dramaCinema')}
               showAiCapsule={sectionOn('aiFinder')}
               showGuideBadge={!isModuleHidden('mod:onboarding-card')}
+              activeWorkspace={activeWorkspace}
               initialSceneParam={sceneParam}
               onOpenGuideTab={() => {
                 setAppearanceTab('guide')

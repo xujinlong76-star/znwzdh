@@ -132,10 +132,12 @@ export function HomeQuickDock({
         id="quick-access-tray"
         data-speed-dial="true"
         aria-label="高频直达与常用访问"
-        className="mb-3 rounded-xl border border-border/60 bg-card/75 px-3 py-2 backdrop-blur-xs"
+        className="mb-3 flex h-12 items-center gap-2 rounded-xl border border-border/60 bg-card/75 px-3 backdrop-blur-xs"
       >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1" role="tablist" aria-label="高频直达分类">
+        {/* 首屏瘦身：单行 48px（h-12）——左紧凑 tab + 中间横向滚动胶囊区 +
+            右「展开全部」。胶囊区保留 overflow-x-auto 容器，供顶栏重构线接入
+            HorizontalScrollFade 横向滚动渐隐（不要删掉该滚动容器）。 */}
+        <div className="flex shrink-0 items-center gap-1" role="tablist" aria-label="高频直达分类">
             <button
               type="button"
               role="tab"
@@ -182,17 +184,7 @@ export function HomeQuickDock({
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setAllDialogOpen(true)}
-            className="inline-flex h-7 items-center gap-0.5 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
-          >
-            <span>展开全部</span>
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
-
-        <div className="mt-1.5 flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none">
           {activeItems.map((item) => (
             <a
               key={`${activeTab}-${item.id}`}
@@ -225,6 +217,15 @@ export function HomeQuickDock({
             </a>
           ))}
         </div>
+
+        <button
+          type="button"
+          onClick={() => setAllDialogOpen(true)}
+          className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+        >
+          <span>展开全部</span>
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
       </section>
 
       {allDialogOpen ? (

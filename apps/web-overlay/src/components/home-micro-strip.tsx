@@ -39,6 +39,8 @@ export interface HomeMicroStripProps {
   showAiCapsule?: boolean
   showGuideBadge?: boolean
   onOpenGuideTab?: () => void
+  /** 当前场景 Tab（研发全栈 'dev' / AI 实验室 'ai' 时隐藏短剧推广胶囊，首屏瘦身） */
+  activeWorkspace?: string
   initialSceneParam?: string | null
 }
 
@@ -49,6 +51,7 @@ export function HomeMicroStrip({
   showAiCapsule = true,
   showGuideBadge = true,
   onOpenGuideTab,
+  activeWorkspace,
   initialSceneParam = null,
 }: HomeMicroStripProps) {
   const { ready: watchlistReady, entries: watchlistEntries } = useWatchlist()
@@ -77,6 +80,10 @@ export function HomeMicroStrip({
 
   const latestWatch = watchlistReady && watchlistEntries.length > 0 ? watchlistEntries[0] : null
   const topPlugins = pluginItems?.slice(0, 2) ?? []
+  // 运营胶囊按场景 Tab 动态展示（首屏瘦身）：研发全栈 / AI 实验室场景下
+  // 隐藏短剧推广胶囊（该场景用户以研发与 AI 找站为主），其余场景保持单行轻量。
+  const hideDramaForWorkspace = activeWorkspace === 'dev' || activeWorkspace === 'ai'
+  const showDrama = showDramaCapsule && !hideDramaForWorkspace
 
   return (
     <>
@@ -84,7 +91,7 @@ export function HomeMicroStrip({
         aria-label="首页快捷功能小窗入口"
         className="mb-2.5 flex items-center gap-1.5 overflow-x-auto py-0.5 scrollbar-none text-xs"
       >
-        {showDramaCapsule ? (
+        {showDrama ? (
           <div className="inline-flex h-8 shrink-0 items-center rounded-full border border-amber-500/30 bg-amber-500/8 px-2.5 text-amber-800 dark:text-amber-300">
             <button
               type="button"

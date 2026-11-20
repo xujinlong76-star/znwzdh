@@ -120,10 +120,16 @@ describe('P1 #10 触控目标：搜索与页脚', () => {
 })
 
 describe('P1 #10 触控目标：首页常驻控件', () => {
-  it('floating-quick-nav：三个浮钮 44×44', () => {
-    const src = read('src/components/floating-quick-nav.tsx')
-    expect(count(src, 'h-11 w-11')).toBe(3)
-    expect(src).not.toContain('w-7.5 h-7.5')
+  it('floating-quick-nav 已移除（首屏瘦身）：三个浮钮不再存在，三功能由顶栏与命令面板覆盖', () => {
+    // 订正（2026-11-20 首屏瘦身，evo/firstscreen-slim-1257）：底部悬浮工具栏整体
+    // 移除，旧「三个浮钮 44×44」断言随之退役（文件不存在即无浮钮可量）。
+    // 替代入口：搜索由顶栏搜索框覆盖，回顶由命令面板 cmd-scroll-top 覆盖，
+    // 微工具由首页 QuickToolsDrawer + T 键覆盖。替代入口的触控尺寸为既有
+    // 现状（本任务不改），只锁「入口存在、不回退到悬浮胶囊」。
+    expect(existsSync(join(ROOT, 'src/components/floating-quick-nav.tsx'))).toBe(false)
+    expect(read('src/components/navigation-toolbar.tsx')).toContain('SearchPalette')
+    expect(read('src/components/search/spotlight-modal.tsx')).toContain("id: 'cmd-scroll-top'")
+    expect(read('src/components/navigation-content.tsx')).toContain('QuickToolsDrawer')
   })
 
   it('category-quick-jump-bar：切换/常用/分类 chips 与视频入口 44px', () => {

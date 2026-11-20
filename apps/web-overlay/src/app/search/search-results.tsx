@@ -50,6 +50,12 @@ interface SearchResultsProps {
   plugins?: HubPluginSearchResponse | null
   /** 零结果救援的「今日热榜」：今日热榜前 6（/search 页取数，失败为空数组） */
   recommended?: HubSite[]
+  /**
+   * 空搜索页热词（W4-0622-1 收尾③）：GET /api/search/hotwords，前 8，
+   * 与零结果页 popular 同口径（排除零结果词）。空数组 = 未取到或取数失败，
+   * 热词区整块不渲染。点选即 searchHref({ q: 词 })，纯 <a> 链接，无 JS 照常直达。
+   */
+  hotwords?: string[]
   /** 收录站点外链 rel（站点级设置，服务端透传）；缺省 nofollow */
   externalRel?: string
 }
@@ -706,6 +712,33 @@ function SearchRelatedTags({
   )
 }
 
+/**
+ * 空搜索页热词 chips（W4-0622-1 收尾③）：纯服务端组件，无客户端状态。
+ *
+ * 每个 chip 都是指向 `/search?q=<词>` 的普通 <a>（经 searchHref 编码），
+ * 点选即直达该词的站内搜索；无 JS 时同样可点——搜索框空态不依赖任何脚本。
+ * 空数组返回 null：未取到或取数失败时整块不渲染，不谎称「没有热词」。
+ */
+export function HotwordChips({ hotwords }: { hotwords: string[] }) {
+  if (hotwords.length === 0) return null
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs text-muted-foreground">大家都在搜</p>
+      <div className="flex flex-wrap justify-center gap-1.5">
+        {hotwords.map((item) => (
+          <Link
+            key={item}
+            href={searchHref({ q: item })}
+            className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent"
+          >
+            {item}
+          </Link>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function SearchResults({
   q,
   page,
@@ -719,6 +752,7 @@ export function SearchResults({
   unavailable,
   plugins = null,
   recommended = [],
+  hotwords = [],
   externalRel = 'nofollow noopener noreferrer',
 }: SearchResultsProps) {
   const hits = result?.hits ?? []
@@ -971,6 +1005,8 @@ export function SearchResults({
           {q === '' && !tag && !category && Object.keys(facets).length === 0 ? (
             <section className="space-y-3 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
               <p className="text-sm text-muted-foreground">输入关键词开始搜索；也可以先按分类或标签浏览。</p>
+              {/* W4-0622-1 收尾③：空态热词点选直达（取数失败为空数组时整块不渲染）。 */}
+              <HotwordChips hotwords={hotwords} />
               <nav aria-label="浏览入口" className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs">
                 <Link className="text-primary hover:underline" href="/category">
                   按分类浏览

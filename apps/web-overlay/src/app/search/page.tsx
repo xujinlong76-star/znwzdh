@@ -105,7 +105,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   }
   const hasFilter = q || tag || category || Object.keys(facets).length > 0
 
-  const [{ result, failed, unavailable, plugins }, facetGroups, trending, categories] = await Promise.all([
+  const [{ result, failed, unavailable, plugins }, facetGroups, trending, categories, hotwordsData] = await Promise.all([
     hasFilter
       ? loadSearchPage(q, page, tag, { category, facets, nocorrect })
       : Promise.resolve({ result: null, failed: false, unavailable: [], plugins: null }),
@@ -123,6 +123,12 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       : Promise.resolve(null),
     // U-183：分类中文名与上面三路并行取（仅 category 非空时调用，3600s 缓存）。
     category ? loadCategories(3600) : Promise.resolve(null),
+    // W4-0622-1 收尾③：空搜索页的热词 chips（GET /api/search/hotwords，60s 缓存，
+    // 与零结果页 popular 同口径）。只在无筛选时取——有筛选的页不渲染空态，
+    // 取了也是浪费一次中枢往返；取数失败（null）时热词区整块不渲染。
+    hasFilter
+      ? Promise.resolve(null)
+      : hubGet<{ hotwords?: string[] }>('/api/search/hotwords', 60),
   ])
   const categoryName = category ? resolveCategoryName(category, categories) : null
   const recommended = (trending?.hits ?? [])
@@ -145,6 +151,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       unavailable={unavailable}
       plugins={plugins}
       recommended={recommended}
+      hotwords={hotwordsData?.hotwords ?? []}
       externalRel={externalRel}
     />
   )

@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { isSafeHttpUrl, safeHref, safeSrc, safeWindowOpen } from '@/lib/safe-url'
 import { buildWaybackSnapshotUrl } from '@/lib/wayback-resolver'
-import { siteHealthBadge } from '@/lib/site-health'
+import { siteHealthState, siteHealthTitle } from '@/lib/site-health'
 import { probeSiteLatency, type PingResult } from '@/lib/site-ping'
 
 interface SitePeekDialogProps {
@@ -285,7 +285,7 @@ export function SitePeekDialog({
 
   // iframe 预览源：非法 URL 直接不渲染（safeSrc 返回 undefined）
   const previewSrc = safeSrc(item.href)
-  const healthBadge = siteHealthBadge(item.health)
+  const healthState = siteHealthState(item.health)
 
   return (
     <Dialog
@@ -412,13 +412,14 @@ export function SitePeekDialog({
           </div>
         </DialogHeader>
 
-        {/* 站点连通性与健康异常提示 */}
-        {item.health?.ok === false && (
+        {/* 站点连通性与健康异常提示（03 §3：文案取 siteHealthState() 的分级，
+            不再直接读 ok/error 猜原因） */}
+        {healthState && healthState.state !== 'accessible' && (
           <div className="mt-3 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs flex items-start gap-2.5">
             <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <div className="flex-1 space-y-1">
               <div className="font-semibold text-amber-900 dark:text-amber-200">
-                站点连通性提示：{item.health.error || '近期探测出现超时或无法直连'}
+                站点连通性提示：{healthState.label}
               </div>
               <div className="text-amber-900 dark:text-amber-200 leading-relaxed">
                 建议优先使用下方「平替雷达」中的可用替代产品，或点击右上角「历史快照」调取网页归档。
@@ -905,11 +906,16 @@ export function SitePeekDialog({
             </Button>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {healthBadge && (
-              <div className="flex items-center gap-1.5 font-mono" title="服务端远端巡检结果">
-                <span className={`w-2 h-2 rounded-full ${healthBadge.tone === 'ok' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                <span>{healthBadge.label}</span>
-                {healthBadge.latencyMs != null && <span>({healthBadge.latencyMs}ms)</span>}
+            {healthState && (
+              <div
+                className="flex items-center gap-1.5 font-mono"
+                title={siteHealthTitle(item.health) ?? '服务端远端巡检结果'}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${healthState.tone === 'ok' ? 'bg-emerald-500 animate-pulse' : healthState.tone === 'error' ? 'bg-rose-500' : 'bg-amber-500'}`}
+                />
+                <span>{healthState.label}</span>
+                {healthState.latencyMs != null && <span>({healthState.latencyMs}ms)</span>}
               </div>
             )}
 

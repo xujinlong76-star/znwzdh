@@ -22,12 +22,40 @@
  * 巡检 + ok === false + 404/410/451/5xx；401/403/429 反爬与无状态码的
  * 探测失败都不算死链）。
  *
+ * 2026-11-20（03-livelink-mapping §4.1/§4.3）：hubId 打通后卡片有了
+ * 可用的巡检生产者，徽标与 isDeadLinkHealth 按本方案恢复——
+ * 注意：本克隆的 git 历史经 rebase 压缩，2026-11-12 的移除提交已不可达
+ * （`git log -S isDeadLinkHealth` 无命中），此处是按本文件头引用的旧口径
+ * 原文 + 方案 §4.3 请回，不是凭空重写：旧口径（跑过巡检 + ok === false +
+ * 404/410/451/5xx；401/403/429 与无状态码不算死链）保持不变，唯一改动
+ * 是判定输入改为映射后的 health——函数只认 `siteHealthState()` 的输出
+ * （`state === 'dead'`），内部不再直接读原始 ok/httpStatus 做判定。
+ * SOFT_404 高置信度（>= 0.9）单次只返“疑似失效 · 看存档”，不返“已失效”：
+ * 这一支由 siteHealthState() 落到 `suspect-soft404` 档保证，本函数对它
+ * 返回 false。
+ *
  * 渲染时不发任何网络请求：动作是用户点击后才打开新标签页（safeWindowOpen），
  * 不做快照有无的预先查询——查询会阻塞渲染、且 Wayback 的「有没有快照」
  * 本来就由它自己在打开后回答（无快照时它会明确告诉用户，而不是我们
  * 替它撒谎说「已恢复」）。
  */
 import { buildWaybackSnapshotUrl } from "./wayback-resolver";
+import type { SiteHealthState } from "./site-health";
+
+/**
+ * 死链判定（2026-11-12 旧口径请回，见文件头；唯一改动是判定输入改为
+ * 映射后的 health）。
+ *
+ * 旧口径：跑过巡检 + ok === false + 404/410/451/5xx；401/403/429 反爬
+ * 与无状态码的探测失败都不算死链。映射后等价为：`siteHealthState()` 的
+ * 输出是 `dead` 档（连续失败 >= 2 且满足 §3.2 第 8 行硬条件）时为真，
+ * 其余一切（未巡检 null、疑似档、检测异常）都为假。
+ * SOFT_404 高置信度单次落 `suspect-soft404`（“疑似失效 · 看存档”），
+ * 本函数对它返回 false，不算死链。
+ */
+export function isDeadLinkHealth(state: SiteHealthState | null | undefined): boolean {
+  return state?.state === "dead";
+}
 
 /**
  * 把收录/保存时刻格式化成 Wayback 时间戳 `YYYYMMDDHHMMSS`（UTC）。

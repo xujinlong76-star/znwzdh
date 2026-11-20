@@ -133,6 +133,18 @@ describe('half-screen-dock 组件本体', () => {
     expect(src).toContain('if (selectionMode && selectedIds.length > 0) return null')
   })
 
+  it('P1-2 两坞互斥：批量操作坞 0 选中自隐藏（防线锁定，误删即红）', () => {
+    // 互斥原理：批量操作坞在 selectedSites 为空时自隐藏
+    // （`if (count === 0) return null`，count = selectedSites.length）；
+    // 半屏下沉栏在多选态且有选中时隐藏
+    // （`if (selectionMode && selectedIds.length > 0) return null`）。
+    // 两坞同现要求 selectedIds.length === 0 且 selectedSites.length > 0，
+    // 不可能成立——1024px 两坞同现重叠的前提不存在。
+    // 本断言锁定批量坞侧这道防线：目前零其它测试覆盖，误删即红。
+    const src = read('src/components/batch-operation-dock.tsx')
+    expect(src).toContain('if (count === 0) return null')
+  })
+
   it('不新建场景 / 密度状态：复用已有组件，不另写状态机', () => {
     const src = read(COMPONENT)
     // 断言调用/导入形式：注释里提及 useDensity / useUserScenes 是为了解释

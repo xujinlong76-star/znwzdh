@@ -119,8 +119,11 @@
      K2：closed/closedAt 记录亲手收起（收起后 7 天内刷新/跳页仍收着，过期自动恢复展开）。
      首屏瘦身（2026-11-20）：默认改为收起（closed: true, closedAt: 0），避免遮挡
      右侧卡片；closedAt === 0 表示「默认收起、无过期」，仅亲手收起（closedAt > 0）
-     才走 7 天 TTL。已有 stored state 的用户保持原偏好（下行 saved 覆盖默认值）。 */
-  var store = { alwaysDynamic: true, voice: true, pos: null, hinted: false, closed: true, closedAt: 0, play: false };
+     才走 7 天 TTL。已有 stored state 的用户保持原偏好（下行 saved 覆盖默认值）。
+     U-260：alwaysDynamic 默认 false——默认 true 时 dockBlocked() 恒真，60 秒闲置贴边
+     永不触发（BLOCK 回归 E2E half-screen-dock.spec.ts:178 在全新 profile 上恒失败）；
+     全时动态仍可由用户在外观小窗手动开启，开启后贴边抑制逻辑不变。 */
+  var store = { alwaysDynamic: false, voice: true, pos: null, hinted: false, closed: true, closedAt: 0, play: false };
   try {
     var saved = JSON.parse(window.localStorage.getItem(STORE_KEY) || 'null');
     if (saved && typeof saved === 'object') {

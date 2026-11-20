@@ -1,6 +1,6 @@
 /**
  * 小猫猫挂件「一直动态 + 低开销 + 首页防撞」优化守卫：
- *  1. 保持默认全时动态透明视频（alwaysDynamic 默认 true，不因轻微滚屏或闲置自动暂停收边）；
+ *  1. 默认关闭全时动态（alwaysDynamic 默认 false；U-260：默认 true 时 dockBlocked() 恒真，60 秒闲置贴边永不触发，使 BLOCK 回归 E2E half-screen-dock.spec.ts:178 在全新 profile 上恒失败；全时动态仍可由用户在外观小窗手动开启，开启后贴边抑制逻辑不变）；
  *  2. 懒加载聊天头像与收起圆标（默认展示态下不抢先下载 3.7MB WebP 动图，避免与主视频争抢带宽）；
  *  3. 视频态下保持光标靠近探头跟随（stageEl.style.translate/rotate），并在后台/收起/贴边态零计算跳过；
  *  4. 弹窗观察器过滤掉非弹窗的 data-state 抖动并用 RAF 合并扫描，同时为微按钮扩展 44×44 触控热区；
@@ -24,8 +24,8 @@ const PINNED_WIDGETS = readFileSync(
 )
 
 describe('小猫猫挂件一直动态与性能/布局优化守卫', () => {
-  it('默认开启 alwaysDynamic 全时动态：保持闭环透明视频不被滚屏/闲置暂停', () => {
-    expect(WIDGET).toContain('alwaysDynamic: true')
+  it('默认关闭 alwaysDynamic 全时动态：60 秒闲置贴边仍可生效（U-260）', () => {
+    expect(WIDGET).toContain('alwaysDynamic: false')
     expect(WIDGET).toContain('window.XIAOMAOMAO.setAlwaysDynamic')
     expect(WIDGET).toContain('window.XIAOMAOMAO.getState')
     expect(WIDGET).toContain('window.XIAOMAOMAO.setCollapsed')

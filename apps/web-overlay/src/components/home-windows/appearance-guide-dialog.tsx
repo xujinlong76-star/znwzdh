@@ -69,7 +69,8 @@ export function AppearanceGuideDialog({
     play: boolean
   }>({
     available: false,
-    alwaysDynamic: true,
+    // 与挂件默认一致（U-260：默认 false，60 秒闲置贴边才生效；打开小窗后由 getState 同步真实值）
+    alwaysDynamic: false,
     closed: false,
     play: false,
   })

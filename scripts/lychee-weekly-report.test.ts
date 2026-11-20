@@ -212,6 +212,36 @@ describe("lychee-weekly-report：issue 标题 / 正文 / 去重", () => {
     });
     expect(actions).toEqual([]);
   });
+
+  it("R2-① 跨 kind 不串扰：同域名已开疑似反爬 issue 时，死链仍新建死链 issue", async () => {
+    const mod = await load();
+    const actions = mod.planActions({
+      dead: [{ url: "https://example.org/gone", statusCode: 404, statusText: "Not Found", suggestion: null }],
+      botBlock: [],
+      week: "2026-W47",
+      existingIssues: [{ number: 9, title: "example.org（疑似反爬 1 条）· 2026-W46", body: "" }],
+    });
+    expect(actions).toHaveLength(1);
+    expect(actions[0].action).toBe("create");
+    expect(actions[0].kind).toBe("dead");
+    expect(actions[0].title).toBe("example.org（1 条）· 2026-W47");
+    expect(actions[0].existingIssueNumber).toBeNull();
+  });
+
+  it("R2-② 跨 kind 不串扰：同域名已开死链 issue 时，疑似反爬仍新建自己的 issue", async () => {
+    const mod = await load();
+    const actions = mod.planActions({
+      dead: [],
+      botBlock: [{ url: "https://example.org/blocked", statusCode: 403, statusText: "Forbidden", suggestion: null }],
+      week: "2026-W47",
+      existingIssues: [{ number: 8, title: "example.org（1 条）· 2026-W46", body: "" }],
+    });
+    expect(actions).toHaveLength(1);
+    expect(actions[0].action).toBe("create");
+    expect(actions[0].kind).toBe("bot-block");
+    expect(actions[0].title).toBe("example.org（疑似反爬 1 条）· 2026-W47");
+    expect(actions[0].existingIssueNumber).toBeNull();
+  });
 });
 
 describe("lychee-weekly-report：CLI（--dry-run，不调网络）", () => {

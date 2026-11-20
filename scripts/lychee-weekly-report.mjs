@@ -276,6 +276,25 @@ export function buildCommentBody(domain, kind, newEntries, week, firstSeen = new
 }
 
 /**
+ * 按 kind 精确匹配已开 issue 标题（与 buildIssueTitle 的格式一一对应，互不串扰）：
+ *   dead：`<域名>（<n> 条）· <周次>`——“（”后紧跟数字，不含“疑似反爬”；
+ *   bot-block：`<域名>（疑似反爬 <n> 条）· <周次>`。
+ * 域名中的正则元字符（`.` 等）需转义，否则 `example.org` 会误匹配 `exampleXorg`。
+ */
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function matchesExistingIssueTitle(title, domain, kind) {
+  const escapedDomain = escapeRegExp(domain);
+  const pattern =
+    kind === "bot-block"
+      ? `^${escapedDomain}（疑似反爬 \\d+ 条）· `
+      : `^${escapedDomain}（\\d+ 条）· `;
+  return new RegExp(pattern).test(title);
+}
+
+/**
  * 纯函数：由失败条目 + 已开 issue 列表算出动作计划（可单测，不调网络）。
  * existingIssues: [{ number, title, body }]（仅 state=open 的）。
  * 返回 { actions, pending }；action: { domain, kind, action: 'create'|'comment', title, body, newEntries, existingIssueNumber }。
@@ -285,9 +304,8 @@ export function planActions({ dead, botBlock, week, existingIssues }) {
   for (const kind of ["dead", "bot-block"]) {
     const entries = kind === "dead" ? dead : botBlock;
     for (const { domain, items } of groupByDomain(entries)) {
-      const marker = kind === "bot-block" ? "（疑似反爬" : "（";
-      const existing = existingIssues.find(
-        (issue) => issue.title.startsWith(`${domain}${marker}`),
+      const existing = existingIssues.find((issue) =>
+        matchesExistingIssueTitle(issue.title, domain, kind),
       );
       if (!existing) {
         actions.push({

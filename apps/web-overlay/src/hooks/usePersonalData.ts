@@ -53,6 +53,9 @@ function browserStorage(): Storage | null {
 let cachedData: PersonalData | null = null
 let cachedCorrupt = false
 let cachedBlocked: string | null = null
+/** 客户端是否已挂载：挂载前快照一律返回默认空数据，与服务端渲染一致，
+ *  避免水合错配（localStorage 只在挂载后读）。与 useFavorites 同款模型。 */
+let clientReady = false
 const listeners = new Set<() => void>()
 
 function emitChange(): void {
@@ -66,6 +69,11 @@ function emitChange(): void {
 
 function readSnapshot(): PersonalData {
   if (cachedData) return cachedData
+  if (!clientReady) {
+    // 未挂载：不碰 localStorage，返回缓存的默认空数据（与服务端一致）。
+    cachedData = defaultPersonalData()
+    return cachedData
+  }
   const store = browserStorage()
   if (!store) {
     cachedData = defaultPersonalData()
@@ -142,6 +150,12 @@ export function usePersonalData(): UsePersonalData {
 
   useEffect(() => {
     readyRef.current = true
+    if (!clientReady) {
+      // 挂载后才读本地存储，并通知全部订阅者用真实数据重渲染。
+      clientReady = true
+      cachedData = null
+      emitChange()
+    }
   }, [])
 
   const persist = useCallback((next: PersonalData): boolean => {
@@ -325,6 +339,7 @@ export function usePersonalData(): UsePersonalData {
   }, [])
 
   const usageBytes = useCallback((): number => {
+    if (!clientReady) return 0
     const store = browserStorage()
     return store ? storageUsageBytes(store) : 0
   }, [])

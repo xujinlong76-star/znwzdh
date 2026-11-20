@@ -250,19 +250,24 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
         ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
         : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
     }
+    // 首屏瘦身：全宽模块下各密度模式统一为 auto-fill minmax(240px, 1fr)。
+    // 列数由容器宽决定（左侧栏可拖拽、视口推不出列数，见本文件注释），
+    // 240px + 14px 间隙自然落在任务断点上：容器 ≥1200px 为 4 列、≥840px 为 3 列、
+    // ≥560px 为 2 列、移动端 1 列。密度模式差异保留在卡片内容而非列数。
+    // 窄模块（moduleColSpan ≤ 9）分支保留：模块被拖窄时强制减列防挤压。
     if (effectiveCardMode === 'minimal') {
-      return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5 min-[1920px]:grid-cols-6!'
+      return 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
     }
     if (effectiveCardMode === 'compact') {
-      return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5 min-[1920px]:grid-cols-6!'
+      return 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
     }
     if (effectiveCardMode === 'rich') {
-      return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 min-[1536px]:grid-cols-4! min-[1920px]:grid-cols-5!'
+      return 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
     }
     if (effectiveCardMode === 'standard') {
-      return 'grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))]'
+      return 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
     }
-    return gridColumnsClass || 'grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))]'
+    return gridColumnsClass || 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
   }, [effectiveCardMode, gridColumnsClass, moduleColSpan])
   const directItems = useMemo(
     () =>

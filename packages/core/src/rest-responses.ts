@@ -212,20 +212,6 @@ export const SearchResponse = z.looseObject({
   relationHits: z.array(MatchedSiteRelationPayload).optional(),
 });
 
-/**
- * GET /api/search/hotwords：搜索框空态「大家都在搜」chips 数据源。
- *
- * 与零结果页 `popular` 同口径（suggestableTopQueries 180 天、过取 30，再排除
- * 零结果词，取前 8）；只读、无身份、无写入。读失败降级为空数组 +
- * suggestionsDegraded，不 5xx（chips 是附加信息；与 SearchResponse 的
- * suggestionsDegraded 同口径：只在降级时出现、恒为 true）。
- */
-export const SearchHotwordsResponse = z.looseObject({
-  /** 去零结果词后的前 8 热搜词 */
-  hotwords: z.array(z.string()).max(8),
-  suggestionsDegraded: z.literal(true).optional(),
-});
-
 /* ------------------------------------------------------------------ *
  * 类目（全量 / 分页 / 站点计数）
  * ------------------------------------------------------------------ */
@@ -2604,8 +2590,6 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "GET /api/search": { schema: SearchResponse, name: "SearchResponse" },
   // POST 与 GET 共用同一处理器，必须共用同一份契约，否则两边会各自漂移
   "POST /api/search": { schema: SearchResponse, name: "SearchResponse" },
-  // 搜索框热词：/search 空态「大家都在搜」chips 数据源（W4-0622-1 收尾③）
-  "GET /api/search/hotwords": { schema: SearchHotwordsResponse, name: "SearchHotwordsResponse" },
   "GET /api/sites": { schema: SiteListResponse, name: "SiteListResponse" },
   "GET /api/categories": { schema: CategoryListResponse, name: "CategoryListResponse" },
   "GET /api/categories/page": { schema: CategoryPageResponse, name: "CategoryPageResponse" },

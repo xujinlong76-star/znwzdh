@@ -61,7 +61,6 @@ import {
   SITE_CORE_FIELDS,
   SearchHistoryPageResponse,
   SearchHistoryRecordResponse,
-  SearchHotwordsResponse,
   SearchResponse,
   SiteListResponse,
   SitePayload,
@@ -415,16 +414,6 @@ describe("真实响应满足契约", () => {
     const res = await app.inject({ method: "POST", url: "/api/search", payload: { q: "Cursor" } });
     expect(res.statusCode).toBe(200);
     expectRoutedContract("POST /api/search", SearchResponse, res.json());
-  });
-
-  it("GET /api/search/hotwords", async () => {
-    const res = await app.inject({ method: "GET", url: "/api/search/hotwords" });
-    expect(res.statusCode).toBe(200);
-    const body = res.json();
-    expectContract(SearchHotwordsResponse, body, "GET /api/search/hotwords");
-    expect(Array.isArray(body.hotwords)).toBe(true);
-    // 路由取前 8（suggestableTopQueries 过取 30 再 slice(0, 8)）
-    expect(body.hotwords.length).toBeLessThanOrEqual(8);
   });
 
   it("站点纠错上报→复核列表→流转：三条路由的真实响应都满足契约（升级第 10 条）", async () => {

@@ -489,7 +489,7 @@ export function NavigationToolbar({
                   aria-label="打开外观排版与新手向导小窗"
                 >
                   <SlidersHorizontal className="h-4 w-4 shrink-0" />
-                  <span className="whitespace-nowrap text-[10px] leading-none sm:text-xs">DIY 排版</span>
+                  <span className="text-center text-xs leading-none whitespace-normal break-keep sm:whitespace-nowrap">DIY 排版</span>
                 </Button>
               ) : null}
               <div className="h-4 w-px bg-border/60 mx-1 hidden min-[1536px]:block" />

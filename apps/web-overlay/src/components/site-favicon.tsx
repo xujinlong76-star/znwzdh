@@ -819,6 +819,38 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 全库 383 站核对：'learn.microsoft.com' 键只命中 Microsoft Learn 一站，无后缀串站。
   // 四色方块明亮、无需底块（resolveLogoTile 为 null），不做单站补丁。
   ['learn.microsoft.com', 'microsoft-learn.png'],
+  // 2026-11-20（C 类第 7 批 C7 补批 W2，视频组 2，3 站）：芒果TV /
+  // 咪咕视频·短剧 / 央视频。3 站 icon 字段均为远端 …/favicon.ico，
+  // 被 isRemoteRawFavicon 拦截，map 生效，navigation.json 不动。
+  // 全库 383 站核对：3 个 map 键各只命中 1 站，无后缀串站。
+  // 芒果TV：首页声明的 shortcut icon
+  // static.hitv.com/pc/icons/icon_64x64.1b7ca7.png（64×64 PNG，
+  // 3,383 B，md5 1871e528cd65055d306a2f20e945eb63），橙底圆角方块 +
+  // 白色 M 标原样；根 /favicon.ico 另有 32×32 橙色描边 M 标
+  // （4,286 B），本轮选用首页声明的 64×64 完整应用标（仿 C12
+  // Imperva / Coolify“首页声明的最大尺寸 icon”先例），见 C7W2
+  // 测试事实钉死。咪咕视频·短剧：以 href 域名 cmread.com 为准
+  // （计划 §C7 备注：icon 字段域名 miguvideo.com 与 href 域名不
+  // 一致，以 href 域名官网为准；'miguvideo.com' 键绝不加）；源为
+  // cmread 声明的 favicon.png
+  // https://www.cmread.com/wenxueinterface/images/favicon.png
+  // （内容实为 ICO 32×32，4,286 B，解码落 PNG，1,181 B，md5
+  // ceb642a6715d5d790f4d5ae07a731341），蓝色 #2E6DED 单色字标原样；
+  // miguvideo.com/favicon.ico（48×48 红蓝 M 标）仅作交叉核对、未
+  // 采用；同页另声明的 logo-mark.svg（19.16×28 竖版页眉 logo
+  // mark）未采用——以 favicon 为准，见调查报告 §5 与 C7W2 测试
+  // 事实钉死。央视频：首页为 177 B meta-refresh 跳转页、无 icon
+  // 声明（link rel="icon" href="data:,"），根 /favicon.ico 直链
+  // 200 可用（48×48 ICO，9,662 B，解码落 PNG，2,220 B，md5
+  // b32d9387e7d784e1a317d6d41a9d53ab），红底 #D60010 + 白色央视
+  // 花标原样；仿 C8 学习强国“首页无声明、favicon 直链可用即落地”
+  // 先例。键用完整 hostname 'm.yangshipin.cn'（www 剥离不适用于
+  // m. 子域；不建 'yangshipin.cn' 裸域键）。无底块：mgtv 不透明橙
+  // 方块、yangshipin 全图不透明红底、cmread 蓝 #2E6DED 在浅/深主
+  // 题下均可见，resolveLogoTile 均为 null，不做单站补丁。
+  ['mgtv.com', 'mgtv.png'],
+  ['cmread.com', 'cmread.png'],
+  ['m.yangshipin.cn', 'yangshipin.png'],
  ];
 
 /**

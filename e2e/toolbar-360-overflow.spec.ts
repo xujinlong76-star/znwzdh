@@ -13,7 +13,9 @@ import { test, expect, type Page } from '@playwright/test';
  * （图标 +「DIY 排版」文字，<sm 上下叠排仍占 44px），360px 不溢出改由小组件盒
  * 按钮 <390px 收进探索菜单保证（行内 7×44px + 6×2px 间隙 = 320px ≤ 336px 可用宽）；
  * 本文件「外观按钮 <390px 隐藏」的旧断言随之改为「可见、可点开同一小窗」，
- * 溢出断言（行不溢出、按钮在视口内）与 390px/1280px 用例不变。
+ * 溢出断言（行不溢出、按钮在视口内）与 390px 用例不变；1280px「今日」标签用例
+ * 于 2026-11-20 按 87b95e27 的 2xl 新断点改写（1280px 标签隐藏、1600px 可见），
+ * 原因见该用例上方注释。
  */
 
 async function measureToolbarRow(page: Page) {
@@ -75,8 +77,23 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     });
   }
 
-  test('1280px：「今日」标签仍可见', async ({ page }) => {
+  // 意图变更（87b95e27，2026-11-20）：「今日」文字标签与 kbd 徽章的显示断点由
+  // xl 延后到 2xl——1280px 档两处共约 140px 会把搜索容器压到 298px、输入框
+  // 只剩 18px，核心搜索近乎不可用；<1536px 只留图标 + title Tooltip + 红点徽章。
+  // 本用例随新行为改写（旧断言「1280px 标签仍可见」与该修复直接冲突；单元侧
+  // header-layout-guard / touch-keyboard-hints 守卫已在同一提交改写）；断言未删，
+  // 只改断言方向，并补 1600px（2xl）档的标签可见用例。
+  test('1280px：「今日」标签按 2xl 断点隐藏、按钮仍可见', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/');
+    const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
+    await expect(todayBtn).toBeVisible({ timeout: 60_000 });
+    const label = todayBtn.locator('span:not([aria-hidden])');
+    await expect(label).toBeHidden();
+  });
+
+  test('1600px（2xl）：「今日」标签仍可见', async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 800 });
     await page.goto('/');
     const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
     await expect(todayBtn).toBeVisible({ timeout: 60_000 });

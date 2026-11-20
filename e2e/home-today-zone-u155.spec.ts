@@ -116,6 +116,10 @@ test.describe('U-155 首页今日行行内直达链接', () => {
     const actual = [...links].sort((a, b) => (a.href ?? '').localeCompare(b.href ?? ''))
     // href 精确集合：不多一条（无 URL 的行被误挂链会多出来），不少一条。
     expect(actual.map((l) => l.href)).toEqual(expected.map((e) => e.href))
+    // label 多重集也要相等：同 href 不同 label 时 href 集合比较会漏过。
+    expect(actual.map((l) => l.text).sort()).toEqual(
+      expected.map((e) => e.label).sort(),
+    )
     for (const link of actual) {
       expect(link.target).toBe('_blank')
       expect(link.rel?.split(' ') ?? []).toEqual(
@@ -123,7 +127,11 @@ test.describe('U-155 首页今日行行内直达链接', () => {
       )
       // ArrowUpRight 图标：链接内恰一个 <svg>。
       expect(link.svgCount).toBe(1)
-      const entry = expected.find((e) => e.href === link.href)
+      // 同一 URL 可挂多行（如两条 CET 准考证打印共用 cet-bm.neea.edu.cn）：
+      // 按 (href, label) 对匹配，同一 href 的条目各消费一次，不互相顶替。
+      const entry = expected.find(
+        (e) => e.href === link.href && link.text.includes(e.label),
+      )
       expect(entry).toBeDefined()
       expect(link.text).toContain(entry!.label)
     }
@@ -139,6 +147,10 @@ test.describe('U-155 首页今日行行内直达链接', () => {
 
     const rows = await zone.locator('li').evaluateAll((els) =>
       els.map((el) => ({
+        // 行首即 TodayNodeLabel 的 span/a，其文本就是 label 全串；行尾
+        // 另有 detail 与 chip 文案，整行子串匹配会误撞（如「四六级 · 口试」
+        // 是「四六级 · 口试准考证打印」的子串），故按行首 label 精确相等。
+        labelText: el.firstElementChild?.textContent?.trim() ?? '',
         text: el.textContent ?? '',
         linkCount: el.querySelectorAll('a').length,
       })),
@@ -147,7 +159,7 @@ test.describe('U-155 首页今日行行内直达链接', () => {
     expect(rows).toHaveLength(todayItems.length + followUpItems.length)
     for (const { exam, node } of plain) {
       const label = `${exam.shortName} · ${node.label}`
-      const hits = rows.filter((row) => row.text.includes(label))
+      const hits = rows.filter((row) => row.labelText === label)
       expect(hits).toHaveLength(1)
       expect(hits[0].linkCount).toBe(0)
     }

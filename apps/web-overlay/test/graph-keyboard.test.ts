@@ -170,7 +170,12 @@ describe("节点的可访问名", () => {
 describe("图谱组件接线", () => {
   function nodeLayer(): string {
     const src = overlaySource(GRAPH);
-    const start = src.indexOf("{filteredNodes.map((n) => {");
+    // 2026-11-21：节点渲染循环由 filteredNodes 改名 displayNodes——图例过滤器
+    // 引入后，渲染的是「过滤后的可见节点」（displayNodes = filteredNodes 再按
+    // 图例去掉无该类边的节点），不再是旧的 filteredNodes；循环体内的键盘语义
+    // （role/tabIndex/onKeyDown/onFocus/aria-label/焦点环）未变，下面三条断言
+    // 仍按原行为检查同一渲染层。
+    const start = src.indexOf("{displayNodes.map((n) => {");
     expect(start, "找不到节点渲染层").toBeGreaterThan(-1);
     const end = src.indexOf("})}", start);
     expect(end).toBeGreaterThan(start);

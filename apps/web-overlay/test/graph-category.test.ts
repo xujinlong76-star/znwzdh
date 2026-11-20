@@ -9,7 +9,13 @@
  * 这里守三件事：
  *   1. 参数按 id 精确匹配一级/二级分类，不猜标题关键词；
  *   2. 匹配不上、分类被禁用、分类在 live 数据里 0 站点时不假装过滤成功；
- *   3. 抽样规则分类域与全局域共用同一均匀步长，不只反映列表前段。
+ *   3. 抽样规则：2026-11-21 起分类域与全局域共用同一 Cluster-First 抽样
+ *      （lib/graph-cluster.ts 的 sampleClusterFirst），不再是均匀步长——
+ *      均匀抽样把站点打散、共享标签的边要求两站同时被抽中，于是过半节点
+ *      是孤岛；Cluster-First 优先抽 3–5 个高密度子簇，孤立 ≤15%。
+ *      下面「sampleUniform(scopeFlat, MAX_NODES)」接线断言按新行为改写，
+ *      不是删除：组件必须调 sampleClusterFirst(scopeFlat，…)，且抽样
+ *      母体仍是 scopeFlat（分类域只抽该分类的站点）。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -140,10 +146,14 @@ describe("组件接线：分类域模式真的接上了", () => {
     expect(GRAPH).toContain("}, [categoryParam])");
   });
 
-  it("命中分类时只抽样该分类的站点并记下 focusedCategory", () => {
+  it("命中分类时只抽样该分类的站点并记下 focusedCategory（Cluster-First）", () => {
     expect(GRAPH).toContain("resolveGraphCategory(categoryParam");
     expect(GRAPH).toContain("setFocusedCategory(activeFocus)");
-    expect(GRAPH).toContain("sampleUniform(scopeFlat, MAX_NODES)");
+    // 2026-11-21：抽样从 sampleUniform 步长均匀改为 Cluster-First
+    // （sampleClusterFirst，见 lib/graph-cluster.ts 与 graph-cluster.test.ts）；
+    // 母体仍是 scopeFlat，分类域只抽该分类的站点。
+    expect(GRAPH).toContain("sampleClusterFirst(scopeFlat");
+    expect(GRAPH).not.toContain("sampleUniform(scopeFlat");
   });
 
   it("分类域模式不混入预设示例节点、不带默认边", () => {

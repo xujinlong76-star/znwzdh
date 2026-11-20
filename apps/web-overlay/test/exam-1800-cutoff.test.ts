@@ -76,9 +76,9 @@
  * U-162 追加（天津成考复核，2026-11-19）：查表加一行——天津成绩复核
  * 11-19 18:00（单日节点，kind today，过期 chip 消失）；11-19 18:00 是截止
  * 时刻（转载级：hqwx 环球青藤 2026-11-18 资讯梳理，非官方公告原文），与
- * 海南 17:00、上海 10:00 的开通时刻性质相反；结果窗口 11-25 09:00 是开通
- * 时刻、11-30 17:00 是结果窗口末端，均不入表。目标时刻：11-19 18:00 =
- * Date.UTC(2026, 10, 19, 10, 0, 0)。陷阱：绝不是京考/文职 11-18 18:00
+ * 海南 17:00、上海 10:00 的开通时刻性质相反；结果窗口 11-25 09:00 是开通时刻、
+ * 不入表，11-30 17:00 是结果窗口末端、入 PEAK 表（U-279，见下）。目标时刻：
+ * 11-19 18:00 = Date.UTC(2026, 10, 19, 10, 0, 0)。陷阱：绝不是京考/文职 11-18 18:00
  * （date 不同）；eol.cn 2025 口径（11-19 09:00–11-20 12:00 现场办理）
  * 与 2026 三处实质冲突，绝不复刻。
  *
@@ -96,6 +96,14 @@
  * 陷阱：浙江志愿 17:00 绝不是浙江准考证 17:00（键与日期均不同）；京考
  * 16:30 绝不是国考 11-29 15:00；山东 14:15 / 浙江 17:00 / 江苏 15:00
  * 同场不同 label，键不同。
+ *
+ * U-279 追加（天津成考成绩复核结果查询，2026-11-20）：查表加一行——天津成绩复核
+ * 结果查询 11-30 17:00（多日窗口 11-25→11-30 末日，kind endsToday，过期显示
+ * 「已截止」，与浙江志愿确认 11-29 17:00 同款）；11-25 09:00 是开通时刻、不入表。
+ * 节点转载级（官方原文复核未通过：browser.open 上游抓取失败、VM curl 超时、
+ * site:zhaokao.net 零结果），不挂 url。目标时刻：11-30 17:00 =
+ * Date.UTC(2026, 10, 30, 9, 0, 0)。陷阱：绝不是天津成绩复核 11-19 18:00
+ * （键与日期均不同）；绝不是结果窗口 11-25 09:00 开通时刻。
  */
 import { describe, expect, it } from 'vitest'
 import type { ExamInfo, ExamNode } from '../src/lib/exam-calendar'
@@ -827,11 +835,107 @@ describe('U-162 天津成考成绩复核（转载级，入 PEAK 表 11-19 18:00�
     expect(tj19?.node.url).toBeUndefined()
     expect(todayNodeDeadlineMs(tj19!)).toBe(Date.UTC(2026, 10, 19, 10, 0, 0))
     expect(todayFollowUpNodes(NOV_19_0800_CST).map((t) => t.node.label)).not.toContain('天津成绩复核')
-    expect(todayFollowUpNodes(NOV_19_0800_CST)).toHaveLength(6)
+    // U-279：天津成绩复核结果查询 11-25 开启，11-19 当天已可办（upcoming）进接续区，接续区 6→7 项
+    expect(todayFollowUpNodes(NOV_19_0800_CST)).toHaveLength(7)
+    expect(todayFollowUpNodes(NOV_19_0800_CST).map((t) => t.node.label)).toContain('天津成绩复核结果查询')
     const items20 = todayNodes(NOV_20_0800_CST)
     expect(items20).toHaveLength(6)
     expect(items20.map((t) => t.node.label)).not.toContain('天津成绩复核')
     expect(todayFollowUpNodes(NOV_20_0800_CST).map((t) => t.node.label)).not.toContain('天津成绩复核')
+  })
+})
+
+describe('U-279 天津成考成绩复核结果查询（转载级，入 PEAK 表 11-30 17:00）', () => {
+  // 查找包成函数：实现未落盘时顶层 find 会在收集期抛错、整文件 0 跑；
+  // 各 it 内调用，失败只落本 it。
+  const tjResultNode = () => chengkao.nodes.find((n) => n.label === '天津成绩复核结果查询')!
+  /** 2026-11-25 08:00 北京时间（结果查询窗口首日） */
+  const NOV_25_0800_CST = Date.UTC(2026, 10, 25, 0, 0, 0)
+  /** 2026-11-30 08:00 北京时间（结果查询窗口末日白天） */
+  const NOV_30_0800_CST = Date.UTC(2026, 10, 30, 0, 0, 0)
+  /** 2026-11-30 16:59:59 北京时间 = UTC 08:59:59（结果查询边界前 1 秒） */
+  const NOV_30_165959_CST = Date.UTC(2026, 10, 30, 8, 59, 59)
+  /** 2026-11-30 17:00:00 北京时间 = UTC 09:00:00（结果查询截止目标时刻） */
+  const NOV_30_170000_CST = Date.UTC(2026, 10, 30, 9, 0, 0)
+  /** 2026-11-30 17:00:01 北京时间 = UTC 09:00:01（边界后 1 秒） */
+  const NOV_30_170001_CST = Date.UTC(2026, 10, 30, 9, 0, 1)
+  /** 2026-12-01 08:00 北京时间（结果查询窗口已过） */
+  const DEC_01_0800_CST = Date.UTC(2026, 11, 1, 0, 0, 0)
+
+  it('节点落库：多日 11-25→11-30，无 url；detail 逐字口径 + 转载级标注', () => {
+    const node = tjResultNode()
+    expect(node.startISO).toBe('2026-11-25')
+    expect(node.endISO).toBe('2026-11-30')
+    expect(node.url).toBeUndefined()
+    expect(node.detail).toBe(
+      '11 月 25 日 9:00 至 11 月 30 日 17:00 可查复核结果（招考资讯网公众服务大厅成绩查询页面 /「天津招考」微信小程序；转载级、未见官方原文，待官方原文核实后升级）',
+    )
+    expect(node.detail).toContain('转载级')
+    expect(node.detail).toContain('未见官方原文')
+    expect(node.detail).toContain('待官方原文核实后升级')
+  })
+
+  it('底线守卫：不写「据官网公告」、不写来源 URL 字符串、不写 2025 口径、不写「现场办理」', () => {
+    const node = tjResultNode()
+    expect(node.detail).not.toContain('官网公告')
+    expect(node.detail).not.toContain('hqwx')
+    expect(node.detail).not.toContain('zhaokao')
+    expect(node.detail).not.toContain('http')
+    expect(node.detail).not.toContain('现场办理')
+    expect(node.detail).not.toContain('逾期不予受理')
+    // eol.cn 2025 口径（11-19 09:00–11-20 12:00 现场办理）绝不复刻：
+    // 2026 结果查询窗口是 11-25→11-30，不写 11 月 20 日
+    expect(node.detail).not.toContain('11 月 20 日')
+  })
+
+  it('天津结果查询入 PEAK 表：todayNodeDeadlineMs 为 11-30 17:00（北京时间 = UTC 09:00）；11-25 09:00 开通时刻不入表', () => {
+    const byKey30 = new Map(
+      todayNodes(NOV_30_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey30.get('chengkao:天津成绩复核结果查询')!)).toBe(
+      Date.UTC(2026, 10, 30, 9, 0, 0),
+    )
+    // 陷阱守卫：绝不是 U-162 天津成绩复核 11-19 18:00（键与日期均不同）；
+    // 绝不是结果窗口 11-25 09:00 开通时刻；绝不是浙江志愿确认 11-29 17:00
+    const ms = todayNodeDeadlineMs(byKey30.get('chengkao:天津成绩复核结果查询')!)
+    expect(ms).not.toBe(Date.UTC(2026, 10, 19, 10, 0, 0))
+    expect(ms).not.toBe(Date.UTC(2026, 10, 25, 1, 0, 0))
+    expect(ms).not.toBe(Date.UTC(2026, 10, 29, 9, 0, 0))
+    // 11-25 首日 helper 仍指向 11-30 17:00（开通时刻无独立表项）
+    const byKey25 = new Map(
+      todayNodes(NOV_25_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    expect(todayNodeDeadlineMs(byKey25.get('chengkao:天津成绩复核结果查询')!)).toBe(
+      Date.UTC(2026, 10, 30, 9, 0, 0),
+    )
+  })
+
+  it('边界三则：11-30 16:59:59 null → 17:00:00「已截止」→ 17:00:01「已截止」；组合文案 16:59:59「进行中」；11-25 全天 helper 为 null', () => {
+    expect(examNodeDeadlineLabel(chengkao, tjResultNode(), NOV_30_165959_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(chengkao, tjResultNode(), NOV_30_170000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(chengkao, tjResultNode(), NOV_30_170001_CST)).toBe('已截止')
+    expect(nodeDeadlineDisplayLabel(chengkao, tjResultNode(), NOV_30_165959_CST)).toBe('进行中')
+    expect(nodeDeadlineDisplayLabel(chengkao, tjResultNode(), NOV_30_170000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(chengkao, tjResultNode(), NOV_25_0800_CST)).toBeNull()
+  })
+
+  it('时刻门控只在渲染层：examNodeStatus 按日期口径（11-25 / 11-30 active、12-01 done）', () => {
+    expect(examNodeStatus(tjResultNode(), NOV_25_0800_CST)).toBe('active')
+    expect(examNodeStatus(tjResultNode(), NOV_30_170000_CST)).toBe('active')
+    expect(examNodeStatus(tjResultNode(), DEC_01_0800_CST)).toBe('done')
+  })
+
+  it('今日行：11-25 startsToday（与浙江志愿确认同日，目标时刻升序排其后）；11-30 endsToday；12-01 不进今日行', () => {
+    const ck25 = todayNodes(NOV_25_0800_CST).filter((t) => t.exam.id === 'chengkao')
+    expect(ck25.map((t) => t.node.label)).toEqual(['浙江志愿确认', '天津成绩复核结果查询'])
+    expect(ck25.map((t) => t.kind)).toEqual(['startsToday', 'startsToday'])
+    const item30 = todayNodes(NOV_30_0800_CST).find(
+      (t) => t.exam.id === 'chengkao' && t.node.label === '天津成绩复核结果查询',
+    )!
+    expect(item30.kind).toBe('endsToday')
+    expect(todayNodeDeadlineMs(item30)).toBe(Date.UTC(2026, 10, 30, 9, 0, 0))
+    expect(todayNodes(DEC_01_0800_CST).map((t) => t.node.label)).not.toContain('天津成绩复核结果查询')
+    expect(todayFollowUpNodes(DEC_01_0800_CST).map((t) => t.node.label)).not.toContain('天津成绩复核结果查询')
   })
 })
 

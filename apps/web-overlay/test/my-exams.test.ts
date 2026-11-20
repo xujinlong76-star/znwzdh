@@ -223,12 +223,17 @@ describe('U-106：已结束但仍有可办节点时可关注、可勾选', () =>
     expect(uncheck.checked).toEqual({ chengkao: ['广东成绩查询'] })
   })
 
-  it('11-30 恢复禁用：节点全过后新关注与勾选都是 no-op', () => {
+  it('11-30 仍有可办节点（U-279 天津结果查询末日）；12-01 恢复禁用：节点全过后新关注与勾选都是 no-op', () => {
     const empty: MyExamsState = { followed: [], checked: {} }
-    expect(hasActionableNodes(chengkao, NOV_30_0800_CST)).toBe(false)
-    expect(toggleFollow(empty, 'chengkao', NOV_30_0800_CST)).toBe(empty)
+    // U-279：天津成绩复核结果查询 11-25→11-30，11-30 当天仍可办，下一步即该节点
+    expect(hasActionableNodes(chengkao, NOV_30_0800_CST)).toBe(true)
+    expect(nextTodoNode({ followed: ['chengkao'], checked: {} }, chengkao, NOV_30_0800_CST)?.label).toBe('天津成绩复核结果查询')
+    expect(toggleFollow(empty, 'chengkao', NOV_30_0800_CST).followed).toEqual(['chengkao'])
+    // 12-01：全部节点已过，无可办节点，恢复禁用
+    expect(hasActionableNodes(chengkao, DEC_01_0800_CST)).toBe(false)
+    expect(toggleFollow(empty, 'chengkao', DEC_01_0800_CST)).toBe(empty)
     const followed: MyExamsState = { followed: ['chengkao'], checked: {} }
-    expect(toggleNodeCheck(followed, 'chengkao', '江西成绩查询', NOV_30_0800_CST)).toBe(followed)
+    expect(toggleNodeCheck(followed, 'chengkao', '江西成绩查询', DEC_01_0800_CST)).toBe(followed)
   })
 
   it('11-30 已关注仍可取消关注（清理出口不受恢复禁用影响），勾选随状态保留', () => {
@@ -552,8 +557,8 @@ describe('省考七省准考证节点（U-30）', () => {
 })
 
 describe('成考成绩分省节点', () => {
-  it('只列八省十二节点（云南为转载级），不写全国单节点', () => {
-    expect(chengkao.nodes.map((n) => n.label)).toEqual(['江西成绩查询', '江西成绩复核', '广东成绩查询', '广东成绩复核', '新疆成绩查询', '新疆成绩复核', '山西成绩复核', '海南成绩查询', '天津成绩复核', '浙江成绩查询', '云南成绩查询', '浙江志愿确认'])
+  it('只列八省十三节点（云南与天津结果查询为转载级），不写全国单节点', () => {
+    expect(chengkao.nodes.map((n) => n.label)).toEqual(['江西成绩查询', '江西成绩复核', '广东成绩查询', '广东成绩复核', '新疆成绩查询', '新疆成绩复核', '山西成绩复核', '海南成绩查询', '天津成绩复核', '浙江成绩查询', '云南成绩查询', '浙江志愿确认', '天津成绩复核结果查询'])
     expect(chengkao.nodes.map((n) => [n.startISO, n.endISO])).toEqual([
       ['2026-11-18', '2026-11-18'],
       ['2026-11-19', '2026-11-20'],
@@ -567,6 +572,7 @@ describe('成考成绩分省节点', () => {
       ['2026-11-20', '2026-11-20'],
       ['2026-11-20', '2026-11-20'],
       ['2026-11-25', '2026-11-29'],
+      ['2026-11-25', '2026-11-30'],
     ])
     for (const node of chengkao.nodes) {
       if (node.label === '江西成绩复核') {
@@ -798,7 +804,7 @@ describe('军队文职节点（2026-11-18 01:22 轮）', () => {
 })
 
 describe('R1：已结束考试仍有可办节点时卡片不渲染裸「已结束」', () => {
-  it('成考 11-17/11-18 统考已结束但仍有可办节点，11-19 起仍有复核与浙江节点，11-30 起无可办节点', () => {
+  it('成考 11-17/11-18 统考已结束但仍有可办节点，11-19 起仍有复核与浙江节点，12-01 起无可办节点', () => {
     // 触发条件：examStatus 已是 ended，但成绩节点未过。
     expect(examStatus(chengkao, NOV_17_0800_CST)).toBe('ended')
     expect(examStatus(chengkao, NOV_18_0800_CST)).toBe('ended')
@@ -809,9 +815,12 @@ describe('R1：已结束考试仍有可办节点时卡片不渲染裸「已结�
     // 下一步先指新疆复核（开始日最早）。
     expect(hasActionableNodes(chengkao, NOV_19_0800_CST)).toBe(true)
     expect(nextTodoNode({ followed: ['chengkao'], checked: {} }, chengkao, NOV_19_0800_CST)?.label).toBe('新疆成绩复核')
-    // 11-30：全部节点已过，无可办节点，卡片回到裸「已结束」。
-    expect(hasActionableNodes(chengkao, NOV_30_0800_CST)).toBe(false)
-    expect(nextTodoNode({ followed: ['chengkao'], checked: {} }, chengkao, NOV_30_0800_CST)).toBeUndefined()
+    // 11-30：U-279 天津成绩复核结果查询末日，仍有可办节点；下一步即该节点。
+    expect(hasActionableNodes(chengkao, NOV_30_0800_CST)).toBe(true)
+    expect(nextTodoNode({ followed: ['chengkao'], checked: {} }, chengkao, NOV_30_0800_CST)?.label).toBe('天津成绩复核结果查询')
+    // 12-01：全部节点已过，无可办节点，卡片回到裸「已结束」。
+    expect(hasActionableNodes(chengkao, DEC_01_0800_CST)).toBe(false)
+    expect(nextTodoNode({ followed: ['chengkao'], checked: {} }, chengkao, DEC_01_0800_CST)).toBeUndefined()
   })
 
   it('其他考试不受影响：11-18 当天除成考外均未结束；已结束的国考/考研无可办节点', () => {

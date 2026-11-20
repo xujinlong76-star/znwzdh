@@ -623,7 +623,8 @@ export const NavigationCard = memo(function NavigationCard({
                 </div>
               </div>
 
-              {/* 紧凑操作按钮：收藏星常显（留存钩子），其余操作仍悬停/聚焦/触屏才显 */}
+              {/* 紧凑操作按钮（首屏瘦身）：收藏星与其它操作同款降透明度，悬停/聚焦/
+                  触屏时才显，编排态常显；图标角标保留（行布局无「右上角」概念）。 */}
               <div className="relative z-20 flex items-center gap-0.5" onKeyDown={handleActionsKeyDown}>
                 <span className={cn(
                   "flex items-center gap-0.5 transition-opacity",
@@ -723,11 +724,18 @@ export const NavigationCard = memo(function NavigationCard({
                   <Copy className="w-3 h-3" />
                 </Button>
                 </span>
-                <FavoriteButton
-                  tabIndex={-1}
-                  cardAction
-                  site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
-                />
+                {/* 收藏星标（首屏瘦身）：默认降透明度，悬停/聚焦/触屏时可见，编排态常显；
+                    与药丸操作区同款显隐（键盘聚焦经操作区方向键导航可达）。 */}
+                <span className={cn(
+                  "transition-opacity",
+                  isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
+                )}>
+                  <FavoriteButton
+                    tabIndex={-1}
+                    cardAction
+                    site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
+                  />
+                </span>
               </div>
             </div>
           </TooltipTrigger>
@@ -762,6 +770,14 @@ export const NavigationCard = memo(function NavigationCard({
                 </div>
               )}
 
+              {/* 数字快捷键角标（首屏瘦身）：由图标/缩略图角标移至卡片右上角极简
+                  <kbd>，悬停/聚焦时隐去让位给右上角操作区。digit 为空时组件
+                  自身返回 null；sm 以下隐藏（见 number-dial-badge）。 */}
+              <NumberDialBadge
+                digit={dialDigit}
+                className="top-2 right-2 z-20 transition-opacity duration-150 group-hover/card:opacity-0 group-focus-within/card:opacity-0"
+              />
+
               {/* 外链覆盖层：唯一 Tab 停留点（Enter 打开站点 / Space 速览 / → 进操作区） */}
               <a
                 href={safeHref(item.href)}
@@ -792,10 +808,9 @@ export const NavigationCard = memo(function NavigationCard({
                       imgClassName="h-14 w-14 object-contain drop-shadow-sm"
                       monogramClassName="text-3xl"
                     />
-                    <NumberDialBadge digit={dialDigit} className="bottom-1 right-1" />
                   </div>
                 )}
-                <CardHeader className="p-4 sm:p-5 flex-1">
+                <CardHeader className="p-3.5 flex-1">
                   <div className="flex items-start gap-3.5">
                     {!thumbnail && (
                     <div className="relative flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover/card:scale-105 shadow-xs">
@@ -806,7 +821,6 @@ export const NavigationCard = memo(function NavigationCard({
                         useDefaultIcon={item.useDefaultIcon}
                         className="w-full h-full object-contain rounded-sm"
                       />
-                      <NumberDialBadge digit={dialDigit} className="-bottom-1 -right-1" />
                     </div>
                     )}
                     <div className="min-w-0 flex-1">
@@ -850,14 +864,14 @@ export const NavigationCard = memo(function NavigationCard({
 
                 {/* 丰富标签池：mt-auto 锁定底部基线 */}
                 {effectiveCardElements.showTags && (
-                <div className="relative z-10 pointer-events-none flex items-center gap-1.5 px-4 sm:px-5 pb-4 sm:pb-5 flex-wrap min-h-[2rem] mt-auto">
-                {item.tags?.slice(0, 3).map((tag) => (
+                <div className="relative z-10 pointer-events-none flex items-center gap-1.5 px-3.5 pb-3.5 flex-wrap min-h-[2rem] mt-auto">
+                {item.tags?.slice(0, 2).map((tag) => (
                   <Link
                     key={tag}
                     href={'/tags/' + encodeURIComponent(tagSlug(tag))}
                     onClick={handleTagClick}
                     tabIndex={-1}
-                    className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors min-h-6"
+                    className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors min-h-6"
                   >
                     #{tag}
                   </Link>
@@ -984,12 +998,19 @@ export const NavigationCard = memo(function NavigationCard({
                   <Copy className="w-3.5 h-3.5" />
                 </Button>
                 </span>
-                <FavoriteButton
-                  tabIndex={-1}
-                  cardAction
-                  className="bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs"
-                  site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
-                />
+                {/* 收藏星标（首屏瘦身）：默认降透明度，悬停/聚焦/触屏时可见，编排态常显；
+                    与药丸操作区同款显隐（键盘聚焦经操作区方向键导航可达）。 */}
+                <span className={cn(
+                  "transition-opacity",
+                  isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
+                )}>
+                  <FavoriteButton
+                    tabIndex={-1}
+                    cardAction
+                    className="bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs"
+                    site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
+                  />
+                </span>
               </div>
             </Card>
           </TooltipTrigger>
@@ -1051,8 +1072,20 @@ export const NavigationCard = memo(function NavigationCard({
               </div>
             )}
 
+            {/* 数字快捷键角标（首屏瘦身）：由图标/缩略图角标移至卡片右上角极简
+                <kbd>，与「Space 速览」徽章同位互换——默认显示，Tab 聚焦时隐去
+                让位给 Space 徽章，悬停/聚焦时隐去让位给右上角操作区。
+                digit 为空时组件自身返回 null；sm 以下隐藏（见 number-dial-badge）。 */}
+            <NumberDialBadge
+              digit={dialDigit}
+              className="top-2 right-2 transition-opacity duration-150 group-hover/card:opacity-0 group-focus-within/card:opacity-0"
+            />
+
             <div className={cn(
               "relative z-10 pointer-events-none flex flex-col flex-1",
+              // 首屏瘦身：内边距已是 14px（= p-3.5）。保留密度变量（默认 0.875rem）
+              // 而非写死 p-3.5，让用户仍可经密度切换调大/调小（见 globals.css
+              // [data-density]），视觉默认值与 p-3.5 完全一致。
               isCapsuleCollapsed ? "px-3 py-2" : "p-[var(--density-card-padding,0.875rem)]"
             )}>
               {/* Header 层：图标与标题同行，释放左侧死区 */}
@@ -1069,7 +1102,6 @@ export const NavigationCard = memo(function NavigationCard({
                       imgClassName="h-9 w-9 object-contain"
                       monogramClassName="text-lg"
                     />
-                    <NumberDialBadge digit={dialDigit} className="-bottom-1 -right-1" />
                   </div>
                 ) : (
                 <div className="relative flex-shrink-0 w-7 h-7 @[280px]:w-8 @[280px]:h-8 rounded-lg p-1 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover/card:scale-105 shadow-xs">
@@ -1080,7 +1112,6 @@ export const NavigationCard = memo(function NavigationCard({
                     useDefaultIcon={item.useDefaultIcon}
                     className="w-full h-full object-contain rounded-xs"
                   />
-                  <NumberDialBadge digit={dialDigit} className="-bottom-1 -right-1" />
                 </div>
                 )}
                 <div className="min-w-0 flex-1">
@@ -1141,13 +1172,13 @@ export const NavigationCard = memo(function NavigationCard({
               {/* 标签栏：mt-auto 强制锁定卡片底部基线，同行标签严丝合缝对齐 */}
               {effectiveCardElements.showTags && (
                 <div className="mt-auto pt-2.5 flex items-center gap-1 flex-wrap min-h-[1.75rem]">
-                  {item.tags?.slice(0, 3).map((tag) => (
+                  {item.tags?.slice(0, 2).map((tag) => (
                     <Link
                       key={tag}
                       href={'/tags/' + encodeURIComponent(tagSlug(tag))}
                       onClick={handleTagClick}
                       tabIndex={-1}
-                      className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.2 rounded bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors"
+                      className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.2 rounded-full bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors"
                     >
                       #{tag}
                     </Link>
@@ -1256,12 +1287,19 @@ export const NavigationCard = memo(function NavigationCard({
                 <Copy className="w-3.5 h-3.5" />
               </Button>
               </span>
-              <FavoriteButton
-                tabIndex={-1}
-                cardAction
-                className="bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs"
-                site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
-              />
+              {/* 收藏星标（首屏瘦身）：默认降透明度，悬停/聚焦/触屏时可见，编排态常显；
+                  与药丸操作区同款显隐（键盘聚焦经操作区方向键导航可达）。 */}
+              <span className={cn(
+                "transition-opacity",
+                isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
+              )}>
+                <FavoriteButton
+                  tabIndex={-1}
+                  cardAction
+                  className="bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs"
+                  site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
+                />
+              </span>
             </div>
           </Card>
         </TooltipTrigger>

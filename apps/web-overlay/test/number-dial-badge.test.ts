@@ -50,10 +50,13 @@ describe('卡片三形态 + 坞芯片渲染点', () => {
   const card = overlaySource('src/components/navigation-card.tsx')
   const dock = overlaySource('src/components/speed-dial-dock.tsx')
 
-  it('三形态各有一处 NumberDialBadge（紧凑 w-6、标准 w-12/w-7、丰富横幅/ w-11）', () => {
+  it('三形态各有一处 NumberDialBadge（紧凑图标角、标准与丰富卡片右上角）', () => {
+    // 订正（2026-11-20 首屏瘦身）：标准卡与富卡的角标由图标/缩略图角标移至
+    // 卡片右上角极简 <kbd>（各一处），紧凑行仍在图标角标（行布局无「右上角」）。
+    // 总数由 5 处（紧凑 1 + 标准 2 + 富卡 2）变为 3 处（每形态各 1 处）。
     expect(card).toContain('import { NumberDialBadge }')
     const hits = card.split('<NumberDialBadge').length - 1
-    expect(hits).toBe(5)
+    expect(hits).toBe(3)
   })
 
   it('坞芯片有一处 NumberDialBadge，数字只取透传映射（无映射不渲染，不回退本列表下标）', () => {
@@ -63,9 +66,12 @@ describe('卡片三形态 + 坞芯片渲染点', () => {
     expect(dock).not.toContain('dialDigitById?.get(site.id) ??')
   })
 
-  it('角标定位在图标右下角（-bottom-1 -right-1 / 横幅 bottom-1 right-1）', () => {
+  it('角标定位：紧凑行在图标右下角，标准与富卡在卡片右上角（top-2 right-2）', () => {
+    // 订正（2026-11-20 首屏瘦身）：标准/富卡角标由图标右下角移至卡片右上角
+    // 极简 <kbd>；紧凑行与坞芯片仍在图标右下角（行布局与胶囊无「右上角」概念）。
     expect(card).toContain('className="-bottom-1 -right-1"')
-    expect(card).toContain('className="bottom-1 right-1"')
+    expect(card).toContain('className="top-2 right-2')
+    expect(card).not.toContain('className="bottom-1 right-1"')
     expect(dock).toContain('className="-bottom-1 -right-1"')
   })
 

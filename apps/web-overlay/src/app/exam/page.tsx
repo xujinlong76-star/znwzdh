@@ -205,6 +205,19 @@ export default async function ExamPage() {
                       1 小时，故走客户端岛）。
                       官方链接在 exam-calendar 常量里，不在页面写死域名。 */}
                   {exam.id === 'guokao' ? <GuokaoAdmissionReminderIsland exam={exam} /> : null}
+                  {/* U-285 D 步：国考卡片内清单页入口一行（提醒岛之后、note 之前）。
+                      常驻显示，不随门控隐藏——清单页 11-23 前即可访问；内部
+                      路由用 Next Link，不写死域名、不挂外链。 */}
+                  {exam.id === 'guokao' ? (
+                    <p className="mt-3">
+                      <Link
+                        href="/exam/guokao-checklist"
+                        className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-sky-700 hover:underline dark:text-sky-400"
+                      >
+                        打印前清单：三件事先勾好 →
+                      </Link>
+                    </p>
+                  ) : null}
                   {exam.note ? (
                     <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{exam.note}</p>
                   ) : null}

@@ -49,6 +49,10 @@ const SELF_CANONICAL = [
     snippet: "const canonical = `/marketplace${buildMarketplaceQuery({ ...state, starred: false })}`",
   },
   { file: "src/app/exam/page.tsx", snippet: "canonical: '/exam'" },
+  {
+    file: "src/app/exam/guokao-checklist/page.tsx",
+    snippet: "canonical: '/exam/guokao-checklist'",
+  },
 ];
 
 describe("收录型页面的 canonical", () => {

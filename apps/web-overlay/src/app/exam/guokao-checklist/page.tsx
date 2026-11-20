@@ -11,6 +11,7 @@ import {
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Breadcrumbs } from '@/components/breadcrumbs'
+import { GuokaoChecklistPhaseBanner } from '@/components/guokao-checklist-phase-banner'
 import { JsonLd } from '@/components/json-ld'
 import { safeHref } from '@/lib/safe-url'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
@@ -25,9 +26,9 @@ import {
   GUOKAO_CHECKLIST_ADMISSION_RULES_LINE,
   GUOKAO_CHECKLIST_DEADLINE_WARNING,
   GUOKAO_CHECKLIST_FIRST_DAY_LINE,
-  GUOKAO_CHECKLIST_GROUPS,
   GUOKAO_CHECKLIST_SOURCE_NOTE,
 } from '@/lib/guokao-checklist'
+import { GuokaoChecklistIsland } from './guokao-checklist-island'
 
 /**
  * 国考准考证「打印前清单」页（U-285，B 步：新静态路由 + 服务端静态页）。
@@ -39,11 +40,11 @@ import {
  * 的国考节点（唯一事实源，不另造时刻源）。
  *
  * 不动 `exam-calendar.ts`、不新增 PEAK 表项、不改 `my-exams.ts` 旧键。
- * 以下两处留给后续步骤（本页先以静态内容完整呈现，不留空壳）：
- *  - C 步（W3）：下方静态清单由勾选岛替换（文案与 id 见 guokao-checklist，
- *    新存储键如 `navhub.guokao-admission-checklist.v1`，旧键不动）；
- *  - D 步（W4）：阶段横幅（复用 `guokaoAdmissionPhase`）与 /exam 国考卡片
- *    内入口链接一行；390px 真实渲染须 live browser 复核。
+ * C 步（W3）已落地：下方清单区为勾选岛（label 包裹、44px 点击区、
+ * 已勾 line-through、新存储键 `navhub.guokao-admission-checklist.v1`），
+ * 文案与 id 复用 @/lib/guokao-checklist，不另编清单项。
+ * D 步（W4）已接线：阶段横幅（`GuokaoChecklistPhaseBanner`，展板下方）
+ * 与 /exam 国考卡片内入口链接一行；390px 真实渲染须 live browser 复核。
  */
 
 export const revalidate = 3600
@@ -135,6 +136,11 @@ export default async function GuokaoChecklistPage() {
           </div>
         </div>
 
+        {/* 阶段横幅（D 步 W4 接线：复用 guokaoAdmissionPhase，11-23 前显示距开放
+            天数，11-15 之前同样显示；60 秒 tick，挂载前 null 防水合错位）。
+            位置：展板之后、截止警示框之前（Spec §3.3 结构第 2 项）。 */}
+        <GuokaoChecklistPhaseBanner />
+
         {/* 截止醒目标注（照抄提醒岛红框色档，常驻首屏，不随阶段消失） */}
         <div
           role="alert"
@@ -149,58 +155,16 @@ export default async function GuokaoChecklistPage() {
           </p>
         </div>
 
-        {/* 清单区：A/B/C 三组静态呈现。C 步（W3）将此处替换为勾选岛
-            （label 包裹、44px 点击区、已勾 line-through、新存储键），
-            文案与 id 一律复用 @/lib/guokao-checklist，不另编清单项。 */}
+        {/* 清单区：A/B/C 三组勾选岛（C 步 W3，照抄 U-237 交互）。 */}
         <section aria-labelledby="guokao-checklist-heading">
           <h2 id="guokao-checklist-heading" className="text-lg font-bold text-foreground">
             打印前清单
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             三件事先备好再进打印系统；打印后逐项核对考点、考场与考试时间。
-            {/* C 步（W3）勾选岛落地后，此处补一句“勾选只保存在本机浏览器，不登录、不跨设备同步”。 */}
+            勾选只保存在本机浏览器，不登录、不跨设备同步。
           </p>
-          <div className="mt-4 space-y-4">
-            {GUOKAO_CHECKLIST_GROUPS.map((group) => (
-              <div
-                key={group.id}
-                data-checklist-group={group.id}
-                className="rounded-2xl border border-border bg-card p-5"
-              >
-                <h3 className="text-base font-bold text-foreground">{group.title}</h3>
-                <ul className="mt-3 space-y-2.5">
-                  {group.items.map((item) => (
-                    <li
-                      key={item.id}
-                      data-checklist-item={item.id}
-                      className="flex items-start gap-2.5 text-sm"
-                    >
-                      <span
-                        aria-hidden
-                        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-border bg-background text-xs text-muted-foreground"
-                      >
-                        □
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="font-medium text-foreground">{item.label}</span>
-                        {item.note ? (
-                          <span className="text-muted-foreground"> · {item.note}</span>
-                        ) : null}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                {group.footnote ? (
-                  <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                    {group.footnote}
-                  </p>
-                ) : null}
-              </div>
-            ))}
-          </div>
-          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            {GUOKAO_CHECKLIST_SOURCE_NOTE}
-          </p>
+          <GuokaoChecklistIsland />
         </section>
 
         {/* 入口区：主按钮只挂打印系统直链（读常量，不写死域名）；

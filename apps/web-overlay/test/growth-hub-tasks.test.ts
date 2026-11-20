@@ -149,11 +149,11 @@ describe('一键直达映射完整性（task-actions）', () => {
   })
 
   it('每个映射的 href 均为已核实的站内真实路由', () => {
-    for (const [id, a] of Object.entries(TASK_ACTIONS)) {
+    for (const [_id, a] of Object.entries(TASK_ACTIONS)) {
       expect(REAL_ROUTES.has(a.href)).toBe(true)
       expect(a.cta.length).toBeGreaterThan(0)
     }
-    for (const [metric, a] of Object.entries(EVENT_METRIC_ACTIONS)) {
+    for (const [_metric, a] of Object.entries(EVENT_METRIC_ACTIONS)) {
       expect(REAL_ROUTES.has(a.href)).toBe(true)
       expect(a.cta.length).toBeGreaterThan(0)
     }

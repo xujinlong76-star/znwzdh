@@ -343,7 +343,7 @@ export function sampleClusterFirst(
 
   // 一轮修复：若诱导孤立仍超上限，用未抽样的连通节点换掉多余的孤立者
   // （换入者须与已抽样集合有边，否则换了也白换）。
-  let finalIds = [...pickedOrder]
+  const finalIds = [...pickedOrder]
   const repair = () => {
     const idSet = new Set(finalIds)
     const induced = inducedEdges(edges, idSet)

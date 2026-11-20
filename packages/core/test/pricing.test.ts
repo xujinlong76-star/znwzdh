@@ -26,6 +26,7 @@
  *    2026-11-20 进化轮 06:22：补站 U-254（容器与编排：Nomad）并入 pricing-overrides（freemium 1），确定值 378→379、未标注仍 0。
  *    2026-11-20 进化轮 08:22：补站 U-08（容器与编排：OpenShift）并入 pricing-overrides（freemium 1），确定值 379→383、未标注仍 0。
  *    2026-11-20 进化轮 11:22：补站 U-08（气象与环境：彩云天气；图标与字体：Iconfont；官方文档：Microsoft Learn）并入 pricing-overrides（freemium 2、free 1），确定值 380→383、未标注仍 0。
+ *    2026-11-20 进化轮 21:22：补站 U-288（AI 写作办公：千问办公/WPS 灵犀/豆包工作；智能体与自动化：WorkBuddy/百度搭子，5 站）并入 pricing-overrides，确定值 383→388、未标注仍 0。
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -102,7 +103,7 @@ describe("derivePricing 强信号规则（收紧版）", () => {
   });
 });
 
-describe("导航 383 站全量推导（数据完整性基线）", () => {
+describe("导航 388 站全量推导（数据完整性基线）", () => {
   const navPath = fileURLToPath(new URL("../../../apps/web-overlay/src/navsphere/content/navigation.json", import.meta.url));
   const nav = JSON.parse(readFileSync(navPath, "utf8")) as {
     navigationItems: Array<{
@@ -111,11 +112,11 @@ describe("导航 383 站全量推导（数据完整性基线）", () => {
   };
   const sites = nav.navigationItems.flatMap((c) => c.subCategories.flatMap((s) => s.items));
 
-  it("共 383 站", () => {
-    expect(sites.length).toBe(383);
+  it("共 388 站", () => {
+    expect(sites.length).toBe(388);
   });
 
-  it("确定值 383 站、未标注为 0（30 站已于 2026-11-15 逐站核实入表）", () => {
+  it("确定值 388 站、未标注为 0（30 站已于 2026-11-15 逐站核实入表）", () => {
     const unknownTitles: string[] = [];
     let determinate = 0;
     for (const s of sites) {
@@ -123,7 +124,7 @@ describe("导航 383 站全量推导（数据完整性基线）", () => {
       if (r.value === "unknown") unknownTitles.push(s.title);
       else determinate++;
     }
-    expect(determinate).toBe(383);
+    expect(determinate).toBe(388);
     expect(unknownTitles).toEqual([]);
   });
 });

@@ -99,6 +99,10 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
   });
 
   test('四边界：639/640/1023/1024 栏显隐符合 [640,1024)，猫底距同步切换', async ({ page }) => {
+    // 300 秒预算（2026-11-20）：猫脚本 lazyOnload，本地开发机慢时单次挂载
+    // 20–45 秒；本用例连做 4 次 gotoHome，180 秒仍不够（本轮实测 3.2 分钟
+    // 撞线）。只放宽预算，断言一字不动。
+    test.setTimeout(300_000);
     const cases: Array<{ width: number; dockVisible: boolean; catBottom: string }> = [
       { width: 639, dockVisible: false, catBottom: '68px' },
       { width: 640, dockVisible: true, catBottom: '112px' },
@@ -119,8 +123,27 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
   });
 
   test('猫可拖动且位置持久化（拖过的猫以用户自选位置为准）', async ({ page }) => {
+    // 180 秒预算（2026-11-20，与 :178 同式）：猫脚本 lazyOnload，本地开发机
+    // 慢时单次挂载 20–45 秒；本用例首访 + 刷新后各等一次挂载，90 秒默认预算
+    // 不够用（本轮实测刷新后挂载等待里撞 90 秒线）。只放宽预算，断言一字不动。
+    test.setTimeout(180_000);
     await gotoHome(page, 700);
     await expectDockVisible(page);
+    // 前置（2026-11-20）：首屏瘦身（76b122a0）后全新 profile 下猫默认收起
+    // （xm-closed），.xm-stage 在 display:none 的主列里、拖动 pointerdown
+    // 永远落不到它身上，行内 left/top 写不出——不是拖动逻辑坏了，是猫没展开。
+    // 先点收起徽标（.xm-tab）展开再拖；断言一字不动（与 :178 的 U-260 前置同式）。
+    const isClosed = await page.evaluate(
+      () => document.querySelector('#xiaomaomao')?.classList.contains('xm-closed') ?? false,
+    );
+    if (isClosed) {
+      await page.locator(`${CAT} .xm-tab`).click({ timeout: 10_000 });
+      await page.waitForFunction(
+        () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-closed'),
+        { timeout: 10_000 },
+      );
+      await page.waitForTimeout(600); // 入场动画（xm-enter .32s）落定
+    }
     const cat = page.locator(`${CAT} .xm-stage`);
     const before = await page.locator(CAT).boundingBox();
     expect(before).not.toBeNull();
@@ -153,8 +176,30 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
   });
 
   test('猫面板展开后仍在视口内（抬高后面板随猫上移、不出视口）', async ({ page }) => {
+    // 180 秒预算（2026-11-20）：gotoHome 的猫挂载在慢机上即占 20–45 秒，
+    // 再加展开前置 + 等「我回来啦」气泡消失（4.5 秒），90 秒默认预算不够用。
+    // 只放宽预算，断言一字不动。
+    test.setTimeout(180_000);
     await gotoHome(page, 700);
     await expectDockVisible(page);
+    // 前置（2026-11-20）：首屏瘦身（76b122a0）后全新 profile 下猫默认收起
+    // （xm-closed），.xm-stage 在 display:none 的主列里、boundingBox 为 null，
+    // 聊天钮也点不到——先点收起徽标（.xm-tab）展开再开面板；断言一字不动
+    // （与 :178 的 U-260 前置同式）。
+    const isClosed = await page.evaluate(
+      () => document.querySelector('#xiaomaomao')?.classList.contains('xm-closed') ?? false,
+    );
+    if (isClosed) {
+      await page.locator(`${CAT} .xm-tab`).click({ timeout: 10_000 });
+      await page.waitForFunction(
+        () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-closed'),
+        { timeout: 10_000 },
+      );
+      await page.waitForTimeout(600); // 入场动画（xm-enter .32s）落定
+    }
+    // 展开会出「我回来啦」气泡（4.5 秒）：气泡在时悬停不开坞（showControls
+    // 遇气泡直接 return），须等气泡消失再悬停点聊天钮；无气泡时立即通过。
+    await expect(page.locator(`${CAT} .xm-bubble`)).not.toHaveClass(/xm-show/, { timeout: 10_000 });
     // 桌面悬停唤出悬浮坞，再点聊天钮开面板。注意不用 page.hover('.xm-stage')：
     // .xm-stage 带无限 xmFloat 浮动动画，Playwright 的 hover 要等元素 stable，
     // 永远等不到而超时；mouse.move 不做 stable 检查，同样能触发 root 的 pointerenter。

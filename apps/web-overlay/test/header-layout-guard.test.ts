@@ -41,8 +41,16 @@ describe('navigation-toolbar：顶栏 Flex 布局', () => {
     expect(src).toContain('justify-between gap-3 md:h-14 md:flex-nowrap')
   })
 
-  it('右侧工具组 shrink-0 flex items-center gap-1.5（不再 basis-full + overflow-hidden 裁剪）', () => {
-    expect(src).toContain('shrink-0 flex items-center gap-1.5')
+  // 订正（U-263，2026-11-20）：<sm 间隙由 gap-1.5 改回 gap-0.5（2px）+ overflow-hidden。
+  // 8ebc4b08 的 gap-1.5 全宽档让 360px 行宽 7×44+6×6=344px > 336px 可用宽、
+  // 390px 行宽 8×44+7×6=394px > 366px，菜单按钮挤出视口、整页横向溢出；
+  // 改回 <sm 2px 后 360px 320≤336、390px 366=366 恰好占满（见 U-155 宽度账）。
+  // overflow-hidden 在此不是 8ebc4b08 之前那种 basis-full 下的裁剪——本行无
+  // basis-full、行宽 fits、裁不到任何按钮；它是兜底（亚像素残留）与 E2E 量测锚点
+  //（toolbar-360-overflow.spec.ts 用 closest('div.overflow-hidden') 定位本行）。
+  // 原「不再 basis-full + overflow-hidden 裁剪」的意图仍由 not.toContain 守住。
+  it('右侧工具组 <sm gap-0.5 + overflow-hidden、≥sm gap-1.5（U-263 宽度账，不裁按钮）', () => {
+    expect(src).toContain('shrink-0 flex items-center gap-0.5 overflow-hidden sm:gap-1.5')
     expect(src).not.toContain('basis-full max-w-none md:basis-auto overflow-hidden')
   })
 

@@ -5,7 +5,7 @@
  *  2. R7 证红：整包单片（现状）超 750KB 红线；超大分类（2,000 站）必须切子片，
  *     每片仍在红线内；
  *  3. 瘦身投影 C：分片只带渲染字段（id/title/href/description/icon/enabled/
- *     status/tags/health + videoConfig/useDefaultIcon 透传），重字段
+ *     status/tags/hubId/health + videoConfig/useDefaultIcon 透传），重字段
  *     （weight/trendScore/actions/relations/liveMetrics/workspaces）不在分片里；
  *     拼装树在渲染字段上与整包逐字等值（processNavigationSubItem 本就丢掉重字段，
  *     故 getProcessedData 输出不变）；
@@ -61,6 +61,8 @@ function syntheticSite(catId: string, i: number): Record<string, unknown> {
     icon: `https://example-${catId}-${i}.com/favicon.ico`,
     enabled: true,
     status: "active",
+    // 03 §2.3：hubId 必须随瘦身投影进分片（W2b：白名单漏了即静默丢字段）
+    hubId: `${catId}-site-${i}`,
     weight: 100 + (i % 50),
     trendScore: 5 + (i % 10),
     tags: ["测试", "分片"],
@@ -101,8 +103,8 @@ function countItems(doc: { navigationItems: Array<Record<string, unknown>> }): n
   return n;
 }
 
-/** 渲染字段白名单（与 data-loader.ts 的 processNavigationSubItem 逐字一致） */
-const RENDER_FIELDS = ["id", "title", "href", "description", "icon", "useDefaultIcon", "enabled", "status", "tags", "health", "videoConfig"] as const;
+/** 渲染字段白名单（与 data-loader.ts 的 processNavigationSubItem 逐字一致，含 03 的 hubId） */
+const RENDER_FIELDS = ["id", "title", "href", "description", "icon", "useDefaultIcon", "enabled", "status", "tags", "hubId", "health", "videoConfig"] as const;
 
 function renderProjection(item: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};

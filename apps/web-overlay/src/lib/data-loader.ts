@@ -72,6 +72,10 @@ export function processNavigationSubItem(item: NavigationSubItemRaw): Navigation
         // 已于 2026-11-12 移除，不再消费本字段（见 dead-link.ts 文件头）。
         // 没有该字段时仍为 undefined，不影响其它渲染。
         health: item.health,
+        // 透传中枢站点 id（03 §2.3 步骤 2）：与 health 同款原样透传，
+        // 不做转换、不做归一化；hubId = id（情况一，W1 实测），
+        // 卡片健康徽标靠它把分片条目与中枢巡检 health 对上。
+        hubId: item.hubId,
         videoConfig
     }
 }

@@ -28,22 +28,31 @@ function isSearchInput(el: Element | null): boolean {
 export function HomeSubtitleHint({ tagline }: { tagline?: string }) {
   const [mounted, setMounted] = useState(false)
   const [dismissed, setDismissed] = useState(true)
-  const [isFirstVisit, setIsFirstVisit] = useState(false)
+  // 首次访问只判定一次（懒初始化，渲染时读本机）：StrictMode 会两次调用 effect，
+  // 若在 effect 里先写 visited 再重读，第二次会误判为「非首次」导致提示不出现。
+  // 这里在首帧渲染时就定下 isFirstVisit，effect 只负责把 visited 落盘（供下次访问用），
+  // 不再重读重算。SSR 时 window 不存在，返回 false（反正 mounted 前不渲染，无水合差）。
+  const [isFirstVisit] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      return window.localStorage.getItem(VISITED_KEY) !== '1'
+    } catch {
+      return false
+    }
+  })
   const [searchFocused, setSearchFocused] = useState(false)
 
   useEffect(() => {
     setMounted(true)
     try {
       setDismissed(window.localStorage.getItem(DISMISSED_KEY) === '1')
-      const visited = window.localStorage.getItem(VISITED_KEY) === '1'
-      setIsFirstVisit(!visited)
-      if (!visited) {
+      // 首次访问落盘（供下次访问判定用）；本次的 isFirstVisit 已由懒初始化定下，不重读
+      if (isFirstVisit) {
         window.localStorage.setItem(VISITED_KEY, '1')
       }
     } catch {
       // 存储受限时默认不展示（不打扰），搜索聚焦仍可触发
       setDismissed(false)
-      setIsFirstVisit(false)
     }
 
     const onFocusIn = (e: FocusEvent) => {
@@ -60,7 +69,7 @@ export function HomeSubtitleHint({ tagline }: { tagline?: string }) {
       document.removeEventListener('focusin', onFocusIn)
       document.removeEventListener('focusout', onFocusOut)
     }
-  }, [])
+  }, [isFirstVisit])
 
   const dismiss = () => {
     setDismissed(true)

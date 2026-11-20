@@ -137,9 +137,14 @@ describe("无障碍细节（footer 分隔符与移动表单字号）", () => {
   it("站点卡片操作在触屏（无 hover）时强制可见（pointer-coarse，V13）", () => {
     const src = overlayFile("src/components/navigation-card.tsx");
     const hits = src.split("pointer-coarse:opacity-100").length - 1;
+    // 6 = 3 处药丸操作簇 + 3 处收藏星标：37352f52（首屏瘦身 SiteCard 升级）有意把
+    // 三形态收藏星标各包一层与药丸操作区同款显隐（默认 opacity-0，悬停/聚焦/
+    // 触屏时可见，编排态常显），三处星标因此各新增一处 pointer-coarse:opacity-100，
+    // 基线 3 → 6。六处缺一处都会让触屏用户看不到对应收藏/置顶按钮，故锁 6——
+    // 不是放宽，是把新增的三处星标触屏可见性也锁进来（同文件 98635cb2/U-155 基线改写惯例）。
     expect(
       hits,
-      "三处 hover-reveal 操作簇都应带 pointer-coarse:opacity-100——否则触屏用户永远看不到收藏/置顶按钮",
-    ).toBe(3);
+      "六处 hover-reveal 元素（3 处药丸操作簇 + 3 处收藏星标）都应带 pointer-coarse:opacity-100——否则触屏用户永远看不到收藏/置顶按钮",
+    ).toBe(6);
   });
 });

@@ -1843,8 +1843,11 @@ export function SpotlightModal({
                 </div>
               )}
 
-              {/* 零结果提示：「没搜到」和「没搜成」是两句话，不能混着说 */}
-              {!loading && query.trim() && displayHits.length === 0 && (!pluginHits || pluginHits.items.length === 0) && (
+              {/* 零结果提示：「没搜到」和「没搜成」是两句话，不能混着说。
+                  空态只按站点计（displayHits）：插件是独立通道，插件命中不能掩盖
+                  "没有找到相关站点"；插件结果在独立区块展示，文案按有无插件结果分流，
+                  避免"没有匹配的站点或插件"在插件命中时说错话。 */}
+              {!loading && query.trim() && displayHits.length === 0 && (
                 <div className="py-12 text-center space-y-2">
                   {sitesUnavailable ? (
                     <>
@@ -1887,7 +1890,15 @@ export function SpotlightModal({
                         没有找到相关站点
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        0 条结果。没有与 “<span className="text-foreground font-medium">{query}</span>” 匹配的站点或插件
+                        {pluginHits && pluginHits.items.length > 0 ? (
+                          <>
+                            0 条站点结果。下方是插件市场的相关结果。
+                          </>
+                        ) : (
+                          <>
+                            0 条结果。没有与 “<span className="text-foreground font-medium">{query}</span>” 匹配的站点或插件
+                          </>
+                        )}
                       </div>
                       <div className="pt-2 flex items-center justify-center gap-2">
                         <button

@@ -1344,8 +1344,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const panel = planSearchPanel({
     loading: loading || pluginLoading,
     degraded,
-    // 展示口径：弱语义填充不算"找到"，没有强匹配时 hitCount 为 0，面板走真空态
-    hitCount: displayHits.length + pluginItems.length,
+    // 展示口径：只计站点（displayHits）。插件是独立通道——插件命中不能掩盖"没有找到相关站点"，
+    // 否则无意义词因插件按单字弱匹配（如"站"）命中而永远看不到站点空态。
+    // 插件结果仍在独立区块展示；站点空态只回答"有没有找到站点"。
+    hitCount: displayHits.length,
     query,
     hasWidgetResult: Boolean(
       speculativeResult ||

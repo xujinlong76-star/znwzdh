@@ -139,7 +139,10 @@ describe("无障碍细节（footer 分隔符与移动表单字号）", () => {
     const hits = src.split("pointer-coarse:opacity-100").length - 1;
     expect(
       hits,
-      "三处 hover-reveal 操作簇都应带 pointer-coarse:opacity-100——否则触屏用户永远看不到收藏/置顶按钮",
-    ).toBe(3);
+      // 6 = 3 种卡片渲染变体（compact / rich / standard）× 每变体 2 处操作簇
+      // （操作按钮簇 + 收藏星标簇）；首屏瘦身批把星标拆为独立 hover-reveal
+      // 簇后由 3 增至 6，守卫计数同步更新（U-261，2026-11-20 实测）。
+      "六处 hover-reveal 操作簇都应带 pointer-coarse:opacity-100——否则触屏用户永远看不到收藏/置顶按钮",
+    ).toBe(6);
   });
 });

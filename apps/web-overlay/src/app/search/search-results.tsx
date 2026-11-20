@@ -19,6 +19,7 @@ import { pluginDetailHref } from '@/lib/plugins/detail-href'
 import { Fragment } from 'react'
 import { highlightParts } from '@/lib/highlight'
 import { SearchFacetBar, type FacetGroup } from '@/components/search-facet-bar'
+import { SearchEngineSwitch } from '@/components/search/search-engine-switch'
 import { ZeroResultActions } from '@/components/search/zero-result-actions'
 import { AlgorithmHudBadge } from '@/components/algorithm-hud-badge'
 import { WantedActions } from '@/components/search/wanted-actions'
@@ -797,6 +798,9 @@ export function SearchResults({
                 : '从站内全部收录站点中检索，支持中文、拼音与语义匹配；结果是可分享、可回退的固定链接。'}
             </p>
             <form action="/search" method="get" role="search" className="flex items-center gap-2">
+              {/* W4-0622-1：搜索框旁一级引擎切换（客户端岛，只复用 defaultSearchEngine
+                  偏好；选站外引擎时提交拦截跳站外，选站内照常 GET 到 /search）。 */}
+              <SearchEngineSwitch />
               <label htmlFor="site-search-q" className="sr-only">
                 搜索关键词
               </label>

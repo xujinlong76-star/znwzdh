@@ -137,7 +137,18 @@ export function NavigationToolbar({
                 </Button>
               ) : null}
             </div>
-            <div className="shrink-0 flex items-center gap-1.5">
+            {/* 工具栏按钮行（U-263，2026-11-20）：<sm 用 gap-0.5（2px）+ overflow-hidden。
+                顶栏重构 8ebc4b08 把本行由 `gap-0.5 sm:gap-1 … overflow-hidden`
+                改成 `gap-1.5` 且去掉 overflow-hidden，行宽随之超标：360px 下
+                7×44px + 6×6px = 344px > 360−24px 可用宽，390px 下 8×44px + 7×6px
+                = 394px > 390−24px，菜单按钮被挤出视口、整页横向溢出；且
+                e2e/toolbar-360-overflow.spec.ts 用 closest('div.overflow-hidden')
+                定位本行，类名一丢量测直接 found=false。
+                改回 <sm 2px 间隙：360px 行宽 7×44 + 6×2 = 320px ≤ 336px，
+                390px 行宽 8×44 + 7×2 = 366px = 390−24px 恰好占满；≥sm 仍用
+                gap-1.5，桌面间距保持 8ebc4b08 的样子。overflow-hidden 同时兜底
+                亚像素残留外溢（下拉菜单走 Radix Portal，不会被裁）。 */}
+            <div className="shrink-0 flex items-center gap-0.5 overflow-hidden sm:gap-1.5">
               {/* 📅 今日中心小窗入口（A2：专注、考试提醒、简报、接力连胜统一收纳） */}
               {onOpenTodayCenter ? (
                 <Button

@@ -287,10 +287,12 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
             </div>
           )}
           <div className="flex flex-col min-w-0 shrink-0">
-            {/* 首屏瘦身：侧边栏品牌为页面唯一 h1（主内容区大号 H1 已移除；
+            {/* 首屏瘦身：侧边栏品牌为桌面端页面 h1（主内容区大号 H1 已移除；
                 不走 sr-only 隐藏术）。侧边栏在桌面与移动抽屉各渲染一次，
-                移动抽屉传 brandAsHeading={false} 渲染为 span，保证 DOM 内
-                恰好一个 h1（复核 2026-11-20 首屏瘦身第 1 项）。 */}
+                移动抽屉传 brandAsHeading={false} 渲染为 span；移动端主标题
+                另见 navigation-content <main> 内 md:hidden 的 h1（U-263，
+                抽屉关闭态 aria-hidden + inert 使抽屉 h1 不可感知）——同一视口
+                恰好一个可感知 h1，DOM 内共两个。 */}
             {brandAsHeading ? (
               <h1 className="leading-tight font-bold text-foreground text-[14px] tracking-tight whitespace-nowrap">{siteInfo.basic.title}</h1>
             ) : (

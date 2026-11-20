@@ -126,7 +126,8 @@ describe("planSearchPanel：真零结果也必须有出口", () => {
     // 查询词的 trim 仍须保证——它进 ai-find 文案与 submit 预填
     const plan = planSearchPanel({ ...base, query: "  pinyin  " });
     expect(plan.title).toBe("没有找到相关站点");
-    expect(plan.actions.find((a) => a.kind === "ai-find")?.label).toContain("“pinyin”");
+    // ai-find 文案用「」括查询词（不是“”），与 search-panel.ts 的 label 模板一致
+    expect(plan.actions.find((a) => a.kind === "ai-find")?.label).toContain("「pinyin」");
     expect(plan.actions.find((a) => a.kind === "submit-site")?.href).toBe("/submit?title=pinyin");
   });
 
@@ -180,7 +181,8 @@ describe("search-palette 源码：竞态与矛盾文案的回归守卫", () => {
   it("「加载更多」失败不等于召回池到底（按钮不能因一次网络故障永久消失）", () => {
     // catch 里只能置 moreFailed；置 hasMore=false 就是把「没拉到」说成「没有了」
     expect(src).toContain("setMoreFailed(true)");
-    expect(src).toContain("再试一次（已显示 ${hits.length} 条）");
+    // 2026-11-20 搜索修复：计数口径改为展示列表 displayHits（弱语义填充不算"已显示"）
+    expect(src).toContain("再试一次（已显示 ${displayHits.length} 条）");
     // 精确取 loadMore 的 catch 块：置 hasMore=false 就是把「没拉到」说成「没有了」
     const moreCatch = src.match(/\.catch\(\(\) => \{[^}]*setMoreFailed\(true\)[^}]*\}\)/)
     expect(moreCatch).not.toBeNull()

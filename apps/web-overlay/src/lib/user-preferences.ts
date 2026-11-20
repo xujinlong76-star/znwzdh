@@ -217,8 +217,10 @@ function isEditableTarget(target: EventTarget | null): boolean {
 export function topSearchHotkeyMatches(event: KeyboardEvent): boolean {
   const key = typeof event.key === 'string' ? event.key : ''
   // Shift+K 不算：那是开超级搜索的键；e.shiftKey 时 key 仍是 'k'（小写 k
-  // 还是大写 K 取决于浏览器），所以必须显式排除 shift
-  return (event.metaKey || event.ctrlKey) && !event.shiftKey && key.toLowerCase() === 'k'
+  // 还是大写 K 取决于浏览器），所以必须显式排除 shift。
+  // 显式 Boolean：metaKey/ctrlKey 缺失时 (undefined || undefined) 是 undefined，
+  // 直接返回会让调用方拿到 undefined 而不是 false。
+  return Boolean((event.metaKey || event.ctrlKey) && !event.shiftKey && key.toLowerCase() === 'k')
 }
 
 export function spotlightModalHotkeyMatches(event: KeyboardEvent, mode: SpotlightShortcutMode): boolean {

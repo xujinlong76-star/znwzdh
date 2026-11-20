@@ -292,13 +292,14 @@ describe('零结果出口：站外直达只在用户选了外部引擎时出现'
     // 两个站内真出口排最前——它们走站内中枢，不依赖外部引擎开关。
     // 第 5 项新增的两个站内真出口（存为待找 / 新建收藏）排在其后、浏览类之前：
     // 它们同样是站内动作，不带 external 标记，与「站外动作绝不出现」的本意不冲突。
-    // 期望顺序须与 search-panel.ts 的 plan 构造顺序一致。
+    // 2026-11-20 搜索假空态修复（William 点名）：「换关键词」（clear）排到最前，
+    // 与 AI 找站并列为两个出口；期望顺序须与 search-panel.ts 的 plan 构造顺序一致。
     expect(planSearchPanel(panelBase).actions.map((a) => a.kind)).toEqual([
+      'clear',
       'ai-find',
       'submit-site',
       'save-wanted',
       'save-favorite',
-      'clear',
       'browse-tags',
       'browse-hot',
     ])
@@ -400,9 +401,16 @@ describe('接线守卫：这五项偏好各自都有真实消费者', () => {
   })
 
   it('spotlightShortcut → 呼出与徽标都走同一判据', () => {
-    expect(overlayCode('src/components/search/global-spotlight-gateway.tsx')).toContain('spotlightHotkeyMatches')
+    // 2026-11-20 搜索快捷键分流：呼出键拆成两判据——spotlightModalHotkeyMatches
+    // （Ctrl/⌘+Shift+K 或 /，开超级搜索）与 topSearchHotkeyMatches（Ctrl/⌘+K，
+    // 聚焦顶栏）。网守与弹窗都要接这两个判据，旧的 spotlightHotkeyMatches
+    // 已改为前者的同义入口，不再直接出现在调用方。
+    const gateway = overlayCode('src/components/search/global-spotlight-gateway.tsx')
+    expect(gateway).toContain('spotlightModalHotkeyMatches')
+    expect(gateway).toContain('topSearchHotkeyMatches')
     const modal = overlayCode('src/components/search/spotlight-modal.tsx')
-    expect(modal).toContain('spotlightHotkeyMatches')
+    expect(modal).toContain('spotlightModalHotkeyMatches')
+    expect(modal).toContain('topSearchHotkeyMatches')
     expect(modal).toContain('useSpotlightShortcutMode')
     expect(overlayCode('src/components/search-palette.tsx')).toContain('spotlightHotkeyHint')
   })

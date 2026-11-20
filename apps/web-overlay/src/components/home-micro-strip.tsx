@@ -13,6 +13,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { Clapperboard, Compass, Puzzle, Sparkles } from 'lucide-react'
 import { useWatchlist } from '@/hooks/useWatchlist'
+import { formatRelativeTime } from '@/lib/format-relative-time'
 import { HorizontalScrollFade } from '@/components/horizontal-scroll-fade'
 import type { CinemaInitialData } from '@/components/home-drama-cinema'
 import type { HubPluginItem } from '@/lib/navhub-api'
@@ -80,6 +81,16 @@ export function HomeMicroStrip({
   }, [initialSceneParam])
 
   const latestWatch = watchlistReady && watchlistEntries.length > 0 ? watchlistEntries[0] : null
+  // B1 收尾：胶囊时间 meta——只写该剧真实改进度的时间。还没开始看
+  // （episode = 0）或 lastProgressAt 非法时不写，绝不渲染“—”。
+  const latestWatchProgress =
+    latestWatch &&
+    latestWatch.episode > 0 &&
+    typeof latestWatch.lastProgressAt === 'number' &&
+    Number.isFinite(latestWatch.lastProgressAt) &&
+    latestWatch.lastProgressAt > 0
+      ? formatRelativeTime(latestWatch.lastProgressAt)
+      : null
   const topPlugins = pluginItems?.slice(0, 2) ?? []
   // 运营胶囊按场景 Tab 动态展示（首屏瘦身）：研发全栈 / AI 实验室场景下
   // 隐藏短剧推广胶囊（该场景用户以研发与 AI 找站为主），其余场景保持单行轻量。
@@ -104,6 +115,7 @@ export function HomeMicroStrip({
               <Clapperboard className="h-3.5 w-3.5 shrink-0" />
               <span className="max-w-[170px] truncate">
                 {latestWatch ? `继续追《${latestWatch.title}》` : '今日短剧热榜'}
+                {latestWatchProgress ? ` · ${latestWatchProgress}` : ''}
               </span>
             </button>
             <span aria-hidden="true" className="mx-1.5 opacity-40">|</span>

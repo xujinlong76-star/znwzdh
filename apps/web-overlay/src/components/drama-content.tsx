@@ -15,6 +15,7 @@ import { useDramaCalendar, useDramaRankings } from "@/hooks/useDramaData";
 import { useDramaCheckStates } from "@/hooks/useDramaCheckStates";
 import { useWatchlist } from "@/hooks/useWatchlist";
 import { safeHref } from "@/lib/safe-url";
+import { formatRelativeTime } from "@/lib/format-relative-time";
 import {
   cadenceLabel,
   isReminderDue,
@@ -86,6 +87,20 @@ function continueBadge(entry: WatchEntry, now: Date): string {
   if (isReminderDue(entry, now)) return "今日待看";
   if (entry.cadence.kind === "unknown") return "可查更新";
   return cadenceLabel(entry.cadence);
+}
+
+/**
+ * “继续追”行时间 meta（B1 收尾）：只写真实改进度的时间。
+ * - episode > 0 且 lastProgressAt 合法才写“上次进度 ×天前”；
+ * - 还没开始看（episode = 0）的剧没有进度可写，不写时间；
+ * - lastProgressAt 非法（NaN / ≤0 / 非数字）时整段省略，绝不渲染 formatRelativeTime 的“—”。
+ * 时间只在页面刷新时重算，与相对时间函数的其余调用点同口径。
+ */
+function progressTimeMeta(entry: WatchEntry, now: Date): string | null {
+  if (entry.episode <= 0) return null;
+  const ts = entry.lastProgressAt;
+  if (typeof ts !== "number" || !Number.isFinite(ts) || ts <= 0) return null;
+  return `上次进度 ${formatRelativeTime(ts, now.getTime())}`;
 }
 
 export function DramaContent({
@@ -259,6 +274,7 @@ export function DramaContent({
               const latestText = latestEpisodeText(state);
               const showUnknown =
                 latestText === null && checkableFeaturedKeys.has(entry.key);
+              const progressMeta = progressTimeMeta(entry, now);
               return (
                 <li
                   key={entry.key}
@@ -285,6 +301,7 @@ export function DramaContent({
                     {entry.episode > 0 ? `看到第 ${entry.episode} 集` : "还没开始看"}
                     {latestText ? ` · ${latestText}` : ""}
                     {showUnknown ? " · 未查到最新集数" : ""}
+                    {progressMeta ? ` · ${progressMeta}` : ""}
                   </p>
                   <p className="mt-2">
                     <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">

@@ -137,9 +137,13 @@ describe("无障碍细节（footer 分隔符与移动表单字号）", () => {
   it("站点卡片操作在触屏（无 hover）时强制可见（pointer-coarse，V13）", () => {
     const src = overlayFile("src/components/navigation-card.tsx");
     const hits = src.split("pointer-coarse:opacity-100").length - 1;
+    // 37352f52 SiteCard 升级后卡片有三条渲染路径（紧凑行卡 / 富卡 / 标准卡），
+    // 每条各有操作区簇 + 收藏星簇，共 6 处 hover-reveal 簇（此前 3 处）；
+    // 断言形状不变：仍要求每一处簇都带 pointer-coarse:opacity-100，
+    // 否则触屏用户永远看不到收藏/置顶按钮。
     expect(
       hits,
-      "三处 hover-reveal 操作簇都应带 pointer-coarse:opacity-100——否则触屏用户永远看不到收藏/置顶按钮",
-    ).toBe(3);
+      "六处 hover-reveal 操作簇都应带 pointer-coarse:opacity-100——否则触屏用户永远看不到收藏/置顶按钮",
+    ).toBe(6);
   });
 });

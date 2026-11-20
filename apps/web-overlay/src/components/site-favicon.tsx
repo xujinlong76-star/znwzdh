@@ -769,6 +769,24 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 浅/深主题下均显白底方块，无底块（resolveLogoTile 为 null），
   // 不做单站补丁，留待统一处理轮。
   ['midjourney.com', 'midjourney.png'],
+  // 2026-11-20（C 类第 7 批 C7 补批 W3，2/2）：DramaBox / DramaWave。
+  // 2 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
+  // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 全库 383 站核对：2 个 map 键各只命中 1 站，无后缀串站。
+  // DramaBox 来源：首页声明的 /favicon.ico（200，1,393 B，32×32 ICO
+  // 内含 PNG）与页眉官方标 logo.png（176×176）为同一粉红 D-play 标，
+  // 取 176 源 LANCZOS 缩至 128×128 落盘（m-logo.png 362×80 为宽版
+  // wordmark，不作 tile）。DramaWave 来源：首页 JS 默认 icon
+  // '/dramawave.ico'（与 /favicon.ico md5 相同，200，4,286 B，32×32）
+  // 与 apple-touch-icon '/Logo.png'（512×512）为同一品红渐变 D-play
+  // 标（32px 小图初看易误读为 W，4 倍放大核对确为 D-play 标，与
+  // Logo.png 一致），取 512 源 LANCZOS 缩至 128×128 落盘。
+  // dramabox.png 15,595 B 略超光栅单站 ~15 KB 参考线（235 B），按原样
+  // 接线、字节数钉死，见 C7W3 测试事实钉死（C12 chinatax/forestry
+  // 超线原样先例）。两标均为不透明渐变底，深/浅主题均可辨，不进
+  // LOGO_TILE_MAP。
+  ['dramaboxdb.com', 'dramabox.png'],
+  ['mydramawave.com', 'dramawave.png'],
   // 2026-11-20（U-08 补站 Rancher）：站方 favicon.ico 为 0 B 不可用，
   // 站 icon 字段用站方 head 自声明的 favicon.png，被 isRemoteRawFavicon
   // 拦截后回落 map；品牌标为 Simple Icons 原样 SVG（1,337 B，fill

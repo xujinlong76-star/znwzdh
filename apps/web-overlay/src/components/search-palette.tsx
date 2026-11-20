@@ -86,6 +86,7 @@ import {
 import { matchScenePaletteActions } from '@/lib/modular/scene-palette-actions'
 import { performSceneSwitch, useUserScenes } from '@/components/scene-switcher'
 import {
+  altDigitFromKeyOrCode,
   altDigitTargetIndex,
   buildPaletteNavItems,
   matchPaletteActions,
@@ -1355,9 +1356,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       // Alt+数字直达前 10 条（04 §4.1，裁决 D1）：Alt+1..9 → navItems[0..8]，
       // Alt+0 → navItems[9]。裸数字不劫持打字（输 123 正常进文本）；
       // meta/ctrl 同时按下时不触发（浏览器/系统组合键优先）。
+      // macOS 回退（W6b 补丁 3，协调员已批）：macOS 上 Option+数字的
+      // e.key 是 ¡/™ 等特殊字符，用 e.code（Digit*/Numpad*）取 OR 兜底。
       // 注意：这里不加 IME 守卫（W7 的活），本分支不碰 composing 相关代码。
       if (e.altKey && !e.metaKey && !e.ctrlKey) {
-        const target = altDigitTargetIndex(e.key, navItems.length)
+        const digit = altDigitFromKeyOrCode(e.key, e.code)
+        const target = digit !== null ? altDigitTargetIndex(digit, navItems.length) : null
         if (target !== null) {
           // 与 Enter 打开同一行完全相同的打开逻辑：点真实元素（站点行 onClick
           // 打开、插件行 Link 跳转、建议行采纳），打开后按各行既有行为关闭面板
@@ -1371,7 +1375,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           return
         }
         // Alt+数字但超出结果数（如只有 3 条时 Alt+5）：静默无操作，不落到其他分支。
-        if (e.key.length === 1 && e.key >= '0' && e.key <= '9') return
+        if (digit !== null) return
       }
       if (e.key === 'Enter') {
         // 优先级：quicklink 精确匹配 > OMNI_ENGINES 硬编码引擎 > 导航第一条结果。

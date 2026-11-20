@@ -119,7 +119,9 @@ describe('PaletteFooterHint（D3：底部提示行文案逐字）', () => {
 describe('onSearchKeyDown 的 Alt+数字分支（D1/D2 接线守卫）', () => {
   it('分支在 ArrowDown/ArrowUp 之后、Enter 之前', () => {
     const arrowAt = paletteSrc.indexOf("e.key === 'ArrowUp'")
-    const altAt = paletteSrc.indexOf('altDigitTargetIndex(e.key, navItems.length)')
+    // W6b 补丁 3：Alt 分支先经 altDigitFromKeyOrCode(e.key, e.code) 取数字
+    // （macOS e.code 回退），再调 altDigitTargetIndex(digit, …)
+    const altAt = paletteSrc.indexOf('altDigitFromKeyOrCode(e.key, e.code)')
     const enterAt = paletteSrc.indexOf("if (e.key === 'Enter') {")
     expect(arrowAt).toBeGreaterThan(-1)
     expect(altAt).toBeGreaterThan(arrowAt)
@@ -131,7 +133,7 @@ describe('onSearchKeyDown 的 Alt+数字分支（D1/D2 接线守卫）', () => {
   })
 
   it('命中后与 Enter 打开同一行：先滚进可视区再点真实元素（与 Enter 分支同款）', () => {
-    const altAt = paletteSrc.indexOf('altDigitTargetIndex(e.key, navItems.length)')
+    const altAt = paletteSrc.indexOf('altDigitFromKeyOrCode(e.key, e.code)')
     const enterAt = paletteSrc.indexOf("if (e.key === 'Enter') {")
     const segment = paletteSrc.slice(altAt, enterAt)
     expect(segment).toContain('const el = findOptionElement(target)')
@@ -140,7 +142,10 @@ describe('onSearchKeyDown 的 Alt+数字分支（D1/D2 接线守卫）', () => {
   })
 
   it('超出长度静默无操作：Alt+数字越界时 return，不落到其他分支', () => {
-    expect(paletteSrc).toContain("if (e.key.length === 1 && e.key >= '0' && e.key <= '9') return")
+    // W6b 补丁 3：越界守卫改用 digit（key/code 取 OR 后的数字字符），
+    // macOS 上 e.key 是 ¡/™ 时越界同样静默，不落到 Enter 分支
+    expect(paletteSrc).toContain('if (digit !== null) return')
+    expect(paletteSrc).toContain('altDigitFromKeyOrCode(e.key, e.code)')
   })
 
   it('本分支不碰 IME：全文件无 isComposing / onComposition（那是 W7 的活，不冲突）', () => {

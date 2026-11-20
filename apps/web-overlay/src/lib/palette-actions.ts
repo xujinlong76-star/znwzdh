@@ -532,6 +532,21 @@ export function altDigitTargetIndex(key: string, itemCount: number): number | nu
 }
 
 /**
+ * Alt+数字的按键 → 数字字符（04 §4.1 的 macOS 回退，纯函数，可单测）。
+ *
+ * macOS 上 Option+数字的 `e.key` 是 ¡/™/£ 等特殊字符而非数字（W6 遗留 4，
+ * 协调员已批补 `e.code` 回退）：`Digit1`–`Digit0` 与 `Numpad1`–`Numpad0`
+ * 的物理键位与 `e.key` 的数字判断取 OR。`e.key` 是数字时优先用它；
+ * 否则看 `e.code`（`Digit`/`Numpad` 后缀即数字键位）；两者都不是时 null。
+ */
+export function altDigitFromKeyOrCode(key: string, code?: string): string | null {
+  if (key.length === 1 && key >= '0' && key <= '9') return key
+  if (!code) return null
+  const match = /^(?:Digit|Numpad)([0-9])$/.exec(code)
+  return match ? match[1]! : null
+}
+
+/**
  * 键盘可导航项的唯一顺序来源（组件渲染顺序必须与这里一致，否则
  * ↑↓ 会跳到另一行）。快捷链接排在建议之后、DIY 之前：命令命中时
  * 它是回车的第一目标（优先级：quicklink > OMNI 硬编码引擎 > 导航首条），

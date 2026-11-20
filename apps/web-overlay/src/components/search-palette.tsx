@@ -47,7 +47,7 @@ import {
   type RecentSearchItem,
 } from '@/lib/recent-search'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
-import { recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
+import { mruScore, recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
 import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
 import { rankSearchHits } from '@/lib/search-rerank'
@@ -87,6 +87,7 @@ import {
 import { matchScenePaletteActions } from '@/lib/modular/scene-palette-actions'
 import { performSceneSwitch, useUserScenes } from '@/components/scene-switcher'
 import {
+  altDigitTargetIndex,
   buildPaletteNavItems,
   matchPaletteActions,
   matchPaletteFavorites,
@@ -240,6 +241,56 @@ interface SearchPaletteProps {
   /** 类目筛选（侧栏点击类目时带入） */
   categoryId?: string
   placeholder?: string
+}
+
+/**
+ * 数字徽标（04 §4.2）：navItems 前 10 条（index 0..9）显示 1..9、0，
+ * 第 11 条起不显示；行首、图标左侧，复用行内 kbd 样式；纯视觉辅助，
+ * `aria-hidden="true"`（读屏器读行标题即可，Alt+数字的操作说明在底部提示行）。
+ */
+export function NavDigitBadge({ index }: { index: number }) {
+  if (index < 0 || index > 9) return null
+  const digit = index === 9 ? '0' : String(index + 1)
+  return (
+    <kbd
+      aria-hidden="true"
+      className="px-1.5 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[10px] text-muted-foreground shrink-0"
+    >
+      {digit}
+    </kbd>
+  )
+}
+
+/**
+ * 面板底部快捷键提示（04 §7.3）：文案一字不差——
+ * `↑↓ 选择 · Enter 打开 · Alt+1–0 直达前 10 条 · Esc 关闭`
+ *（`·` 为分隔，`–` 为 en dash；kbd 键位芯片只影响样式，不影响文案）。
+ */
+export function PaletteFooterHint() {
+  return (
+    <>
+      <span className="inline-flex items-center gap-1">
+        <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↑</kbd>
+        <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↓</kbd>
+        {' '}选择
+      </span>
+      {' · '}
+      <span className="inline-flex items-center gap-1">
+        <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Enter</kbd>
+        {' '}打开
+      </span>
+      {' · '}
+      <span className="inline-flex items-center gap-1">
+        <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Alt+1–0</kbd>
+        {' '}直达前 10 条
+      </span>
+      {' · '}
+      <span className="inline-flex items-center gap-1">
+        <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Esc</kbd>
+        {' '}关闭
+      </span>
+    </>
+  )
 }
 
 export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导航…（中文 / 拼音 / 语义）（按 / 快速搜索）' }: SearchPaletteProps) {
@@ -1124,6 +1175,21 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     () => matchPaletteQuicklinks(query, quicklinkEntries),
     [query, quicklinkEntries],
   )
+  /**
+   * 收藏行的 MRU 归一分（04 §3.3/§6）：`mruNorm = mruScore / 100`，无记录为 0，
+   * 随 `matchPaletteFavorites` 传给 §6 总分的 0.15 权重项。建库起点取本次
+   * 快照最早一条（与 `topFrequentVisits` 同口径）；同一调用内只取一次 now。
+   * 注意：`recentVisits` 只含最近 8 条快照（空面板直达区同款数据源），
+   * 8 条之外的收藏拿不到 MRU 加分——见 PoC 报告遗留。
+   */
+  const mruNormBySiteId = useMemo(() => {
+    const map = new Map<string, number>()
+    if (recentVisits.length === 0) return map
+    const now = Date.now()
+    const earliestVisitedAt = Math.min(...recentVisits.map((v) => v.visitedAt))
+    for (const v of recentVisits) map.set(v.id, mruScore(v, now, earliestVisitedAt) / 100)
+    return map
+  }, [recentVisits])
   const matchedPaletteFavorites = useMemo(
     () =>
       matchPaletteFavorites(query, favorites.items, {
@@ -1131,8 +1197,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           ...hits.map((h) => h.siteId),
           ...(quicklinkMatch ? [quicklinkMatch.entry.siteId] : []),
         ]),
+        mruNormBySiteId,
       }),
-    [query, favorites.items, hits, quicklinkMatch],
+    [query, favorites.items, hits, quicklinkMatch, mruNormBySiteId],
   )
   /** 空查询面板直接展示的四操作（matchPaletteActions('') 即全部）与收藏 */
   const emptyPanelActions = useMemo(
@@ -1288,6 +1355,27 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           return prev <= 0 ? navItems.length - 1 : prev - 1
         })
         return
+      }
+      // Alt+数字直达前 10 条（04 §4.1，裁决 D1）：Alt+1..9 → navItems[0..8]，
+      // Alt+0 → navItems[9]。裸数字不劫持打字（输 123 正常进文本）；
+      // meta/ctrl 同时按下时不触发（浏览器/系统组合键优先）。
+      // 注意：这里不加 IME 守卫（W7 的活），本分支不碰 composing 相关代码。
+      if (e.altKey && !e.metaKey && !e.ctrlKey) {
+        const target = altDigitTargetIndex(e.key, navItems.length)
+        if (target !== null) {
+          // 与 Enter 打开同一行完全相同的打开逻辑：点真实元素（站点行 onClick
+          // 打开、插件行 Link 跳转、建议行采纳），打开后按各行既有行为关闭面板
+          // 并 recordOfflineVisit；先滚进可视区再打开（§7.4）。
+          const el = findOptionElement(target)
+          if (el) {
+            e.preventDefault()
+            el.scrollIntoView({ block: 'nearest' })
+            el.click()
+          }
+          return
+        }
+        // Alt+数字但超出结果数（如只有 3 条时 Alt+5）：静默无操作，不落到其他分支。
+        if (e.key.length === 1 && e.key >= '0' && e.key <= '9') return
       }
       if (e.key === 'Enter') {
         // 优先级：quicklink 精确匹配 > OMNI_ENGINES 硬编码引擎 > 导航第一条结果。
@@ -1944,6 +2032,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       }`
                       const inner = (
                         <>
+                          <NavDigitBadge index={idx} />
                           <span className="min-w-0 flex-1">
                             <span className="block text-sm font-medium truncate">
                               <Highlighted text={item.label} query={query} />
@@ -2012,6 +2101,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                           }`}
                         >
+                          <NavDigitBadge index={idx} />
                           <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-mono text-[10px] font-bold shrink-0">
                             !{item.entry.quickPrefix}
                           </span>
@@ -2054,6 +2144,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                           }`}
                         >
+                          <NavDigitBadge index={idx} />
                           <span className="w-8 h-8 rounded-lg bg-violet-500/10 border border-violet-500/15 flex items-center justify-center shrink-0">
                             <Icon className="h-4 w-4 text-violet-500" />
                           </span>
@@ -2097,6 +2188,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                           }`}
                         >
+                          <NavDigitBadge index={idx} />
                           <span className="w-8 h-8 rounded-lg bg-teal-500/10 border border-teal-500/15 flex items-center justify-center shrink-0">
                             <Layers className="h-4 w-4 text-teal-500" />
                           </span>
@@ -2146,6 +2238,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                           }`}
                         >
+                          <NavDigitBadge index={idx} />
                           <span className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/15 flex items-center justify-center shrink-0">
                             <SiteFavicon
                               title={fav.title}
@@ -2193,6 +2286,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                           }`}
                         >
+                          <NavDigitBadge index={idx} />
                           <span className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/15 flex items-center justify-center shrink-0">
                             <Icon className="h-4 w-4 text-amber-500" />
                           </span>
@@ -2237,6 +2331,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                           }`}
                         >
+                          <NavDigitBadge index={idx} />
                           <span className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/15 flex items-center justify-center shrink-0">
                             <Icon className="h-4 w-4 text-emerald-500" />
                           </span>
@@ -2489,6 +2584,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           navIndexById.get('plugin-' + p.id) === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                         }`}
                       >
+                        <NavDigitBadge index={navIndexById.get('plugin-' + p.id) ?? -1} />
                         <span className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/15 flex items-center justify-center shrink-0">
                           <Store className="h-4 w-4 text-primary" />
                         </span>
@@ -2731,6 +2827,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           navIndexById.get('site-' + site.id) === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                         }`}
                       >
+                      <NavDigitBadge index={navIndexById.get('site-' + site.id) ?? -1} />
                       <div className="flex-shrink-0 w-8 h-8 rounded-md p-1 bg-muted/60 dark:bg-muted/30 border border-border/50 flex items-center justify-center">
                         <SiteFavicon
                           title={site.title}
@@ -2799,19 +2896,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               {/* 键盘提示：能力存在但没人知道，等于不存在（桌面端才显示） */}
               {(displayHits.length > 0 || pluginItems.length > 0 || matchedPaletteFavorites.length > 0 || matchedPaletteActions.length > 0 || matchedPaletteTools.length > 0) && (
                 <div className="hidden sm:flex sm:pointer-coarse:hidden items-center gap-3 border-t border-border/60 bg-muted/20 px-3 py-1.5 text-[10px] text-muted-foreground">
-                  <span className="inline-flex items-center gap-1">
-                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↑</kbd>
-                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↓</kbd>
-                    选择
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Enter</kbd>
-                    打开
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Esc</kbd>
-                    关闭
-                  </span>
+                  <PaletteFooterHint />
                 </div>
               )}
               {showResults && displayHits.length > 0 && hasMore && (

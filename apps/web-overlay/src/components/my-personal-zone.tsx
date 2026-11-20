@@ -94,9 +94,15 @@ export function MyPersonalZone({ allSites = [], catalog }: MyPersonalZoneProps) 
       .filter((entry): entry is { id: string; site: PersonalZoneSite; role: 'main' | 'backup' | 'notice' } => Boolean(entry.site))
   }, [activeScene, siteById])
 
-  const hasScenesWithSites = data.scenes.some((s) => s.siteIds.length > 0)
+  // 专区只在用户主动用过「我的常用」时才展开：置顶、自建链接、选中场景、
+  // 自建场景。预置场景是首次使用后自动播种的，播种本身不算“用过”——否则
+  // 取消最后一个置顶后专区永远合不上；本地最近使用是被动记录的（点任意
+  // 站点都会写），同样不单独触发展开，只在专区已展开时展示。
   const isUsed =
-    data.pinned.length > 0 || data.customLinks.length > 0 || hasScenesWithSites || recents.length > 0
+    data.pinned.length > 0 ||
+    data.customLinks.length > 0 ||
+    data.activeSceneId !== null ||
+    data.scenes.some((s) => !s.builtin)
 
   // 未使用时完全折叠：不占位、不渲染任何骨架。
   if (!mounted || !isUsed) return null

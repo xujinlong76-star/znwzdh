@@ -39,9 +39,9 @@ import { loginViaAdmin } from './helpers';
  *   - 榜单：无筛选首页的安装榜 / 口碑榜首行是 A、新作榜首行是 D。
  *   - kind 筛选：同一组 stamp 下 2 个网站包 + 1 个主题 + 1 个搜索引擎包，
  *     逐个 kind 断言真实结果集（集合相等）与「共 N 个插件」计数。
- *   - 分页：本用例内先导入 25 个同 stamp 插件（总数 > 24），再等「加载更多」
- *     出现，点击后卡片数增多、按钮计数同步变大。CI E2E 库从空开始、无种子，
- *     不依赖既有数据量。
+ *   - 分页：本用例内先导入 25 个同 stamp 插件（总数 > 24），再经一次客户端
+ *     排序切换（非静默重取，24 条/页）让「加载更多」出现，点击后卡片数增多、
+ *     按钮计数同步变大。CI E2E 库从空开始、无种子，不依赖既有数据量。
  *
  * 并行说明：playwright.config 是 workers:1、fullyParallel:false，全文件
  * 顺序执行；kind 组在 kind 用例内现导入（不在 beforeAll），以免抢占
@@ -422,6 +422,22 @@ test.describe('插件市场 P1-8：排序 / 筛选 / 分页（非零数据）', 
     await expect(page.getByText('共 4 个插件')).toBeVisible();
   });
 
+async function selectSort(page: Page, sort: string) {
+  const sortSelect = page.getByLabel('排序方式');
+  const pattern = new RegExp(`[?&]sort=${sort}`);
+  await sortSelect.selectOption(sort);
+  await expect
+    .poll(async () => {
+      if (pattern.test(page.url())) return 'applied';
+      return (await sortSelect.inputValue()) === 'trending' ? 'reset' : 'pending';
+    }, { timeout: 15_000 })
+    .not.toBe('pending');
+  if (!pattern.test(page.url())) {
+    await sortSelect.selectOption(sort);
+    await expect(page).toHaveURL(pattern, { timeout: 15_000 });
+  }
+}
+
   test('分页：点「加载更多」后条目增多', async ({ page }) => {
     // 自给自足：CI E2E 库从空开始（e2e-web-server.mjs 只删库重建、dev-all
     // 不播种，pnpm seed 只在 test-web 作业跑），同分片先行导入 + 本文件
@@ -440,9 +456,13 @@ test.describe('插件市场 P1-8：排序 / 筛选 / 分页（非零数据）', 
 
     await page.goto(`/marketplace?q=${pageStamp}`);
     await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible();
-    // 按钮只在「已加载 < 总数」时出现：等它出现即等客户端首屏（24 条）落定，
-    // 此时 SSR 全量种子已被 24 条/页的客户端列表取代。过滤视图下精选与三榜
-    // 不渲染（board 只在无筛选时加载），卡片数即列表数。
+    // d52a36ec 静默同步改合并式后：SSR 已种全量（25 条），挂载静默同步只合
+    // 并身份字段、不再把列表替换成 24 条/页，items.length === total 时
+    // 「加载更多」自然隐藏（page.tsx 注释同款设计）。分页须经一次客户端
+    // 排序切换才出现：改排序触发非静默重取（替换语义，24 条/页），按钮随
+    // 之出现；再点「加载更多」追加第 25 条。过滤视图下精选与三榜不渲染
+    // （board 只在无筛选时加载），卡片数即列表数。
+    await selectSort(page, 'new');
     const loadMore = page.getByRole('button', { name: /加载更多/ });
     await expect(loadMore).toBeVisible({ timeout: 30_000 });
     const beforeText = (await loadMore.textContent()) ?? '';
@@ -450,7 +470,7 @@ test.describe('插件市场 P1-8：排序 / 筛选 / 分页（非零数据）', 
     expect(beforeMatch, `加载更多文案未含计数：${beforeText}`).toBeTruthy();
     const beforeShown = Number(beforeMatch![1]);
     const beforeTotal = Number(beforeMatch![2]);
-    expect(beforeShown, '首屏应只加载一页 24 条').toBe(24);
+    expect(beforeShown, '切换排序后应只加载一页 24 条').toBe(24);
     expect(beforeTotal, '总数应大于一页').toBeGreaterThan(24);
 
     // 卡片标题链计数（过滤视图无精选区，卡片数即列表数）：点击后必须增多。

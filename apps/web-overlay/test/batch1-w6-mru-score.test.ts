@@ -9,10 +9,10 @@
  * 两者都按「当天」取 fib[6]=89；visitedAt 恰好等于 now 时同样处理，
  * 不取 fib[7] 越界。见 `offline-recent.ts` 的 `MRU_FIB_BONUS` 注释。
  *
- * C2 前半（count=1 的误点站不进空查询「最近访问」置顶区）与 C3 的
- * 300ms/IndexedDB 延迟模拟不在本文件：前者是空面板分区接线（不在 W6
- * 的四处改动内，见 PoC 报告遗留），后者需要 IndexedDB 延迟注入，
- * node 环境无 IndexedDB——两者都记为「需真人/真机验证」，不伪造通过。
+ * C2 前半（count=1 的误点站不进空查询「最近访问」置顶区）已由 W6b
+ * 补丁 1 落在 `batch1-w6b-c2-boost.test.ts`（`splitRecentVisitsForBoost`
+ * + 空面板接线）；C3 的 300ms/IndexedDB 延迟模拟仍需真人/真机验证，
+ * node 环境无 IndexedDB，不伪造通过。
  */
 import { describe, expect, it, vi, afterEach } from 'vitest'
 
@@ -26,8 +26,11 @@ import {
 const DAY = 86400000
 /** 固定「现在」：2026-11-20 12:00 UTC，手算三例都以它为准。 */
 const NOW = Date.parse('2026-11-20T12:00:00Z')
-/** 建库起点：最早一条 visit 在 30 天前，建库天数 = 30。 */
-const LIBRARY_START = NOW - 30 * DAY
+/** 建库起点：最早一条 visit 在 10 天前，建库天数 = 10（方案 §9 C1 手算
+    三例的隐含建库天数；W6b 补丁 4 由 30 天改回 10 天，与方案值对齐）。 */
+const LIBRARY_START = NOW - 10 * DAY
+/** 补充用例的建库起点：30 天夹具的三值保留作对照（见文件末尾）。 */
+const LIBRARY_START_30 = NOW - 30 * DAY
 
 const visit = (id: string, visitedAt: number, extra: Partial<RecentVisit> = {}): RecentVisit => ({
   id,
@@ -38,19 +41,19 @@ const visit = (id: string, visitedAt: number, extra: Partial<RecentVisit> = {}):
 })
 
 describe('mruScore（C1：对照 Wox 公式手算三例，误差 < 0.01）', () => {
-  it('count=1 当天：0 + 89 + min(1/30*10, 50) = 89.3333', () => {
-    // 次数分 log(1)*15 = 0；时间分当天 fib[6] = 89；频率分 1/30*10 = 1/3
-    expect(mruScore(visit('a', NOW, { count: 1 }), NOW, LIBRARY_START)).toBeCloseTo(89.3333, 2)
+  it('count=1 当天：0 + 89 + min(1/10*10, 50) = 90', () => {
+    // 次数分 log(1)*15 = 0；时间分当天 fib[6] = 89；频率分 1/10*10 = 1
+    expect(mruScore(visit('a', NOW, { count: 1 }), NOW, LIBRARY_START)).toBeCloseTo(90, 2)
   })
 
-  it('count=3 七天前：log(3)*15 + 5 + 1 = 22.4792', () => {
-    // 次数分 ln3*15 ≈ 16.4792；时间分 7 天前 fib[0] = 5；频率分 3/30*10 = 1
-    expect(mruScore(visit('b', NOW - 7 * DAY, { count: 3 }), NOW, LIBRARY_START)).toBeCloseTo(22.4792, 2)
+  it('count=3 七天前：log(3)*15 + 5 + 3 = 24.4792', () => {
+    // 次数分 ln3*15 ≈ 16.4792；时间分 7 天前 fib[0] = 5；频率分 3/10*10 = 3
+    expect(mruScore(visit('b', NOW - 7 * DAY, { count: 3 }), NOW, LIBRARY_START)).toBeCloseTo(24.4792, 2)
   })
 
-  it('count=50 三十天前：log(50)*15 + 3 + 50/3 = 78.3470', () => {
-    // 次数分 ln50*15 ≈ 58.6803；时间分 7–30 天统一 +3；频率分 50/30*10 ≈ 16.6667
-    expect(mruScore(visit('c', NOW - 30 * DAY, { count: 50 }), NOW, LIBRARY_START)).toBeCloseTo(78.347, 2)
+  it('count=50 三十天前：log(50)*15 + 3 + 50 = 111.6803（频率分封顶）', () => {
+    // 次数分 ln50*15 ≈ 58.6803；时间分 7–30 天统一 +3；频率分 min(50/10*10, 50) = 50
+    expect(mruScore(visit('c', NOW - 30 * DAY, { count: 50 }), NOW, LIBRARY_START)).toBeCloseTo(111.6803, 2)
   })
 
   it('频率分封顶：count=50 当天、建库 1 天时频率分 = 50（不是 500）', () => {
@@ -59,15 +62,23 @@ describe('mruScore（C1：对照 Wox 公式手算三例，误差 < 0.01）', () 
   })
 
   it('时间分边界：8 天前 +3、31 天前 +0', () => {
-    // 8 天前：0 + 3 + 1/30*10 ≈ 3.3333
-    expect(mruScore(visit('d', NOW - 8 * DAY, { count: 1 }), NOW, LIBRARY_START)).toBeCloseTo(3.3333, 2)
+    // 8 天前：0 + 3 + 1/10*10 = 4
+    expect(mruScore(visit('d', NOW - 8 * DAY, { count: 1 }), NOW, LIBRARY_START)).toBeCloseTo(4, 2)
     // 31 天前（建库 31 天）：0 + 0 + 1/31*10 ≈ 0.3226
     expect(mruScore(visit('e', NOW - 31 * DAY, { count: 1 }), NOW, NOW - 31 * DAY)).toBeCloseTo(0.3226, 2)
   })
 
   it('count 缺失按 1 计；MRU_MIN_USES_FOR_BOOST = 3', () => {
     expect(MRU_MIN_USES_FOR_BOOST).toBe(3)
-    expect(mruScore(visit('f', NOW), NOW, LIBRARY_START)).toBeCloseTo(89.3333, 2)
+    expect(mruScore(visit('f', NOW), NOW, LIBRARY_START)).toBeCloseTo(90, 2)
+  })
+})
+
+describe('C1 补充：建库 30 天的三值对照（W6 原夹具保留，公式本身没错）', () => {
+  it('30 天建库：89.3333 / 22.4792 / 78.3470', () => {
+    expect(mruScore(visit('a', NOW, { count: 1 }), NOW, LIBRARY_START_30)).toBeCloseTo(89.3333, 2)
+    expect(mruScore(visit('b', NOW - 7 * DAY, { count: 3 }), NOW, LIBRARY_START_30)).toBeCloseTo(22.4792, 2)
+    expect(mruScore(visit('c', NOW - 30 * DAY, { count: 50 }), NOW, LIBRARY_START_30)).toBeCloseTo(78.347, 2)
   })
 })
 

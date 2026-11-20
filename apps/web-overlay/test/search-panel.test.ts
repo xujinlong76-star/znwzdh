@@ -3,7 +3,7 @@
  *
  * 组件自己的注释写着契约：「中枢不可用时明示降级，而不是假装『没有结果』」。
  * 修复前的实现同时违反了三处：
- *   - 降级 + 零结果时，「检索服务暂时不可用」和「未找到与 x 相关的导航」一起渲染
+ *   - 降级 + 零结果时，「检索服务暂时不可用」和「没有找到相关站点」一起渲染
  *     （用户不知道该重试还是该换词）
  *   - 零结果的出口完全依赖服务端返回的 suggestions / popular，服务端没给就是死路
  *   - 命中投机 / 对比 / 配方微组件时，「导航检索为空」整块被抑制（用户看不到这个事实）
@@ -47,10 +47,10 @@ describe("planSearchPanel：检索中与有结果时不该有提示块", () => {
 describe("planSearchPanel：降级不能假装「没有结果」", () => {
   const plan = planSearchPanel({ ...base, degraded: true });
 
-  it("降级 + 零结果 → outage 模式，而不是「未找到」", () => {
+  it("降级 + 零结果 → outage 模式，而不是「没有找到」", () => {
     expect(plan.mode).toBe("outage");
     expect(plan.title).toBe("检索服务暂时不可用");
-    expect(plan.title + plan.hint).not.toContain("未找到");
+    expect(plan.title + plan.hint).not.toContain("没有找到");
   });
 
   it("说清楚「无法确认」而不是「没有」，并给出重试", () => {
@@ -63,27 +63,32 @@ describe("planSearchPanel：降级不能假装「没有结果」", () => {
 describe("planSearchPanel：真零结果也必须有出口", () => {
   const plan = planSearchPanel(base);
 
-  it("标题带上查询词，并给出清空/浏览出口（不依赖服务端 suggestions）", () => {
+  it("标题固定为“没有找到相关站点”并明示 0 条结果；两个出口排最前（换关键词、去 AI 找站）", () => {
     expect(plan.mode).toBe("no-results");
-    expect(plan.title).toBe("未找到与 “react vue” 相关的导航");
-    // A11：两个真出口排最前（AI 找站、投稿收录），容错两出口（存为待找、
-    // 新建收藏）排在其后、清空/浏览之前
+    // 2026-11-20 搜索假空态修复（William 点名）：空态文案固定为“没有找到相关站点”，
+    // 不再把查询词拼进标题；hint 明示 0 条结果
+    expect(plan.title).toBe("没有找到相关站点");
+    expect(plan.hint).toContain("0 条结果");
+    // 两个出口排最前：换关键词（clear）、去 AI 找站（ai-find），其后是投稿收录、
+    // 存为待找、新建收藏、浏览类
     expect(plan.actions.map((a) => a.kind)).toEqual([
+      "clear",
       "ai-find",
       "submit-site",
       "save-wanted",
       "save-favorite",
-      "clear",
       "browse-tags",
       "browse-hot",
     ]);
+    expect(plan.actions[0].label).toBe("换关键词");
   });
 
   it("A11：AI 找站出口是按钮动作（无 href，组件内唤起抽屉并带词）", () => {
     const aiFind = plan.actions.find((a) => a.kind === "ai-find");
     expect(aiFind).toBeDefined();
     expect(aiFind?.href).toBeUndefined();
-    expect(aiFind?.label).toContain("让 AI 帮我找");
+    // 2026-11-20 搜索假空态修复：AI 出口文案由"让 AI 帮我找"改为"去 AI 找站"
+    expect(aiFind?.label).toContain("去 AI 找站");
     expect(aiFind?.label).toContain("react vue");
   });
 
@@ -116,8 +121,13 @@ describe("planSearchPanel：真零结果也必须有出口", () => {
     expect(aiFind?.label).toContain("…");
   });
 
-  it("查询词两侧空白被裁掉", () => {
-    expect(planSearchPanel({ ...base, query: "  pinyin  " }).title).toContain("“pinyin”");
+  it("查询词两侧空白被裁掉（裁掉后的词进 AI 出口文案与投稿链接，不进标题）", () => {
+    // 2026-11-20 搜索假空态修复：空态标题固定为"没有找到相关站点"，不再拼查询词；
+    // 查询词的 trim 仍须保证——它进 ai-find 文案与 submit 预填
+    const plan = planSearchPanel({ ...base, query: "  pinyin  " });
+    expect(plan.title).toBe("没有找到相关站点");
+    expect(plan.actions.find((a) => a.kind === "ai-find")?.label).toContain("“pinyin”");
+    expect(plan.actions.find((a) => a.kind === "submit-site")?.href).toBe("/submit?title=pinyin");
   });
 
   it("默认提示引导拼音首字母", () => {
@@ -127,7 +137,7 @@ describe("planSearchPanel：真零结果也必须有出口", () => {
   it("命中微组件时仍然显示「导航检索为空」，只是提示措辞不同（回归：曾被整块抑制）", () => {
     const withWidget = planSearchPanel({ ...base, hasWidgetResult: true });
     expect(withWidget.mode).toBe("no-results");
-    expect(withWidget.title).toContain("未找到");
+    expect(withWidget.title).toBe("没有找到相关站点");
     expect(withWidget.hint).toContain("上方卡片");
   });
 

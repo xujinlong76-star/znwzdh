@@ -56,7 +56,8 @@ export interface SearchPanelPlan {
 const BROWSE_TAGS: SearchPanelAction = { kind: 'browse-tags', label: '浏览标签云', href: '/tags' }
 const BROWSE_HOT: SearchPanelAction = { kind: 'browse-hot', label: '看看热度榜', href: '/hot' }
 const RETRY: SearchPanelAction = { kind: 'retry', label: '重试检索' }
-const CLEAR: SearchPanelAction = { kind: 'clear', label: '清空搜索' }
+/** 零结果第一出口：清空查询词并聚焦输入框，让用户换个关键词再搜 */
+const CHANGE_KEYWORD: SearchPanelAction = { kind: 'clear', label: '换关键词' }
 
 export interface SearchPanelInput {
   loading: boolean
@@ -106,14 +107,16 @@ export function planSearchPanel(input: SearchPanelInput): SearchPanelPlan {
   }
 
   // 真的零结果：给出口，且不要因为微组件命中就隐瞒「导航检索为空」。
-  // A11：两个真出口排在最前——问 AI 找站（查询词自动发过去）、投稿收录
-  // （查询词预填进表单）；清空/浏览是次要出口，放后面。降级（outage）时
-  // 不给这两条：我们连「有没有」都没问成功，AI 找站同样走中枢、一样没谱。
+  // 2026-11-20 搜索假空态修复（William 点名）：空态文案固定为"没有找到相关站点"，
+  // 0 条结果明示；两个出口排最前——换关键词（清空并聚焦输入框）、去 AI 找站
+  // （查询词自动发过去）；投稿收录、存为待找、新建收藏随后；清空/浏览是次要出口，
+  // 放后面。降级（outage）时不给这两条：我们连「有没有」都没问成功，AI 找站
+  // 同样走中枢、一样没谱。
   const trimmed = query.trim()
   // 按钮文案只露前 24 字（查询词最长 256 字，全塞进胶囊会撑爆面板）；
   // 发给 AI 的仍是完整查询词（runPanelAction 用组件内的 query，不读 label）。
   const labelQuery = trimmed.length > 24 ? `${trimmed.slice(0, 24)}…` : trimmed
-  const aiFind: SearchPanelAction = { kind: 'ai-find', label: `让 AI 帮我找「${labelQuery}」` }
+  const aiFind: SearchPanelAction = { kind: 'ai-find', label: `去 AI 找站「${labelQuery}」` }
   const submitSite: SearchPanelAction = {
     kind: 'submit-site',
     label: '投稿收录这个站',
@@ -124,10 +127,10 @@ export function planSearchPanel(input: SearchPanelInput): SearchPanelPlan {
   const saveFavorite: SearchPanelAction = { kind: 'save-favorite', label: '新建收藏' }
   return {
     mode: 'no-results',
-    title: `未找到与 “${trimmed}” 相关的导航`,
+    title: '没有找到相关站点',
     hint: hasWidgetResult
-      ? '上方卡片是根据这句话即时生成的；导航检索没有匹配，可以换更短的关键词。'
-      : '试试拼音首字母（如 zgtqw）或描述你的需求',
-    actions: [aiFind, submitSite, saveWanted, saveFavorite, CLEAR, ...(external ? [external] : []), BROWSE_TAGS, BROWSE_HOT],
+      ? '0 条结果。上方卡片是根据这句话即时生成的；导航检索没有匹配，可以换更短的关键词。'
+      : '0 条结果。试试拼音首字母（如 zgtqw）或描述你的需求',
+    actions: [CHANGE_KEYWORD, aiFind, submitSite, saveWanted, saveFavorite, ...(external ? [external] : []), BROWSE_TAGS, BROWSE_HOT],
   }
 }

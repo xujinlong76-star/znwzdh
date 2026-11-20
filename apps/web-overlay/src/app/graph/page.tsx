@@ -59,7 +59,7 @@ export default function GraphPage() {
             <div>
               <dt className="font-medium">靛蓝实线：生态链路</dt>
               <dd className="mt-1 leading-relaxed text-muted-foreground">
-                同分类工具之间的关联，用来发现同一条工作流里的上下游与同域生态项目。
+                同一子分类站点之间的关联，用来发现同一条工作流里的上下游与同域生态项目。
               </dd>
             </div>
             <div>
@@ -69,9 +69,15 @@ export default function GraphPage() {
               </dd>
             </div>
             <div>
+              <dt className="font-medium">抽样方式：生态簇优先</dt>
+              <dd className="mt-1 leading-relaxed text-muted-foreground">
+                图谱每次展示 24–36 站，优先抽取互相连通的生态簇（每簇 3–6 站，如「开源簇」「短剧簇」），孤立站点不超过 15%；点「换一批生态簇」可探索另一批子图。
+              </dd>
+            </div>
+            <div>
               <dt className="font-medium">搜索与筛选</dt>
               <dd className="mt-1 leading-relaxed text-muted-foreground">
-                顶部搜索框按名称过滤节点；场景按钮在全部、开发、设计、AI、效率之间切换。
+                顶部搜索框检索站内全部收录站点（不只当前抽样的 24 站），选中后进入平替雷达，以该站点为中心展示一跳平替与上下游生态；场景按钮在全部、研发全栈、UI &amp; 设计、AI 实验室、效率创作之间切换，切换时重新抽样；图例可点击过滤：只看开源、仅看平替关系、仅看生态链路，再点一次取消。
               </dd>
             </div>
             <div>

@@ -1835,6 +1835,18 @@
               ]
             },
             {
+              "id": "nav-a2f4ad00b6cc2208",
+              "title": "OpenShift",
+              "href": "https://www.openshift.com",
+              "description": "企业级 Kubernetes 平台，内置 CI/CD 与镜像仓库。",
+              "enabled": true,
+              "tags": [
+                "容器",
+                "编排",
+                "K8s"
+              ]
+            },
+            {
               "id": "nav-73a19732a7a809f3",
               "title": "Nomad",
               "href": "https://www.nomadproject.io",

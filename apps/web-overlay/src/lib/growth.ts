@@ -1063,12 +1063,19 @@ export function assignDailySlots(profile: GrowthProfile, key: string): NonNullab
     dramaOps += (d.counts.drama_visit ?? 0) + (d.counts.watchlist_progress ?? 0)
   }
   const aiMain = aiOps >= dramaOps
-  const mainPool = aiMain ? DAILY_CORE_AI : DAILY_CORE_DRAMA
-  const altPool = aiMain ? DAILY_CORE_DRAMA : DAILY_CORE_AI
+  // 追剧分支设门：只向近 7 日有短剧行为、或历史上到访过短剧的用户
+  // 展示短剧任务；纯 AI/开发用户不强推「推进一集追剧进度」。
+  // （选择/展示层变更：结算、XP 数额、宝箱规则一字不动。）
+  const hasDramaHistory = dramaOps > 0 || profile.dramaDates.length > 0
+  const mainPool = aiMain || !hasDramaHistory ? DAILY_CORE_AI : DAILY_CORE_DRAMA
+  const altPool = aiMain ? (hasDramaHistory ? DAILY_CORE_DRAMA : DAILY_CORE_AI) : DAILY_CORE_AI
+  const coreAIndex = h % mainPool.length
+  // 备选与主选同池时取另一项，避免主选与备选是同一任务
+  const coreBIndex = altPool === mainPool ? (coreAIndex + 1) % altPool.length : (h >> 2) % altPool.length
   return {
     shallow: DAILY_SHALLOW[h % DAILY_SHALLOW.length]!.id,
-    coreA: mainPool[h % mainPool.length]!.id,
-    coreB: altPool[(h >> 2) % altPool.length]!.id,
+    coreA: mainPool[coreAIndex]!.id,
+    coreB: altPool[coreBIndex]!.id,
     settle: DAILY_SETTLE[(h >> 3) % DAILY_SETTLE.length]!.id,
   }
 }
@@ -1079,6 +1086,8 @@ function dailyDef(id: string): DailyTaskDef | undefined {
 
 export interface DailySlotStatus {
   slot: 'shallow' | 'core' | 'settle'
+  /** 对应 DailyTaskDef 的 id（展示层直达按钮取映射用，不参与结算） */
+  id: string
   title: string
   hint: string
   done: boolean
@@ -1103,6 +1112,7 @@ export function dailyTaskStatus(profile: GrowthProfile, now: Date = new Date()):
   const slots: DailySlotStatus[] = [
     {
       slot: 'shallow',
+      id: slotsDef.shallow,
       title: shallowDef?.title ?? '',
       hint: shallowDef?.hint ?? '',
       done: shallowDef ? shallowDef.check(d) : false,
@@ -1110,6 +1120,7 @@ export function dailyTaskStatus(profile: GrowthProfile, now: Date = new Date()):
     },
     {
       slot: 'core',
+      id: slotsDef.coreA,
       title: coreADef?.title ?? '',
       hint: `${coreADef?.hint ?? ''}${coreBDef ? `（或：${coreBDef.hint}）` : ''}`,
       done: (coreADef ? coreADef.check(d) : false) || (coreBDef ? coreBDef.check(d) : false),
@@ -1117,6 +1128,7 @@ export function dailyTaskStatus(profile: GrowthProfile, now: Date = new Date()):
     },
     {
       slot: 'settle',
+      id: slotsDef.settle,
       title: settleDef?.title ?? '',
       hint: settleDef?.hint ?? '',
       done: settleDef ? settleDef.check(d) : false,

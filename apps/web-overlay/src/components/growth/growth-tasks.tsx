@@ -9,7 +9,8 @@
  */
 
 import { useState } from 'react'
-import { CheckCircle2, Circle, Gift, ListChecks, RotateCcw, Sprout } from 'lucide-react'
+import Link from 'next/link'
+import { CheckCircle2, ChevronDown, Circle, Gift, ListChecks, RotateCcw, Sprout } from 'lucide-react'
 import {
   dailyTaskStatus,
   openDailyChestAction,
@@ -18,7 +19,23 @@ import {
   weeklyTaskStatus,
   type GrowthProfile,
 } from '@/lib/growth'
+import { Popover, PopoverContent, PopoverTrigger } from '@/registry/new-york/ui/popover'
+import { taskAction, type TaskAction } from './task-actions'
 import { cn } from '@/lib/utils'
+
+/** 未完成任务的一键直达按钮：无映射（s1/d6/d7）时不渲染。 */
+function TaskGoButton({ id }: { id: string }) {
+  const action = taskAction(id)
+  if (!action) return null
+  return (
+    <Link
+      href={action.href}
+      className="shrink-0 rounded-lg border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
+    >
+      {action.cta}
+    </Link>
+  )
+}
 
 function ProgressRow({
   title,
@@ -26,12 +43,14 @@ function ProgressRow({
   target,
   done,
   xp,
+  action,
 }: {
   title: string
   current: number
   target: number
   done: boolean
   xp: number
+  action?: TaskAction
 }) {
   return (
     <li className="flex items-center gap-2.5 py-2">
@@ -54,16 +73,39 @@ function ProgressRow({
           />
         </div>
       </div>
+      {!done && action && (
+        <Link
+          href={action.href}
+          className="shrink-0 rounded-lg border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
+        >
+          {action.cta}
+        </Link>
+      )}
     </li>
   )
 }
 
-export function GrowthTasks({ profile }: { profile: GrowthProfile }) {
+export function GrowthTasks({
+  profile,
+  onGoToGuide,
+}: {
+  profile: GrowthProfile
+  /** 新手 D3「设为首页」的面板内动作：切到「图鉴与指南」Tab 看设置向导 */
+  onGoToGuide?: () => void
+}) {
   const [chestMsg, setChestMsg] = useState<string | null>(null)
+  const [rookieOpen, setRookieOpen] = useState(true)
   const daily = dailyTaskStatus(profile)
   const weekly = weeklyTaskStatus(profile)
   const rookie = rookieStatus(profile)
   const ret = returnPackStatus(profile)
+  // 新手步骤条：当前天优先，未到当前天时取第一个未完成项
+  const currentRookieTask =
+    rookie.tasks.find((t) => t.day === rookie.chainDay) ??
+    rookie.tasks.find((t) => !t.done) ??
+    rookie.tasks[rookie.tasks.length - 1]
+  const rookieDoneCount = rookie.tasks.filter((t) => t.done).length
+  const lastDoneIndex = rookie.tasks.reduce((acc, t, i) => (t.done ? i : acc), -1)
 
   const openChest = () => {
     const { result } = openDailyChestAction()
@@ -111,6 +153,7 @@ export function GrowthTasks({ profile }: { profile: GrowthProfile }) {
                     已入账
                   </span>
                 )}
+                {!s.done && <TaskGoButton id={s.id} />}
               </li>
             ))}
           </ul>
@@ -140,14 +183,25 @@ export function GrowthTasks({ profile }: { profile: GrowthProfile }) {
               </button>
             </div>
             {chestMsg && <p className="mt-2 text-xs font-medium text-primary">{chestMsg}</p>}
-            <details className="mt-2 border-t border-border/50 pt-2">
-              <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground">
-                查看宝箱概率与规则（明码标价）
-              </summary>
-              <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-                固定 +15 经验，外加一份随机奖励——小份 +5~10 经验（约 50%）、中份 +12~20 经验（约 32%）、冻结卡 1 张（约 18%；口袋里没卡时约 30%）。连开 3 个没出卡，第 4 个必出；口袋满时卡换成 +25 经验。
-              </p>
-            </details>
+            <div className="mt-2 border-t border-border/50 pt-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="宝箱规则说明"
+                    className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-border-strong text-[10px] font-semibold leading-none">
+                      ?
+                    </span>
+                    规则说明
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 text-[11px] leading-relaxed text-muted-foreground" align="start">
+                  固定 +15 经验，外加一份随机奖励——小份 +5~10 经验（约 50%）、中份 +12~20 经验（约 32%）、冻结卡 1 张（约 18%；口袋里没卡时约 30%）。连开 3 个没出卡，第 4 个必出；口袋满时卡换成 +25 经验。
+                </PopoverContent>
+              </Popover>
+            </div>
           </div>
         </div>
 
@@ -164,7 +218,15 @@ export function GrowthTasks({ profile }: { profile: GrowthProfile }) {
 
           <ul className="mt-2.5 flex-1 divide-y divide-border/60">
             {weekly.map((t) => (
-              <ProgressRow key={t.id} title={t.title} current={t.current} target={t.target} done={t.done} xp={t.xp} />
+              <ProgressRow
+                key={t.id}
+                title={t.title}
+                current={t.current}
+                target={t.target}
+                done={t.done}
+                xp={t.xp}
+                action={taskAction(t.id)}
+              />
             ))}
           </ul>
           <p className="mt-2.5 rounded-lg bg-muted/40 px-2.5 py-1.5 text-[11px] text-muted-foreground">
@@ -181,37 +243,90 @@ export function GrowthTasks({ profile }: { profile: GrowthProfile }) {
                 <Sprout className="h-3.5 w-3.5" aria-hidden />
               </span>
               新手一周：第 {rookie.chainDay} 天
+              <span className="rounded-md bg-muted/70 px-1.5 py-0.5 font-mono text-[10px] font-normal text-muted-foreground tabular-nums">
+                {rookieDoneCount}/{rookie.tasks.length}
+              </span>
             </h3>
-            <span className="text-[11px] text-muted-foreground">不用赶进度，晚几天做完也一样</span>
-          </div>
-          <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {rookie.tasks.map((t) => (
-              <li
-                key={t.id}
-                className={cn(
-                  'flex items-center gap-2 rounded-xl border px-3 py-2 text-xs',
-                  t.done
-                    ? 'border-emerald-500/35 bg-emerald-500/10 text-foreground'
-                    : t.day === rookie.chainDay
-                      ? 'border-primary/50 bg-primary/5 text-foreground'
-                      : 'border-border/60 bg-background/50 text-muted-foreground',
-                )}
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] text-muted-foreground">不用赶进度，晚几天做完也一样</span>
+              <button
+                type="button"
+                onClick={() => setRookieOpen((v) => !v)}
+                aria-expanded={rookieOpen}
+                aria-label={rookieOpen ? '收起新手一周' : '展开新手一周'}
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {t.done ? (
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" aria-hidden />
-                ) : (
-                  <Circle className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                )}
-                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">D{t.day}</span>
-                <span className="min-w-0 flex-1 truncate font-medium">{t.title}</span>
-                {t.day === rookie.chainDay && !t.done && (
-                  <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                    今天
+                <ChevronDown className={cn('h-4 w-4 transition-transform', !rookieOpen && '-rotate-90')} aria-hidden />
+              </button>
+            </div>
+          </div>
+
+          {/* 横向 7 天步骤条：已完成收起为绿色对勾，仅当前天高亮 */}
+          <div className="relative mt-4">
+            <div className="absolute left-[7%] right-[7%] top-3.5 h-0.5 rounded bg-muted" aria-hidden />
+            <div
+              className="absolute left-[7%] top-3.5 h-0.5 rounded bg-emerald-500 transition-all"
+              style={{ width: lastDoneIndex < 0 ? '0%' : `${(lastDoneIndex / (rookie.tasks.length - 1)) * 86}%` }}
+              aria-hidden
+            />
+            <ol className="relative flex items-start justify-between" aria-label="新手一周进度">
+              {rookie.tasks.map((t) => {
+                const isCurrent = t.day === rookie.chainDay
+                return (
+                  <li key={t.id} className="flex w-0 flex-1 flex-col items-center gap-1.5">
+                    <span
+                      className={cn(
+                        'relative z-10 flex h-7 w-7 items-center justify-center rounded-full border text-[11px] font-semibold',
+                        t.done
+                          ? 'border-emerald-500 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                          : isCurrent
+                            ? 'border-primary bg-primary text-primary-foreground shadow-xs'
+                            : 'border-border-strong bg-background text-muted-foreground',
+                      )}
+                      aria-label={`第 ${t.day} 天${t.done ? '已完成' : isCurrent ? '今天' : ''}`}
+                    >
+                      {t.done ? <CheckCircle2 className="h-4 w-4" aria-hidden /> : t.day}
+                    </span>
+                    <span
+                      className={cn(
+                        'text-[10px]',
+                        isCurrent && !t.done ? 'font-semibold text-primary' : 'text-muted-foreground',
+                      )}
+                    >
+                      第 {t.day} 天
+                    </span>
+                  </li>
+                )
+              })}
+            </ol>
+          </div>
+
+          {/* 仅当前天高亮展开：今日目标 + 直达按钮 */}
+          {rookieOpen && currentRookieTask && (
+            <div className="mt-3 rounded-xl border border-primary/40 bg-primary/5 p-3">
+              <p className="text-xs font-semibold text-foreground">
+                第 {currentRookieTask.day} 天：今日目标
+              </p>
+              <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+                <p className="min-w-0 flex-1 text-xs font-medium text-foreground">{currentRookieTask.title}</p>
+                {currentRookieTask.done ? (
+                  <span className="shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                    已完成
                   </span>
+                ) : currentRookieTask.id === 'd3' && onGoToGuide ? (
+                  <button
+                    type="button"
+                    onClick={onGoToGuide}
+                    className="shrink-0 rounded-lg border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
+                  >
+                    查看设置向导 →
+                  </button>
+                ) : (
+                  <TaskGoButton id={currentRookieTask.id} />
                 )}
-              </li>
-            ))}
-          </ul>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -228,7 +343,15 @@ export function GrowthTasks({ profile }: { profile: GrowthProfile }) {
           </div>
           <ul className="mt-2 grid gap-x-5 divide-y divide-border/60 sm:grid-cols-2 sm:divide-y-0">
             {ret.tasks.map((t) => (
-              <ProgressRow key={t.id} title={t.title} current={t.current} target={t.target} done={t.done} xp={t.xp} />
+              <ProgressRow
+                key={t.id}
+                title={t.title}
+                current={t.current}
+                target={t.target}
+                done={t.done}
+                xp={t.xp}
+                action={taskAction(t.id)}
+              />
             ))}
           </ul>
         </div>

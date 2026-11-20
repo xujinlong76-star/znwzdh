@@ -23,7 +23,6 @@ import {
   Fish,
   Flame,
   ListChecks,
-  Moon,
   PawPrint,
   Snowflake,
   Sparkles,
@@ -160,8 +159,10 @@ export function GrowthPanel() {
     <div className="space-y-4">
       {/* 顶部精炼成长总览卡 */}
       <section className="rounded-2xl border border-border/70 bg-card/75 p-4 shadow-xs sm:p-5" aria-label="我的成长">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3.5">
+        {/* 探索者档案卡：左身份与进度，右 16 周热力图 */}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3.5">
             <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-amber-400/15 text-primary ring-1 ring-primary/20">
               <Cat className="h-6 w-6" aria-hidden />
             </span>
@@ -196,8 +197,20 @@ export function GrowthPanel() {
             </div>
           </div>
 
+          {/* 升级进度条 */}
+          <div
+            className="mt-3.5 h-2 overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-valuenow={Math.round(lp.progress * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="升级进度"
+          >
+            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round(lp.progress * 100)}%` }} />
+          </div>
+
           {/* 4 枚高对比核心成长指标胶囊 */}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div className="rounded-xl border border-border/60 bg-background/65 px-3 py-2">
               <span className="block text-[10px] text-muted-foreground">今日获得</span>
               <span className="mt-0.5 block text-sm font-semibold text-primary tabular-nums">+{todayXp(profile)} XP</span>
@@ -233,35 +246,23 @@ export function GrowthPanel() {
               <span className="mt-0.5 block text-sm font-semibold text-foreground tabular-nums">{profile.freezeCards} 张</span>
             </div>
           </div>
+
+          {profile.earnBack && (
+            <p className="mt-3 rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-700 dark:text-amber-400">
+              连胜抢救中：{profile.earnBack.brokenStreak} 天的连胜还剩约 {earnbackHoursLeft} 小时接回
+            </p>
+          )}
         </div>
 
-        {profile.earnBack && (
-          <p className="mt-3 rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-700 dark:text-amber-400">
-            连胜抢救中：{profile.earnBack.brokenStreak} 天的连胜还剩约 {earnbackHoursLeft} 小时接回
-          </p>
-        )}
-
-        {/* 升级进度条 + 精炼单行挂机陪伴状态 */}
-        <div className="mt-3.5 space-y-2.5">
-          <div
-            className="h-2 overflow-hidden rounded-full bg-muted"
-            role="progressbar"
-            aria-valuenow={Math.round(lp.progress * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="升级进度"
-          >
-            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round(lp.progress * 100)}%` }} />
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/50 bg-muted/35 px-3 py-2 text-xs">
-            <span className="flex min-w-0 items-center gap-2 text-foreground">
-              <Moon className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-              <span className="truncate font-medium">挂机陪伴：前台浏览每分钟 +1 经验，切后台自动暂停</span>
-            </span>
-            <span className="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">
-              今日 {idleToday}/{IDLE_DAILY_CAP_MINUTES} 分钟 · 累计 {profile.idleTotalMinutes} 分钟
-            </span>
+          {/* 右：16 周热力图 + 一行温和注脚 */}
+          <div className="min-w-0">
+            <GrowthHeatmap profile={profile} />
+            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+              专注浏览自动累计经验 ·{' '}
+              {idleToday >= IDLE_DAILY_CAP_MINUTES
+                ? `今日已满 ${IDLE_DAILY_CAP_MINUTES}/${IDLE_DAILY_CAP_MINUTES} 分钟`
+                : `今日 ${idleToday}/${IDLE_DAILY_CAP_MINUTES} 分钟`}
+            </p>
           </div>
         </div>
 
@@ -282,10 +283,6 @@ export function GrowthPanel() {
             ))}
           </ul>
         )}
-
-        <div className="mt-3.5">
-          <GrowthHeatmap profile={profile} />
-        </div>
 
         {/* 成长中心 4 标签切换条 */}
         <div
@@ -332,7 +329,7 @@ export function GrowthPanel() {
       </section>
 
       {/* 标签内容区 */}
-      {activeTab === 'tasks' && <GrowthTasks profile={profile} />}
+      {activeTab === 'tasks' && <GrowthTasks profile={profile} onGoToGuide={() => setActiveTab('guide')} />}
 
       {activeTab === 'season' && <GrowthSeasonPanel profile={profile} />}
 
@@ -493,3 +490,9 @@ export function GrowthPanel() {
     </div>
   )
 }
+
+/**
+ * 成长 Tab 内容组件（供「成长与任务」Tab 挂载，与 GrowthPanel 同体；
+ * me-view 的 Tab wiring 由结构重构线负责，此处只提供别名导出）。
+ */
+export const GrowthHubTab = GrowthPanel

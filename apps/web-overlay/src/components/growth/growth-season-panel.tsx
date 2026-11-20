@@ -8,6 +8,7 @@
  */
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { CalendarRange, CheckCircle2, Circle, Snowflake, Trophy } from 'lucide-react'
 import {
   SEASON_MILESTONE_LEVELS,
@@ -20,9 +21,23 @@ import {
   type GrowthProfile,
 } from '@/lib/growth'
 import { MID_SEASON_MILESTONES, SEASON_LEVEL_COUNT, SEASON_SP_PER_LEVEL } from '@/lib/growth-season'
+import { eventMetricAction, taskAction, type TaskAction } from './task-actions'
 import { cn } from '@/lib/utils'
 
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六']
+
+/** 未完成任务的一键直达按钮（与 growth-tasks.tsx 的 TaskGoButton 同款）。 */
+function GoButton({ action }: { action: TaskAction | undefined }) {
+  if (!action) return null
+  return (
+    <Link
+      href={action.href}
+      className="shrink-0 rounded-lg border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
+    >
+      {action.cta}
+    </Link>
+  )
+}
 
 export function GrowthSeasonPanel({ profile }: { profile: GrowthProfile }) {
   const [restMsg, setRestMsg] = useState<string | null>(null)
@@ -103,20 +118,26 @@ export function GrowthSeasonPanel({ profile }: { profile: GrowthProfile }) {
           </div>
           <p className="mt-0.5 text-[11px] text-muted-foreground">{event.blurb}</p>
           <ul className="mt-2 divide-y divide-border/50">
-            {evTasks.map((t) => (
-              <li key={t.id} className="flex items-center gap-2 py-1.5 text-xs">
-                {t.done ? (
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" aria-hidden />
-                ) : (
-                  <Circle className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                )}
-                <span className="min-w-0 flex-1 font-medium text-foreground">{t.title}</span>
-                <span className="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">
-                  {Math.min(t.current, t.target)}/{t.target} · +{t.xp}
-                  {t.granted ? ' · 已入账' : ''}
-                </span>
-              </li>
-            ))}
+            {evTasks.map((t) => {
+              // 任务进度对象不带 metric：按 `${event.id}:${def.id}` 从事件定义里找回
+              // （seasonEventStatus 只返回 TaskProgress，展示层在此处做映射，不改结算）
+              const metric = event.tasks.find((d) => `${event.id}:${d.id}` === t.id)?.metric
+              return (
+                <li key={t.id} className="flex items-center gap-2 py-1.5 text-xs">
+                  {t.done ? (
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" aria-hidden />
+                  ) : (
+                    <Circle className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                  )}
+                  <span className="min-w-0 flex-1 font-medium text-foreground">{t.title}</span>
+                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">
+                    {Math.min(t.current, t.target)}/{t.target} · +{t.xp}
+                    {t.granted ? ' · 已入账' : ''}
+                  </span>
+                  {!t.done && <GoButton action={metric ? eventMetricAction(metric) : undefined} />}
+                </li>
+              )
+            })}
           </ul>
         </div>
       ))}
@@ -164,6 +185,7 @@ export function GrowthSeasonPanel({ profile }: { profile: GrowthProfile }) {
                   />
                 </div>
               </div>
+              {!t.done && <GoButton action={taskAction(t.id)} />}
             </li>
           ))}
         </ul>

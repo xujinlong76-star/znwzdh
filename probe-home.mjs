@@ -2,11 +2,11 @@
 // 用法：node probe-home.mjs  （需 playwright + chromium 已装）
 import { chromium } from "@playwright/test";
 
-const BASE = "http://localhost:3002";
+const BASE = "http://127.0.0.1:3002";
 const out = [];
 const log = (k, v) => { out.push([k, v]); console.log(k + " = " + JSON.stringify(v)); };
 
-const browser = await chromium.launch({ headless: true, executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", args: ["--no-sandbox"] });
+const browser = await chromium.launch({ headless: true, executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", args: ["--no-sandbox", "--no-proxy-server", "--disable-gpu"] });
 try {
   // ---------- 1. 首页 1440x900 ----------
   {

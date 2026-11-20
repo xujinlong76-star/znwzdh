@@ -750,6 +750,42 @@
                 "改写润色",
                 "英文写作"
               ]
+            },
+            {
+              "id": "nav-2ae5dace30b1",
+              "title": "千问办公",
+              "href": "https://qwenwork.cn/",
+              "description": "阿里千问推出的 AI 办公助手",
+              "enabled": true,
+              "tags": [
+                "阿里",
+                "办公",
+                "AI助手"
+              ]
+            },
+            {
+              "id": "nav-537fa070679f",
+              "title": "WPS 灵犀",
+              "href": "https://lingxi.wps.cn/",
+              "description": "WPS 旗下的 AI 办公助手",
+              "enabled": true,
+              "tags": [
+                "WPS",
+                "办公",
+                "AI助手"
+              ]
+            },
+            {
+              "id": "nav-26ece0510f52",
+              "title": "豆包工作",
+              "href": "https://www.doubao.com/work",
+              "description": "字节跳动豆包推出的 AI 办公助手",
+              "enabled": true,
+              "tags": [
+                "字节",
+                "办公",
+                "AI助手"
+              ]
             }
           ]
         },
@@ -848,6 +884,28 @@
                 "自动化",
                 "工作流",
                 "集成"
+              ]
+            },
+            {
+              "id": "nav-ae659901bcda",
+              "title": "WorkBuddy",
+              "href": "https://www.workbuddy.cn/",
+              "description": "AI Agent 办公助手，开启办公新范式",
+              "enabled": true,
+              "tags": [
+                "智能体",
+                "办公"
+              ]
+            },
+            {
+              "id": "nav-33032489bff7",
+              "title": "百度搭子",
+              "href": "https://dumate.baidu.com/app",
+              "description": "百度推出的 AI 助手，说出需求即可代为执行",
+              "enabled": true,
+              "tags": [
+                "百度",
+                "智能体"
               ]
             }
           ]

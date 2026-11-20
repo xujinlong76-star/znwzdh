@@ -8,6 +8,7 @@ import {
   type SearchEngineId,
 } from '@/lib/user-settings'
 import { updateUserPreferences, useUserPreference } from '@/lib/user-preferences'
+import { safeWindowOpen } from '@/lib/safe-url'
 
 /**
  * /search 搜索框旁的一级引擎切换（W4-0622-1 缺口 ①）。
@@ -42,8 +43,9 @@ export function SearchEngineSwitch() {
       if (!query) return
       const url = externalSearchUrl(engine, query)
       if (!url) return
+      const opened = safeWindowOpen(url)
+      if (!opened) return
       e.preventDefault()
-      window.open(url, '_blank', 'noopener,noreferrer')
     }
     form.addEventListener('submit', onSubmit)
     return () => form.removeEventListener('submit', onSubmit)

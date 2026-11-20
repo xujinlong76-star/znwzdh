@@ -89,10 +89,13 @@ describe("引擎切换：提交拦截只发生在站外引擎 + 非空查询", (
     expect(src).toContain("if (!query) return");
   });
 
-  it("拦截后新标签打开 externalSearchUrl 的地址，带 noopener", () => {
+  it("拦截后经 safeWindowOpen 新标签打开 externalSearchUrl 的地址，带 noopener", () => {
     expect(src).toContain("e.preventDefault()");
     expect(src).toContain("externalSearchUrl(engine, query)");
-    expect(src).toContain("window.open(url, '_blank', 'noopener,noreferrer')");
+    expect(src).toContain("import { safeWindowOpen } from '@/lib/safe-url'");
+    expect(src).toContain("safeWindowOpen(url)");
+    expect(src).toContain("if (!opened) return");
+    expect(src).not.toContain("window.open(url");
   });
 
   it("地址不手写：组件里没有引擎域名", () => {

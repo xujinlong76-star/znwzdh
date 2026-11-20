@@ -76,8 +76,6 @@ GET /api/rank/similar/{siteId}
 GET /api/ready
 GET /api/recipes
 GET /api/relations/types
-# 搜索热词：只读聚合，词库实时变化且未登记响应契约（与 search/linucb 同口径）
-GET /api/search/hotwords
 GET /api/search/linucb
 GET /api/shortlinks/{code}
 GET /api/sites/duplicates
@@ -226,7 +224,7 @@ HEAD /api/scenes
 HEAD /api/scenes/{id}
 HEAD /api/search
 HEAD /api/search-history
-# HEAD /api/search/hotwords：与 GET 同一处理器，未登记契约的基线同步保留
+# GET /api/search/hotwords 已绑定 SearchHotwordsResponse；HEAD 由 Fastify 自动生成，仍无契约（与 GET 同一处理器）
 HEAD /api/search/hotwords
 HEAD /api/search/linucb
 HEAD /api/shortlinks/{code}

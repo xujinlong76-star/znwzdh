@@ -216,6 +216,15 @@ export interface SearchResponse {
 }
 
 /**
+ * GET /api/search/hotwords
+ */
+export interface SearchHotwordsResponse {
+  hotwords: string[];
+  suggestionsDegraded?: true;
+  [key: string]: unknown;
+}
+
+/**
  * GET /api/sites
  * GET /api/sites/{id}/similar
  */
@@ -3654,6 +3663,7 @@ export interface RestContractRoutes {
   "GET /api/scenes/{id}": SceneDetailResponse;
   "GET /api/search": SearchResponse;
   "GET /api/search-history": SearchHistoryPageResponse;
+  "GET /api/search/hotwords": SearchHotwordsResponse;
   "GET /api/sites": SiteListResponse;
   "GET /api/sites/{id}": SitePayload;
   "GET /api/sites/{id}/facets": SiteFacetsResponse;

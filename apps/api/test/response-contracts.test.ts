@@ -61,6 +61,7 @@ import {
   SITE_CORE_FIELDS,
   SearchHistoryPageResponse,
   SearchHistoryRecordResponse,
+  SearchHotwordsResponse,
   SearchResponse,
   SiteListResponse,
   SitePayload,
@@ -414,6 +415,22 @@ describe("真实响应满足契约", () => {
     const res = await app.inject({ method: "POST", url: "/api/search", payload: { q: "Cursor" } });
     expect(res.statusCode).toBe(200);
     expectRoutedContract("POST /api/search", SearchResponse, res.json());
+  });
+
+  it("GET /api/search/hotwords：热词 chips 数据源满足契约", async () => {
+    // suggestableTopQueries 的形状闸要求 ≥2 身份 / ≥2 行：三个身份各记一次
+    //（与 apps/api/test/search-hotwords.test.ts 同口径）。
+    for (const identity of ["contract-hotwords-a", "contract-hotwords-b", "contract-hotwords-c"]) {
+      await ctx.repo.recordEvent("search", { query: "契约热词", identity });
+    }
+    const res = await app.inject({ method: "GET", url: "/api/search/hotwords" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(SearchHotwordsResponse, body, "GET /api/search/hotwords");
+    expect(body.hotwords).toContain("契约热词");
+    expect(body.hotwords.length).toBeLessThanOrEqual(8);
+    // 正常返回不带降级标记（读失败时才出现 suggestionsDegraded: true）
+    expect(body.suggestionsDegraded).toBeUndefined();
   });
 
   it("站点纠错上报→复核列表→流转：三条路由的真实响应都满足契约（升级第 10 条）", async () => {

@@ -3,8 +3,10 @@
 /**
  * 概览页的账号卡：登录态展示资料摘要，匿名态给出登录、快照导出、健康自检与查看本机收藏。
  *
- * 匿名文案与按钮保持原文（E2E 固定断言），扩展 Local-First 匿名安全舱：
- * - 完整匿名标识展示与一键剪贴板复制；
+ * 匿名态资产感知（Local-First 匿名安全舱）：
+ * - 匿名标识收纳为右上角轻量标签（短码 + 复制），点击复制完整 UUID；
+ * - 安全背书人话化：主文案「仅本机可见的端到端加密（E2EE）」，点击展开技术细节；
+ * - 有成长数据时 3 格改为本机收藏 / 成长等级 / 离线安全舱，并显示登录防丢失提示；
  * - 本机离线数据快照导出（.json）；
  * - 本地存储占用与健康度探测（navigator.storage.estimate）。
  */
@@ -14,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import {
   ArrowRight,
   Check,
+  ChevronDown,
   Clapperboard,
   Copy,
   Download,
@@ -21,9 +24,12 @@ import {
   HardDrive,
   LogIn,
   ShieldCheck,
+  Trophy,
   User,
 } from 'lucide-react'
 import type { Overview } from '@/lib/me-types'
+import { cn } from '@/lib/utils'
+import { GROWTH_UPDATED_EVENT, growthSummary, loadGrowthProfile } from '@/lib/growth'
 import { readLocalUserSettings } from '@/lib/user-settings'
 import { FAVORITES_STORAGE_KEY, parseFavorites } from '@/lib/favorites-storage'
 import { ANON_ID_STORAGE_KEY } from '@/lib/identity-keys'
@@ -49,6 +55,13 @@ export function AccountCard({
   const [copied, setCopied] = useState(false)
   const [storageText, setStorageText] = useState<string | null>(null)
   const [watchlistCount, setWatchlistCount] = useState<number>(0)
+  const [growth, setGrowth] = useState<{
+    level: number
+    totalXp: number
+    streak: number
+    freezeCards: number
+  } | null>(null)
+  const [e2eeOpen, setE2eeOpen] = useState(false)
   const { toast } = useToast()
 
   useEffect(() => {
@@ -77,6 +90,29 @@ export function AccountCard({
           /* 存储占用是装饰信息：隐私模式下 storage.estimate 会抛，吞掉不影响卡片其余内容 */
         })
     }
+  }, [])
+
+  // 成长档案：匿名态同样读本机成长数据，用于资产感知（有成长数据时 3 格改为
+  // 收藏 / 成长等级 / 离线安全舱，并显示防丢失提示）。档案变化经事件广播即时刷新，
+  // 与 GrowthPanel 同一数据源、同一读取范式。
+  useEffect(() => {
+    const refresh = () => {
+      try {
+        const profile = loadGrowthProfile()
+        const summary = growthSummary(profile)
+        setGrowth({
+          level: summary.level,
+          totalXp: profile.totalXp,
+          streak: summary.streak,
+          freezeCards: profile.freezeCards,
+        })
+      } catch {
+        setGrowth(null)
+      }
+    }
+    refresh()
+    window.addEventListener(GROWTH_UPDATED_EVENT, refresh)
+    return () => window.removeEventListener(GROWTH_UPDATED_EVENT, refresh)
   }, [])
 
   const copyAnonId = useCallback(async () => {
@@ -142,6 +178,16 @@ export function AccountCard({
     URL.revokeObjectURL(url)
   }, [anonId, favoritesCount])
 
+  // 有成长数据（XP > 0 或连续访问 > 0）时，3 格改为收藏 / 成长等级 / 离线安全舱，
+  // 并显示防丢失提示；无成长数据的新用户保持原 3 格。
+  const hasGrowth = growth !== null && (growth.totalXp > 0 || growth.streak > 0)
+  const lossPreventionText =
+    hasGrowth && growth
+      ? growth.freezeCards > 0
+        ? `登录即可永久锁定当前 Lv.${growth.level} 成长记录、${growth.freezeCards} 张冻结卡与本机偏好，换设备自动合并`
+        : `登录即可永久锁定当前 Lv.${growth.level} 成长记录与本机偏好，换设备自动合并`
+      : null
+
   if (anonymous) {
     return (
       <section className="relative flex h-full flex-col justify-between overflow-hidden rounded-2xl border border-border/70 bg-card/75 p-4 shadow-xs sm:p-5">
@@ -155,12 +201,28 @@ export function AccountCard({
               <LogIn className="h-5 w-5" aria-hidden />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-start justify-between gap-2">
                 <h2 className="text-base font-semibold tracking-tight">当前是匿名身份</h2>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Local-First 离线安全舱
-                </span>
+                <div className="flex flex-col items-end gap-1">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Local-First 离线安全舱
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void copyAnonId()}
+                    title="匿名设备标识，用于排查问题或合并"
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    ID: {anonId ? `${anonId.slice(0, 9)}…` : '…'}
+                    {copied ? (
+                      <Check className="h-3 w-3 text-emerald-700 dark:text-emerald-400" aria-hidden />
+                    ) : (
+                      <Copy className="h-3 w-3" aria-hidden />
+                    )}
+                    <span>{copied ? '已复制' : '复制'}</span>
+                  </button>
+                </div>
               </div>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 数据默认保存在本机，登录后可跨设备同步并自动合并匿名期间的收藏与画像。
@@ -168,7 +230,7 @@ export function AccountCard({
             </div>
           </div>
 
-          {/* 本机资产速览条：匿名态同样直观呈现本机数据规模 */}
+          {/* 本机资产速览条：有成长数据时突出成长等级与离线安全舱，否则保持原 3 格 */}
           <div className="grid grid-cols-3 gap-2">
             <Link
               href="/favorites"
@@ -180,20 +242,35 @@ export function AccountCard({
               </span>
               <p className="mt-1 text-base font-semibold tabular-nums leading-tight">{favoritesCount}</p>
             </Link>
-            <Link
-              href="/me/watchlist"
-              className="group rounded-xl border border-border/60 bg-background/70 px-2.5 py-2 transition-colors hover:border-primary/40 hover:bg-primary/5"
-            >
-              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                <Clapperboard className="h-3.5 w-3.5 shrink-0 text-sky-700 dark:text-sky-300" aria-hidden />
-                <span className="truncate">追剧清单</span>
-              </span>
-              <p className="mt-1 text-base font-semibold tabular-nums leading-tight">{watchlistCount}</p>
-            </Link>
+            {hasGrowth && growth ? (
+              <div className="rounded-xl border border-border/60 bg-background/70 px-2.5 py-2">
+                <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Trophy className="h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
+                  <span className="truncate">成长等级</span>
+                </span>
+                <p
+                  className="mt-1 truncate text-base font-semibold tabular-nums leading-tight"
+                  title={`Lv.${growth.level} · ${growth.totalXp} XP`}
+                >
+                  Lv.{growth.level} · {growth.totalXp} XP
+                </p>
+              </div>
+            ) : (
+              <Link
+                href="/me/watchlist"
+                className="group rounded-xl border border-border/60 bg-background/70 px-2.5 py-2 transition-colors hover:border-primary/40 hover:bg-primary/5"
+              >
+                <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Clapperboard className="h-3.5 w-3.5 shrink-0 text-sky-700 dark:text-sky-300" aria-hidden />
+                  <span className="truncate">追剧清单</span>
+                </span>
+                <p className="mt-1 text-base font-semibold tabular-nums leading-tight">{watchlistCount}</p>
+              </Link>
+            )}
             <div className="rounded-xl border border-border/60 bg-background/70 px-2.5 py-2">
               <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                 <HardDrive className="h-3.5 w-3.5 shrink-0 text-emerald-700 dark:text-emerald-400" aria-hidden />
-                <span className="truncate">离线占用</span>
+                <span className="truncate">{hasGrowth ? '离线安全舱' : '离线占用'}</span>
               </span>
               <p className="mt-1 truncate text-base font-semibold tabular-nums leading-tight">
                 {storageText ?? '检测中'}
@@ -201,45 +278,38 @@ export function AccountCard({
             </div>
           </div>
 
-          {/* 精简为单行匿名标识与安全说明（消除原两行重复展示 UUID） */}
-          <div className="min-w-0 space-y-1.5 rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-xs">
-            <div className="flex min-w-0 items-center justify-between gap-2">
-              <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                <span className="shrink-0 text-[11px] text-muted-foreground">匿名标识</span>
-                <code
-                  title={anonId}
-                  className="anon-badge block min-w-0 flex-1 truncate rounded border border-border/60 bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-foreground/90 selection:bg-primary/20"
-                >
-                  {anonId}
-                </code>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => void copyAnonId()}
-                className="h-6 shrink-0 gap-1 px-2 text-[11px] hover:bg-muted"
-                title="复制完整匿名标识到剪贴板"
-              >
-                {copied ? (
-                  <>
-                    <Check className="h-3 w-3 text-emerald-700 dark:text-emerald-400" />
-                    <span className="text-emerald-700 dark:text-emerald-400">已复制</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3 w-3 text-muted-foreground" />
-                    <span>复制</span>
-                  </>
+          {/* 安全背书：主文案人话化，点击展开技术细节；UUID 已收纳至右上角轻量标签 */}
+          <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setE2eeOpen((v) => !v)}
+              aria-expanded={e2eeOpen}
+              className="flex w-full items-center gap-1.5 rounded text-left text-[11px] font-medium text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:text-emerald-400"
+            >
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="flex-1">仅本机可见的端到端加密（E2EE）</span>
+              <ChevronDown
+                className={cn(
+                  'h-3.5 w-3.5 shrink-0 transition-transform',
+                  e2eeOpen && 'rotate-180',
                 )}
-              </Button>
-            </div>
-            <p className="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400">
-              <ShieldCheck className="h-3 w-3 shrink-0" aria-hidden />
-              E2EE 端到端密钥受本机设备环境隔离
-            </p>
+                aria-hidden
+              />
+            </button>
+            {e2eeOpen && (
+              <p className="mt-1.5 pl-5 text-[11px] leading-relaxed text-muted-foreground">
+                E2EE 端到端密钥受本机设备环境隔离
+              </p>
+            )}
           </div>
         </div>
+
+        {lossPreventionText && (
+          <p className="relative mt-3 flex items-start gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-800 dark:text-amber-200">
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>{lossPreventionText}</span>
+          </p>
+        )}
 
         <div className="relative mt-4 flex flex-wrap items-center gap-2 pt-1">
           <Button asChild size="sm" className="w-full text-xs sm:w-auto">

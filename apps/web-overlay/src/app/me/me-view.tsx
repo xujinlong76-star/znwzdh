@@ -12,7 +12,7 @@
  *   - 完整设置与资料编辑分别移到 `/me/settings`、`/me/account`。
  *
  * 原地即时交互控件（V5）：
- * 偏好设置从只读展示升级为 In-Place 即时修改（搜索引擎、密度、历史周期、0-RTT），
+ * 偏好设置从只读展示升级为 In-Place 即时修改（搜索引擎、密度、历史周期、智能极速预加载），
  * 修改后通过 Save-then-Verify 内核落盘并广播跨 Tab 与 data-density 样式属性。
  *
  * 固定文案（匿名 / 加载失败 / 登录状态无法确认）与 E2E 断言保持一致。
@@ -66,7 +66,15 @@ import {
 } from '@/lib/growth'
 import { EntryGroups } from '@/components/user-center/dashboard/entry-groups'
 import { ThemeQuickToggle } from '@/components/user-center/dashboard/theme-quick-toggle'
-import { ArrowRight, CheckCircle2, Gift, RefreshCw, Settings2, User } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ArrowRight, CheckCircle2, ChevronDown, Gift, RefreshCw, Settings2, User } from 'lucide-react'
 
 /** 设置面板：原地即时交互控件（In-Place Controls），完整表单可前往 /me/settings */
 // 单选组方向键：遵循 WAI-ARIA 单选组模式——方向键在组内移动并选中，
@@ -133,19 +141,31 @@ function SettingsSummary({
             <span className="text-xs text-muted-foreground font-medium">默认搜索引擎</span>
             <span className="text-[10px] text-muted-foreground font-mono">即时生效</span>
           </div>
-          <select
-            aria-label="默认搜索引擎"
-            disabled={busy || !onPatch}
-            value={settings.defaultSearchEngine}
-            onChange={(e) => onPatch?.({ defaultSearchEngine: e.target.value as SearchEngineId })}
-            className="h-8 w-full rounded-lg border border-border/70 bg-background/90 px-2.5 text-xs font-medium text-foreground transition-colors focus:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
-          >
-            {SEARCH_ENGINE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label="默认搜索引擎"
+              disabled={busy || !onPatch}
+              className="flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-border/70 bg-background/90 px-2.5 text-xs font-medium text-foreground transition-colors focus:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
+            >
+              <span className="truncate">
+                {SEARCH_ENGINE_OPTIONS.find((opt) => opt.value === settings.defaultSearchEngine)
+                  ?.label ?? '站内聚合搜索 (山羊胡)'}
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuRadioGroup
+                value={settings.defaultSearchEngine}
+                onValueChange={(value) => onPatch?.({ defaultSearchEngine: value as SearchEngineId })}
+              >
+                {SEARCH_ENGINE_OPTIONS.map((opt) => (
+                  <DropdownMenuRadioItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* 卡片展示密度 */}
@@ -223,33 +243,54 @@ function SettingsSummary({
           </div>
         </div>
 
-        {/* 0-RTT 即时计算 */}
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/50 p-3">
-          <div className="min-w-0">
-            <span className="block text-xs font-medium text-foreground">0-RTT 即时计算</span>
-            <span className="mt-0.5 block text-[11px] text-muted-foreground">
-              {settings.speculativeZeroRttEnabled ? '已开启推测预热' : '已关闭推测预热'}
+        {/* 智能极速预加载 */}
+        <div className="flex flex-col justify-between gap-2 rounded-xl border border-border/60 bg-background/50 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+              智能极速预加载
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="什么是智能极速预加载"
+                    className="flex h-4 w-4 items-center justify-center rounded-full border border-border/70 bg-muted/50 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                  >
+                    ?
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[240px] text-xs leading-relaxed">
+                  基于 0-RTT 推测预热技术：悬停链接时提前预热，打开站点更快。
+                </TooltipContent>
+              </Tooltip>
+            </span>
+            <span className="text-[10px] text-muted-foreground font-mono">
+              {settings.speculativeZeroRttEnabled ? '已开启' : '已关闭'}
             </span>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={settings.speculativeZeroRttEnabled}
-            aria-label="0-RTT 即时计算"
-            disabled={busy || !onPatch}
-            onClick={() => onPatch?.({ speculativeZeroRttEnabled: !settings.speculativeZeroRttEnabled })}
-            className={cn(
-              'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-border-strong transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
-              settings.speculativeZeroRttEnabled ? 'bg-primary' : 'bg-muted',
-            )}
-          >
-            <span
+          <div className="flex items-end justify-between gap-3">
+            <span className="text-[11px] leading-snug text-muted-foreground">
+              悬停链接时提前预热，打开站点更快
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={settings.speculativeZeroRttEnabled}
+              aria-label="智能极速预加载"
+              disabled={busy || !onPatch}
+              onClick={() => onPatch?.({ speculativeZeroRttEnabled: !settings.speculativeZeroRttEnabled })}
               className={cn(
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out',
-                settings.speculativeZeroRttEnabled ? 'translate-x-5' : 'translate-x-0',
+                'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-border-strong transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+                settings.speculativeZeroRttEnabled ? 'bg-primary' : 'bg-muted',
               )}
-            />
-          </button>
+            >
+              <span
+                className={cn(
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out',
+                  settings.speculativeZeroRttEnabled ? 'translate-x-5' : 'translate-x-0',
+                )}
+              />
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -521,10 +562,6 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
         actions={
           <>
             <ThemeQuickToggle />
-            <Button variant="outline" size="sm" className="w-full text-xs sm:w-auto" onClick={() => void reloadOnce()}>
-              <RefreshCw className="mr-2 h-3.5 w-3.5" />
-              刷新
-            </Button>
           </>
         }
       />

@@ -125,10 +125,20 @@ describe("submission notification transactions", () => {
     expect(queue.body).not.toContain(AUTHOR);
   });
 
-  it("anonymous and signed body-only claims never create ownership; reserved recipients are rejected", async () => {
+  it("signed anon claims own their submission for feedback; unsigned body-only claims do not; reserved recipients are rejected", async () => {
+    // 匿名投稿者也要在「收录反馈」看到自己的汇报：签名 anonId 是合法归属身份。
+    // 但通知仍只发给可登录身份，匿名 owner 不进通知 outbox（避免无主推送）。
+    const anon = "anon-notification-123";
+    const anonCreated = await submission(signed(anon), { identity: AUTHOR });
+    expect(anonCreated.statusCode).toBe(201);
+    const anonId = anonCreated.json().siteId;
+    expect(await ctx.repo.raw("SELECT identity FROM submission_owners WHERE site_id = ?", [anonId])).toEqual([{ identity: anon }]);
+    expect((await reviewSite(anonId, "reject")).statusCode).toBe(200);
+    expect((await outbox(anon)).filter((n) => String(n.body).includes(anonId))).toHaveLength(0);
+    expect((await outbox(AUTHOR)).filter((n) => String(n.body).includes(anonId))).toHaveLength(0);
+
     for (const [headers, extra] of [
       [{}, {}],
-      [signed("anon-notification-123"), { identity: AUTHOR }],
       [{ "x-navhub-identity-signature": signIdentity(SECRET, OTHER) }, { userId: OTHER }],
     ] as Array<[Record<string, string>, Record<string, string>]>) {
       const res = await submission(headers, extra);

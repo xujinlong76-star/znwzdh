@@ -168,6 +168,28 @@ describe("收录反馈：审核汇报 + 个人查询", () => {
     expect(res.json().message).toContain("子类目不属于所选主分类");
   });
 
+  it("匿名投稿：签名 anon 头创建 → 归属落库、同一身份反馈页可见", async () => {
+    const identity = "anon-feedback-chain";
+    const headers = {
+      "x-navhub-anon-id": identity,
+      "x-navhub-identity-signature": signIdentity("test-secret", identity),
+    };
+    const res = await app.inject({
+      method: "POST", url: "/api/submissions", headers,
+      payload: { title: "匿名投稿反馈链", url: "https://anon-owner.example/", categoryId: "cat-ai" },
+    });
+    expect(res.statusCode).toBe(201);
+    const siteId = String(res.json().siteId);
+    const owners = await ctx.repo.raw("SELECT identity FROM submission_owners WHERE site_id = ?", [siteId]);
+    expect(owners).toHaveLength(1);
+    expect(owners[0]!.identity).toBe(identity);
+    const feedback = await app.inject({ method: "GET", url: "/api/submissions/feedback", headers });
+    expect(feedback.statusCode).toBe(200);
+    expect(feedback.json().items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ siteId, status: "pending" })]),
+    );
+  });
+
   it("投稿创建：不同形态的同一 URL（大小写/utm/尾斜杠）被规范化去重返回 409", async () => {
     const identity = "user-submit-dedup";
     const headers = { "x-navhub-user-id": identity, "x-navhub-identity-signature": signIdentity("test-secret", identity) };

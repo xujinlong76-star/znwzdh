@@ -97,6 +97,35 @@ describe("AI 原因生成：外发隐私与输出清理", () => {
     expect(rows[0]!.reviewer_note).toBe(PRIVATE_NOTE); // 原始备注仍留库内（不外发出口）
   });
 
+  it("模型去掉备注标点逐字复述 → 归一化后命中，仍走模板", async () => {
+    const note = "预算不足，暂不收录";
+    llmContent = `抱歉，预算不足暂不收录，请完善后再来。`;
+    const siteId = await submit(3);
+    const res = await app.inject({
+      method: "PATCH", url: `/api/submissions/${siteId}`, headers,
+      payload: { action: "reject", reason: note },
+    });
+    expect(res.statusCode).toBe(200);
+    const rows = await ctx.repo.raw("SELECT reason FROM submission_reviews WHERE site_id = ?", [siteId]);
+    const reason = String(rows[0]!.reason);
+    expect(reason).toContain("暂未通过");
+    expect(reason).not.toContain("预算不足");
+  });
+
+  it("极短备注被整段复述 → 丢弃（包含检测会误伤，整段相等仍拦）", async () => {
+    const note = "刷屏";
+    llmContent = "刷屏";
+    const siteId = await submit(4);
+    const res = await app.inject({
+      method: "PATCH", url: `/api/submissions/${siteId}`, headers,
+      payload: { action: "reject", reason: note },
+    });
+    expect(res.statusCode).toBe(200);
+    const rows = await ctx.repo.raw("SELECT reason FROM submission_reviews WHERE site_id = ?", [siteId]);
+    expect(String(rows[0]!.reason)).toContain("暂未通过");
+    expect(String(rows[0]!.reason)).not.toContain("刷屏");
+  });
+
   it("模型正常输出（不含备注）→ 对称剥引号后进汇报", async () => {
     llmContent = `"内容与定位清晰，具有明确的实用价值，予以收录。"`;
     const siteId = await submit(2);

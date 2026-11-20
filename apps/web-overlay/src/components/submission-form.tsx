@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { safeHref } from '@/lib/safe-url'
+import { getAnonId, getIdentity } from '@/lib/identity'
+import { anonHeaders } from '@/lib/navhub-api'
 import { Button } from "@/registry/new-york/ui/button"
 import { Input } from "@/registry/new-york/ui/input"
 import { Textarea } from "@/registry/new-york/ui/textarea"
@@ -99,7 +101,10 @@ export function SubmissionForm({ navigationData, initialTitle, initialUrl }: Sub
                 }))
             const res = await fetch('/api/hub/submissions/prefill', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                // 显式带匿名身份：有会话时代理用会话身份覆盖（按登录用户记账），
+                // 无会话时匿名合池。用 getAnonId() 而非 getIdentity()：后者可能在
+                // 登录态过期后仍留着旧 userId，代理会按「未登录自称账号」403。
+                headers: { 'Content-Type': 'application/json', ...anonHeaders(getAnonId()) },
                 body: JSON.stringify({ url: targetUrl, categories: categoriesPayload }),
             })
             // 响应体不是 JSON（如 502 网关页）时按「无预填」处理，下面 res.ok 分支会兜底
@@ -137,7 +142,8 @@ export function SubmissionForm({ navigationData, initialTitle, initialUrl }: Sub
                 })
             }
         } catch {
-            if (seq !== prefillSeqRef.current) return
+            // 与成功分支同口径：改了网址后旧请求失败也不许弹错到新输入上
+            if (seq !== prefillSeqRef.current || latestUrlRef.current !== targetUrl) return
             setResult({
                 success: false,
                 message: 'AI 识别服务请求失败，请手动填写或稍后重试',
@@ -192,7 +198,10 @@ export function SubmissionForm({ navigationData, initialTitle, initialUrl }: Sub
             const response = await fetch('/api/submissions', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    // 匿名投稿也要带身份：BFF 只在会话缺席时转发明文 anonId 并签名，
+                    // 中枢据此写 submission_owners，否则反馈页永远查不到这条投稿。
+                    ...anonHeaders(getIdentity())
                 },
                 body: JSON.stringify(formData)
             })

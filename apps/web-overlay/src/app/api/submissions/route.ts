@@ -42,6 +42,22 @@ function hubServiceToken(): string | undefined {
 }
 
 /**
+ * 投稿人匿名身份：只接受 anon-* 自报头，绝不把客户端自称的账号带进身份链。
+ *
+ * 收录反馈页用 `getIdentity()` 取身份（登录优先、否则 localStorage anonId），
+ * 中枢 POST /api/submissions 只有拿到可信身份才会写 submission_owners。此前
+ * 这条 BFF 只转发会话用户，匿名用户投稿全部落成无主数据——反馈页对投稿主力
+ * （未登录用户）恒为空。这里沿用 /api/hub/* 代理的裁决口径：会话优先，
+ * 无会话时仅认 anon- 前缀并由服务端签名后转发（客户端签名不进中枢）。
+ */
+function claimedAnonIdentity(request: NextRequest): string | null {
+  const raw = request.headers.get('x-navhub-anon-id') ?? request.headers.get('x-anon-id')
+  if (!raw) return null
+  const identity = raw.trim().slice(0, 64)
+  return identity.startsWith('anon-') ? identity : null
+}
+
+/**
  * 是否配置了 GitHub 投稿通道。
  * NavHub 默认部署（STORAGE_ADAPTER=http）没有 GitHub 配置，
  * 上游的「建 Issue」流程会直接失败——因此提供中枢回退：
@@ -62,12 +78,15 @@ async function submitToHub(data: SubmissionData, request: NextRequest): Promise<
         headers['x-forwarded-for'] = xff
     }
     const session = await auth()
-    const identity = canonicalUserId(session?.user)
+    const sessionIdentity = canonicalUserId(session?.user)
+    // 会话优先：已登录用户即使带 anon 头也按会话身份归属，避免改 anonId 读写他人。
+    const identity = sessionIdentity ?? claimedAnonIdentity(request)
     const secret = hubIdentitySecret()
     // 无签名密钥时按匿名投稿，不借用管理凭据或客户端自称身份。
     if (identity && secret) {
         const signedIdentity = identity.slice(0, 64)
-        headers['x-navhub-user-id'] = signedIdentity
+        if (sessionIdentity) headers['x-navhub-user-id'] = signedIdentity
+        else headers['x-navhub-anon-id'] = signedIdentity
         Object.assign(headers, await identitySignatureHeaders(secret, signedIdentity))
     }
 

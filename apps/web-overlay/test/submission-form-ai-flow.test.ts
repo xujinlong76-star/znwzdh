@@ -84,9 +84,20 @@ describe('投稿表单 AI 自动流守卫', () => {
     expect(form).toContain('prefillSeqRef')
     expect(form).toContain('latestUrlRef')
     expect(form).toMatch(/seq !== prefillSeqRef\.current \|\| latestUrlRef\.current !== targetUrl\) return/)
-    // 成功与 catch / finally 都判序号（旧请求不落地、不误关新请求的 loading）
-    expect(form).toContain('if (seq !== prefillSeqRef.current) return')
+    // 成功与 catch 都判「序号 + 最新 URL」：改址后旧请求失败也不能弹错到新输入
+    expect(form).toMatch(/catch \{[\s\S]{0,120}seq !== prefillSeqRef\.current \|\| latestUrlRef\.current !== targetUrl\) return/)
     expect(form).toContain('if (seq === prefillSeqRef.current) setIsAiPrefilling(false)')
+  })
+
+  it('身份传递：AI 识别与投稿提交都显式带身份（额度按真实身份、投稿可归属）', () => {
+    expect(form).toContain("import { getAnonId, getIdentity } from '@/lib/identity'")
+    expect(form).toContain("import { anonHeaders } from '@/lib/navhub-api'")
+    const prefillFetch = form.slice(form.indexOf("fetch('/api/hub/submissions/prefill'"), form.indexOf("fetch('/api/hub/submissions/prefill'") + 520)
+    // public 端点用 anonId：有会话代理会用会话身份覆盖，无会话走匿名合池；
+    // 不用 getIdentity()，避免登录态过期后的旧 userId 触发 403。
+    expect(prefillFetch).toContain('anonHeaders(getAnonId())')
+    const submitFetch = form.slice(form.indexOf("fetch('/api/submissions'"), form.indexOf("fetch('/api/submissions'") + 520)
+    expect(submitFetch).toContain('anonHeaders(getIdentity())')
   })
 
   it('分类一致性：主分类变化时旧子分类不得沿用', () => {

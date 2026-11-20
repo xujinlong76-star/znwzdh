@@ -350,8 +350,12 @@ candidates 给第二、第三可能的分类（最多 2 条，不含已选的 ca
       reply.code(403);
       return { success: false, message: "保留身份不能投稿" };
     }
-    const owner = identity && !identity.startsWith("anon-") && identity !== "anonymous" &&
-      !rawIdentity?.startsWith("anon-") && rawIdentity !== "anonymous" ? identity : null;
+    // 归属允许匿名身份：收录反馈页用 getIdentity() 查询，未登录投稿者的身份就是
+    // anon-*，排除它会让投稿主力永远看不到自己的审核汇报。body 自称身份已被
+    // 签名闸门挡在 rawIdentity 之外；这里只排保留身份与字面 anonymous。
+    const owner = identity && identity !== ADMIN_NOTIFICATION_IDENTITY && identity !== "anonymous"
+      ? identity
+      : null;
     const site = await ctx.repo.withTransaction(async () => {
       const created = await ctx.repo.createSite({
         url: canonicalUrl,
@@ -638,11 +642,18 @@ ${action === "approve"
     // 剥模型偶尔裹上的引号（中英引号对称清理）；原正则开头字符类重复、结尾漏右引号，清不干净
     const text = (res.content || "").trim().replace(/^[「」"']+|[「」"']+$/g, "").slice(0, 300);
     // 代码层兜底：prompt 的自然语言约束「禁止逐字复述」不保证模型遵守。备注是
-    // 内部口径，reason 会外发到通知与反馈页；若输出里含备注原文（去空白/小写
-    // 归一化后包含），整段丢弃走模板，确保内部意见绝不泄漏给投稿人。
-    const note = reviewerNote?.trim().toLowerCase().replace(/\s+/g, "");
-    if (note && note.length >= 4 && text.toLowerCase().replace(/\s+/g, "").includes(note)) {
-      return fallback();
+    // 内部口径，reason 会外发到通知与反馈页。归一化不只去空白/小写，还要去掉
+    // 标点与符号——模型常把「预算不足，暂不收录」写成「预算不足暂不收录」，
+    // 只比空白会让这种逐字复述漏过。极短备注（2~3 字）不做包含检测（会误伤
+    // 「不好」这类常见词），但若整段输出就是该备注，仍然丢弃。
+    const normalizeForLeakCheck = (s: string) => s.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
+    const note = reviewerNote ? normalizeForLeakCheck(reviewerNote) : "";
+    const output = normalizeForLeakCheck(text);
+    if (note) {
+      const verbatim = note.length >= 4
+        ? output.includes(note)
+        : note.length >= 2 && output === note;
+      if (verbatim) return fallback();
     }
     return { text: text || fallback().text, source: "ai" };
   } catch {

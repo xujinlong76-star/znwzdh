@@ -9,7 +9,8 @@
 const relativeFormat = new Intl.RelativeTimeFormat("zh-CN", { numeric: "auto" });
 
 export function formatRelativeTime(ts: number | null | undefined, now = Date.now()): string {
-  if (ts == null || typeof ts !== "number" || !Number.isFinite(ts)) return "—";
+  // 0 / 负数不是合法时间戳（Date.now() 恒 > 0）：脏数据不渲染成 1970 年日期。
+  if (ts == null || typeof ts !== "number" || !Number.isFinite(ts) || ts <= 0) return "—";
   const diffMs = now - ts;
   // 未来时间戳（时钟偏差）按“刚刚”处理，不显示负数
   if (diffMs < 0) return "刚刚";

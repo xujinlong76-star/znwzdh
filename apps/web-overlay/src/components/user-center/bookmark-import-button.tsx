@@ -12,10 +12,16 @@ import { useCallback, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import { BookmarkPlus, Loader2 } from 'lucide-react'
-import type { FavoritesApi } from '@/hooks/useFavorites'
+import { useFavorites } from '@/hooks/useFavorites'
 
-export function BookmarkImportButton({ favorites }: { favorites: FavoritesApi }) {
+/**
+ * 书签导入按钮直接订阅本机收藏（原来由 /me/data 把 favorites 对象当 prop
+ * 传进来——那会逼页面静态 import useFavorites，整条收藏闭包占首屏预算；
+ * 本组件已是按需加载的动态 chunk，在这里订阅，闭包随 chunk 一起按需加载）。
+ */
+export function BookmarkImportButton() {
   const { toast } = useToast()
+  const favorites = useFavorites()
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
 

@@ -325,7 +325,13 @@ describe('接线守卫：replaceAll 不经过撤销路径；hook 回调推栈', 
     )
     expect(body).toContain('if (opts?.pushUndo !== false) snapshotToTrash')
     expect(hookSrc).toContain('已清空全部收藏')
-    const dataSrc = overlaySource('src/app/me/data/page.tsx')
+    // 2026-11-21：危险区（含 favorites.clear 调用）从 page.tsx 抽成按需加载的
+    // me-data-danger-zone.tsx（/me/data 首屏预算超 2 KB 的拆分），接线断言跟随
+    // 新位置；行为不变：仍是 pushUndo:false 且只清本体、不碰回收站键。
+    // 页面仍挂载该组件（动态 import），删除入口没有丢。
+    const pageSrc = overlaySource('src/app/me/data/page.tsx')
+    expect(pageSrc).toContain('me-data-danger-zone')
+    const dataSrc = overlaySource('src/components/user-center/me-data-danger-zone.tsx')
     expect(dataSrc).toContain('favorites.clear({ pushUndo: false })')
     expect(dataSrc).toContain('navhub.favorites.trash.v1')
   })

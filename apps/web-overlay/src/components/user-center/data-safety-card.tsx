@@ -24,7 +24,6 @@ import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-relative-ti
 import type { DataSafety, SafetyCheck, SafetyStatus } from '@/lib/me-types'
 import type { DiagnosticCheckItem } from '@/lib/user-settings'
 import { buildLocalSnapshotCheck } from '@/lib/user-settings'
-import { syncFavoritesToCloud } from '@/hooks/useFavorites'
 
 /** 失败原因三档文案（与服务端 mapSyncErrorCode 的枚举同源，只给分类）。 */
 export function describeSyncErrorCode(code: string | null | undefined): string {
@@ -211,6 +210,10 @@ export function DataSafetyCard({
     setSyncing(true)
     setSyncMessage(null)
     try {
+      // 收藏同步模块只在用户点「重新同步」时才需要：动态 import，避免整条
+      // useFavorites 闭包（favorites-storage/triage/hibernation/undo-stack…）
+      // 静态挂进数据页首屏（/me/data 曾超首屏预算 2 KB）。
+      const { syncFavoritesToCloud } = await import('@/hooks/useFavorites')
       const result = await syncFavoritesToCloud()
       setSyncMessage(
         result.ok

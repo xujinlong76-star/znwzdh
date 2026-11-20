@@ -15,8 +15,6 @@ import { Container } from '@/components/ui/container'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/use-toast'
-import { useFavorites } from '@/hooks/useFavorites'
-import { signOut } from "next-auth/react"
 import { probeClientSession } from '@/lib/client-session'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { AnonymousHint } from '@/components/user-center/anonymous-hint'
@@ -52,13 +50,22 @@ const LocalDataManager = dynamic(
 
 // 页脚在折叠线以下：动态导入（与 /videos 的 Footer 处理一致）。
 const Footer = dynamic(() => import('@/components/footer').then((m) => m.Footer), { ssr: false })
+
+// 危险区（删除全部云端数据）在折叠线以下，且是本页唯一消费 useFavorites /
+// next-auth signOut 的地方：整条收藏闭包按需加载，不占数据页首屏预算
+// （/me/data 曾超预算 2 KB，见 scripts/bundle-budget.json:31）。
+const MeDataDangerZone = dynamic(
+  () => import('@/components/user-center/me-data-danger-zone').then((m) => m.MeDataDangerZone),
+  {
+    ssr: false,
+    loading: () => <div className="h-32 animate-pulse rounded-2xl border border-border/70 bg-card/50" aria-busy="true" />,
+  },
+)
 import { SectionState } from '@/components/user-center/section-state'
 import { DataSafetyCard } from '@/components/user-center/data-safety-card'
 import {
-  AlertTriangle,
   Bookmark,
   Bot,
-  CheckCircle2,
   Database,
   Download,
   Eraser,
@@ -67,7 +74,6 @@ import {
   History,
   Loader2,
   ShieldCheck,
-  Trash2,
   Upload,
   Zap,
 } from 'lucide-react'
@@ -123,12 +129,9 @@ interface DataOverviewSummary {
 
 export default function MeDataPage() {
   const { toast } = useToast()
-  const favorites = useFavorites()
   const [state, setState] = useState<ViewState>('loading')
   const [summary, setSummary] = useState<DataOverviewSummary | null>(null)
   const [exporting, setExporting] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [confirmText, setConfirmText] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   // 备份导入恢复状态
@@ -423,48 +426,6 @@ export default function MeDataPage() {
     [confirmPruneDomain, loadSummary, toast],
   )
 
-  const handleDelete = useCallback(async () => {
-    if (confirmText.trim().toUpperCase() !== 'DELETE') return
-    setDeleting(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/me', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirm: 'DELETE' }),
-        cache: 'no-store',
-      })
-      const data = (await res.json().catch(() => ({}))) as { error?: string }
-      if (!res.ok) throw new Error(data.error || '删除失败')
-      // 云端已清空：本机收藏缓存一并清掉，避免下次同步又把旧数据推回云端。
-      // pushUndo: false——账号删除本身不进撤销（云端已清空，撤销无意义）。
-      // 注意：这里只清收藏本体（navhub.favorites.v1），绝不碰回收站键
-      // navhub.favorites.trash.v1——清账号是另一回事，回收站里的 30 天
-      // 快照留给用户自己在回收站页处理，不由账号删除顺手抹掉。
-      favorites.clear({ pushUndo: false })
-      for (const key of Object.keys(window.localStorage)) {
-        if (key.startsWith('navhub.growth.')) window.localStorage.removeItem(key)
-      }
-      setState('deleted')
-      toast({ title: '云端数据已删除', description: '登录账号已一并删除，邮箱与密码不再可用；重新注册是全新的空账号。' })
-      // U-278：不在这里登出——立即登出会跳首页，确认区永远渲染不到。
-      // 登出改由确认区「退出并返回用户中心」按钮触发（handleDeletedReturn）；
-      // 服务端在 DELETE 返回前已 revokeAllSessions 并删了账号行，残留本地
-      // 会话已无实际权限，推迟登出无风险。
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '删除失败')
-    } finally {
-      setDeleting(false)
-    }
-  }, [confirmText, favorites, toast])
-
-  // U-278：确认区「退出并返回用户中心」按钮的唯一登出入口。删除成功后先停在
-  // 确认态展示结果，用户点返回才登出回 /me（此时已是匿名态，会话在
-  // 服务端早已吊销，登出只是清本地 cookie）。
-  const handleDeletedReturn = useCallback(async () => {
-    await signOut({ callbackUrl: '/me' })
-  }, [])
-
   return (
     <Container as="main" id="main-content" className="space-y-6 pt-3 pb-8 sm:pt-4 sm:pb-10">
       <CenterPageHeader
@@ -504,20 +465,7 @@ export default function MeDataPage() {
       )}
 
       {state === 'deleted' && (
-        <section className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 sm:p-6">
-          <div className="flex items-start gap-3">
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" aria-hidden />
-            <div className="min-w-0">
-              <p className="text-sm font-semibold">云端数据已删除</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                收藏、历史、画像、LLM 配置、金库元信息与插件安装记录均已清除，登录账号已一并删除，邮箱与密码不再可用。
-              </p>
-              <Button variant="outline" size="sm" className="mt-3 w-full text-xs sm:w-auto" onClick={() => void handleDeletedReturn()}>
-                退出并返回用户中心
-              </Button>
-            </div>
-          </div>
-        </section>
+        <MeDataDangerZone deleted onDeleted={() => setState('deleted')} onError={setError} />
       )}
 
       {state === 'ready' && (
@@ -709,7 +657,7 @@ export default function MeDataPage() {
                 {importing ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-2 h-3.5 w-3.5" />}
                 选择备份 JSON 文件恢复
               </Button>
-              <BookmarkImportButton favorites={favorites} />
+              <BookmarkImportButton />
               <Input
                 aria-label="粘贴备份 JSON 内容"
                 value={importJsonText}
@@ -783,39 +731,7 @@ export default function MeDataPage() {
 
           <LocalDataManager />
 
-          <section className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="flex items-center gap-2 text-sm font-semibold text-destructive-text">
-                <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
-                删除全部云端数据
-              </h2>
-              <span className="rounded-full border border-destructive/30 bg-destructive/15 px-2 py-0.5 text-[10px] font-medium text-destructive-text">
-                不可逆
-              </span>
-            </div>
-            <p className="mt-3 max-w-prose text-xs leading-relaxed text-muted-foreground">
-              这是不可逆操作。输入 <span className="font-mono font-semibold text-destructive-text">DELETE</span> 解锁按钮。
-            </p>
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-              <Input
-                value={confirmText}
-                onChange={(e) => setConfirmText(e.target.value)}
-                placeholder="输入 DELETE"
-                className="h-9 w-full text-xs sm:w-44"
-                aria-label="删除确认"
-              />
-              <Button
-                variant="destructive"
-                size="sm"
-                className="w-full text-xs sm:w-auto"
-                disabled={deleting || confirmText.trim().toUpperCase() !== 'DELETE'}
-                onClick={() => void handleDelete()}
-              >
-                {deleting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-2 h-3.5 w-3.5" />}
-                永久删除
-              </Button>
-            </div>
-          </section>
+          <MeDataDangerZone deleted={false} onDeleted={() => setState('deleted')} onError={setError} />
         </>
       )}
 

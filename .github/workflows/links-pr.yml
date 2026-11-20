@@ -1,0 +1,66 @@
+# =============================================================================
+# links-pr：PR 门禁 —— 只拦内部死链（零外部误报、零限流）
+#
+# 方案 03-livelink-mapping §6.1。lychee 以 --offline 只查本地文件、禁网，
+# 检查仓库内文档（README / docs / wiki）的站内链接与锚点。
+#
+# 退出码分流（写在 shell 步骤里，直接读 $?，不依赖 lychee-action 的
+# fail 输入与 outputs.exit_code 语义）：
+#   0 = 通过；2 = 链检查失败（至少一条未排除链接失败）→ 阻塞合入；
+#   1/3 = 配置/运行错误 → 不报死链，报给维护者修工具。
+#
+# lychee 二进制直接取官方 release（v0.24.2，见方案 §6），下载后验 sha256，
+# 不经过 lychee-action —— 这样 $? 就是 lychee 自身的退出码。
+# =============================================================================
+
+name: links-pr
+
+on:
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+# 最小权限：门禁只读内容
+permissions:
+  contents: read
+
+jobs:
+  links-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install lychee v0.24.2 (release tarball, sha256 verified)
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/lychee.tar.gz \
+            https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz
+          curl -fsSL -o /tmp/lychee.tar.gz.sha256 \
+            https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz.sha256
+          cd /tmp && sha256sum -c lychee.tar.gz.sha256
+          tar -xzf /tmp/lychee.tar.gz -C /tmp lychee
+          sudo install -m 0755 /tmp/lychee /usr/local/bin/lychee
+          lychee --version
+
+      - name: Check internal links (offline)
+        id: lychee
+        run: |
+          set +e
+          lychee --config lychee.toml --offline README.md docs wiki.md
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Gate on lychee exit code
+        run: |
+          code="${{ steps.lychee.outputs.exit_code }}"
+          if [ "$code" = "0" ]; then
+            echo "links-pr: 通过，无内部死链。"
+          elif [ "$code" = "2" ]; then
+            echo "::error::links-pr: 发现内部死链（lychee 退出码 2），阻塞合入。请修复 README.md / docs / wiki.md 里的失效站内链接或锚点。"
+            exit 1
+          elif [ "$code" = "1" ] || [ "$code" = "3" ]; then
+            echo "::error::links-pr: lychee 配置/运行错误（退出码 $code），不是死链。请维护者检查 lychee.toml 与工作流，不要把工具故障报成死链。"
+            exit 1
+          else
+            echo "::error::links-pr: lychee 未知退出码 $code，请维护者检查。"
+            exit 1
+          fi

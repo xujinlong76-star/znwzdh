@@ -8,7 +8,7 @@
  * 4. 协作式限时退出（run.shouldStop()）与顺延。
  */
 
-import { auditPageHealth, BOT_BLOCKED_ERROR_PREFIX, classifyProbeStatus, isBotBlockedHealthRecord } from "@navhub/core";
+import { auditPageHealth, BOT_BLOCKED_ERROR_PREFIX, classifyProbeStatus } from "@navhub/core";
 import type { AppContext } from "../../context.ts";
 import {
   HEALTH_FAIL_THRESHOLD,
@@ -63,25 +63,27 @@ export function needsDesktopRetry(status: number): boolean {
 
 /**
  * 本次失败是否足以把站点标为 broken。
- * 查该站点最近 threshold-1 次巡检，统计「从最近往前连续失败」的次数。
+ *
+ * 读持久计数，不再现扫 health_checks：连续失败计数已持久化在
+ * `sites.consecutive_failures`（与 updateSiteHealth 的 health 写回 +
+ * lastCheckedAt 同一次写入、同一事务可见；03 §3.3，W1 §13 第 2 条 verdict ①）。
+ * 本函数在 updateSiteHealth 写本次结果之前调（只在本次失败时调），所以读到
+ * 的是上一次巡检结束后的计数，本次失败再 +1 后与阈值比较。
+ *
+ * bot-blocked 行在写入时已把计数清零（打断链，见 updateSiteHealth），
+ * 这里无需再扫历史识别 BOT_BLOCKED 前缀；永久 WAF 站因此永远到不了阈值，
+ * 与旧实现的行为一致（2026-10-18 事故：kubernetes.io / figma.com / npmjs.com）。
+ *
+ * 阈值取 HEALTH_FAIL_THRESHOLD，其默认值就是 core 的
+ * CONSECUTIVE_FAILURES_THRESHOLD（= 2，03 §3.3 已裁决）；环境变量
+ * NAVHUB_HEALTH_FAIL_THRESHOLD 仍可临时覆盖（§11 风险 5 的回退：阈值 2→3）。
  */
 export async function shouldBreak(ctx: AppContext, siteId: string): Promise<boolean> {
-  const threshold = HEALTH_FAIL_THRESHOLD;
-  if (threshold <= 1) return true;
   try {
-    const recent = await ctx.repo.recentHealthChecks(siteId, threshold - 1);
-    let consecutive = 0;
-    for (const r of recent) {
-      if (r.ok) break;
-      // bot-blocked 行是“未测准”不是失败：站点当时在线但拒绝巡检抓取。
-      // 它打断连续失败链（与 ok 同级）——否则永久 WAF 站迟早被误标 broken，
-      // 这正是 2026-10-18 事故（kubernetes.io / figma.com / npmjs.com）的根因。
-      if (isBotBlockedHealthRecord(r.error)) break;
-      consecutive++;
-    }
-    return shouldMarkBroken(false, consecutive, threshold);
+    const previous = await ctx.repo.getConsecutiveFailures(siteId);
+    return shouldMarkBroken(false, previous, HEALTH_FAIL_THRESHOLD);
   } catch {
-    // 查不到历史（新库/表缺失）时保守处理：不标 broken，等下一轮
+    // 查不到计数（新库/表缺失/列未迁移）时保守处理：不标 broken，等下一轮
     return false;
   }
 }

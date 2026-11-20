@@ -16,7 +16,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
-import { shouldMarkBroken } from "../src/jobs.ts";
+import { HEALTH_FAIL_THRESHOLD, shouldMarkBroken } from "../src/jobs.ts";
+import { BOT_BLOCKED_ERROR_PREFIX } from "@navhub/core";
 
 let dir: string;
 let ctx: AppContext;
@@ -88,5 +89,57 @@ describe("recentHealthChecks", () => {
     const limited = await ctx.repo.recentHealthChecks(site.id, 1);
     expect(limited).toHaveLength(1);
     expect(limited[0].ok).toBe(true);
+  });
+});
+
+describe("默认阈值统一为 2（03 §3.3 已裁决）", () => {
+  it("HEALTH_FAIL_THRESHOLD 默认 2（环境变量未覆盖时）", () => {
+    // 本测试假定运行环境未设置 NAVHUB_HEALTH_FAIL_THRESHOLD（CI 默认即如此）；
+    // 运维仍可用该变量临时覆盖（§11 风险 5 的回退：阈值 2→3）。
+    expect(HEALTH_FAIL_THRESHOLD).toBe(2);
+  });
+
+  it("默认阈值下：第 1 次失败不标 broken，第 2 次标 broken", () => {
+    expect(shouldMarkBroken(false, 0)).toBe(false);
+    expect(shouldMarkBroken(false, 1)).toBe(true);
+  });
+});
+
+describe("sites.consecutive_failures 持久化（W1 §13 第 2 条 verdict ①）", () => {
+  it("失败 +1、成功清零、bot-blocked 打断链；与 lastCheckedAt 同一次写入可见", async () => {
+    const cat = await ctx.repo.createCategory({ id: "cat-counter", title: "计数测试分类", sort: 1, source: "api" } as never);
+    const site = await ctx.repo.createSite({ url: "https://example.com/counter", title: "计数测试", categoryId: cat.id } as never);
+    expect(await ctx.repo.getConsecutiveFailures(site.id)).toBe(0);
+
+    const record = async (ok: boolean, error: string | null, httpStatus = ok ? 200 : 500) =>
+      ctx.repo.updateSiteHealth(site.id, {
+        httpStatus,
+        ok,
+        latencyMs: 10,
+        redirectTo: null,
+        error,
+        markBroken: false,
+      });
+
+    await record(false, "boom");
+    expect(await ctx.repo.getConsecutiveFailures(site.id)).toBe(1);
+    // 同一次写入里 lastCheckedAt 已有值（计数与 health 写回同一事务）
+    expect((await ctx.repo.getSite(site.id))!.health!.lastCheckedAt).toBeGreaterThan(0);
+
+    await record(false, "boom");
+    expect(await ctx.repo.getConsecutiveFailures(site.id)).toBe(2);
+
+    // bot-blocked 行（ok=false 但带 BOT_BLOCKED 前缀）不清零就错：打断链回 0
+    await record(false, `${BOT_BLOCKED_ERROR_PREFIX} 第 1 层 HTTP 403，第 2 层桌面 UA 仍 HTTP 403`, 403);
+    expect(await ctx.repo.getConsecutiveFailures(site.id)).toBe(0);
+
+    await record(false, "boom");
+    expect(await ctx.repo.getConsecutiveFailures(site.id)).toBe(1);
+    await record(true, null);
+    expect(await ctx.repo.getConsecutiveFailures(site.id)).toBe(0);
+  });
+
+  it("未知站点计数为 0", async () => {
+    expect(await ctx.repo.getConsecutiveFailures("no-such-site")).toBe(0);
   });
 });

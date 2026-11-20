@@ -44,22 +44,37 @@ test.describe('U-155 今日中心入口可见文字标签（2026-11-19 01:22 轮
   // 文案复用已 SSR 的 todayBadge.todayCount：有今日节点时「今日 N 项」，
   // 无节点时只写「今日」。aria-label 不动，本用例仍用它定位按钮。
   // 与服务端同源：todayCount = todayNodes(nowMs).length。
-  test('首屏按钮含可见「今日 N 项」标签（桌面与 390px 移动端）', async ({
+  // 意图变更（87b95e27，2026-11-20）：「今日」文字标签的显示断点由 xl 延后到
+  // 2xl——<1536px 只留图标 + title Tooltip + 红点徽章，文字标签隐藏（1280px 档
+  // 标签会把搜索容器压到 298px、输入框只剩 18px）。本用例随新行为改写：1280px
+  // 与 390px 档断言标签隐藏（按钮本身仍可见），并补 1600px（2xl）档的标签可见
+  // 用例；断言未删，只改断言方向。e2e2 分支的 toolbar-360-overflow 同款改写。
+  test('首屏按钮「今日 N 项」标签按 2xl 断点隐藏（1280px 与 390px 移动端）', async ({
     page,
   }) => {
-    const nowMs = Date.now()
-    const todayCount = todayNodes(nowMs).length
-    const expected = todayCount > 0 ? `今日 ${todayCount} 项` : '今日'
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 800 })
       await page.goto('/')
       const btn = page.getByRole('button', { name: '打开今日中心小窗', exact: true })
       await expect(btn).toBeVisible({ timeout: 60_000 })
-      // 标签是按钮内真实可见的 span 文本，不是仅 title 悬停提示。
+      // 标签是按钮内真实可见的 span 文本，不是仅 title 悬停提示；<1536px 应隐藏。
       const label = btn.locator('span:not([aria-hidden])')
-      await expect(label).toBeVisible({ timeout: 10_000 })
-      await expect(label).toHaveText(expected)
+      await expect(label).toBeHidden()
     }
+  })
+
+  test('首屏按钮含可见「今日 N 项」标签（1600px，2xl）', async ({ page }) => {
+    const nowMs = Date.now()
+    const todayCount = todayNodes(nowMs).length
+    const expected = todayCount > 0 ? `今日 ${todayCount} 项` : '今日'
+    await page.setViewportSize({ width: 1600, height: 800 })
+    await page.goto('/')
+    const btn = page.getByRole('button', { name: '打开今日中心小窗', exact: true })
+    await expect(btn).toBeVisible({ timeout: 60_000 })
+    // 标签是按钮内真实可见的 span 文本，不是仅 title 悬停提示。
+    const label = btn.locator('span:not([aria-hidden])')
+    await expect(label).toBeVisible({ timeout: 10_000 })
+    await expect(label).toHaveText(expected)
   })
 })
 

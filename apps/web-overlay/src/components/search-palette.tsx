@@ -47,7 +47,7 @@ import {
   type RecentSearchItem,
 } from '@/lib/recent-search'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
-import { mruScore, recordOfflineVisit, readOfflineVisits, splitRecentVisitsForBoost, type RecentVisit } from '@/lib/offline-recent'
+import { OFFLINE_RECENT_LIMIT, buildMruNormBySiteId, recordOfflineVisit, readOfflineVisits, splitRecentVisitsForBoost, type RecentVisit } from '@/lib/offline-recent'
 import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
 import { openCopilot } from '@/lib/ai-entry'
@@ -362,6 +362,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [relaxedFacets, setRelaxedFacets] = useState<Record<string, string[]> | undefined>(undefined)
   const [recent, setRecent] = useState<RecentSearchItem[]>([])
   const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
+  /** MRU 加分用的全量快照（上限 50 条）：与空面板直达区的 8 条分轨，
+      8 条之外的收藏也能拿到 MRU 加分（W6b 补丁 2）。 */
+  const [mruVisits, setMruVisits] = useState<RecentVisit[]>([])
   /** 中枢不可用（历史拉取降级）：与「真的没有历史」区分，避免把故障渲染成「暂无数据」 */
   const [recentDegraded, setRecentDegraded] = useState(false)
   /** 清空最近搜索的两步确认是否已 armed（同 /me/history「清空全部」→「确认清空全部」） */
@@ -635,6 +638,13 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         setRecentVisits(visits)
       }).catch(() => {
         // 容错降级：本地最近访问读取失败保持空数组
+      })
+      // MRU 加分读全量（OFFLINE_RECENT_LIMIT = 50）：与 8 条直达区分轨，
+      // 预填查询打开时快照也可能为空——读全量后 mruNorm 不再依赖直达区。
+      readOfflineVisits(OFFLINE_RECENT_LIMIT).then((visits) => {
+        setMruVisits(visits)
+      }).catch(() => {
+        // 容错降级：MRU 加分读取失败保持空映射（mruNorm 全为 0）
       })
 
       setConfirmClearRecent(false)
@@ -1172,19 +1182,15 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   )
   /**
    * 收藏行的 MRU 归一分（04 §3.3/§6）：`mruNorm = mruScore / 100`，无记录为 0，
-   * 随 `matchPaletteFavorites` 传给 §6 总分的 0.15 权重项。建库起点取本次
-   * 快照最早一条（与 `topFrequentVisits` 同口径）；同一调用内只取一次 now。
-   * 注意：`recentVisits` 只含最近 8 条快照（空面板直达区同款数据源），
-   * 8 条之外的收藏拿不到 MRU 加分——见 PoC 报告遗留。
+   * 随 `matchPaletteFavorites` 传给 §6 总分的 0.15 权重项。数据源是全量
+   * 50 条快照 `mruVisits`（与空面板 8 条直达区分轨），8 条之外的收藏
+   * 也能拿到 MRU 加分；建库起点取本次快照最早一条（与 `topFrequentVisits`
+   * 同口径）；同一调用内只取一次 now。
    */
-  const mruNormBySiteId = useMemo(() => {
-    const map = new Map<string, number>()
-    if (recentVisits.length === 0) return map
-    const now = Date.now()
-    const earliestVisitedAt = Math.min(...recentVisits.map((v) => v.visitedAt))
-    for (const v of recentVisits) map.set(v.id, mruScore(v, now, earliestVisitedAt) / 100)
-    return map
-  }, [recentVisits])
+  const mruNormBySiteId = useMemo(
+    () => buildMruNormBySiteId(mruVisits),
+    [mruVisits],
+  )
   const matchedPaletteFavorites = useMemo(
     () =>
       matchPaletteFavorites(query, favorites.items, {

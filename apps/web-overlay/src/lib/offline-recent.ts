@@ -200,6 +200,25 @@ export function splitRecentVisitsForBoost(
   return { boosted, rest }
 }
 
+/**
+ * 收藏行的 MRU 归一分映射（04 §3.3/§6：`mruNorm = mruScore / 100`，
+ * 无记录为 0；纯函数，可单测）。
+ *
+ * 调用方必须传入**全量**快照（`readOfflineVisits(OFFLINE_RECENT_LIMIT)`，
+ * 上限 50 条），而不是空面板直达区的 8 条快照——否则 8 条之外的收藏
+ * 拿不到 MRU 加分。建库起点取全表最早一条，与 `topFrequentVisits` 同口径。
+ */
+export function buildMruNormBySiteId(
+  visits: RecentVisit[],
+  now: number = Date.now(),
+): Map<string, number> {
+  const map = new Map<string, number>()
+  if (visits.length === 0) return map
+  const earliestVisitedAt = Math.min(...visits.map((v) => v.visitedAt))
+  for (const v of visits) map.set(v.id, mruScore(v, now, earliestVisitedAt) / 100)
+  return map
+}
+
 /* ------------------------------ 存储层 ------------------------------ */
 
 let memoryFallback: RecentVisit[] = []

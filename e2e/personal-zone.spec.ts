@@ -42,10 +42,12 @@ async function pinCard(page: Page, siteId: string, siteName: string) {
   await card.hover({ timeout: 20_000 })
   const pinBtn = page.getByRole('button', { name: `固定到「我的常用」：${siteName}`, exact: true }).first()
   await expect(pinBtn).toBeVisible({ timeout: 20_000 })
-  // force：固定钮平时藏在卡片悬停显隐层里；常规 click 的滚动复位会让
-  // 鼠标离开卡片、hover 丢失，点按落到卡片外链上（新标签页打开站点、
-  // 固定没触发）。force 直接在按钮上派发点击，测的就是固定逻辑本身。
-  await pinBtn.click({ force: true })
+  // 固定钮平时藏在卡片悬停显隐层里：常规 click 的滚动复位会让鼠标离开
+  // 卡片、hover 丢失（720px 高下滚动后吸顶分类轨还可能盖住按钮），点按
+  // 落到卡片外链上（开新标签、固定没触发）。evaluate 直接在按钮上派发
+  // 点击，跑的是真实 React onClick（已单机验证：固定写盘、专区出现），
+  // 绕过的只是悬停显隐层的命中测试，不是固定逻辑本身。
+  await pinBtn.evaluate((el) => (el as HTMLElement).click())
 }
 
 test.describe('「我的常用」首页专区', () => {

@@ -120,3 +120,7 @@ apps/api/seed-content/
 
 # 小猫猫挂件媒体包（二进制，不进仓库、部署时另放）：透明视频与 WebP/GIF 兜底
 apps/web-overlay/public/xiaomaomao/media/
+
+# Gatus 配置产物（scripts/generate-gatus-config.mjs 默认输出 ./gatus-config.yaml）：
+# 方案 03 §5 写死“产物不入库”，现生成现核对；忽略规则防手滑 git add -A 提交
+gatus-config.yaml

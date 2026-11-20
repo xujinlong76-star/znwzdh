@@ -259,6 +259,15 @@ describe("generate-gatus-config：CLI 端到端（fixture 导航）", () => {
   });
 });
 
+describe("generate-gatus-config：产物不入库（§5）", () => {
+  it(".gitignore 忽略默认产物路径 gatus-config.yaml", () => {
+    const lines = readFileSync(resolve(".gitignore"), "utf8")
+      .split("\n")
+      .map((l) => l.trim());
+    expect(lines).toContain("gatus-config.yaml");
+  });
+});
+
 describe("generate-gatus-config：真实导航 JSON（只读断言）", () => {
   it("383 站全量生成通过，报告数字与实测一致", () => {
     const root = mkdtempSync(join(tmpdir(), "navhub-gatus-real-"));

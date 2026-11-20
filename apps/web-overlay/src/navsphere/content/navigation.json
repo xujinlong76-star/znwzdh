@@ -16,6 +16,7 @@
           "items": [
             {
               "id": "nav-da02af4f6414",
+              "hubId": "nav-da02af4f6414",
               "title": "ChatGPT",
               "href": "https://chatgpt.com",
               "description": "OpenAI 的对话式 AI 助手",
@@ -27,6 +28,7 @@
             },
             {
               "id": "nav-9336ef9971b1",
+              "hubId": "nav-9336ef9971b1",
               "title": "DeepSeek",
               "href": "https://chat.deepseek.com",
               "description": "深度求索的大模型对话与推理服务，中文表现优秀",
@@ -39,6 +41,7 @@
             },
             {
               "id": "nav-b6079f993ed2",
+              "hubId": "nav-b6079f993ed2",
               "title": "Claude",
               "href": "https://claude.ai",
               "description": "Anthropic 的大语言模型对话助手，擅长长文本与代码理解",
@@ -50,6 +53,7 @@
             },
             {
               "id": "nav-8a13a0d53f1b",
+              "hubId": "nav-8a13a0d53f1b",
               "title": "Kimi",
               "href": "https://www.kimi.com",
               "description": "长文本处理能力强，适合深度阅读与总结。",
@@ -63,6 +67,7 @@
             },
             {
               "id": "nav-3a7b360cd001",
+              "hubId": "nav-3a7b360cd001",
               "title": "通义千问",
               "href": "https://qianwen.aliyun.com",
               "description": "阿里旗下大模型，办公与代码辅助功能丰富。",
@@ -76,6 +81,7 @@
             },
             {
               "id": "nav-2685c645b208",
+              "hubId": "nav-2685c645b208",
               "title": "豆包",
               "href": "https://www.doubao.com",
               "description": "字节跳动推出的AI助手，交互自然流畅。",
@@ -89,6 +95,7 @@
             },
             {
               "id": "nav-c9117d4ee05c",
+              "hubId": "nav-c9117d4ee05c",
               "title": "文心一言",
               "href": "https://wenxin.baidu.com",
               "description": "百度生成式AI，集成百度搜索生态优势。",
@@ -102,6 +109,7 @@
             },
             {
               "id": "nav-6599732737b8",
+              "hubId": "nav-6599732737b8",
               "title": "智谱清言",
               "href": "https://chatglm.cn",
               "description": "清华系大模型应用，支持代码与逻辑推理。",
@@ -115,6 +123,7 @@
             },
             {
               "id": "nav-e7027bfb74ad",
+              "hubId": "nav-e7027bfb74ad",
               "title": "讯飞星火",
               "href": "https://xinghuo.xfyun.cn",
               "description": "科大讯飞推出，语音交互与翻译能力突出。",
@@ -128,6 +137,7 @@
             },
             {
               "id": "nav-0bc5477b0ff7",
+              "hubId": "nav-0bc5477b0ff7",
               "title": "Gemini",
               "href": "https://gemini.google.com",
               "description": "Google 的多模态 AI 助手，搜索与 Workspace 深度整合",
@@ -150,6 +160,7 @@
           "items": [
             {
               "id": "nav-9d5b5b2b1cec",
+              "hubId": "nav-9d5b5b2b1cec",
               "title": "元宝搜索",
               "href": "https://so.qq.com",
               "description": "腾讯旗下新一代 AI 搜索：用 AI 直接给答案并标注出处，广告与答案明确区分",
@@ -162,6 +173,7 @@
             },
             {
               "id": "nav-045f8a557d74",
+              "hubId": "nav-045f8a557d74",
               "title": "Kimi 搜索",
               "href": "https://kimi.moonshot.cn/",
               "description": "月之暗面旗下 Kimi 的 AI 搜索：用 AI 直接给答案并标注出处",
@@ -174,6 +186,7 @@
             },
             {
               "id": "nav-4a30fe52e2b4",
+              "hubId": "nav-4a30fe52e2b4",
               "title": "秘塔搜索",
               "href": "https://metaso.cn/",
               "description": "秘塔 AI 搜索：直接给出结构化答案并标注信源出处",
@@ -186,6 +199,7 @@
             },
             {
               "id": "nav-a55e0bb23d0b",
+              "hubId": "nav-a55e0bb23d0b",
               "title": "Perplexity",
               "href": "https://www.perplexity.ai/",
               "description": "海外主流 AI 搜索引擎：用 AI 直接回答问题并附来源链接",
@@ -198,6 +212,7 @@
             },
             {
               "id": "nav-cea4a7424e2c",
+              "hubId": "nav-cea4a7424e2c",
               "title": "天工AI搜索",
               "href": "https://www.tiangong.cn/",
               "description": "昆仑万维旗下天工 AI 的搜索入口：用 AI 直接回答问题并附参考来源",
@@ -210,6 +225,7 @@
             },
             {
               "id": "nav-9dcbc81296d5",
+              "hubId": "nav-9dcbc81296d5",
               "title": "Gemini Notebook",
               "href": "https://notebook.google.com",
               "description": "Google 的 AI 研究笔记本（曾用名 NotebookLM），基于自有资料问答、摘要与生成音频概览",
@@ -232,6 +248,7 @@
           "items": [
             {
               "id": "nav-4537a5e836ce",
+              "hubId": "nav-4537a5e836ce",
               "title": "Cline",
               "href": "https://github.com/cline/cline",
               "description": "自主型 AI 编程 Agent，直接执行终端命令、读写文件并迭代解决工程任务",
@@ -245,6 +262,7 @@
             },
             {
               "id": "nav-ec57d26d0bcb",
+              "hubId": "nav-ec57d26d0bcb",
               "title": "GitHub Copilot",
               "href": "https://github.com/features/copilot",
               "description": "AI 代码补全与编程助手，支持 VS Code、JetBrains 等主流编辑器",
@@ -257,6 +275,7 @@
             },
             {
               "id": "nav-94e2b6dc31b5",
+              "hubId": "nav-94e2b6dc31b5",
               "title": "Cursor",
               "href": "https://cursor.com",
               "description": "AI 驱动的代码编辑器，用自然语言写代码、改代码",
@@ -269,6 +288,7 @@
             },
             {
               "id": "nav-ee398c68f878",
+              "hubId": "nav-ee398c68f878",
               "title": "Devin Desktop",
               "href": "https://devin.ai/desktop",
               "description": "Codeium 打造的下一代 Agentic AI IDE，支持级联思考 (Cascade)",
@@ -281,6 +301,7 @@
             },
             {
               "id": "nav-0d1818fd483a",
+              "hubId": "nav-0d1818fd483a",
               "title": "CodeGeeX",
               "href": "https://www.codegeex.cn",
               "description": "通用AI代码助手，支持多语言代码生成与补全。",
@@ -294,6 +315,7 @@
             },
             {
               "id": "nav-cec162baa7e6",
+              "hubId": "nav-cec162baa7e6",
               "title": "Trae",
               "href": "https://www.trae.cn",
               "description": "字节跳动推出的AI原生IDE，内置智能编程助手。",
@@ -307,6 +329,7 @@
             },
             {
               "id": "nav-3bf8887798d1",
+              "hubId": "nav-3bf8887798d1",
               "title": "Baidu Comate",
               "href": "https://comate.baidu.com",
               "description": "百度推出的AI代码助手，提供代码生成与智能修复。",
@@ -320,6 +343,7 @@
             },
             {
               "id": "nav-65135fcca883",
+              "hubId": "nav-65135fcca883",
               "title": "Tongyi Lingma",
               "href": "https://lingma.aliyun.com",
               "description": "阿里云通义灵码，企业级AI编码助手，支持代码解释。",
@@ -333,6 +357,7 @@
             },
             {
               "id": "nav-42968eaf9722",
+              "hubId": "nav-42968eaf9722",
               "title": "Continue.dev",
               "href": "https://continue.dev",
               "description": "开源 AI 编程助手，VS Code 与 JetBrains 插件，可接本地模型",
@@ -355,6 +380,7 @@
           "items": [
             {
               "id": "nav-bf794ea816c3",
+              "hubId": "nav-bf794ea816c3",
               "title": "Midjourney",
               "href": "https://midjourney.com",
               "description": "AI 绘画与图像生成工具",
@@ -367,6 +393,7 @@
             },
             {
               "id": "nav-c30b0b7ed721",
+              "hubId": "nav-c30b0b7ed721",
               "title": "DALL-E 3",
               "href": "https://openai.com/dall-e-3",
               "description": "OpenAI 推出的强大 AI 绘图工具",
@@ -379,6 +406,7 @@
             },
             {
               "id": "nav-73fd5e66eea6",
+              "hubId": "nav-73fd5e66eea6",
               "title": "Adobe Firefly",
               "href": "https://www.adobe.com/products/firefly.html",
               "description": "Adobe 推出的商业安全生成式 AI",
@@ -391,6 +419,7 @@
             },
             {
               "id": "nav-ea54fb1dc6d7",
+              "hubId": "nav-ea54fb1dc6d7",
               "title": "Leonardo AI",
               "href": "https://leonardo.ai",
               "description": "游戏与创意资产专用 AI 生成平台",
@@ -403,6 +432,7 @@
             },
             {
               "id": "nav-30ec12229b4a",
+              "hubId": "nav-30ec12229b4a",
               "title": "Krea",
               "href": "https://krea.ai",
               "description": "实时图像生成与视频增强平台",
@@ -415,6 +445,7 @@
             },
             {
               "id": "nav-e644d80e0326",
+              "hubId": "nav-e644d80e0326",
               "title": "Deep Dream Generator",
               "href": "https://deepdreamgenerator.com",
               "description": "基于神经网络的艺术风格化生成",
@@ -427,6 +458,7 @@
             },
             {
               "id": "nav-03b44480b539",
+              "hubId": "nav-03b44480b539",
               "title": "Remove.bg",
               "href": "https://www.remove.bg",
               "description": "AI 一键抠图去背景",
@@ -448,6 +480,7 @@
           "items": [
             {
               "id": "nav-9e9db2e08ffe",
+              "hubId": "nav-9e9db2e08ffe",
               "title": "Suno",
               "href": "https://suno.com",
               "description": "AI 音乐生成，输入歌词即可出歌",
@@ -460,6 +493,7 @@
             },
             {
               "id": "nav-0627c7db33ef",
+              "hubId": "nav-0627c7db33ef",
               "title": "讯飞开放平台",
               "href": "https://www.xfyun.cn/",
               "description": "科大讯飞旗下，提供语音合成与识别服务。",
@@ -473,6 +507,7 @@
             },
             {
               "id": "nav-e64e60f5614c",
+              "hubId": "nav-e64e60f5614c",
               "title": "网易天音",
               "href": "https://tianyin.163.com/",
               "description": "网易旗下AI音乐创作平台，支持音频生成。",
@@ -486,6 +521,7 @@
             },
             {
               "id": "nav-b0837c2ee567",
+              "hubId": "nav-b0837c2ee567",
               "title": "Udio",
               "href": "https://www.udio.com",
               "description": "AI 音乐生成平台，输入文字描述即可生成完整歌曲",
@@ -498,6 +534,7 @@
             },
             {
               "id": "nav-c52c89f12a4a",
+              "hubId": "nav-c52c89f12a4a",
               "title": "Soundraw",
               "href": "https://soundraw.io",
               "description": "AI 配乐生成工具，为视频与播客生成免版税背景音乐",
@@ -511,6 +548,7 @@
             },
             {
               "id": "nav-e4d55a8be74f",
+              "hubId": "nav-e4d55a8be74f",
               "title": "AIVA",
               "href": "https://www.aiva.ai",
               "description": "AI 作曲助手，生成影视、游戏与广告配乐",
@@ -523,6 +561,7 @@
             },
             {
               "id": "nav-1924d27a118b",
+              "hubId": "nav-1924d27a118b",
               "title": "Boomy",
               "href": "https://boomy.com",
               "description": "生成式 AI 音乐平台，几秒生成原创歌曲并支持发行到流媒体",
@@ -535,6 +574,7 @@
             },
             {
               "id": "nav-c0c8b539d7c7",
+              "hubId": "nav-c0c8b539d7c7",
               "title": "Mubert",
               "href": "https://mubert.com",
               "description": "AI 音乐生成平台，为创作者与品牌提供免版税配乐",
@@ -548,6 +588,7 @@
             },
             {
               "id": "nav-75486766407b",
+              "hubId": "nav-75486766407b",
               "title": "Beatoven.ai",
               "href": "https://www.beatoven.ai",
               "description": "AI 背景音乐生成工具，按视频情绪与节奏自动配乐",
@@ -560,6 +601,7 @@
             },
             {
               "id": "nav-15c56bbff0dd",
+              "hubId": "nav-15c56bbff0dd",
               "title": "Loudly",
               "href": "https://www.loudly.com",
               "description": "面向创作者与品牌的 AI 音乐平台，快速生成与定制歌曲",
@@ -572,6 +614,7 @@
             },
             {
               "id": "nav-1b91a11a69f5",
+              "hubId": "nav-1b91a11a69f5",
               "title": "ElevenLabs",
               "href": "https://elevenlabs.io",
               "description": "AI 语音生成平台，逼真的文字转语音与声音克隆",
@@ -585,6 +628,7 @@
             },
             {
               "id": "nav-ff38a522ca4c",
+              "hubId": "nav-ff38a522ca4c",
               "title": "Murf AI",
               "href": "https://murf.ai",
               "description": "AI 配音平台，为视频、播客与演示生成专业旁白",
@@ -597,6 +641,7 @@
             },
             {
               "id": "nav-4ac24710e562",
+              "hubId": "nav-4ac24710e562",
               "title": "Speechify",
               "href": "https://speechify.com",
               "description": "文字转语音阅读助手，把文档、PDF 与电子书朗读出来",
@@ -609,6 +654,7 @@
             },
             {
               "id": "nav-87e88de1f698",
+              "hubId": "nav-87e88de1f698",
               "title": "WellSaid",
               "href": "https://www.wellsaid.io",
               "description": "面向团队的 AI 配音制作平台，生成企业级旁白音频",
@@ -621,6 +667,7 @@
             },
             {
               "id": "nav-ecbadcf00f06",
+              "hubId": "nav-ecbadcf00f06",
               "title": "NaturalReader",
               "href": "https://www.naturalreaders.com",
               "description": "AI 文字转语音工具，用自然语音朗读文档、PDF 与网页",
@@ -633,6 +680,7 @@
             },
             {
               "id": "nav-6c22d8dc6a1b",
+              "hubId": "nav-6c22d8dc6a1b",
               "title": "魔音工坊",
               "href": "https://moyin.com",
               "description": "AI 配音平台，主打短视频与有声书配音，音色选择丰富",
@@ -646,6 +694,7 @@
             },
             {
               "id": "nav-a39bc922bb9e",
+              "hubId": "nav-a39bc922bb9e",
               "title": "Descript",
               "href": "https://www.descript.com",
               "description": "AI 音视频编辑器，改转录文字即可剪辑音视频，适合播客与视频创作者",
@@ -668,6 +717,7 @@
           "items": [
             {
               "id": "nav-9f7a344d7cbe",
+              "hubId": "nav-9f7a344d7cbe",
               "title": "Jasper",
               "href": "https://www.jasper.ai",
               "description": "面向营销团队的 AI 写作平台，生成广告文案、博客与社媒内容",
@@ -680,6 +730,7 @@
             },
             {
               "id": "nav-f969b96580c7",
+              "hubId": "nav-f969b96580c7",
               "title": "Copy.ai",
               "href": "https://www.copy.ai",
               "description": "面向市场与销售团队的 AI 平台，生成营销文案与客户触达内容",
@@ -692,6 +743,7 @@
             },
             {
               "id": "nav-6c112160b49c",
+              "hubId": "nav-6c112160b49c",
               "title": "Writesonic",
               "href": "https://writesonic.com",
               "description": "AI 内容平台，提供文章写作与品牌在 AI 搜索中的可见度监测",
@@ -704,6 +756,7 @@
             },
             {
               "id": "nav-205506d136ca",
+              "hubId": "nav-205506d136ca",
               "title": "Grammarly",
               "href": "https://www.grammarly.com",
               "description": "AI 写作助手，英语语法校对、拼写检查与语气润色",
@@ -717,6 +770,7 @@
             },
             {
               "id": "nav-59d422f6f2b9",
+              "hubId": "nav-59d422f6f2b9",
               "title": "秘塔写作猫",
               "href": "https://xiezuocat.com",
               "description": "中文 AI 写作与校对工具，智能纠正错别字、语法与标点问题",
@@ -729,6 +783,7 @@
             },
             {
               "id": "nav-63b511531390",
+              "hubId": "nav-63b511531390",
               "title": "Sudowrite",
               "href": "https://www.sudowrite.com",
               "description": "面向小说作者的 AI 写作伙伴，辅助续写、扩写与情节构思",
@@ -741,6 +796,7 @@
             },
             {
               "id": "nav-22d8a9ca8c1f",
+              "hubId": "nav-22d8a9ca8c1f",
               "title": "Wordtune",
               "href": "https://www.wordtune.com",
               "description": "AI 英文改写润色工具，一键换词改句并调整语气与篇幅",
@@ -762,6 +818,7 @@
           "items": [
             {
               "id": "nav-f46ea0410157",
+              "hubId": "nav-f46ea0410157",
               "title": "LangGraph",
               "href": "https://github.com/langchain-ai/langgraph",
               "description": "构建可控、有状态、支持循环工作流的多智能体编排引擎",
@@ -774,6 +831,7 @@
             },
             {
               "id": "nav-05184cfbc178",
+              "hubId": "nav-05184cfbc178",
               "title": "Coze",
               "href": "https://www.coze.cn",
               "description": "字节跳动推出的智能体开发平台",
@@ -787,6 +845,7 @@
             },
             {
               "id": "nav-714d7353be11",
+              "hubId": "nav-714d7353be11",
               "title": "Dify",
               "href": "https://dify.ai",
               "description": "开源的大语言模型应用开发框架",
@@ -800,6 +859,7 @@
             },
             {
               "id": "nav-a9aaf6a90a40",
+              "hubId": "nav-a9aaf6a90a40",
               "title": "n8n",
               "href": "https://n8n.io",
               "description": "灵活可扩展的开源工作流自动化工具",
@@ -813,6 +873,7 @@
             },
             {
               "id": "nav-82e4beb88f5b",
+              "hubId": "nav-82e4beb88f5b",
               "title": "Flowise",
               "href": "https://flowiseai.com",
               "description": "拖拽式的LLM应用可视化构建工具",
@@ -826,6 +887,7 @@
             },
             {
               "id": "nav-de1ad54d0872",
+              "hubId": "nav-de1ad54d0872",
               "title": "Apify",
               "href": "https://apify.com",
               "description": "基于云端的工作流与自动化爬虫平台",
@@ -839,6 +901,7 @@
             },
             {
               "id": "nav-8d8365c62578",
+              "hubId": "nav-8d8365c62578",
               "title": "Make",
               "href": "https://www.make.com",
               "description": "可视化自动化平台，连接千余款应用，拖拽搭建跨应用工作流",
@@ -861,6 +924,7 @@
           "items": [
             {
               "id": "nav-1fac4a7503a0",
+              "hubId": "nav-1fac4a7503a0",
               "title": "魔搭 ModelScope",
               "href": "https://modelscope.cn",
               "description": "阿里达摩院开源模型社区，国内模型下载优选",
@@ -873,6 +937,7 @@
             },
             {
               "id": "nav-9564f66ddc16",
+              "hubId": "nav-9564f66ddc16",
               "title": "Hugging Face",
               "href": "https://huggingface.co",
               "description": "开源模型与数据集社区，模型下载与在线推理",
@@ -885,6 +950,7 @@
             },
             {
               "id": "nav-ae0df63eb94c",
+              "hubId": "nav-ae0df63eb94c",
               "title": "Ollama",
               "href": "https://ollama.com",
               "description": "本地一键运行开源大模型，隐私友好",
@@ -897,6 +963,7 @@
             },
             {
               "id": "nav-55a843da50d7",
+              "hubId": "nav-55a843da50d7",
               "title": "Qwen 3",
               "href": "https://github.com/QwenLM/Qwen3",
               "description": "阿里通义千问开源大模型，具备极强代码与数学推理能力",
@@ -909,6 +976,7 @@
             },
             {
               "id": "nav-65e32dabe8c3",
+              "hubId": "nav-65e32dabe8c3",
               "title": "vLLM",
               "href": "https://github.com/vllm-project/vllm",
               "description": "高吞吐、低显存占用的大模型推理与服务引擎，支持 PagedAttention",
@@ -921,6 +989,7 @@
             },
             {
               "id": "nav-f0098dd6ea2f",
+              "hubId": "nav-f0098dd6ea2f",
               "title": "百度飞桨",
               "href": "https://www.paddlepaddle.org.cn/",
               "description": "百度开源深度学习平台，涵盖框架、模型库与工具链。",
@@ -934,6 +1003,7 @@
             },
             {
               "id": "nav-7911357c524f",
+              "hubId": "nav-7911357c524f",
               "title": "OpenAI",
               "href": "https://openai.com/",
               "description": "GPT系列大模型研发机构，引领前沿AI技术方向。",
@@ -947,6 +1017,7 @@
             },
             {
               "id": "nav-b5cb3d37773a",
+              "hubId": "nav-b5cb3d37773a",
               "title": "Stability AI",
               "href": "https://stability.ai/",
               "description": "开源图像生成模型SD系列的核心开发者平台。",
@@ -960,6 +1031,7 @@
             },
             {
               "id": "nav-f3af8752e1cb",
+              "hubId": "nav-f3af8752e1cb",
               "title": "Mistral AI",
               "href": "https://mistral.ai/",
               "description": "欧洲领先开源LLM公司，发布Mistral系列模型。",
@@ -973,6 +1045,7 @@
             },
             {
               "id": "nav-ee616ea65ac4",
+              "hubId": "nav-ee616ea65ac4",
               "title": "Meta AI Developers",
               "href": "https://dev.meta.ai/",
               "description": "Meta开源大模型系列，支持多规模免费商用。",
@@ -986,6 +1059,7 @@
             },
             {
               "id": "nav-192a544535c8",
+              "hubId": "nav-192a544535c8",
               "title": "Gitee AI",
               "href": "https://moark.com",
               "description": "Gitee 旗下模力方舟（Gitee AI）开源大模型与数据集社区，提供模型体验、推理与算力服务",
@@ -1008,6 +1082,7 @@
           "items": [
             {
               "id": "nav-56a9382beb8c",
+              "hubId": "nav-56a9382beb8c",
               "title": "可灵AI",
               "href": "https://www.klingai.com/app/",
               "description": "快手可灵 AI 视频生成，文生视频与图生视频，国内版入口",
@@ -1020,6 +1095,7 @@
             },
             {
               "id": "nav-6db724ca3b43",
+              "hubId": "nav-6db724ca3b43",
               "title": "海螺视频",
               "href": "https://hailuoai.com",
               "description": "MiniMax 海螺视频，AI 文生视频与图生视频",
@@ -1032,6 +1108,7 @@
             },
             {
               "id": "nav-ddfd26e7aee2",
+              "hubId": "nav-ddfd26e7aee2",
               "title": "Runway",
               "href": "https://runway.com",
               "description": "AI 视频生成与编辑平台，Gen-4.5 模型",
@@ -1044,6 +1121,7 @@
             },
             {
               "id": "nav-b65ebed2b9ad",
+              "hubId": "nav-b65ebed2b9ad",
               "title": "即梦AI",
               "href": "https://jimeng.jianying.com",
               "description": "字节跳动一站式 AI 创作平台，AI 生图与生视频",
@@ -1057,6 +1135,7 @@
             },
             {
               "id": "nav-8d6ff451461a",
+              "hubId": "nav-8d6ff451461a",
               "title": "Pika",
               "href": "https://pika.art",
               "description": "全球领先的AI视频生成平台，支持文本与图像转视频。",
@@ -1070,6 +1149,7 @@
             },
             {
               "id": "nav-9f9aa4dddd80",
+              "hubId": "nav-9f9aa4dddd80",
               "title": "Luma AI",
               "href": "https://lumalabs.ai/app",
               "description": "Luma AI 推出的基于自研 Ray 模型的高画质 AI 视频生成工具，操作简便",
@@ -1083,6 +1163,7 @@
             },
             {
               "id": "nav-152aee459038",
+              "hubId": "nav-152aee459038",
               "title": "Viggle AI",
               "href": "https://viggle.ai",
               "description": "专注于人物动作模仿与舞蹈生成的AI视频工具。",
@@ -1096,6 +1177,7 @@
             },
             {
               "id": "nav-2e727d29bc5d",
+              "hubId": "nav-2e727d29bc5d",
               "title": "Haiper",
               "href": "https://haiper.ai",
               "description": "快速生成短视频的AI平台，支持多种风格与分辨率。",
@@ -1109,6 +1191,7 @@
             },
             {
               "id": "nav-ea641c51f989",
+              "hubId": "nav-ea641c51f989",
               "title": "Genmo",
               "href": "https://genmo.ai",
               "description": "面向开发者的AI视频引擎，支持实时视频生成与编辑。",
@@ -1122,6 +1205,7 @@
             },
             {
               "id": "nav-90f676a0dbba",
+              "hubId": "nav-90f676a0dbba",
               "title": "Vidu",
               "href": "https://www.vidu.cn",
               "description": "生数科技的 AI 视频生成平台，支持参考生视频与角色一致性，常用于 AI 漫剧与短剧的镜头生成",
@@ -1135,6 +1219,7 @@
             },
             {
               "id": "nav-e810cc001ccf",
+              "hubId": "nav-e810cc001ccf",
               "title": "OpusClip",
               "href": "https://www.opus.pro",
               "description": "AI 长视频一键剪成短视频，自动配字幕与高光片段",
@@ -1148,6 +1233,7 @@
             },
             {
               "id": "nav-c4670df71778",
+              "hubId": "nav-c4670df71778",
               "title": "剪映专业版",
               "href": "https://www.capcut.cn/",
               "description": "AI驱动的音视频创作平台，含配音与识别。",
@@ -1170,6 +1256,7 @@
           "items": [
             {
               "id": "nav-2de6e995764d",
+              "hubId": "nav-2de6e995764d",
               "title": "有戏AI",
               "href": "https://youxi.fullpeace.net",
               "description": "风平智能旗下 AI 短剧与漫剧一站式创作平台：剧本拆解、角色设计、智能分镜、视频生成、配音到成片导出，主打一人一天一部剧",
@@ -1184,6 +1271,7 @@
             },
             {
               "id": "nav-0b76eb465501",
+              "hubId": "nav-0b76eb465501",
               "title": "小云雀AI",
               "href": "https://www.xiaoyunque.com/",
               "description": "字节跳动剪映团队的 AI 内容创作 Agent，短剧 Agent 能把长剧本自动拆分镜、锁定角色一致性并生成成片",
@@ -1198,6 +1286,7 @@
             },
             {
               "id": "nav-34f7f3f7e468",
+              "hubId": "nav-34f7f3f7e468",
               "title": "Topview",
               "href": "https://www.topview.ai",
               "description": "AI 视频创作 Agent：可从剧本生成短剧与短片，也支持商品链接一键转营销带货视频",
@@ -1211,6 +1300,7 @@
             },
             {
               "id": "nav-d1a6cc9e4dd8",
+              "hubId": "nav-d1a6cc9e4dd8",
               "title": "SkyReels",
               "href": "https://www.skyreels.ai/",
               "description": "昆仑万维 AI 短剧创作平台：剧本生成、智能分镜、视频合成一站式成剧",
@@ -1225,6 +1315,7 @@
             },
             {
               "id": "nav-1bfe0d776459",
+              "hubId": "nav-1bfe0d776459",
               "title": "讯飞绘镜",
               "href": "https://typemovie.art/",
               "description": "科大讯飞 AI 短视频创作平台：输入描述自动完成剧本生成、智能分镜、画面生成到视频合成",
@@ -1257,6 +1348,7 @@
           "items": [
             {
               "id": "nav-a867c19af98c",
+              "hubId": "nav-a867c19af98c",
               "title": "npmmirror",
               "href": "https://registry.npmmirror.com",
               "description": "淘宝 NPM 镜像，国内安装依赖加速",
@@ -1269,6 +1361,7 @@
             },
             {
               "id": "nav-33126b9d8bd3",
+              "hubId": "nav-33126b9d8bd3",
               "title": "npm",
               "href": "https://npmjs.com",
               "description": "JavaScript 包管理器与依赖仓库",
@@ -1281,6 +1374,7 @@
             },
             {
               "id": "nav-61b79edab557",
+              "hubId": "nav-61b79edab557",
               "title": "Vite",
               "href": "https://vite.dev",
               "description": "下一代前端开发构建工具",
@@ -1293,6 +1387,7 @@
             },
             {
               "id": "nav-5a28d33c0f9f",
+              "hubId": "nav-5a28d33c0f9f",
               "title": "Rollup",
               "href": "https://rollupjs.org",
               "description": "模块打包器，适合库开发",
@@ -1305,6 +1400,7 @@
             },
             {
               "id": "nav-b9f548cae8ed",
+              "hubId": "nav-b9f548cae8ed",
               "title": "Webpack",
               "href": "https://webpack.js.org",
               "description": "功能强大的模块打包器",
@@ -1317,6 +1413,7 @@
             },
             {
               "id": "nav-4704c4aecc5a",
+              "hubId": "nav-4704c4aecc5a",
               "title": "esbuild",
               "href": "https://esbuild.github.io",
               "description": "极速Go语言编写的JS编译器",
@@ -1329,6 +1426,7 @@
             },
             {
               "id": "nav-fd12551ae243",
+              "hubId": "nav-fd12551ae243",
               "title": "Turbo",
               "href": "https://turborepo.dev",
               "description": "基于Rust的增量构建系统",
@@ -1350,6 +1448,7 @@
           "items": [
             {
               "id": "nav-6e95fda33796",
+              "hubId": "nav-6e95fda33796",
               "title": "Uiverse",
               "href": "https://uiverse.io",
               "description": "社区分享的开源 UI 组件与 CSS 特效",
@@ -1362,6 +1461,7 @@
             },
             {
               "id": "nav-97e35520cd1f",
+              "hubId": "nav-97e35520cd1f",
               "title": "Ant Design",
               "href": "https://ant.design",
               "description": "企业级中后台设计系统",
@@ -1374,6 +1474,7 @@
             },
             {
               "id": "nav-ee365c798f88",
+              "hubId": "nav-ee365c798f88",
               "title": "Element Plus",
               "href": "https://element-plus.org",
               "description": "基于Vue3的组件库",
@@ -1386,6 +1487,7 @@
             },
             {
               "id": "nav-0365d68bd857",
+              "hubId": "nav-0365d68bd857",
               "title": "Naive UI",
               "href": "https://www.naiveui.com",
               "description": "功能丰富的Vue3组件库",
@@ -1398,6 +1500,7 @@
             },
             {
               "id": "nav-4b84df8924b5",
+              "hubId": "nav-4b84df8924b5",
               "title": "Mantine",
               "href": "https://mantine.dev",
               "description": "基于React的UI库与Hooks",
@@ -1410,6 +1513,7 @@
             },
             {
               "id": "nav-75ee959a6fca",
+              "hubId": "nav-75ee959a6fca",
               "title": "Shadcn/UI",
               "href": "https://ui.shadcn.com",
               "description": "可复制的Next.js/UI库集合",
@@ -1422,6 +1526,7 @@
             },
             {
               "id": "nav-74ea21e67bf9",
+              "hubId": "nav-74ea21e67bf9",
               "title": "Radix UI",
               "href": "https://www.radix-ui.com",
               "description": "无样式可访问的UI原语",
@@ -1434,6 +1539,7 @@
             },
             {
               "id": "nav-27e91d940e7f",
+              "hubId": "nav-27e91d940e7f",
               "title": "Chakra UI",
               "href": "https://chakra-ui.com",
               "description": "构建可访问React应用的库",
@@ -1446,6 +1552,7 @@
             },
             {
               "id": "nav-8f3af80ff09f",
+              "hubId": "nav-8f3af80ff09f",
               "title": "Storybook",
               "href": "https://storybook.js.org",
               "description": "UI组件开发与测试环境",
@@ -1476,6 +1583,7 @@
           "items": [
             {
               "id": "nav-8cf2ddc041b7",
+              "hubId": "nav-8cf2ddc041b7",
               "title": "Bun",
               "href": "https://bun.sh",
               "description": "全功能超高速 JavaScript/TypeScript 运行时、打包器与测试套件",
@@ -1488,6 +1596,7 @@
             },
             {
               "id": "nav-77567d3ce3a0",
+              "hubId": "nav-77567d3ce3a0",
               "title": "Node.js",
               "href": "https://nodejs.org/",
               "description": "基于V8引擎的JavaScript运行时环境",
@@ -1501,6 +1610,7 @@
             },
             {
               "id": "nav-00f5d4de983c",
+              "hubId": "nav-00f5d4de983c",
               "title": "Python",
               "href": "https://www.python.org/",
               "description": "简洁强大的多范式编程语言官网",
@@ -1514,6 +1624,7 @@
             },
             {
               "id": "nav-80a70d35025c",
+              "hubId": "nav-80a70d35025c",
               "title": "Rust",
               "href": "https://www.rust-lang.org/",
               "description": "注重安全与性能的系统级编程语言",
@@ -1527,6 +1638,7 @@
             },
             {
               "id": "nav-93e53e23ce8a",
+              "hubId": "nav-93e53e23ce8a",
               "title": "Go",
               "href": "https://go.dev/",
               "description": "谷歌出品的云原生高并发编程语言",
@@ -1540,6 +1652,7 @@
             },
             {
               "id": "nav-509733179a52",
+              "hubId": "nav-509733179a52",
               "title": "Java",
               "href": "https://www.java.com/",
               "description": "跨平台的企业级Java语言与JDK下载",
@@ -1562,6 +1675,7 @@
           "items": [
             {
               "id": "nav-6b8b45c286e3",
+              "hubId": "nav-6b8b45c286e3",
               "title": "Fastify",
               "href": "https://fastify.dev",
               "description": "极速且低开销的 Node.js 现代微服务后端框架",
@@ -1574,6 +1688,7 @@
             },
             {
               "id": "nav-3aaff8ada1bc",
+              "hubId": "nav-3aaff8ada1bc",
               "title": "Express",
               "href": "https://expressjs.com/",
               "description": "Node.js最流行的极简Web应用框架",
@@ -1587,6 +1702,7 @@
             },
             {
               "id": "nav-6e8829c1f092",
+              "hubId": "nav-6e8829c1f092",
               "title": "NestJS",
               "href": "https://nestjs.com/",
               "description": "基于TypeScript的模块化Node后端框架",
@@ -1600,6 +1716,7 @@
             },
             {
               "id": "nav-58e16fa14d13",
+              "hubId": "nav-58e16fa14d13",
               "title": "Laravel",
               "href": "https://laravel.com/",
               "description": "优雅的PHP后端Web应用开发框架",
@@ -1613,6 +1730,7 @@
             },
             {
               "id": "nav-c9cbdb490e60",
+              "hubId": "nav-c9cbdb490e60",
               "title": "Django",
               "href": "https://www.djangoproject.com/",
               "description": "Python社区推崇的高生产力Web框架",
@@ -1626,6 +1744,7 @@
             },
             {
               "id": "nav-131fa935d813",
+              "hubId": "nav-131fa935d813",
               "title": "Spring Boot",
               "href": "https://spring.io/projects/spring-boot",
               "description": "Java生态最主流的快速起步开发框架",
@@ -1639,6 +1758,7 @@
             },
             {
               "id": "nav-05dadcde2045",
+              "hubId": "nav-05dadcde2045",
               "title": "Go Zero",
               "href": "https://go-zero.dev/",
               "description": "国内开源的高性能微服务Go框架",
@@ -1661,6 +1781,7 @@
           "items": [
             {
               "id": "nav-8589adf0fa18",
+              "hubId": "nav-8589adf0fa18",
               "title": "Drizzle ORM",
               "href": "https://orm.drizzle.team",
               "description": "现代轻量、无头、零运行时开销的 100% 类型安全 TypeScript SQL ORM",
@@ -1674,6 +1795,7 @@
             },
             {
               "id": "nav-4480dc0e6242",
+              "hubId": "nav-4480dc0e6242",
               "title": "MySQL",
               "href": "https://www.mysql.com/",
               "description": "全球使用最广泛的开源关系型数据库",
@@ -1687,6 +1809,7 @@
             },
             {
               "id": "nav-ab01045dcb29",
+              "hubId": "nav-ab01045dcb29",
               "title": "PostgreSQL",
               "href": "https://www.postgresql.org/",
               "description": "功能强大的开源对象关系型数据库",
@@ -1700,6 +1823,7 @@
             },
             {
               "id": "nav-0ad9342c1e31",
+              "hubId": "nav-0ad9342c1e31",
               "title": "Redis",
               "href": "https://redis.io/",
               "description": "高性能的内存键值存储与缓存数据库",
@@ -1713,6 +1837,7 @@
             },
             {
               "id": "nav-143d3322fdd3",
+              "hubId": "nav-143d3322fdd3",
               "title": "MongoDB",
               "href": "https://www.mongodb.com/",
               "description": "流行的文档型非关系型数据库解决方案",
@@ -1726,6 +1851,7 @@
             },
             {
               "id": "nav-2a81142b8988",
+              "hubId": "nav-2a81142b8988",
               "title": "MinIO",
               "href": "https://min.io/",
               "description": "高性能的S3兼容分布式对象存储服务",
@@ -1748,6 +1874,7 @@
           "items": [
             {
               "id": "nav-0040b04719f7",
+              "hubId": "nav-0040b04719f7",
               "title": "Docker Hub",
               "href": "https://hub.docker.com",
               "description": "容器镜像仓库，镜像拉取与发布",
@@ -1760,6 +1887,7 @@
             },
             {
               "id": "nav-26bfddc112e2",
+              "hubId": "nav-26bfddc112e2",
               "title": "Kubernetes",
               "href": "https://kubernetes.io",
               "description": "容器编排系统官方文档与下载",
@@ -1772,6 +1900,7 @@
             },
             {
               "id": "nav-29fe65079680",
+              "hubId": "nav-29fe65079680",
               "title": "Podman",
               "href": "https://podman.io/",
               "description": "无守护进程的容器引擎和集群工具",
@@ -1785,6 +1914,7 @@
             },
             {
               "id": "nav-08be4730969b",
+              "hubId": "nav-08be4730969b",
               "title": "Helm",
               "href": "https://helm.sh/",
               "description": "Kubernetes包管理器，用于应用部署",
@@ -1798,6 +1928,7 @@
             },
             {
               "id": "nav-6f2be0ca78f1",
+              "hubId": "nav-6f2be0ca78f1",
               "title": "Compose",
               "href": "https://docs.docker.com/compose/",
               "description": "用于定义和运行多容器Docker应用",
@@ -1811,6 +1942,7 @@
             },
             {
               "id": "nav-0416888d17ba",
+              "hubId": "nav-0416888d17ba",
               "title": "Rancher",
               "href": "https://www.rancher.com",
               "description": "企业级 Kubernetes 集群管理平台，开源免费（Rancher Prime 商业支持付费）",
@@ -1824,6 +1956,7 @@
             },
             {
               "id": "nav-037d194bcc9a5df7",
+              "hubId": "nav-037d194bcc9a5df7",
               "title": "Portainer",
               "href": "https://www.portainer.io",
               "description": "开源容器可视化管理面板，图形界面管理镜像、容器与堆栈。",
@@ -1836,6 +1969,7 @@
             },
             {
               "id": "nav-a2f4ad00b6cc2208",
+              "hubId": "nav-a2f4ad00b6cc2208",
               "title": "OpenShift",
               "href": "https://www.openshift.com",
               "description": "企业级 Kubernetes 平台，内置 CI/CD 与镜像仓库。",
@@ -1848,6 +1982,7 @@
             },
             {
               "id": "nav-73a19732a7a809f3",
+              "hubId": "nav-73a19732a7a809f3",
               "title": "Nomad",
               "href": "https://www.nomadproject.io",
               "description": "HashiCorp 的轻量调度器，容器与非容器混部简单。",
@@ -1869,6 +2004,7 @@
           "items": [
             {
               "id": "nav-e1b397fc3214",
+              "hubId": "nav-e1b397fc3214",
               "title": "Vercel",
               "href": "https://vercel.com",
               "description": "前端部署平台，推送即上线",
@@ -1880,6 +2016,7 @@
             },
             {
               "id": "nav-40aaadb9680c",
+              "hubId": "nav-40aaadb9680c",
               "title": "Terraform",
               "href": "https://developer.hashicorp.com/terraform",
               "description": "基础设施即代码(IaC)的开源管理工具",
@@ -1893,6 +2030,7 @@
             },
             {
               "id": "nav-b142882485da",
+              "hubId": "nav-b142882485da",
               "title": "Ansible Collaborative",
               "href": "https://www.redhat.com/en/ansible-collaborative",
               "description": "极简的IT自动化与配置管理工具",
@@ -1906,6 +2044,7 @@
             },
             {
               "id": "nav-2d8a8dfb1c48",
+              "hubId": "nav-2d8a8dfb1c48",
               "title": "Pulumi",
               "href": "https://www.pulumi.com/",
               "description": "使用编程语言编写基础设施的IaC平台",
@@ -1919,6 +2058,7 @@
             },
             {
               "id": "nav-1b68b82128af",
+              "hubId": "nav-1b68b82128af",
               "title": "Alibaba Cloud",
               "href": "https://www.aliyun.com/",
               "description": "阿里云提供的丰富云计算产品与服务",
@@ -1932,6 +2072,7 @@
             },
             {
               "id": "nav-53af79a5b97a",
+              "hubId": "nav-53af79a5b97a",
               "title": "Qiniu Cloud",
               "href": "https://www.qiniu.com/",
               "description": "领先的云上可开放、可集成数据处理服务",
@@ -1945,6 +2086,7 @@
             },
             {
               "id": "nav-55baf56ce162",
+              "hubId": "nav-55baf56ce162",
               "title": "腾讯云",
               "href": "https://cloud.tencent.com/",
               "description": "腾讯旗下综合公有云平台，提供云服务器、数据库、存储、AI 与云原生等全栈云计算服务",
@@ -1958,6 +2100,7 @@
             },
             {
               "id": "nav-c0e3676b2ff2",
+              "hubId": "nav-c0e3676b2ff2",
               "title": "华为云",
               "href": "https://www.huaweicloud.com/",
               "description": "华为旗下综合公有云平台，提供弹性计算、存储、AI 算力与云原生基础设施服务",
@@ -1971,6 +2114,7 @@
             },
             {
               "id": "nav-4ca5d219ba78",
+              "hubId": "nav-4ca5d219ba78",
               "title": "Coolify",
               "href": "https://coolify.io",
               "description": "开源自托管部署平台，在自己服务器上一键部署应用与数据库",
@@ -1984,6 +2128,7 @@
             },
             {
               "id": "nav-7303368fd060",
+              "hubId": "nav-7303368fd060",
               "title": "Zeabur",
               "href": "https://zeabur.com",
               "description": "一键部署全栈应用的云平台，支持多语言与数据库",
@@ -1997,6 +2142,7 @@
             },
             {
               "id": "nav-43e27b209ff8",
+              "hubId": "nav-43e27b209ff8",
               "title": "Cloudflare Pages",
               "href": "https://www.cloudflare.com/products/pages/",
               "description": "Cloudflare 的静态站与全栈前端托管：Git 推送即部署，全球边缘网络分发，免费额度覆盖多数个人项目。",
@@ -2028,6 +2174,7 @@
           "items": [
             {
               "id": "nav-36fec9ad3e59",
+              "hubId": "nav-36fec9ad3e59",
               "title": "Cloudflare",
               "href": "https://cloudflare.com",
               "description": "CDN、DNS、Workers 边缘计算与 Pages 部署",
@@ -2039,6 +2186,7 @@
             },
             {
               "id": "nav-580fd8ce2d9e",
+              "hubId": "nav-580fd8ce2d9e",
               "title": "AWS WAF",
               "href": "https://aws.amazon.com/waf/",
               "description": "亚马逊云服务的Web应用防火墙",
@@ -2052,6 +2200,7 @@
             },
             {
               "id": "nav-1dc7b78588aa",
+              "hubId": "nav-1dc7b78588aa",
               "title": "Akamai",
               "href": "https://www.akamai.com/",
               "description": "全球领先的CDN和安全服务",
@@ -2065,6 +2214,7 @@
             },
             {
               "id": "nav-9f71b1c650cf",
+              "hubId": "nav-9f71b1c650cf",
               "title": "F5 Networks",
               "href": "https://www.f5.com/",
               "description": "企业级流量管理和负载均衡",
@@ -2078,6 +2228,7 @@
             },
             {
               "id": "nav-ffc4fffbcce5",
+              "hubId": "nav-ffc4fffbcce5",
               "title": "Imperva",
               "href": "https://www.imperva.com/",
               "description": "专业的Web应用防火墙服务商",
@@ -2109,6 +2260,7 @@
           "items": [
             {
               "id": "nav-6f36c8bb7920",
+              "hubId": "nav-6f36c8bb7920",
               "title": "Gitee 码云",
               "href": "https://gitee.com",
               "description": "国内代码托管平台，访问速度快",
@@ -2121,6 +2273,7 @@
             },
             {
               "id": "nav-6b7a84a89e85",
+              "hubId": "nav-6b7a84a89e85",
               "title": "GitHub",
               "href": "https://github.com",
               "description": "全球最大的代码托管与开发者协作平台",
@@ -2134,6 +2287,7 @@
             },
       {
         "id": "nav-94404995d9c7",
+        "hubId": "nav-94404995d9c7",
         "title": "GitHub Trending",
         "href": "https://github.com/trending",
         "description": "GitHub 热门趋势开源项目",
@@ -2146,6 +2300,7 @@
       },
             {
               "id": "nav-c8edc7dd0b67",
+              "hubId": "nav-c8edc7dd0b67",
               "title": "GitLab",
               "href": "https://gitlab.com",
               "description": "一体化的源代码管理与DevOps平台",
@@ -2159,6 +2314,7 @@
             },
             {
               "id": "nav-d1f0a39199dc",
+              "hubId": "nav-d1f0a39199dc",
               "title": "GitCode",
               "href": "https://gitcode.com",
               "description": "国内领先的开源代码托管与技术社区",
@@ -2172,6 +2328,7 @@
             },
             {
               "id": "nav-8fe06df4f9be",
+              "hubId": "nav-8fe06df4f9be",
               "title": "Coding",
               "href": "https://coding.net",
               "description": "腾讯云旗下敏捷研发平台，支持代码管理",
@@ -2185,6 +2342,7 @@
             },
             {
               "id": "nav-a8b086fab667",
+              "hubId": "nav-a8b086fab667",
               "title": "Codeup",
               "href": "https://codeup.aliyun.com",
               "description": "阿里云智能研发平台，企业级代码管理",
@@ -2198,6 +2356,7 @@
             },
             {
               "id": "nav-be6e65140a3f",
+              "hubId": "nav-be6e65140a3f",
               "title": "SourceHut",
               "href": "https://sourcehut.org",
               "description": "极简主义开源代码托管与协作平台，基于邮件列表工作流，全站无 JavaScript",
@@ -2211,6 +2370,7 @@
             },
             {
               "id": "nav-523ff7ca16c3",
+              "hubId": "nav-523ff7ca16c3",
               "title": "Gogs",
               "href": "https://gogs.io/getting-started/introduction",
               "description": "轻量级开源代码托管服务，易自建部署",
@@ -2224,6 +2384,7 @@
             },
             {
               "id": "nav-586dea85165c",
+              "hubId": "nav-586dea85165c",
               "title": "Bitbucket",
               "href": "https://bitbucket.org",
               "description": "Atlassian旗下云代码托管与协作工具",
@@ -2246,6 +2407,7 @@
           "items": [
             {
               "id": "nav-507f520c3bf3",
+              "hubId": "nav-507f520c3bf3",
               "title": "Stack Overflow",
               "href": "https://stackoverflow.com",
               "description": "程序员问答社区，几乎所有报错都能找到答案",
@@ -2258,6 +2420,7 @@
             },
             {
               "id": "nav-dc8979d4afcd",
+              "hubId": "nav-dc8979d4afcd",
               "title": "掘金",
               "href": "https://juejin.cn",
               "description": "面向开发者的技术社区与资源平台",
@@ -2270,6 +2433,7 @@
             },
             {
               "id": "nav-5a4ab6142e65",
+              "hubId": "nav-5a4ab6142e65",
               "title": "CSDN",
               "href": "https://www.csdn.net",
               "description": "国内最大的IT技术开发者社区",
@@ -2282,6 +2446,7 @@
             },
             {
               "id": "nav-32d3e66e715d",
+              "hubId": "nav-32d3e66e715d",
               "title": "SegmentFault",
               "href": "https://segmentfault.com",
               "description": "开发者问答与经验分享社区",
@@ -2294,6 +2459,7 @@
             },
             {
               "id": "nav-240d7ed2bb28",
+              "hubId": "nav-240d7ed2bb28",
               "title": "知乎",
               "href": "https://www.zhihu.com",
               "description": "中文问答社区，深度讨论与经验分享",
@@ -2306,6 +2472,7 @@
             },
             {
               "id": "nav-5e352ab7c838",
+              "hubId": "nav-5e352ab7c838",
               "title": "V2EX",
               "href": "https://www.v2ex.com",
               "description": "创意工作者社区，技术问答、分享发现与职场讨论",
@@ -2318,6 +2485,7 @@
             },
             {
               "id": "nav-6b73f63473a9",
+              "hubId": "nav-6b73f63473a9",
               "title": "百度知道",
               "href": "https://zhidao.baidu.com",
               "description": "中文互动问答平台，生活与专业知识一问一答",
@@ -2339,6 +2507,7 @@
           "items": [
             {
               "id": "nav-d3df48a5371e",
+              "hubId": "nav-d3df48a5371e",
               "title": "MDN Web Docs",
               "href": "https://developer.mozilla.org",
               "description": "Web 技术权威文档，HTML/CSS/JS 参考",
@@ -2351,6 +2520,7 @@
             },
             {
               "id": "nav-cbf14ad1ea1b",
+              "hubId": "nav-cbf14ad1ea1b",
               "title": "Java 官方文档",
               "href": "https://docs.oracle.com/en/java/javase/",
               "description": "Oracle 官方 Java 语言规范与 API 参考",
@@ -2364,6 +2534,7 @@
             },
             {
               "id": "nav-c13afe195cf1",
+              "hubId": "nav-c13afe195cf1",
               "title": "W3C 标准",
               "href": "https://www.w3.org/standards/",
               "description": "万维网联盟发布的 HTML、CSS 等标准",
@@ -2377,6 +2548,7 @@
             },
             {
               "id": "nav-e2bde7061bc2",
+              "hubId": "nav-e2bde7061bc2",
               "title": "IETF RFC 搜索",
               "href": "https://datatracker.ietf.org/",
               "description": "互联网工程任务组请求注释书全文库",
@@ -2390,6 +2562,7 @@
             },
             {
               "id": "nav-0b22dcd111c1",
+              "hubId": "nav-0b22dcd111c1",
               "title": "ISO/IEC 标准",
               "href": "https://www.iso.org/standards.html",
               "description": "国际标准化组织技术报告与标准目录",
@@ -2403,6 +2576,7 @@
             },
             {
               "id": "nav-a61ae5a351d4",
+              "hubId": "nav-a61ae5a351d4",
               "title": "Python 官方文档",
               "href": "https://docs.python.org/3/",
               "description": "Python 官方文档，语言教程与标准库参考",
@@ -2415,6 +2589,7 @@
             },
             {
               "id": "nav-b8d9c5887738",
+              "hubId": "nav-b8d9c5887738",
               "title": "Go 官方文档",
               "href": "https://go.dev/doc/",
               "description": "Go 官方文档，入门教程与标准库参考",
@@ -2427,6 +2602,7 @@
             },
             {
               "id": "nav-31cba38935381184",
+              "hubId": "nav-31cba38935381184",
               "title": "Microsoft Learn",
               "href": "https://learn.microsoft.com/zh-cn/",
               "description": "微软官方学习平台，文档、教程与认证路径免费开放",
@@ -2449,6 +2625,7 @@
           "items": [
             {
               "id": "nav-a8cb4c370926",
+              "hubId": "nav-a8cb4c370926",
               "title": "roadmap.sh",
               "href": "https://roadmap.sh",
               "description": "开发者学习路线图，规划技术成长路径",
@@ -2461,6 +2638,7 @@
             },
             {
               "id": "nav-d24d2d6546fe",
+              "hubId": "nav-d24d2d6546fe",
               "title": "CS自学指南",
               "href": "https://csdiy.wiki",
               "description": "计算机自学路线图与资源汇总，覆盖各方向课程与书籍",
@@ -2473,6 +2651,7 @@
             },
             {
               "id": "nav-244e42296c5c",
+              "hubId": "nav-244e42296c5c",
               "title": "JavaGuide",
               "href": "https://javaguide.cn",
               "description": "Java 学习与面试知识体系，后端通用学习路线",
@@ -2485,6 +2664,7 @@
             },
             {
               "id": "nav-da4fc876df85",
+              "hubId": "nav-da4fc876df85",
               "title": "W3Schools",
               "href": "https://www.w3schools.com",
               "description": "循序渐进的 Web 开发教程，从 HTML 到后端全覆盖",
@@ -2497,6 +2677,7 @@
             },
             {
               "id": "nav-87ce93944653",
+              "hubId": "nav-87ce93944653",
               "title": "Exercism",
               "href": "https://exercism.org",
               "description": "按学习路径免费练编程的平台，习题带导师点评",
@@ -2518,6 +2699,7 @@
           "items": [
             {
               "id": "nav-05c14d1da7a2",
+              "hubId": "nav-05c14d1da7a2",
               "title": "力扣 LeetCode",
               "href": "https://leetcode.cn",
               "description": "算法题库与在线编程练习",
@@ -2530,6 +2712,7 @@
             },
             {
               "id": "nav-719d72399e4f",
+              "hubId": "nav-719d72399e4f",
               "title": "牛客网",
               "href": "https://www.nowcoder.com",
               "description": "IT技术求职与面试题库聚合平台",
@@ -2543,6 +2726,7 @@
             },
             {
               "id": "nav-4cadd46f4b26",
+              "hubId": "nav-4cadd46f4b26",
               "title": "洛谷",
               "href": "https://www.luogu.com.cn",
               "description": "知名ACM/NOI算法竞赛在线评测系统",
@@ -2556,6 +2740,7 @@
             },
             {
               "id": "nav-7df4aa1cb97f",
+              "hubId": "nav-7df4aa1cb97f",
               "title": "Codeforces",
               "href": "https://codeforces.com",
               "description": "全球高热度算法竞赛在线交流平台",
@@ -2569,6 +2754,7 @@
             },
             {
               "id": "nav-ef7766bee06d",
+              "hubId": "nav-ef7766bee06d",
               "title": "AtCoder",
               "href": "https://atcoder.jp",
               "description": "面向全球的顶级在线算法编程竞技平台",
@@ -2582,6 +2768,7 @@
             },
             {
               "id": "nav-2f62960d9c79",
+              "hubId": "nav-2f62960d9c79",
               "title": "LintCode",
               "href": "https://www.lintcode.com",
               "description": "面向编程面试的高难度算法题库平台",
@@ -2595,6 +2782,7 @@
             },
             {
               "id": "nav-447e161761d8",
+              "hubId": "nav-447e161761d8",
               "title": "LeetCode国际版",
               "href": "https://leetcode.com",
               "description": "全球最大的程序员算法面试刷题网站",
@@ -2626,6 +2814,7 @@
           "items": [
             {
               "id": "nav-93efc6a224fa",
+              "hubId": "nav-93efc6a224fa",
               "title": "Dribbble",
               "href": "https://dribbble.com",
               "description": "设计师作品社区，寻找设计灵感",
@@ -2638,6 +2827,7 @@
             },
             {
               "id": "nav-66656a411883",
+              "hubId": "nav-66656a411883",
               "title": "Behance",
               "href": "https://www.behance.net",
               "description": "全球创意工作者的社区平台",
@@ -2650,6 +2840,7 @@
             },
             {
               "id": "nav-954482b2c674",
+              "hubId": "nav-954482b2c674",
               "title": "Pinterest",
               "href": "https://www.pinterest.com",
               "description": "视觉发现与灵感聚合平台",
@@ -2662,6 +2853,7 @@
             },
             {
               "id": "nav-d5235454e4b3",
+              "hubId": "nav-d5235454e4b3",
               "title": "Awwwards",
               "href": "https://www.awwwards.com",
               "description": "展示优秀网页设计作品",
@@ -2674,6 +2866,7 @@
             },
             {
               "id": "nav-1e33fd386038",
+              "hubId": "nav-1e33fd386038",
               "title": "SiteInspire",
               "href": "https://www.siteinspire.com",
               "description": "收集高质量网页设计案例",
@@ -2686,6 +2879,7 @@
             },
             {
               "id": "nav-ee52036a9e8f",
+              "hubId": "nav-ee52036a9e8f",
               "title": "Mobbin",
               "href": "https://mobbin.com",
               "description": "移动应用界面设计灵感库",
@@ -2707,6 +2901,7 @@
           "items": [
             {
               "id": "nav-0c2be6ab8fb0",
+              "hubId": "nav-0c2be6ab8fb0",
               "title": "TinyPNG",
               "href": "https://tinypng.com",
               "description": "在线图片压缩，显著减小体积且保持画质",
@@ -2718,6 +2913,7 @@
             },
             {
               "id": "nav-ba05aba02c2c",
+              "hubId": "nav-ba05aba02c2c",
               "title": "Canva",
               "href": "https://www.canva.com",
               "description": "在线图形设计与海报制作",
@@ -2730,6 +2926,7 @@
             },
             {
               "id": "nav-c78272fc0703",
+              "hubId": "nav-c78272fc0703",
               "title": "Squoosh",
               "href": "https://squoosh.app",
               "description": "Google 开源在线图片压缩，端侧处理不上传，画质可调",
@@ -2743,6 +2940,7 @@
             },
             {
               "id": "nav-6649c4e5e1b6",
+              "hubId": "nav-6649c4e5e1b6",
               "title": "Creative Market",
               "href": "https://creativemarket.com",
               "description": "设计师数字资源交易平台",
@@ -2755,6 +2953,7 @@
             },
             {
               "id": "nav-5377e0424a7f",
+              "hubId": "nav-5377e0424a7f",
               "title": "Photopea",
               "href": "https://www.photopea.com",
               "description": "免费在线修图工具，浏览器里直接用，免安装可做基础修图",
@@ -2776,6 +2975,7 @@
           "items": [
             {
               "id": "nav-b9b2d2b2e7f8",
+              "hubId": "nav-b9b2d2b2e7f8",
               "title": "Iconify",
               "href": "https://iconify.design",
               "description": "海量开源图标聚合，支持多套图标集",
@@ -2788,6 +2988,7 @@
             },
             {
               "id": "nav-92a457b294f1",
+              "hubId": "nav-92a457b294f1",
               "title": "Google Fonts",
               "href": "https://fonts.google.com",
               "description": "免费开源字体库，中英文字体齐全",
@@ -2799,6 +3000,7 @@
             },
             {
               "id": "nav-be6ae4abe9ef",
+              "hubId": "nav-be6ae4abe9ef",
               "title": "Font Awesome",
               "href": "https://fontawesome.com",
               "description": "流行的矢量图标与字体库",
@@ -2811,6 +3013,7 @@
             },
             {
               "id": "nav-33bb6ab211fd",
+              "hubId": "nav-33bb6ab211fd",
               "title": "Flaticon",
               "href": "https://www.flaticon.com",
               "description": "免费图标设计与下载平台",
@@ -2823,6 +3026,7 @@
             },
             {
               "id": "nav-262fee5ace4d",
+              "hubId": "nav-262fee5ace4d",
               "title": "Dafont",
               "href": "https://www.dafont.com",
               "description": "免费字体下载与分享网站",
@@ -2835,6 +3039,7 @@
             },
             {
               "id": "nav-242b3358fa0c",
+              "hubId": "nav-242b3358fa0c",
               "title": "Adobe Fonts",
               "href": "https://fonts.adobe.com",
               "description": "Adobe 旗下字体订阅服务（原 Typekit），提供高质量商用字体库",
@@ -2847,6 +3052,7 @@
             },
             {
               "id": "nav-f8381fa7fe59",
+              "hubId": "nav-f8381fa7fe59",
               "title": "Lucide",
               "href": "https://lucide.dev",
               "description": "开源线性图标库，风格统一，支持 React/Vue 与 Figma 插件",
@@ -2860,6 +3066,7 @@
             },
             {
               "id": "nav-060035543d7b57c0",
+              "hubId": "nav-060035543d7b57c0",
               "title": "Iconfont",
               "href": "https://www.iconfont.cn",
               "description": "阿里巴巴矢量图标库，提供图标下载、在线存储与格式转换",
@@ -2881,6 +3088,7 @@
           "items": [
             {
               "id": "nav-28db7169d6e6",
+              "hubId": "nav-28db7169d6e6",
               "title": "Coolors",
               "href": "https://coolors.co",
               "description": "快速生成与微调配色方案",
@@ -2893,6 +3101,7 @@
             },
             {
               "id": "nav-98ba57cc6a01",
+              "hubId": "nav-98ba57cc6a01",
               "title": "Adobe Color",
               "href": "https://color.adobe.com",
               "description": "配色方案生成与探索工具",
@@ -2905,6 +3114,7 @@
             },
             {
               "id": "nav-3104e8afb902",
+              "hubId": "nav-3104e8afb902",
               "title": "Paletton",
               "href": "https://paletton.com",
               "description": "配色方案设计器，实时预览色彩搭配",
@@ -2917,6 +3127,7 @@
             },
             {
               "id": "nav-719582542a72",
+              "hubId": "nav-719582542a72",
               "title": "Color Hunt",
               "href": "https://colorhunt.co",
               "description": "设计师手选配色方案库",
@@ -2929,6 +3140,7 @@
             },
             {
               "id": "nav-0e2bdd7b85b5",
+              "hubId": "nav-0e2bdd7b85b5",
               "title": "Khroma",
               "href": "https://www.khroma.co",
               "description": "AI 学习偏好生成个性配色组合",
@@ -2941,6 +3153,7 @@
             },
             {
               "id": "nav-57c110a3244f",
+              "hubId": "nav-57c110a3244f",
               "title": "Colormind",
               "href": "https://colormind.io",
               "description": "AI 深度学习配色生成器，从照片与艺术中学习色彩风格",
@@ -2953,6 +3166,7 @@
             },
             {
               "id": "nav-3974490e2cda",
+              "hubId": "nav-3974490e2cda",
               "title": "Happy Hues",
               "href": "https://www.happyhues.co",
               "description": "精选配色方案的真实场景应用示例，点击复制色值",
@@ -2974,6 +3188,7 @@
           "items": [
             {
               "id": "nav-186e99992a26",
+              "hubId": "nav-186e99992a26",
               "title": "Unsplash",
               "href": "https://unsplash.com",
               "description": "免费高清图片素材库，可商用",
@@ -2985,6 +3200,7 @@
             },
             {
               "id": "nav-f52f8ac5f6ef",
+              "hubId": "nav-f52f8ac5f6ef",
               "title": "Pexels",
               "href": "https://www.pexels.com",
               "description": "免费高清图片与视频素材",
@@ -2997,6 +3213,7 @@
             },
             {
               "id": "nav-e3899db34178",
+              "hubId": "nav-e3899db34178",
               "title": "Pixabay",
               "href": "https://pixabay.com",
               "description": "CC0 许可的图片与视频库",
@@ -3009,6 +3226,7 @@
             },
             {
               "id": "nav-eb7a325c0b59",
+              "hubId": "nav-eb7a325c0b59",
               "title": "Mixkit",
               "href": "https://mixkit.co",
               "description": "高质量免费视频素材库",
@@ -3021,6 +3239,7 @@
             },
             {
               "id": "nav-91ca151d887a",
+              "hubId": "nav-91ca151d887a",
               "title": "Storyblocks",
               "href": "https://storyblocks.com",
               "description": "订阅制高品质素材视频库",
@@ -3033,6 +3252,7 @@
             },
             {
               "id": "nav-d14a60261f69",
+              "hubId": "nav-d14a60261f69",
               "title": "iStock",
               "href": "https://www.istockphoto.com",
               "description": "知名高品质图片视频素材",
@@ -3054,6 +3274,7 @@
           "items": [
             {
               "id": "nav-b220d784d62a",
+              "hubId": "nav-b220d784d62a",
               "title": "Figma",
               "href": "https://figma.com",
               "description": "在线 UI 设计与原型协作工具，多人实时编辑",
@@ -3065,6 +3286,7 @@
             },
             {
               "id": "nav-dd4ce203358a",
+              "hubId": "nav-dd4ce203358a",
               "title": "Sketch",
               "href": "https://www.sketch.com",
               "description": "Mac 端矢量界面设计工具",
@@ -3077,6 +3299,7 @@
             },
             {
               "id": "nav-c183d6301851",
+              "hubId": "nav-c183d6301851",
               "title": "Adobe XD",
               "href": "https://helpx.adobe.com/xd/desktop.html",
               "description": "界面设计与原型制作工具（已停止新功能开发，仅维护模式）",
@@ -3089,6 +3312,7 @@
             },
             {
               "id": "nav-bb6600ff3c9d",
+              "hubId": "nav-bb6600ff3c9d",
               "title": "Penpot",
               "href": "https://penpot.app",
               "description": "开源在线设计与原型工具，Figma 平替，可自托管",
@@ -3102,6 +3326,7 @@
             },
             {
               "id": "nav-c4aa035078dc",
+              "hubId": "nav-c4aa035078dc",
               "title": "Pixso",
               "href": "https://pixso.cn",
               "description": "国产在线协同设计工具，Figma 平替，中文支持完善",
@@ -3115,6 +3340,7 @@
             },
             {
               "id": "nav-5606e02108f9",
+              "hubId": "nav-5606e02108f9",
               "title": "Adobe Illustrator",
               "href": "https://www.adobe.com/products/illustrator.html",
               "description": "专业矢量图形编辑软件",
@@ -3145,6 +3371,7 @@
           "items": [
             {
               "id": "nav-fc4808a9bd0d",
+              "hubId": "nav-fc4808a9bd0d",
               "title": "Excalidraw",
               "href": "https://excalidraw.com",
               "description": "在线手绘风格白板，画流程图与架构图",
@@ -3157,6 +3384,7 @@
             },
             {
               "id": "nav-9af59dc14453",
+              "hubId": "nav-9af59dc14453",
               "title": "XMind",
               "href": "https://www.xmind.cn/",
               "description": "功能强大的专业思维导图软件",
@@ -3169,6 +3397,7 @@
             },
             {
               "id": "nav-8f13b112f07a",
+              "hubId": "nav-8f13b112f07a",
               "title": "MindManager",
               "href": "https://www.mindmanager.com/",
               "description": "企业级思维导图与目标管理工具",
@@ -3181,6 +3410,7 @@
             },
             {
               "id": "nav-501cf67096a2",
+              "hubId": "nav-501cf67096a2",
               "title": "ProcessOn",
               "href": "https://www.processon.com/",
               "description": "在线流程图与思维导图绘制平台",
@@ -3193,6 +3423,7 @@
             },
             {
               "id": "nav-89b5df73125e",
+              "hubId": "nav-89b5df73125e",
               "title": "Boardmix",
               "href": "https://boardmix.cn/",
               "description": "AI驱动的在线协作白板与思维导图",
@@ -3205,6 +3436,7 @@
             },
             {
               "id": "nav-536ff253de93",
+              "hubId": "nav-536ff253de93",
               "title": "GitMind",
               "href": "https://gitmind.com/",
               "description": "AI 驱动的免费在线思维导图与流程图协作工具",
@@ -3217,6 +3449,7 @@
             },
             {
               "id": "nav-c79fd62efe2a",
+              "hubId": "nav-c79fd62efe2a",
               "title": "tldraw",
               "href": "https://www.tldraw.com",
               "description": "免费轻量在线白板与无限画布，打开即画，适合快速梳理思路",
@@ -3230,6 +3463,7 @@
             },
             {
               "id": "nav-d519870cfd13",
+              "hubId": "nav-d519870cfd13",
               "title": "Draw.io",
               "href": "https://app.diagrams.net",
               "description": "免费开源流程图工具，画架构图与 UML，支持离线与云盘保存",
@@ -3243,6 +3477,7 @@
             },
             {
               "id": "nav-91d93ca93df4",
+              "hubId": "nav-91d93ca93df4",
               "title": "Miro",
               "href": "https://miro.com",
               "description": "在线白板与团队协作工具",
@@ -3264,6 +3499,7 @@
           "items": [
             {
               "id": "nav-4bbc476c6a05",
+              "hubId": "nav-4bbc476c6a05",
               "title": "腾讯文档",
               "href": "https://docs.qq.com",
               "description": "腾讯旗下在线文档：文档、表格、幻灯片多人实时协作，免费易用",
@@ -3277,6 +3513,7 @@
             },
             {
               "id": "nav-954d60ae7ad3",
+              "hubId": "nav-954d60ae7ad3",
               "title": "石墨文档",
               "href": "https://shimo.im",
               "description": "轻量在线文档与表格协作工具，界面清爽，适合团队写作",
@@ -3290,6 +3527,7 @@
             },
             {
               "id": "nav-b26a8d3266d8",
+              "hubId": "nav-b26a8d3266d8",
               "title": "飞书",
               "href": "https://www.feishu.cn",
               "description": "字节跳动旗下协作平台：飞书文档、多维表格、会议与沟通一体",
@@ -3303,6 +3541,7 @@
             },
             {
               "id": "nav-a1115612fa68",
+              "hubId": "nav-a1115612fa68",
               "title": "金山文档",
               "href": "https://www.kdocs.cn",
               "description": "金山办公旗下在线文档：兼容 Office 格式，文档与表格多人协作",
@@ -3316,6 +3555,7 @@
             },
             {
               "id": "nav-44471e5904f3",
+              "hubId": "nav-44471e5904f3",
               "title": "语雀",
               "href": "https://www.yuque.com",
               "description": "蚂蚁集团旗下知识库：写文档、记笔记、沉淀团队知识",
@@ -3329,6 +3569,7 @@
             },
             {
               "id": "nav-8a80d9483c93",
+              "hubId": "nav-8a80d9483c93",
               "title": "Notion",
               "href": "https://www.notion.com",
               "description": "All-in-one 协作空间：笔记、文档、表格数据库与项目管理",
@@ -3342,6 +3583,7 @@
             },
             {
               "id": "nav-74ad124ca53c",
+              "hubId": "nav-74ad124ca53c",
               "title": "Obsidian",
               "href": "https://obsidian.md",
               "description": "本地 Markdown 双链知识库，插件生态丰富，数据完全归自己",
@@ -3355,6 +3597,7 @@
             },
             {
               "id": "nav-de3563796222",
+              "hubId": "nav-de3563796222",
               "title": "AppFlowy",
               "href": "https://appflowy.com/",
               "description": "开源 Notion 平替，本地优先的笔记与看板，可自托管",
@@ -3368,6 +3611,7 @@
             },
             {
               "id": "nav-76126d553f44",
+              "hubId": "nav-76126d553f44",
               "title": "AFFiNE",
               "href": "https://affine.pro",
               "description": "开源一体化工作区，文档、白板与数据库三合一",
@@ -3381,6 +3625,7 @@
             },
             {
               "id": "nav-0ad94ff7e2cf",
+              "hubId": "nav-0ad94ff7e2cf",
               "title": "Logseq",
               "href": "https://logseq.com",
               "description": "开源大纲笔记，本地优先双链，支持任务与白板",
@@ -3394,6 +3639,7 @@
             },
             {
               "id": "nav-50edd79acc4e",
+              "hubId": "nav-50edd79acc4e",
               "title": "思源笔记",
               "href": "https://b3log.org/siyuan",
               "description": "开源块级编辑器，可完全离线，双链与挂件生态完善",
@@ -3407,6 +3653,7 @@
             },
             {
               "id": "nav-ea5931e503b0",
+              "hubId": "nav-ea5931e503b0",
               "title": "Todoist",
               "href": "https://todoist.com",
               "description": "跨平台待办清单与任务管理，支持项目分组、提醒与协作",
@@ -3438,6 +3685,7 @@
           "items": [
             {
               "id": "nav-8477ee9ea720",
+              "hubId": "nav-8477ee9ea720",
               "title": "菜鸟教程",
               "href": "https://www.runoob.com",
               "description": "编程入门教程，覆盖主流语言与框架",
@@ -3450,6 +3698,7 @@
             },
             {
               "id": "nav-cbb9bce93713",
+              "hubId": "nav-cbb9bce93713",
               "title": "Codecademy",
               "href": "https://www.codecademy.com",
               "description": "交互式编程学习平台",
@@ -3462,6 +3711,7 @@
             },
             {
               "id": "nav-f2524c211cef",
+              "hubId": "nav-f2524c211cef",
               "title": "freeCodeCamp",
               "href": "https://www.freecodecamp.org",
               "description": "免费在线编程学习平台，交互式课程与实战项目",
@@ -3473,6 +3723,7 @@
             },
             {
               "id": "nav-1910b08f0746",
+              "hubId": "nav-1910b08f0746",
               "title": "廖雪峰教程",
               "href": "https://www.liaoxuefeng.com",
               "description": "中文编程入门教程，覆盖 Python、Java、JavaScript 等主流语言",
@@ -3485,6 +3736,7 @@
             },
             {
               "id": "nav-f76396799087",
+              "hubId": "nav-f76396799087",
               "title": "The Odin Project",
               "href": "https://www.theodinproject.com",
               "description": "免费开源全栈开发学习路径，项目驱动",
@@ -3506,6 +3758,7 @@
           "items": [
             {
               "id": "nav-851b8e2cbc38",
+              "hubId": "nav-851b8e2cbc38",
               "title": "哔哩哔哩",
               "href": "https://www.bilibili.com",
               "description": "国内视频社区，技术课程与学习资源丰富",
@@ -3518,6 +3771,7 @@
             },
             {
               "id": "nav-c32ae6fc9d92",
+              "hubId": "nav-c32ae6fc9d92",
               "title": "Coursera",
               "href": "https://www.coursera.org",
               "description": "国际名校在线课程平台",
@@ -3530,6 +3784,7 @@
             },
             {
               "id": "nav-5fd04f3f3311",
+              "hubId": "nav-5fd04f3f3311",
               "title": "中国大学MOOC",
               "href": "https://www.icourse163.org",
               "description": "国内高校在线开放课程平台",
@@ -3542,6 +3797,7 @@
             },
             {
               "id": "nav-8efae44c2141",
+              "hubId": "nav-8efae44c2141",
               "title": "Udemy",
               "href": "https://www.udemy.com",
               "description": "全球职业技能在线课程平台",
@@ -3554,6 +3810,7 @@
             },
             {
               "id": "nav-358837656548",
+              "hubId": "nav-358837656548",
               "title": "网易云课堂",
               "href": "https://study.163.com",
               "description": "IT与设计类在线课程社区",
@@ -3566,6 +3823,7 @@
             },
             {
               "id": "nav-9cd7d59b9a54",
+              "hubId": "nav-9cd7d59b9a54",
               "title": "Khan Academy",
               "href": "https://www.khanacademy.org",
               "description": "全球免费教育资源平台",
@@ -3578,6 +3836,7 @@
             },
             {
               "id": "nav-e3e4640ff31f",
+              "hubId": "nav-e3e4640ff31f",
               "title": "Skillshare",
               "href": "https://www.skillshare.com",
               "description": "创意与设计技能在线学习平台",
@@ -3590,6 +3849,7 @@
             },
             {
               "id": "nav-e8931ffa1ac0",
+              "hubId": "nav-e8931ffa1ac0",
               "title": "慕课网",
               "href": "https://www.imooc.com/",
               "description": "提供丰富编程课程与技术培训平台",
@@ -3602,6 +3862,7 @@
             },
             {
               "id": "nav-e7f533e4d7cd",
+              "hubId": "nav-e7f533e4d7cd",
               "title": "极客时间",
               "href": "https://time.geekbang.org/",
               "description": "面向工程师的系统化技术课程平台",
@@ -3614,6 +3875,7 @@
             },
             {
               "id": "nav-fa7d39d1fec0",
+              "hubId": "nav-fa7d39d1fec0",
               "title": "学习强国",
               "href": "https://www.xuexi.cn/",
               "description": "综合学习平台：时政理论、慕课课程与图书音视频",
@@ -3626,6 +3888,7 @@
             },
             {
               "id": "nav-b9cd3b2bc578",
+              "hubId": "nav-b9cd3b2bc578",
               "title": "edX",
               "href": "https://www.edx.org",
               "description": "哈佛、MIT 等名校在线课程平台",
@@ -3647,6 +3910,7 @@
           "items": [
             {
               "id": "nav-f8c966c919a4",
+              "hubId": "nav-f8c966c919a4",
               "title": "维基百科",
               "href": "https://zh.wikipedia.org",
               "description": "自由的百科全书",
@@ -3659,6 +3923,7 @@
             },
             {
               "id": "nav-541673d083aa",
+              "hubId": "nav-541673d083aa",
               "title": "国家数字图书馆",
               "href": "https://www.nlc.cn",
               "description": "中国国家图书馆数字资源入口",
@@ -3671,6 +3936,7 @@
             },
             {
               "id": "nav-508848075e00",
+              "hubId": "nav-508848075e00",
               "title": "Project Gutenberg",
               "href": "https://www.gutenberg.org",
               "description": "公共领域电子书文库",
@@ -3683,6 +3949,7 @@
             },
             {
               "id": "nav-1f210e7486a2",
+              "hubId": "nav-1f210e7486a2",
               "title": "Internet Archive",
               "href": "https://archive.org",
               "description": "全球最大的公益数字图书馆，免费图书、影片、音乐与 Wayback Machine",
@@ -3695,6 +3962,7 @@
             },
             {
               "id": "nav-0227fcccf382",
+              "hubId": "nav-0227fcccf382",
               "title": "Open Library",
               "href": "https://openlibrary.org",
               "description": "开放图书借阅馆，上百万册图书可免费借读",
@@ -3716,6 +3984,7 @@
           "items": [
             {
               "id": "nav-95d39aca99e9",
+              "hubId": "nav-95d39aca99e9",
               "title": "BOSS直聘",
               "href": "https://www.zhipin.com",
               "description": "主流招聘平台，和老板直接开聊，岗位多、反馈快",
@@ -3729,6 +3998,7 @@
             },
             {
               "id": "nav-49db980929af",
+              "hubId": "nav-49db980929af",
               "title": "拉勾网",
               "href": "https://www.lagou.com",
               "description": "互联网垂直招聘平台，产品、技术、运营岗位集中",
@@ -3742,6 +4012,7 @@
             },
             {
               "id": "nav-5b90a3301077",
+              "hubId": "nav-5b90a3301077",
               "title": "智联招聘",
               "href": "https://www.zhaopin.com",
               "description": "老牌综合招聘平台，岗位覆盖行业广",
@@ -3754,6 +4025,7 @@
             },
             {
               "id": "nav-e5cdec7f7e3b",
+              "hubId": "nav-e5cdec7f7e3b",
               "title": "前程无忧",
               "href": "https://www.51job.com",
               "description": "综合招聘平台，外企与大型企业岗位多",
@@ -3766,6 +4038,7 @@
             },
             {
               "id": "nav-c0439e70977b",
+              "hubId": "nav-c0439e70977b",
               "title": "猎聘",
               "href": "https://www.liepin.com",
               "description": "中高端人才招聘平台，猎头资源多，适合有经验的职场人",
@@ -3779,6 +4052,7 @@
             },
             {
               "id": "nav-2684f4944505",
+              "hubId": "nav-2684f4944505",
               "title": "超级简历",
               "href": "https://www.wondercv.com",
               "description": "专业在线简历制作工具，大厂 HR 推荐的简历模板，支持简历优化",
@@ -3792,6 +4066,7 @@
             },
             {
               "id": "nav-3585516fe941",
+              "hubId": "nav-3585516fe941",
               "title": "五百丁",
               "href": "https://www.500d.me",
               "description": "在线简历制作平台，海量简历模板与范文，一键导出简历",
@@ -3814,6 +4089,7 @@
           "items": [
             {
               "id": "nav-c6c24bd6dc9e",
+              "hubId": "nav-c6c24bd6dc9e",
               "title": "国家公务员局",
               "href": "http://www.scs.gov.cn/gkIndex.html",
               "description": "国家公务员局考试录用公务员引导页：考务入口（报名确认、打印准考证）与 2027 年度招考专题入口",
@@ -3827,6 +4103,7 @@
             },
             {
               "id": "nav-7465492db41a",
+              "hubId": "nav-7465492db41a",
               "title": "2027年国家公务员考试专题",
               "href": "http://bm.scs.gov.cn/kl2027",
               "description": "中央机关及其直属机构2027年度考试录用公务员专题网站：招考公告、报名入口、笔试安排与成绩查询",
@@ -3840,6 +4117,7 @@
             },
             {
               "id": "nav-0e97e3d46aa7",
+              "hubId": "nav-0e97e3d46aa7",
               "title": "中央机关公开遴选和公开选调专题",
               "href": "http://subb.scs.gov.cn/lx2027",
               "description": "中央机关公开遴选和公开选调公务员专题：招考公告、职位表与报名入口",
@@ -3853,6 +4131,7 @@
             },
             {
               "id": "nav-9e4479deb10f",
+              "hubId": "nav-9e4479deb10f",
               "title": "研招网",
               "href": "https://yz.chsi.com.cn",
               "description": "中国研究生招生信息网：考研报名、调剂与录取查询的官方平台",
@@ -3866,6 +4145,7 @@
             },
             {
               "id": "nav-aa744c865a4c",
+              "hubId": "nav-aa744c865a4c",
               "title": "全国大学英语四、六级考试官网",
               "href": "https://cet.neea.edu.cn/",
               "description": "全国大学英语四六级考试官方网站：考试安排、报名通知与成绩查询入口",
@@ -3878,6 +4158,7 @@
             },
             {
               "id": "nav-1675e073090f",
+              "hubId": "nav-1675e073090f",
               "title": "四六级成绩查询",
               "href": "https://cet.neea.edu.cn/cet",
               "description": "全国大学英语四六级考试成绩查询：凭姓名与证件号码查询当次及历史成绩",
@@ -3890,6 +4171,7 @@
             },
             {
               "id": "nav-e0fd05b63d6d",
+              "hubId": "nav-e0fd05b63d6d",
               "title": "中国教育考试网",
               "href": "https://www.neea.edu.cn/",
               "description": "教育部教育考试院官方网站：各类教育考试报名、成绩查询与证书服务入口",
@@ -3902,6 +4184,7 @@
             },
             {
               "id": "nav-310cb47c7ebb",
+              "hubId": "nav-310cb47c7ebb",
               "title": "考研网上报名",
               "href": "https://yz.chsi.com.cn/yzwb/",
               "description": "全国硕士研究生招生考试网上报名：网报流程、准考证下载与初试安排",
@@ -3914,6 +4197,7 @@
             },
             {
               "id": "nav-8ec89effc595",
+              "hubId": "nav-8ec89effc595",
               "title": "粉笔",
               "href": "https://www.fenbi.com",
               "description": "公务员与事业单位考试备考平台：在线题库、模考大赛与系统课程",
@@ -3927,6 +4211,7 @@
             },
             {
               "id": "nav-ed251f6c67d3",
+              "hubId": "nav-ed251f6c67d3",
               "title": "华图教育",
               "href": "https://www.huatu.com",
               "description": "公务员、教师、事业单位考试培训机构，线上线下课程齐全",
@@ -3940,6 +4225,7 @@
             },
             {
               "id": "nav-99311b7d5a66",
+              "hubId": "nav-99311b7d5a66",
               "title": "中公教育",
               "href": "https://www.offcn.com",
               "description": "公务员与事业单位考试培训机构，行测申论课程与题库",
@@ -3953,6 +4239,7 @@
             },
             {
               "id": "nav-ea146f992973",
+              "hubId": "nav-ea146f992973",
               "title": "新东方在线",
               "href": "https://www.koolearn.com",
               "description": "新东方旗下在线教育平台：考研、英语四六级、雅思托福课程",
@@ -3984,6 +4271,7 @@
           "items": [
             {
               "id": "nav-bd7aa388347c",
+              "hubId": "nav-bd7aa388347c",
               "title": "arXiv",
               "href": "https://arxiv.org",
               "description": "预印本论文库，AI 与计算机科学前沿",
@@ -3996,6 +4284,7 @@
             },
             {
               "id": "nav-0ab4df3bab56",
+              "hubId": "nav-0ab4df3bab56",
               "title": "Hugging Face Papers",
               "href": "https://huggingface.co/papers/trending",
               "description": "论文与开源实现对照，AI 研究必备",
@@ -4008,6 +4297,7 @@
             },
             {
               "id": "nav-3328def7415c",
+              "hubId": "nav-3328def7415c",
               "title": "中国知网",
               "href": "https://www.cnki.net",
               "description": "国内最权威学术资源数据库",
@@ -4020,6 +4310,7 @@
             },
             {
               "id": "nav-0e8c6b634b1e",
+              "hubId": "nav-0e8c6b634b1e",
               "title": "万方数据",
               "href": "https://www.wanfangdata.com.cn",
               "description": "综合性学术资源与知识服务",
@@ -4032,6 +4323,7 @@
             },
             {
               "id": "nav-c9eec176581c",
+              "hubId": "nav-c9eec176581c",
               "title": "Web of Science",
               "href": "https://www.webofscience.com",
               "description": "全球顶级学术引文索引数据库",
@@ -4044,6 +4336,7 @@
             },
             {
               "id": "nav-9bb1c20d7dfc",
+              "hubId": "nav-9bb1c20d7dfc",
               "title": "Scopus",
               "href": "https://www.scopus.com",
               "description": "全球最大的摘要与引文数据库",
@@ -4056,6 +4349,7 @@
             },
             {
               "id": "nav-8911782fce1c",
+              "hubId": "nav-8911782fce1c",
               "title": "读秀",
               "href": "https://www.duxiu.com",
               "description": "图书全文检索与知识发现平台",
@@ -4068,6 +4362,7 @@
             },
             {
               "id": "nav-57df6bb7f011",
+              "hubId": "nav-57df6bb7f011",
               "title": "Semantic Scholar",
               "href": "https://www.semanticscholar.org",
               "description": "基于AI的学术文献推荐引擎",
@@ -4080,6 +4375,7 @@
             },
             {
               "id": "nav-89bde19a0875",
+              "hubId": "nav-89bde19a0875",
               "title": "国家哲学社会科学文献中心",
               "href": "https://www.ncpssd.org",
               "description": "哲学社会科学文献共享平台",
@@ -4092,6 +4388,7 @@
             },
             {
               "id": "nav-eacbada04668",
+              "hubId": "nav-eacbada04668",
               "title": "IEEE Xplore",
               "href": "https://ieeexplore.ieee.org/",
               "description": "电气电子工程师学会技术论文与标准",
@@ -4105,6 +4402,7 @@
             },
             {
               "id": "nav-e86e62a25ee1",
+              "hubId": "nav-e86e62a25ee1",
               "title": "JSTOR",
               "href": "https://www.jstor.org",
               "description": "全球学术文章数字图书馆",
@@ -4135,6 +4433,7 @@
           "items": [
             {
               "id": "nav-c731fcdf3886",
+              "hubId": "nav-c731fcdf3886",
               "title": "36氪",
               "href": "https://www.36kr.com",
               "description": "聚焦科技互联网领域的创新报道",
@@ -4147,6 +4446,7 @@
             },
             {
               "id": "nav-502e75a2e52c",
+              "hubId": "nav-502e75a2e52c",
               "title": "虎嗅",
               "href": "https://www.huxiu.com",
               "description": "记录时代商业变革的深度媒体",
@@ -4159,6 +4459,7 @@
             },
             {
               "id": "nav-463d715e368b",
+              "hubId": "nav-463d715e368b",
               "title": "极客公园",
               "href": "https://www.geekpark.net",
               "description": "关注前沿科技与互联网行业动态",
@@ -4170,6 +4471,7 @@
             },
             {
               "id": "nav-d07e68208f1e",
+              "hubId": "nav-d07e68208f1e",
               "title": "InfoQ",
               "href": "https://www.infoq.cn",
               "description": "面向软件开发者的技术媒体",
@@ -4182,6 +4484,7 @@
             },
             {
               "id": "nav-c5e4b03ce4a1",
+              "hubId": "nav-c5e4b03ce4a1",
               "title": "少数派",
               "href": "https://sspai.com",
               "description": "分享数字生活与效率工具心得",
@@ -4194,6 +4497,7 @@
             },
             {
               "id": "nav-f31870fed982",
+              "hubId": "nav-f31870fed982",
               "title": "爱范儿",
               "href": "https://www.ifanr.com",
               "description": "探索科技产品与生活方式变革",
@@ -4224,6 +4528,7 @@
           "items": [
             {
               "id": "nav-b0ac61074c51",
+              "hubId": "nav-b0ac61074c51",
               "title": "豆瓣",
               "href": "https://www.douban.com",
               "description": "书影音评分与评论社区",
@@ -4236,6 +4541,7 @@
             },
             {
               "id": "nav-a1e12a334e55",
+              "hubId": "nav-a1e12a334e55",
               "title": "IMDb",
               "href": "https://www.imdb.com",
               "description": "全球最大的影视数据库与评分平台",
@@ -4248,6 +4554,7 @@
             },
             {
               "id": "nav-8511e58fd60c",
+              "hubId": "nav-8511e58fd60c",
               "title": "猫眼电影",
               "href": "https://maoyan.com",
               "description": "专业电影购票及评分数据平台",
@@ -4260,6 +4567,7 @@
             },
             {
               "id": "nav-7737a063c21c",
+              "hubId": "nav-7737a063c21c",
               "title": "时光网",
               "href": "https://www.mtime.com",
               "description": "经典影视资讯与深度评分社区",
@@ -4272,6 +4580,7 @@
             },
             {
               "id": "nav-c3f5c97b0cfe",
+              "hubId": "nav-c3f5c97b0cfe",
               "title": "Letterboxd",
               "href": "https://letterboxd.com",
               "description": "以社交为核心的电影发现与日志平台",
@@ -4284,6 +4593,7 @@
             },
             {
               "id": "nav-bbdff16b81a9",
+              "hubId": "nav-bbdff16b81a9",
               "title": "Rotten Tomatoes",
               "href": "https://www.rottentomatoes.com",
               "description": "全球最具影响力的影评聚合平台，Tomatometer 新鲜度评分",
@@ -4296,6 +4606,7 @@
             },
             {
               "id": "nav-6080a9435a89",
+              "hubId": "nav-6080a9435a89",
               "title": "Metacritic",
               "href": "https://www.metacritic.com",
               "description": "权威媒体评分聚合，Metascore 百分制综合评分",
@@ -4317,6 +4628,7 @@
           "items": [
             {
               "id": "nav-5c19b7c118cb",
+              "hubId": "nav-5c19b7c118cb",
               "title": "起点中文网",
               "href": "https://www.qidian.com",
               "description": "阅文旗下老牌网文平台，玄幻、都市等原创小说的发源地",
@@ -4330,6 +4642,7 @@
             },
             {
               "id": "nav-f98a0120c1d4",
+              "hubId": "nav-f98a0120c1d4",
               "title": "番茄小说",
               "href": "https://www.fanqienovel.com",
               "description": "字节跳动旗下免费小说平台，全场小说免费看，也是短剧、漫剧的 IP 源头",
@@ -4343,6 +4656,7 @@
             },
             {
               "id": "nav-bad514336826",
+              "hubId": "nav-bad514336826",
               "title": "晋江文学城",
               "href": "https://www.jjwxc.net",
               "description": "女性向原创小说平台，言情与纯爱作品集中，投稿签约通道完善",
@@ -4356,6 +4670,7 @@
             },
             {
               "id": "nav-71c0be21ab3e",
+              "hubId": "nav-71c0be21ab3e",
               "title": "七猫中文网",
               "href": "https://www.qimao.com",
               "description": "免费小说平台，全本小说免费阅读，更新快",
@@ -4368,6 +4683,7 @@
             },
             {
               "id": "nav-707afdb954d8",
+              "hubId": "nav-707afdb954d8",
               "title": "纵横中文网",
               "href": "https://www.zongheng.com",
               "description": "老牌原创小说平台，玄幻、历史等男频作品多，有作者投稿入口",
@@ -4381,6 +4697,7 @@
             },
             {
               "id": "nav-c250c4733925",
+              "hubId": "nav-c250c4733925",
               "title": "飞卢小说网",
               "href": "https://www.faloo.com",
               "description": "同人与快节奏爽文小说平台，更新速度快",
@@ -4394,6 +4711,7 @@
             },
             {
               "id": "nav-9b096de8b698",
+              "hubId": "nav-9b096de8b698",
               "title": "17K小说网",
               "href": "https://www.17k.com",
               "description": "中文在线旗下原创小说平台，新人作者扶持多",
@@ -4407,6 +4725,7 @@
             },
             {
               "id": "nav-a86aaf7153ec",
+              "hubId": "nav-a86aaf7153ec",
               "title": "书旗小说",
               "href": "https://www.shuqi.com",
               "description": "阿里旗下免费小说平台，海量小说免费阅读",
@@ -4438,6 +4757,7 @@
           "items": [
             {
               "id": "nav-29bea3ce4550",
+              "hubId": "nav-29bea3ce4550",
               "title": "淘宝",
               "href": "https://www.taobao.com",
               "description": "综合电商购物平台",
@@ -4450,6 +4770,7 @@
             },
             {
               "id": "nav-8aca4a15bb97",
+              "hubId": "nav-8aca4a15bb97",
               "title": "京东",
               "href": "https://www.jd.com",
               "description": "自营电商，数码家电配送快",
@@ -4462,6 +4783,7 @@
             },
             {
               "id": "nav-2ad61b208d04",
+              "hubId": "nav-2ad61b208d04",
               "title": "天猫",
               "href": "https://www.tmall.com",
               "description": "品牌官方旗舰店为主的 B2C 平台，正品保障",
@@ -4474,6 +4796,7 @@
             },
             {
               "id": "nav-211fca1bfa4d",
+              "hubId": "nav-211fca1bfa4d",
               "title": "拼多多",
               "href": "https://www.pinduoduo.com",
               "description": "主打社交电商与农产品补贴，提供高性价比商品。",
@@ -4486,6 +4809,7 @@
             },
             {
               "id": "nav-0d580284dc30",
+              "hubId": "nav-0d580284dc30",
               "title": "唯品会",
               "href": "https://www.vip.com",
               "description": "品牌特卖电商，主打限时折扣与大牌直降",
@@ -4498,6 +4822,7 @@
             },
             {
               "id": "nav-671b7c7d713e",
+              "hubId": "nav-671b7c7d713e",
               "title": "苏宁易购",
               "href": "https://www.suning.com",
               "description": "综合电商平台，家电与 3C 数码见长，线下门店多",
@@ -4510,6 +4835,7 @@
             },
             {
               "id": "nav-a0c1389236a7",
+              "hubId": "nav-a0c1389236a7",
               "title": "1688",
               "href": "https://www.1688.com",
               "description": "阿里巴巴批发采购平台，工厂货源与一件代发",
@@ -4522,6 +4848,7 @@
             },
             {
               "id": "nav-8ee7dd8ec36a",
+              "hubId": "nav-8ee7dd8ec36a",
               "title": "支付宝",
               "href": "https://www.alipay.com/",
               "description": "国民级支付工具，支付与缴费需登录账号、建议使用 App",
@@ -4543,6 +4870,7 @@
           "items": [
             {
               "id": "nav-f653aea738ca",
+              "hubId": "nav-f653aea738ca",
               "title": "百度地图",
               "href": "https://map.baidu.com",
               "description": "地图导航、路线规划与周边搜索",
@@ -4555,6 +4883,7 @@
             },
             {
               "id": "nav-d9f255845165",
+              "hubId": "nav-d9f255845165",
               "title": "铁路 12306",
               "href": "https://www.12306.cn",
               "description": "火车票与高铁票官方购票平台",
@@ -4567,6 +4896,7 @@
             },
             {
               "id": "nav-3f4b76d9cbfd",
+              "hubId": "nav-3f4b76d9cbfd",
               "title": "高德地图",
               "href": "https://www.amap.com",
               "description": "地图导航与实时路况",
@@ -4579,6 +4909,7 @@
             },
             {
               "id": "nav-e77f8bc65f4b",
+              "hubId": "nav-e77f8bc65f4b",
               "title": "携程旅行",
               "href": "https://www.ctrip.com",
               "description": "领先的在线旅行预订平台",
@@ -4591,6 +4922,7 @@
             },
             {
               "id": "nav-79558c4e0514",
+              "hubId": "nav-79558c4e0514",
               "title": "滴滴出行",
               "href": "https://www.didiglobal.com",
               "description": "领先的出行平台，提供打车、快车等",
@@ -4603,6 +4935,7 @@
             },
             {
               "id": "nav-7c389f967df0",
+              "hubId": "nav-7c389f967df0",
               "title": "大众点评",
               "href": "https://www.dianping.com",
               "description": "本地生活消费指南",
@@ -4615,6 +4948,7 @@
             },
             {
               "id": "nav-fd71b93480c0",
+              "hubId": "nav-fd71b93480c0",
               "title": "顺丰速运",
               "href": "https://www.sf-express.com",
               "description": "提供快速、安全的快递物流",
@@ -4627,6 +4961,7 @@
             },
             {
               "id": "nav-cfff99198322",
+              "hubId": "nav-cfff99198322",
               "title": "圆通速递",
               "href": "https://www.yto.net.cn",
               "description": "提供全国范围内的快递服务",
@@ -4648,6 +4983,7 @@
           "items": [
             {
               "id": "nav-8d8c02444fdf",
+              "hubId": "nav-8d8c02444fdf",
               "title": "小红书",
               "href": "https://www.xiaohongshu.com",
               "description": "生活方式分享社区，攻略与测评",
@@ -4660,6 +4996,7 @@
             },
             {
               "id": "nav-66b7052d8910",
+              "hubId": "nav-66b7052d8910",
               "title": "微博",
               "href": "https://www.weibo.com",
               "description": "国内主流社交媒体平台，热点资讯与名人动态",
@@ -4673,6 +5010,7 @@
             },
             {
               "id": "nav-10fac05d53d0",
+              "hubId": "nav-10fac05d53d0",
               "title": "Soul",
               "href": "https://www.soulapp.cn",
               "description": "基于灵魂社交兴趣匹配的网络社交应用",
@@ -4686,6 +5024,7 @@
             },
             {
               "id": "nav-670db0796ecc",
+              "hubId": "nav-670db0796ecc",
               "title": "积目",
               "href": "https://www.jimoapp.com",
               "description": "主打潮流青年社交与亚文化聚集的平台",
@@ -4699,6 +5038,7 @@
             },
             {
               "id": "nav-bf9742bb3a8e",
+              "hubId": "nav-bf9742bb3a8e",
               "title": "探探",
               "href": "https://tantanapp.com",
               "description": "通过滑动卡片匹配附近异性的约会软件",
@@ -4712,6 +5052,7 @@
             },
             {
               "id": "nav-c2e0738817c7",
+              "hubId": "nav-c2e0738817c7",
               "title": "百合网",
               "href": "https://www.baihe.com",
               "description": "老牌严肃婚恋交友平台，提供真人认证服务",
@@ -4725,6 +5066,7 @@
             },
             {
               "id": "nav-52a3b8a50c0f",
+              "hubId": "nav-52a3b8a50c0f",
               "title": "世纪佳缘",
               "href": "https://www.jiayuan.com",
               "description": "专注婚恋服务的平台，提供红娘咨询推荐",
@@ -4738,6 +5080,7 @@
             },
             {
               "id": "nav-00856e5c8f88",
+              "hubId": "nav-00856e5c8f88",
               "title": "伊对",
               "href": "https://www.yidui.net",
               "description": "主打红娘助手的在线直播相亲交友平台",
@@ -4751,6 +5094,7 @@
             },
             {
               "id": "nav-8aa78c99ac0e",
+              "hubId": "nav-8aa78c99ac0e",
               "title": "微信",
               "href": "https://weixin.qq.com/",
               "description": "国民级聊天与支付工具，聊天与支付需在 App 内使用",
@@ -4773,6 +5117,7 @@
           "items": [
             {
               "id": "nav-e5763f7061cd",
+              "hubId": "nav-e5763f7061cd",
               "title": "亚马逊",
               "href": "https://www.amazon.com",
               "description": "全球最大的电商平台：海淘购物，以及亚马逊全球开店卖家入口",
@@ -4786,6 +5131,7 @@
             },
             {
               "id": "nav-dd5ba3e3ccee",
+              "hubId": "nav-dd5ba3e3ccee",
               "title": "全球速卖通",
               "href": "https://www.aliexpress.com",
               "description": "阿里旗下跨境出口电商平台，中国卖家把货卖到全球",
@@ -4799,6 +5145,7 @@
             },
             {
               "id": "nav-7f0740a202d9",
+              "hubId": "nav-7f0740a202d9",
               "title": "Temu",
               "href": "https://www.temu.com",
               "description": "拼多多旗下跨境购物平台，主打低价全品类，海外用户量大",
@@ -4812,6 +5159,7 @@
             },
             {
               "id": "nav-34ff72968e25",
+              "hubId": "nav-34ff72968e25",
               "title": "Shopee虾皮",
               "href": "https://shopee.com",
               "description": "东南亚头部电商平台，跨境卖家进入东南亚市场的主要入口",
@@ -4825,6 +5173,7 @@
             },
             {
               "id": "nav-0f7f3bcd29f5",
+              "hubId": "nav-0f7f3bcd29f5",
               "title": "SHEIN",
               "href": "https://www.shein.com",
               "description": "快时尚跨境购物平台，服装品类在海外热销",
@@ -4838,6 +5187,7 @@
             },
             {
               "id": "nav-26449b88dbf1",
+              "hubId": "nav-26449b88dbf1",
               "title": "eBay",
               "href": "https://www.ebay.com",
               "description": "全球老牌电商与拍卖平台，二手与收藏品交易活跃",
@@ -4851,6 +5201,7 @@
             },
             {
               "id": "nav-26a7f821637c",
+              "hubId": "nav-26a7f821637c",
               "title": "Shopify",
               "href": "https://www.shopify.com",
               "description": "独立站建站平台：自己搭品牌官网做跨境生意",
@@ -4882,6 +5233,7 @@
           "items": [
             {
               "id": "nav-d798930a89ac",
+              "hubId": "nav-d798930a89ac",
               "title": "国家网信办举报中心",
               "href": "https://www.12377.cn",
               "description": "网络违法和不良信息举报平台",
@@ -4894,6 +5246,7 @@
             },
             {
               "id": "nav-9091518d1b44",
+              "hubId": "nav-9091518d1b44",
               "title": "中国政府网",
               "href": "https://www.gov.cn",
               "description": "国家及地方政务信息权威发布平台",
@@ -4907,6 +5260,7 @@
             },
             {
               "id": "nav-5cf3891dd34c",
+              "hubId": "nav-5cf3891dd34c",
               "title": "国家信访局",
               "href": "https://www.gjxfj.gov.cn",
               "description": "受理群众来信来访及网络信访",
@@ -4920,6 +5274,7 @@
             },
             {
               "id": "nav-84cb66fcdde7",
+              "hubId": "nav-84cb66fcdde7",
               "title": "公安部",
               "href": "https://www.mps.gov.cn",
               "description": "公安部官方门户，发布公安资讯",
@@ -4933,6 +5288,7 @@
             },
             {
               "id": "nav-7260145fc032",
+              "hubId": "nav-7260145fc032",
               "title": "国家税务局",
               "href": "https://www.chinatax.gov.cn",
               "description": "国家税务总局官网，税务政策查询",
@@ -4946,6 +5302,7 @@
             },
             {
               "id": "nav-afd6d4d87e3a",
+              "hubId": "nav-afd6d4d87e3a",
               "title": "国家医保局",
               "href": "https://www.nhsa.gov.cn",
               "description": "医疗保障局官网，医保政策服务",
@@ -4959,6 +5316,7 @@
             },
             {
               "id": "nav-e75c46240bd4",
+              "hubId": "nav-e75c46240bd4",
               "title": "国家林业和草原局",
               "href": "https://www.forestry.gov.cn",
               "description": "负责森林草原资源管理与保护",
@@ -4972,6 +5330,7 @@
             },
             {
               "id": "nav-e37f051563b4",
+              "hubId": "nav-e37f051563b4",
               "title": "12333 人社服务",
               "href": "https://www.12333.gov.cn/",
               "description": "人力资源社会保障部官方平台：社保查询、就业服务与人社业务办理",
@@ -4992,6 +5351,7 @@
           "items": [
             {
               "id": "nav-60bb52f1114d",
+              "hubId": "nav-60bb52f1114d",
               "title": "中国天气网",
               "href": "https://weather.com.cn",
               "description": "全国天气预报与灾害预警查询",
@@ -5004,6 +5364,7 @@
             },
             {
               "id": "nav-fcb48253fc41",
+              "hubId": "nav-fcb48253fc41",
               "title": "中央气象台",
               "href": "https://www.nmc.cn",
               "description": "国家权威气象预报与预警发布机构",
@@ -5017,6 +5378,7 @@
             },
             {
               "id": "nav-f2314bb899c1",
+              "hubId": "nav-f2314bb899c1",
               "title": "生态环境部",
               "href": "https://www.mee.gov.cn",
               "description": "负责国家生态环境保护监督管理",
@@ -5030,6 +5392,7 @@
             },
             {
               "id": "nav-04935b9c3b6a",
+              "hubId": "nav-04935b9c3b6a",
               "title": "全国排污许可证管理信息平台",
               "href": "https://permit.mee.gov.cn",
               "description": "企业排污许可申请与信息公开平台",
@@ -5043,6 +5406,7 @@
             },
             {
               "id": "nav-c4a923505682",
+              "hubId": "nav-c4a923505682",
               "title": "Windy",
               "href": "https://www.windy.com",
               "description": "全球风场与天气可视化地图，可看风、降雨与温度分层预报",
@@ -5055,6 +5419,7 @@
             },
             {
               "id": "nav-76a36b42b1daf644",
+              "hubId": "nav-76a36b42b1daf644",
               "title": "彩云天气",
               "href": "https://www.caiyunapp.com/weather",
               "description": "分钟级降水预报，精准到街道的天气查询",
@@ -5085,6 +5450,7 @@
           "items": [
             {
               "id": "nav-557388e01d50",
+              "hubId": "nav-557388e01d50",
               "title": "红果短剧",
               "href": "https://hongguoduanju.com/",
               "description": "抖音旗下免费短剧平台，海量短剧看广告免费看全集",
@@ -5098,6 +5464,7 @@
             },
             {
               "id": "nav-0e1d7c09e2d4",
+              "hubId": "nav-0e1d7c09e2d4",
               "title": "DramaWave",
               "href": "https://mydramawave.com",
               "description": "昆仑万维旗下海外短剧平台，海量竖屏短剧免费看，支持多语言字幕",
@@ -5111,6 +5478,7 @@
             },
             {
               "id": "nav-24dd8c461f0f",
+              "hubId": "nav-24dd8c461f0f",
               "title": "ShortMax",
               "href": "https://www.shorttv.live/",
               "description": "海外热门免费短剧平台，竖屏短剧在线看",
@@ -5124,6 +5492,7 @@
             },
             {
               "id": "nav-e1f94cbcac9a",
+              "hubId": "nav-e1f94cbcac9a",
               "title": "GoodShort",
               "href": "https://www.goodshort.com",
               "description": "免费短剧与短片在线观看平台",
@@ -5136,6 +5505,7 @@
             },
             {
               "id": "nav-8d6140ddc03d",
+              "hubId": "nav-8d6140ddc03d",
               "title": "NetShort",
               "href": "https://netshort.com",
               "description": "免费短剧在线看，主打无广告",
@@ -5149,6 +5519,7 @@
             },
             {
               "id": "nav-3fa1f550b73f",
+              "hubId": "nav-3fa1f550b73f",
               "title": "FlexTV",
               "href": "https://www.flextv.cc",
               "description": "海外短剧平台，竖屏短剧在线看，前期集数免费、多语言字幕",
@@ -5162,6 +5533,7 @@
             },
             {
               "id": "nav-a2d257aac372",
+              "hubId": "nav-a2d257aac372",
               "title": "MoboReels",
               "href": "https://www.moboreels.com",
               "description": "海外短剧与电影在线看，开头集数免费、多语言字幕",
@@ -5175,6 +5547,7 @@
             },
             {
               "id": "nav-4d8f2a6c91e3",
+              "hubId": "nav-4d8f2a6c91e3",
               "title": "Melolo",
               "href": "https://melolo.com",
               "description": "海外短剧平台，竖屏短剧全集免费看，无需注册、多语言字幕",
@@ -5197,6 +5570,7 @@
           "items": [
             {
               "id": "nav-e85ffe7e04f6",
+              "hubId": "nav-e85ffe7e04f6",
               "title": "抖音",
               "href": "https://www.douyin.com",
               "description": "抖音站内短剧频道，爆款短剧首发多；短剧需在抖音 App 内观看",
@@ -5209,6 +5583,7 @@
             },
             {
               "id": "nav-536bfabaa406",
+              "hubId": "nav-536bfabaa406",
               "title": "快手",
               "href": "https://www.kuaishou.com",
               "description": "快手站内短剧频道；短剧需在快手 App 内观看",
@@ -5220,6 +5595,7 @@
             },
             {
               "id": "nav-675c7a57840e",
+              "hubId": "nav-675c7a57840e",
               "title": "爱奇艺",
               "href": "https://www.iqiyi.com",
               "description": "爱奇艺 App 内短剧专区，专业制作的高画质短剧，部分免费；短剧需在爱奇艺 App 内观看",
@@ -5232,6 +5608,7 @@
             },
             {
               "id": "nav-8652182b18e7",
+              "hubId": "nav-8652182b18e7",
               "title": "腾讯视频",
               "href": "https://v.qq.com",
               "description": "腾讯视频 App 内微短剧专区，前几集免费，会员解锁全集；短剧需在腾讯视频 App 内观看",
@@ -5244,6 +5621,7 @@
             },
             {
               "id": "nav-9d3e930967bf",
+              "hubId": "nav-9d3e930967bf",
               "title": "优酷",
               "href": "https://www.youku.com",
               "description": "优酷 App 内短剧专区，短剧库更新快，部分免费；短剧需在优酷 App 内观看",
@@ -5255,6 +5633,7 @@
             },
             {
               "id": "nav-193880f6c388",
+              "hubId": "nav-193880f6c388",
               "title": "芒果TV",
               "href": "https://www.mgtv.com",
               "description": "芒果TV App 内短剧专区，青春甜宠短剧与综艺，免费 + VIP；短剧需在芒果TV App 内观看",
@@ -5267,6 +5646,7 @@
             },
             {
               "id": "nav-c50b8f31263b",
+              "hubId": "nav-c50b8f31263b",
               "title": "咪咕视频·短剧",
               "href": "https://www.cmread.com/yuekan/drama/index.html",
               "description": "咪咕悦看短剧大全，精选短剧会员免费观看",
@@ -5280,6 +5660,7 @@
             },
             {
               "id": "nav-2a75026be228",
+              "hubId": "nav-2a75026be228",
               "title": "央视频",
               "href": "https://m.yangshipin.cn/",
               "description": "中央广播电视总台官方新媒体短剧板块，短剧需在央视频 App 内观看",
@@ -5293,6 +5674,7 @@
             },
             {
               "id": "nav-33fd24586389",
+              "hubId": "nav-33fd24586389",
               "title": "ReelShort",
               "href": "https://www.reelshort.com",
               "description": "海外头部竖屏短剧平台，独家短剧与短片，前几集免费、付费解锁全集",
@@ -5306,6 +5688,7 @@
             },
             {
               "id": "nav-3c1be50acf30",
+              "hubId": "nav-3c1be50acf30",
               "title": "DramaBox",
               "href": "https://www.dramaboxdb.com",
               "description": "海外短剧平台，剧库量大，网页端可直接看，金币与会员解锁",

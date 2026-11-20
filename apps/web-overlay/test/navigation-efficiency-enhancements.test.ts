@@ -274,19 +274,29 @@ describe('导航效率增强与用户体验治理', () => {
     expect(src).toContain('history.replaceState')
   })
 
-  it('FloatingQuickNav 具备滚动感知、遵循 preferredScrollBehavior 的极速回顶与生产力入口', () => {
-    const src = loadSource('src/components/floating-quick-nav.tsx')
-    expect(src).toContain('preferredScrollBehavior')
-    expect(src).toContain('scrollToTop')
-    expect(src).toContain('openSpotlight')
-    expect(src).toContain('回到顶部')
-    expect(src).toContain('超级搜索')
-    expect(src).toContain('微工具箱')
+  it('回顶遵循 preferredScrollBehavior（首屏瘦身后由命令面板指令覆盖）', () => {
+    // 订正（2026-11-20 首屏瘦身）：FloatingQuickNav 已整体删除，其「极速回顶」
+    // 改由命令面板「回到页面顶部」指令（cmd-scroll-top）覆盖，仍遵循
+    // preferredScrollBehavior；「超级搜索」由顶栏搜索框 + ⌘K 覆盖，「微工具箱」
+    // 由首页 QuickToolsDrawer + T 键覆盖。
+    const modal = loadSource('src/components/search/spotlight-modal.tsx')
+    expect(modal).toContain('preferredScrollBehavior')
+    expect(modal).toContain("id: 'cmd-scroll-top'")
+    expect(modal).toContain('回到页面顶部')
+    expect(modal).toContain('window.scrollTo({ top: 0')
+    const toolbar = loadSource('src/components/navigation-toolbar.tsx')
+    expect(toolbar).toContain('SearchPalette')
+    const content = loadSource('src/components/navigation-content.tsx')
+    expect(content).toContain('QuickToolsDrawer')
   })
 
-  it('NavigationContent 与 KeyboardShortcutsDialog 协同挂载 FloatingQuickNav 与规范快捷键文案', () => {
+  it('NavigationContent 与 KeyboardShortcutsDialog 协同：悬浮工具栏已移除，微工具抽屉与规范快捷键文案仍在', () => {
+    // 订正（2026-11-20 首屏瘦身）：FloatingQuickNav 已整体删除，NavigationContent
+    // 不再挂载它；微工具入口仍为首页 QuickToolsDrawer（onOpenTools → setIsToolsOpen），
+    // 快捷键文案仍由 KeyboardShortcutsDialog 规范。
     const srcContent = loadSource('src/components/navigation-content.tsx')
-    expect(srcContent).toContain('FloatingQuickNav')
+    expect(srcContent).not.toContain('FloatingQuickNav')
+    expect(srcContent).toContain('QuickToolsDrawer')
     expect(srcContent).toContain('onOpenTools={() => setIsToolsOpen(true)}')
 
     const srcShortcuts = loadSource('src/components/keyboard-shortcuts-dialog.tsx')

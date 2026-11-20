@@ -64,9 +64,13 @@ describe('侧栏：空间所有者徽章不被裁切', () => {
   })
 
   it('悬浮工具栏只在滚动后显形，回顶遵循用户滚动偏好', () => {
-    const src = overlaySource('src/components/floating-quick-nav.tsx')
-    expect(src).toContain('preferredScrollBehavior')
-    expect(src).toContain('scrollToTop')
+    // 订正（2026-11-20 首屏瘦身）：FloatingQuickNav 已整体删除，回顶改由命令
+    // 面板「回到页面顶部」指令覆盖，仍遵循 preferredScrollBehavior（减速偏好）。
+    const modal = overlaySource('src/components/search/spotlight-modal.tsx')
+    expect(modal).toContain("id: 'cmd-scroll-top'")
+    expect(modal).toContain('preferredScrollBehavior')
+    expect(modal).toContain('window.scrollTo({ top: 0')
+    expect(modal).toContain('回到页面顶部')
   })
 })
 

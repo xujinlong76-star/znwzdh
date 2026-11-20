@@ -16,6 +16,8 @@ import { HomeDIYTrigger } from '@/components/home-diy-trigger'
 import { HomeMicroStrip } from '@/components/home-micro-strip'
 import { HomeSubtitleHint } from '@/components/home-subtitle-hint'
 import { HomeQuickDock } from '@/components/home-quick-dock'
+import { MyPersonalZone } from '@/components/my-personal-zone'
+import type { CatalogCategory } from '@/lib/personal-data'
 import type { HomeTodayBadgeSummary } from '@/lib/home-today-summary'
 import type { HubPluginItem } from '@/lib/navhub-api'
 import { usePinnedCornerWidgets } from '@/lib/modular/pinned-widgets-store'
@@ -653,6 +655,24 @@ export function NavigationContent({
     selectAllVisible,
   } = useSiteSelection(sortedCategories, collapsedCategoryIds)
 
+  /**
+   * 「我的常用」预置场景的分类输入（2026-11-20 W9）：只传 id/title/items
+   * 结构，场景初始内容由它生成，不新增人工编目。
+   */
+  const personalCatalog = useMemo<CatalogCategory[]>(
+    () =>
+      sortedCategories.map((cat) => ({
+        id: cat.id,
+        title: cat.title,
+        subCategories: (cat.subCategories ?? []).map((sub) => ({
+          id: sub.id,
+          title: sub.title,
+          items: (sub.items ?? []).map((item) => ({ id: item.id, title: item.title })),
+        })),
+      })),
+    [sortedCategories],
+  )
+
   /* ------------------------- 首屏数字直达 -------------------------
    *
    * 映射源 = 速览坞 Top 9（computeSpeedDialSites，与坞同一份纯函数、
@@ -1241,6 +1261,15 @@ export function NavigationContent({
                 setAppearanceTab('guide')
                 setAppearanceOpen(true)
               }}
+            />
+          ) : null}
+
+          {/* 「我的常用」区（2026-11-20 W9）：搜索框下方、分类区上方；
+              未使用时组件返回 null，不占位、不改动现有首页布局。 */}
+          {viewMode !== 'workbench' ? (
+            <MyPersonalZone
+              allSites={visibleSites}
+              catalog={personalCatalog}
             />
           ) : null}
 

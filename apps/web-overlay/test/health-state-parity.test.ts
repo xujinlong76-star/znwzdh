@@ -11,6 +11,11 @@
  */
 import { describe, expect, it } from "vitest";
 import { deriveHealthPanelState as fromCopy } from "../src/lib/health-state";
+// @ts-expect-error: 前端 tsc 在全新安装/镜像构建里解析不到 @navhub/core——
+// 它只是 apps/api 的依赖（workspace:*），pnpm 不会把它链进根 node_modules，
+// 前端 tsc 从 apps/web 向上找找不到；vitest 运行时仍能解析（工作区链接），
+// 本测试的同构校验照常跑。2b623a60 曾误删此行（误以为 exports.types 足够），
+// 致 CI 前端门禁 TS2307 连带跳过 lint/build/budget/ISR，特此恢复。
 import { deriveHealthPanelState as fromCore } from "@navhub/core";
 
 const SNAPSHOTS = [

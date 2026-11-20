@@ -23,6 +23,7 @@ import {
 import { MID_SEASON_MILESTONES, SEASON_LEVEL_COUNT, SEASON_SP_PER_LEVEL } from '@/lib/growth-season'
 import { eventMetricAction, taskAction, type TaskAction } from './task-actions'
 import { cn } from '@/lib/utils'
+import { safeHref } from '@/lib/safe-url'
 
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -31,7 +32,7 @@ function GoButton({ action }: { action: TaskAction | undefined }) {
   if (!action) return null
   return (
     <Link
-      href={action.href}
+      href={safeHref(action.href)}
       className="shrink-0 rounded-lg border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
     >
       {action.cta}

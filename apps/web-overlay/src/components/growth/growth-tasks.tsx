@@ -22,6 +22,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/registry/new-york/ui/popover'
 import { taskAction, type TaskAction } from './task-actions'
 import { cn } from '@/lib/utils'
+import { safeHref } from '@/lib/safe-url'
 
 /** 未完成任务的一键直达按钮：无映射（s1/d6/d7）时不渲染。 */
 function TaskGoButton({ id }: { id: string }) {
@@ -29,7 +30,7 @@ function TaskGoButton({ id }: { id: string }) {
   if (!action) return null
   return (
     <Link
-      href={action.href}
+      href={safeHref(action.href)}
       className="shrink-0 rounded-lg border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
     >
       {action.cta}
@@ -75,7 +76,7 @@ function ProgressRow({
       </div>
       {!done && action && (
         <Link
-          href={action.href}
+          href={safeHref(action.href)}
           className="shrink-0 rounded-lg border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
         >
           {action.cta}
@@ -278,7 +279,7 @@ export function GrowthTasks({
                       className={cn(
                         'relative z-10 flex h-7 w-7 items-center justify-center rounded-full border text-[11px] font-semibold',
                         t.done
-                          ? 'border-emerald-500 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                          ? 'border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
                           : isCurrent
                             ? 'border-primary bg-primary text-primary-foreground shadow-xs'
                             : 'border-border-strong bg-background text-muted-foreground',

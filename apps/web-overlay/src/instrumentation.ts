@@ -34,6 +34,18 @@ export async function register() {
     console.error('[VideoHealthScheduler] 启动失败（巡检不会自动运行，手动入口仍可用）:', error)
   }
 
+  // 事件循环阻塞看门狗（2026-11-20 服务器挂死定位用）：单线程 JS 空转会把
+  // 事件循环堵死、HTTP 全灭，事后又拿不到 JS 栈（Windows 上 _debugProcess
+  // 不可用）。哨兵只检测不上报以外的事：阻塞超阈值即把“堵了多久 + 开始时间
+  // + 内存”写进日志，下次挂死按开始时间对请求日志定位触发点。
+  // 与巡检调度同一口径：函数内动态 import，不进 Edge Instrumentation 编译。
+  try {
+    const { startEventLoopWatchdog } = await import('./lib/event-loop-watchdog')
+    startEventLoopWatchdog()
+  } catch (error) {
+    console.error('[EventLoopWatchdog] 启动失败（阻塞不会上报，不影响服务）:', error)
+  }
+
   const raw = process.env.NAVHUB_SITE_URL?.trim()
   if (!raw) {
     console.error(

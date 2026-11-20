@@ -819,6 +819,25 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 全库 383 站核对：'learn.microsoft.com' 键只命中 Microsoft Learn 一站，无后缀串站。
   // 四色方块明亮、无需底块（resolveLogoTile 为 null），不做单站补丁。
   ['learn.microsoft.com', 'microsoft-learn.png'],
+  // 2026-11-20（C 类第 7 批 C7 补批 W4，小说组 1，2/20）：起点中文网 /
+  // 晋江文学城。C7 原“安全原因暂缓”经 2026-11-20 调查证实只是 W4 一份
+  // 报告被安全系统移除，无任何一站涉及安全/侵权/版权/合规（见
+  // icon-c7-defer-reason-2026-11-20.md §5）；两站官网/favicon 本轮实测
+  // 均可取。两站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon
+  // 拦截，map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键
+  // 绝不加。全库 383 站核对：'qidian.com' / 'jjwxc.net' 各只命中一站，
+  // 无后缀串站。起点：首页 202（209 B 反爬挑战页，不影响取标，仿 C8
+  // 慕课网/可汗学院先例），favicon.ico 直链 200（4,286 B，image/x-icon，
+  // 单帧 ICO 32×32 32bpp），Pillow 转 RGBA PNG 原样落盘 qidian.png
+  // （1,547 B，红底白字“起点中文网”标，主红 #f02737/#e50517）。
+  // 晋江：首页 200（71,944 B），favicon.ico 直链 200（2,038 B，
+  // image/x-icon，ICO 双帧均为 16×16），Pillow 默认解码转 RGBA PNG 原样
+  // 落盘 jjwxc.png（485 B，绿底白字“晋江文学城”标，主绿 #275f15）；
+  // 16×16 原尺寸按规范 §1.1 原样保留、绝不放大（仿 C12 百合网/世纪佳缘
+  // 16px 原样先例），卡片内显小是已知特性。两标浅/深主题均彩色可辨，
+  // 无需底块（resolveLogoTile 为 null），不做单站补丁。
+  ['qidian.com', 'qidian.png'],
+  ['jjwxc.net', 'jjwxc.png'],
  ];
 
 /**

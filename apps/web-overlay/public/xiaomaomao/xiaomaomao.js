@@ -116,8 +116,11 @@
   ];
 
   /* ---------- 持久化（只存本机：语音开关 + 拖动位置） ----------
-     K2：closed/closedAt 记录亲手收起（收起后 7 天内刷新/跳页仍收着，过期自动恢复展开）。 */
-  var store = { alwaysDynamic: true, voice: true, pos: null, hinted: false, closed: false, closedAt: 0, play: false };
+     K2：closed/closedAt 记录亲手收起（收起后 7 天内刷新/跳页仍收着，过期自动恢复展开）。
+     首屏瘦身（2026-11-20）：默认改为收起（closed: true, closedAt: 0），避免遮挡
+     右侧卡片；closedAt === 0 表示「默认收起、无过期」，仅亲手收起（closedAt > 0）
+     才走 7 天 TTL。已有 stored state 的用户保持原偏好（下行 saved 覆盖默认值）。 */
+  var store = { alwaysDynamic: true, voice: true, pos: null, hinted: false, closed: true, closedAt: 0, play: false };
   try {
     var saved = JSON.parse(window.localStorage.getItem(STORE_KEY) || 'null');
     if (saved && typeof saved === 'object') {
@@ -687,15 +690,18 @@
   document.body.appendChild(root);
   /* K2：启动时恢复持久收起态——7 天内收起过则仍收着（圆标可唤回）；超过 7 天
      自动过期恢复展开（关一次不等于永久消失）。自动收起（syncMarketPark 的
-     autoClosed）不走这条：它只在本页滚动时生效，不落盘。 */
+     autoClosed）不走这条：它只在本页滚动时生效，不落盘。
+     首屏瘦身（2026-11-20）：默认收起（closedAt === 0）不设过期，永久收起直到
+     用户点圆标展开；仅亲手收起（closedAt > 0）才走 7 天 TTL。 */
   (function () {
     var CLOSED_TTL = 7 * 24 * 3600 * 1000;
     if (!store.closed) return;
-    if (!store.closedAt) { store.closedAt = Date.now(); persist(); }
-    else if (Date.now() - store.closedAt > CLOSED_TTL) {
+    if (store.closedAt && Date.now() - store.closedAt > CLOSED_TTL) {
+      /* 亲手收起且已过期：自动恢复展开 */
       store.closed = false; store.closedAt = 0; persist();
       return;
     }
+    /* 默认收起（closedAt === 0，无过期）或 7 天内亲手收起：保持收着，圆标可唤回 */
     root.classList.add('xm-closed');
     setIconImg(root.querySelector('.xm-tab img')); /* B-04：启动恢复收起态时才给圆标设 src */
   })();

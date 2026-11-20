@@ -14,6 +14,7 @@ import { ChevronDown, ChevronRight, Compass, Bell, X } from 'lucide-react'
 import { NavIcon } from '@/components/nav-icon'
 import { NAV_ICON_FALLBACK, isIconUrl, resolveNavIcon } from '@/lib/nav-icons'
 import { WorkspaceSwitcher } from '@/components/workspace/workspace-switcher'
+import { XiaomaomaoToggle } from '@/components/xiaomaomao-toggle'
 /**
  * CRDT 同步状态小药丸（Bundle 瘦身续刀：CRDT 引擎按需加载）。
  *
@@ -399,21 +400,25 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
         ) : (
           <span />
         )}
-        <Link
-          href="/me/notifications"
-          aria-label={unread > 0 ? `通知，${unread} 条未读` : '通知'}
-          className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Bell className="h-4 w-4" aria-hidden />
-          {unreadText && (
-            <span
-              aria-hidden
-              className="absolute -right-0.5 -top-0.5 min-w-[15px] rounded-full bg-primary px-1 text-center text-[9px] font-semibold leading-[15px] text-primary-foreground tabular-nums"
-            >
-              {unreadText}
-            </span>
-          )}
-        </Link>
+        {/* 首屏瘦身：小猫猫挂件默认收起，本开关是常驻开启入口（与通知铃并列） */}
+        <div className="flex items-center gap-1">
+          <XiaomaomaoToggle />
+          <Link
+            href="/me/notifications"
+            aria-label={unread > 0 ? `通知，${unread} 条未读` : '通知'}
+            className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Bell className="h-4 w-4" aria-hidden />
+            {unreadText && (
+              <span
+                aria-hidden
+                className="absolute -right-0.5 -top-0.5 min-w-[15px] rounded-full bg-primary px-1 text-center text-[9px] font-semibold leading-[15px] text-primary-foreground tabular-nums"
+              >
+                {unreadText}
+              </span>
+            )}
+          </Link>
+        </div>
       </div>
     </div>
   )

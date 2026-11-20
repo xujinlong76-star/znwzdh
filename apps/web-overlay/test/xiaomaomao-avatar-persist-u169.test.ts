@@ -56,9 +56,12 @@ describe("U-169 用户自选形象 reload 两次不丢失", () => {
       l.includes("} catch (e) { /* 脏数据静默退化为默认视频 */ }"),
     );
     expect(restoreEndLine).toBeGreaterThan(-1);
-    // K2 收起态恢复 IIFE：加载期第一个可达的裸 persist()（closedAt 未设分支）。
+    // K2 收起态恢复 IIFE：加载期第一个可达的裸 persist()（TTL 过期分支）。
+    // 订正（2026-11-20 首屏瘦身）：默认收起（closedAt === 0）不再在启动时补写
+    // closedAt，旧「closedAt 未设分支」已删除；K2 首个 persist() 改为过期分支
+    // 里的「store.closed = false; store.closedAt = 0; persist();」。
     const k2Line = lines.findIndex((l) =>
-      l.includes("if (!store.closedAt) { store.closedAt = Date.now(); persist(); }"),
+      l.includes("store.closed = false; store.closedAt = 0; persist();"),
     );
     expect(k2Line).toBeGreaterThan(-1);
     expect(k2Line).toBeGreaterThan(restoreEndLine);

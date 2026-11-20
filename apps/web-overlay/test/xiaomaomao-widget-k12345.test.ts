@@ -37,10 +37,9 @@ function overlayRoot(): string {
 
 const ROOT = overlayRoot();
 const WIDGET = readFileSync(join(ROOT, "public/xiaomaomao/xiaomaomao.js"), "utf8");
-const QUICK_NAV = readFileSync(
-  join(ROOT, "src/components/floating-quick-nav.tsx"),
-  "utf8",
-);
+// 订正（2026-11-20 首屏瘦身）：FloatingQuickNav 已整体删除，K1 悬浮栈里的
+// 「胶囊底边抬到猫顶之上」随之退役（无胶囊可定位）；猫底边 68px/112px 仍由
+// 下方 K1 其余断言锁定。
 const DRAWER = readFileSync(
   join(ROOT, "src/components/ai/ai-copilot-drawer.tsx"),
   "utf8",
@@ -64,9 +63,14 @@ describe("K1 悬浮栈规范", () => {
   });
 
   it("移动端胶囊底边抬到猫顶之上 168px（68+88+12），sm 起仍 bottom-12", () => {
-    expect(QUICK_NAV).toContain("bottom-[calc(68px+88px+12px+env(safe-area-inset-bottom,0px))]");
-    expect(QUICK_NAV).toContain("sm:bottom-12");
-    expect(QUICK_NAV).not.toContain("bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+3rem)]");
+    // 订正（2026-11-20 首屏瘦身）：FloatingQuickNav 已整体删除，悬浮胶囊不再
+    // 存在，故无需再把它抬到猫顶之上；锁「组件已删、猫底边仍为 68px（移动端）
+    // 与 112px（640–1023px 档）」即可。
+    expect(existsSync(join(ROOT, "src/components/floating-quick-nav.tsx"))).toBe(false);
+    expect(WIDGET).toContain("bottom:calc(68px + env(safe-area-inset-bottom,0px))");
+    expect(WIDGET).toContain(
+      "@media (min-width:640px) and (max-width:1023px){#xiaomaomao{bottom:calc(112px + env(safe-area-inset-bottom,0px))}}",
+    );
   });
 
   it("抽屉仍在猫之上（z-[100000] 不变），注释里的旧 z-index 已同步", () => {
@@ -77,7 +81,9 @@ describe("K1 悬浮栈规范", () => {
 
 describe("K2 收起持久化", () => {
   it("store 有 closed/closedAt 字段，启动时读存档", () => {
-    expect(WIDGET).toContain("closed: false, closedAt: 0");
+    // 订正（2026-11-20 首屏瘦身）：默认改为收起（closed: true），避免遮挡右侧卡片；
+    // closedAt === 0 表示「默认收起、无过期」，仅亲手收起（closedAt > 0）才走 7 天 TTL。
+    expect(WIDGET).toContain("closed: true, closedAt: 0");
     expect(WIDGET).toContain("if (typeof saved.closed === 'boolean') store.closed = saved.closed;");
     expect(WIDGET).toContain("if (typeof saved.closedAt === 'number' && saved.closedAt > 0) store.closedAt = saved.closedAt;");
   });
@@ -92,7 +98,9 @@ describe("K2 收起持久化", () => {
 
   it("启动时 7 天内恢复收起态，过期自动恢复展开", () => {
     expect(WIDGET).toContain("var CLOSED_TTL = 7 * 24 * 3600 * 1000;");
-    expect(WIDGET).toContain("if (Date.now() - store.closedAt > CLOSED_TTL)");
+    // 订正（2026-11-20 首屏瘦身）：仅亲手收起（closedAt > 0）才走 7 天 TTL；
+    // 默认收起（closedAt === 0）无过期，永久收起直到用户点圆标展开。
+    expect(WIDGET).toContain("if (store.closedAt && Date.now() - store.closedAt > CLOSED_TTL)");
   });
 
   it("亲手唤回（点圆标）即清掉持久收起", () => {

@@ -36,7 +36,9 @@ describe('不可变基础配置 + 用户差异掩码层 + 时间轴回收站 (Fe
   })
 
   it('暴露完整的 L1 全局模块、L3 卡片微元素与 L4 交互特性元数据目录', () => {
-    expect(L1_MODULE_CATALOG.length).toBeGreaterThanOrEqual(8)
+    // d69c05c1 首屏瘦身退役 Hero 标题横幅，mod:hero-header 随之从 L1 目录移除，
+    // 基线 8→7（目录仍完整：在用模块一个不少，L3/L4 数量不变）。
+    expect(L1_MODULE_CATALOG.length).toBeGreaterThanOrEqual(7)
     expect(L3_MICRO_CATALOG.length).toBe(4)
     expect(L4_FEATURE_CATALOG.length).toBe(4)
     expect(L1_MODULE_CATALOG.some((m) => m.id === 'mod:speed-dial')).toBe(true)

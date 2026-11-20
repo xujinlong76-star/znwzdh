@@ -1041,6 +1041,7 @@ export function NavigationContent({
           <Sidebar
             navigationData={{ navigationItems: sortedCategories as unknown as NavigationItem[] }}
             siteInfo={siteData}
+            brandAsHeading={false}
             onClose={() => setIsSidebarOpen(false)}
           />
         </div>

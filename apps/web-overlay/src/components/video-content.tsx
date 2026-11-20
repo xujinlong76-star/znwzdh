@@ -695,6 +695,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                     <Sidebar
                         navigationData={visibleNavigationData}
                         siteInfo={siteData}
+                        brandAsHeading={false}
                         onClose={() => setIsSidebarOpen(false)}
                     />
                 </div>

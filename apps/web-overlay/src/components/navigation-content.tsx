@@ -1038,10 +1038,16 @@ export function NavigationContent({
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
+          {/* 移动抽屉品牌用默认 brandAsHeading（h1）：76b122a0 为「DOM 内恰好一个
+              h1」把它改成 span，但桌面侧边栏是 `hidden md:block`（<md 直接
+              display:none、不进无障碍树），移动端首页随之一个可访问的 h1 都没有，
+              e2e/mobile-layout.spec.ts 的「主标题可见」断言超时（U-263）。
+              改回 h1 后同一视口仍恰好一个可感知 h1（桌面只见侧边栏 h1、移动只见
+              抽屉 h1），即 d69c05c1 的原设计；首页没有 h1 数量守卫（仅管理后台
+              有源码级检查），不引入新红。 */}
           <Sidebar
             navigationData={{ navigationItems: sortedCategories as unknown as NavigationItem[] }}
             siteInfo={siteData}
-            brandAsHeading={false}
             onClose={() => setIsSidebarOpen(false)}
           />
         </div>

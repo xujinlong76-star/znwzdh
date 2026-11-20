@@ -13,6 +13,10 @@ import { describe, expect, it } from 'vitest'
  * 全局挂载（providers.tsx，与 GlobalSpotlightGateway 同级），非首页阈值
  * 100px，/videos* 与首页不重复挂（首页仍用带微工具键的实例）。
  * 底栏不动：仍为 5 项，不加第 6 项“搜索”（mobile-nav.test.ts 另锁）。
+ *
+ * 订正（2026-11-20 首屏瘦身，evo/firstscreen-slim-1257）：FloatingQuickNav
+ * 整体移除（见下方「缺口 ②（退役）」块），其三键功能由顶栏与命令面板覆盖；
+ * 缺口 ①（placeholder 后缀）与底栏 5 项守卫不变。
  */
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -71,54 +75,52 @@ describe('命令面板缺口 ①：placeholder 必须提示“按 / 快速搜索
   })
 })
 
-describe('命令面板缺口 ②：FloatingQuickNav 全局挂载', () => {
-  it('providers.tsx 与 GlobalSpotlightGateway 同级挂载全局版（阈值 100，不传 onOpenTools）', () => {
-    const src = read('src/components/providers.tsx')
-    expect(src).toContain("import { FloatingQuickNav } from '@/components/floating-quick-nav'")
-    expect(src).toContain('GlobalSpotlightGateway')
-    expect(src).toContain('<FloatingQuickNav global threshold={100} />')
-    expect(src.indexOf('<FloatingQuickNav global threshold={100} />')).toBeGreaterThan(
-      src.indexOf('GlobalSpotlightGateway'),
-    )
-    // 全局版不传 onOpenTools：微工具键不渲染（工具抽屉是首页作用域的）
-    const mount = src.match(/<FloatingQuickNav[^>]*\/>/)
-    expect(mount, '应有 FloatingQuickNav 挂载').not.toBeNull()
-    expect(mount![0]).not.toContain('onOpenTools')
+/**
+ * 命令面板缺口 ②（已退役，首屏瘦身重写）：
+ * 原守卫锁的是 FloatingQuickNav 全局挂载（深链直达内页的移动端 Spotlight
+ * 常驻入口）。2026-11-20 首屏瘦身（evo/firstscreen-slim-1257）把底部悬浮
+ * 工具栏整体移除：其三键功能已由顶栏与命令面板覆盖——搜索由顶栏搜索框 +
+ * ⌘K / / 覆盖，微工具由 T 键 + 命令面板「极客微工具」指令覆盖，回到顶部
+ * 由命令面板新增「回到页面顶部」指令（cmd-scroll-top）覆盖。
+ * 本块按新行为改写（不删除守卫）：锁「组件已删、两处挂载已撤、事件桥已删、
+ * 三功能均有替代入口」，防止后续重构把悬浮胶囊静默加回来。
+ */
+describe('命令面板缺口 ②（退役）：FloatingQuickNav 已移除，三功能由顶栏与命令面板覆盖', () => {
+  it('FloatingQuickNav 组件文件已删除', () => {
+    expect(existsSync(join(ROOT, 'src/components/floating-quick-nav.tsx'))).toBe(false)
   })
 
-  it('全局版在 /videos* 与首页不渲染（首页仍用带微工具键的实例）', () => {
-    const src = read('src/components/floating-quick-nav.tsx')
-    expect(src).toContain("import { usePathname } from 'next/navigation'")
-    expect(src).toContain("pathname.startsWith('/videos')")
-    expect(src).toContain("if (global && (pathname === '/' || pathname.startsWith('/videos'))) return null")
+  it('两处挂载已撤：providers.tsx 与 navigation-content.tsx 均无 FloatingQuickNav', () => {
+    for (const rel of ['src/components/providers.tsx', 'src/components/navigation-content.tsx']) {
+      const src = read(rel)
+      expect(src, `${rel} 不应再引用 FloatingQuickNav`).not.toContain('FloatingQuickNav')
+      // 注：注释里允许出现小写 floating-quick-nav（退役说明），这里只锁 import 路径
+      expect(src, `${rel} 不应再 import floating-quick-nav`).not.toContain("from '@/components/floating-quick-nav'")
+      expect(src, `${rel} 不应再挂载 <FloatingQuickNav`).not.toContain('<FloatingQuickNav')
+    }
+    // 全局 Spotlight 入口本身仍在（深链直达内页的搜索入口不依赖悬浮胶囊）
+    expect(read('src/components/providers.tsx')).toContain('GlobalSpotlightGateway')
+  })
+
+  it('搜索可达：顶栏仍有搜索框，命令面板仍走 ⌘K / / 呼出', () => {
+    const toolbar = read('src/components/navigation-toolbar.tsx')
+    expect(toolbar).toContain('SearchPalette')
+    expect(toolbar).toContain('按 / 快速搜索')
+    const palette = read('src/components/search-palette.tsx')
+    expect(palette).toContain('spotlightHotkeyHint')
+  })
+
+  it('回到顶部可达：命令面板新增「回到页面顶部」指令（cmd-scroll-top）', () => {
+    const modal = read('src/components/search/spotlight-modal.tsx')
+    expect(modal).toContain("id: 'cmd-scroll-top'")
+    expect(modal).toContain('回到页面顶部')
+    expect(modal).toContain('window.scrollTo({ top: 0')
+  })
+
+  it('微工具可达：首页仍有 QuickToolsDrawer 与 T 键接线', () => {
     const content = read('src/components/navigation-content.tsx')
-    expect(content).toContain('<FloatingQuickNav onOpenTools={() => setIsToolsOpen(true)} />')
-  })
-
-  it('非首页阈值 100px、首页实例保持 300px 默认', () => {
-    const src = read('src/components/floating-quick-nav.tsx')
-    expect(src).toContain('threshold?: number')
-    expect(src).toContain('threshold = 300')
-    expect(src).toContain('scrollY > threshold')
-    expect(src).not.toContain('scrollY > 300')
-  })
-
-  it('唤起仍走现成 open-spotlight 事件，不新增接口与依赖', () => {
-    const src = read('src/components/floating-quick-nav.tsx')
-    expect(src).toContain("new CustomEvent('open-spotlight')")
-  })
-
-  it('位置/样式沿用现有值：z-40、right-4、底栏之上', () => {
-    const src = read('src/components/floating-quick-nav.tsx')
-    expect(src).toContain('fixed right-4')
-    expect(src).toContain('z-40')
-    // K1 悬浮栈规范（f0283bb8）：移动端胶囊底边 104px→168px，抬到猫顶（68+88=156px）之上留 12px 间隙；旧 calc(3.5rem+…+3rem)=104px 会被猫的白圆盖住
-    expect(src).toContain('bottom-[calc(68px+88px+12px+env(safe-area-inset-bottom,0px))]')
-  })
-
-  it('搜索键触摸目标仍为 44px（h-11 w-11 三处：回顶/搜索/微工具）', () => {
-    const src = read('src/components/floating-quick-nav.tsx')
-    expect(src.match(/h-11 w-11/g)?.length).toBe(3)
+    expect(content).toContain('QuickToolsDrawer')
+    expect(content).toContain('setIsToolsOpen(true)')
   })
 })
 

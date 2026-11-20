@@ -79,7 +79,6 @@ import {
 import { readLocalHiddenHomeModules } from '@/lib/personal-home-modules'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
 import { CategoryQuickJumpBar } from '@/components/category-quick-jump-bar'
-import { FloatingQuickNav } from '@/components/floating-quick-nav'
 
 // 性能优化：动态懒加载大型组件，大幅缩减首屏 JS 体积与主线程阻塞时间
 const ModularCanvas = dynamic(
@@ -1515,8 +1514,9 @@ export function NavigationContent({
         {/* 4.0 弹窗：内置开发者微工具抽屉 */}
         <QuickToolsDrawer open={isToolsOpen} onOpenChange={setIsToolsOpen} />
 
-        {/* 浮动快捷导航胶囊：滚动时自动呈现「极速回顶 / 呼出超级搜索 / 打开微工具」 */}
-        <FloatingQuickNav onOpenTools={() => setIsToolsOpen(true)} />
+        {/* 首屏瘦身：底部悬浮快捷导航胶囊已移除（回顶 / 呼出超级搜索 / 微工具
+            三键已由顶栏搜索 + ⌘K 命令面板 + T 键覆盖；回顶另见命令面板
+            「回到页面顶部」。见 floating-quick-nav 退役说明）。 */}
 
         {/* 4.0 弹窗：快捷键指南与 Maestro 监听 */}
         {/* T 键打开微工具箱的键盘入口由这里接线（若 L4 禁用了 feat:keyboard-nav 则卸载监听） */}

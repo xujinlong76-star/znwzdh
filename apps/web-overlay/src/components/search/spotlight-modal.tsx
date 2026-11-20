@@ -21,6 +21,7 @@ import {
   Sparkles,
   Terminal,
   ArrowRight,
+  ArrowUp,
   ExternalLink,
   History,
   Copy,
@@ -57,6 +58,7 @@ import {
 } from 'lucide-react'
 import type { NavigationSubItem } from '@/types/navigation'
 import { formatDuration } from '@/lib/video-format'
+import { preferredScrollBehavior } from '@/lib/motion'
 import { Input } from '@/registry/new-york/ui/input'
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -725,6 +727,17 @@ export function SpotlightModal({
         }
         toast.success(isNow ? '已开启动态流光毛玻璃背景' : '已关闭流光背景')
         setOpen(false)
+      },
+    },
+    {
+      id: 'cmd-scroll-top',
+      title: '回到页面顶部 (Back to Top)',
+      description: '平滑滚动回页面顶部（替代已移除的底部悬浮快捷导航回顶键）',
+      icon: ArrowUp,
+      category: '页面导航',
+      handler: () => {
+        setOpen(false)
+        window.scrollTo({ top: 0, behavior: preferredScrollBehavior() })
       },
     },
   ], [router, modKey])

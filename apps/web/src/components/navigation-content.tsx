@@ -14,6 +14,7 @@ import { NavigationCategorySection } from '@/components/navigation-category-sect
 import { LazyMountSection } from '@/components/lazy-mount-section'
 import { HomeDIYTrigger } from '@/components/home-diy-trigger'
 import { HomeMicroStrip } from '@/components/home-micro-strip'
+import { HomeSubtitleHint } from '@/components/home-subtitle-hint'
 import { HomeQuickDock } from '@/components/home-quick-dock'
 import type { HomeTodayBadgeSummary } from '@/lib/home-today-summary'
 import type { HubPluginItem } from '@/lib/navhub-api'
@@ -78,7 +79,6 @@ import {
 import { readLocalHiddenHomeModules } from '@/lib/personal-home-modules'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
 import { CategoryQuickJumpBar } from '@/components/category-quick-jump-bar'
-import { FloatingQuickNav } from '@/components/floating-quick-nav'
 
 // 性能优化：动态懒加载大型组件，大幅缩减首屏 JS 体积与主线程阻塞时间
 const ModularCanvas = dynamic(
@@ -1213,46 +1213,13 @@ export function NavigationContent({
             </div>
           )}
 
-          {/* 页面主标题：可见 h1 由 SSR 直出（2026-11-07 SEO 扫描，原 sr-only 隐藏形态
-              属灰色做法）。h1 只承载品牌主体，描述降为 p，保持标题层级大纲干净。 */}
-          <header
-            data-feature-id="mod:hero-header"
-            className={cn(
-              "mb-2 flex flex-wrap items-baseline justify-between gap-2 relative",
-              isModuleHidden('mod:hero-header') && "hidden",
-              isEditingLayout && "p-3 rounded-xl border border-dashed border-primary/40 bg-primary/5"
-            )}
-          >
-            {isEditingLayout && (
-              <button
-                type="button"
-                onClick={() => {
-                  removeFeature({
-                    id: 'mod:hero-header',
-                    level: 'L1_MODULE',
-                    title: 'Hero 标题横幅（山羊胡网址导航大全）',
-                    parentTitle: 'L1 全局功能组件',
-                  })
-                  toast({
-                    title: '已移除「Hero 标题横幅」',
-                    description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
-                  })
-                }}
-                className="absolute top-2 right-2 z-20 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
-              >
-                <EyeOff className="w-3 h-3" />
-                <span>－ 移除横幅</span>
-              </button>
-            )}
-            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-              <h1 className="text-base sm:text-lg font-bold tracking-tight text-foreground">
-                {siteData.basic.title}
-              </h1>
-              <p className="hidden sm:inline text-xs text-muted-foreground">
-                {homeControl.basic.tagline || siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
-              </p>
-            </div>
-          </header>
+          {/* 首屏瘦身：主内容区不再渲染大号 H1 标题块（品牌 h1 已移到左侧边栏，
+              见 sidebar.tsx；不走 sr-only 隐藏术）。副标题只在首次访问或搜索
+              聚焦时以单行轻量条出现，可关闭（见 home-subtitle-hint.tsx）。
+              旧 Hero 标题横幅模块（mod:hero-header）随之退役，见 feature-mask-store。 */}
+          <HomeSubtitleHint
+            tagline={homeControl.basic.tagline || siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
+          />
 
           {/* 首页功能微胶囊行（A1 + A4）：单行保留短剧 / AI 找站 / 插件精选 / 新手向导小窗入口 */}
           {viewMode !== 'workbench' ? (
@@ -1547,8 +1514,9 @@ export function NavigationContent({
         {/* 4.0 弹窗：内置开发者微工具抽屉 */}
         <QuickToolsDrawer open={isToolsOpen} onOpenChange={setIsToolsOpen} />
 
-        {/* 浮动快捷导航胶囊：滚动时自动呈现「极速回顶 / 呼出超级搜索 / 打开微工具」 */}
-        <FloatingQuickNav onOpenTools={() => setIsToolsOpen(true)} />
+        {/* 首屏瘦身：底部悬浮快捷导航胶囊已移除（回顶 / 呼出超级搜索 / 微工具
+            三键已由顶栏搜索 + ⌘K 命令面板 + T 键覆盖；回顶另见命令面板
+            「回到页面顶部」。见 floating-quick-nav 退役说明）。 */}
 
         {/* 4.0 弹窗：快捷键指南与 Maestro 监听 */}
         {/* T 键打开微工具箱的键盘入口由这里接线（若 L4 禁用了 feat:keyboard-nav 则卸载监听） */}

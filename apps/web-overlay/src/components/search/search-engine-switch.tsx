@@ -8,6 +8,7 @@ import {
   type SearchEngineId,
 } from '@/lib/user-settings'
 import { updateUserPreferences, useUserPreference } from '@/lib/user-preferences'
+import { safeWindowOpen } from '@/lib/safe-url'
 
 /**
  * /search 搜索框旁的一级引擎切换（W4-0622-1 缺口 ①）。
@@ -43,7 +44,11 @@ export function SearchEngineSwitch() {
       const url = externalSearchUrl(engine, query)
       if (!url) return
       e.preventDefault()
-      window.open(url, '_blank', 'noopener,noreferrer')
+      // URL 卫生：裸 window.open 会被 url-hygiene.test.ts 拦下；
+      // safeWindowOpen 先过 safeHref 闸（不过闸返回 null、不开新页），
+      // 再以 '_blank' + noopener,noreferrer 打开——行为与原来逐字一致，
+      // 地址本身仍由 externalSearchUrl 的引擎白名单 + 编码后查询词构造。
+      safeWindowOpen(url)
     }
     form.addEventListener('submit', onSubmit)
     return () => form.removeEventListener('submit', onSubmit)

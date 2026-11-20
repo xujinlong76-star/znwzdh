@@ -16,17 +16,22 @@ import { renderToString } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import {
   GUOKAO_CHECKLIST_GROUPS,
   GUOKAO_CHECKLIST_SOURCE_NOTE,
 } from '../src/lib/guokao-checklist'
 import {
   GUOKAO_CHECKLIST_ITEMS,
+  GUOKAO_CHECKLIST_STORAGE_KEY,
   groupCheckedCount,
   parseGuokaoChecklist,
   toggleGuokaoChecklist,
 } from '../src/lib/guokao-checklist-state'
+import {
+  loadGuokaoChecklistLocal,
+  saveGuokaoChecklistLocal,
+} from '../src/hooks/useGuokaoChecklist'
 import {
   GuokaoChecklistPhaseBannerView,
   checklistPhaseBanner,
@@ -421,5 +426,91 @@ describe('U-285 C+D：清单页已接线——勾选岛 + 阶段横幅均已挂�
     expect(page).toContain('<GuokaoChecklistIsland />')
     expect(page).toContain('<GuokaoChecklistPhaseBanner />')
     expect(page).not.toContain('□')
+  })
+})
+
+/**
+ * U-285 G2：刷新持久化——写盘 → 重读恢复（方案 A，助手层往返）。
+ * 诚实边界：本 describe 只证明 load/save 助手层的“写盘 → 重读”往返与
+ * 收敛/容错；hook 的 useEffect 挂载读、toggle → save 接线、跨 tab storage
+ * 事件仍需方案 B（jsdom + testing-library，另立项），不在此覆盖。
+ * 前置模式复用 apps/web-overlay/test/daily-focus.test.ts 的 stubBrowserEnv：
+ * node 环境无 window/localStorage，用 Map 替身 + vi.stubGlobal 补齐。
+ */
+function stubBrowserEnv() {
+  const map = new Map<string, string>()
+  const store = {
+    get length() {
+      return map.size
+    },
+    key: (i: number) => [...map.keys()][i] ?? null,
+    getItem: (k: string) => (map.has(k) ? map.get(k)! : null),
+    setItem: (k: string, v: string) => {
+      map.set(k, v)
+    },
+    removeItem: (k: string) => {
+      map.delete(k)
+    },
+  }
+  vi.stubGlobal('localStorage', store)
+  vi.stubGlobal('window', { localStorage: store })
+  return { map, store }
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('U-285 G2：刷新持久化——写盘 → 重读恢复', () => {
+  it('刷新持久化：save 写盘后 load 读回同一勾选；预置未知 id 读回时丢弃', () => {
+    const { map } = stubBrowserEnv()
+    saveGuokaoChecklistLocal(['registration-number', 'id-number'])
+    // 只存 id 数组、不存文案；键恰为新键。
+    expect(map.get(GUOKAO_CHECKLIST_STORAGE_KEY)).toBe(
+      JSON.stringify(['registration-number', 'id-number']),
+    )
+    // 模拟刷新：load 是无状态导出函数，每次调用即一次新的挂载读。
+    expect(loadGuokaoChecklistLocal()).toEqual({
+      checked: ['registration-number', 'id-number'],
+      blocked: null,
+    })
+    // 预置未知 id：读回时丢弃，与 parse 单测的收敛口径一致。
+    map.set(
+      GUOKAO_CHECKLIST_STORAGE_KEY,
+      JSON.stringify(['registration-number', 'no-such-item']),
+    )
+    expect(loadGuokaoChecklistLocal()).toEqual({
+      checked: ['registration-number'],
+      blocked: null,
+    })
+  })
+
+  it('刷新持久化：盘上 JSON 损坏或存储被禁时 load 报 blocked，不抛、不返回脏数据', () => {
+    const { map } = stubBrowserEnv()
+    map.set(GUOKAO_CHECKLIST_STORAGE_KEY, '{corrupt')
+    const corrupt = loadGuokaoChecklistLocal()
+    expect(corrupt.checked).toEqual([])
+    expect(corrupt.blocked).toContain('本地清单勾选读不出来')
+    // 存储被禁：getItem 抛错 → blocked 报原因，不抛。
+    const throwing = {
+      get length() {
+        return 0
+      },
+      key: () => null,
+      getItem: (): string | null => {
+        throw new Error('denied')
+      },
+      setItem: (): void => {
+        throw new Error('denied')
+      },
+      removeItem: () => {},
+    }
+    vi.stubGlobal('localStorage', throwing)
+    vi.stubGlobal('window', { localStorage: throwing })
+    const denied = loadGuokaoChecklistLocal()
+    expect(denied.checked).toEqual([])
+    expect(denied.blocked).toContain('浏览器不允许读写本地存储')
+    // setItem 抛错时 save 静默吞错、不崩（源码行为：内存态仍有效，刷新丢失是已知行为）。
+    expect(() => saveGuokaoChecklistLocal(['registration-number'])).not.toThrow()
   })
 })

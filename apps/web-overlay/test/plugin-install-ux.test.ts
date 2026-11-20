@@ -192,7 +192,9 @@ describe("插件卡片：父级刷新后本地安装态必须跟 prop 走", () =
     // `!(silent && failed)` 已从 board 消失，board 改走
     // applyMarketplaceListLoad，静默失败时 helper 原样返回旧快照（同一引
     // 用），SSR 首帧列表与总数都不被清空、不闪空态。
-    expect(board).toContain("applyMarketplaceListLoad(prev, res, { failed, append, silent })")
+    // 2026-11-20 d52a36ec（#418 修复）：静默同步改合并式，board 调用多传
+    // silentMerge: mergeSilentSync，断言跟随接线更新。
+    expect(board).toContain("applyMarketplaceListLoad(prev, res, { failed, append, silent, silentMerge: mergeSilentSync })")
     const helper = overlaySource("src/lib/plugins/marketplace-load-state.ts")
     expect(helper).toContain("if (opts.append || opts.silent) return prev")
     expect(board).toContain("if (!silent) setNotice(describeDegrade(error, '插件市场'))")

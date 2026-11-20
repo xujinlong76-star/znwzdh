@@ -1943,5 +1943,30 @@
   "pricing": "free",
   "evidence": "首页 200 免登录可读（问题列表与答案可见）；问答详情页 200 免登录可读（99 个回答全文）；全站无会员/VIP/付费/订阅/金币/定价入口；提问需免费百度账号登录，与知乎同口径",
   "title": "百度知道"
+ },
+ "qwenwork.cn": {
+  "pricing": "freemium",
+  "evidence": "官网设免费版与标准版（98元/月）、高级版（198元/月）付费档",
+  "title": "千问办公"
+ },
+ "lingxi.wps.cn": {
+  "pricing": "freemium",
+  "evidence": "官网设体验版限时免费与标准版（48元/月）、进阶版（128元/月）、旗舰版（398元/月）付费档",
+  "title": "WPS 灵犀"
+ },
+ "doubao.com/work": {
+  "pricing": "freemium",
+  "evidence": "官网设免费版与标准套餐（68元/月）、加强套餐（200元/月）、高级套餐（500元/月）付费档",
+  "title": "豆包工作"
+ },
+ "workbuddy.cn": {
+  "pricing": "freemium",
+  "evidence": "官网设体验版免费与标准版（99元/月）、高级版（199元/月）、旗舰版（999元/月）付费档",
+  "title": "WorkBuddy"
+ },
+ "dumate.baidu.com/app": {
+  "pricing": "freemium",
+  "evidence": "官网设体验版免费与 Pro 版（59元/月）、Max 版（129元/月）付费档",
+  "title": "百度搭子"
  }
 }

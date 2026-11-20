@@ -43,6 +43,75 @@ import {
   type QuicklinkEntry,
 } from './quicklinks'
 
+/* --------------------------- 本地行总分（04 §6） --------------------------- */
+
+/**
+ * 本地行总分（04 §6，写死；只用于本地行内部排序，服务端 hits 的 RRF 排名不动）：
+ *
+ *   本地行总分 = 0.5 * nameMatch + 0.3 * keywordsMatch + 0.2 * subtitleMatch + 0.15 * mruNorm
+ *
+ * - `nameMatch / keywordsMatch / subtitleMatch`：该字段命中查询 token 的比例
+ *   （0~1；不命中为 0）。命中判定复用 `matchSuggestionText` 的单 token 口径
+ *   （归一化子串为主、Latin token 编辑距离容错）；keywords 按 `/\s+/` 切分
+ *   的等价写法——本实现按 token 逐个对整串做子串/容错判定，与按空格切分后
+ *   逐 token 判定同义，不照搬 kbar 的 `split(",")`（本站 keywords 是空格分隔）。
+ * - `mruNorm = mruScore / 100`（无 MRU 记录时为 0；Wox 公式满分约 197，
+ *   取 100 作分母是保守归一）；权重 0.15 只做平局打破与轻微提权，
+ *   不做主导排序（是否上调需实测后定，见方案 §10 P-c）。
+ * - 拼音分计入 `nameMatch`（标题拼音是 name 的派生，不单独占权重）：
+ *   本 PoC 不含拼音层（`palette-pinyin.ts` 另有 worker 负责），nameMatch
+ *   现按标题原文计分，拼音接线后同一槽位由 `matchPinyin` 供分。
+ */
+export interface LocalRowFields {
+  /** 行标题（操作 label / 工具 label / 收藏 title） */
+  name: string
+  /** 匹配用词（操作/工具 keywords；收藏为 tags 空格拼串） */
+  keywords: string
+  /** 副标题（操作/工具 description；收藏 description） */
+  subtitle: string
+}
+
+/** 单个字段的匹配分：命中查询 token 的比例（0~1）。 */
+export function fieldMatchScore(query: string, field: string): number {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  if (tokens.length === 0 || !field.trim()) return 0
+  let matched = 0
+  for (const token of tokens) if (matchSuggestionText(token, field)) matched++
+  return matched / tokens.length
+}
+
+/** 本地行总分（见上式；`mruNorm` 默认 0，即无 MRU 记录的行）。 */
+export function scoreLocalRow(query: string, fields: LocalRowFields, mruNorm = 0): number {
+  return (
+    0.5 * fieldMatchScore(query, fields.name) +
+    0.3 * fieldMatchScore(query, fields.keywords) +
+    0.2 * fieldMatchScore(query, fields.subtitle) +
+    0.15 * mruNorm
+  )
+}
+
+/**
+ * 本地行稳定排序：总分降序，分相同保持原顺序（`Array.sort` 本身稳定，
+ * `index` 是双保险）。空查询返回原顺序的副本（空面板的操作行按既有
+ * 固定顺序展示，不参与打分）。
+ */
+export function sortLocalRowsByScore<T>(
+  query: string,
+  rows: readonly T[],
+  fieldsOf: (row: T) => LocalRowFields,
+  mruNormOf: (row: T) => number = () => 0,
+): T[] {
+  const q = query.trim()
+  if (!q) return [...rows]
+  const scored = rows.map((row, index) => ({
+    row,
+    index,
+    score: scoreLocalRow(q, fieldsOf(row), mruNormOf(row)),
+  }))
+  scored.sort((a, b) => b.score - a.score || a.index - b.index)
+  return scored.map((s) => s.row)
+}
+
 /* ------------------------------ 快捷操作 ------------------------------ */
 
 export type PaletteActionId = 'theme' | 'elder' | 'add-site' | 'density'
@@ -109,7 +178,13 @@ export function matchPaletteActions(query: string, opts: PaletteActionOptions): 
   if (!q) return buildPaletteActions(opts)
   if (q.length < 2) return []
   const all = buildPaletteActions(opts)
-  return all.filter((action) => matchSuggestionText(q, `${action.label} ${action.description} ${action.keywords}`))
+  const matched = all.filter((action) => matchSuggestionText(q, `${action.label} ${action.description} ${action.keywords}`))
+  // 本地行内部按 §6 总分降序（操作行无 MRU 记录，mruNorm 恒为 0）
+  return sortLocalRowsByScore(
+    q,
+    matched,
+    (a) => ({ name: a.label, keywords: a.keywords, subtitle: a.description }),
+  )
 }
 
 /* ------------------------------ 极速工具 ------------------------------ */
@@ -302,8 +377,14 @@ export function toolSampleParses(tool: PaletteToolEntry): boolean {
 export function matchPaletteTools(query: string): PaletteToolEntry[] {
   const q = query.trim()
   if (!q || q.length < 2) return []
-  return ZERO_RTT_TOOLS.filter((tool) =>
+  const matched = ZERO_RTT_TOOLS.filter((tool) =>
     matchSuggestionText(q, `${tool.label} ${tool.description} ${tool.keywords}`),
+  )
+  // 本地行内部按 §6 总分降序（工具行无 MRU 记录，mruNorm 恒为 0）
+  return sortLocalRowsByScore(
+    q,
+    matched,
+    (t) => ({ name: t.label, keywords: t.keywords, subtitle: t.description }),
   )
 }
 
@@ -329,6 +410,12 @@ export interface MatchPaletteFavoritesOptions {
   limit?: number
   /** 已在站点结果里出现过的 siteId（同一条不出现两次） */
   excludeSiteIds?: ReadonlySet<string>
+  /**
+   * MRU 归一分（`mruScore / 100`，无记录为 0），由调用方按最近访问快照建表。
+   * 只影响本地行内部排序：先按 §6 总分排满再取 limit，有 MRU 加分的行可以
+   * 凭总分挤进前 5；服务端 hits 的 RRF 排名不动。
+   */
+  mruNormBySiteId?: ReadonlyMap<string, number>
 }
 
 /**
@@ -345,9 +432,8 @@ export function matchPaletteFavorites(
   const q = query.trim()
   if (!q || q.length < 2) return []
   const limit = opts.limit ?? 5
-  const out: PaletteFavoriteItem[] = []
+  const matched: PaletteFavoriteItem[] = []
   for (const fav of favorites) {
-    if (out.length >= limit) break
     if (opts.excludeSiteIds?.has(fav.siteId)) continue
     // 不安全 href（javascript: / data: / 带 userinfo / 含控制字符）直接跳过：
     // 这类收藏进了结果会占一个键盘导航位，渲染行却因安全闸不出现——
@@ -357,9 +443,17 @@ export function matchPaletteFavorites(
     if (!safeHref(fav.href, '')) continue
     const haystack = `${fav.title} ${fav.href} ${fav.description ?? ''} ${(fav.tags ?? []).join(' ')}`
     if (!matchSuggestionText(q, haystack)) continue
-    out.push({ ...fav, key: `favorite-${fav.siteId}` })
+    matched.push({ ...fav, key: `favorite-${fav.siteId}` })
   }
-  return out
+  // 本地行内部按 §6 总分降序再取 limit（先排后切：MRU 加分可以把行顶进前 5）。
+  // 字段口径：name=标题、keywords=标签（空格拼串）、subtitle=描述；
+  // 网址只参与「是否命中」的 haystack，不参与打分字段（§6 只有三字段）。
+  return sortLocalRowsByScore(
+    q,
+    matched,
+    (f) => ({ name: f.title, keywords: (f.tags ?? []).join(' '), subtitle: f.description ?? '' }),
+    (f) => opts.mruNormBySiteId?.get(f.siteId) ?? 0,
+  ).slice(0, limit)
 }
 
 /* ------------------------------ 快捷链接 ------------------------------ */
@@ -423,6 +517,18 @@ export interface PaletteNavGroups {
   toolIds: string[]
   pluginIds: string[]
   siteIds: string[]
+}
+
+/**
+ * Alt+数字 → navItems 下标（04 §4.1，纯函数，可单测）：Alt+1..9 → 0..8，
+ * Alt+0 → 9（第 10 条）；其余按键或下标超出 navItems 长度时返回 null，
+ * 调用方静默无操作（不报错、不 toast、不移动焦点）。
+ */
+export function altDigitTargetIndex(key: string, itemCount: number): number | null {
+  if (key.length !== 1) return null
+  const target = key === '0' ? 9 : key >= '1' && key <= '9' ? Number(key) - 1 : -1
+  if (target < 0 || target >= itemCount) return null
+  return target
 }
 
 /**

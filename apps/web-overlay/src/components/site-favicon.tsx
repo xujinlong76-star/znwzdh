@@ -86,13 +86,16 @@ export function extractFaviconMonogram(title: string, _url?: string): string {
 }
 
 /**
- * 品牌图标本地映射的紧凑表（2026-11-19 U-248 体积压缩）。
- * 341 条里 299 条的值共享 '/brand-icons/' 前缀；前缀只写一次、条目只存
- * 裸文件名，首屏少发约 2.8 KB。值里带 '/' 的是完整路径（/assets/... 或
- * https://...），原样使用，不加前缀。新增条目时裸文件名进 brand-icons，
- * 完整路径照写即可。
+ * 品牌图标本地映射的紧凑表（2026-11-19 U-248 体积压缩；2026-11-20 U-248
+ * 再压缩：条目由 ['host', 'file'] 二元组改为 'host=file' 一行字符串，
+ * 每条省 5 B 标点，首屏再少发约 1.7 KB。host 里无 '='，值里也无 '='
+ * （全表已校验），故按第一个 '=' 切分即无歧义；顺序与重键保留原样，
+ * 展开后的 Record 与旧表逐键一致）。
+ * 340 条里 305 条的值共享 '/brand-icons/' 前缀；前缀只写一次、条目只存
+ * 裸文件名，值里带 '/' 的是完整路径（/assets/... 或 https://...），
+ * 原样使用，不加前缀。新增条目时裸文件名进 brand-icons，完整路径照写即可。
  */
-const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
+const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   // 2026-11-09：高频开发工具的品牌图标本地静态化。
   // 这些站点原先走 /api/hub/assets/icon 代理，而代理在拿不到外网 favicon 时会
   // 回落到「渐变底 + 首字母」的生成 SVG，视觉上和纯字母色块没有区别。
@@ -104,18 +107,18 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 本地 Simple Icons 资产优先（零运行时依赖）；无 Simple Icons 的站用
   // 站方自有 favicon 或官方应用图标本地化文件（public/brand-icons/），
   // 每个远程地址与本地文件均经 curl 逐个验证（200 + image MIME + >32B）。
-  ['dify.ai', 'dify.svg'],
-  ['ant.design', 'antdesign.png'],
-  ['kubernetes.io', 'kubernetes.svg'],
-  ['spring.io', 'springboot.svg'],
-  ['notion.com', 'notion.png'],
-  ['radix-ui.com', 'radix-ui.svg'],
-  ['boardmix.cn', 'boardmix.jpg'],
-  ['docs.qq.com', 'tencent-docs.jpg'],
-  ['kdocs.cn', 'kdocs.jpg'],
-  ['sspai.com', 'sspai.png'],
-  ['pinduoduo.com', 'pinduoduo.png'],
-  ['hongguoduanju.com', 'hongguo.jpg'],
+  'dify.ai=dify.svg',
+  'ant.design=antdesign.png',
+  'kubernetes.io=kubernetes.svg',
+  'spring.io=springboot.svg',
+  'notion.com=notion.png',
+  'radix-ui.com=radix-ui.svg',
+  'boardmix.cn=boardmix.jpg',
+  'docs.qq.com=tencent-docs.jpg',
+  'kdocs.cn=kdocs.jpg',
+  'sspai.com=sspai.png',
+  'pinduoduo.com=pinduoduo.png',
+  'hongguoduanju.com=hongguo.jpg',
   // 2026-11-17（进化轮第二批 2a）：48 站缺失清单里的 Simple Icons 18 站。
   // 全部 curl 重新验证（200 + SVG 魔数 + <title> 品牌一致）后本地落盘，
   // 与第一批同款做法。Ollama / SourceHut 为纯黑标（fill #000000）：
@@ -123,26 +126,26 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 仅普通 map 条目，无白底色块、无组件改动），此处照抄；深色模式下
   // 黑标对比度弱是已知局限，留待深色底块统一处理轮（研究笔记 §3/§5）。
   // 2026-11-17 深色底块轮：已处理，见下方 LOGO_TILE_MAP（light）。
-  ['rollupjs.org', 'rollupdotjs.png'],
-  ['webpack.js.org', 'webpack.png'],
-  ['esbuild.github.io', 'esbuild.svg'],
-  ['storybook.js.org', 'storybook.svg'],
-  ['min.io', 'minio.svg'],
-  ['helm.sh', 'helm.svg'],
-  ['pulumi.com', 'pulumi.png'],
-  ['dribbble.com', 'dribbble.svg'],
-  ['behance.net', 'behance.svg'],
-  ['logseq.com', 'logseq.svg'],
-  ['ollama.com', 'ollama.svg'],
-  ['shopee.com', 'shopee.svg'],
-  ['infoq.cn', 'infoq.svg'],
-  ['qianwen.aliyun.com', 'qwen.svg'],
-  ['qianwen.com', 'qwen.svg'],
-  ['www.qianwen.com', 'qwen.svg'],
-  ['mantine.dev', 'mantine.svg'],
-  ['sourcehut.org', 'sourcehut.png'],
-  ['coze.cn', 'coze.svg'],
-  ['lintcode.com', 'lintcode.svg'],
+  'rollupjs.org=rollupdotjs.png',
+  'webpack.js.org=webpack.png',
+  'esbuild.github.io=esbuild.svg',
+  'storybook.js.org=storybook.svg',
+  'min.io=minio.svg',
+  'helm.sh=helm.svg',
+  'pulumi.com=pulumi.png',
+  'dribbble.com=dribbble.svg',
+  'behance.net=behance.svg',
+  'logseq.com=logseq.svg',
+  'ollama.com=ollama.svg',
+  'shopee.com=shopee.svg',
+  'infoq.cn=infoq.svg',
+  'qianwen.aliyun.com=qwen.svg',
+  'qianwen.com=qwen.svg',
+  'www.qianwen.com=qwen.svg',
+  'mantine.dev=mantine.svg',
+  'sourcehut.org=sourcehut.png',
+  'coze.cn=coze.svg',
+  'lintcode.com=lintcode.svg',
   // 2026-11-17（进化轮第二批 2b 之开发设计类）：48 站缺失清单里的站方自有
   // 图标 10 站。全部 curl 重新验证（200 + image MIME + 魔数 + 尺寸与研究
   // 笔记逐个相符）后本地落盘，与第一批/2a 同款做法。Naive UI 的远程路径
@@ -151,16 +154,16 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 不可热链。CodeGeeX 自带黑底（312x312 PNG），深色模式可用；其余按 2a
   // 对 Ollama / SourceHut 的做法——不做特殊处理，已知局限留待深色底块
   // 统一处理轮（研究笔记 §3/§5）。
-  ['codegeex.cn', 'codegeex.png'],
-  ['coding.net', 'coding.png'],
-  ['element-plus.org', 'element-plus.svg'],
-  ['naiveui.com', 'naiveui.svg'],
-  ['go-zero.dev', 'go-zero.svg'],
-  ['coolors.co', 'coolors.png'],
-  ['squoosh.app', 'squoosh.png'],
-  ['segmentfault.com', 'segmentfault.png'],
-  ['gogs.io', 'gogs.png'],
-  ['datatracker.ietf.org', 'ietf.png'],
+  'codegeex.cn=codegeex.png',
+  'coding.net=coding.png',
+  'element-plus.org=element-plus.svg',
+  'naiveui.com=naiveui.svg',
+  'go-zero.dev=go-zero.svg',
+  'coolors.co=coolors.png',
+  'squoosh.app=squoosh.png',
+  'segmentfault.com=segmentfault.png',
+  'gogs.io=gogs.png',
+  'datatracker.ietf.org=ietf.png',
   // 2026-11-17（进化轮第二批 2b 剩余 + 2c）：48 站缺失清单里站方自有
   // 图标 12 站（剪映/即梦/天音/中国大学 MOOC/极客时间/智联/番茄小说/
   // 探探/ReelShort/中央气象台/国家哲学/有戏 AI）+ iTunes 128px 应用
@@ -173,28 +176,28 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 对 Ollama / SourceHut 的做法——不做特殊处理，已知局限留待深色
   // 底块统一处理轮（研究笔记 §3/§5）。海珀/国家公务员局不在本批，
   // 未动；极客公园由 B 批合批新入 map（见下方 geekpark.net）。
-  ['capcut.cn', 'capcut.png'],
-  ['jimeng.jianying.com', 'jimeng.png'],
-  ['tianyin.163.com', 'tianyin.png'],
-  ['icourse163.org', 'icourse163.png'],
-  ['time.geekbang.org', 'geekbang.jpg'],
-  ['zhaopin.com', 'zhaopin.png'],
-  ['fanqienovel.com', 'fanqie.png'],
-  ['tantanapp.com', 'tantan.png'],
-  ['reelshort.com', 'reelshort.png'],
-  ['nmc.cn', 'nmc.png'],
-  ['ncpssd.org', 'ncpssd.png'],
-  ['youxi.fullpeace.net', 'youxi.png'],
-  ['mtime.com', 'mtime.jpg'],
-  ['wondercv.com', 'wondercv.jpg'],
-  ['nhsa.gov.cn', 'nhsa.jpg'],
-  ['12333.gov.cn', '12333.jpg'],
-  ['xiaoyunque.com', 'xiaoyunque.jpg'],
+  'capcut.cn=capcut.png',
+  'jimeng.jianying.com=jimeng.png',
+  'tianyin.163.com=tianyin.png',
+  'icourse163.org=icourse163.png',
+  'time.geekbang.org=geekbang.jpg',
+  'zhaopin.com=zhaopin.png',
+  'fanqienovel.com=fanqie.png',
+  'tantanapp.com=tantan.png',
+  'reelshort.com=reelshort.png',
+  'nmc.cn=nmc.png',
+  'ncpssd.org=ncpssd.png',
+  'youxi.fullpeace.net=youxi.png',
+  'mtime.com=mtime.jpg',
+  'wondercv.com=wondercv.jpg',
+  'nhsa.gov.cn=nhsa.jpg',
+  '12333.gov.cn=12333.jpg',
+  'xiaoyunque.com=xiaoyunque.jpg',
   // 2026-11-17（深色底块统一处理轮）：Haiper。站方首页只有内联 SVG
   // wordmark（无可热链 URL、176x72、7 条 path 全跟随文字颜色），本轮
   // 重取首页（200）提取后本地落盘为 haiper.svg：fill 钉死 #ffffff，
   // 配下方 LOGO_TILE_MAP 的 dark 底块。
-  ['haiper.ai', 'haiper.svg'],
+  'haiper.ai=haiper.svg',
   // 2026-11-17（同轮追加）：极客公园。1361x261 白字宽版 wordmark 仍不
   // 可用（24px 卡片内只剩 3.8px 高，比渐变字母更差，不进 map）；但并行
   // 研究线找到站方 /about 页 head 三重官方指定的方形标
@@ -202,85 +205,85 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 实测 100×100（文件名按实测尺寸，不沿用虚标 196）：黑底白 G、全
   // 10000 像素不透明，24/36/64 三档 G 高 9.8/15.7/29.4px 均可读。
   // 黑底方块配下方 LOGO_TILE_MAP 的 light 底块（与 Ollama 黑标同款处理）。
-  ['geekpark.net', 'geekpark.png'],
-  ['vuejs.org', 'vue.svg'],
-  ['npmjs.com', 'npm.svg'],
-  ['vite.dev', 'vite.svg'],
-  ['pnpm.io', 'pnpm.svg'],
-  ['tongyi.aliyun.com', 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'],
-  ['wan2.aliyun.com', 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'],
+  'geekpark.net=geekpark.png',
+  'vuejs.org=vue.svg',
+  'npmjs.com=npm.svg',
+  'vite.dev=vite.svg',
+  'pnpm.io=pnpm.svg',
+  'tongyi.aliyun.com=https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png',
+  'wan2.aliyun.com=https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png',
   // 2026-11-16：旧值 https://zhiwen.xfyun.cn/favicon.ico 经 curl 验证 404，
   // 改用同站验证过的 favicon.png（200 image/png 14725B）。
-  ['zhiwen.xfyun.cn', 'https://zhiwen.xfyun.cn/favicon.png'],
-  ['cursor.com', 'cursor.png'],
-  ['v0.dev', '/assets/images/logos/vercel.webp'],
-  ['kimi.moonshot.cn', 'kimi-search.png'],
-  ['doubao.com', 'doubao.png'],
-  ['www.doubao.com', 'doubao.png'],
-  ['yiyan.baidu.com', 'wenxin.png'],
-  ['lingma.aliyun.com', 'lingma.png'],
-  ['runwayml.com', 'runway.png'],
-  ['deepseek.com', 'deepseek.png'],
-  ['chat.deepseek.com', 'deepseek.png'],
-  ['klingai.com', 'klingai.png'],
-  ['klingai.kuaishou.com', 'klingai.png'],
+  'zhiwen.xfyun.cn=https://zhiwen.xfyun.cn/favicon.png',
+  'cursor.com=cursor.png',
+  'v0.dev=/assets/images/logos/vercel.webp',
+  'kimi.moonshot.cn=kimi-search.png',
+  'doubao.com=doubao.png',
+  'www.doubao.com=doubao.png',
+  'yiyan.baidu.com=wenxin.png',
+  'lingma.aliyun.com=lingma.png',
+  'runwayml.com=runway.png',
+  'deepseek.com=deepseek.png',
+  'chat.deepseek.com=deepseek.png',
+  'klingai.com=klingai.png',
+  'klingai.kuaishou.com=klingai.png',
   // 2026-11-16：旧值 https://lumalabs.ai/favicon.ico 经 curl 验证 404，
   // 改用 Luma 官方备用域名 luma.ai 的同名 favicon（200 image/x-icon 15086B，
   // 内容为 Luma 四角星品牌标）。
-  ['lumalabs.ai', 'luma.png'],
-  ['vidu.studio', 'vidu.svg'],
-  ['hailuoai.com', 'hailuoai.png'],
-  ['chatgpt.com', 'chatgpt.svg'],
-  ['chat.openai.com', 'chatgpt.svg'],
-  ['openai.com', 'openai.png'],
-  ['claude.ai', 'claude.svg'],
-  ['anthropic.com', '/assets/images/logos/claude.webp'],
-  ['cloudflare.com', 'cloudflare.png'],
-  ['figma.com', 'figma.svg'],
-  ['tinypng.com', 'tinypng.png'],
-  ['unsplash.com', 'unsplash.png'],
-  ['vercel.com', 'vercel.png'],
-  ['fonts.google.com', 'google-fonts.svg'],
-  ['material.io', '/assets/images/logos/Materialicons.webp'],
-  ['colorhunt.co', '/assets/images/logos/colorhunt.webp'],
-  ['flinto.com', '/assets/images/logos/flinto.webp'],
-  ['flaticon.com', 'flaticon.png'],
-  ['fontawesome.com', 'font-awesome.svg'],
-  ['framer.com', '/assets/images/logos/framer.webp'],
-  ['freepik.com', '/assets/images/logos/freepik.webp'],
-  ['gemini.google.com', 'gemini.svg'],
-  ['iconarchive.com', '/assets/images/logos/iconarchive.webp'],
-  ['iconfinder.com', '/assets/images/logos/Iconfinder.webp'],
+  'lumalabs.ai=luma.png',
+  'vidu.studio=vidu.svg',
+  'hailuoai.com=hailuoai.png',
+  'chatgpt.com=chatgpt.svg',
+  'chat.openai.com=chatgpt.svg',
+  'openai.com=openai.png',
+  'claude.ai=claude.svg',
+  'anthropic.com=/assets/images/logos/claude.webp',
+  'cloudflare.com=cloudflare.png',
+  'figma.com=figma.svg',
+  'tinypng.com=tinypng.png',
+  'unsplash.com=unsplash.png',
+  'vercel.com=vercel.png',
+  'fonts.google.com=google-fonts.svg',
+  'material.io=/assets/images/logos/Materialicons.webp',
+  'colorhunt.co=/assets/images/logos/colorhunt.webp',
+  'flinto.com=/assets/images/logos/flinto.webp',
+  'flaticon.com=flaticon.png',
+  'fontawesome.com=font-awesome.svg',
+  'framer.com=/assets/images/logos/framer.webp',
+  'freepik.com=/assets/images/logos/freepik.webp',
+  'gemini.google.com=gemini.svg',
+  'iconarchive.com=/assets/images/logos/iconarchive.webp',
+  'iconfinder.com=/assets/images/logos/Iconfinder.webp',
   // 2026-11-20（U-08 补站 Iconfont）：原值 '/assets/images/logos/iconfont.webp'
   // 为上游底座 44×44 WebP（apps/web 镜像树资产）；改指站方 favicon 本体 SVG
   // （www.iconfont.cn/favicon.ico 302 至 img.alicdn.com 官方标，83×82，5,688 B，
   // md5 dcc980d06bc7209d1c9ec24870620f0d），与导航条目同源、矢量更清晰。
   // 全库 383 站核对：'iconfont.cn' 键只命中 Iconfont 一站，无后缀串站。
-  ['iconfont.cn', 'iconfont.svg'],
-  ['iconmonstr.com', '/assets/images/logos/iconmonstr.webp'],
-  ['ionicons.com', '/assets/images/logos/ionicons.webp'],
-  ['leonardo.ai', 'leonardo.png'],
-  ['poe.com', '/assets/images/logos/poe.svg'],
-  ['producthunt.com', '/assets/images/logos/producthunt.webp'],
-  ['tensor.art', '/assets/images/logos/tensorart.webp'],
-  ['icomoon.io', '/assets/images/logos/IcoMoonApp.webp'],
-  ['findicons.com', '/assets/images/logos/FindIcons.webp'],
-  ['principleformac.com', '/assets/images/logos/principle.webp'],
-  ['worldvectorlogo.com', '/assets/images/logos/worldvectorlogo.webp'],
-  ['shots.so', '/assets/images/logos/shots.webp'],
-  ['simplelineicons.com', '/assets/images/logos/simplelineicons.webp'],
-  ['sqlformat.org', '/assets/images/logos/sqlformat.webp'],
-  ['tableconvert.com', '/assets/images/logos/tableconvert.webp'],
-  ['json.cn', '/assets/images/logos/json.webp'],
-  ['beautifier.io', '/assets/images/logos/beautifier.webp'],
-  ['ui-cloud.com', '/assets/images/logos/UICloud.webp'],
-  ['ads.google.com', '/assets/images/logos/gads.webp'],
-  ['analytics.google.com', '/assets/images/logos/analytics.webp'],
-  ['photoshop.com', '/assets/images/logos/photoshop.webp'],
-  ['affinity.serif.com', '/assets/images/logos/AffinityDesigner.webp'],
-  ['instantlogosearch.com', '/assets/images/logos/InstantLogoSearch.webp'],
-  ['iconsfeed.com', '/assets/images/logos/iconsfeed.webp'],
-  ['iosicongallery.com', '/assets/images/logos/iosicongallery.webp'],
+  'iconfont.cn=iconfont.svg',
+  'iconmonstr.com=/assets/images/logos/iconmonstr.webp',
+  'ionicons.com=/assets/images/logos/ionicons.webp',
+  'leonardo.ai=leonardo.png',
+  'poe.com=/assets/images/logos/poe.svg',
+  'producthunt.com=/assets/images/logos/producthunt.webp',
+  'tensor.art=/assets/images/logos/tensorart.webp',
+  'icomoon.io=/assets/images/logos/IcoMoonApp.webp',
+  'findicons.com=/assets/images/logos/FindIcons.webp',
+  'principleformac.com=/assets/images/logos/principle.webp',
+  'worldvectorlogo.com=/assets/images/logos/worldvectorlogo.webp',
+  'shots.so=/assets/images/logos/shots.webp',
+  'simplelineicons.com=/assets/images/logos/simplelineicons.webp',
+  'sqlformat.org=/assets/images/logos/sqlformat.webp',
+  'tableconvert.com=/assets/images/logos/tableconvert.webp',
+  'json.cn=/assets/images/logos/json.webp',
+  'beautifier.io=/assets/images/logos/beautifier.webp',
+  'ui-cloud.com=/assets/images/logos/UICloud.webp',
+  'ads.google.com=/assets/images/logos/gads.webp',
+  'analytics.google.com=/assets/images/logos/analytics.webp',
+  'photoshop.com=/assets/images/logos/photoshop.webp',
+  'affinity.serif.com=/assets/images/logos/AffinityDesigner.webp',
+  'instantlogosearch.com=/assets/images/logos/InstantLogoSearch.webp',
+  'iconsfeed.com=/assets/images/logos/iconsfeed.webp',
+  'iosicongallery.com=/assets/images/logos/iosicongallery.webp',
   // 2026-11-17（图标 A 类第 1 批 a1a + a1b，独立复审 R1–R6 后合批）：
   // 本批 8 个键均为原地替换旧值（旧值指向不存在的 /assets/images/logos/*，
   // 不另起重复块）：chatgpt.com → chatgpt.svg；chat.openai.com → chatgpt.svg
@@ -301,15 +304,15 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   //（精确键优先于 adobe.com 后缀匹配）。Illustrator 无 hostname 键，改走
   // map 查找前的标题规则（复审裁决 (a)）。Adobe Color 阻塞未落盘：资产、
   // map 值、测试用例均未合入，待 429 冷却后重取验过再补（复审裁决 (c)）。
-  ['fonts.adobe.com', 'adobe-fonts.png'],
-  ['helpx.adobe.com', 'adobe-xd.svg'],
+  'fonts.adobe.com=adobe-fonts.png',
+  'helpx.adobe.com=adobe-xd.svg',
   // 2026-11-17（图标 B 类第 1 批 b1a）：DeepSeek / Kimi / 文心一言 / Kimi 搜索。
   // 旧键替换（勿重复落键）：'deepseek.com' / 'chat.deepseek.com' /
   // 'kimi.moonshot.cn' 原为热链值，本批改为本地路径；'kimi.com' /
   // 'wenxin.baidu.com' 为新键。来源均经 curl 重新验证（见 map-block-b1a.txt）。
   // chat.deepseek.com/favicon.ico 回的是 SPA HTML 壳页，旧热链值已失效。
-  ['kimi.com', 'kimi.png'],
-  ['wenxin.baidu.com', 'wenxin.png'],
+  'kimi.com=kimi.png',
+  'wenxin.baidu.com=wenxin.png',
   // 2026-11-17（图标 B 类第 1 批 b1b）：Cline / GitHub Copilot 走 map 前
   // 标题规则（见上方 cline / copilot 规则），此处不建 github.com 键；
   // Cursor 与 Tongyi Lingma 为旧键原地替换值（热链 → 本地路径）。
@@ -318,13 +321,13 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 2026-11-17（图标 B 类 B2a）：Beatoven.ai / Sudowrite 新建键。
   // R1 裁决：这两站 navigation.json 的 icon 为远程热链且不触发拦截，
   // customIcon 优先于 map，单加 map 键不可达——已同步清空两站 icon 字段。
-  ['beatoven.ai', 'beatoven.png'],
-  ['sudowrite.com', 'sudowrite.png'],
+  'beatoven.ai=beatoven.png',
+  'sudowrite.com=sudowrite.png',
   // 2026-11-17（图标 B 类第 4 批 B2b）
   // klingai.com / hailuoai.com 为替换旧键（旧值热链 ICO）；runway.com 为
   // 新建键（旧键 runwayml.com 为死键，全库无站命中，不动；兄弟键
   // klingai.kuaishou.com 全库无站命中，不动）。
-  ['runway.com', 'runway.png'],
+  'runway.com=runway.png',
   // 2026-11-17（B 类第 5 批之 B3a：Luma AI / Radix UI / Notion / freeCodeCamp）：
   // 4 站热链本地化。lumalabs.ai / radix-ui.com / notion.com 为原地替换旧值
   //（旧值均为远程热链，勿重复建键）；freecodecamp.org 为新键（须与
@@ -332,48 +335,48 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // Radix 为近黑标（fill #1C2024，透明底），与 Ollama / SourceHut 同款处理：
   // 只加普通 map 条目，不做白底色块；深色模式黑标对比度弱是已知局限，
   // 留待深色底块统一处理轮。
-  ['freecodecamp.org', 'freecodecamp.png'],
+  'freecodecamp.org=freecodecamp.png',
   // 2026-11-17（图标 B 类第 3 批 b3b）：少数派 / 拼多多 / 微信，本地化。
   // sspai.com、pinduoduo.com 为旧键原地替换值（上方已改，勿重复建键）；
   // weixin.qq.com 为新键（微信 icon 已同步清空，见 navigation-icon-clear-b3b.patch，
   // 仅改这一行）。少数派/拼多多的 customIcon 均为 …/favicon.ico，会被
   // isRemoteRawFavicon 拦截后回落 map，无需清空。
-  ['weixin.qq.com', 'weixin.png'],
+  'weixin.qq.com=weixin.png',
   // 2026-11-18（C 类第 1 批 c1g1）：Perplexity / Hugging Face / Suno / ElevenLabs。
   // 4 站 icon 均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
   // navigation.json 不动。Midjourney 阻塞未落盘（见批次笔记），无条目。
-  ['perplexity.ai', 'perplexity.svg'],
-  ['huggingface.co', 'huggingface.png'],
-  ['suno.com', 'suno.png'],
-  ['elevenlabs.io', 'elevenlabs.svg'],
+  'perplexity.ai=perplexity.svg',
+  'huggingface.co=huggingface.png',
+  'suno.com=suno.png',
+  'elevenlabs.io=elevenlabs.svg',
   // 2026-11-18（C 类第 1 批 c1g2）：智谱清言 / 讯飞星火 / n8n。
   // 3 站 icon 均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
   // navigation.json 不动。GitHub 走下方标题规则，不建 'github.com' 键。
-  ['chatglm.cn', 'zhipu.png'],
-  ['xinghuo.xfyun.cn', 'xinghuo.png'],
-  ['n8n.io', 'n8n.png'],
+  'chatglm.cn=zhipu.png',
+  'xinghuo.xfyun.cn=xinghuo.png',
+  'n8n.io=n8n.png',
   // 2026-11-18（C 类第 1 批 c1g3）：淘宝 / 京东 / 抖音 / 快手 / 哔哩哔哩。
   // 5 站 icon 均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
   // navigation.json 不动。京东取帧提醒：ICO 最大帧为第 7 帧 48×48 32bpp，
   // PIL 默认帧是 4bpp 抖动帧，复核不要用 PIL 默认帧。
-  ['taobao.com', 'taobao.png'],
-  ['jd.com', 'jd.png'],
-  ['douyin.com', 'douyin.png'],
-  ['kuaishou.com', 'kuaishou.png'],
-  ['bilibili.com', 'bilibili.png'],
+  'taobao.com=taobao.png',
+  'jd.com=jd.png',
+  'douyin.com=douyin.png',
+  'kuaishou.com=kuaishou.png',
+  'bilibili.com=bilibili.png',
   // 2026-11-18（C 类第 1 批 c1g4：办公 + 内容社区）：飞书 / Stack Overflow / 知乎 / 豆瓣 / 小红书。
   // 5 站 icon 均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
   // navigation.json 不动。
-  ['feishu.cn', 'feishu.png'],
-  ['stackoverflow.com', 'stackoverflow.png'],
-  ['zhihu.com', 'zhihu.png'],
-  ['douban.com', 'douban.png'],
-  ['xiaohongshu.com', 'xiaohongshu.png'],
+  'feishu.cn=feishu.png',
+  'stackoverflow.com=stackoverflow.png',
+  'zhihu.com=zhihu.png',
+  'douban.com=douban.png',
+  'xiaohongshu.com=xiaohongshu.png',
   // 2026-11-18（C 类第 1 批 Trae 补救）：Trae。
   // icon 为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，map 生效，
   // navigation.json 不动。源为 docs.trae.ai 首页声明的 shortcut icon
   //（trae.cn 地域墙 403，见批次笔记）；trae.ai 不在站内，不加键。
-  ['trae.cn', 'trae.png'],
+  'trae.cn=trae.png',
   // 2026-11-18（C 类第 2 批 c2g1–c2g7）：元宝搜索 / 秘塔搜索 / 天工AI搜索 /
   // Pika / Viggle AI / Genmo / Vidu / Krea / Deep Dream Generator /
   // Remove.bg / 魔搭 ModelScope / 百度飞桨 / Stability AI / Mistral AI /
@@ -384,26 +387,26 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 绝不建 windsurf 键。Meta AI 只建完整子域 'dev.meta.ai'，禁写 'meta.ai'。
   // vidu.studio 旧键（指远程 favicon，不在 navigation.json 中）不动，与
   // 'vidu.cn' 互不干扰。Meta AI 源为 Wayback 存档（官网直连 403，见 C2 测试注释）。
-  ['so.qq.com', 'yuanbao.png'],
-  ['metaso.cn', 'metaso.png'],
-  ['tiangong.cn', 'tiangong.png'],
-  ['pika.art', 'pika.svg'],
-  ['viggle.ai', 'viggle.svg'],
-  ['genmo.ai', 'genmo.png'],
-  ['vidu.cn', 'vidu.svg'],
-  ['krea.ai', 'krea.png'],
-  ['deepdreamgenerator.com', 'deepdreamgenerator.png'],
-  ['remove.bg', 'removebg.png'],
-  ['modelscope.cn', 'modelscope.png'],
-  ['paddlepaddle.org.cn', 'paddlepaddle.png'],
-  ['stability.ai', 'stability.png'],
-  ['mistral.ai', 'mistral.svg'],
-  ['dev.meta.ai', 'meta-ai.png'],
-  ['moark.com', 'moark.png'],
-  ['flowiseai.com', 'flowise.png'],
-  ['apify.com', 'apify.svg'],
-  ['devin.ai', 'devin.svg'],
-  ['topview.ai', 'topview.png'],
+  'so.qq.com=yuanbao.png',
+  'metaso.cn=metaso.png',
+  'tiangong.cn=tiangong.png',
+  'pika.art=pika.svg',
+  'viggle.ai=viggle.svg',
+  'genmo.ai=genmo.png',
+  'vidu.cn=vidu.svg',
+  'krea.ai=krea.png',
+  'deepdreamgenerator.com=deepdreamgenerator.png',
+  'remove.bg=removebg.png',
+  'modelscope.cn=modelscope.png',
+  'paddlepaddle.org.cn=paddlepaddle.png',
+  'stability.ai=stability.png',
+  'mistral.ai=mistral.svg',
+  'dev.meta.ai=meta-ai.png',
+  'moark.com=moark.png',
+  'flowiseai.com=flowise.png',
+  'apify.com=apify.svg',
+  'devin.ai=devin.svg',
+  'topview.ai=topview.png',
   // 2026-11-19（C 类第 3 批 C3）：Jasper / Copy.ai / Writesonic / Grammarly /
   // 秘塔写作猫 / Wordtune / Baidu Comate / Continue.dev / 讯飞开放平台 /
   // Udio / Soundraw / AIVA / Boomy / Mubert / Loudly / Murf AI /
@@ -413,26 +416,26 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // map 生效，navigation.json 不动。'xfyun.cn'（讯飞开放平台）与已有
   // 'xinghuo.xfyun.cn'（讯飞星火）互不干扰：精确查找先命中各自键。
   // 'comate.baidu.com' 用完整子域建键，不建 'baidu.com' 键。
-  ['jasper.ai', 'jasper.png'],
-  ['copy.ai', 'copy-ai.png'],
-  ['writesonic.com', 'writesonic.svg'],
-  ['grammarly.com', 'grammarly.png'],
-  ['xiezuocat.com', 'xiezuocat.png'],
-  ['wordtune.com', 'wordtune.png'],
-  ['comate.baidu.com', 'comate.png'],
-  ['continue.dev', 'continue.png'],
-  ['xfyun.cn', 'xfyun.png'],
-  ['udio.com', 'udio.png'],
-  ['soundraw.io', 'soundraw.png'],
-  ['aiva.ai', 'aiva.png'],
-  ['boomy.com', 'boomy.png'],
-  ['mubert.com', 'mubert.png'],
-  ['loudly.com', 'loudly.png'],
-  ['murf.ai', 'murf.png'],
-  ['speechify.com', 'speechify.png'],
-  ['wellsaid.io', 'wellsaid.png'],
-  ['naturalreaders.com', 'naturalreader.png'],
-  ['moyin.com', 'moyin.png'],
+  'jasper.ai=jasper.png',
+  'copy.ai=copy-ai.png',
+  'writesonic.com=writesonic.svg',
+  'grammarly.com=grammarly.png',
+  'xiezuocat.com=xiezuocat.png',
+  'wordtune.com=wordtune.png',
+  'comate.baidu.com=comate.png',
+  'continue.dev=continue.png',
+  'xfyun.cn=xfyun.png',
+  'udio.com=udio.png',
+  'soundraw.io=soundraw.png',
+  'aiva.ai=aiva.png',
+  'boomy.com=boomy.png',
+  'mubert.com=mubert.png',
+  'loudly.com=loudly.png',
+  'murf.ai=murf.png',
+  'speechify.com=speechify.png',
+  'wellsaid.io=wellsaid.png',
+  'naturalreaders.com=naturalreader.png',
+  'moyin.com=moyin.png',
   // 2026-11-19（C 类第 4 批 C4）：Gitee 码云 / GitHub Trending / GitLab /
   // GitCode / Codeup / Bitbucket / 掘金 / CSDN / 力扣 LeetCode / 牛客网 /
   // 洛谷 / Codeforces / AtCoder / LeetCode 国际版 / MDN Web Docs /
@@ -452,25 +455,25 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 未能核实具体色值（www.iso.org curl 空回复、官方品牌页无 hex、
   // 候选 #D22630 经查是 Saudi Aramco 的 SA Red、与 ISO 无关），
   // 故本次不加底块分支、不猜 hex，记为未决点，见 C4 测试事实钉死。
-  ['gitee.com', 'gitee.png'],
-  ['gitlab.com', 'gitlab.png'],
-  ['gitcode.com', 'gitcode.png'],
-  ['codeup.aliyun.com', 'codeup.png'],
-  ['bitbucket.org', 'bitbucket.png'],
-  ['juejin.cn', 'juejin.png'],
-  ['csdn.net', 'csdn.png'],
-  ['leetcode.cn', 'leetcode-cn.png'],
-  ['nowcoder.com', 'nowcoder.png'],
-  ['luogu.com.cn', 'luogu.png'],
-  ['codeforces.com', 'codeforces.png'],
-  ['atcoder.jp', 'atcoder.png'],
-  ['leetcode.com', 'leetcode.png'],
-  ['developer.mozilla.org', 'mdn.svg'],
-  ['docs.oracle.com', 'java-docs.png'],
-  ['w3.org', 'w3c.svg'],
-  ['iso.org', 'iso.svg'],
-  ['roadmap.sh', 'roadmap.png'],
-  ['ui.shadcn.com', 'shadcn.png'],
+  'gitee.com=gitee.png',
+  'gitlab.com=gitlab.png',
+  'gitcode.com=gitcode.png',
+  'codeup.aliyun.com=codeup.png',
+  'bitbucket.org=bitbucket.png',
+  'juejin.cn=juejin.png',
+  'csdn.net=csdn.png',
+  'leetcode.cn=leetcode-cn.png',
+  'nowcoder.com=nowcoder.png',
+  'luogu.com.cn=luogu.png',
+  'codeforces.com=codeforces.png',
+  'atcoder.jp=atcoder.png',
+  'leetcode.com=leetcode.png',
+  'developer.mozilla.org=mdn.svg',
+  'docs.oracle.com=java-docs.png',
+  'w3.org=w3c.svg',
+  'iso.org=iso.svg',
+  'roadmap.sh=roadmap.png',
+  'ui.shadcn.com=shadcn.png',
   // 2026-11-19（C 类第 5 批 C5）：Bun / Node.js / Python / Rust / Go /
   // Java / Drizzle ORM / MySQL / PostgreSQL / Redis / MongoDB / Fastify /
   // Express / NestJS / Laravel / Django / Docker Hub / Podman / Compose /
@@ -496,26 +499,26 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 解码落盘 .png，无 .ico 残留。
   // 非方标等比缩略（不拉伸不裁切）：nodejs.png 112×128、
   // postgresql.png 124×128、compose.png 117×128。
-  ['bun.sh', 'bun.svg'],
-  ['nodejs.org', 'nodejs.png'],
-  ['python.org', 'python.png'],
-  ['rust-lang.org', 'rust.svg'],
-  ['go.dev', 'go.svg'],
-  ['java.com', 'java.png'],
-  ['orm.drizzle.team', 'drizzle.png'],
-  ['mysql.com', 'mysql.png'],
-  ['postgresql.org', 'postgresql.png'],
-  ['redis.io', 'redis.png'],
-  ['mongodb.com', 'mongodb.png'],
-  ['fastify.dev', 'fastify.svg'],
-  ['expressjs.com', 'express.svg'],
-  ['nestjs.com', 'nestjs.svg'],
-  ['laravel.com', 'laravel.png'],
-  ['djangoproject.com', 'django.png'],
-  ['hub.docker.com', 'docker-hub.png'],
-  ['podman.io', 'podman.png'],
-  ['docs.docker.com', 'compose.png'],
-  ['developer.hashicorp.com', 'terraform.svg'],
+  'bun.sh=bun.svg',
+  'nodejs.org=nodejs.png',
+  'python.org=python.png',
+  'rust-lang.org=rust.svg',
+  'go.dev=go.svg',
+  'java.com=java.png',
+  'orm.drizzle.team=drizzle.png',
+  'mysql.com=mysql.png',
+  'postgresql.org=postgresql.png',
+  'redis.io=redis.png',
+  'mongodb.com=mongodb.png',
+  'fastify.dev=fastify.svg',
+  'expressjs.com=express.svg',
+  'nestjs.com=nestjs.svg',
+  'laravel.com=laravel.png',
+  'djangoproject.com=django.png',
+  'hub.docker.com=docker-hub.png',
+  'podman.io=podman.png',
+  'docs.docker.com=compose.png',
+  'developer.hashicorp.com=terraform.svg',
   // 2026-11-19（C 类第 6 批 C6）：天猫 / 唯品会 / 苏宁易购 / 1688 /
   // 支付宝 / 全球速卖通 / Temu / SHEIN / eBay / Shopify / 百度地图 /
   // 铁路 12306 / 高德地图 / 携程旅行 / 滴滴出行 / 大众点评 / 顺丰速运 /
@@ -529,25 +532,25 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // ICO 方标（备选）未采用，待复审裁决，见 C6 测试事实钉死。
   // 唯品会 / 全球速卖通 / 携程旅行：官网只有 16px 单帧 favicon，按规范
   // §1.1 原样落盘 16×16、绝不放大；是否接受待裁决，见 C6 测试事实钉死。
-  ['tmall.com', 'tmall.png'],
-  ['vip.com', 'vip.png'],
-  ['suning.com', 'suning.png'],
-  ['1688.com', '1688.png'],
-  ['alipay.com', 'alipay.png'],
-  ['aliexpress.com', 'aliexpress.png'],
-  ['temu.com', 'temu.png'],
-  ['shein.com', 'shein.png'],
-  ['ebay.com', 'ebay.png'],
-  ['shopify.com', 'shopify.png'],
-  ['map.baidu.com', 'baidumap.png'],
-  ['12306.cn', '12306.png'],
-  ['amap.com', 'amap.png'],
-  ['ctrip.com', 'ctrip.png'],
-  ['didiglobal.com', 'didi.png'],
-  ['dianping.com', 'dianping.png'],
-  ['sf-express.com', 'sf-express.png'],
-  ['yto.net.cn', 'yto.png'],
-  ['weibo.com', 'weibo.png'],
+  'tmall.com=tmall.png',
+  'vip.com=vip.png',
+  'suning.com=suning.png',
+  '1688.com=1688.png',
+  'alipay.com=alipay.png',
+  'aliexpress.com=aliexpress.png',
+  'temu.com=temu.png',
+  'shein.com=shein.png',
+  'ebay.com=ebay.png',
+  'shopify.com=shopify.png',
+  'map.baidu.com=baidumap.png',
+  '12306.cn=12306.png',
+  'amap.com=amap.png',
+  'ctrip.com=ctrip.png',
+  'didiglobal.com=didi.png',
+  'dianping.com=dianping.png',
+  'sf-express.com=sf-express.png',
+  'yto.net.cn=yto.png',
+  'weibo.com=weibo.png',
   // 2026-11-19（C 类第 8 批 C8）：石墨文档 / 语雀 / Obsidian / AppFlowy /
   // AFFiNE / 思源笔记 / Excalidraw / XMind / MindManager / ProcessOn /
   // GitMind / tldraw / Draw.io / Miro / Khan Academy / Skillshare /
@@ -579,25 +582,25 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 96×96（AFFiNE）、50×45（MindManager）、64×64（ProcessOn）、
   // 72×72（GitMind）、120×120（Skillshare）、48×48（慕课网）、
   // 30×30（学习强国）。
-  ['shimo.im', 'shimo.png'],
-  ['yuque.com', 'yuque.png'],
-  ['obsidian.md', 'obsidian.svg'],
-  ['appflowy.com', 'appflowy.png'],
-  ['affine.pro', 'affine.png'],
-  ['b3log.org', 'siyuan.png'],
-  ['excalidraw.com', 'excalidraw.png'],
-  ['xmind.cn', 'xmind.svg'],
-  ['mindmanager.com', 'mindmanager.png'],
-  ['processon.com', 'processon.png'],
-  ['gitmind.com', 'gitmind.png'],
-  ['tldraw.com', 'tldraw.svg'],
-  ['app.diagrams.net', 'diagrams.png'],
-  ['miro.com', 'miro.png'],
-  ['khanacademy.org', 'khanacademy.png'],
-  ['skillshare.com', 'skillshare.png'],
-  ['imooc.com', 'imooc.png'],
-  ['xuexi.cn', 'xuexi.png'],
-  ['runoob.com', 'runoob.png'],
+  'shimo.im=shimo.png',
+  'yuque.com=yuque.png',
+  'obsidian.md=obsidian.svg',
+  'appflowy.com=appflowy.png',
+  'affine.pro=affine.png',
+  'b3log.org=siyuan.png',
+  'excalidraw.com=excalidraw.png',
+  'xmind.cn=xmind.svg',
+  'mindmanager.com=mindmanager.png',
+  'processon.com=processon.png',
+  'gitmind.com=gitmind.png',
+  'tldraw.com=tldraw.svg',
+  'app.diagrams.net=diagrams.png',
+  'miro.com=miro.png',
+  'khanacademy.org=khanacademy.png',
+  'skillshare.com=skillshare.png',
+  'imooc.com=imooc.png',
+  'xuexi.cn=xuexi.png',
+  'runoob.com=runoob.png',
   // 2026-11-19（C 类第 9 批 C9，15/20）：粉笔 / 华图教育 / 新东方在线 /
   // BOSS直聘 / 拉勾网 / 前程无忧 / 猎聘 / 五百丁 / Codecademy / 维基百科
   // （研招网 / 考研网上报名 / 全国大学英语四、六级考试官网 /
@@ -611,16 +614,16 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 全库 383 站核对：本批 10 个 map 键各只命中 1 站，无后缀串站。
   // 6 站为 16×16 原样小图（huatu / zhipin / lagou；另 3 站走标题规则，
   // 见下方），按规范 §1.1 原样落盘、绝不放大，卡片上显小是合规状态。
-  ['fenbi.com', 'fenbi.png'],
-  ['huatu.com', 'huatu.png'],
-  ['koolearn.com', 'koolearn.png'],
-  ['zhipin.com', 'zhipin.png'],
-  ['lagou.com', 'lagou.png'],
-  ['51job.com', '51job.png'],
-  ['liepin.com', 'liepin.png'],
-  ['500d.me', '500d.png'],
-  ['codecademy.com', 'codecademy.png'],
-  ['zh.wikipedia.org', 'wikipedia.png'],
+  'fenbi.com=fenbi.png',
+  'huatu.com=huatu.png',
+  'koolearn.com=koolearn.png',
+  'zhipin.com=zhipin.png',
+  'lagou.com=lagou.png',
+  '51job.com=51job.png',
+  'liepin.com=liepin.png',
+  '500d.me=500d.png',
+  'codecademy.com=codecademy.png',
+  'zh.wikipedia.org=wikipedia.png',
   // 2026-11-19（C 类第 10 批 C10）：arXiv / 中国知网 / 万方数据 /
   // Web of Science / Semantic Scholar / IEEE Xplore / JSTOR /
   // 国家数字图书馆 / 36氪 / 虎嗅 / 爱范儿 / Canva / Creative Market /
@@ -643,22 +646,22 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 以 32×32 官方 favicon（蓝 Kr）为准；虎嗅以首页声明的 120×120
   // apple-touch-icon 为准（favicon.ico 100×100 PNG 未用）；Pixso 以
   // 官网首页引用的 512 品牌标缩至 128 为准（favicon.ico 仅 32×32 未用）。
-  ['arxiv.org', 'arxiv.png'],
-  ['cnki.net', 'cnki.svg'],
-  ['wanfangdata.com.cn', 'wanfang.png'],
-  ['webofscience.com', 'webofscience.png'],
-  ['semanticscholar.org', 'semanticscholar.png'],
-  ['ieeexplore.ieee.org', 'ieee.png'],
-  ['jstor.org', 'jstor.png'],
-  ['nlc.cn', 'nlc.png'],
-  ['36kr.com', '36kr.png'],
-  ['huxiu.com', 'huxiu.png'],
-  ['ifanr.com', 'ifanr.png'],
-  ['canva.com', 'canva.png'],
-  ['creativemarket.com', 'creativemarket.png'],
-  ['sketch.com', 'sketch.png'],
-  ['penpot.app', 'penpot.png'],
-  ['pixso.cn', 'pixso.png'],
+  'arxiv.org=arxiv.png',
+  'cnki.net=cnki.svg',
+  'wanfangdata.com.cn=wanfang.png',
+  'webofscience.com=webofscience.png',
+  'semanticscholar.org=semanticscholar.png',
+  'ieeexplore.ieee.org=ieee.png',
+  'jstor.org=jstor.png',
+  'nlc.cn=nlc.png',
+  '36kr.com=36kr.png',
+  'huxiu.com=huxiu.png',
+  'ifanr.com=ifanr.png',
+  'canva.com=canva.png',
+  'creativemarket.com=creativemarket.png',
+  'sketch.com=sketch.png',
+  'penpot.app=penpot.png',
+  'pixso.cn=pixso.png',
   // 2026-11-19（C 类第 11 批 C11，17/20）：Mixkit / Storyblocks / iStock /
   // Pinterest / Awwwards / Mobbin / Iconify / Dafont / Lucide / Uiverse /
   // Chakra UI / npmmirror / Turbo / 中国天气网 / 生态环境部 /
@@ -687,23 +690,23 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 小尺寸原样站（源 <128 不放大）：16×16（Mixkit / 生态环境部）、
   // 32×32（Storyblocks / npmmirror / 中国天气网）、48×48（Dafont /
   // Lucide / Uiverse / Chakra UI / 排污平台）。
-  ['mixkit.co', 'mixkit.png'],
-  ['storyblocks.com', 'storyblocks.png'],
-  ['istockphoto.com', 'istockphoto.png'],
-  ['pinterest.com', 'pinterest.svg'],
-  ['awwwards.com', 'awwwards.svg'],
-  ['mobbin.com', 'mobbin.svg'],
-  ['iconify.design', 'iconify.svg'],
-  ['dafont.com', 'dafont.png'],
-  ['lucide.dev', 'lucide.png'],
-  ['uiverse.io', 'uiverse.png'],
-  ['chakra-ui.com', 'chakra-ui.png'],
-  ['registry.npmmirror.com', 'npmmirror.png'],
-  ['turborepo.dev', 'turborepo.png'],
-  ['weather.com.cn', 'weather.png'],
-  ['mee.gov.cn', 'mee.png'],
-  ['permit.mee.gov.cn', 'permit-mee.png'],
-  ['aws.amazon.com', 'aws-waf.svg'],
+  'mixkit.co=mixkit.png',
+  'storyblocks.com=storyblocks.png',
+  'istockphoto.com=istockphoto.png',
+  'pinterest.com=pinterest.svg',
+  'awwwards.com=awwwards.svg',
+  'mobbin.com=mobbin.svg',
+  'iconify.design=iconify.svg',
+  'dafont.com=dafont.png',
+  'lucide.dev=lucide.png',
+  'uiverse.io=uiverse.png',
+  'chakra-ui.com=chakra-ui.png',
+  'registry.npmmirror.com=npmmirror.png',
+  'turborepo.dev=turborepo.png',
+  'weather.com.cn=weather.png',
+  'mee.gov.cn=mee.png',
+  'permit.mee.gov.cn=permit-mee.png',
+  'aws.amazon.com=aws-waf.svg',
   // 2026-11-19（C 类第 12 批 C12，17/20）：国家信访局 / 国家税务局 /
   // 国家林业和草原局 / Soul / 积目 / 百合网 / 世纪佳缘 / Akamai /
   // F5 Networks / Imperva / Ansible Collaborative / Alibaba Cloud /
@@ -728,22 +731,22 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // （接受原样或无损压缩、尺寸须保持），见 C12 测试事实钉死。
   // gov.png / baihe.png / jiayuan.png 为 16×16 原样小图（无更大官方
   // 方标），按规范 §1.1 原样保留、绝不放大。
-  ['gjxfj.gov.cn', 'gjxfj.png'],
-  ['chinatax.gov.cn', 'chinatax.png'],
-  ['forestry.gov.cn', 'forestry.jpg'],
-  ['soulapp.cn', 'soul.png'],
-  ['jimoapp.com', 'jimo.png'],
-  ['baihe.com', 'baihe.png'],
-  ['jiayuan.com', 'jiayuan.png'],
-  ['akamai.com', 'akamai.png'],
-  ['f5.com', 'f5.png'],
-  ['imperva.com', 'imperva.png'],
-  ['redhat.com', 'ansible-collaborative.png'],
-  ['aliyun.com', 'aliyun.png'],
-  ['qiniu.com', 'qiniu.png'],
-  ['cloud.tencent.com', 'tencent-cloud.png'],
-  ['huaweicloud.com', 'huaweicloud.png'],
-  ['coolify.io', 'coolify.png'],
+  'gjxfj.gov.cn=gjxfj.png',
+  'chinatax.gov.cn=chinatax.png',
+  'forestry.gov.cn=forestry.jpg',
+  'soulapp.cn=soul.png',
+  'jimoapp.com=jimo.png',
+  'baihe.com=baihe.png',
+  'jiayuan.com=jiayuan.png',
+  'akamai.com=akamai.png',
+  'f5.com=f5.png',
+  'imperva.com=imperva.png',
+  'redhat.com=ansible-collaborative.png',
+  'aliyun.com=aliyun.png',
+  'qiniu.com=qiniu.png',
+  'cloud.tencent.com=tencent-cloud.png',
+  'huaweicloud.com=huaweicloud.png',
+  'coolify.io=coolify.png',
   // 2026-11-19（C 类第 13 批 C13，尾巴 1 站）：Zeabur。
   // 站 icon 字段为远端 https://zeabur.com/favicon.svg，被
   // isRemoteRawFavicon 拦截（pathname '/favicon.svg'），map 生效，
@@ -755,7 +758,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 元素改为白色）未另行落盘：按统一规范 §9，只落默认浅色标、
   // 不做单站补丁，深色底块问题留待统一处理轮；接线/复审如需
   // 定夺深色变体，请裁决（见 C13 测试事实钉死）。
-  ['zeabur.com', 'zeabur.svg'],
+  'zeabur.com=zeabur.svg',
   // 2026-11-20（C 类第 13 批 C13 续，尾巴 1 站）：Midjourney。
   // 原属 C1 清单，当时被 Cloudflare 墙阻塞未入；设计经 Wayback 路线
   // 取回后解堵（staging specials/midjourney.png，128×128、9,084 B，
@@ -768,20 +771,20 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 全图不透明像素 16,384/16,384，深色帆船标 bbox x18–109 y19–96），
   // 浅/深主题下均显白底方块，无底块（resolveLogoTile 为 null），
   // 不做单站补丁，留待统一处理轮。
-  ['midjourney.com', 'midjourney.png'],
+  'midjourney.com=midjourney.png',
   // 2026-11-20（U-08 补站 Rancher）：站方 favicon.ico 为 0 B 不可用，
   // 站 icon 字段用站方 head 自声明的 favicon.png，被 isRemoteRawFavicon
   // 拦截后回落 map；品牌标为 Simple Icons 原样 SVG（1,337 B，fill
   // #0075A8，<title>Rancher</title>，与 CDN 内容 md5 一致）。
   // 全库 383 站核对：'rancher.com' 键只命中 Rancher 一站，无后缀串站。
   // 深色下品牌蓝偏暗，按统一规范 §9 不做单站补丁、不配底块，留待统一处理轮。
-  ['rancher.com', 'rancher.svg'],
+  'rancher.com=rancher.svg',
   // 2026-11-20（U-253 补站 Portainer）：站方 favicon.ico / favicon.svg / apple-touch-icon.png 均为 404，
   // head icon 为内联 data URI 不可用；导航条目省略 icon 字段，解析走 map；品牌标为 Simple Icons 原样 SVG（1,043 B，fill
   // #13BEF9，<title>Portainer</title>，与 CDN 内容 md5 一致）。
   // 全库 383 站核对：'portainer.io' 键只命中 Portainer 一站，无后缀串站。
   // 品牌色 #13BEF9 明亮，无需底块（resolveLogoTile 为 null），不做单站补丁。
-  ['portainer.io', 'portainer.svg'],
+  'portainer.io=portainer.svg',
   // 2026-11-20（U-254 补站 Nomad）：站方 favicon.ico 实为跳转目标页 HTML 不可用，
   // developer.hashicorp.com 的 favicon 是通用 HashiCorp 标、非 Nomad 专属；导航条目省略 icon 字段，解析走 map；
   // 品牌标为 Simple Icons 原样 SVG（277 B，fill #00CA8E，<title>Nomad</title>，与 CDN 内容 md5 一致）。
@@ -789,7 +792,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 注意：切勿把 href 改成 developer.hashicorp.com/nomad——该 hostname 的 map 键已被 Terraform 占用
   // （['developer.hashicorp.com', 'terraform.svg']），改 href 会让 Nomad 错指 terraform.svg。
   // 品牌绿 #00CA8E 明亮，无需底块（resolveLogoTile 为 null），不做单站补丁。
-  ['nomadproject.io', 'nomad.svg'],
+  'nomadproject.io=nomad.svg',
   // 2026-11-20（U-08 补站 OpenShift）：站方 favicon.ico 实为 cloud.redhat.com/favicon.ico
   //（Red Hat 通用站标、非 OpenShift 专属），不可用；导航条目省略 icon 字段，解析走 map；
   // 品牌标为 Simple Icons 原样 SVG（1,046 B，fill #EE0000，<title>Red Hat Open Shift</title>，
@@ -799,7 +802,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 的 map 键已被 Ansible Collaborative 占用（['redhat.com', 'ansible-collaborative.png']），
   // 改 href 会让 OpenShift 错指 ansible-collaborative.png。
   // 品牌红 #EE0000 明亮，无需底块（resolveLogoTile 为 null），不做单站补丁。
-  ['openshift.com', 'openshift.svg'],
+  'openshift.com=openshift.svg',
   // 2026-11-20（U-08 补站 彩云天气）：站方 favicon.ico 内容实为 PNG 190×190
   // （7,165 B，md5 1452fa082142f0db9dff9a9ad7ea27a9，白圆角底 + 橙绿渐变云标，
   // 四角透明），原样落盘 caiyun.png；导航条目 icon 字段写远端 favicon.ico，
@@ -808,7 +811,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 首页 www.caiyunapp.com/（标题「彩云科技」，非天气页）。
   // 全库 383 站核对：'caiyunapp.com' 键只命中 彩云天气 一站，无后缀串站。
   // 云标彩色明亮、无需底块（resolveLogoTile 为 null），不做单站补丁。
-  ['caiyunapp.com', 'caiyun.png'],
+  'caiyunapp.com=caiyun.png',
   // 2026-11-20（U-08 补站 Microsoft Learn）：站方 favicon.ico 为 6 尺寸 ICO，
   // 最大 128×128 帧（微软四色方块标 #F25022/#7FBA00/#00A4EF/#FFB900，间隙透明），
   // PIL 转 RGBA PNG 原样落盘 microsoft-learn.png（426 B，md5
@@ -818,7 +821,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // hostname 'learn.microsoft.com'（不建 'microsoft.com' 裸域键，防后缀串站）。
   // 全库 383 站核对：'learn.microsoft.com' 键只命中 Microsoft Learn 一站，无后缀串站。
   // 四色方块明亮、无需底块（resolveLogoTile 为 null），不做单站补丁。
-  ['learn.microsoft.com', 'microsoft-learn.png'],
+  'learn.microsoft.com=microsoft-learn.png',
   // 2026-11-20（C 类第 7 批 C7，W1 视频组 1：爱奇艺 / 腾讯视频 / 优酷）。
   // 3 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
   // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
@@ -838,9 +841,9 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // weixin.qq.com（微信）各有精确键，不受影响。3 站均 <128 原样
   // 保留、绝不放大；均 ≤15 KB。优酷蓝底方块在浅/深主题下均显蓝底，
   // 不做单站补丁，留待统一处理轮。
-  ['iqiyi.com', 'iqiyi.png'],
-  ['v.qq.com', 'tencent-video.png'],
-  ['youku.com', 'youku.png'],
+  'iqiyi.com=iqiyi.png',
+  'v.qq.com=tencent-video.png',
+  'youku.com=youku.png',
   // 2026-11-20（C 类第 7 批 C7 补批 W2，视频组 2，3 站）：芒果TV /
   // 咪咕视频·短剧 / 央视频。3 站 icon 字段均为远端 …/favicon.ico，
   // 被 isRemoteRawFavicon 拦截，map 生效，navigation.json 不动。
@@ -870,9 +873,9 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // m. 子域；不建 'yangshipin.cn' 裸域键）。无底块：mgtv 不透明橙
   // 方块、yangshipin 全图不透明红底、cmread 蓝 #2E6DED 在浅/深主
   // 题下均可见，resolveLogoTile 均为 null，不做单站补丁。
-  ['mgtv.com', 'mgtv.png'],
-  ['cmread.com', 'cmread.png'],
-  ['m.yangshipin.cn', 'yangshipin.png'],
+  'mgtv.com=mgtv.png',
+  'cmread.com=cmread.png',
+  'm.yangshipin.cn=yangshipin.png',
   // 2026-11-20（C 类第 7 批 C7 补批 W3，2/2）：DramaBox / DramaWave。
   // 2 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
   // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
@@ -889,8 +892,8 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 接线、字节数钉死，见 C7W3 测试事实钉死（C12 chinatax/forestry
   // 超线原样先例）。两标均为不透明渐变底，深/浅主题均可辨，不进
   // LOGO_TILE_MAP。
-  ['dramaboxdb.com', 'dramabox.png'],
-  ['mydramawave.com', 'dramawave.png'],
+  'dramaboxdb.com=dramabox.png',
+  'mydramawave.com=dramawave.png',
   // 2026-11-20（C 类第 7 批 C7 补批 W4，小说组 1，2/20）：起点中文网 /
   // 晋江文学城。C7 原“安全原因暂缓”经 2026-11-20 调查证实只是 W4 一份
   // 报告被安全系统移除，无任何一站涉及安全/侵权/版权/合规（见
@@ -908,8 +911,8 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 16×16 原尺寸按规范 §1.1 原样保留、绝不放大（仿 C12 百合网/世纪佳缘
   // 16px 原样先例），卡片内显小是已知特性。两标浅/深主题均彩色可辨，
   // 无需底块（resolveLogoTile 为 null），不做单站补丁。
-  ['qidian.com', 'qidian.png'],
-  ['jjwxc.net', 'jjwxc.png'],
+  'qidian.com=qidian.png',
+  'jjwxc.net=jjwxc.png',
   // 2026-11-20（C 类第 7 批 C7 补批 W5，小说组 2：纵横中文网 / 飞卢小说网）。
   // C7 暂缓“安全原因”经调查只是 W4 报告被安全系统移除，无任何一站涉及
   // 安全/侵权/版权/合规（见 icon-c7-defer-reason-2026-11-20.md §5）。
@@ -924,8 +927,8 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 与根 /favicon.ico md5 相同（c4f3df9dec223473188a362ae250ba41），单帧
   // 48×48 32bpp ICO，Pillow 转 PNG 原样落盘 faloo.png（3,708 B），
   // 绿底白字“飞卢”书法标。两标均为官网在用标原样，无占位、无通用标冒充。
-  ['zongheng.com', 'zongheng.png'],
-  ['faloo.com', 'faloo.png'],
+  'zongheng.com=zongheng.png',
+  'faloo.com=faloo.png',
   // 2026-11-20（C 类第 7 批 C7 补批 W7，影视评分组 2 站）：IMDb / Letterboxd。
   // C7 暂缓的“安全原因”经调查只是 W4 一份报告被安全系统移除，无任何一站
   // 涉及安全/侵权/版权/合规（见 icon-c7-defer-reason-2026-11-20.md）。
@@ -941,8 +944,8 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 'letterboxd.com' 各只命中 1 站，无后缀串站、无子域站。两标在浅/深主题
   // 下均可辨识（IMDb 不透明黄底方块；Letterboxd 深 slate 底 + 亮色圆标），
   // 按统一规范 §9 不做单站底块补丁、不配 LOGO_TILE_MAP，留待统一处理轮。
-  ['imdb.com', 'imdb.png'],
-  ['letterboxd.com', 'letterboxd.png'],
+  'imdb.com=imdb.png',
+  'letterboxd.com=letterboxd.png',
   // 2026-11-20（C 类第 7 批 C7 补批，W8 单站）：Coursera。
   // 站 icon 字段为远端 https://coursera.org/favicon.ico，被
   // isRemoteRawFavicon 拦截（pathname '/favicon.ico'），map 生效，
@@ -955,7 +958,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 48×48 未用。蓝 #0056D2 主色 + 白字镂空、四角透明，浅/深两主题下
   // 均可见，无底块（resolveLogoTile 为 null），不做单站补丁，留待
   // 统一处理轮。
-  ['coursera.org', 'coursera.png'],
+  'coursera.org=coursera.png',
   // 2026-11-20（C 类第 7 批 C7，worker W9，七猫中文网 1 站）。
   // 全库唯一既无 icon 字段又无映射的站（见 icon-c-plan §C7 备注）；
   // 导航条目省略 icon 字段，解析走 map，navigation.json 不动。
@@ -971,7 +974,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 绝不加。全库 383 站核对：'qimao.com' 键只命中七猫中文网一站，
   // 无后缀串站、无子域站。黄底不透明、黑猫醒目，浅/深主题均可见，
   // 无需底块（resolveLogoTile 为 null），不做单站补丁。
-  ['qimao.com', 'qimao.png'],
+  'qimao.com=qimao.png',
   // 2026-11-20（C 类第 7 批 C7 补批 W10，猫眼电影 1 站）。
   // C7 暂缓的“安全原因”经调查只是 W4 一份报告被安全系统移除，无任何一站
   // 涉及安全/侵权/版权/合规（见 icon-c7-defer-reason-2026-11-20.md）。
@@ -985,7 +988,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 全库 383 站核对：'maoyan.com' 键只命中 猫眼电影 一站，无后缀串站。
   // 红圆底 + 白猫脸在浅/深主题下均可辨识（resolveLogoTile 为 null），
   // 不做单站补丁。
-  ['maoyan.com', 'maoyan.png'],
+  'maoyan.com=maoyan.png',
   // 2026-11-20（C 类第 7 批 C7，W11，1 站）：Udemy。
   // 来源（浏览器取材 + 独立复核）：官网 apple-touch-icon.png
   // https://frontends.udemycdn.com/frontends-homepage/staticx/udemy/images/v7/apple-touch-icon.png
@@ -1006,7 +1009,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // isRemoteRawFavicon 拦截，map 生效，navigation.json 不动。
   // 'github.com' / 'adobe.com' 键绝不加。
   // 全库 383 站核对：'udemy.com' 键只命中 Udemy 一站，无后缀串站、无子域站。
-  ['udemy.com', 'udemy.png'],
+  'udemy.com=udemy.png',
  ];
 
 /**
@@ -1014,12 +1017,12 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
  * 全部 iconbatch 测试断言的行为都不变（见下方 resolveSiteIcon）。
  */
 export const LOCAL_LOGO_MAP: Record<string, string> = Object.fromEntries(
-  LOCAL_LOGO_ENTRIES.map(
-    ([host, file]): [string, string] => [
-      host,
-      file.startsWith('/') || file.startsWith('http') ? file : '/brand-icons/' + file,
-    ],
-  ),
+  LOCAL_LOGO_ENTRIES.map((entry): [string, string] => {
+    const sep = entry.indexOf('=')
+    const host = entry.slice(0, sep)
+    const file = entry.slice(sep + 1)
+    return [host, file.startsWith('/') || file.startsWith('http') ? file : '/brand-icons/' + file]
+  }),
 );
 
 /**

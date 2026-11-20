@@ -819,6 +819,27 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 全库 383 站核对：'learn.microsoft.com' 键只命中 Microsoft Learn 一站，无后缀串站。
   // 四色方块明亮、无需底块（resolveLogoTile 为 null），不做单站补丁。
   ['learn.microsoft.com', 'microsoft-learn.png'],
+  // 2026-11-20（C 类第 7 批 C7，W11，1 站）：Udemy。
+  // 来源（浏览器取材 + 独立复核）：官网 apple-touch-icon.png
+  // https://frontends.udemycdn.com/frontends-homepage/staticx/udemy/images/v7/apple-touch-icon.png
+  // （200、image/png、180×180、1,527 B，SHA-256
+  // 1a2683b802a828f68b2014a624aaf3009969dcf75451e6d35c16eb7db40c82e8）。
+  // 站根 /favicon.ico 404、v7 目录 favicon.ico / favicon-32x32.png /
+  // favicon-144x144.png 均 404；rel="icon" 声明链接未直接读到（浏览器
+  // 视图不暴露 head），以同源官方静态目录实测可加载的 apple-touch-icon.png
+  // 为源，见 C7-W11 测试事实钉死。交叉核对：同源 logo-udemy.svg
+  // （1,891 B）chevron #A435F0 与黑色小写 u 字标；调色板分析：白底
+  // 不透明（29,004 px 白、无 tRNS）、黑 U（0,0,0）、chevron #A435F0
+  // （164,53,240，878 px），与 SVG 的 #A435F0 一致。
+  // 落盘：Pillow LANCZOS 180→128（≥128 源缩到 128），RGB PNG，
+  // 2,579 B，md5 65c81a2ce9193371cc5f4106796d7635。白底不透明：
+  // 浅/深主题下均显白底方块、黑 U 可见，无底块（resolveLogoTile 为
+  // null），不做单站补丁，留待统一处理轮（仿 Midjourney 白底不透明先例）。
+  // 站 icon 字段为远端 https://www.udemy.com/favicon.ico，被
+  // isRemoteRawFavicon 拦截，map 生效，navigation.json 不动。
+  // 'github.com' / 'adobe.com' 键绝不加。
+  // 全库 383 站核对：'udemy.com' 键只命中 Udemy 一站，无后缀串站、无子域站。
+  ['udemy.com', 'udemy.png'],
  ];
 
 /**

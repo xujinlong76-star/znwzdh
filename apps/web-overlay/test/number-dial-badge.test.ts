@@ -66,11 +66,13 @@ describe('卡片三形态 + 坞芯片渲染点', () => {
     expect(dock).not.toContain('dialDigitById?.get(site.id) ??')
   })
 
-  it('角标定位：紧凑行在图标右下角，标准与富卡在卡片右上角（top-2 right-2）', () => {
+  it('角标定位：紧凑行在图标右下角，标准与富卡在卡片右上角星标左侧（top-2 right-11）', () => {
     // 订正（2026-11-20 首屏瘦身）：标准/富卡角标由图标右下角移至卡片右上角
     // 极简 <kbd>；紧凑行与坞芯片仍在图标右下角（行布局与胶囊无「右上角」概念）。
+    // 再订正（2026-11-21 卡片悬浮修复 dee0c333）：星标改为常驻右上角（top-2 right-2），
+    // 角标再放同位会被星标盖住，改放星标左侧（right-11）；断言按新行为改写，非删除。
     expect(card).toContain('className="-bottom-1 -right-1"')
-    expect(card).toContain('className="top-2 right-2')
+    expect(card).toContain('className="top-2 right-11')
     expect(card).not.toContain('className="bottom-1 right-1"')
     expect(dock).toContain('className="-bottom-1 -right-1"')
   })

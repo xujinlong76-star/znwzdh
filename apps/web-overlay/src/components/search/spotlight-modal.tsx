@@ -1701,10 +1701,12 @@ export function SpotlightModal({
                       >
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="w-12 h-8 rounded-md bg-muted/80 border border-border/60 flex items-center justify-center shrink-0 overflow-hidden relative">
-                            {video.icon ? (
-                               
+                            {video.icon || video.mediaProxyIconUrl ? (
+                              // 优先用服务端预签的代理封面：B 站直链会被 ORB/403 拦截
+                              //（2026-11-20 实测：搜 Python 时 4 张 hdslb 封面 2×ORB + 2×403）。
+                              // /api/videos 搜索路径已下发 mediaProxyIconUrl；无代理地址时回落直链。
                               <img
-                                src={video.icon.startsWith('//') ? `https:${video.icon}` : video.icon}
+                                src={video.mediaProxyIconUrl || (video.icon?.startsWith('//') ? `https:${video.icon}` : video.icon)}
                                 alt=""
                                 referrerPolicy="no-referrer"
                                 className="w-full h-full object-cover"

@@ -9,6 +9,7 @@ import {
 } from '@/lib/video-pagination'
 import { mutateVideoLibrary } from '@/lib/video-library-store'
 import { isVideoShrinkBlock } from '@/lib/video-write-guard'
+import { signIcon } from '@/lib/media-proxy'
 import type { NavigationItem, NavigationData, NavigationSubItem } from '@/types/navigation'
 
 export const runtime = 'nodejs'
@@ -27,12 +28,15 @@ function stripHeavyFields(item: NavigationSubItem): NavigationSubItem {
 }
 
 function compactCategory(cat: NavigationItem): NavigationItem {
+  // 与搜索路径同理：compact=1 喂给客户端全量池（站内搜索结果、协同推荐），
+  // 封面须带预签代理地址，否则客户端渲染的 B 站封面直链同样会被 ORB/403 拦截。
+  const sign = (it: NavigationSubItem) => signIcon(stripHeavyFields(it))
   return {
     ...cat,
-    items: (cat.items || []).map(stripHeavyFields),
+    items: (cat.items || []).map(sign),
     subCategories: (cat.subCategories || []).map(sub => ({
       ...sub,
-      items: (sub.items || []).map(stripHeavyFields),
+      items: (sub.items || []).map(sign),
     })),
   }
 }
@@ -147,7 +151,10 @@ export async function GET(request: Request) {
                     }
                 }
             }
-            const pagedMatches = matches.slice(offset, offset + (limit ?? 20)).map(stripHeavyFields)
+            // 搜索结果要带预签代理封面：消费方（全局搜索 spotlight、站内详情页）
+            // 直接用 icon 渲染缩略图；B 站直链会被 ORB/403 拦截致封面破损
+            //（2026-11-20 实测：搜 Python 时 4 张 hdslb 封面 2×ORB + 2×403）。
+            const pagedMatches = matches.slice(offset, offset + (limit ?? 20)).map((it) => signIcon(stripHeavyFields(it)))
             return NextResponse.json(
                 {
                     ...data,

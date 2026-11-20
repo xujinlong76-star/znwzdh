@@ -46,7 +46,9 @@ describe('Quicklinks 接线：三处缺一不可', () => {
   it('spotlight-modal：quicklink 行占导航位 0，站点/视频/插件整体后移', () => {
     const src = overlaySource('src/components/search/spotlight-modal.tsx')
     expect(src).toContain('const quicklinkOffset = quicklinkActive && quicklinkMatch?.url ? 1 : 0')
-    expect(src).toContain('return quicklinkOffset + hits.length + videoHits.length')
+    // 2026-11-20 搜索修复：导航计数口径改为展示列表 displayHits（重排后，
+    // 失效站点已剔除、弱语义填充不再占位）；quicklink 仍占导航位 0，其余整体后移
+    expect(src).toContain('return quicklinkOffset + displayHits.length + videoHits.length')
     expect(src).toContain('const index = selectedIndex - quicklinkOffset')
     expect(src).toContain('idx + quicklinkOffset === selectedIndex')
     expect(src).toContain('id={optionIdOf(0)}')

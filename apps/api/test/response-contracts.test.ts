@@ -782,8 +782,14 @@ describe("契约不是空转（负控：手工漂移必须被拒）", () => {
     const body = (await app.inject({ method: "GET", url: "/api/me", headers: ME_HEADERS })).json();
     expect(MeOverviewResponse.safeParse({ ...body, counts: { ...body.counts, favorites: "0" } }).success).toBe(false);
     expect(
-      MeOverviewResponse.safeParse({ ...body, settings: { ...body.settings, defaultSearchEngine: "baidu" } }).success,
+      MeOverviewResponse.safeParse({ ...body, settings: { ...body.settings, defaultSearchEngine: "yahoo" } }).success,
     ).toBe(false);
+    expect(
+      MeOverviewResponse.safeParse({ ...body, settings: { ...body.settings, defaultSearchEngine: "baidu" } }).success,
+    ).toBe(true);
+    expect(
+      MeOverviewResponse.safeParse({ ...body, settings: { ...body.settings, defaultSearchEngine: "sogou" } }).success,
+    ).toBe(true);
     const { settings: _drop, ...noSettings } = body;
     expect(MeOverviewResponse.safeParse(noSettings).success).toBe(false);
   });

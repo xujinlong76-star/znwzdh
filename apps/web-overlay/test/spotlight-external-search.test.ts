@@ -49,6 +49,17 @@ describe("站外出口 URL：等于配置引擎的地址 + 查询词", () => {
     expect(externalSearchEngineName("bing")).toBe("Bing");
   });
 
+  it("换默认引擎后 href 跟着变：baidu / sogou（与快捷搜索卡同一地址）", () => {
+    expect(externalSearchUrl("baidu", "考研")).toBe(
+      "https://www.baidu.com/s?wd=%E8%80%83%E7%A0%94",
+    );
+    expect(externalSearchEngineName("baidu")).toBe("百度");
+    expect(externalSearchUrl("sogou", "考研")).toBe(
+      "https://www.sogou.com/web?query=%E8%80%83%E7%A0%94",
+    );
+    expect(externalSearchEngineName("sogou")).toBe("搜狗");
+  });
+
   it("换默认引擎后 href 跟着变：duckduckgo / github / perplexity", () => {
     expect(externalSearchUrl("duckduckgo", "react hooks")).toBe(
       "https://duckduckgo.com/?q=react%20hooks",
@@ -78,8 +89,8 @@ describe("站外出口：无查询词 / 站内聚合时没有可点出口", () =
   });
 
   it("未知引擎 id（旧页面读到新档位）→ null，不崩", () => {
-    expect(externalSearchUrl("baidu" as never, "考研")).toBeNull();
-    expect(externalSearchEngineName("baidu" as never)).toBeNull();
+    expect(externalSearchUrl("yahoo" as never, "考研")).toBeNull();
+    expect(externalSearchEngineName("yahoo" as never)).toBeNull();
   });
 });
 

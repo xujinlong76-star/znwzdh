@@ -825,7 +825,7 @@ const MeSettingsPayload = z.looseObject({
   personalizationEnabled: z.boolean(),
   favoriteSignalCutoff: z.number(),
   updatedAt: z.number(),
-  defaultSearchEngine: z.enum(["internal", "google", "bing", "duckduckgo", "github", "perplexity"]),
+  defaultSearchEngine: z.enum(["internal", "google", "baidu", "bing", "sogou", "duckduckgo", "github", "perplexity"]),
   openLinksInNewTab: z.boolean(),
   cardDensity: z.enum(["comfortable", "compact", "minimal"]),
   speculativeZeroRttEnabled: z.boolean(),

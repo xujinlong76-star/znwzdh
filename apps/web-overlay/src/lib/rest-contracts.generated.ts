@@ -911,7 +911,7 @@ export interface MeOverviewResponse {
     personalizationEnabled: boolean;
     favoriteSignalCutoff: number;
     updatedAt: number;
-    defaultSearchEngine: "internal" | "google" | "bing" | "duckduckgo" | "github" | "perplexity";
+    defaultSearchEngine: "internal" | "google" | "baidu" | "bing" | "sogou" | "duckduckgo" | "github" | "perplexity";
     openLinksInNewTab: boolean;
     cardDensity: "comfortable" | "compact" | "minimal";
     speculativeZeroRttEnabled: boolean;
@@ -3061,7 +3061,7 @@ export interface MeSettingsResponse {
     personalizationEnabled: boolean;
     favoriteSignalCutoff: number;
     updatedAt: number;
-    defaultSearchEngine: "internal" | "google" | "bing" | "duckduckgo" | "github" | "perplexity";
+    defaultSearchEngine: "internal" | "google" | "baidu" | "bing" | "sogou" | "duckduckgo" | "github" | "perplexity";
     openLinksInNewTab: boolean;
     cardDensity: "comfortable" | "compact" | "minimal";
     speculativeZeroRttEnabled: boolean;

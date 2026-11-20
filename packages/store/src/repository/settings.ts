@@ -19,7 +19,7 @@
  */
 import type { Repository } from "../repository.ts";
 
-export type SearchEngineId = "internal" | "google" | "bing" | "duckduckgo" | "github" | "perplexity";
+export type SearchEngineId = "internal" | "google" | "baidu" | "bing" | "sogou" | "duckduckgo" | "github" | "perplexity";
 export type CardDensityMode = "comfortable" | "compact" | "minimal";
 export type SpotlightShortcutMode = "mod+k" | "slash" | "both";
 export type HistoryRetentionDays = 30 | 90 | 180 | 365;
@@ -67,7 +67,7 @@ export const DEFAULT_EXTENDED_PREFERENCES: ExtendedUserPreferences = {
   hiddenHomeModules: [],
 };
 
-const VALID_ENGINES = new Set<SearchEngineId>(["internal", "google", "bing", "duckduckgo", "github", "perplexity"]);
+const VALID_ENGINES = new Set<SearchEngineId>(["internal", "google", "baidu", "bing", "sogou", "duckduckgo", "github", "perplexity"]);
 const VALID_DENSITIES = new Set<CardDensityMode>(["comfortable", "compact", "minimal"]);
 const VALID_SHORTCUTS = new Set<SpotlightShortcutMode>(["mod+k", "slash", "both"]);
 const VALID_RETENTION_DAYS = new Set<HistoryRetentionDays>([30, 90, 180, 365]);

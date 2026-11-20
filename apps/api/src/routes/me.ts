@@ -59,7 +59,7 @@ const settingsPatchSchema = z
       .min(0)
       .max(4_102_444_800_000) // 2100-01-01，挡住异常大值与未来时间戳
       .optional(),
-    defaultSearchEngine: z.enum(["internal", "google", "bing", "duckduckgo", "github", "perplexity"]).optional(),
+    defaultSearchEngine: z.enum(["internal", "google", "baidu", "bing", "sogou", "duckduckgo", "github", "perplexity"]).optional(),
     openLinksInNewTab: z.boolean().optional(),
     cardDensity: z.enum(["comfortable", "compact", "minimal"]).optional(),
     speculativeZeroRttEnabled: z.boolean().optional(),

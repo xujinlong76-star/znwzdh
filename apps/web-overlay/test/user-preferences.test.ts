@@ -214,14 +214,14 @@ describe('界面那枚按键提示与真实呼出键逐字一致', () => {
 })
 
 describe('站外引擎：设置里的每个选项都能真的跳出去', () => {
-  const externals: SearchEngineId[] = ['google', 'bing', 'duckduckgo', 'github', 'perplexity']
+  const externals: SearchEngineId[] = ['google', 'baidu', 'bing', 'sogou', 'duckduckgo', 'github', 'perplexity']
 
   it('选「站内聚合」时不给站外出口（不把用户的选择当没发生）', () => {
     expect(externalSearchUrl('internal', 'react')).toBeNull()
     expect(externalSearchEngineName('internal')).toBeNull()
   })
 
-  it('五个站外引擎都有 https 地址，且带编码后的查询词', () => {
+  it('七个站外引擎都有 https 地址，且带编码后的查询词', () => {
     for (const engine of externals) {
       const url = externalSearchUrl(engine, 'rust 异步')
       expect(url, engine).not.toBeNull()
@@ -317,7 +317,7 @@ describe('零结果出口：站外直达只在用户选了外部引擎时出现'
   })
 
   it('站外动作一律带 external 标记（渲染成 <a target>，绝不交给 <Link> 做客户端路由）', () => {
-    for (const engine of ['google', 'bing', 'duckduckgo', 'github', 'perplexity'] as SearchEngineId[]) {
+    for (const engine of ['google', 'baidu', 'bing', 'sogou', 'duckduckgo', 'github', 'perplexity'] as SearchEngineId[]) {
       for (const action of planSearchPanel({ ...panelBase, searchEngine: engine }).actions) {
         if (action.external) expect(action.kind).toBe('external-search')
         else if (action.href) expect(action.href.startsWith('/'), action.label).toBe(true)

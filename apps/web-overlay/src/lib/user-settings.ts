@@ -12,7 +12,7 @@ import { FAVORITES_STORAGE_KEY, corruptKeyFor, parseFavorites } from './favorite
 import { ANON_ID_STORAGE_KEY } from './identity-keys'
 import { isAnonIdentity } from './hub-identity-guard'
 
-export type SearchEngineId = 'internal' | 'google' | 'bing' | 'duckduckgo' | 'github' | 'perplexity'
+export type SearchEngineId = 'internal' | 'google' | 'baidu' | 'bing' | 'sogou' | 'duckduckgo' | 'github' | 'perplexity'
 export type CardDensityMode = 'comfortable' | 'compact' | 'minimal'
 export type SpotlightShortcutMode = 'mod+k' | 'slash' | 'both'
 export type HistoryRetentionDays = 30 | 90 | 180 | 365
@@ -142,7 +142,9 @@ export const DEFAULT_USER_SETTINGS: UserSettingsModel = {
 export const SEARCH_ENGINE_OPTIONS = [
   { value: 'internal', label: '站内聚合搜索 (山羊胡)' },
   { value: 'google', label: 'Google 谷歌' },
+  { value: 'baidu', label: '百度 Baidu' },
   { value: 'bing', label: 'Bing 必应' },
+  { value: 'sogou', label: '搜狗 Sogou' },
   { value: 'duckduckgo', label: 'DuckDuckGo 隐私检索' },
   { value: 'github', label: 'GitHub 源码检索' },
   { value: 'perplexity', label: 'Perplexity AI' },
@@ -281,9 +283,17 @@ const EXTERNAL_SEARCH_ENGINES = {
     short: 'Google',
     buildUrl: (q: string) => `https://www.google.com/search?q=${encodeURIComponent(q)}`,
   },
+  baidu: {
+    short: '百度',
+    buildUrl: (q: string) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)}`,
+  },
   bing: {
     short: 'Bing',
     buildUrl: (q: string) => `https://www.bing.com/search?q=${encodeURIComponent(q)}`,
+  },
+  sogou: {
+    short: '搜狗',
+    buildUrl: (q: string) => `https://www.sogou.com/web?query=${encodeURIComponent(q)}`,
   },
   duckduckgo: {
     short: 'DuckDuckGo',

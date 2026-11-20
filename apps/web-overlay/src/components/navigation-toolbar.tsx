@@ -47,7 +47,7 @@ import dynamic from 'next/dynamic'
 import type { SiteConfig } from '@/types/site'
 import { ModeToggle } from '@/components/mode-toggle'
 import { FontSizeToggle } from '@/components/font-size-toggle'
-import { WorkspaceFilter, type WorkspaceId } from '@/components/workspace-filter'
+import { type WorkspaceId } from '@/components/workspace-filter'
 import { cn } from '@/lib/utils'
 import { trackDiyEvent } from '@/lib/navhub-api'
 import { summarizeSelection } from '@/lib/selection'
@@ -522,9 +522,6 @@ export function NavigationToolbar({
               </Button>
             </div>
           </div>
-
-          {/* 场景化工作台切换条 */}
-          <WorkspaceFilter active={activeWorkspace} onChange={onWorkspaceChange} />
         </div>
 
   )

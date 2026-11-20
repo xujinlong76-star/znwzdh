@@ -445,7 +445,7 @@ export function NavigationToolbar({
               >
                 <CheckSquare className="h-4 w-4" />
                 {selectionMode && selectedIds.length > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] leading-4 font-mono">
+                  <span className="absolute -right-0.5 -top-0.5 min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-xs leading-4 font-mono">
                     {selectedIds.length}
                   </span>
                 )}

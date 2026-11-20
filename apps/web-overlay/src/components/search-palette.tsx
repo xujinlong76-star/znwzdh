@@ -1443,9 +1443,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             </Button>
           )}
           {/* <1536px 隐藏：1280px 档徽章 91px 会把输入框压到只剩 18px（复核
-              2026-11-20 实测），占位符全截断、核心搜索近乎不可用；改到 2xl
-              才显示。隐藏后呼出键仍可按 ⌘K / / 使用，title 保留提示。 */}
-          <kbd className="hidden h-5 select-none items-center gap-0.5 rounded-md border border-border/50 bg-muted/60 px-1.5 font-mono text-xs font-semibold text-muted-foreground opacity-100 2xl:flex 2xl:pointer-coarse:hidden shadow-2xs" title={spotlightHotkeyHint(preferences.spotlightShortcut, modKey) + ' 呼出超级搜索'}>
+              2026-11-20 实测），占位符全截断、核心搜索近乎不可用；改到 ≥1536px
+              才显示。断点用 min-[1536px]: 任意值写法（U-262：2xl 变体在
+              Tailwind 4.1.12 下恒不生成，见 tw-variant-guard.test.ts）。
+              隐藏后呼出键仍可按 ⌘K / / 使用，title 保留提示。 */}
+          <kbd className="hidden h-5 select-none items-center gap-0.5 rounded-md border border-border/50 bg-muted/60 px-1.5 font-mono text-xs font-semibold text-muted-foreground opacity-100 min-[1536px]:flex! min-[1536px]:pointer-coarse:hidden! shadow-2xs" title={spotlightHotkeyHint(preferences.spotlightShortcut, modKey) + ' 呼出超级搜索'}>
             {/* 徽标必须与真正生效的呼出键一致：选了「仅 /」还显示 ⌘K 就是在骗用户 */}
             <span>{spotlightHotkeyHint(preferences.spotlightShortcut, modKey)}</span>
           </kbd>

@@ -9,8 +9,11 @@
  *（measure-header.cjs after 档），本文件把布局类名锁死，防回退。
  *
  * 订正（2026-11-20 复核阻塞项 ②）：1280px 档输入框仅 18px，kbd 徽章与
- *「今日」文字标签的显示断点由 xl 延后到 2xl（<1536px 隐藏），本文件两处
+ *「今日」文字标签的显示断点由 xl 延后到 ≥1536px（<1536px 隐藏），本文件两处
  * 断言随新行为改写。
+ * 订正（2026-11-20 U-262）：2xl 变体在 Tailwind 4.1.12 下恒不生成，上述两处
+ * 断点改写为 min-[1536px]:! 任意值写法（行为不变：<1536px 隐藏），本文件
+ * 两处断言随新行为改写。
  *
  * 按 ask-page.test.ts 同款做法用源码守卫（node 环境无 jsdom/RTL）；
  * 真实重叠检测由 Playwright 在 dev 服务器上做，不在这里重复测。
@@ -47,13 +50,15 @@ describe('navigation-toolbar：顶栏 Flex 布局', () => {
   })
 
   // 订正（2026-11-20 复核阻塞项 ②）：1280px 档文字标签 49px 会把搜索容器压窄、
-  // 输入框只剩 18px，xl 改 2xl，<1536px 只留图标；Tooltip 与红点徽章不受影响。
-  it('「今日」按钮 <1536px 只留图标：按钮 2xl:w-auto、文字标签 hidden 2xl:inline', () => {
+  // 输入框只剩 18px，<1536px 只留图标；Tooltip 与红点徽章不受影响。
+  // 订正（2026-11-20 U-262）：2xl 变体在 Tailwind 4.1.12 下恒不生成，断点改用
+  // min-[1536px]:! 任意值写法，行为不变；断言随新行为改写。
+  it('「今日」按钮 <1536px 只留图标：按钮 min-[1536px]:w-auto!、文字标签 hidden min-[1536px]:inline!', () => {
     const btn = windowAround(src, 'aria-label="打开今日中心小窗"', 800, 1500)
-    expect(btn).toContain('2xl:w-auto')
+    expect(btn).toContain('min-[1536px]:w-auto!')
     expect(btn).not.toContain('sm:w-auto')
     expect(btn).toContain('hidden whitespace-nowrap')
-    expect(btn).toContain('2xl:inline')
+    expect(btn).toContain('min-[1536px]:inline!')
   })
 
   it('「今日」按钮保留 title Tooltip 与红点徽章（只藏文字，不丢入口）', () => {
@@ -89,10 +94,12 @@ describe('search-palette：搜索框 Flex 内布局', () => {
   })
 
   // 订正（2026-11-20 复核阻塞项 ②）：1280px 档徽章 91px 会把输入框压到只剩
-  // 18px，xl 改 2xl，<1536px 隐藏；触屏降噪（pointer-coarse:hidden）本身不丢。
-  it('Ctrl+K 徽章 <1536px 隐藏（2xl:flex），窄档不再顶出输入框', () => {
+  // 18px，<1536px 隐藏；触屏降噪（pointer-coarse:hidden）本身不丢。
+  // 订正（2026-11-20 U-262）：2xl 变体在 Tailwind 4.1.12 下恒不生成，断点改用
+  // min-[1536px]:! 任意值写法，行为不变；断言随新行为改写。
+  it('Ctrl+K 徽章 <1536px 隐藏（min-[1536px]:flex!），窄档不再顶出输入框', () => {
     const kbd = windowAround(src, '呼出超级搜索', 1200, 200)
-    expect(kbd).toContain('2xl:flex 2xl:pointer-coarse:hidden')
+    expect(kbd).toContain('min-[1536px]:flex! min-[1536px]:pointer-coarse:hidden!')
     expect(kbd).not.toContain('sm:flex sm:pointer-coarse:hidden')
   })
 })

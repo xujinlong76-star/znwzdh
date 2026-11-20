@@ -38,8 +38,10 @@ const gated: Array<[string, string]> = [
   // 文字会顶出输入框、与外部「AI 找站」按钮重叠）；触屏降噪仍在，只是变体
   // 从 sm: 换成 xl:，pointer-coarse:hidden 本身不丢。
   // 订正（2026-11-20 复核阻塞项 ②）：1280px 档徽章 91px 会把输入框压到只剩
-  // 18px，显示断点由 xl 再延后到 2xl（<1536px 隐藏）。
-  ["src/components/search-palette.tsx", "opacity-100 2xl:flex 2xl:pointer-coarse:hidden shadow-2xs"],
+  // 18px，显示断点由 xl 再延后到 ≥1536px（<1536px 隐藏）。
+  // 订正（2026-11-20 U-262）：2xl 变体在 Tailwind 4.1.12 下恒不生成，断点改用
+  // min-[1536px]:! 任意值写法，行为不变；断言随新行为改写。
+  ["src/components/search-palette.tsx", "opacity-100 min-[1536px]:flex! min-[1536px]:pointer-coarse:hidden! shadow-2xs"],
   ["src/components/search-palette.tsx", "hidden sm:flex sm:pointer-coarse:hidden items-center gap-3 border-t border-border/60 bg-muted/20"],
   ["src/components/search/spotlight-modal.tsx", "hidden sm:inline-flex sm:pointer-coarse:hidden h-5"],
   ["src/components/search/spotlight-modal.tsx", 'flex items-center gap-1 pointer-coarse:hidden'],

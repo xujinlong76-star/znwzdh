@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { safeWindowOpen } from '@/lib/safe-url'
 import { Button } from '@/registry/new-york/ui/button'
@@ -21,6 +21,16 @@ import {
   sampleUniform,
   type GraphCategoryFocus,
 } from '@/lib/graph-category'
+import {
+  capsuleTextWidth,
+  computeGraphFit,
+  computeNodeDegrees,
+  edgeCapsuleText,
+  graphContentBox,
+  nodeRadiusForDegree,
+  truncateGraphLabel,
+} from '@/lib/graph-polish'
+import { extractFaviconMonogram, resolveSiteIcon } from '@/components/site-favicon'
 
 export interface GraphNode {
   id: string
@@ -141,6 +151,47 @@ export function EcosystemGraph() {
   // 键盘漫游：只有「当前节点」在 Tab 序列里，方向键按几何方向移动（见 lib/graph-nav.ts）
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null)
   const nodeRefs = useRef(new Map<string, SVGGElement>())
+
+  // 图谱打磨轮（2026-11-21）：自动 fitView 与一跳聚焦
+  /** 画布容器：ResizeObserver 量实际尺寸，fitView 据此换算安全边距 */
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
+  /** 用户一旦手动缩放/拖拽，就不再自动 fit（点「重置视图」恢复自动居中） */
+  const [userMoved, setUserMoved] = useState(false)
+  /** live 数据回填后重跑一次力导向松弛（否则新节点只按圆周摆，不舒展） */
+  const [layoutNonce, setLayoutNonce] = useState(0)
+  /** 力导向 45 帧跑完 = 布局收敛，可触发 fitView */
+  const [layoutDone, setLayoutDone] = useState(false)
+  /** hover 的节点（一跳聚焦优先于选中）与 hover 的边（浮现边胶囊） */
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
+  const [hoveredEdgeKey, setHoveredEdgeKey] = useState<string | null>(null)
+  /** 加载失败过的 favicon 地址：回落品牌首字母，不再反复请求 */
+  const [failedIcons, setFailedIcons] = useState<ReadonlySet<string>>(new Set())
+  /** zoom/pan 的 ref 镜像：补间动画读当前值，避免回调闭包过期 */
+  const zoomRef = useRef(zoom)
+  const panRef = useRef(pan)
+  const viewTweenRef = useRef<number | null>(null)
+  useEffect(() => {
+    zoomRef.current = zoom
+  }, [zoom])
+  useEffect(() => {
+    panRef.current = pan
+  }, [pan])
+  useEffect(() => {
+    return () => {
+      if (viewTweenRef.current !== null) cancelAnimationFrame(viewTweenRef.current)
+    }
+  }, [])
+
+  /** favicon 加载失败：记入失败集，节点回落品牌首字母 */
+  const handleFaviconError = (src: string) => {
+    setFailedIcons((prev) => {
+      if (prev.has(src)) return prev
+      const next = new Set(prev)
+      next.add(src)
+      return next
+    })
+  }
 
   // SSR/CSR 水合：节点坐标由浮点运算得出，服务端与客户端的 Number 字符串化尾差
   // 会让 React 抛出「hydrated but some attributes didn't match」告警（/graph 控制台实测）。
@@ -335,6 +386,8 @@ export function EcosystemGraph() {
         setLiveCount(dynamicNodes.length)
         setLiveTotal(scopeFlat.length)
         setDataSource('live')
+        // 新节点已按圆周摆好：重跑一次力导向松弛再 fitView（否则只按圆周摆，不舒展）
+        setLayoutNonce((v) => v + 1)
       })
       .catch(() => {
         // 拉不到数据：保留内置静态图谱保证可视化不空白，但把「示例数据」如实标注出来
@@ -349,12 +402,18 @@ export function EcosystemGraph() {
   }, [categoryParam])
 
   // 简易力导引松弛算法（使得连接更舒展）
+  // layoutNonce 变化时重跑：live 数据回填替换了节点集，旧坐标只按圆周摆，
+  // 不重跑就永远是初始圆环。45 帧跑完标记 layoutDone，触发 fitView。
   useEffect(() => {
     let frameId: number
     let iter = 0
+    setLayoutDone(false)
 
     const step = () => {
-      if (iter > 45) return
+      if (iter > 45) {
+        setLayoutDone(true)
+        return
+      }
       iter++
 
       setNodes((prevNodes) => {
@@ -392,6 +451,20 @@ export function EcosystemGraph() {
 
     step()
     return () => cancelAnimationFrame(frameId)
+  }, [layoutNonce])
+
+  // 容器尺寸监听：窗口缩放时重算 fitView（用户手动移动过视图时不自动抢回）
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const update = () => {
+      const r = el.getBoundingClientRect()
+      setContainerSize({ w: r.width, h: r.height })
+    }
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
   }, [])
 
   // 过滤后的节点与连线
@@ -442,6 +515,85 @@ export function EcosystemGraph() {
     return edges.filter((e) => filteredNodeIds.has(e.source) && filteredNodeIds.has(e.target))
   }, [edges, filteredNodeIds])
 
+  /** 节点连接度（可见边）：半径分档与 fitView 包围盒共用 */
+  const degreeMap = useMemo(
+    () => computeNodeDegrees(visibleEdges, filteredNodeIds),
+    [visibleEdges, filteredNodeIds],
+  )
+
+  /**
+   * 一跳聚焦（Ego-Network Highlight）：hover 优先于选中。
+   * focusId 为 null 时全图正常显示；有焦点时只留它与一跳邻居，其余淡化。
+   */
+  const focusId = hoveredNodeId ?? selectedNode?.id ?? null
+  const neighborIds = useMemo(() => {
+    if (!focusId) return null
+    const s = new Set<string>([focusId])
+    for (const e of visibleEdges) {
+      if (e.source === focusId) s.add(e.target)
+      else if (e.target === focusId) s.add(e.source)
+    }
+    return s
+  }, [focusId, visibleEdges])
+
+  /**
+   * 自动 fitView：算出全部可见节点（含文字包围盒）的并集，按画布实际宽高比
+   * 缩放并居中，强制预留 56px 四周安全边距，彻底杜绝裁切。
+   * animate=true 时用 350ms 缓动从当前视图平滑过渡过去。
+   */
+  const applyFit = useCallback(
+    (animate: boolean) => {
+      const el = containerRef.current
+      if (!el || filteredNodes.length === 0) return
+      const rect = el.getBoundingClientRect()
+      if (rect.width < 10 || rect.height < 10) return
+      const box = graphContentBox(
+        filteredNodes,
+        (i) => nodeRadiusForDegree(degreeMap.get(filteredNodes[i]!.id) ?? 0),
+        (i) => truncateGraphLabel(filteredNodes[i]!.title),
+      )
+      if (!box) return
+      const target = computeGraphFit(box, rect.width, rect.height)
+      if (viewTweenRef.current !== null) {
+        cancelAnimationFrame(viewTweenRef.current)
+        viewTweenRef.current = null
+      }
+      if (!animate) {
+        setZoom(target.zoom)
+        setPan(target.pan)
+        return
+      }
+      const startZoom = zoomRef.current
+      const startPan = panRef.current
+      const start = performance.now()
+      const duration = 350
+      const tick = (now: number) => {
+        const t = Math.min(1, (now - start) / duration)
+        const eased = 1 - Math.pow(1 - t, 3)
+        setZoom(startZoom + (target.zoom - startZoom) * eased)
+        setPan({
+          x: startPan.x + (target.pan.x - startPan.x) * eased,
+          y: startPan.y + (target.pan.y - startPan.y) * eased,
+        })
+        if (t < 1) {
+          viewTweenRef.current = requestAnimationFrame(tick)
+        } else {
+          viewTweenRef.current = null
+        }
+      }
+      viewTweenRef.current = requestAnimationFrame(tick)
+    },
+    [filteredNodes, degreeMap],
+  )
+
+  // 自动 fitView 触发点：布局收敛后、可见集变化（筛选/搜索/分类域）后、
+  // 容器尺寸变化（窗口缩放）后——只要用户没手动移动过视图。
+  useEffect(() => {
+    if (userMoved || !graphMounted || !layoutDone) return
+    const t = window.setTimeout(() => applyFit(true), 150)
+    return () => window.clearTimeout(t)
+  }, [filteredNodes, containerSize, layoutDone, userMoved, graphMounted, applyFit])
+
   // 当前选中节点的所有关联
   const relatedEdges = useMemo(() => {
     if (!selectedNode) return []
@@ -458,6 +610,8 @@ export function EcosystemGraph() {
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDraggingRef.current) return
+    // 真正拖动才算手动移动：光点下不算，避免一次点击就关掉自动 fit
+    setUserMoved(true)
     setPan({
       x: e.clientX - dragStartRef.current.x,
       y: e.clientY - dragStartRef.current.y,
@@ -568,13 +722,13 @@ export function EcosystemGraph() {
             />
           </div>
           <div className="flex items-center gap-1 bg-muted/30 p-0.5 rounded-lg border border-border/50">
-            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="放大" title="放大" onClick={() => setZoom((z) => Math.min(z + 0.15, 2))}>
+            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="放大" title="放大" onClick={() => { setUserMoved(true); setZoom((z) => Math.min(z + 0.15, 2)) }}>
               <ZoomIn className="w-3.5 h-3.5" />
             </Button>
-            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="缩小" title="缩小" onClick={() => setZoom((z) => Math.max(z - 0.15, 0.5))}>
+            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="缩小" title="缩小" onClick={() => { setUserMoved(true); setZoom((z) => Math.max(z - 0.15, 0.5)) }}>
               <ZoomOut className="w-3.5 h-3.5" />
             </Button>
-            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="重置视图" title="重置视图" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
+            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="重置视图" title="重置视图" onClick={() => { setUserMoved(false); applyFit(true) }}>
               <RefreshCw className="w-3.5 h-3.5" />
             </Button>
           </div>
@@ -593,6 +747,7 @@ export function EcosystemGraph() {
 
       {/* SVG 画布 */}
       <div
+        ref={containerRef}
         className="flex-1 w-full h-full cursor-grab active:cursor-grabbing relative overflow-hidden bg-dot-grid"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -605,56 +760,114 @@ export function EcosystemGraph() {
           preserveAspectRatio="xMidYMid meet"
         >
           <defs>
-            <pattern id="graph-pattern-grid" width="40" height="40" patternUnits="userSpaceOnUse">
-              <circle cx="2" cy="2" r="1" className="fill-border/40" />
+            <pattern id="graph-pattern-grid" width="28" height="28" patternUnits="userSpaceOnUse">
+              <circle cx="1.5" cy="1.5" r="1.2" className="fill-border/50" />
             </pattern>
+            {/* 节点 favicon 圆裁剪：每节点一个 clipPath（id 按节点 id 区分） */}
+            {filteredNodes.map((node) => (
+              <clipPath key={node.id} id={`graph-clip-${node.id}`}>
+                <circle
+                  r={
+                    nodeRadiusForDegree(
+                      degreeMap.get(node.id) ?? 0,
+                      selectedNode?.id === node.id,
+                    ) * 0.72
+                  }
+                />
+              </clipPath>
+            ))}
           </defs>
           <rect width="100%" height="100%" fill="url(#graph-pattern-grid)" />
 
           <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
-            {/* 连线层 */}
+            {/* 连线层：常态只留线条（粉色虚线=平替，靛蓝实线=生态），
+                边文字默认隐藏——hover 某条边、或 hover/选中某节点时，
+                才在关联连线中点浮现高对比胶囊，避免画布文字互相打架 */}
             {visibleEdges.map((e, idx) => {
               const src = nodeMap.get(e.source)
               const tgt = nodeMap.get(e.target)
               if (!src || !tgt) return null
 
+              const edgeKey = `${e.source}→${e.target}`
               const isConnectedToSelected =
                 selectedNode && (e.source === selectedNode.id || e.target === selectedNode.id)
+              const isConnectedToFocus =
+                focusId !== null && (e.source === focusId || e.target === focusId)
+              const isEdgeActive = hoveredEdgeKey === edgeKey || isConnectedToFocus
               const strokeColor =
                 e.type === 'alternative' ? 'rgba(236, 72, 153, 0.55)' : 'rgba(99, 102, 241, 0.55)'
+              const mx = ((src.x || 0) + (tgt.x || 0)) / 2
+              const my = ((src.y || 0) + (tgt.y || 0)) / 2
+              const capsule = edgeCapsuleText(e)
+              const capsuleW = capsuleTextWidth(capsule)
 
               return (
-                <g key={idx}>
+                <g
+                  key={idx}
+                  onMouseEnter={() => setHoveredEdgeKey(edgeKey)}
+                  onMouseLeave={() => setHoveredEdgeKey((k) => (k === edgeKey ? null : k))}
+                >
+                  {/* 加粗透明命中线：1.4px 的细线很难 hover 到，命中区扩到 14px */}
+                  <line
+                    x1={src.x}
+                    y1={src.y}
+                    x2={tgt.x}
+                    y2={tgt.y}
+                    stroke="transparent"
+                    strokeWidth={14}
+                    style={{ pointerEvents: 'stroke' }}
+                  />
                   <line
                     x1={src.x}
                     y1={src.y}
                     x2={tgt.x}
                     y2={tgt.y}
                     stroke={isConnectedToSelected ? '#f43f5e' : strokeColor}
-                    strokeWidth={isConnectedToSelected ? 2.5 : 1.4}
+                    strokeWidth={isConnectedToSelected ? 2.5 : isConnectedToFocus ? 2.2 : 1.4}
                     strokeDasharray={e.type === 'alternative' ? '4 3' : undefined}
-                    opacity={selectedNode && !isConnectedToSelected ? 0.2 : 0.85}
+                    opacity={focusId ? (isConnectedToFocus ? 0.95 : 0.12) : 0.85}
                   />
-                  {e.label && (
-                    <text
-                      x={((src.x || 0) + (tgt.x || 0)) / 2}
-                      y={((src.y || 0) + (tgt.y || 0)) / 2 - 3}
-                      fontSize="9"
-                      fill="#94a3b8"
-                      textAnchor="middle"
-                      className="pointer-events-none font-mono"
-                    >
-                      {e.label}
-                    </text>
+                  {isEdgeActive && (
+                    <g className="pointer-events-none">
+                      <rect
+                        x={mx - capsuleW / 2}
+                        y={my - 9}
+                        width={capsuleW}
+                        height={18}
+                        rx={9}
+                        strokeWidth={1}
+                        className={
+                          e.type === 'alternative'
+                            ? 'fill-white stroke-pink-500/70 dark:fill-slate-900'
+                            : 'fill-white stroke-indigo-500/70 dark:fill-slate-900'
+                        }
+                      />
+                      <text
+                        x={mx}
+                        y={my + 3.5}
+                        fontSize={10}
+                        textAnchor="middle"
+                        className="fill-slate-800 dark:fill-slate-100 font-medium pointer-events-none"
+                      >
+                        {capsule}
+                      </text>
+                    </g>
                   )}
                 </g>
               )
             })}
 
-            {/* 节点层 */}
+            {/* 节点层：favicon 优先（失败回落品牌首字母），半径按连接度分档，
+                hover/选中一跳聚焦时其余节点淡化至 0.18 */}
             {filteredNodes.map((n) => {
               const isSelected = selectedNode?.id === n.id
               const catColor = CATEGORY_COLORS[n.category]
+              const nodeR = nodeRadiusForDegree(degreeMap.get(n.id) ?? 0, isSelected)
+              const iconSrc = resolveSiteIcon(n.url, n.title)
+              const hasIcon = Boolean(iconSrc) && !failedIcons.has(iconSrc)
+              const label = truncateGraphLabel(n.title)
+              const isDimmed =
+                focusId !== null && neighborIds !== null && !neighborIds.has(n.id)
 
               return (
                 <g
@@ -672,10 +885,16 @@ export function EcosystemGraph() {
                   onClick={() => setSelectedNode(n)}
                   onFocus={() => setFocusedNodeId(n.id)}
                   onKeyDown={(event) => handleNodeKeyDown(event, n)}
+                  onMouseEnter={() => setHoveredNodeId(n.id)}
+                  onMouseLeave={() => setHoveredNodeId((id) => (id === n.id ? null : id))}
+                  opacity={isDimmed ? 0.18 : 1}
+                  style={{ transition: 'opacity 200ms ease' }}
                 >
+                  {/* 完整名称：hover 原生 tooltip 与详情抽屉展示，标签只显示截断版 */}
+                  <title>{n.title}</title>
                   {/* 键盘焦点环：只有真正聚焦（Tab / 方向键）时才出现 */}
                   <circle
-                    r={26}
+                    r={nodeR + 8}
                     fill="none"
                     stroke="#60a5fa"
                     strokeWidth={1.5}
@@ -683,26 +902,55 @@ export function EcosystemGraph() {
                     className="pointer-events-none opacity-0 group-focus:opacity-100 transition-opacity"
                   />
                   <circle
-                    r={isSelected ? 23 : 16}
+                    r={nodeR}
                     fill={catColor.fill}
                     stroke={isSelected ? '#ffffff' : 'rgba(255,255,255,0.4)'}
                     strokeWidth={isSelected ? 3.5 : 1.8}
-                    className="hover:scale-115 transition-transform drop-shadow-md"
+                    className="drop-shadow-md"
                   />
+                  {hasIcon ? (
+                    <>
+                      <circle r={nodeR * 0.72} fill="#ffffff" />
+                      <image
+                        href={iconSrc}
+                        x={-nodeR * 0.72}
+                        y={-nodeR * 0.72}
+                        width={nodeR * 1.44}
+                        height={nodeR * 1.44}
+                        preserveAspectRatio="xMidYMid slice"
+                        clipPath={`url(#graph-clip-${n.id})`}
+                        onError={() => handleFaviconError(iconSrc)}
+                      />
+                    </>
+                  ) : (
+                    <text
+                      y={1}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fontSize={Math.round(nodeR * 0.85)}
+                      fontWeight="700"
+                      fill="#ffffff"
+                      className="pointer-events-none select-none"
+                    >
+                      {extractFaviconMonogram(n.title)}
+                    </text>
+                  )}
                   <text
-                    y={28}
+                    y={nodeR + 12}
                     textAnchor="middle"
                     fontSize="11"
                     fontWeight={isSelected ? 'bold' : '500'}
-                    fill={isSelected ? '#ffffff' : '#cbd5e1'}
-                    className="pointer-events-none select-none drop-shadow-sm font-mono"
+                    strokeWidth={3}
+                    strokeLinejoin="round"
+                    paintOrder="stroke"
+                    className="pointer-events-none select-none drop-shadow-sm font-mono fill-slate-800 stroke-white dark:fill-slate-100 dark:stroke-slate-950"
                   >
-                    {n.title}
+                    {label}
                   </text>
                   {n.openSource && (
                     <circle
-                      cx={12}
-                      cy={-12}
+                      cx={nodeR * 0.7}
+                      cy={-nodeR * 0.7}
                       r={4.5}
                       fill="#10b981"
                       stroke="#0f172a"

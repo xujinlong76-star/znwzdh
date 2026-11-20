@@ -11,6 +11,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { NavigationCard } from '@/components/navigation-card'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
+import { HorizontalScrollFade } from '@/components/horizontal-scroll-fade'
 /**
  * 模块缩放手柄（Bundle 瘦身第三刀 a）：手柄本体约 20KB 代码，只在排版编辑态
  * 才渲染（非编辑态返回 null），平时不进 `/` 初始 chunk。`next/dynamic`
@@ -986,11 +987,14 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                             )}
                             style={moduleHeightPx ? { maxHeight: `${moduleHeightPx}px` } : undefined}
                           >
-                            {/* 二级分类快速切换导航轨（仅在拥有多个子分类且未折叠时渲染） */}
+                            {/* 二级分类快速切换导航轨（仅在拥有多个子分类且未折叠时渲染）
+                                首屏瘦身：接入 HorizontalScrollFade（滚轮横滚、mask 渐隐、
+                                左右箭头），替代手写 overflow-x-auto + 生硬裁剪；tablist
+                                语义与 ←/→ 漫游经 role/onKeyDown 透传到滚动容器。 */}
                             {!isEditingLayout && subCats.length > 1 && (
-                              <div
+                              <HorizontalScrollFade
                                 role="tablist"
-                                aria-label={`${category.title} 子分类快速切换`}
+                                ariaLabel={`${category.title} 子分类快速切换`}
                                 onKeyDown={(e) => {
                                   if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
                                   const tabs = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
@@ -1004,7 +1008,9 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                   tabs[nextIndex]?.focus()
                                   tabs[nextIndex]?.click()
                                 }}
-                                className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 scrollbar-none text-xs"
+                                scrollClassName="flex items-center gap-1.5 pb-1 pt-0.5 text-xs"
+                                prevAriaLabel={`向左滚动${category.title}子分类`}
+                                nextAriaLabel={`向右滚动${category.title}子分类`}
                               >
                                 <button
                                   type="button"
@@ -1063,7 +1069,25 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                     </button>
                                   )
                                 })}
-                              </div>
+                                {/* 条尾「全部」收起：长条滚到最右时无需滚回开头即可复位 */}
+                                <button
+                                  type="button"
+                                  role="tab"
+                                  aria-selected={selectedSubCatId === null}
+                                  aria-label="显示全部子分类"
+                                  tabIndex={selectedSubCatId === null ? 0 : -1}
+                                  onClick={() => setSelectedSubCatId(null)}
+                                  className={cn(
+                                    "min-h-11 px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
+                                    selectedSubCatId === null
+                                      ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
+                                      : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
+                                  )}
+                                >
+                                  <span>全部</span>
+                                  <span className={cn("text-[10px] font-mono", selectedSubCatId === null ? "text-primary-foreground/80" : "text-muted-foreground/60")}>{`(${totalCount})`}</span>
+                                </button>
+                              </HorizontalScrollFade>
                             )}
 
                             {/* 筛选零匹配友好空态 */}

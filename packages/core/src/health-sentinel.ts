@@ -440,3 +440,98 @@ export function auditPageHealth(
     reason: `页面文本与信息熵正常 (${entropy})，未检出劫持特征`,
   };
 }
+
+/* ------------------------------------------------------------------ *
+ * §3.3 时序维：连续失败计数（03-livelink-mapping，B 段）
+ * ------------------------------------------------------------------ *
+ * 单次失败只记疑似，连续失败达到阈值才升为已失效（§3.2 第 8 行）。
+ * 阈值 2 是已裁决的本站值，不随 Gatus 的 failure-threshold: 3 走——
+ * 本站巡检周期是天级（Weibull 排期 1–180 天），阈值 3 会让一次真实下线
+ * 多等一个周期才标出。
+ *
+ * 两层计数，职责分开，不要混成一个：
+ *   1. 本文件的进程内登记（recordCheck / getConsecutiveFailures）：
+ *      §3.3 要求的 in-process API，供单测与进程内调用方使用。
+ *      它只是持久计数的进程内镜像，不是事实源。
+ *   2. 持久计数（事实源）：`sites.consecutive_failures` 列（W1 §13 第 2 条
+ *      verdict ①——中枢 health 记录内嵌字段，与 updateSiteHealth 的
+ *      health 写回 + lastCheckedAt 同一次写入、同一事务可见）。
+ *      写路径见 packages/store/src/repository/health.ts 的 updateSiteHealth，
+ *      它用同一个纯转移函数 computeConsecutiveFailures、读库内旧值计算，
+ *      重启后不丢；不要用本文件的进程内登记代替库内值做升级判定。
+ */
+
+/** 连续失败升级阈值（已裁决的本站值；Gatus 默认 3 不适用本站天级巡检）。 */
+export const CONSECUTIVE_FAILURES_THRESHOLD = 2;
+
+export type ConsecutiveFailureState = 'ok' | 'suspect' | 'confirmed-dead';
+
+/** recordCheck 的一次巡检结果（§3.3 签名；botBlocked 为可选补充位）。 */
+export interface ConsecutiveCheckResult {
+  ok: boolean;
+  httpStatus?: number | null;
+  auditStatus?: HealthStatus;
+  auditConfidence?: number;
+  checkedAt: number;
+  /**
+   * 本次是“未测准”（bot-blocked：站点在线但拒绝巡检抓取）而非失败。
+   * 置 true 时打断连续失败链（与 ok 同级），不计入失败——否则永久 WAF 站
+   * 迟早被误标 broken（2026-10-18 事故：kubernetes.io / figma.com /
+   * npmjs.com）。写路径（updateSiteHealth）用 isBotBlockedHealthRecord
+   * 从 error 前缀判定后传入；不传时按 §3.3 字面规则（失败即 +1）。
+   */
+  botBlocked?: boolean;
+}
+
+export interface ConsecutiveFailureOutcome {
+  consecutiveFailures: number;
+  state: ConsecutiveFailureState;
+}
+
+function streakState(consecutiveFailures: number): ConsecutiveFailureState {
+  if (consecutiveFailures >= CONSECUTIVE_FAILURES_THRESHOLD) return 'confirmed-dead';
+  if (consecutiveFailures >= 1) return 'suspect';
+  return 'ok';
+}
+
+/**
+ * 纯转移函数：一次巡检结果如何改写连续失败计数（写路径与登记共用同一规则）。
+ *
+ * - 成功（ok === true 且 auditStatus 为空或 HEALTHY）→ 清零，state 'ok'。
+ * - bot-blocked（botBlocked === true）→ 清零，state 'ok'（打断链，不计失败）。
+ * - 其余失败 → +1；计数达到阈值时 state 'confirmed-dead'，否则 'suspect'。
+ * - state 只是“连续失败达到阈值”的 streak 状态；是否升为已失效还需满足
+ *   §3.2 第 8 行的条件（状态码 / auditStatus + 置信度），由 siteHealthState
+ *   判定，本函数不管。
+ * - 巡检未跑不记：不调本函数即不产生计数，不存在“缺席记失败”。
+ */
+export function computeConsecutiveFailures(
+  previous: number,
+  result: ConsecutiveCheckResult,
+): ConsecutiveFailureOutcome {
+  const prev = Number.isFinite(previous) && previous > 0 ? Math.floor(previous) : 0;
+  const success = result.ok && (result.auditStatus === undefined || result.auditStatus === 'HEALTHY');
+  if (success || result.botBlocked === true) {
+    return { consecutiveFailures: 0, state: 'ok' };
+  }
+  const next = prev + 1;
+  return { consecutiveFailures: next, state: streakState(next) };
+}
+
+/** 进程内登记：siteId → 当前连续失败计数（只在进程内有效，不是事实源）。 */
+const consecutiveFailuresBySite = new Map<string, number>();
+
+/**
+ * 记一次巡检（§3.3）：成功清零，失败 +1，bot-blocked 打断链。
+ * 返回记完后的计数与 streak 状态；巡检未跑不调用、不记数。
+ */
+export function recordCheck(siteId: string, result: ConsecutiveCheckResult): ConsecutiveFailureOutcome {
+  const outcome = computeConsecutiveFailures(consecutiveFailuresBySite.get(siteId) ?? 0, result);
+  consecutiveFailuresBySite.set(siteId, outcome.consecutiveFailures);
+  return outcome;
+}
+
+/** 读当前连续失败计数（§3.3；未记过为 0）。供 siteHealthState() 的升级判定用。 */
+export function getConsecutiveFailures(siteId: string): number {
+  return consecutiveFailuresBySite.get(siteId) ?? 0;
+}

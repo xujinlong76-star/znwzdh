@@ -2,14 +2,14 @@
  * U-13 分层探活回归：批量巡检不再把 WAF 拦截判死链。
  *
  * 真实缺陷：health_check 只用单层 NavHubBot UA 抓取，403/429/503 与真死链同码记
- * ok=false；连续 3 次即标 broken。2026-10-18 实测 50 站里 15 站被误标 broken
+ * ok=false；连续 2 次即标 broken。2026-10-18 实测 50 站里 15 站被误标 broken
  * （kubernetes.io / figma.com / npmjs.com 均可正常访问）。
  *
  * 这里锁三段行为（本地 127.0.0.1 服务器实测，不 mock 抓取层）：
  *   1. needsDesktopRetry：只有 blocked / server-error 才发第二层；
  *   2. 第二层桌面 UA 救回：第一层 403、第二层 200 → 判健康；
  *   3. 两层都被拦截：写 BOT_BLOCKED verdict、永不标 broken，且该行打断连续失败链
- *      （3 轮后仍 active）；而真死链（404）3 轮后照旧标 broken。
+ *      （3 轮后仍 active）；而真死链（404）两轮即标 broken（阈值 2，03 §3.3）。
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -145,8 +145,10 @@ describe("shouldBreak 连续失败链", () => {
     expect(await shouldBreak(ctx, site.id)).toBe(false);
   });
 
-  it("连续两次普通失败即到阈值（阈值 3，读最近 2 条）", async () => {
+  it("一次普通失败即到阈值（阈值 2，读持久计数 sites.consecutive_failures）", async () => {
     const site = await ctx.repo.createSite({ url: "https://example.com/chain2", title: "链测试2", categoryId: "cat-chain" } as never);
+    // 无历史：本次是第 1 次失败，不到阈值
+    expect(await shouldBreak(ctx, site.id)).toBe(false);
     const record = async () =>
       ctx.repo.updateSiteHealth(site.id, {
         httpStatus: 500,
@@ -157,14 +159,17 @@ describe("shouldBreak 连续失败链", () => {
         markBroken: false,
       });
     await record();
-    await new Promise((r) => setTimeout(r, 5));
+    expect(await ctx.repo.getConsecutiveFailures(site.id)).toBe(1);
+    // 已有 1 次失败：本次再失败即第 2 次，到阈值
+    expect(await shouldBreak(ctx, site.id)).toBe(true);
     await record();
+    expect(await ctx.repo.getConsecutiveFailures(site.id)).toBe(2);
     expect(await shouldBreak(ctx, site.id)).toBe(true);
   });
 });
 
 describe("handleHealthCheck 分层探活（本地服务器实测）", () => {
-  it("第一层 403、第二层 200 → 判健康；两层 403 → BOT_BLOCKED 且 3 轮不标 broken；404 三轮照旧标 broken", async () => {
+  it("第一层 403、第二层 200 → 判健康；两层 403 → BOT_BLOCKED 且 3 轮不标 broken；404 两轮即标 broken", async () => {
     const cat = await ctx.repo.createCategory({ id: "cat-layered", title: "分层分类", sort: 1, source: "api" } as never);
     const rescued = await ctx.repo.createSite({ url: `http://127.0.0.1:${port}/waf-rescue`, title: "可救回", categoryId: cat.id } as never);
     const stubborn = await ctx.repo.createSite({ url: `http://127.0.0.1:${port}/waf-stubborn`, title: "顽固拦截", categoryId: cat.id } as never);
@@ -201,8 +206,10 @@ describe("handleHealthCheck 分层探活（本地服务器实测）", () => {
     expect(goneAfter!.health!.httpStatus).toBe(404);
     expect(goneAfter!.status).toBe("active"); // 第 1 次失败不判死
 
-    // 再跑两轮：顽固拦截站 3 轮仍 active（BOT_BLOCKED 行打断链），真死链 3 轮标 broken。
+    // 再跑两轮：顽固拦截站 3 轮仍 active（BOT_BLOCKED 行打断链），真死链第 2 轮即标 broken（阈值 2）。
     await runAll();
+    expect((await ctx.repo.getSite(gone.id))!.status).toBe("broken");
+    expect((await ctx.repo.getSite(stubborn.id))!.status).toBe("active");
     await runAll();
     expect((await ctx.repo.getSite(stubborn.id))!.status).toBe("active");
     const stubbornRows = await ctx.repo.recentHealthChecks(stubborn.id, 3);

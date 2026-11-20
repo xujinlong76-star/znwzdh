@@ -50,6 +50,7 @@ import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
 import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
+import { rankSearchHits } from '@/lib/search-rerank'
 import { openCopilot } from '@/lib/ai-entry'
 import {
   SEARCH_AI_PLACEHOLDER,
@@ -756,8 +757,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       return
     }
     if (action.kind === 'clear') {
+      // 2026-11-20 搜索假空态修复："换关键词"——清空查询词并聚焦输入框，
+      // 面板保持打开（空查询时显示建议面板），用户直接输入新词。
+      // 原先是 setIsFocused(false)（关闭面板），换关键词要多点一次输入框。
       setQuery('')
-      setIsFocused(false)
+      setIsFocused(true)
+      inputRef.current?.focus()
       return
     }
     if (action.kind === 'ai-find') {
@@ -1207,6 +1212,20 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
    * 建议行也在列表里：↑↓ 能走到建议上，回车采纳；但「没有高亮时回车」的
    * 默认目标仍是第一条结果（见 onSearchKeyDown），不能被建议抢走。
    */
+  /**
+   * 客户端重排（2026-11-20 搜索假空态与相关性修复）：后端 RRF 会把弱语义命中
+   * 也当结果返回（无意义词 12 条全是 semantic 尾巴），失效站点（status=broken）
+   * 也会混进来。这里把 displayHits 当作唯一展示列表：
+   *  - 失效站点剔除（status=broken；health.ok=false 不剔除，Google Gemini 本体就是
+   *    healthOk=false 的活站）；
+   *  - 精确名称匹配置顶（"Gemini" → Google Gemini），语义联想降权进 related 组；
+   *  - 没有强匹配时 ordered 为空 → 面板走真空态（"没有找到相关站点"），不拿弱相关填充。
+   * 原始 hits 只留给分页（offset / loadMore）与 pruned 回忆，不参与渲染与键盘导航。
+   */
+  const rankedHits = useMemo(() => rankSearchHits(hits, query), [hits, query])
+  const displayHits = rankedHits.ordered
+  const relatedStartIndex = rankedHits.exact.length + rankedHits.keyword.length
+
   const navItems = useMemo(() => {
     if (!showResults) return [] as Array<{ id: string; kind: 'plugin' | 'site' | 'diy' | 'suggestion' | 'favorite' | 'action' | 'tool' | 'quicklink' }>
     return buildPaletteNavItems({
@@ -1218,9 +1237,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       actionIds: matchedPaletteActions.map((a) => `action-${a.id}`),
       toolIds: matchedPaletteTools.map((t) => `tool-${t.id}`),
       pluginIds: pluginItems.map((p) => `plugin-${p.id}`),
-      siteIds: hits.filter((h) => h.site).map((h) => `site-${h.siteId}`),
+      siteIds: displayHits.map((h) => `site-${h.siteId}`),
     })
-  }, [showResults, suggestionGroups, matchedPaletteQuicklinks, matchedDiyActions, matchedSceneActions, matchedPaletteFavorites, matchedPaletteActions, matchedPaletteTools, pluginItems, hits])
+  }, [showResults, suggestionGroups, matchedPaletteQuicklinks, matchedDiyActions, matchedSceneActions, matchedPaletteFavorites, matchedPaletteActions, matchedPaletteTools, pluginItems, displayHits])
 
   const navIndexById = useMemo(() => {
     const map = new Map<string, number>()
@@ -1325,7 +1344,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const panel = planSearchPanel({
     loading: loading || pluginLoading,
     degraded,
-    hitCount: hits.length + pluginItems.length,
+    // 展示口径：弱语义填充不算"找到"，没有强匹配时 hitCount 为 0，面板走真空态
+    hitCount: displayHits.length + pluginItems.length,
     query,
     hasWidgetResult: Boolean(
       speculativeResult ||
@@ -1459,11 +1479,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         {loading
           ? '正在检索'
           : query.trim()
-            ? degraded && hits.length === 0
+            ? degraded && displayHits.length === 0
               ? // 读屏同样不能把「没问成功」说成「没有找到」
                 '检索服务暂时不可用，本次没有取回站点结果'
-              : hits.length > 0 || pluginItems.length > 0 || matchedPaletteFavorites.length > 0 || matchedPaletteActions.length > 0 || matchedPaletteTools.length > 0
-                ? `找到 ${hits.length + pluginItems.length + matchedPaletteFavorites.length + matchedPaletteActions.length + matchedPaletteTools.length} 条结果`
+              : displayHits.length > 0 || pluginItems.length > 0 || matchedPaletteFavorites.length > 0 || matchedPaletteActions.length > 0 || matchedPaletteTools.length > 0
+                ? `找到 ${displayHits.length + pluginItems.length + matchedPaletteFavorites.length + matchedPaletteActions.length + matchedPaletteTools.length} 条结果`
                 : '没有找到匹配结果'
             : ''}
       </p>
@@ -1859,7 +1879,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               {degraded && panel.mode !== 'outage' && (
                 <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 border-b flex items-center justify-between gap-2">
                   <span>
-                    {hits.length > 0
+                    {displayHits.length > 0
                       ? '检索服务暂时不可用，已降级；下面结果可能不完整。'
                       : '站点检索这次没能问成功，下面的结果不保证覆盖；插件结果不受影响。'}
                   </span>
@@ -1876,7 +1896,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   语义检索不可用（未配置本地模型），当前为关键词 / 拼音 / 全文混合检索。
                 </div>
               )}
-              {fallbackHint && hits.length > 0 && (
+              {/* 放宽提示只在真的展示了放宽结果时出现：弱语义填充被重排抑制、
+                  面板走真空态时不再挂这条横幅（否则"没有找到"和"以下是放宽结果"自相矛盾） */}
+              {fallbackHint && displayHits.length > 0 && (
                 <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 border-b">
                   {fallbackHint === 'filter'
                     ? (relaxedPricingNotice(relaxedFacets) ??
@@ -2669,24 +2691,33 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               ) : (
 
 
-                hits.map((hit) => {
+                // 展示列表是重排后的 displayHits（失效站点已剔除、精确名称置顶、
+                // 无强匹配时为空→走真空态）。语义联想组（related）单独标注"相关推荐"，
+                // 不与主结果混排。
+                displayHits.map((hit, displayIndex) => {
                   const site = hit.site
                   if (!site) return null
                   const channels = Object.keys(hit.contributions ?? {})
                   const faved = favorites.isFavorite(site.id)
                   return (
-                    <div
-                      key={hit.siteId}
-                      id={`navhub-search-opt-${navIndexById.get('site-' + site.id) ?? -1}`}
-                      role="option"
-                      data-nav-index={navIndexById.get('site-' + site.id) ?? -1}
-                      data-nav-item="site"
-                      aria-selected={navIndexById.get('site-' + site.id) === activeIndex}
-                      onClick={() => openSite(hit)}
-                      className={`flex items-center gap-3 py-3 px-3 cursor-pointer ${
-                        navIndexById.get('site-' + site.id) === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
-                      }`}
-                    >
+                    <Fragment key={hit.siteId}>
+                      {displayIndex === relatedStartIndex && rankedHits.related.length > 0 && (
+                        <div className="px-3.5 pt-3 pb-1 flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                          <Sparkles className="h-3 w-3 text-violet-500" />
+                          <span>相关推荐</span>
+                        </div>
+                      )}
+                      <div
+                        id={`navhub-search-opt-${navIndexById.get('site-' + site.id) ?? -1}`}
+                        role="option"
+                        data-nav-index={navIndexById.get('site-' + site.id) ?? -1}
+                        data-nav-item="site"
+                        aria-selected={navIndexById.get('site-' + site.id) === activeIndex}
+                        onClick={() => openSite(hit)}
+                        className={`flex items-center gap-3 py-3 px-3 cursor-pointer ${
+                          navIndexById.get('site-' + site.id) === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                        }`}
+                      >
                       <div className="flex-shrink-0 w-8 h-8 rounded-md p-1 bg-muted/60 dark:bg-muted/30 border border-border/50 flex items-center justify-center">
                         <SiteFavicon
                           title={site.title}
@@ -2747,12 +2778,13 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       >
                         <Star className={'h-4 w-4 ' + (faved ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />
                       </button>
-                    </div>
+                      </div>
+                    </Fragment>
                   )
                 })
               )}
               {/* 键盘提示：能力存在但没人知道，等于不存在（桌面端才显示） */}
-              {(hits.length > 0 || pluginItems.length > 0 || matchedPaletteFavorites.length > 0 || matchedPaletteActions.length > 0 || matchedPaletteTools.length > 0) && (
+              {(displayHits.length > 0 || pluginItems.length > 0 || matchedPaletteFavorites.length > 0 || matchedPaletteActions.length > 0 || matchedPaletteTools.length > 0) && (
                 <div className="hidden sm:flex sm:pointer-coarse:hidden items-center gap-3 border-t border-border/60 bg-muted/20 px-3 py-1.5 text-[10px] text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
                     <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↑</kbd>
@@ -2769,7 +2801,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   </span>
                 </div>
               )}
-              {showResults && hits.length > 0 && hasMore && (
+              {showResults && displayHits.length > 0 && hasMore && (
                 <div className="p-2 border-t">
                   <button
                     className="w-full text-xs py-2 rounded-md bg-muted hover:bg-accent text-muted-foreground transition-colors disabled:opacity-50"
@@ -2779,12 +2811,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     {loadingMore
                       ? '加载中…'
                       : moreFailed
-                        ? `再试一次（已显示 ${hits.length} 条）`
-                        : `加载更多（已显示 ${hits.length} 条）`}
+                        ? `再试一次（已显示 ${displayHits.length} 条）`
+                        : `加载更多（已显示 ${displayHits.length} 条）`}
                   </button>
                   {moreFailed && (
                     <p className="pt-1.5 text-[11px] text-amber-700 dark:text-amber-400">
-                      下一页没加载成功（请求失败，不是没有更多了）。已显示的 {hits.length} 条仍然可用，点上面按钮可再试。
+                      下一页没加载成功（请求失败，不是没有更多了）。已显示的 {displayHits.length} 条仍然可用，点上面按钮可再试。
                     </p>
                   )}
                 </div>
@@ -2841,7 +2873,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   </div>
                 </div>
               )}
-              {showResults && query.trim() && hits.length > 0 && (
+              {showResults && query.trim() && displayHits.length > 0 && (
                 <div className="border-t border-border/60 bg-muted/10 px-2 py-1.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
                   <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
                     <span className="inline-flex items-center gap-1">

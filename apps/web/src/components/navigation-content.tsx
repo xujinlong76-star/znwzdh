@@ -13,7 +13,7 @@ import { HalfScreenDock } from '@/components/half-screen-dock'
 import { NavigationCategorySection } from '@/components/navigation-category-section'
 import { LazyMountSection } from '@/components/lazy-mount-section'
 import { HomeDIYTrigger } from '@/components/home-diy-trigger'
-import { HomeMicroStrip } from '@/components/home-micro-strip'
+import { HomeCapsuleRow } from '@/components/home-capsule-row'
 import { HomeSubtitleHint } from '@/components/home-subtitle-hint'
 import { HomeQuickDock } from '@/components/home-quick-dock'
 import type { HomeTodayBadgeSummary } from '@/lib/home-today-summary'
@@ -1130,7 +1130,7 @@ export function NavigationContent({
           </div>
         )}
 
-        <div className="px-3 sm:px-6 md:px-8 pt-4 sm:pt-8 pb-8 flex-1">
+        <div className="px-3 sm:px-6 md:px-8 pt-4 sm:pt-4 pb-8 flex-1">
           {/* 移动端品牌主标题（U-263）：桌面侧边栏品牌 h1 在移动端被 hidden，
               首页主内容区又无其它 h1，致移动端无可见主标题（mobile-layout
               冒烟红）。此处补一个移动端专用的紧凑标题（短标题「山羊胡导航」），
@@ -1227,15 +1227,18 @@ export function NavigationContent({
             tagline={homeControl.basic.tagline || siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
           />
 
-          {/* 首页功能微胶囊行（A1 + A4）：单行保留短剧 / AI 找站 / 插件精选 / 新手向导小窗入口 */}
+          {/* 首屏瘦身：工作区胶囊行与运营胶囊行合并为一行（HomeCapsuleRow，
+              2026-11-20）：原来上下两行（工作区 ~63px + 运营 ~46px）压成单行
+              约 44px；<1024px 只留「全部探索」＋「AI 找站」，其余进「更多」折叠菜单。 */}
           {viewMode !== 'workbench' ? (
-            <HomeMicroStrip
+            <HomeCapsuleRow
               cinemaInitial={cinemaInitial}
               pluginItems={pluginItems}
               showDramaCapsule={sectionOn('dramaCinema')}
               showAiCapsule={sectionOn('aiFinder')}
               showGuideBadge={!isModuleHidden('mod:onboarding-card')}
               activeWorkspace={activeWorkspace}
+              onWorkspaceChange={handleWorkspaceChange}
               initialSceneParam={sceneParam}
               onOpenGuideTab={() => {
                 setAppearanceTab('guide')

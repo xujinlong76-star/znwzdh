@@ -133,7 +133,7 @@ export function HomeQuickDock({
         id="quick-access-tray"
         data-speed-dial="true"
         aria-label="高频直达与常用访问"
-        className="mb-3 flex h-12 items-center gap-2 rounded-xl border border-border/60 bg-card/75 px-3 backdrop-blur-xs"
+        className="mb-2 flex h-12 items-center gap-2 rounded-xl border border-border/60 bg-card/75 px-3 backdrop-blur-xs"
       >
         {/* 首屏瘦身：单行 48px（h-12）——左紧凑 tab + 中间横向滚动胶囊区 +
             右「展开全部」。胶囊区已接入 HorizontalScrollFade 横向滚动渐隐

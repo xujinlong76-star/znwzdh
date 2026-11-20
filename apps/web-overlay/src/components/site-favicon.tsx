@@ -819,6 +819,194 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   // 全库 383 站核对：'learn.microsoft.com' 键只命中 Microsoft Learn 一站，无后缀串站。
   // 四色方块明亮、无需底块（resolveLogoTile 为 null），不做单站补丁。
   ['learn.microsoft.com', 'microsoft-learn.png'],
+  // 2026-11-20（C 类第 7 批 C7，W1 视频组 1：爱奇艺 / 腾讯视频 / 优酷）。
+  // 3 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
+  // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 来源（2026-11-20 15:01 CST 实测，Chrome UA，见 C7-W1 测试事实钉死）：
+  // 爱奇艺首页声明 //www.iqiyi.com/favicon.ico，200、32,038 B、
+  // image/x-icon，ICO 4 帧（16/32/48/64），最大 64×64 帧 PIL 转 RGBA
+  // PNG 原样落盘 iqiyi.png（7,036 B，绿底白字 iQIYI 爱奇艺标）；
+  // 腾讯视频首页声明 //v.qq.com/favicon.ico，200、4,286 B、
+  // image/x-icon，ICO 单帧 32×32 转 PNG 原样 tencent-video.png
+  // （915 B，蓝绿橙三色播放三角标）；优酷首页无 icon 声明，根
+  // /favicon.ico 直链 200、9,662 B、image/vnd.microsoft.icon，ICO
+  // 单帧 48×48 转 PNG 原样 youku.png（1,904 B，蓝底 YOUKU 优酷标，
+  // 首页无声明、favicon 直链可用即落地，仿 C8 学习强国先例）。
+  // 全库 383 站核对：'iqiyi.com' / 'youku.com' 各只命中一站；
+  // 'v.qq.com' 用完整 hostname 建键（不建 'qq.com' 裸域键）：
+  // so.qq.com（元宝搜索 yuanbao.png）、docs.qq.com（腾讯文档）、
+  // weixin.qq.com（微信）各有精确键，不受影响。3 站均 <128 原样
+  // 保留、绝不放大；均 ≤15 KB。优酷蓝底方块在浅/深主题下均显蓝底，
+  // 不做单站补丁，留待统一处理轮。
+  ['iqiyi.com', 'iqiyi.png'],
+  ['v.qq.com', 'tencent-video.png'],
+  ['youku.com', 'youku.png'],
+  // 2026-11-20（C 类第 7 批 C7 补批 W2，视频组 2，3 站）：芒果TV /
+  // 咪咕视频·短剧 / 央视频。3 站 icon 字段均为远端 …/favicon.ico，
+  // 被 isRemoteRawFavicon 拦截，map 生效，navigation.json 不动。
+  // 全库 383 站核对：3 个 map 键各只命中 1 站，无后缀串站。
+  // 芒果TV：首页声明的 shortcut icon
+  // static.hitv.com/pc/icons/icon_64x64.1b7ca7.png（64×64 PNG，
+  // 3,383 B，md5 1871e528cd65055d306a2f20e945eb63），橙底圆角方块 +
+  // 白色 M 标原样；根 /favicon.ico 另有 32×32 橙色描边 M 标
+  // （4,286 B），本轮选用首页声明的 64×64 完整应用标（仿 C12
+  // Imperva / Coolify“首页声明的最大尺寸 icon”先例），见 C7W2
+  // 测试事实钉死。咪咕视频·短剧：以 href 域名 cmread.com 为准
+  // （计划 §C7 备注：icon 字段域名 miguvideo.com 与 href 域名不
+  // 一致，以 href 域名官网为准；'miguvideo.com' 键绝不加）；源为
+  // cmread 声明的 favicon.png
+  // https://www.cmread.com/wenxueinterface/images/favicon.png
+  // （内容实为 ICO 32×32，4,286 B，解码落 PNG，1,181 B，md5
+  // ceb642a6715d5d790f4d5ae07a731341），蓝色 #2E6DED 单色字标原样；
+  // miguvideo.com/favicon.ico（48×48 红蓝 M 标）仅作交叉核对、未
+  // 采用；同页另声明的 logo-mark.svg（19.16×28 竖版页眉 logo
+  // mark）未采用——以 favicon 为准，见调查报告 §5 与 C7W2 测试
+  // 事实钉死。央视频：首页为 177 B meta-refresh 跳转页、无 icon
+  // 声明（link rel="icon" href="data:,"），根 /favicon.ico 直链
+  // 200 可用（48×48 ICO，9,662 B，解码落 PNG，2,220 B，md5
+  // b32d9387e7d784e1a317d6d41a9d53ab），红底 #D60010 + 白色央视
+  // 花标原样；仿 C8 学习强国“首页无声明、favicon 直链可用即落地”
+  // 先例。键用完整 hostname 'm.yangshipin.cn'（www 剥离不适用于
+  // m. 子域；不建 'yangshipin.cn' 裸域键）。无底块：mgtv 不透明橙
+  // 方块、yangshipin 全图不透明红底、cmread 蓝 #2E6DED 在浅/深主
+  // 题下均可见，resolveLogoTile 均为 null，不做单站补丁。
+  ['mgtv.com', 'mgtv.png'],
+  ['cmread.com', 'cmread.png'],
+  ['m.yangshipin.cn', 'yangshipin.png'],
+  // 2026-11-20（C 类第 7 批 C7 补批 W3，2/2）：DramaBox / DramaWave。
+  // 2 站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
+  // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 全库 383 站核对：2 个 map 键各只命中 1 站，无后缀串站。
+  // DramaBox 来源：首页声明的 /favicon.ico（200，1,393 B，32×32 ICO
+  // 内含 PNG）与页眉官方标 logo.png（176×176）为同一粉红 D-play 标，
+  // 取 176 源 LANCZOS 缩至 128×128 落盘（m-logo.png 362×80 为宽版
+  // wordmark，不作 tile）。DramaWave 来源：首页 JS 默认 icon
+  // '/dramawave.ico'（与 /favicon.ico md5 相同，200，4,286 B，32×32）
+  // 与 apple-touch-icon '/Logo.png'（512×512）为同一品红渐变 D-play
+  // 标（32px 小图初看易误读为 W，4 倍放大核对确为 D-play 标，与
+  // Logo.png 一致），取 512 源 LANCZOS 缩至 128×128 落盘。
+  // dramabox.png 15,595 B 略超光栅单站 ~15 KB 参考线（235 B），按原样
+  // 接线、字节数钉死，见 C7W3 测试事实钉死（C12 chinatax/forestry
+  // 超线原样先例）。两标均为不透明渐变底，深/浅主题均可辨，不进
+  // LOGO_TILE_MAP。
+  ['dramaboxdb.com', 'dramabox.png'],
+  ['mydramawave.com', 'dramawave.png'],
+  // 2026-11-20（C 类第 7 批 C7 补批 W4，小说组 1，2/20）：起点中文网 /
+  // 晋江文学城。C7 原“安全原因暂缓”经 2026-11-20 调查证实只是 W4 一份
+  // 报告被安全系统移除，无任何一站涉及安全/侵权/版权/合规（见
+  // icon-c7-defer-reason-2026-11-20.md §5）；两站官网/favicon 本轮实测
+  // 均可取。两站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon
+  // 拦截，map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键
+  // 绝不加。全库 383 站核对：'qidian.com' / 'jjwxc.net' 各只命中一站，
+  // 无后缀串站。起点：首页 202（209 B 反爬挑战页，不影响取标，仿 C8
+  // 慕课网/可汗学院先例），favicon.ico 直链 200（4,286 B，image/x-icon，
+  // 单帧 ICO 32×32 32bpp），Pillow 转 RGBA PNG 原样落盘 qidian.png
+  // （1,547 B，红底白字“起点中文网”标，主红 #f02737/#e50517）。
+  // 晋江：首页 200（71,944 B），favicon.ico 直链 200（2,038 B，
+  // image/x-icon，ICO 双帧均为 16×16），Pillow 默认解码转 RGBA PNG 原样
+  // 落盘 jjwxc.png（485 B，绿底白字“晋江文学城”标，主绿 #275f15）；
+  // 16×16 原尺寸按规范 §1.1 原样保留、绝不放大（仿 C12 百合网/世纪佳缘
+  // 16px 原样先例），卡片内显小是已知特性。两标浅/深主题均彩色可辨，
+  // 无需底块（resolveLogoTile 为 null），不做单站补丁。
+  ['qidian.com', 'qidian.png'],
+  ['jjwxc.net', 'jjwxc.png'],
+  // 2026-11-20（C 类第 7 批 C7 补批 W5，小说组 2：纵横中文网 / 飞卢小说网）。
+  // C7 暂缓“安全原因”经调查只是 W4 报告被安全系统移除，无任何一站涉及
+  // 安全/侵权/版权/合规（见 icon-c7-defer-reason-2026-11-20.md §5）。
+  // 两站 icon 字段均为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
+  // map 生效，navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 全库 383 站核对：'zongheng.com' / 'faloo.com' 各只命中一站，无后缀串站。
+  // 纵横：首页声明 rel="icon" href="/favicon.ico"，内容实为 PNG 16×16
+  // （742 B，md5 5c2a43cd336a629e5852d2f9e8f21bde），按内容解码原样落盘
+  // zongheng.png，红底白字纵横标；16px 原样不放大（C6 唯品会/速卖通/
+  // 携程仅 16px 已接受原样，有先例），卡片内显小是已知特性。
+  // 飞卢：首页声明 rel="shortcut icon" href="//s.faloo.com/novel/favicon.ico"，
+  // 与根 /favicon.ico md5 相同（c4f3df9dec223473188a362ae250ba41），单帧
+  // 48×48 32bpp ICO，Pillow 转 PNG 原样落盘 faloo.png（3,708 B），
+  // 绿底白字“飞卢”书法标。两标均为官网在用标原样，无占位、无通用标冒充。
+  ['zongheng.com', 'zongheng.png'],
+  ['faloo.com', 'faloo.png'],
+  // 2026-11-20（C 类第 7 批 C7 补批 W7，影视评分组 2 站）：IMDb / Letterboxd。
+  // C7 暂缓的“安全原因”经调查只是 W4 一份报告被安全系统移除，无任何一站
+  // 涉及安全/侵权/版权/合规（见 icon-c7-defer-reason-2026-11-20.md）。
+  // IMDb：首页 202、0 B（疑似反爬挑战页），favicon 直链 200，内容实为 PNG
+  // 32×32（497 B，md5 a00f507810e886fe683c705a0582cdb2），黄底 #F5C518 +
+  // 黑字 IMDb 标原样落盘 imdb.png。Letterboxd：首页 403 Cloudflare 验证墙
+  // （Just a moment…），favicon 直链 200，3 帧 ICO（16/32/64，22,382 B），
+  // 取最大 64×64 帧转 PNG 原样落盘 letterboxd.png（2,101 B，md5
+  // 5d8c7b3af905a4b820b27c23fa30b57f；深 slate #445566 圆底 + 橙/绿/蓝三色
+  // 圆标，四角透明）。两站 icon 字段均为远端 …/favicon.ico，被
+  // isRemoteRawFavicon 拦截后走 map，navigation.json 不动。
+  // 'github.com' / 'adobe.com' 键绝不加。全库 383 站核对：'imdb.com' /
+  // 'letterboxd.com' 各只命中 1 站，无后缀串站、无子域站。两标在浅/深主题
+  // 下均可辨识（IMDb 不透明黄底方块；Letterboxd 深 slate 底 + 亮色圆标），
+  // 按统一规范 §9 不做单站底块补丁、不配 LOGO_TILE_MAP，留待统一处理轮。
+  ['imdb.com', 'imdb.png'],
+  ['letterboxd.com', 'letterboxd.png'],
+  // 2026-11-20（C 类第 7 批 C7 补批，W8 单站）：Coursera。
+  // 站 icon 字段为远端 https://coursera.org/favicon.ico，被
+  // isRemoteRawFavicon 拦截（pathname '/favicon.ico'），map 生效，
+  // navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
+  // 全库 383 站核对：'coursera.org' 键只命中 Coursera 一站，无后缀串站、
+  // 无子域站。落盘 coursera.png 为官网首页声明的最大尺寸 favicon
+  // favicon-v2-194x194.png（15,476 B，md5
+  // 7169eafb412bf2df21fd61a482a2c136，CloudFront 直链）经 Pillow
+  // LANCZOS 只缩小至 128×128（9,529 B）；根 /favicon.ico 最大帧仅
+  // 48×48 未用。蓝 #0056D2 主色 + 白字镂空、四角透明，浅/深两主题下
+  // 均可见，无底块（resolveLogoTile 为 null），不做单站补丁，留待
+  // 统一处理轮。
+  ['coursera.org', 'coursera.png'],
+  // 2026-11-20（C 类第 7 批 C7，worker W9，七猫中文网 1 站）。
+  // 全库唯一既无 icon 字段又无映射的站（见 icon-c-plan §C7 备注）；
+  // 导航条目省略 icon 字段，解析走 map，navigation.json 不动。
+  // 来源：站点头部 Logo https://cdn-front.qimao.com/qimao/pc/img/header/logo.d026f02.png
+  // （200、image/png、4,072 B、380×88，PNG 魔数已验；curl 空回复为反爬，
+  // 浏览器直读正常；站根 /favicon.ico 仅 1×1 占位图，不可用）。
+  // Logo 为 380×88 横版图文，按品牌图标惯例只取左侧猫剪影方标：
+  // 品牌黄 #FCC800 圆角方块 x0–87 y0–87（88×88，黑猫“7”形剪影 +
+  // 黄眼睛 + 胡须），文字“七猫中文网”不硬塞；88 < 128 按规范 §1.1
+  // 原样保留、不放大，落盘 qimao.png（1,761 B，md5
+  // 7807f1b332c4b34d80af2f6182d09c6f）。U-333“死链”判定应修正为
+  // 不计死链（见 W9 测试事实钉死）。'github.com' / 'adobe.com' 键
+  // 绝不加。全库 383 站核对：'qimao.com' 键只命中七猫中文网一站，
+  // 无后缀串站、无子域站。黄底不透明、黑猫醒目，浅/深主题均可见，
+  // 无需底块（resolveLogoTile 为 null），不做单站补丁。
+  ['qimao.com', 'qimao.png'],
+  // 2026-11-20（C 类第 7 批 C7 补批 W10，猫眼电影 1 站）。
+  // C7 暂缓的“安全原因”经调查只是 W4 一份报告被安全系统移除，无任何一站
+  // 涉及安全/侵权/版权/合规（见 icon-c7-defer-reason-2026-11-20.md）。
+  // m 站 favicon 直链 200，image/x-icon，67,646 B，单帧 128×128 32 位
+  // DIB（ICO 魔数 00 00 01 00），转 RGBA PNG 原样落盘 maoyan.png
+  // （9,080 B，md5 5789648065fa2e8d7f8a19892c1a03c8）；红圆底 #E5342A
+  // + 白猫脸 #F5F5F5，四角透明，像素采样目视确认与官网标一致。
+  // www.maoyan.com/favicon.ico 本身打不开（curl -L 50 次重定向未收敛），
+  // 必须用 m 站地址；导航条目 icon 字段为远端 favicon.ico，被
+  // isRemoteRawFavicon 拦截后走 map，navigation.json 不动。
+  // 全库 383 站核对：'maoyan.com' 键只命中 猫眼电影 一站，无后缀串站。
+  // 红圆底 + 白猫脸在浅/深主题下均可辨识（resolveLogoTile 为 null），
+  // 不做单站补丁。
+  ['maoyan.com', 'maoyan.png'],
+  // 2026-11-20（C 类第 7 批 C7，W11，1 站）：Udemy。
+  // 来源（浏览器取材 + 独立复核）：官网 apple-touch-icon.png
+  // https://frontends.udemycdn.com/frontends-homepage/staticx/udemy/images/v7/apple-touch-icon.png
+  // （200、image/png、180×180、1,527 B，SHA-256
+  // 1a2683b802a828f68b2014a624aaf3009969dcf75451e6d35c16eb7db40c82e8）。
+  // 站根 /favicon.ico 404、v7 目录 favicon.ico / favicon-32x32.png /
+  // favicon-144x144.png 均 404；rel="icon" 声明链接未直接读到（浏览器
+  // 视图不暴露 head），以同源官方静态目录实测可加载的 apple-touch-icon.png
+  // 为源，见 C7-W11 测试事实钉死。交叉核对：同源 logo-udemy.svg
+  // （1,891 B）chevron #A435F0 与黑色小写 u 字标；调色板分析：白底
+  // 不透明（29,004 px 白、无 tRNS）、黑 U（0,0,0）、chevron #A435F0
+  // （164,53,240，878 px），与 SVG 的 #A435F0 一致。
+  // 落盘：Pillow LANCZOS 180→128（≥128 源缩到 128），RGB PNG，
+  // 2,579 B，md5 65c81a2ce9193371cc5f4106796d7635。白底不透明：
+  // 浅/深主题下均显白底方块、黑 U 可见，无底块（resolveLogoTile 为
+  // null），不做单站补丁，留待统一处理轮（仿 Midjourney 白底不透明先例）。
+  // 站 icon 字段为远端 https://www.udemy.com/favicon.ico，被
+  // isRemoteRawFavicon 拦截，map 生效，navigation.json 不动。
+  // 'github.com' / 'adobe.com' 键绝不加。
+  // 全库 383 站核对：'udemy.com' 键只命中 Udemy 一站，无后缀串站、无子域站。
+  ['udemy.com', 'udemy.png'],
  ];
 
 /**

@@ -5,8 +5,9 @@
  * 所以“行为级”按能真实跑到的层次分三层钉死，不拿源码 toContain 充数）：
  *
  *  1. 真行为（纯函数 / 真取数）：describeDegrade 的英文翻译、
- *     applyMarketplaceListLoad 的三态转移、fetch* 在 fetch 抛错时的
- *     onDegraded + 空兜底契约——全部是真实调用、真实断言返回值。
+ *     applyMarketplaceListLoad 的三态转移、mergeSilentSync 的静默合并
+ *     （只补身份态、不替换列表；#418 修复 2026-11-20）、fetch* 在 fetch
+ *     抛错时的 onDegraded + 空兜底契约——全部是真实调用、真实断言返回值。
  *  2. 真渲染（renderToString）：共用的 MarketplaceLoadError 面板、
  *     board 的空态 / 加载态 / 有数据态——断言渲染出的 HTML 文本。
  *  3. 接线顺序守卫（补充）：失败分支必须排在空态分支之前（三页）、
@@ -36,6 +37,7 @@ import {
 } from '../src/lib/navhub-api'
 import {
   applyMarketplaceListLoad,
+  mergeSilentSync,
   type MarketplaceListSnapshot,
 } from '../src/lib/plugins/marketplace-load-state'
 import { MarketplaceLoadError } from '../src/components/marketplace-load-error'
@@ -294,6 +296,106 @@ describe('applyMarketplaceListLoad：失败 ≠ 空', () => {
     const recovered = applyMarketplaceListLoad(failed, { items: [{ slug: 'a' }], total: 1 }, { failed: false, append: false, silent: false })
     expect(recovered).toEqual({ items: [{ slug: 'a' }], total: 1, loadFailed: false })
   })
+
+  it('A8 静默成功 + silentMerge：合并身份字段，不替换列表（#418：SSR 77 项不闪成 24 项）', () => {
+    const prev: MarketplaceListSnapshot<{ slug: string; name: string; installed?: boolean; starred?: boolean }> = {
+      items: [
+        { slug: 'a', name: 'A', installed: false, starred: false },
+        { slug: 'b', name: 'B', installed: false, starred: false },
+        { slug: 'c', name: 'C', installed: false, starred: false },
+      ],
+      total: 3,
+      loadFailed: false,
+    }
+    const next = applyMarketplaceListLoad(
+      prev,
+      {
+        items: [{ slug: 'b', name: 'B-新', installed: true, starred: true }],
+        total: 3,
+      },
+      { failed: false, append: false, silent: true, silentMerge: mergeSilentSync as never },
+    )
+    // 仍 3 项、顺序不变；只刷新同 slug 的身份字段，name 等其余字段保持 SSR 值
+    expect(next.items.map((i) => i.slug)).toEqual(['a', 'b', 'c'])
+    expect(next.items[1]).toEqual({ slug: 'b', name: 'B', installed: true, starred: true })
+    expect(next.items[0]).toEqual({ slug: 'a', name: 'A', installed: false, starred: false })
+    expect(next.total).toBe(3)
+    expect(next.loadFailed).toBe(false)
+  })
+
+  it('A8 静默失败 + silentMerge：仍原样返回（不写空兜底、不立失败态）', () => {
+    const next = applyMarketplaceListLoad(
+      loaded,
+      { items: [], total: 0 },
+      { failed: true, append: false, silent: true, silentMerge: mergeSilentSync as never },
+    )
+    expect(next).toBe(loaded)
+  })
+
+  it('A8 非静默成功 + silentMerge：仍替换（筛选/排序/搜索重取不受合并影响）', () => {
+    const next = applyMarketplaceListLoad(
+      loaded,
+      { items: [{ slug: 'c' }], total: 1 },
+      { failed: false, append: false, silent: false, silentMerge: mergeSilentSync as never },
+    )
+    expect(next.items).toEqual([{ slug: 'c' }])
+    expect(next.total).toBe(1)
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * mergeSilentSync：静默同步只补身份态、不替换列表（#418）
+ * ------------------------------------------------------------------ */
+
+describe('mergeSilentSync：静默同步只补身份态、不替换列表（#418）', () => {
+  type Item = {
+    slug: string
+    name: string
+    version: string
+    starred?: boolean
+    starCount?: number
+    installed?: boolean
+    installedVersion?: string | null
+    installCount?: number
+  }
+  const prev: Item[] = [
+    { slug: 'a', name: 'A', version: '1.0', starred: false, starCount: 0, installed: false, installCount: 0 },
+    { slug: 'b', name: 'B', version: '1.0', starred: false, starCount: 1, installed: false, installCount: 2 },
+    { slug: 'c', name: 'C', version: '2.0', starred: false, starCount: 0, installed: false, installCount: 0 },
+  ]
+
+  it('只取回一页（77→24 场景）：未取回条目原样保留，列表不缩水、顺序不变', () => {
+    const next = mergeSilentSync(prev, [
+      { slug: 'b', name: 'B-新', version: '9.9', starred: true, starCount: 5, installed: true, installedVersion: '1.1', installCount: 9 },
+    ])
+    expect(next.map((i) => i.slug)).toEqual(['a', 'b', 'c'])
+    expect(next[0]).toBe(prev[0])
+    expect(next[2]).toBe(prev[2])
+  })
+
+  it('只覆盖五个身份字段：name/version 等其余字段保持 SSR 值', () => {
+    const next = mergeSilentSync(prev, [
+      { slug: 'b', name: 'B-新', version: '9.9', starred: true, starCount: 5, installed: true, installedVersion: '1.1', installCount: 9 },
+    ])
+    expect(next[1]).toEqual({
+      slug: 'b',
+      name: 'B',
+      version: '1.0',
+      starred: true,
+      starCount: 5,
+      installed: true,
+      installedVersion: '1.1',
+      installCount: 9,
+    })
+  })
+
+  it('取回为空：返回原引用（不触发无意义重渲染）', () => {
+    expect(mergeSilentSync(prev, [])).toBe(prev)
+  })
+
+  it('无匹配 slug：返回原引用', () => {
+    expect(mergeSilentSync(prev, [{ slug: 'z', name: 'Z', version: '1.0' }])).toBe(prev)
+  })
 })
 
 /* ------------------------------------------------------------------ *
@@ -399,7 +501,12 @@ describe('接线顺序守卫（补充：行为由上层覆盖，这里只钉顺�
     expect(failureAt).toBeGreaterThan(-1)
     expect(emptyAt).toBeGreaterThan(-1)
     expect(failureAt).toBeLessThan(emptyAt)
-    expect(src).toContain('applyMarketplaceListLoad(prev, res, { failed, append, silent })')
+    // 2026-11-20 #418 修复后改写：load() 仍走状态机，但静默同步传
+    // silentMerge（合并身份态、不替换列表），不再是旧的纯替换调用。
+    expect(src).toContain('applyMarketplaceListLoad(prev, res, { failed, append, silent, silentMerge: mergeSilentSync })')
+    expect(src).toContain("import { applyMarketplaceListLoad, mergeSilentSync, type MarketplaceListSnapshot } from '@/lib/plugins/marketplace-load-state'")
+    // 静默同步要覆盖 SSR 已种的全量（默认 77 项），不再只取一页
+    expect(src).toContain('limit: silent ? Math.max(PAGE_SIZE, initialItems?.length ?? 0) : PAGE_SIZE,')
     expect(src).toContain('<MarketplaceLoadError title="插件市场加载失败"')
     // 失败时横幅不与失败态叠加：横幅只在非失败态渲染
     expect(src).toContain('{notice && !list.loadFailed && <HubDegradedNotice')

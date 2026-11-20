@@ -27,7 +27,7 @@ import { fetchPlugins, type HubPluginItem } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
 import { PluginCard } from '@/components/plugins/plugin-card'
 import { MarketplaceLoadError } from '@/components/marketplace-load-error'
-import { applyMarketplaceListLoad, type MarketplaceListSnapshot } from '@/lib/plugins/marketplace-load-state'
+import { applyMarketplaceListLoad, mergeSilentSync, type MarketplaceListSnapshot } from '@/lib/plugins/marketplace-load-state'
 import dynamic from 'next/dynamic'
 
 const PluginInstallModal = dynamic(
@@ -315,7 +315,17 @@ export function PluginMarketBoard({
         if (!silent) setNotice(describeDegrade(error, '插件市场'))
       }
       const res = await fetchPlugins(
-        { kind: kind || undefined, q: q || undefined, sort, starred: starredOnly || undefined, limit: PAGE_SIZE, offset },
+        {
+          kind: kind || undefined,
+          q: q || undefined,
+          sort,
+          starred: starredOnly || undefined,
+          // 静默同步要覆盖 SSR 已种的全量（默认 77 项），只取 24 项会让
+          // 25 项之后的已装/星标态永远补不上；上限 100 是 /api/plugins
+          // 的服务端硬限制，超了会被静默截断，合并仍只写回取回的部分。
+          limit: silent ? Math.max(PAGE_SIZE, initialItems?.length ?? 0) : PAGE_SIZE,
+          offset,
+        },
         onDegraded,
       )
       // 追加页失败时 res 是降级兜底（items 空、total 0），不能拿它覆盖现有状态：
@@ -323,8 +333,10 @@ export function PluginMarketBoard({
       // 而列表里明明还留着前面那些插件。失败就保持原样，让用户重试。
       // 静默同步失败同理：不能用空兜底把 SSR 首帧抹掉。
       // 首屏失败同理：不写空兜底，改立 loadFailed，由失败态接管列表区（P1-2）。
+      // 静默成功走合并（silentMerge）而非替换：SSR 已种全量，替换会把列表
+      // 闪成一页（83→30 张卡），且与水合抢跑会抛 React #418。
       setList((prev) => {
-        const next = applyMarketplaceListLoad(prev, res, { failed, append, silent })
+        const next = applyMarketplaceListLoad(prev, res, { failed, append, silent, silentMerge: mergeSilentSync })
         const items = overlayPatched(next.items, patchSeqAtIssue)
         return items === next.items ? next : { ...next, items }
       })
@@ -333,7 +345,7 @@ export function PluginMarketBoard({
         else setLoading(false)
       }
     },
-    [kind, q, sort, starredOnly, overlayPatched],
+    [kind, q, sort, starredOnly, overlayPatched, initialItems],
   )
 
   // 首帧用服务端数据，但 SSR 拿不到浏览器的匿名身份：挂载后静默重取一次

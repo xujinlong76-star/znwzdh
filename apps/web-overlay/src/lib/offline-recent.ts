@@ -1,5 +1,7 @@
 'use client'
 
+import { RECENT_PAUSED_KEY } from './personal-data'
+
 /**
  * 离线「最近访问」快照（P2-3 第一块）。
  *
@@ -175,6 +177,15 @@ function writeToLs(list: RecentVisit[]): boolean {
 
 /** 记录一次访问（fire-and-forget，永不 reject） */
 export function recordOfflineVisit(visit: Omit<RecentVisit, 'visitedAt'>): void {
+  // 「我的常用」关闭记录时（2026-11-20 W9）：本站内点击也不写快照与频次键，
+  // 用户点了「关闭」之后就不该还记得。开关缺省为开，既有行为不变。
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem(RECENT_PAUSED_KEY) === '1') {
+      return
+    }
+  } catch {
+    // 读不到开关时按默认（记录）继续，不阻断主流程
+  }
   const entry: RecentVisit = { ...visit, visitedAt: Date.now() }
   // 频次键与快照同次写：调优的计分终于能读到真实点击
   bumpVisitCount(visit.id)

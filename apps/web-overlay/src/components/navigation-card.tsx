@@ -7,6 +7,7 @@ import type { NavigationSubItem } from '@/types/navigation'
 import { SiteFavicon, extractFaviconMonogram, getDeterministicGradient } from '@/components/site-favicon'
 import { resolveSiteThumbnail, type SiteThumbnail } from '@/lib/site-thumbnails'
 import { FavoriteButton } from '@/components/favorite-button'
+import { PersonalPinButton } from '@/components/personal-pin-button'
 import type { SiteConfig } from '@/types/site'
 import {
   Tooltip,
@@ -735,6 +736,12 @@ export const NavigationCard = memo(function NavigationCard({
                     cardAction
                     site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
                   />
+                  {/* 固定到「我的常用」（2026-11-20 W9）：只存浏览器本地 */}
+                  <PersonalPinButton
+                    tabIndex={-1}
+                    cardAction
+                    site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon }}
+                  />
                 </span>
               </div>
             </div>
@@ -1009,6 +1016,12 @@ export const NavigationCard = memo(function NavigationCard({
                     cardAction
                     className="bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs"
                     site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
+                  />
+                  {/* 固定到「我的常用」（2026-11-20 W9）：只存浏览器本地 */}
+                  <PersonalPinButton
+                    tabIndex={-1}
+                    cardAction
+                    site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon }}
                   />
                 </span>
               </div>
@@ -1298,6 +1311,12 @@ export const NavigationCard = memo(function NavigationCard({
                   cardAction
                   className="bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs"
                   site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
+                />
+                {/* 固定到「我的常用」（2026-11-20 W9）：只存浏览器本地 */}
+                <PersonalPinButton
+                  tabIndex={-1}
+                  cardAction
+                  site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon }}
                 />
               </span>
             </div>

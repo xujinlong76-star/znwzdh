@@ -2424,6 +2424,19 @@
                 "Go",
                 "文档"
               ]
+            },
+            {
+              "id": "nav-31cba38935381184",
+              "title": "Microsoft Learn",
+              "href": "https://learn.microsoft.com/zh-cn/",
+              "description": "微软官方学习平台，文档、教程与认证路径免费开放",
+              "icon": "https://learn.microsoft.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "微软",
+                "文档",
+                "教程"
+              ]
             }
           ]
         },
@@ -2843,6 +2856,18 @@
                 "图标",
                 "开源",
                 "UI"
+              ]
+            },
+            {
+              "id": "nav-060035543d7b57c0",
+              "title": "Iconfont",
+              "href": "https://www.iconfont.cn",
+              "description": "阿里巴巴矢量图标库，提供图标下载、在线存储与格式转换",
+              "icon": "https://www.iconfont.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "图标",
+                "字体"
               ]
             }
           ]
@@ -5022,6 +5047,18 @@
               "href": "https://www.windy.com",
               "description": "全球风场与天气可视化地图，可看风、降雨与温度分层预报",
               "icon": "https://www.windy.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "天气",
+                "预报"
+              ]
+            },
+            {
+              "id": "nav-76a36b42b1daf644",
+              "title": "彩云天气",
+              "href": "https://www.caiyunapp.com/weather",
+              "description": "分钟级降水预报，精准到街道的天气查询",
+              "icon": "https://www.caiyunapp.com/favicon.ico",
               "enabled": true,
               "tags": [
                 "天气",

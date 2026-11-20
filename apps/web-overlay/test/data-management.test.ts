@@ -4,7 +4,7 @@
  * 锁住三件事：
  *   1. 灌入判定是纯函数、可枚举：0 = 空、(0, 基线) = 低于基线、≥ 基线 = 已灌入。
  *   2. 基线数字不是拍脑袋的：每次跑测试都重数一遍仓库事实源——
- *      navigation.json（380 站 / 48 二级 / 14 一级）与 videos.json（2265 条）。
+ *      navigation.json（383 站 / 48 二级 / 14 一级）与 videos.json（2265 条）。
  *      仓库扩容时这里会先红，提醒人同步改基线，而不是页面悄悄拿旧数比较。
  *      2026-11-15 T5 元宝收录：新增「AI 搜索」二级与元宝搜索一站。
  *      2026-11-15 卸载合集：补 github.com/trending 一站，基线 334→335。
@@ -24,7 +24,8 @@
  *      2026-11-20 进化轮 05:22：补站 U-08（容器与编排：Rancher 1 站），基线 376→377。
  *      2026-11-20 进化轮 05:22：补站 U-253（容器与编排：Portainer 1 站），基线 377→378。
  *      2026-11-20 进化轮 06:22：补站 U-254（容器与编排：Nomad 1 站），基线 378→379。
- *      2026-11-20 进化轮 08:22：补站 U-08（容器与编排：OpenShift 1 站），基线 379→380。
+ *      2026-11-20 进化轮 08:22：补站 U-08（容器与编排：OpenShift 1 站），基线 379→383。
+ *      2026-11-20 进化轮 11:22：补站 U-08（气象与环境：彩云天气；图标与字体：Iconfont；官方文档：Microsoft Learn，3 站），基线 380→383。
  *   3. 页面只展示从中枢取回的 live 数：页面源码里不许出现 346/2265 的
  *      字面量（基线只能来自 lib 常量），两个计数端点与三个管理入口必须在位，
  *      冷备导出必须走带 token 的 hubGet（普通 <a href> 带不上 admin token）。
@@ -104,7 +105,7 @@ describe('灌入判定 seedStatus', () => {
 })
 
 describe('基线数字钉住仓库事实源', () => {
-  it('站点基线 = navigation.json 实测（14 一级 / 48 二级 / 380 站）', () => {
+  it('站点基线 = navigation.json 实测（14 一级 / 48 二级 / 383 站）', () => {
     const nav = overlayJson('src/navsphere/content/navigation.json') as {
       navigationItems: Array<{ subCategories?: unknown[] }>
     }
@@ -115,8 +116,8 @@ describe('基线数字钉住仓库事实源', () => {
     )
     expect(nav.navigationItems.length).toBe(14)
     expect(subs).toBe(48)
-    expect(sites).toBe(380)
-    expect(BASELINE_SITES).toBe(380)
+    expect(sites).toBe(383)
+    expect(BASELINE_SITES).toBe(383)
   })
 
   it('视频基线 = videos.json 实测 2265 条', () => {

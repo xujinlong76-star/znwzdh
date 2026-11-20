@@ -26,7 +26,7 @@ import { LOCAL_LOGO_MAP, resolveLogoTile, resolveSiteIcon } from '../src/compone
  * 事实钉死（只记、不加占位、不擅自换图）：
  * - 品牌红 #EE0000 明亮，无需底块（resolveLogoTile 为 null），不做
  *   单站补丁。
- * - 全库 380 站核对：'openshift.com' map 键只命中 OpenShift 一站，无后缀串站。
+ * - 全库 383 站核对：'openshift.com' map 键只命中 OpenShift 一站，无后缀串站。
  * - 定价 freemium（免费 Developer Sandbox + 付费订阅 OpenShift Container
  *   Platform / Kubernetes Engine / ROSA；另有免费 8 小时 ROSA 体验）。
  */

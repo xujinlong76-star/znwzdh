@@ -469,6 +469,21 @@
   "evidence": "免费 Developer Sandbox（官网定价页：最小预配置开发测试环境即时可用）+ 付费订阅（OpenShift Container Platform / Kubernetes Engine / ROSA；另有免费 8 小时 ROSA 体验）",
   "title": "OpenShift"
  },
+ "caiyunapp.com/weather": {
+  "pricing": "freemium",
+  "evidence": "免费版可用；SVIP 连续包月 ¥9/月、包年 ¥90/年（App Store 说明），Pro 解锁专属降雨提醒与去广告",
+  "title": "彩云天气"
+ },
+ "iconfont.cn": {
+  "pricing": "freemium",
+  "evidence": "基础功能与图标资源免费，部分优质商用资源与团队增值服务付费",
+  "title": "Iconfont"
+ },
+ "learn.microsoft.com/zh-cn": {
+  "pricing": "free",
+  "evidence": "微软官方 FAQ：Learn 培训免费、向所有人开放；认证考试另行付费",
+  "title": "Microsoft Learn"
+ },
  "docs.docker.com/compose": {
   "pricing": "open_source",
   "evidence": "开源多容器编排工具",

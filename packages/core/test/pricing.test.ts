@@ -3,7 +3,7 @@
  * 1. 人工核实覆盖表优先，键归一化（www./大小写/尾斜杠）不影响命中；
  * 2. 强信号规则收紧：裸「免费」不判 free、「免费试用」判 freemium 而非 free；
  * 3. 无证据一律 unknown，绝不猜；
- * 4. 数据完整性：线上导航 380 站逐站过推导，确定值/未标注集合与撰写时的
+ * 4. 数据完整性：线上导航 383 站逐站过推导，确定值/未标注集合与撰写时的
  *    核实结论一致（新增站点落 unknown 是预期——提醒后来者先核实再入表）。
  *    2026-11-15 T5 元宝收录：元宝搜索已核实并入 pricing-overrides（free），确定值 303→304、未标注仍 30。
  *    2026-11-15 卸载合集：GitHub Trending 已在 pricing-overrides（free），确定值 304→305、未标注仍 30。
@@ -24,7 +24,8 @@
  *    2026-11-20 进化轮 05:22：补站 U-08（容器与编排：Rancher）并入 pricing-overrides（open_source 1），确定值 376→377、未标注仍 0。
  *    2026-11-20 进化轮 05:22：补站 U-253（容器与编排：Portainer）并入 pricing-overrides（open_source 1），确定值 377→378、未标注仍 0。
  *    2026-11-20 进化轮 06:22：补站 U-254（容器与编排：Nomad）并入 pricing-overrides（freemium 1），确定值 378→379、未标注仍 0。
- *    2026-11-20 进化轮 08:22：补站 U-08（容器与编排：OpenShift）并入 pricing-overrides（freemium 1），确定值 379→380、未标注仍 0。
+ *    2026-11-20 进化轮 08:22：补站 U-08（容器与编排：OpenShift）并入 pricing-overrides（freemium 1），确定值 379→383、未标注仍 0。
+ *    2026-11-20 进化轮 11:22：补站 U-08（气象与环境：彩云天气；图标与字体：Iconfont；官方文档：Microsoft Learn）并入 pricing-overrides（freemium 2、free 1），确定值 380→383、未标注仍 0。
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -101,7 +102,7 @@ describe("derivePricing 强信号规则（收紧版）", () => {
   });
 });
 
-describe("导航 380 站全量推导（数据完整性基线）", () => {
+describe("导航 383 站全量推导（数据完整性基线）", () => {
   const navPath = fileURLToPath(new URL("../../../apps/web-overlay/src/navsphere/content/navigation.json", import.meta.url));
   const nav = JSON.parse(readFileSync(navPath, "utf8")) as {
     navigationItems: Array<{
@@ -110,11 +111,11 @@ describe("导航 380 站全量推导（数据完整性基线）", () => {
   };
   const sites = nav.navigationItems.flatMap((c) => c.subCategories.flatMap((s) => s.items));
 
-  it("共 380 站", () => {
-    expect(sites.length).toBe(380);
+  it("共 383 站", () => {
+    expect(sites.length).toBe(383);
   });
 
-  it("确定值 380 站、未标注为 0（30 站已于 2026-11-15 逐站核实入表）", () => {
+  it("确定值 383 站、未标注为 0（30 站已于 2026-11-15 逐站核实入表）", () => {
     const unknownTitles: string[] = [];
     let determinate = 0;
     for (const s of sites) {
@@ -122,7 +123,7 @@ describe("导航 380 站全量推导（数据完整性基线）", () => {
       if (r.value === "unknown") unknownTitles.push(s.title);
       else determinate++;
     }
-    expect(determinate).toBe(380);
+    expect(determinate).toBe(383);
     expect(unknownTitles).toEqual([]);
   });
 });

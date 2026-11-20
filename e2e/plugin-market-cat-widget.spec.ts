@@ -37,7 +37,10 @@ async function hitIs(page: Page, x: number, y: number, closestSelector: string):
 }
 
 async function waitForCat(page: Page) {
-  await page.waitForSelector('#xiaomaomao', { timeout: 30_000 })
+  // 60 秒（2026-11-20 探针实测后放宽，原 30 秒）：猫脚本是 lazyOnload，首页重、
+  // 本地开发机慢时脚本在 load 事件后 20–44 秒才执行（load 本身只用了 3–10 秒），
+  // 30 秒等不到猫挂载。只放宽失败侧的等待上限，通过时仍是猫一可见即返回。
+  await page.waitForSelector('#xiaomaomao', { timeout: 60_000 })
   // lazyOnload 脚本 + 850ms 入场招呼 + .45s 收起滑动，留足余量
   await page.waitForTimeout(2000)
 }
@@ -120,35 +123,56 @@ test('市场页 390px：输入聚焦时猫静默，清除 × 可点，失焦后�
   await expect(page.locator('#xiaomaomao')).not.toHaveClass(/xm-quiet/, { timeout: 5000 })
 })
 
-test('首页 390px：入场招呼气泡 5 秒内消失，之后不重出', async ({ page }) => {
-  test.setTimeout(120_000)
+test('首页 390px：收起态无入场招呼，展开后摸猫气泡 5 秒内消失，之后不重出', async ({ page }) => {
+  // 180 秒预算（2026-11-20）：猫挂载在慢机上即占 20–45 秒（waitForCat 上限
+  // 60 秒），再加 5 秒无招呼等待 + 展开/摸猫 + 5 秒消失 + 8 秒不重出，
+  // 120 秒预算不够用。只放宽预算，断言一字不动。
+  test.setTimeout(180_000)
   await page.goto('/')
   await page.waitForLoadState('domcontentloaded')
   await waitForCat(page)
 
-  // A2-1：等招呼气泡出现后计时，5 秒内必须消失（实现是 4.5 秒定时器，
-  // xiaomaomao.js:1552 `setTimeout(hideBubble, 4500)`）。
-  // （2026-11-18 :123 选 b：c3001 门控阈值改按单个元素重叠面积占气泡面积
-  // >25% 判定——390px 首页三个 44px 悬浮钮各占气泡仅约 12%，不再拦住招呼；
-  // 整宽卡片/搜索框等大面积遮挡仍拦。3fc08466 的“永不出现”断言方向已弃，
-  // 本用例改回原断言；4.5 秒自动消失全路径自此由本用例覆盖。）
+  // A2-0（2026-11-20 按首屏瘦身 76b122a0 新行为改写）：全新 profile 下猫默认
+  // 收起（xm-closed），850ms 入场招呼被 xiaomaomao.js:3888 的 !xm-closed
+  // 守门跳过——收起态下招呼永不出。旧断言「等招呼气泡出现」与该有意变更直接
+  // 冲突，改写为「收起态下气泡不出」：招呼在初始化后 850ms 即判定，猫可见时
+  // 判定早已过去，再等 5 秒只是留足余量。4.5 秒自动消失的断言移到展开后
+  // 的摸猫气泡（A2-1），覆盖同一条定时器。c3001 门控（:123 选 b 的 >25%
+  // 阈值）只拦自动招呼，与本用例的新断言无关。
   const bubble = page.locator('#xiaomaomao .xm-bubble')
-  await expect(bubble).toHaveClass(/xm-show/, { timeout: 15_000 })
+  await page.waitForTimeout(5000)
+  await expect(bubble).not.toHaveClass(/xm-show/)
+
+  // A2-1：展开后摸猫出气泡，5 秒内必须消失（实现是 4.5 秒定时器，
+  // showBubble 入口 setTimeout(hideBubble, 4500)）。粗指针下点猫本体只开关
+  // 控制坞；.xm-stage 带无限浮动动画，Playwright 的 click 永远等不到 stable，
+  // 用 mouse.click 点舞台中心唤坞；摸猫钮是二级按钮（.xm-dock-sec），须先点
+  // 「更多」展开二级区，再点摸猫钮（.xm-pet-btn → petCat → showBubble）。
+  // 摸猫即置 interacted，26 秒分页面提示不再冒泡，不会污染
+  // A2-2 的「不重出」窗口。
+  await page.getByLabel('叫出小猫猫').click()
+  await expect(page.locator('#xiaomaomao')).not.toHaveClass(/xm-closed/, { timeout: 10_000 })
+  await page.waitForTimeout(600) // 入场动画（xm-enter .32s）落定，坞按钮稳定可点
+  const stageBox = await page.locator('#xiaomaomao .xm-stage').boundingBox()
+  expect(stageBox, '展开后猫舞台应有包围盒').not.toBeNull()
+  await page.mouse.click(stageBox!.x + stageBox!.width / 2, stageBox!.y + stageBox!.height / 2)
+  // 坞里摸猫钮是二级按钮（.xm-dock-sec），坞打开时默认隐藏，须先点「更多」
+  // （.xm-more-btn，aria-label「展开更多功能」）展开二级区；每次点坞内按钮
+  // 都会重算 3 秒自动收起计时，链路不会中途收坞。
+  await page.locator('#xiaomaomao .xm-more-btn').click({ timeout: 10_000 })
+  await page.locator('#xiaomaomao .xm-pet-btn').click({ timeout: 10_000 })
+  await expect(bubble).toHaveClass(/xm-show/, { timeout: 10_000 })
   const seenAt = Date.now()
   await expect(bubble).not.toHaveClass(/xm-show/, { timeout: 6000 })
   expect(Date.now() - seenAt, '单次气泡应自出现起 5 秒内消失').toBeLessThan(5000)
 
-  // A2-2：消失后 8 秒内不得重出。时序算术（T = 挂件初始化时刻；本窗口约
-  // T+2s 至 T+10s，waitForCat 已等 2 秒、此处再等 8 秒）：三条可能重出气泡的
-  // 路径都落不到窗内——分页面提示在 T+26s（xiaomaomao.js:3027）、闲时 tip
-  // 需 idle > 50s（:1759）、切走回访招呼需切走 ≥90s 后切回（:1743）。
+  // A2-2：消失后 8 秒内不得重出。时序算术：摸猫已置 interacted，26 秒分页面
+  // 提示被抑制；闲时 tip 需 idle > 50s（:1759）、切走回访招呼需切走 ≥90s 后
+  // 切回（:1743），均落不到窗内。
   await page.waitForTimeout(8000)
   await expect(bubble).not.toHaveClass(/xm-show/)
 
   // B2-3（366fd5a3）：招呼气泡消失后，不应把整只猫卸掉——8 秒后挂件本身仍可见。
-  // 更强断言（点猫后气泡出现）未加：粗指针下点猫本体只开关控制坞，气泡要
-  // 走坞内摸猫钮（.xm-pet-btn → petCat → showBubble），两步路径本机无
-  // Chrome 可验，不加未经验证的断言。
   await expect(page.locator('#xiaomaomao')).toBeVisible()
 })
 
@@ -162,19 +186,15 @@ test('市场页 390px：滚到底后页脚链接与回到顶部可点', async ({
   expect(reached, '应能滚到页面底部').toBe(true)
   await page.waitForTimeout(800) // 回到顶部按钮是 scrollY>300 后才现身的 React 状态
 
-  // A3-1（回到顶部）：取按钮顶部附近一点——此处正处猫带的高度（y 718–776），
-  // 猫若未收走会盖住它；底栏（y 788–844）不覆盖此点。
+  // A3-1（回到顶部，2026-11-20 按 292937a2 新行为改写）：底部悬浮工具栏
+  // （FloatingQuickNav）已随首屏瘦身整段移除，回顶改由命令面板指令覆盖；
+  // /marketplace 上不再有 button[aria-label="回到顶部"]（ScrollToTop 只挂
+  // 在 /videos）。旧断言「滚到底后至少应有一个回到顶部按钮」与该有意移除
+  // 直接冲突，改写为「按钮不存在」——无按钮即无猫盖住它的遮挡面；页脚链接
+  // 的遮挡断言在下一段，仍逐个实测。
   const topButtons = page.locator('button[aria-label="回到顶部"]')
   const topCount = await topButtons.count()
-  expect(topCount, '滚到底后至少应有一个回到顶部按钮').toBeGreaterThan(0)
-  for (let i = 0; i < topCount; i++) {
-    const btn = topButtons.nth(i)
-    if (!(await btn.isVisible().catch(() => false))) continue
-    const box = await btn.boundingBox()
-    if (!box) continue
-    const ok = await hitIs(page, box.x + box.width / 2, box.y + 5, 'button[aria-label="回到顶部"]')
-    expect(ok, '回到顶部按钮顶部应可点（猫不应盖住）').toBe(true)
-  }
+  expect(topCount, '底部悬浮工具栏已移除，市场页不应再有回到顶部按钮').toBe(0)
 
   // A3-1（页脚链接）：视口内、底栏（y 788–844）之上的页脚链接逐个断言；
   // 命中须是页脚链接本身（或其子孙），且绝不能是猫挂件（#xiaomaomao 内元素）。

@@ -34,7 +34,10 @@ function overlayFile(rel: string): string {
 
 const gated: Array<[string, string]> = [
   ["src/components/search-bar.tsx", "opacity-100 sm:flex sm:pointer-coarse:hidden"],
-  ["src/components/search-palette.tsx", "opacity-100 sm:flex sm:pointer-coarse:hidden shadow-2xs"],
+  // header-scroll-refactor-1222：搜索面板的 ⌘K 徽章改到 xl 才显示（<1280px 时徽章
+  // 文字会顶出输入框、与外部「AI 找站」按钮重叠）；触屏降噪仍在，只是变体
+  // 从 sm: 换成 xl:，pointer-coarse:hidden 本身不丢。
+  ["src/components/search-palette.tsx", "opacity-100 xl:flex xl:pointer-coarse:hidden shadow-2xs"],
   ["src/components/search-palette.tsx", "hidden sm:flex sm:pointer-coarse:hidden items-center gap-3 border-t border-border/60 bg-muted/20"],
   ["src/components/search/spotlight-modal.tsx", "hidden sm:inline-flex sm:pointer-coarse:hidden h-5"],
   ["src/components/search/spotlight-modal.tsx", 'flex items-center gap-1 pointer-coarse:hidden'],

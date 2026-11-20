@@ -4,6 +4,7 @@ import { useState, useTransition, useId } from 'react'
 import { Search, X, MonitorPlay, ArrowRight, Layers } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { HorizontalScrollFade } from '@/components/horizontal-scroll-fade'
 import { matchesSiteTag } from '@/lib/category-tag-match'
 import { searchHref } from '@/lib/search-page'
 import { useLocalSearchRecorder } from '@/lib/local-search-record'
@@ -187,7 +188,11 @@ export function CategorySiteFilterBar({
 
       {/* 根分类内子切片快选（不跳转到独立薄页，页内实时过滤） */}
       {subcategories.length > 0 && (
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-xs">
+        <HorizontalScrollFade
+          scrollClassName="flex items-center gap-1.5 pb-0.5 text-xs"
+          ariaLabel="分区筛选"
+          showArrows={false}
+        >
           <span className="text-[11px] text-muted-foreground shrink-0">分区筛选:</span>
           <button
             type="button"
@@ -235,12 +240,16 @@ export function CategorySiteFilterBar({
               </button>
             )
           })}
-        </div>
+        </HorizontalScrollFade>
       )}
 
       {/* 热门标签快选 */}
       {topTags.length > 0 && (
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-xs">
+        <HorizontalScrollFade
+          scrollClassName="flex items-center gap-1.5 pb-0.5 text-xs"
+          ariaLabel="标签精选"
+          showArrows={false}
+        >
           <span className="text-[11px] text-muted-foreground shrink-0">标签精选:</span>
           {topTags.map(([tag, count]) => {
             const isSelected = selectedTag === tag
@@ -263,7 +272,7 @@ export function CategorySiteFilterBar({
               </button>
             )
           })}
-        </div>
+        </HorizontalScrollFade>
       )}
 
       {/* 筛选零结果动态提示区（初始由 DOM 隐藏） */}

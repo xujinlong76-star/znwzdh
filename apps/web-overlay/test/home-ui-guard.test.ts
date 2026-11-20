@@ -28,10 +28,16 @@ function overlaySource(rel: string): string {
 describe('首页顶栏：搜索框与快捷键徽章', () => {
   const src = overlaySource('src/components/search-palette.tsx')
 
-  it('输入框右侧预留 ≥ 6.5rem（pr-26 起），占位符不被 AI 按钮/清空按钮盖住', () => {
-    expect(src).toContain('pr-26 sm:pr-44 md:pr-48')
-    // 不许退回「只留 pr-2/pr-3」的老写法
-    expect(src).not.toMatch(/\bpl-9[^"']*\bpr-[1-8]\b/)
+  it('输入框与右侧操作区 Flex 内布局：占位符不可能被 AI 按钮/清空按钮盖住', () => {
+    // header-scroll-refactor-1222：旧实现靠 input 右 padding（pr-26 起）给 absolute
+    // 操作区让位；1024px 档根节点 lg:min-w-[420px] 把框顶出父容器后，预留失效、
+    // 操作区与外部按钮叠在一起。新实现操作区是 in-flow 的 shrink-0 兄弟节点，
+    // input 为 flex-1 min-w-0——占位符再也不会被盖住，固定右 padding 不再需要，
+    // 断言按新行为改写（仍禁回 absolute 簇 + 固定右 padding 的老写法）。
+    expect(src).toContain('className="h-9.5 min-w-0 flex-1 border-0 bg-transparent px-0 py-1 shadow-none focus-visible:ring-0')
+    expect(src).toContain('<div className="flex shrink-0 items-center gap-1.5">')
+    expect(src).not.toContain('absolute right-2 top-1/2 flex items-center gap-1.5')
+    expect(src).not.toContain('pr-26 sm:pr-44 md:pr-48')
   })
 
   it('Omni 命令前缀四件套齐全（@g / @gh / @npm / @mdn）', () => {

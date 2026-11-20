@@ -13,6 +13,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { Clapperboard, Compass, Puzzle, Sparkles } from 'lucide-react'
 import { useWatchlist } from '@/hooks/useWatchlist'
+import { HorizontalScrollFade } from '@/components/horizontal-scroll-fade'
 import type { CinemaInitialData } from '@/components/home-drama-cinema'
 import type { HubPluginItem } from '@/lib/navhub-api'
 import { MARKETPLACE_CATEGORIES_PATH } from '@/lib/plugins/marketplace-categories'
@@ -87,9 +88,11 @@ export function HomeMicroStrip({
 
   return (
     <>
-      <div
-        aria-label="首页快捷功能小窗入口"
-        className="mb-2.5 flex items-center gap-1.5 overflow-x-auto py-0.5 scrollbar-none text-xs"
+      <HorizontalScrollFade
+        className="mb-2.5"
+        scrollClassName="flex items-center gap-1.5 py-0.5 text-xs"
+        ariaLabel="首页快捷功能小窗入口"
+        showArrows={false}
       >
         {showDrama ? (
           <div className="inline-flex h-8 shrink-0 items-center rounded-full border border-amber-500/30 bg-amber-500/8 px-2.5 text-amber-800 dark:text-amber-300">
@@ -176,7 +179,7 @@ export function HomeMicroStrip({
             <span>向导与设首页</span>
           </button>
         ) : null}
-      </div>
+      </HorizontalScrollFade>
 
       {dramaOpen ? (
         <DramaMiniDialog open={dramaOpen} onOpenChange={setDramaOpen} initial={cinemaInitial} />

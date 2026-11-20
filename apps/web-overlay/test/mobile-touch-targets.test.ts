@@ -135,8 +135,10 @@ describe('P1 #10 触控目标：首页常驻控件', () => {
   it('category-quick-jump-bar：切换/常用/分类 chips 与视频入口 44px', () => {
     const src = read('src/components/category-quick-jump-bar.tsx')
     expect(count(src, 'min-h-11')).toBeGreaterThanOrEqual(4)
-    // 左右滚动箭头只在 sm 以上出现，不是移动端目标
-    expect(src).toContain('hidden sm:flex items-center justify-center h-7 w-7')
+    // header-scroll-refactor-1222：左右滚动箭头统一收进 HorizontalScrollFade，
+    // 本文件不再手写箭头；箭头「只在 sm 以上出现」的 44px 目标改由统一组件锁住。
+    const fade = read('src/components/horizontal-scroll-fade.tsx')
+    expect(fade).toContain('hidden sm:flex items-center justify-center h-7 w-7')
   })
 
   it('directory-pill-toolbar：目录胶囊 44px', () => {

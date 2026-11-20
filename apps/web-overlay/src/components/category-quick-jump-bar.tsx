@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, Star, MonitorPlay, ChevronsUpDown } from 'lucide-react'
+import { Star, MonitorPlay, ChevronsUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { preferredScrollBehavior } from '@/lib/motion'
+import { HorizontalScrollFade } from '@/components/horizontal-scroll-fade'
 
 export interface CategoryJumpItem {
   id: string
@@ -31,29 +32,7 @@ export function CategoryQuickJumpBar({
   onToggleAllCollapsed,
 }: CategoryQuickJumpBarProps) {
   const [activeId, setActiveId] = useState<string>('')
-  const [canScrollLeft, setCanScrollLeft] = useState(false)
-  const [canScrollRight, setCanScrollRight] = useState(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-
-  // 检查横向滚动边界
-  const checkScrollBounds = useCallback(() => {
-    const el = scrollContainerRef.current
-    if (!el) return
-    setCanScrollLeft(el.scrollLeft > 4)
-    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4)
-  }, [])
-
-  useEffect(() => {
-    const el = scrollContainerRef.current
-    if (!el) return
-    checkScrollBounds()
-    el.addEventListener('scroll', checkScrollBounds, { passive: true })
-    window.addEventListener('resize', checkScrollBounds)
-    return () => {
-      el.removeEventListener('scroll', checkScrollBounds)
-      window.removeEventListener('resize', checkScrollBounds)
-    }
-  }, [checkScrollBounds, categories])
 
   // 监听可视区域内的分类区块 (Scroll Spy)
   useEffect(() => {
@@ -128,13 +107,6 @@ export function CategoryQuickJumpBar({
     }
   }
 
-  const scrollHorizontally = (direction: 'left' | 'right') => {
-    const el = scrollContainerRef.current
-    if (!el) return
-    const offset = direction === 'left' ? -240 : 240
-    el.scrollBy({ left: offset, behavior: 'smooth' })
-  }
-
   if (categories.length === 0) return null
 
   return (
@@ -146,27 +118,15 @@ export function CategoryQuickJumpBar({
       )}
     >
       <div className="relative flex items-center max-w-7xl mx-auto">
-        {/* 左滑按钮 */}
-        {canScrollLeft && (
-          <button
-            type="button"
-            onClick={() => scrollHorizontally('left')}
-            className="absolute left-0 z-10 hidden sm:flex items-center justify-center h-7 w-7 rounded-full bg-background/95 border border-border shadow-xs text-muted-foreground hover:text-foreground transition-all"
-            aria-label="向左滚动分类"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-        )}
-
-        {/* 左侧遮罩 */}
-        {canScrollLeft && (
-          <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-background to-transparent pointer-events-none z-5" />
-        )}
-
-        {/* 横向滚动列表 */}
-        <div
+        {/* 横向滚动列表：边界检测、渐隐遮罩、滚轮横滚与箭头统一由
+            HorizontalScrollFade 负责；ScrollSpy 仍用 scrollContainerRef
+            把激活 Pill 滚回可视区（ref 经组件透传到滚动容器）。 */}
+        <HorizontalScrollFade
           ref={scrollContainerRef}
-          className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 px-1 w-full"
+          className="min-w-0 flex-1"
+          scrollClassName="flex items-center gap-1.5 scroll-smooth py-0.5 px-1 w-full"
+          prevAriaLabel="向左滚动分类"
+          nextAriaLabel="向右滚动分类"
         >
           {onToggleAllCollapsed && (
             <button
@@ -247,24 +207,7 @@ export function CategoryQuickJumpBar({
             <span>精选视频</span>
             <span className="text-[10px] px-1 rounded-full bg-rose-500/20">6k+</span>
           </Link>
-        </div>
-
-        {/* 右滑按钮 */}
-        {canScrollRight && (
-          <button
-            type="button"
-            onClick={() => scrollHorizontally('right')}
-            className="absolute right-0 z-10 hidden sm:flex items-center justify-center h-7 w-7 rounded-full bg-background/95 border border-border shadow-xs text-muted-foreground hover:text-foreground transition-all"
-            aria-label="向右滚动分类"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        )}
-
-        {/* 右侧遮罩 */}
-        {canScrollRight && (
-          <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background to-transparent pointer-events-none z-5" />
-        )}
+        </HorizontalScrollFade>
       </div>
     </nav>
   )

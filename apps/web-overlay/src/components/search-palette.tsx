@@ -1344,7 +1344,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const omniCommand = useMemo(() => parseOmniCommand(query), [query])
 
   return (
-    <div ref={searchRef} className="relative w-full max-w-2xl min-w-0 sm:min-w-[380px] lg:min-w-[420px] mx-auto">
+    <div ref={searchRef} className="relative w-full max-w-2xl min-w-0 mx-auto">
       {/* DIY「导入」的文件选择框 */}
       <input
         ref={diyImportInputRef}
@@ -1389,8 +1389,14 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           dialogDescription="保存到「我的站点」（登录后跨设备同步）。网址必填：请粘贴真实网址，不会按关键词猜一个地址。"
         />
       )}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      {/* 搜索框 Flex 内布局：外层做输入框边框样式，左侧图标 + 中间 input（flex-1 min-w-0）
+          + 右侧 shrink-0 操作区（AI 切换 / 清空 / ⌘K 徽章）。右侧操作区不用裸 absolute
+          定位——旧实现里 absolute 簇 + 固定右 padding 在 1024px 档会被
+          根节点的 lg 档 420px 最小宽度顶出父容器，与「AI 找站」「今日」按钮叠在一起。 */}
+      <div
+        className={`flex items-center gap-2 rounded-xl border bg-background/90 pl-3 pr-2 shadow-xs transition-all focus-within:ring-2 hover:border-border-strong dark:bg-muted/20 ${aiMode ? 'border-violet-400/70 focus-within:border-violet-400/80 focus-within:ring-violet-400/30' : 'border-border-strong focus-within:border-primary/50 focus-within:ring-primary/20'}`}
+      >
+        <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <Input aria-label={effectivePlaceholder}
           data-search-input
           ref={inputRef}
@@ -1415,9 +1421,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             setIsFocused(true)
           }}
           onFocus={() => setIsFocused(true)}
-          className={`pl-9 sm:pl-10 pr-26 sm:pr-44 md:pr-48 h-9.5 sm:h-10 rounded-xl border hover:border-border-strong bg-background/90 dark:bg-muted/20 focus:ring-2 shadow-xs text-base sm:text-sm transition-all ${aiMode ? 'border-violet-400/70 focus:border-violet-400/80 focus:ring-violet-400/30' : 'border-border-strong focus:border-primary/50 focus:ring-primary/20'}`}
+          className="h-9.5 min-w-0 flex-1 border-0 bg-transparent px-0 py-1 shadow-none focus-visible:ring-0 text-base sm:text-sm"
         />
-        <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           <Button
             variant="ghost"
@@ -1436,7 +1442,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               <X className="h-3 w-3" />
             </Button>
           )}
-          <kbd className="hidden h-5 select-none items-center gap-0.5 rounded-md border border-border/50 bg-muted/60 px-1.5 font-mono text-xs font-semibold text-muted-foreground opacity-100 sm:flex sm:pointer-coarse:hidden shadow-2xs" title={spotlightHotkeyHint(preferences.spotlightShortcut, modKey) + ' 呼出超级搜索'}>
+          {/* <1280px 隐藏：窄档下徽章文字会顶出输入框、与外部「AI 找站」按钮重叠；
+              隐藏后呼出键仍可按 ⌘K / / 使用，title 保留提示。 */}
+          <kbd className="hidden h-5 select-none items-center gap-0.5 rounded-md border border-border/50 bg-muted/60 px-1.5 font-mono text-xs font-semibold text-muted-foreground opacity-100 xl:flex xl:pointer-coarse:hidden shadow-2xs" title={spotlightHotkeyHint(preferences.spotlightShortcut, modKey) + ' 呼出超级搜索'}>
             {/* 徽标必须与真正生效的呼出键一致：选了「仅 /」还显示 ⌘K 就是在骗用户 */}
             <span>{spotlightHotkeyHint(preferences.spotlightShortcut, modKey)}</span>
           </kbd>

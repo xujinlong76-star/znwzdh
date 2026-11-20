@@ -340,8 +340,10 @@ describe("表单控件边界（border-border-strong，禁 border-input）", () =
   });
   it("搜索面板输入框（原 border-border/70 盲区，实测 ≈1.2:1）必须用 border-border-strong", () => {
     const src = readFileSync(overlayPath("src/components/search-palette.tsx"), "utf8");
-    const inputLine = src.split("\n").find((l) => l.includes("pl-9") && l.includes("rounded-xl"));
-    expect(inputLine, "未找到搜索输入框 className 行").toBeTruthy();
+    // header-scroll-refactor-1222：输入框改 Flex 内布局后，边框从 Input 本体移到
+    // 外层 flex 容器（focus-within:ring-2 的那一行）；对比度要求不变，仍锁该行。
+    const inputLine = src.split("\n").find((l) => l.includes("focus-within:ring-2") && l.includes("rounded-xl"));
+    expect(inputLine, "未找到搜索框外层容器 className 行").toBeTruthy();
     expect(
       inputLine!,
       "搜索框边界需 border-border-strong（防 border-border/N 透明度变体绕开 border-input 禁令）",

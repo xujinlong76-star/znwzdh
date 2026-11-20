@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { ChevronRight, History, Star, Zap } from 'lucide-react'
 import { SiteFavicon } from '@/components/site-favicon'
+import { HorizontalScrollFade } from '@/components/horizontal-scroll-fade'
 import { NumberDialBadge } from '@/components/number-dial-badge'
 import { safeHref } from '@/lib/safe-url'
 import { computeSpeedDialSites } from '@/lib/speed-dial-order'
@@ -135,8 +136,8 @@ export function HomeQuickDock({
         className="mb-3 flex h-12 items-center gap-2 rounded-xl border border-border/60 bg-card/75 px-3 backdrop-blur-xs"
       >
         {/* 首屏瘦身：单行 48px（h-12）——左紧凑 tab + 中间横向滚动胶囊区 +
-            右「展开全部」。胶囊区保留 overflow-x-auto 容器，供顶栏重构线接入
-            HorizontalScrollFade 横向滚动渐隐（不要删掉该滚动容器）。 */}
+            右「展开全部」。胶囊区已接入 HorizontalScrollFade 横向滚动渐隐
+            （2026-11-20 合入合并：首屏单行布局 + 顶栏渐隐包装，两者都保留）。 */}
         <div className="flex shrink-0 items-center gap-1" role="tablist" aria-label="高频直达分类">
             <button
               type="button"
@@ -184,7 +185,13 @@ export function HomeQuickDock({
             </button>
           </div>
 
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none">
+        <HorizontalScrollFade
+          className="min-w-0 flex-1"
+          scrollClassName="flex items-center gap-1.5"
+          ariaLabel="高频直达站点列表"
+          prevAriaLabel="向左滚动直达站点"
+          nextAriaLabel="向右滚动直达站点"
+        >
           {activeItems.map((item) => (
             <a
               key={`${activeTab}-${item.id}`}
@@ -216,7 +223,7 @@ export function HomeQuickDock({
               ) : null}
             </a>
           ))}
-        </div>
+        </HorizontalScrollFade>
 
         <button
           type="button"

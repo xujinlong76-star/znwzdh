@@ -56,10 +56,17 @@ import { QuickActions } from '@/components/user-center/dashboard/quick-actions'
 import { SyncHealthCard } from '@/components/user-center/dashboard/sync-health-card'
 import { PersonalizationCard } from '@/components/user-center/dashboard/personalization-card'
 import { RecentActivity, type ActivityItem } from '@/components/user-center/dashboard/recent-activity'
-import { GrowthPanelLazy } from '@/components/user-center/growth-panel-lazy'
+import {
+  currentStreak,
+  dailyTaskStatus,
+  GROWTH_UPDATED_EVENT,
+  levelProgress,
+  loadGrowthProfile,
+  type GrowthProfile,
+} from '@/lib/growth'
 import { EntryGroups } from '@/components/user-center/dashboard/entry-groups'
 import { ThemeQuickToggle } from '@/components/user-center/dashboard/theme-quick-toggle'
-import { ArrowRight, CheckCircle2, RefreshCw, Settings2, User } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Gift, RefreshCw, Settings2, User } from 'lucide-react'
 
 /** 设置面板：原地即时交互控件（In-Place Controls），完整表单可前往 /me/settings */
 // 单选组方向键：遵循 WAI-ARIA 单选组模式——方向键在组内移动并选中，
@@ -245,6 +252,100 @@ function SettingsSummary({
           </button>
         </div>
       </div>
+    </section>
+  )
+}
+
+/**
+ * 概览页「今日成长速览」横幅卡（2026-11-21 结构重构）。
+ *
+ * 成长系统本体已迁至 /me/growth 独立 Tab，这里只留一张紧凑横向横幅。
+ * 数据与成长系统同源（lib/growth：loadGrowthProfile + levelProgress +
+ * dailyTaskStatus + currentStreak），绝不硬编码；档案变化经
+ * GROWTH_UPDATED_EVENT 广播即时刷新。
+ *
+ * 数字口径（与 William 当前真实值一致）：
+ *   文案 `Lv.4 · 422/600 XP` = 总经验 / 下一级门槛（Lv.5 在 600 XP），
+ *   进度条可视化同一分数（422/600 ≈ 70%）；成长面板内的 in-level 进度条
+ *  （levelProgress.progress，本级 62/240 ≈ 26%）是另一口径，留在成长 Tab 内。
+ */
+function GrowthBanner() {
+  const [profile, setProfile] = useState<GrowthProfile | null>(null)
+
+  useEffect(() => {
+    const refresh = () => {
+      try {
+        setProfile(loadGrowthProfile())
+      } catch {
+        setProfile(null)
+      }
+    }
+    refresh()
+    window.addEventListener(GROWTH_UPDATED_EVENT, refresh)
+    window.addEventListener('storage', refresh)
+    return () => {
+      window.removeEventListener(GROWTH_UPDATED_EVENT, refresh)
+      window.removeEventListener('storage', refresh)
+    }
+  }, [])
+
+  if (!profile) {
+    return (
+      <section
+        aria-label="今日成长速览"
+        aria-busy="true"
+        className="rounded-2xl border border-border/70 bg-card/75 p-4 shadow-xs sm:p-5"
+      >
+        <div className="h-5 w-32 animate-pulse rounded-lg bg-muted" />
+        <div className="mt-3 h-2 w-full animate-pulse rounded-full bg-muted/60" />
+      </section>
+    )
+  }
+
+  const lp = levelProgress(profile.totalXp)
+  const status = dailyTaskStatus(profile, new Date())
+  const doneCount = status.slots.filter((s) => s.done).length
+  const streak = currentStreak(profile, new Date())
+  // 横幅分数 = 总经验 / 下一级门槛，与文案「422/600 XP」同一口径。
+  const totalProgress = lp.nextXp ? Math.min(1, Math.max(0, profile.totalXp / lp.nextXp)) : 1
+  const progressPct = Math.round(totalProgress * 100)
+
+  return (
+    <section
+      aria-label="今日成长速览"
+      className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/75 p-4 shadow-xs sm:flex-row sm:items-center sm:gap-4 sm:p-5"
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-sm font-semibold tracking-tight">
+            Lv.{lp.level} {lp.title} · {profile.totalXp}/{lp.nextXp ?? profile.totalXp} XP
+          </span>
+          <span className="text-xs text-muted-foreground">连续 {streak} 天</span>
+          <span className="text-xs text-muted-foreground">今日任务 {doneCount}/3</span>
+        </div>
+        <div
+          className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-muted"
+          role="progressbar"
+          aria-valuenow={progressPct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`距离下一级 Lv.${lp.nextLevel ?? lp.level} 的总进度`}
+        >
+          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progressPct}%` }} />
+        </div>
+        {lp.nextXp && lp.nextLevel && (
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            再赚 {lp.toNext} XP 升至 Lv.{lp.nextLevel} · {lp.nextTitle}
+          </p>
+        )}
+      </div>
+      <Button asChild size="sm" className="shrink-0 text-xs">
+        <Link href="/me/growth">
+          <Gift className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+          去领每日宝箱
+          <ArrowRight className="ml-1 h-3.5 w-3.5" aria-hidden />
+        </Link>
+      </Button>
     </section>
   )
 }
@@ -514,7 +615,9 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
             anonymous={true}
           />
 
-          <GrowthPanelLazy />
+          {/* 2026-11-21 结构重构：成长系统已迁至 /me/growth 独立 Tab，
+              概览仅留一张「今日成长速览」横幅卡（数据与成长系统同源）。 */}
+          <GrowthBanner />
         </div>
       )}
 
@@ -584,7 +687,9 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
             </div>
           </div>
 
-          <GrowthPanelLazy />
+          {/* 2026-11-21 结构重构：成长系统已迁至 /me/growth 独立 Tab，
+              概览仅留一张「今日成长速览」横幅卡（数据与成长系统同源）。 */}
+          <GrowthBanner />
         </div>
       )}
 

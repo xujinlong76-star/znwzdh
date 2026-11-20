@@ -23,18 +23,22 @@ describe('用户中心（/me）重新设计守卫', () => {
     expect(nav).toContain('pr-4 sm:gap-1 sm:pr-0')
   })
 
-  it('/me 概览使用紧凑氛围页头 + 顶部快捷主题切换，且全部功能入口优先于成长面板展示', () => {
+  it('/me 概览使用紧凑氛围页头 + 顶部快捷主题切换，且全部功能入口优先于成长速览横幅展示', () => {
     const view = read('src/app/me/me-view.tsx')
     expect(view).toContain('<CenterPageHeader\n        compact')
     expect(view).toContain('<ThemeQuickToggle />')
 
+    // 2026-11-21 结构重构：成长系统迁至 /me/growth 独立 Tab，概览底部不再堆砌
+    // 成长面板，改为一张「今日成长速览」横幅卡（GrowthBanner）。入口组仍在横幅之前。
     const anonBlock = view.slice(view.indexOf("state === 'anonymous'"), view.indexOf("state === 'error'"))
     expect(anonBlock.indexOf('<EntryGroups')).toBeGreaterThan(-1)
-    expect(anonBlock.indexOf('<GrowthPanelLazy />')).toBeGreaterThan(anonBlock.indexOf('<EntryGroups'))
+    expect(anonBlock).not.toContain('<GrowthPanelLazy />')
+    expect(anonBlock.indexOf('<GrowthBanner')).toBeGreaterThan(anonBlock.indexOf('<EntryGroups'))
 
     const readyBlock = view.slice(view.indexOf("state === 'ready'"))
     expect(readyBlock.indexOf('<EntryGroups')).toBeGreaterThan(-1)
-    expect(readyBlock.indexOf('<GrowthPanelLazy />')).toBeGreaterThan(readyBlock.indexOf('<EntryGroups'))
+    expect(readyBlock).not.toContain('<GrowthPanelLazy />')
+    expect(readyBlock.indexOf('<GrowthBanner')).toBeGreaterThan(readyBlock.indexOf('<EntryGroups'))
   })
 
   it('匿名身份卡采用实线 Bento 样式并融合本机资产速览，不重复打印两遍匿名 ID', () => {

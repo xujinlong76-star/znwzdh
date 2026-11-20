@@ -355,13 +355,14 @@ export function EntryGroups({
               </div>
               <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{group.items.length} 项</span>
             </div>
-            <ul className="grid flex-1 gap-1.5 sm:grid-cols-2">
-              {group.items.map(({ href, label, hint, icon: Icon, badgeKey, defaultBadge }, idx) => {
+            {/* 方案 A（2026-11-21 结构重构）：内层改单列紧凑列表，每行宽度充足，
+                标题与描述完整展示、杜绝截断；外层仍是 2×2 大卡片网格。 */}
+            <ul className="flex flex-1 flex-col gap-1.5">
+              {group.items.map(({ href, label, hint, icon: Icon, badgeKey, defaultBadge }) => {
                 // U-92：插件徽章走独立 state（首漆 null → 默认中性文案），其余仍走 telemetry。
                 const liveBadge = badgeKey === 'plugins' ? (pluginBadge ?? defaultBadge) : (telemetry[badgeKey] || defaultBadge)
-                const spanFull = group.items.length === 3 && idx === 2
                 return (
-                  <li key={href} className={spanFull ? 'min-w-0 sm:col-span-2' : 'min-w-0'}>
+                  <li key={href} className="min-w-0">
                     <Link
                       href={href}
                       className="group flex h-full items-center justify-between gap-2 rounded-xl border border-border/60 bg-card/80 px-2.5 py-2 text-xs transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:shadow-xs dark:hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -371,8 +372,8 @@ export function EntryGroups({
                           <Icon className="h-3.5 w-3.5" aria-hidden />
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate font-medium text-foreground">{label}</span>
-                          <span aria-hidden className="block truncate text-[10px] text-muted-foreground">
+                          <span className="block font-medium text-foreground">{label}</span>
+                          <span aria-hidden className="block text-[10px] text-muted-foreground">
                             {hint}
                           </span>
                         </span>

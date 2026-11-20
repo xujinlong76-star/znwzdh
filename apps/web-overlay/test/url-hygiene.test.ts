@@ -189,7 +189,7 @@ const SANCTIONED: Array<{ file: string; kind: Hit["kind"]; expr: string; why: st
     file: "src/components/user-center/user-center-nav.tsx",
     kind: "href",
     expr: "item.href",
-    why: "用户中心固定六个入口，同文件常量表",
+    why: "用户中心固定七个入口，同文件常量表",
     evidence: ["href: '/me/plugins'"],
   },
   {

@@ -27,18 +27,27 @@ function overlayFile(rel: string): string {
 describe('/me 成长面板懒加载边界', () => {
   const meView = () => overlayFile('src/app/me/me-view.tsx')
   const lazy = () => overlayFile('src/components/user-center/growth-panel-lazy.tsx')
+  // 2026-11-21 结构重构：成长面板挂载点从 /me 概览迁至 /me/growth 独立页。
+  const growthPage = () => overlayFile('src/app/me/growth/page.tsx')
 
-  it('me-view 不静态引入 growth-panel，只走懒加载包装', () => {
+  it('me-view 不静态引入 growth-panel，成长面板挂载点已迁至 /me/growth 页', () => {
     const s = meView()
     expect(s).not.toContain("from '@/components/user-center/growth-panel'")
     expect(s).not.toContain('from "./growth-panel"')
-    expect(s).toContain("from '@/components/user-center/growth-panel-lazy'")
-    expect(s).toContain('<GrowthPanelLazy />')
+    // 2026-11-21 结构重构：成长系统从概览底部迁至 /me/growth 独立 Tab，
+    // 概览只留 GrowthBanner 横幅卡；GrowthPanelLazy 的挂载点随之搬家，懒加载边界不变。
+    expect(s).not.toContain("from '@/components/user-center/growth-panel-lazy'")
+    expect(s).not.toContain('<GrowthPanelLazy />')
+    expect(s).toContain('<GrowthBanner')
+    const growth = growthPage()
+    expect(growth).toContain("from '@/components/user-center/growth-panel-lazy'")
+    expect(growth).toContain('<GrowthPanelLazy />')
   })
 
-  it('匿名与登录两态都渲染懒加载版成长面板', () => {
-    const hits = meView().match(/<GrowthPanelLazy \/>/g) ?? []
-    expect(hits.length).toBe(2)
+  it('成长面板只在 /me/growth 页挂载一次（懒加载版）', () => {
+    const hits = growthPage().match(/<GrowthPanelLazy \/>/g) ?? []
+    expect(hits.length).toBe(1)
+    expect(meView().match(/<GrowthPanelLazy \/>/g) ?? []).toHaveLength(0)
   })
 
   it('懒加载包装用 next/dynamic 且保留服务端首帧', () => {

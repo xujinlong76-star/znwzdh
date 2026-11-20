@@ -44,7 +44,7 @@
 //   庆祝视频钩子：public/xiaomaomao/media/ 下放 celebrate.mp4 / dance-1..5.mp4 即自动生效
 //   （或用 window.XIAOMAOMAO_MEDIA 指向 CDN），文件不在时跳过视频庆祝（只留气泡/台词），绝不摆假视频；
 //   ②可拖动补强——触摸拖动（touch-action:none）、钳制改按根节点真实尺寸、pointercancel 兜底；
-//   ③闲时贴边收缩——60 秒不理小猫自动滑到最近的窗口左右边缘半藏（露约半张脸），
+//   ③闲时贴边收缩——60 秒不理小猫自动吸附到最近的窗口左右边缘安全内边距处（整只猫完整可见），
 //   悬停/点按弹回；聊天面板/游戏开着、拖动中、收起态不缩；
 //   ④用户自改形象——聊天面板里从整套在用图挑一张当主形象，或上传自己的图片
 //   （浏览器内裁方压缩、≤约 420KB，只存本机 localStorage，可恢复默认；单图时降级为静态主图+既有动效）。
@@ -2304,7 +2304,7 @@
   applySavedPos();
   alignPanel();
 
-  /* ---------- v6：闲时贴边收缩（60 秒不理小猫 → 滑到最近的左右边缘半藏，露约半张脸） ----------
+  /* ---------- v6：闲时贴边收缩（60 秒不理小猫 → 吸附到最近的左右边缘安全内边距处，整只猫完整可见） ----------
      冲突规则（先想清再写）：聊天面板开着不缩（xm-open）；游戏开着不缩；收起成圆标不缩
      （圆标本身已是最小态）；拖动中不缩；聊天请求中（busy）不缩；页面不可见不缩。
      睡觉与贴边互不干涉：睡着了也可以贴边，Zzz 跟着走；点/悬停先弹回，唤醒仍走原 click 链。
@@ -2328,11 +2328,16 @@
     var r = root.getBoundingClientRect();
     var w = r.width || 112;
     dockSide = (r.left + w / 2) < window.innerWidth / 2 ? 'left' : 'right';
-    var shift = Math.max(0, Math.round(w * 0.48));
-    root.style.transform = 'translateX(' + (dockSide === 'left' ? -shift : shift) + 'px)';
+    /* 2026-11-21 /me P0：贴边半藏改为安全内边距贴边——旧逻辑把猫推出视口 48%，
+       右缘的鱼数/徽章角标（外探约 5px）会被视口裁掉。改为吸附到最近边缘的
+       8px 安全内边距处，整只猫与角标完整可见；点/悬停仍弹回原位。 */
+    var SAFE_DOCK_INSET = 8;
+    var targetLeft = dockSide === 'left' ? SAFE_DOCK_INSET : window.innerWidth - SAFE_DOCK_INSET - w;
+    var shift = Math.round(targetLeft - r.left);
+    root.style.transform = 'translateX(' + shift + 'px)';
     docked = true;
     root.classList.add('xm-docked');
-    pauseClips(); /* 默认视频：贴边半藏即停播，不在半藏态白白解码 */
+    pauseClips(); /* 默认视频：贴边吸附后停播，不在吸附态白白解码 */
     hideBubble();
   }
   function undock() {

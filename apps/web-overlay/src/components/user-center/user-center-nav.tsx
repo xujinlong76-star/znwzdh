@@ -17,12 +17,14 @@
  */
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Bell } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowLeft, Bell } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-url'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { useUnreadNotifications } from '@/hooks/useUnreadNotifications'
 import { unreadBadgeText } from '@/lib/notification-badge'
+import { dailyTaskStatus, GROWTH_UPDATED_EVENT, loadGrowthProfile } from '@/lib/growth'
 
 interface SubNavItem {
   href: string
@@ -37,6 +39,8 @@ interface DomainItem {
 
 const DOMAINS: readonly DomainItem[] = [
   { href: '/me', label: '概览' },
+  // 2026-11-21 结构重构：成长系统从 /me 概览底部迁至此独立 Tab。
+  { href: '/me/growth', label: '成长与任务' },
   {
     href: '/favorites',
     label: '内容与收藏',
@@ -87,6 +91,28 @@ export function UserCenterNav() {
   const unread = useUnreadNotifications(identityState)
   const unreadText = unreadBadgeText(unread)
 
+  // 成长 Tab 小红点：有未领宝箱或待办每日任务时显示。数据与成长系统同源
+  // （lib/growth，localStorage），只在客户端 effect 里读，不碰 SSR。
+  const [growthAlert, setGrowthAlert] = useState(false)
+  useEffect(() => {
+    const refresh = () => {
+      try {
+        const profile = loadGrowthProfile()
+        const status = dailyTaskStatus(profile, new Date())
+        setGrowthAlert(status.chestAvailable || status.slots.some((s) => !s.done))
+      } catch {
+        setGrowthAlert(false)
+      }
+    }
+    refresh()
+    window.addEventListener(GROWTH_UPDATED_EVENT, refresh)
+    window.addEventListener('storage', refresh)
+    return () => {
+      window.removeEventListener(GROWTH_UPDATED_EVENT, refresh)
+      window.removeEventListener('storage', refresh)
+    }
+  }, [])
+
   const isNotificationsActive =
     pathname === NOTIFICATION_ENTRY.href || pathname.startsWith(NOTIFICATION_ENTRY.href + '/')
 
@@ -104,6 +130,18 @@ export function UserCenterNav() {
         aria-label="用户中心导航"
         className="relative flex items-center justify-between gap-1 rounded-2xl border border-border/70 bg-card/95 p-1 shadow-xs sm:gap-1.5 sm:p-1.5"
       >
+        {/* 2026-11-21 结构重构：补齐全局导航闭环——顶栏最左侧固定返回首页入口，
+            细竖线与用户中心子导航分隔；出现在所有挂载 UserCenterNav 的页面。 */}
+        <div className="flex shrink-0 items-center border-r border-border/60 pr-1.5 sm:pr-2">
+          <Link
+            href="/"
+            aria-label="返回首页"
+            className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-xl px-2 py-1.5 text-xs font-medium text-foreground/75 transition-all duration-200 hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+            返回首页
+          </Link>
+        </div>
         <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto pr-4 sm:gap-1 sm:pr-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:[mask-image:linear-gradient(to_right,black_86%,transparent_100%)]">
           {DOMAINS.map((item) => {
             const isExact = pathname === item.href
@@ -116,7 +154,7 @@ export function UserCenterNav() {
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'shrink-0 whitespace-nowrap rounded-xl px-2.5 py-1.5 text-xs font-medium transition-all duration-200 sm:px-3',
+                  'relative shrink-0 whitespace-nowrap rounded-xl px-2.5 py-1.5 text-xs font-medium transition-all duration-200 sm:px-3',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                   active
                     ? 'bg-primary text-primary-foreground shadow-sm'
@@ -124,6 +162,15 @@ export function UserCenterNav() {
                 )}
               >
                 {item.label}
+                {item.href === '/me/growth' && growthAlert && (
+                  <>
+                    <span
+                      aria-hidden
+                      className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-card"
+                    />
+                    <span className="sr-only">有未领宝箱或待办任务</span>
+                  </>
+                )}
               </Link>
             )
           })}

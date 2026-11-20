@@ -58,7 +58,7 @@ async function findCat(page: Page): Promise<FixedInfo | null> {
 }
 
 test('小猫挂件遮挡与闲置贴边现状测量（桌面 1920x1080）', async ({ page }) => {
-  test.setTimeout(240_000)
+  test.setTimeout(360_000) // 360 秒（2026-11-20）：本地开发机慢时首访加载 + 猫挂载即超 240 秒；只放宽预算，量法与断言一字不动。
   const consoleErrors: string[] = []
   const pageErrors: string[] = []
   const failedRequests: string[] = []
@@ -74,8 +74,16 @@ test('小猫挂件遮挡与闲置贴边现状测量（桌面 1920x1080）', asyn
 
   await page.addInitScript(() => { document.documentElement.style.scrollBehavior = 'auto' })
   await page.goto('/')
-  await page.waitForLoadState('networkidle')
+  // networkidle 在开发机上可能被页内持续请求拖很久（本轮实测 2 分钟以上才
+  // 走完），它只是「页面落定」的启发式，真正的门是下面的猫挂载等待；
+  // 60 秒封顶、超时也继续，不把整轮预算烧在这里。
+  await page.waitForLoadState('networkidle', { timeout: 60_000 }).catch(() => {})
   await page.waitForTimeout(5000)
+  // 前置（2026-11-20）：猫脚本是 lazyOnload，首页重、本地开发机慢时脚本在
+  // load 事件后 20–44 秒才执行（探针实测：1920 下 load 9.8 秒已 fire、猫
+  // 39–44 秒才出现）；只等 networkidle + 5 秒就量，量到的常是「脚本还没跑」
+  // 而不是「猫被藏」。先等猫挂载再量，量什么、怎么量一字不动。
+  await expect(page.locator('#xiaomaomao')).toBeAttached({ timeout: 60_000 })
 
   const fixed = await fixedElements(page)
   const cat = await findCat(page)

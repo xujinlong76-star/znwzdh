@@ -141,7 +141,7 @@ export function sortLocalRowsByScore<T>(
 
 /* ------------------------------ 快捷操作 ------------------------------ */
 
-export type PaletteActionId = 'theme' | 'elder' | 'add-site' | 'density'
+export type PaletteActionId = 'theme' | 'elder' | 'add-site' | 'density' | 'personal-export' | 'personal-clear'
 
 export interface PaletteActionEntry {
   id: PaletteActionId
@@ -164,7 +164,7 @@ export interface PaletteActionOptions {
   densityLabel: string
 }
 
-/** 四个操作行（含随状态变的标题 / 描述）。空查询返回全部，供空面板直接展示。 */
+/** 六个操作行（含随状态变的标题 / 描述）。空查询返回全部，供空面板直接展示。 */
 export function buildPaletteActions(opts: PaletteActionOptions): PaletteActionEntry[] {
   return [
     {
@@ -192,6 +192,18 @@ export function buildPaletteActions(opts: PaletteActionOptions): PaletteActionEn
       label: `切换卡片密度（当前：${opts.densityLabel}）`,
       description: '紧凑 / 舒适 / 宽松三档循环切换，立即生效',
       keywords: '密度 卡片密度 切换密度 紧凑 舒适 宽松 midu density',
+    },
+    {
+      id: 'personal-export',
+      label: '导出我的数据',
+      description: '把「我的常用」（置顶、自定义链接、场景）导出为 JSON 备份文件，只在本地下载',
+      keywords: '导出 导出数据 备份我的数据 导出我的常用 daochu export backup',
+    },
+    {
+      id: 'personal-clear',
+      label: '清除全部个人数据',
+      description: '一键清除置顶、自定义链接、场景与本地最近使用（会先请你确认）',
+      keywords: '清除 清除数据 删除个人数据 清空我的常用 qingchu clear delete',
     },
   ]
 }

@@ -19,7 +19,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList } from '@/registry/new-york/ui/command'
-import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download, ExternalLink, PencilLine, Share2, Upload, RotateCcw, LayoutTemplate, Sun, Moon, Accessibility, Plus, Wrench, Calculator, Braces, Binary, Link2, KeyRound, Timer, Terminal, Hash, Globe, Network, Palette, CalendarDays, Regex, Scale, Activity, Ruler, Fingerprint } from 'lucide-react'
+import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download, ExternalLink, PencilLine, Share2, Upload, RotateCcw, LayoutTemplate, Sun, Moon, Accessibility, Plus, Wrench, Calculator, Braces, Binary, Link2, KeyRound, Timer, Terminal, Hash, Globe, Network, Palette, CalendarDays, Regex, Scale, Activity, Ruler, Fingerprint, Trash2 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
   searchSites,
@@ -47,7 +47,7 @@ import {
   type RecentSearchItem,
 } from '@/lib/recent-search'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
-import { OFFLINE_RECENT_LIMIT, buildMruNormBySiteId, recordOfflineVisit, readOfflineVisits, splitRecentVisitsForBoost, type RecentVisit } from '@/lib/offline-recent'
+import { OFFLINE_RECENT_LIMIT, buildMruNormBySiteId, clearOfflineVisits, recordOfflineVisit, readOfflineVisits, splitRecentVisitsForBoost, type RecentVisit } from '@/lib/offline-recent'
 import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
 import { rankSearchHits } from '@/lib/search-rerank'
@@ -61,6 +61,8 @@ import {
 import { getIdentity } from '@/lib/identity'
 import { relaxedPricingNotice, searchHref } from '@/lib/search-page'
 import { useFavorites } from '@/hooks/useFavorites'
+import { downloadTextFile, usePersonalData } from '@/hooks/usePersonalData'
+import { PersonalPinButton } from '@/components/personal-pin-button'
 import { useToast } from '@/components/ui/use-toast'
 import type { SiteConfig } from '@/types/site'
 import { parseSpeculativeIntent } from '@/lib/speculative'
@@ -186,6 +188,8 @@ const PALETTE_ACTION_ICONS: Record<Exclude<PaletteActionId, 'theme'>, typeof Pen
   elder: Accessibility,
   'add-site': Plus,
   density: LayoutTemplate,
+  'personal-export': Download,
+  'personal-clear': Trash2,
 }
 
 /** 极速工具行图标（P1 #8）：装饰性图标，与抽屉各 tab 的图标同口径 */
@@ -435,6 +439,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [pinyinReady, setPinyinReady] = useState(false)
   const identity = useMemo(() => getIdentity(), [])
   const favorites = useFavorites()
+  /** 「我的常用」（2026-11-20 W9）：只读浏览器本地，与收藏夹分轨 */
+  const personal = usePersonalData()
   const { toast } = useToast()
   const preferences = useUserPreferences()
   const featureMask = useFeatureMask()
@@ -1038,12 +1044,28 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   }, [stageImportForConfirm, toast])
 
   /**
-   * 万能栏快捷操作（P1 #8）：四个操作全部复用已有 handler，只做分发与提示，
+   * 万能栏快捷操作（P1 #8）：六个操作全部复用已有 handler，只做分发与提示，
    * 不复制执行逻辑。主题 / 长辈 / 密度点完即生效（面板收起 + toast 说清
-   * 结果）；添加站点打开录入弹窗（面板收起，弹窗接管焦点）。
+   * 结果）；添加站点打开录入弹窗（面板收起，弹窗接管焦点）；
+   * 导出 / 清除走「我的常用」本地数据层（2026-11-20 W9），零网络请求。
    */
   const handlePaletteAction = useCallback((action: PaletteActionEntry) => {
     setIsFocused(false)
+    if (action.id === 'personal-export') {
+      const stamp = new Date().toISOString().slice(0, 10)
+      downloadTextFile(`znw-personal-data-v1-${stamp}.json`, personal.exportJson())
+      toast({ title: '已导出「我的常用」备份文件', description: '文件里只有收藏、分组与偏好，不含浏览历史与搜索词' })
+      return
+    }
+    if (action.id === 'personal-clear') {
+      if (!window.confirm('确定清除全部「我的常用」个人数据吗？包括置顶、自定义链接、场景分组与本地最近使用。此操作不可恢复（建议先导出备份）。')) {
+        return
+      }
+      personal.clearAll()
+      void clearOfflineVisits()
+      toast({ title: '已清除全部个人数据', description: '首页「我的常用」区已恢复默认折叠状态' })
+      return
+    }
     if (action.id === 'theme') {
       const nextDark = resolvedTheme !== 'dark'
       setTheme(nextDark ? 'dark' : 'light')
@@ -1069,7 +1091,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     setAddSiteDesc('')
     setAddSiteTargetCatId(null)
     setAddSiteOpen(true)
-  }, [resolvedTheme, setTheme, elderOn, cycleDensity, toast])
+  }, [resolvedTheme, setTheme, elderOn, cycleDensity, toast, personal])
 
   /**
    * 极速工具（P1 #8）：回车即把示例填回输入框，面板不关闭——已有的
@@ -1269,7 +1291,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     const { boosted, rest } = splitRecentVisitsForBoost(recentVisits)
     return [...boosted, ...rest]
   }, [recentVisits])
-  /** 空查询面板直接展示的四操作（matchPaletteActions('') 即全部）与收藏 */
+  /** 空查询面板直接展示的六操作（matchPaletteActions('') 即全部）与收藏 */
   const emptyPanelActions = useMemo(
     () => matchPaletteActions('', paletteActionOpts),
     [paletteActionOpts],
@@ -1751,7 +1773,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             </div>
           </div>
 
-          {/* 快捷操作（P1 #8）：空查询时直接展示全部四项，点一下就执行（主题 / 长辈 / 密度即时生效，添加站点开弹窗） */}
+          {/* 快捷操作（P1 #8）：空查询时直接展示全部六项，点一下就执行（主题 / 长辈 / 密度即时生效，添加站点开弹窗，导出 / 清除走本地数据层） */}
           <div className="p-2.5">
             <div className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1.5 mb-2 px-1">
               <Zap className="h-3 w-3 text-amber-500" />
@@ -1839,6 +1861,91 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   </p>
                 )
               })()}
+            </div>
+          )}
+
+          {/* 我的常用（2026-11-20 W9）：空查询时展示置顶与场景切换；数据只在浏览器本地 */}
+          {(personal.data.pinned.length > 0 || personal.data.customLinks.length > 0 || personal.data.scenes.length > 0) && (
+            <div className="p-2.5 bg-amber-500/5">
+              <div className="text-[11px] font-semibold text-muted-foreground flex items-center justify-between mb-2 px-1">
+                <span className="flex items-center gap-1.5">
+                  <Star className="h-3 w-3 text-amber-500 fill-amber-500" />
+                  <span>我的常用</span>
+                </span>
+                <Link href="/personal" onClick={() => setIsFocused(false)} className="text-[10px] font-mono text-muted-foreground hover:text-primary">
+                  管理与隐私 →
+                </Link>
+              </div>
+              {personal.data.scenes.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2 px-1">
+                  <button
+                    type="button"
+                    onClick={() => personal.setActiveScene(null)}
+                    className={`px-2 py-0.5 rounded-full text-[11px] border transition-colors ${personal.data.activeSceneId === null ? 'bg-primary text-primary-foreground border-primary' : 'bg-background/60 text-muted-foreground border-border/60 hover:bg-accent/50'}`}
+                  >
+                    全部
+                  </button>
+                  {personal.data.scenes.map((scene) => (
+                    <button
+                      key={scene.id}
+                      type="button"
+                      onClick={() => personal.setActiveScene(scene.id)}
+                      title={scene.goal || scene.name}
+                      className={`px-2 py-0.5 rounded-full text-[11px] border transition-colors ${personal.data.activeSceneId === scene.id ? 'bg-primary text-primary-foreground border-primary' : 'bg-background/60 text-muted-foreground border-border/60 hover:bg-accent/50'}`}
+                    >
+                      {scene.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                {personal.data.pinned.map((pin) => {
+                  const href = safeHref(pin.href, '')
+                  if (!href) return null
+                  return (
+                    <a
+                      key={pin.siteId}
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => {
+                        recordOfflineVisit({ id: pin.siteId, title: pin.title, href, icon: pin.icon ?? null })
+                        personal.recordClick()
+                        setIsFocused(false)
+                      }}
+                      className="flex items-center gap-2 p-1.5 rounded-lg border border-border/50 bg-background/60 hover:bg-accent/50 hover:border-primary/30 transition-all text-xs group"
+                    >
+                      <div className="w-4 h-4 shrink-0 flex items-center justify-center">
+                        <SiteFavicon title={pin.title} url={href} icon={pin.icon} className="w-4 h-4 object-contain rounded" />
+                      </div>
+                      <span className="truncate font-medium text-foreground group-hover:text-primary transition-colors text-[11px]">
+                        {pin.title}
+                      </span>
+                    </a>
+                  )
+                })}
+                {personal.data.customLinks.map((link) => {
+                  const href = safeHref(link.url, '')
+                  if (!href) return null
+                  return (
+                    <a
+                      key={link.id}
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => {
+                        personal.recordClick()
+                        setIsFocused(false)
+                      }}
+                      className="flex items-center gap-2 p-1.5 rounded-lg border border-dashed border-border/60 bg-background/60 hover:bg-accent/50 transition-all text-xs group"
+                    >
+                      <span className="truncate font-medium text-foreground group-hover:text-primary transition-colors text-[11px]">
+                        {link.name}
+                      </span>
+                    </a>
+                  )
+                })}
+              </div>
             </div>
           )}
 
@@ -3007,9 +3114,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       >
                         <Star className={'h-4 w-4 ' + (faved ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />
                       </button>
+                      {/* 固定到「我的常用」（2026-11-20 W9）：只存浏览器本地 */}
+                      <PersonalPinButton site={{ siteId: site.id, title: site.title, href: site.url, icon: site.iconKey ?? null }} />
                       </div>
-                    </Fragment>
-                  )
+                    </Fragment>                  )
                 })
               )}
               {/* 键盘提示：能力存在但没人知道，等于不存在（桌面端才显示） */}

@@ -37,9 +37,15 @@ const FAVORITES: PaletteFavoriteLike[] = [
 ]
 
 describe('matchPaletteActions', () => {
-  it('空查询返回全部 4 个操作（空面板直接展示，不走匹配）', () => {
+  it('空查询返回全部 6 个操作（空面板直接展示，不走匹配）', () => {
     const items = matchPaletteActions('', OPTS)
-    expect(items.map((i) => i.id)).toEqual(['theme', 'elder', 'add-site', 'density'])
+    expect(items.map((i) => i.id)).toEqual(['theme', 'elder', 'add-site', 'density', 'personal-export', 'personal-clear'])
+  })
+
+  it('「导出」「清除」命中「我的常用」本地数据操作（2026-11-20 W9）', () => {
+    expect(matchPaletteActions('导出', OPTS).map((i) => i.id)).toEqual(['personal-export'])
+    expect(matchPaletteActions('清除', OPTS).map((i) => i.id)).toEqual(['personal-clear'])
+    expect(matchPaletteActions('daochu', OPTS).map((i) => i.id)).toEqual(['personal-export'])
   })
 
   it('单字查询不匹配', () => {
@@ -80,7 +86,7 @@ describe('matchPaletteActions', () => {
     expect(matchPaletteActions('天气预报', OPTS)).toEqual([])
   })
 
-  it('四个操作行都有「执行后会发生什么」的描述，没有空文案', () => {
+  it('六个操作行都有「执行后会发生什么」的描述，没有空文案', () => {
     for (const action of buildPaletteActions(OPTS)) {
       expect(action.label.trim().length).toBeGreaterThan(0)
       expect(action.description.trim().length).toBeGreaterThan(0)

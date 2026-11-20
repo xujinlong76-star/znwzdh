@@ -76,6 +76,31 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     }).optional(),
   });
 
+  /**
+   * 搜索框热词（W4-0622-1 收尾③）：/search 空态的「大家都在搜」chips 数据源。
+   *
+   * 与零结果页 `popular` 同口径（见 runSearch 零结果分支）：`suggestableTopQueries`
+   * （180 天、过取 30，自带 ≥2 身份 / ≥2 行 / 形状闸）再排除零结果词，取前 8。
+   * 只读、无身份、无写入：本次请求不记事件，`before: snapshotAt` 也不需要——
+   * 本端点不写事件，不存在「自己灌榜」回路。读失败降级为空数组 + 降级计数，
+   * 不 5xx（chips 是附加信息，缺了比整页报错好；与 runSearch 建议读侧同哲学）。
+   */
+  app.get("/api/search/hotwords", { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 60, etag: true } } }, async () => {
+    const [topRead, zeroRead] = await Promise.allSettled([
+      ctx.repo.suggestableTopQueries(180, 30),
+      ctx.repo.zeroResultQueries(180, 30),
+    ]);
+    const degraded = topRead.status === "rejected" || zeroRead.status === "rejected";
+    if (degraded) {
+      recordSearchSuggestionsDegraded();
+    }
+    const top = topRead.status === "fulfilled" ? topRead.value : [];
+    const zero = zeroRead.status === "fulfilled" ? zeroRead.value : [];
+    const zeroSet = new Set(zero.map((z) => z.query));
+    const hotwords = top.filter((t) => !zeroSet.has(t.query)).slice(0, 8).map((t) => t.query);
+    return { hotwords, ...(degraded ? { suggestionsDegraded: true } : {}) };
+  });
+
   app.get("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 20, etag: true, vary: SEARCH_VARY } } }, async (req, reply) => {
     const parsed = searchBody.safeParse(req.query ?? {});
     if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);

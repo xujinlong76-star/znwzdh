@@ -15,6 +15,8 @@ import {
   isBlockedByBotStatus,
   normalizeAuditUrl,
   PLUGIN_AUDIT_DEFAULTS,
+  PLUGIN_AUDIT_LIMITS,
+  PluginAuditLimitError,
   probeUrls,
   sampleUrls,
   summarizeProbes,
@@ -212,5 +214,66 @@ describe("一步到位入口", () => {
     expect(summary.ok + summary.broken).toBe(30);
     expect(summary.reachability).toBeGreaterThan(0);
     expect(summary.reachability).toBeLessThan(1);
+  })
+})
+
+describe("资源上限（CodeQL #134）：fail-closed，超限直接拒绝", () => {
+  it("输入清单超 maxUrls 条直接拒绝（恶意插件声明数万条 URL 的主向量）", async () => {
+    const probe = async (url: string): Promise<UrlProbeResult> => ({ url, ok: true });
+    await expect(auditPluginUrls(makeUrls(PLUGIN_AUDIT_LIMITS.maxUrls + 1), probe)).rejects.toMatchObject({
+      code: "audit_limit_exceeded",
+      limit: "maxUrls",
+    });
+    // 边界：恰好等于上限时不拒绝
+    const { sampledUrls } = await auditPluginUrls(makeUrls(PLUGIN_AUDIT_LIMITS.maxUrls), probe, { sample: 5 });
+    expect(sampledUrls).toHaveLength(5);
+  })
+
+  it("sample 超上限时钳制到 maxSample（不静默放行、也不拒绝整轮）", async () => {
+    const { sampledUrls } = await auditPluginUrls(makeUrls(200), async (url) => ({ url, ok: true }), {
+      sample: 10_000,
+    });
+    expect(sampledUrls).toHaveLength(PLUGIN_AUDIT_LIMITS.maxSample);
+  })
+
+  it("sampleUrls 直接调用传超大 limit 同样钳制", () => {
+    expect(sampleUrls(makeUrls(300), 10_000)).toHaveLength(PLUGIN_AUDIT_LIMITS.maxSample);
+  })
+
+  it("concurrency 超上限时钳制到 maxConcurrency（不生成上千并行探活）", async () => {
+    const urls = makeUrls(50);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    await probeUrls(
+      urls,
+      async (url) => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight--;
+        return { url, ok: true, status: 200 };
+      },
+      { concurrency: 1000, timeoutMs: 1_000 },
+    );
+    expect(maxInFlight).toBeLessThanOrEqual(PLUGIN_AUDIT_LIMITS.maxConcurrency);
+    expect(maxInFlight).toBeGreaterThan(1);
+  })
+
+  it("整轮超 maxAuditMs 即停并拒绝（不返回半份结果）", async () => {
+    const slowProbe = async (url: string): Promise<UrlProbeResult> => {
+      await new Promise((r) => setTimeout(r, 100));
+      return { url, ok: true };
+    };
+    // 每批 1 条、每条 100ms，总时限 50ms：第一批跑完后第二批开始前即触发 deadline
+    await expect(
+      probeUrls(makeUrls(10), slowProbe, { concurrency: 1, timeoutMs: 1_000, maxAuditMs: 50 }),
+    ).rejects.toMatchObject({ code: "audit_limit_exceeded", limit: "maxAuditMs" });
+  })
+
+  it("批次数超 maxIterations 即停并拒绝", async () => {
+    const probe = async (url: string): Promise<UrlProbeResult> => ({ url, ok: true });
+    await expect(
+      probeUrls(makeUrls(10), probe, { concurrency: 1, timeoutMs: 1_000, maxIterations: 2 }),
+    ).rejects.toMatchObject({ code: "audit_limit_exceeded", limit: "maxIterations" });
   })
 })

@@ -31,6 +31,7 @@ import {
   auditPluginUrls,
   isBlockedByBotStatus,
   PLUGIN_AUDIT_DEFAULTS,
+  PluginAuditLimitError,
   type ProbeFailureKind,
   type UrlProbeResult,
   type UrlProber,
@@ -585,6 +586,17 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
             caveat: REACHABILITY_CAVEAT,
             params: { sample, timeoutMs, maxRedirects: PLUGIN_AUDIT_DEFAULTS.maxRedirects },
           }
+        } catch (err) {
+          // 资源上限拒绝（CodeQL #134）：库函数 fail-closed 抛错，这里转 400 而非 500
+          if (err instanceof PluginAuditLimitError) {
+            reply.code(400)
+            return {
+              ok: false,
+              error: "audit_limit_exceeded",
+              message: err.message,
+            }
+          }
+          throw err
         } finally {
           AUDIT_OUTBOUND_BUDGET.release()
           auditFlights.delete(flightKey)
@@ -1103,12 +1115,25 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
         const limit = clampInt(body.sampleLimit, PLUGIN_AUDIT_DEFAULTS.sample, 1, MAX_SAMPLE)
         // 与 POST /:slug/audit 共用同一份出站预算：限流按请求数算，探活按条数算
         const plannedProbes = Math.max(1, Math.min(limit, packSites.length))
-        const auditRun = AUDIT_OUTBOUND_BUDGET.tryAcquire(plannedProbes)
-          ? await auditPluginUrls(packSites.map((s) => s.url), createGuardedProber(), {
+        let auditRun: Awaited<ReturnType<typeof auditPluginUrls>> | null = null
+        if (AUDIT_OUTBOUND_BUDGET.tryAcquire(plannedProbes)) {
+          try {
+            auditRun = await auditPluginUrls(packSites.map((s) => s.url), createGuardedProber(), {
               sample: limit,
               timeoutMs: 3500,
             }).finally(() => AUDIT_OUTBOUND_BUDGET.release())
-          : null
+          } catch (err) {
+            // 资源上限拒绝（CodeQL #134）：库函数 fail-closed 抛错，这里转 400 而非 500
+            if (err instanceof PluginAuditLimitError) {
+              return reply.code(400).send({
+                ok: false,
+                error: "audit_limit_exceeded",
+                message: err.message,
+              })
+            }
+            throw err
+          }
+        }
         if (!auditRun) {
           return reply.code(429).header("retry-after", "60").send({
             ok: false,

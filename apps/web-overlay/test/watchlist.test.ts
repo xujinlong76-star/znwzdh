@@ -494,6 +494,14 @@ describe('预约 → 平台加入就地升级（U-377 返工）', () => {
     uninstallFakeBrowser()
   })
 
+  /** 脏集合读回：键名与 useWatchlist.ts 的 DIRTY_KEY 同值（navhub.watchlist.dirty.v1）。 */
+  const readDirtyKeys = (): string[] => {
+    const raw = storageGet('navhub.watchlist.dirty.v1')
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
+  }
+
   it('先预约、后平台加入不重复：清单仍只有 1 条该剧，平台字段已补、开播日保留', () => {
     const api = renderWatchlistApi()
     const reserved = api.addReserved('待开播剧', '2026-11-30')
@@ -540,5 +548,39 @@ describe('预约 → 平台加入就地升级（U-377 返工）', () => {
     expect([...parts.due, ...parts.check, ...parts.active, ...parts.finished].map((e) => e.title)).toEqual([
       '待开播剧',
     ])
+  })
+
+  it('中间同步过再升级：旧 reserved 键仍进脏集合，下次同步能对其生成 remove op', () => {
+    const api = renderWatchlistApi()
+    const reserved = api.addReserved('待开播剧', '2026-11-30')
+    expect(reserved).not.toBeNull()
+    if (!reserved) throw new Error('addReserved 应返回预约条目')
+    expect(reserved.key).toBe('reserved::待开播剧')
+    // 预约后脏集合里有旧键（若此处已为空，后面的断言就是空断言）
+    expect(readDirtyKeys()).toEqual(['reserved::待开播剧'])
+
+    // 模拟一次成功同步：页面在 syncWatchlistToCloud 成功后调
+    // replaceAll(nextItems)，其本身清脏集合、保留条目——与「预约后打开一次
+    // 我的追剧触发自动同步成功」是同一中间态（同步成功后 clearDirty，见
+    // useWatchlist.ts:680）。注意：不用 resetLocal() 模拟，它会连清单一起清掉。
+    expect(api.replaceAll([reserved])).toBe(true)
+    expect(readDirtyKeys()).toEqual([])
+    const storedAfterSync = JSON.parse(storageGet(WATCHLIST_STORAGE_KEY) ?? '[]') as WatchEntry[]
+    expect(storedAfterSync.map((e) => e.key)).toEqual(['reserved::待开播剧'])
+
+    // 此时再平台加入升级
+    const upgraded = api.add(
+      { siteId: 'nav-hongguo', title: '红果短剧', href: 'https://www.hongguo.com' },
+      { title: '待开播剧' },
+    )
+    expect(upgraded).not.toBeNull()
+    expect(upgraded?.key).toBe('nav-hongguo::待开播剧')
+
+    // 旧 reserved 键必须在脏集合里：它已不在本地清单（下条断言），同步时
+    // 按「在脏集合里且本地已无此键」对其生成 remove op（useWatchlist.ts:646-648），
+    // 云端占位才会被写墓碑；否则新设备全量拉取时占位复活。
+    expect(readDirtyKeys().sort()).toEqual(['nav-hongguo::待开播剧', 'reserved::待开播剧'].sort())
+    const stored = JSON.parse(storageGet(WATCHLIST_STORAGE_KEY) ?? '[]') as WatchEntry[]
+    expect(stored.map((e) => e.key)).toEqual(['nav-hongguo::待开播剧'])
   })
 })

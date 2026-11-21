@@ -313,9 +313,12 @@ export function useWatchlist(): WatchlistApi {
           updatedAt: now,
         }
         if (!persist(current.map((e) => (e.key === reserved.key ? next : e)))) return null
-        // 新键进脏集合；旧 reserved:: 键仍在脏集合里，下次同步按「本地已无
-        // 此键」生成 remove op，云端预约占位随之清除，不残留。
-        markDirty([key])
+        // 新键与旧 reserved:: 键都进脏集合：旧键必须显式标记——预约与升级
+        // 之间若发生过一次成功同步，脏集合已被清空（syncWatchlistToCloud
+        // 成功后 clearDirty），只标新键会让旧键拿不到 remove op，云端预约
+        // 占位在新设备全量拉取时复活。下次同步按「本地已无此键」对旧键生成
+        // remove op，云端预约占位随之清除，不残留。
+        markDirty([key, reserved.key])
         return next
       }
       const entry: WatchEntry = {

@@ -62,6 +62,8 @@ export interface WatchlistApi {
    * 预约态加入（U-377）：开播日历上的剧没有平台信息，键为
    * reserved::归一化剧名，不指向平台入口。同一剧名（归一后）已在清单
    * 里（无论预约态还是在追）直接返回既有条目，不生成第二条。
+   * 反方向（先预约、后平台加入）由 add 的归一化剧名回查兜底：查到预约
+   * 条目就地升级为平台条目，同样不生成第二条。
    */
   addReserved: (title: string, premiereDate?: string | null) => WatchEntry | null
   /** 改进度：episode 增大时记一次成长经验（复用成长系统的既有递减口径）；改小只当纠错，不记 */
@@ -288,6 +290,31 @@ export function useWatchlist(): WatchlistApi {
           updatedAt: now,
         }
         if (!persist(current.map((e) => (e.key === key ? next : e)))) return null
+        markDirty([key])
+        return next
+      }
+      // U-377 返工：先预约、后平台加入——预约条目的键是 reserved::归一化剧名，
+      // 与平台键恒不相等，上面按平台键查不到。此时再按归一化剧名回查一次：
+      // 查到既有预约条目就就地升级为平台条目（换键、补平台字段，保留开播日
+      // 与已有进度），不生成第二条。只认预约态：同一剧名在另一平台的在追
+      // 条目是合法的多平台并存，不参与升级。
+      const reserved = current.find((e) => e.key === dramaReservedKeyFor(title))
+      if (reserved) {
+        const next: WatchEntry = {
+          ...reserved,
+          key,
+          platformSiteId: platform.siteId,
+          platformTitle: platform.title,
+          playUrl: platform.href,
+          icon: platform.icon,
+          episode: draft.episode !== undefined ? Math.max(0, Math.trunc(draft.episode)) : reserved.episode,
+          cadence: draft.cadence ?? reserved.cadence,
+          priority: draft.priority ?? reserved.priority,
+          updatedAt: now,
+        }
+        if (!persist(current.map((e) => (e.key === reserved.key ? next : e)))) return null
+        // 新键进脏集合；旧 reserved:: 键仍在脏集合里，下次同步按「本地已无
+        // 此键」生成 remove op，云端预约占位随之清除，不残留。
         markDirty([key])
         return next
       }

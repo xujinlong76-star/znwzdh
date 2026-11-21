@@ -125,7 +125,7 @@ export interface NavigationCardProps {
    * 走 use-home-diy-grid 的置顶列表重排；不传则不渲染菜单）。
    * 与拖拽互为等效替代（WCAG 2.2 2.5.7），不依赖任何拖拽库。
    */
-  onMoveCard?: (direction: CardMoveDirection) => void
+  onMoveCard?: (cardId: string, direction: CardMoveDirection) => void
   /** 该卡在当前显示列表里的序号（菜单的禁用态与播报用） */
   cardIndex?: number
   /** 当前显示列表的总卡数 */
@@ -199,7 +199,9 @@ export const NavigationCard = memo(function NavigationCard({
    * 只有合法移动才会调到这里，播报可以按成功写。
    */
   const handleMenuMove = (direction: CardMoveDirection) => {
-    onMoveCard?.(direction)
+    // P0-2：onMoveCard 改为（cardId, direction）——调用方传一个稳定回调，
+    // 卡片把自己的 id 带上，不再每轮在调用点新建闭包击穿 memo。
+    onMoveCard?.(item.id, direction)
     const directionLabel =
       direction === 'up' ? '上移' : direction === 'down' ? '下移' : direction === 'top' ? '移到顶部' : '移到末尾'
     const toPosition =

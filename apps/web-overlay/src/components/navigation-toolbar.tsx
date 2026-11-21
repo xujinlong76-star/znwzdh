@@ -6,6 +6,7 @@
  * 只负责渲染搜索入口、探索矩阵、视图/密度/主题开关与多选入口；
  * 选中态与工作台过滤仍由 NavigationContent 持有，通过 props 注入。
  */
+import { memo } from 'react'
 import Link from 'next/link'
 import { Button } from '@/registry/new-york/ui/button'
 import {
@@ -95,7 +96,8 @@ export interface NavigationToolbarProps {
   onOpenAiFinder?: () => void
 }
 
-export function NavigationToolbar({
+// P0-2：包 memo——父组件回调已全部 useCallback 化，浅比较才能生效。
+export const NavigationToolbar = memo(function NavigationToolbar({
   siteConfig,
   activeWorkspace,
   onWorkspaceChange,
@@ -525,4 +527,4 @@ export function NavigationToolbar({
         </div>
 
   )
-}
+})

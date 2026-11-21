@@ -34,7 +34,7 @@ import {
 } from '@/lib/modular/diy-presets'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { useHomeDiyGrid } from '@/lib/modular/use-home-diy-grid'
-import type { DiyCardDragData } from '@/lib/modular/diy-drag'
+import type { CardMoveDirection, DiyCardDragData } from '@/lib/modular/diy-drag'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { countCategorySites } from '@/lib/modular/category-counts'
 import { categoryHref } from '@/lib/seo/category-url'
@@ -495,15 +495,26 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
          */
         const expanded = forceFull || isFilterActive || selectedSubCatId !== null || Boolean(expandedGroups[entry.subCategory.id])
         const items = expanded || all.length <= limit ? all : all.slice(0, limit)
+        /** 该子分类组当前显示的卡片 id（⋯ 菜单移动的基准列表） */
+        const displayedIds = items.map((item) => item.id)
         return {
           ...entry,
           items,
-          /** 该子分类组当前显示的卡片 id（⋯ 菜单移动的基准列表） */
-          displayedIds: items.map((item) => item.id),
+          displayedIds,
+          /**
+           * P0-2：每组三个稳定回调——与直属组的 handle*Direct 对等。
+           * 原先调用点用内联闭包（(siteId) => togglePinSiteInCategory(subId, siteId)），
+           * 每轮新建身份击穿 memo 卡片。放进 memo 后，回调身份只随组数据变而变；
+           * moveCard / togglePinSiteInCategory / setPeekItem 均为稳定引用（见依赖）。
+           */
+          onTogglePin: (siteId: string) => togglePinSiteInCategory(entry.subCategory.id, siteId),
+          onPeek: (peekItem: NavigationSubItem) => setPeekItem(peekItem, entry.subCategory.id),
+          onMoveCard: (cardId: string, direction: CardMoveDirection) =>
+            moveCard(entry.subCategory.id, displayedIds, cardId, direction),
         }
       })
     },
-    [filteredSubCategories, selectedSubCatId, forceFull, isFilterActive, expandedGroups, limit]
+    [filteredSubCategories, selectedSubCatId, forceFull, isFilterActive, expandedGroups, limit, moveCard, togglePinSiteInCategory, setPeekItem]
   )
 
   const totalMatchedCount = useMemo(() => {
@@ -578,6 +589,15 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     (siteId: string) => togglePinSiteInCategory(category.id, siteId),
     [togglePinSiteInCategory, category.id]
   )
+  /**
+   * P0-2：直属组的稳定移动回调——卡片把自己的 id 带上（onMoveCard(cardId, direction)），
+   * 这里只依赖 memo 化的 directDisplayedIds 与稳定的 moveCard，不再每轮新建闭包。
+   */
+  const handleMoveCardDirect = useCallback(
+    (cardId: string, direction: CardMoveDirection) =>
+      moveCard(category.id, directDisplayedIds, cardId, direction),
+    [moveCard, category.id, directDisplayedIds]
+  )
 
   /**
    * 卡片渲染（含编辑态的 dnd-kit 可拖拽包装）。
@@ -597,6 +617,8 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
       onPeek: (item: NavigationSubItem) => void
       displayedIds: string[]
       index: number
+      /** P0-2：每组稳定移动回调（直属组 handleMoveCardDirect / 子组 memo 内 onMoveCard），卡片自带 id 调用 */
+      onMoveCard: (cardId: string, direction: CardMoveDirection) => void
     },
   ) => {
     const node = (
@@ -619,9 +641,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
         onToggleSpeedDialPin={handleToggleSpeedDialPin}
         linkTarget={linkTarget}
         externalRel={externalRel}
-        onMoveCard={(direction) => {
-          moveCard(opts.sourceCategoryId, opts.displayedIds, item.id, direction)
-        }}
+        onMoveCard={opts.onMoveCard}
         cardIndex={opts.index}
         cardTotal={opts.displayedIds.length}
         dialDigit={dialDigitById?.get(item.id)}
@@ -1130,6 +1150,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                     onPeek: handlePeekDirect,
                                     displayedIds: directDisplayedIds,
                                     index,
+                                    onMoveCard: handleMoveCardDirect,
                                   }),
                                 )}
 
@@ -1155,7 +1176,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
 
                             {/* 二级分类及其站点 */}
                             {subGroups.length > 0 &&
-                              subGroups.map(({ subCategory, subPinnedItemIds, sortedSubItems, items, displayedIds }) => {
+                              subGroups.map(({ subCategory, subPinnedItemIds, sortedSubItems, items, displayedIds, onTogglePin, onPeek, onMoveCard }) => {
                                 const hasSubCatRail = !isEditingLayout && subCats.length > 1
                                 const isSubExpanded = Boolean(expandedGroups[subCategory.id])
                                 const canExpandSub = !forceFull && Number.isFinite(limit) && sortedSubItems.length > limit
@@ -1252,10 +1273,11 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                         renderSiteCard(item, {
                                           sourceCategoryId: subCategory.id,
                                           pinnedIds: subPinnedItemIds,
-                                          onTogglePin: (siteId) => togglePinSiteInCategory(subCategory.id, siteId),
-                                          onPeek: (peekItem) => setPeekItem(peekItem, subCategory.id),
+                                          onTogglePin,
+                                          onPeek,
                                           displayedIds,
                                           index,
+                                          onMoveCard,
                                         }),
                                       )}
                                     </div>

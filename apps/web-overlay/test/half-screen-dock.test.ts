@@ -217,7 +217,10 @@ describe('挂载点：navigation-content.tsx（选项 b）', () => {
     expect(src).toContain("import { HalfScreenDock } from '@/components/half-screen-dock'")
     expect(src).toContain('<HalfScreenDock')
     expect(src).toContain('activeWorkspace={activeWorkspace}')
-    expect(src).toContain('onOpenTools={() => setIsToolsOpen(true)}')
+    // P0-2（2026-11-21）：内联回调改为稳定引用 handleOpenTools（useCallback），
+    // 行为不变（仍是 setIsToolsOpen(true)），但不再每轮新建函数身份击穿 memo。
+    expect(src).toContain('onOpenTools={handleOpenTools}')
+    expect(src).toContain('const handleOpenTools = useCallback(() => setIsToolsOpen(true), [])')
     expect(src).toContain('isEditingLayout={isEditingLayout}')
     expect(src).toContain('selectionMode={selectionMode}')
     expect(src).toContain('selectedIds={selectedIds}')

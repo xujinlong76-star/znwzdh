@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, memo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import dynamic from 'next/dynamic'
@@ -75,7 +75,8 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   brandAsHeading?: boolean
 }
 
-export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsHeading = true }: SidebarProps) {
+// P0-2：包 memo——navigationData 已 memo 化、onClose 已 useCallback 化。
+export const Sidebar = memo(function Sidebar({ className, navigationData, siteInfo, onClose, brandAsHeading = true }: SidebarProps) {
   const identityState = useIdentityReady()
   const unread = useUnreadNotifications(identityState)
   const unreadText = unreadBadgeText(unread)
@@ -430,5 +431,5 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
       </div>
     </div>
   )
-}
+})
 

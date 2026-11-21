@@ -7,7 +7,7 @@
  * 并支持右侧「全部 ▾」按需打开完整清单小窗口。
  * 保持 `id="quick-access-tray"` 与 `data-speed-dial="true"` 兼容 DIY 与直达规范。
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, memo } from 'react'
 import dynamic from 'next/dynamic'
 import { ChevronRight, History, Star, Zap } from 'lucide-react'
 import { SiteFavicon } from '@/components/site-favicon'
@@ -42,7 +42,8 @@ export interface HomeQuickDockProps {
   maxInlineItems?: number
 }
 
-export function HomeQuickDock({
+// P0-2：包 memo——父组件传的 allSites/activeWorkspace/dialDigitById 均已稳定。
+export const HomeQuickDock = memo(function HomeQuickDock({
   allSites,
   activeWorkspace,
   dialDigitById,
@@ -248,4 +249,4 @@ export function HomeQuickDock({
       ) : null}
     </>
   )
-}
+})

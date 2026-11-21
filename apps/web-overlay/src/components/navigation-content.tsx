@@ -582,6 +582,33 @@ export function NavigationContent({
     }
   }, [expandAllCategories, setCollapsedCategoryIds, navigationData.navigationItems])
 
+  /**
+   * P0-2：工具栏 7 个打开/切换回调全部 useCallback 化——它们传给 memo 的
+   * NavigationToolbar（onOpenTools 与 HalfScreenDock 共用），内联写法每轮
+   * 新建身份会让工具栏 memo 恒失效。setX 均为 React 稳定 setter，空依赖即可。
+   * handleCloseSidebar 同理服务 memo 的 Sidebar（onClose）。
+   */
+  const handleToggleSidebar = useCallback(() => setIsSidebarOpen((open) => !open), [])
+  const handleCloseSidebar = useCallback(() => setIsSidebarOpen(false), [])
+  const handleOpenTools = useCallback(() => setIsToolsOpen(true), [])
+  const handleOpenShortcuts = useCallback(() => setIsShortcutsOpen(true), [])
+  const handleOpenTodayCenter = useCallback(() => setTodayOpen(true), [])
+  const handleOpenWidgetBox = useCallback(() => setWidgetBoxOpen(true), [])
+  const handleOpenAppearanceGuide = useCallback(() => {
+    setAppearanceTab('appearance')
+    setAppearanceOpen(true)
+  }, [])
+  const handleOpenAiFinder = useCallback(() => setToolbarAiOpen(true), [])
+
+  /**
+   * P0-2：Sidebar 的 navigationData 对象字面量每轮新建会击穿 memo，
+   * 在此 memo 化（sortedCategories 本身已是 useMemo，身份稳定）。
+   */
+  const sidebarNavigationData = useMemo(
+    () => ({ navigationItems: sortedCategories as unknown as NavigationItem[] }),
+    [sortedCategories]
+  )
+
   // 我的场景接线：① 把全站站点→分类索引登记到场景注册表（置顶派生用，
   //    用未经过滤的原始分类建，置顶站点所在分类被隐藏/折叠也要能解析）；
   //    ② 监听场景切换派发的 workspace 事件，走上面同一条 handleWorkspaceChange。
@@ -1016,7 +1043,7 @@ export function NavigationContent({
     <div className="flex flex-col md:flex-row min-h-screen">
       <div className="hidden md:block">
         <Sidebar
-          navigationData={{ navigationItems: sortedCategories as unknown as NavigationItem[] }}
+          navigationData={sidebarNavigationData}
           siteInfo={siteData}
           className="sticky top-0 h-screen"
         />
@@ -1039,10 +1066,10 @@ export function NavigationContent({
           )}
         >
           <Sidebar
-            navigationData={{ navigationItems: sortedCategories as unknown as NavigationItem[] }}
+            navigationData={sidebarNavigationData}
             siteInfo={siteData}
             brandAsHeading={false}
-            onClose={() => setIsSidebarOpen(false)}
+            onClose={handleCloseSidebar}
           />
         </div>
       </div>
@@ -1074,9 +1101,9 @@ export function NavigationContent({
 
         <NavigationToolbar
           siteConfig={siteData}
-          onToggleSidebar={() => setIsSidebarOpen((open) => !open)}
-          onOpenTools={() => setIsToolsOpen(true)}
-          onOpenShortcuts={() => setIsShortcutsOpen(true)}
+          onToggleSidebar={handleToggleSidebar}
+          onOpenTools={handleOpenTools}
+          onOpenShortcuts={handleOpenShortcuts}
           activeWorkspace={activeWorkspace}
           onWorkspaceChange={handleWorkspaceChange}
           selectionMode={selectionMode}
@@ -1086,13 +1113,10 @@ export function NavigationContent({
           onSelectAllVisible={selectAllVisible}
           todayBadge={todayBadge}
           pinnedWidgetCount={pinnedMounted ? pinnedCornerWidgets.length : 0}
-          onOpenTodayCenter={() => setTodayOpen(true)}
-          onOpenWidgetBox={() => setWidgetBoxOpen(true)}
-          onOpenAppearanceGuide={() => {
-            setAppearanceTab('appearance')
-            setAppearanceOpen(true)
-          }}
-          onOpenAiFinder={() => setToolbarAiOpen(true)}
+          onOpenTodayCenter={handleOpenTodayCenter}
+          onOpenWidgetBox={handleOpenWidgetBox}
+          onOpenAppearanceGuide={handleOpenAppearanceGuide}
+          onOpenAiFinder={handleOpenAiFinder}
         />
 
         {/* 半屏下沉栏（Batch 3 第 12 项）：挂在这里而非工具栏内——工具栏没有
@@ -1101,7 +1125,7 @@ export function NavigationContent({
             与 setIsToolsOpen，少一次 prop 透传。仅首页挂载，其它路由零变化。 */}
         <HalfScreenDock
           activeWorkspace={activeWorkspace}
-          onOpenTools={() => setIsToolsOpen(true)}
+          onOpenTools={handleOpenTools}
           isEditingLayout={isEditingLayout}
           selectionMode={selectionMode}
           selectedIds={selectedIds}
@@ -1539,7 +1563,7 @@ export function NavigationContent({
           <KeyboardShortcutsDialog
             open={isShortcutsOpen}
             onOpenChange={setIsShortcutsOpen}
-            onOpenTools={() => setIsToolsOpen(true)}
+            onOpenTools={handleOpenTools}
           />
         )}
 

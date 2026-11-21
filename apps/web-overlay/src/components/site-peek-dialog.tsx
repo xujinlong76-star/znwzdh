@@ -10,9 +10,11 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { SiteFavicon } from '@/components/site-favicon'
-import { ExternalLink, Star, Sparkles, Zap, ArrowRight, Eye, Search, AlertTriangle, Orbit, History, Pin, Copy, FileText, Activity, Check, Loader2 } from 'lucide-react'
+import { ExternalLink, Star, Sparkles, Zap, ArrowRight, Eye, EyeOff, Search, AlertTriangle, Orbit, History, Pin, Copy, FileText, Activity, Check, Loader2 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 import { copyText } from '@/lib/clipboard'
+import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
+import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { Button } from '@/registry/new-york/ui/button'
 import { FavoriteButton } from '@/components/favorite-button'
 import { Input } from '@/components/ui/input'
@@ -51,8 +53,42 @@ export function SitePeekDialog({
   onCloseAutoFocus,
 }: SitePeekDialogProps) {
   const { toast } = useToast()
+  const { removeFeature } = useFeatureMask()
   const [actionInputs, setActionInputs] = useState<Record<string, string>>({})
   const [showIframe, setShowIframe] = useState(false)
+
+  // P1-20：速览弹窗补齐卡片上 <640px 被藏起的两项（工作台固定、隐藏站点）。
+  // 复制链接本就已在弹窗里；这两项与卡片按钮同源（同一 pinSiteToWorkbench /
+  // removeFeature），移动端用户无需回卡片即可操作。
+  const handleWorkbenchPin = () => {
+    if (!item) return
+    const res = pinSiteToWorkbench({
+      siteId: item.id,
+      title: item.title,
+      href: item.href,
+      icon: item.icon,
+      description: item.description,
+    })
+    toast({
+      title: res.ok ? '📌 已固定到工作台' : '固定提示',
+      description: res.message,
+    })
+  }
+  const handleHideSite = () => {
+    if (!item) return
+    removeFeature({
+      id: `site:${item.id}`,
+      level: 'L3_SITE',
+      title: item.title,
+      parentTitle: categoryId ? `所属分类 (${categoryId})` : '站点卡片',
+    })
+    toast({
+      title: `🙈 已隐藏站点「${item.title}」`,
+      description: '已移入时间轴回收站，按 Ctrl/Cmd+Z 可立即撤销，或在 DIY 恢复中心随时还原。',
+    })
+    // 站点已隐藏，弹窗所指内容不再存在，直接关闭。
+    onOpenChange(false)
+  }
   /** 速览 iframe 状态：loading 中显示加载态，超时未 load 判定为被对方禁嵌并给兜底（A6） */
   const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'loaded' | 'blocked'>('idle')
   const [hyperbolicAlts, setHyperbolicAlts] = useState<Array<{
@@ -335,6 +371,29 @@ export function SitePeekDialog({
               >
                 <History className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">历史快照</span>
+              </Button>
+              {/* P1-20：卡片上 <640px 被藏起的两项，在速览弹窗里补齐（移动端等效入口）。 */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 min-h-11 px-3 shadow-2xs font-medium text-xs text-muted-foreground hover:text-emerald-500 border-border/70"
+                title="📌 固定到工作台"
+                aria-label={`固定到工作台：${item.title}`}
+                onClick={handleWorkbenchPin}
+              >
+                <Pin className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">工作台</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 min-h-11 px-3 shadow-2xs font-medium text-xs text-muted-foreground hover:text-destructive-text hover:bg-destructive/15 border-border/70"
+                title="🙈 隐藏此站点（移入回收站，可按 Ctrl+Z 撤销或随时还原）"
+                aria-label={`隐藏站点：${item.title}`}
+                onClick={handleHideSite}
+              >
+                <EyeOff className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">隐藏</span>
               </Button>
               <Button
                 variant="default"

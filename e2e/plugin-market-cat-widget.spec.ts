@@ -122,6 +122,14 @@ test('市场页 390px：输入聚焦时猫静默，清除 × 可点，失焦后�
 
 test('首页 390px：入场招呼气泡 5 秒内消失，之后不重出', async ({ page }) => {
   test.setTimeout(120_000)
+  // U-260 前置（2026-11-21）：全新 profile 下猫默认收起（closed: true），850ms
+  // 自动招呼被 !xm-closed 门拦住（xiaomaomao.js:3895），气泡 15 秒永不出
+  // （CI 同错，本地复现同错）。预置 localStorage closed:false，恢复用例编写
+  // 时的前提（进页即展开）；招呼出现/4.5 秒自消/8 秒不重出的断言一字不动。
+  // 键与形状与本文件 Q1 用例同款（STORE_KEY = 'navhub.xiaomaomao.v1'）。
+  await page.addInitScript(() => {
+    window.localStorage.setItem('navhub.xiaomaomao.v1', JSON.stringify({ closed: false }))
+  })
   await page.goto('/')
   await page.waitForLoadState('domcontentloaded')
   await waitForCat(page)

@@ -77,7 +77,7 @@ export function MeshPanel() {
                     模拟客户端无中心节点点对点直连（WebRTC DataChannel），通过状态向量时钟实现离线书签创建与双向最终一致性收敛。
                   </CardDescription>
                 </div>
-                <Badge variant="outline" className="text-teal-500 border-teal-500/30 bg-teal-500/5 text-xs font-mono">
+                <Badge variant="outline" className="text-teal-500 border-teal-500/30 bg-teal-500/5 text-xs font-mono tabular-nums">
                   Vector Clock P2P
                 </Badge>
               </div>
@@ -88,7 +88,7 @@ export function MeshPanel() {
                 <div className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-teal-600 dark:text-teal-400">Node-Alpha (手机端)</span>
-                    <Badge variant="secondary" className="text-[10px] font-mono">
+                    <Badge variant="secondary" className="text-[10px] font-mono tabular-nums">
                       时钟: {JSON.stringify(meshClockA)}
                     </Badge>
                   </div>
@@ -97,7 +97,7 @@ export function MeshPanel() {
                     {meshSitesA.map((s) => (
                       <div key={s.id} className="p-2 rounded bg-background border border-border/40 text-xs flex justify-between">
                         <span className="font-medium">{s.title}</span>
-                        <span className="text-[10px] text-muted-foreground font-mono">{s.url}</span>
+                        <span className="text-[10px] text-muted-foreground font-mono tabular-nums">{s.url}</span>
                       </div>
                     ))}
                   </div>
@@ -118,7 +118,7 @@ export function MeshPanel() {
                 <div className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-teal-600 dark:text-teal-400">Node-Beta (平板端)</span>
-                    <Badge variant="secondary" className="text-[10px] font-mono">
+                    <Badge variant="secondary" className="text-[10px] font-mono tabular-nums">
                       时钟: {JSON.stringify(meshClockB)}
                     </Badge>
                   </div>
@@ -127,7 +127,7 @@ export function MeshPanel() {
                     {meshSitesB.map((s) => (
                       <div key={s.id} className="p-2 rounded bg-background border border-border/40 text-xs flex justify-between">
                         <span className="font-medium">{s.title}</span>
-                        <span className="text-[10px] text-muted-foreground font-mono">{s.url}</span>
+                        <span className="text-[10px] text-muted-foreground font-mono tabular-nums">{s.url}</span>
                       </div>
                     ))}
                   </div>
@@ -172,11 +172,11 @@ export function MeshPanel() {
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     P2P Mesh 通信与状态机流转日志：
                   </span>
-                  <span className="font-mono text-muted-foreground text-[11px]">
+                  <span className="font-mono tabular-nums text-muted-foreground text-[11px]">
                     共 {p2pLog.length} 条记录
                   </span>
                 </div>
-                <div className="p-3.5 rounded-lg bg-background border border-border/50 text-[11px] font-mono space-y-1 overflow-x-auto text-foreground/90 max-h-48">
+                <div className="p-3.5 rounded-lg bg-background border border-border/50 text-[11px] font-mono tabular-nums space-y-1 overflow-x-auto text-foreground/90 max-h-48">
                   {p2pLog.map((log, i) => (
                     <div key={i} className="text-muted-foreground">
                       <span className="text-teal-500 font-bold">&gt;</span> {log}

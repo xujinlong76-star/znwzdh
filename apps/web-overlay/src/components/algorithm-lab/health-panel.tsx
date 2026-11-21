@@ -96,7 +96,7 @@ export function HealthPanel() {
                   </div>
                 </div>
                 <textarea aria-label="输入或粘贴待检测的 HTML 文本"
-                  className="w-full h-32 p-3.5 rounded-xl border border-border/70 font-mono text-base sm:text-xs bg-muted/20 focus:outline-hidden focus:ring-1 focus:ring-emerald-500/50 shadow-inner resize-y"
+                  className="w-full h-32 p-3.5 rounded-xl border border-border/70 font-mono tabular-nums text-base sm:text-xs bg-muted/20 focus:outline-hidden focus:ring-1 focus:ring-emerald-500/50 shadow-inner resize-y"
                   value={healthSnippet}
                   onChange={(e) => setHealthSnippet(e.target.value)}
                   placeholder="在此输入或粘贴待检测的 HTML 文本..."
@@ -108,7 +108,7 @@ export function HealthPanel() {
                 <div className="p-4 rounded-xl border border-border/60 bg-card flex flex-col justify-between shadow-2xs">
                   <div>
                     <span className="text-xs text-muted-foreground">Shannon 文本信息熵 H(S)</span>
-                    <div className="text-3xl font-extrabold font-mono text-emerald-600 dark:text-emerald-400 mt-1">
+                    <div className="text-3xl font-extrabold font-mono tabular-nums text-emerald-600 dark:text-emerald-400 mt-1">
                       {healthAudit.entropy}
                     </div>
                   </div>
@@ -120,7 +120,7 @@ export function HealthPanel() {
                 <div className="p-4 rounded-xl border border-border/60 bg-card flex flex-col justify-between shadow-2xs">
                   <div>
                     <span className="text-xs text-muted-foreground">命中华文/英文停放特征词</span>
-                    <div className="text-xl font-bold font-mono text-foreground mt-1">
+                    <div className="text-xl font-bold font-mono tabular-nums text-foreground mt-1">
                       {healthAudit.matched.length > 0 ? `${healthAudit.matched.length} 处匹配` : '0 处 (安全)'}
                     </div>
                   </div>
@@ -130,7 +130,7 @@ export function HealthPanel() {
                         <Badge key={m} variant="destructive" className="text-xs px-2 py-0.5">{m}</Badge>
                       ))
                     ) : (
-                      <span className="text-xs text-emerald-700 dark:text-emerald-400 font-mono">未检出广告/抢注模式</span>
+                      <span className="text-xs text-emerald-700 dark:text-emerald-400 font-mono tabular-nums">未检出广告/抢注模式</span>
                     )}
                   </div>
                 </div>

@@ -55,27 +55,27 @@ export function IntentPanel() {
               <div className="space-y-2.5">
                 <label className="text-xs font-semibold text-muted-foreground">快速加载特征串测试：</label>
                 <div className="flex flex-wrap gap-1.5">
-                  <Button size="sm" variant="outline" className="text-xs font-mono h-7.5" onClick={() => setIntentInput('SGVsbG8gV29ybGQ=')}>
+                  <Button size="sm" variant="outline" className="text-xs font-mono tabular-nums h-7.5" onClick={() => setIntentInput('SGVsbG8gV29ybGQ=')}>
                     Base64 串
                   </Button>
-                  <Button size="sm" variant="outline" className="text-xs font-mono h-7.5" onClick={() => setIntentInput('1710328900')}>
+                  <Button size="sm" variant="outline" className="text-xs font-mono tabular-nums h-7.5" onClick={() => setIntentInput('1710328900')}>
                     Unix 时间戳
                   </Button>
-                  <Button size="sm" variant="outline" className="text-xs font-mono h-7.5" onClick={() => setIntentInput('#ff4500')}>
+                  <Button size="sm" variant="outline" className="text-xs font-mono tabular-nums h-7.5" onClick={() => setIntentInput('#ff4500')}>
                     HEX 色彩
                   </Button>
-                  <Button size="sm" variant="outline" className="text-xs font-mono h-7.5" onClick={() => setIntentInput('(128 + 64) * 8')}>
+                  <Button size="sm" variant="outline" className="text-xs font-mono tabular-nums h-7.5" onClick={() => setIntentInput('(128 + 64) * 8')}>
                     算术表达式
                   </Button>
-                  <Button size="sm" variant="outline" className="text-xs font-mono h-7.5" onClick={() => setIntentInput('{"site":"navhub","v":4}')}>
+                  <Button size="sm" variant="outline" className="text-xs font-mono tabular-nums h-7.5" onClick={() => setIntentInput('{"site":"navhub","v":4}')}>
                     JSON 美化
                   </Button>
-                  <Button size="sm" variant="outline" className="text-xs font-mono h-7.5" onClick={() => setIntentInput('e10adc3949ba59abbe56e057f20f883e')}>
+                  <Button size="sm" variant="outline" className="text-xs font-mono tabular-nums h-7.5" onClick={() => setIntentInput('e10adc3949ba59abbe56e057f20f883e')}>
                     MD5 哈希
                   </Button>
                 </div>
                 <Input aria-label="键入 Base64、时间戳、RGB/HEX、算术公式"
-                  className="mt-2 font-mono text-sm h-10 border-border/70 focus-visible:ring-amber-500/40"
+                  className="mt-2 font-mono tabular-nums text-sm h-10 border-border/70 focus-visible:ring-amber-500/40"
                   value={intentInput}
                   onChange={(e) => setIntentInput(e.target.value)}
                   placeholder="在此键入 Base64、时间戳、RGB/HEX、算术公式..."
@@ -91,7 +91,7 @@ export function IntentPanel() {
                         <Sparkles className="w-4 h-4" />
                       </div>
                       <span className="text-sm font-bold">{intentResult.title}</span>
-                      <Badge variant="outline" className="text-xs text-amber-700 dark:text-amber-400 border-amber-500/40 bg-amber-500/10 font-mono px-2 py-0.5">
+                      <Badge variant="outline" className="text-xs text-amber-700 dark:text-amber-400 border-amber-500/40 bg-amber-500/10 font-mono tabular-nums px-2 py-0.5">
                         0-RTT 命中
                       </Badge>
                     </div>
@@ -105,7 +105,7 @@ export function IntentPanel() {
                         style={{ backgroundColor: intentResult.previewValue }}
                       />
                     )}
-                    <div className="flex-1 p-3 rounded-lg bg-background border border-border/60 font-mono text-xs break-all select-all shadow-2xs">
+                    <div className="flex-1 p-3 rounded-lg bg-background border border-border/60 font-mono tabular-nums text-xs break-all select-all shadow-2xs">
                       {intentResult.previewValue}
                     </div>
                   </div>

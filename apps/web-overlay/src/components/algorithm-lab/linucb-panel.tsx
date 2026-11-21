@@ -9,7 +9,24 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/registry/new-york/ui/card'
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/registry/new-york/ui/input'
-import { Sparkles, RefreshCw, Layers } from 'lucide-react'
+import { Sparkles, RefreshCw, Layers, Sigma, Info, ChevronDown } from 'lucide-react'
+/**
+ * 一键对比剧本（2026-11-21 要求 2）。
+ *
+ * 四个剧本刻意选了「四种查询形态 × 四种通道胜负」的组合，
+ * 让访客点一圈就能看懂：静态 RRF 是固定权重，动态 LinUCB 会随查询上下文提权。
+ *   vsc            英文缩写 → Exact/FTS 主导
+ *   duanju         全拼     → Pinyin 提权
+ *   免费做视频的AI  中文意图 → Semantic 反超
+ *   githbu         长尾错拼 → 模糊容错
+ */
+export const LAB_SCENARIOS = [
+  { label: '英文缩写', query: 'vsc', hint: '英文缩写：看 Exact / FTS 通道主导' },
+  { label: '全拼检索', query: 'duanju', hint: '全拼：看 Pinyin 通道被提权' },
+  { label: '中文意图', query: '免费做视频的AI', hint: '中文长句：看 Semantic 通道反超静态 RRF' },
+  { label: '长尾错拼', query: 'githbu', hint: '错拼：看模糊容错后何者仍能命中' },
+] as const
+
 /* ------------------ 算法 1：LinUCB（真引擎，来自 @navhub/core） ------------------
  *
  * 2026-11-10 修正：此前这个面板是**手工线性加权**冒充 LinUCB ——
@@ -112,6 +129,8 @@ export function LinucbPanel() {
    * 每次 rewardArm 时记录各通道 ucb 的前后差值，2 秒后清空。
    */
   const [recentDelta, setRecentDelta] = useState<Record<string, number>>({})
+  /** 公式卡折叠态（2026-11-21 结构化降噪）：默认收起，让对比结果当主角。 */
+  const [formulaOpen, setFormulaOpen] = useState(false)
   const deltaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 /** A/B 对比：一次检索的 contributions 在本地复算两套 Top 3 */;const [abLoading, setAbLoading] = useState(false);const [abError, setAbError] = useState<string | null>(null);const [abResult, setAbResult] = useState<{ staticTop: LabScoredHit[];
 dynamicTop: LabScoredHit[] } | null>(null);const [abChannels, setAbChannels] = useState<string[] | null>(null);const [abQuery, setAbQuery] = useState("");const abRowRefs = useRef(new Map<string, HTMLDivElement | null>());const abPrevTops = useRef(new Map<string, number>());/** 手写 FLIP：重排后把行从旧位置平移到新位置（无动画库依赖） */;useLayoutEffect(() => { if (!abResult) return;
@@ -204,6 +223,31 @@ runAbCompareRef.current = runAbCompare
     // runAbCompare 经 ref 转发，故无需进依赖数组。
   }, [abAutoKey])
 
+  /**
+   * 一键对比剧本（2026-11-21 要求 2）。
+   *
+   * 点击即填入词条并**立刻跑完 A/B 对比**，省掉「填词 → 再点运行」两步。
+   * 刻意直接传 q 而不是依赖 banditQuery：setState 是异步的，
+   * 用它去读会拿到上一轮的旧值。
+   */
+  const applyScenario = (q: string) => {
+    setBanditQuery(q)
+    if (abLoading) return
+    setAbLoading(true)
+    setAbError(null)
+    void searchSites({ q, limit: 20 })
+      .then((res) => {
+        setAbResult({
+          staticTop: labTop3(res.hits, LAB_STATIC_WEIGHTS),
+          dynamicTop: labTop3(res.hits, predictArmWeights(model, q)),
+        })
+        setAbChannels(res.channelsUsed ?? [])
+        setAbQuery(q)
+      })
+      .catch(() => setAbError('检索失败，请稍后重试。'))
+      .finally(() => setAbLoading(false))
+  }
+
   return (
     <div className="space-y-4">
           <Card className="nav-card-glow border-border/70 shadow-xs overflow-hidden">
@@ -245,23 +289,23 @@ runAbCompareRef.current = runAbCompare
                       placeholder="试着输入拼音 (vsc)、长句 (构建高可用架构) 或纯中文..."
                       className="text-xs sm:text-sm h-9 border-border/70 focus-visible:ring-primary/40"
                     />
-                    <div className="flex gap-1.5 shrink-0">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="text-xs h-9 px-3 border border-border/50"
-                        onClick={() => setBanditQuery('自然语言处理模型')}
-                      >
-                        中文长句
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="text-xs h-9 px-3 border border-border/50"
-                        onClick={() => setBanditQuery('cursor')}
-                      >
-                        纯英文/拼音
-                      </Button>
+                    {/* 2026-11-21 要求 2：把泛化的「中文长句 / 纯英文拼音」换成
+                        4 个真实站内高频场景剧本。点击即填入词条并**自动跑完 A/B 对比**，
+                        让访客 3 秒看懂「不同查询下哪个通道胜出」。 */}
+                    <div className="flex flex-wrap gap-1.5 shrink-0">
+                      {LAB_SCENARIOS.map((sc) => (
+                        <Button
+                          key={sc.query}
+                          variant="secondary"
+                          size="sm"
+                          className="h-9 border border-border/50 px-2.5 text-[11px]"
+                          title={sc.hint}
+                          onClick={() => applyScenario(sc.query)}
+                        >
+                          <span className="font-medium">{sc.label}</span>
+                          <span className="ml-1 font-mono text-[10px] text-muted-foreground">{sc.query}</span>
+                        </Button>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -391,8 +435,61 @@ runAbCompareRef.current = runAbCompare
 <h4 className="font-semibold text-sm">A/B 对比：静态 RRF vs 动态 LinUCB</h4>
 <Button size="sm" variant="outline" onClick={runAbCompare} disabled={abLoading || !banditQuery.trim()}>          {abLoading ? "检索中…" : "用当前查询运行对比"}        </Button>
 </div>
-<p className="text-xs text-muted-foreground leading-relaxed">        一次检索返回的 contributions 在浏览器本地复算两套 Top 3。静态权重 exact 1.4 / fts 1.0 / pinyin 0.9 / semantic 1.15 / personal 0.3；分数 = 求和 权重/(60+名次) × 覆盖因子（1 + 0.35·log2(非 personal 通道数)）。动态侧用本面板 LinUCB 模型预测的通道权重复算同一公式。      </p>
-<p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">        动态侧是面板本地模型，不等于全站生产权重；本面板的点击强化（奖励恒 1、无名次、无负反馈）不会写入生产 recordFeedback。      </p>      {abError && <p className="text-xs text-destructive-text">{abError}</p>}      {abChannels && (        <p className="text-xs text-muted-foreground">          本次检索参与通道：{abChannels.length ? abChannels.join("、") : "无"}          {!abChannels.includes("semantic") && "（语义通道未参与：Lite 环境无向量配置）"}        </p>      )}      {abResult ? (        <div className="grid md:grid-cols-2 gap-4">
+{/* 2026-11-21 结构化降噪：原为两段长文本公式 + 一段免责声明，
+      把核心对比结果压在下面。改为「可折叠公式卡 + 轻量注脚条」，
+      默认收起只留一行触发器，让 Top 3 对比成为视觉主角。 */}
+<div
+  className="rounded-lg border border-border/60 bg-muted/20"
+  data-ab-formula-card=""
+>
+  <button
+    type="button"
+    aria-expanded={formulaOpen}
+    aria-controls="ab-formula-body"
+    onClick={() => setFormulaOpen((v) => !v)}
+    className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+  >
+    <span className="flex items-center gap-1.5">
+      <Sigma className="h-3.5 w-3.5" aria-hidden />
+      查看评分公式与静态权重
+    </span>
+    <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${formulaOpen ? 'rotate-180' : ''}`} aria-hidden />
+  </button>
+  {formulaOpen ? (
+    <div id="ab-formula-body" className="space-y-3 border-t border-border/50 px-3 py-2.5">
+      <div>
+        <p className="mb-1.5 text-[11px] font-semibold text-foreground">静态 RRF 权重</p>
+        <div className="grid grid-cols-2 gap-1.5 @sm:grid-cols-5">
+          {(Object.keys(LAB_STATIC_WEIGHTS) as string[]).map((ch) => (
+            <div key={ch} className="flex items-center justify-between gap-1 rounded-md border border-border/50 bg-background/70 px-1.5 py-1">
+              <span className="font-mono text-[10px] uppercase text-muted-foreground">{ch}</span>
+              <span className="font-mono text-[11px] font-semibold tabular-nums text-foreground">
+                {(LAB_STATIC_WEIGHTS as Record<string, number>)[ch].toFixed(2)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <p className="mb-1 text-[11px] font-semibold text-foreground">融合分</p>
+        <code className="block rounded-md border border-border/50 bg-background/70 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground">
+          score(d) = Σ<sub>c</sub> w<sub>c</sub> / (60 + rank<sub>c</sub>(d)) × coverage
+        </code>
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          覆盖因子 coverage = 命中通道数 / 5，用于奖励「多路共识」的站点。
+        </p>
+      </div>
+    </div>
+  ) : null}
+</div>
+
+{/* 诚实声明：改为带 Info 图标的轻量注脚条，透明度不降、纵向只占一行 */}
+<p className="flex items-start gap-1.5 rounded-md bg-amber-500/[0.06] px-2 py-1 text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
+  <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+  <span>动态侧为面板本地模型，不等于全站生产权重；点击强化（奖励恒 1、无名次、无负反馈）不写入生产 recordFeedback。</span>
+</p>
+
+{abError && <p className="text-xs text-destructive-text">{abError}</p>}      {abChannels && (        <p className="text-xs text-muted-foreground">          本次检索参与通道：{abChannels.length ? abChannels.join("、") : "无"}          {!abChannels.includes("semantic") && "（语义通道未参与：Lite 环境无向量配置）"}        </p>      )}      {abResult ? (        <div className="grid md:grid-cols-2 gap-4">
 <div>
 <h5 className="text-xs font-semibold mb-2">静态 RRF Top 3</h5>
 <div className="space-y-2">              {abResult.staticTop.map((s, i) => (                <div key={s.hit.siteId} ref={(el) => { abRowRefs.current.set("s:" + s.hit.siteId, el) }}>

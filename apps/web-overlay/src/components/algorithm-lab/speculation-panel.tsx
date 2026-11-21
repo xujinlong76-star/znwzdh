@@ -77,7 +77,7 @@ export function SpeculationPanel() {
                     依据 Kalman 鼠标轨迹加速度与焦点抵达预测，自动为高置信落点生成标准 Speculation Rules，并在内核中自动拦截敏感/高危路径。
                   </CardDescription>
                 </div>
-                <Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/5 text-xs font-mono">
+                <Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/5 text-xs font-mono tabular-nums">
                   Speculation Rules API
                 </Badge>
               </div>
@@ -88,7 +88,7 @@ export function SpeculationPanel() {
                 <div className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-2">
                   <div className="flex items-center justify-between text-xs font-semibold">
                     <span>Prerender 唤起置信度阈值</span>
-                    <span className="font-mono text-amber-500 font-bold">≥ {specPrerenderThresh}</span>
+                    <span className="font-mono tabular-nums text-amber-500 font-bold">≥ {specPrerenderThresh}</span>
                   </div>
                   <div className="flex gap-2">
                     {[0.75, 0.82, 0.9, 0.95].map((t) => (
@@ -111,7 +111,7 @@ export function SpeculationPanel() {
                 <div className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-2">
                   <div className="flex items-center justify-between text-xs font-semibold">
                     <span>Prefetch 降级预取阈值</span>
-                    <span className="font-mono text-amber-500 font-bold">≥ {specPrefetchThresh}</span>
+                    <span className="font-mono tabular-nums text-amber-500 font-bold">≥ {specPrefetchThresh}</span>
                   </div>
                   <div className="flex gap-2">
                     {[0.35, 0.45, 0.55, 0.65].map((t) => (
@@ -144,7 +144,7 @@ export function SpeculationPanel() {
                     return (
                       <div key={c.url} className="p-3 rounded-lg border border-border/60 bg-muted/15 flex flex-wrap items-center justify-between gap-3 text-xs">
                         <div className="space-y-1">
-                          <div className="font-mono font-medium">{c.url}</div>
+                          <div className="font-mono tabular-nums font-medium">{c.url}</div>
                           <div className="text-[11px] text-muted-foreground">
                             置信度: <span className="font-bold text-foreground">{c.confidence}</span> · 预估抵达: <span className="font-bold text-foreground">{c.predictedArrivalMs} ms</span>
                           </div>
@@ -184,16 +184,16 @@ export function SpeculationPanel() {
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     编译出的标准 W3C Speculation Rules 结构：
                   </span>
-                  <span className="text-[11px] text-muted-foreground font-mono">
+                  <span className="text-[11px] text-muted-foreground font-mono tabular-nums">
                     script type=&quot;speculationrules&quot;
                   </span>
                 </div>
-                <pre className="p-3.5 rounded-lg bg-background border border-border/50 text-[11px] font-mono overflow-x-auto text-foreground/90 max-h-52">
+                <pre className="p-3.5 rounded-lg bg-background border border-border/50 text-[11px] font-mono tabular-nums overflow-x-auto text-foreground/90 max-h-52">
                   {compiledSpecRules ? renderSpeculationRulesScript(compiledSpecRules) : '// 暂无满足置信度阈值的候选规则'}
                 </pre>
                 {fallbackLinkTags.length > 0 && (
                   <div className="pt-2 text-[11px] text-muted-foreground">
-                    低版本降级回退标签: <code className="text-xs text-foreground font-mono">{fallbackLinkTags.join(' ')}</code>
+                    低版本降级回退标签: <code className="text-xs text-foreground font-mono tabular-nums">{fallbackLinkTags.join(' ')}</code>
                   </div>
                 )}
               </div>

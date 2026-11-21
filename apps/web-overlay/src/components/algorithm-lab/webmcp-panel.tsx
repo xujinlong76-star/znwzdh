@@ -5,7 +5,7 @@
  * 从 algorithm-lab.tsx 拆出（第五批 A1）：状态与逻辑原样搬运，行为由
  * algorithm-lab-structure.test.ts 与 e2e/algorithms.spec.ts 双守卫锁定。
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/registry/new-york/ui/card'
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/registry/new-york/ui/input'
@@ -27,6 +27,18 @@ export function WebMcpPanel() {
   const [mcpArgMsg, setMcpArgMsg] = useState('Hello from 山羊胡 In-Browser Agent!')
   const [mcpResponse, setMcpResponse] = useState<JsonRpcResponse | null>(null)
   const [mcpLatency, setMcpLatency] = useState<number | null>(null)
+
+  /**
+   * 默认样例自动运行（2026-11-21 巡检修复）。
+   *
+   * 改造前：mcpResponse 初始为 null，切进本 Tab 只看到空响应区，
+   * 必须先手点「调用」才有结果——12 个面板里就它和 intent 是这种冷启动空态。
+   * 现在挂载即用默认工具跑一次（无副作用：只读系统信息，不改任何持久状态）。
+   */
+  useEffect(() => {
+    void handleRunMcpTool('navhub_system_info')
+    // 只在挂载时跑一次；handleRunMcpTool 每次渲染重建，故刻意不进依赖
+  }, [])
 
   const handleRunMcpTool = async (tool: string) => {
     const bridge = getWebMcpBridge()

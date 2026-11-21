@@ -142,7 +142,7 @@ export function GraphPanel() {
                     <Sparkles className="w-3.5 h-3.5" />
                     协同演进链路推演结果：
                   </span>
-                  <span className="font-mono text-muted-foreground">
+                  <span className="font-mono tabular-nums text-muted-foreground">
                     拓扑代价距离：<span className="text-foreground font-bold">{techPathResult.distance}</span> | 跃点数：{techPathResult.steps.length}
                   </span>
                 </div>
@@ -154,10 +154,10 @@ export function GraphPanel() {
                         <div className="px-3 py-1.5 rounded-lg bg-background border border-indigo-500/40 shadow-xs flex items-center gap-1.5">
                           <span className="w-2 h-2 rounded-full bg-indigo-500" />
                           <span className="text-xs font-bold text-foreground">{node.name}</span>
-                          <span className="text-[10px] text-muted-foreground font-mono">({node.layer})</span>
+                          <span className="text-[10px] text-muted-foreground font-mono tabular-nums">({node.layer})</span>
                         </div>
                         {idx < techPathResult.nodeChain.length - 1 && (
-                          <div className="flex items-center text-xs font-mono text-indigo-500 px-1">
+                          <div className="flex items-center text-xs font-mono tabular-nums text-indigo-500 px-1">
                             <span className="text-[11px] bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20 mr-1">
                               {techPathResult.steps[idx]?.relation}
                             </span>
@@ -168,7 +168,7 @@ export function GraphPanel() {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-xs text-muted-foreground py-2 font-mono">未找到连通链路</div>
+                  <div className="text-xs text-muted-foreground py-2 font-mono tabular-nums">未找到连通链路</div>
                 )}
               </div>
 
@@ -176,7 +176,7 @@ export function GraphPanel() {
               <div className="p-4 rounded-xl border border-border/60 bg-card space-y-3">
                 <div className="flex items-center justify-between text-xs font-semibold">
                   <span>技术栈方案兼容度与补齐诊断：</span>
-                  <Badge variant="outline" className="text-xs font-mono text-indigo-500">
+                  <Badge variant="outline" className="text-xs font-mono tabular-nums text-indigo-500">
                     契合度: {stackReport.coherenceScore} / 100
                   </Badge>
                 </div>
@@ -252,7 +252,7 @@ export function GraphPanel() {
                     <ol className="space-y-1.5">
                       {rows.map((row, i) => (
                         <li key={row.id} className="flex items-center gap-2 text-xs">
-                          <span className="w-4 text-[10px] font-mono text-muted-foreground shrink-0">{i + 1}.</span>
+                          <span className="w-4 text-[10px] font-mono tabular-nums text-muted-foreground shrink-0">{i + 1}.</span>
                           <span className="font-medium text-foreground truncate flex-1">{row.name}</span>
                           {/* 归一化后的分值（0~1 量级），用条形直观表达相对强弱 */}
                           <span className="w-16 h-1.5 rounded-full bg-muted overflow-hidden shrink-0">
@@ -261,7 +261,7 @@ export function GraphPanel() {
                               style={{ width: `${Math.min(100, Math.max(4, row.score * 100))}%` }}
                             />
                           </span>
-                          <span className="font-mono text-[10px] text-muted-foreground w-10 text-right shrink-0">
+                          <span className="font-mono tabular-nums text-[10px] text-muted-foreground w-10 text-right shrink-0">
                             {row.score.toFixed(3)}
                           </span>
                         </li>

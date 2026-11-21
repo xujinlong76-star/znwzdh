@@ -125,8 +125,8 @@ export function HyperbolicPanel() {
                   <div className="absolute inset-4 rounded-full border border-dashed border-violet-400/20 pointer-events-none" />
                   <div className="absolute inset-16 rounded-full border border-dashed border-violet-400/20 pointer-events-none" />
                   <div className="absolute inset-28 rounded-full border border-dotted border-violet-400/15 pointer-events-none" />
-                  <div className="text-xs text-muted-foreground absolute top-2 font-mono">||x|| = 1.0 (流形边界)</div>
-                  <div className="text-xs text-muted-foreground absolute bottom-3 font-mono">Poincaré Ball Model</div>
+                  <div className="text-xs text-muted-foreground absolute top-2 font-mono tabular-nums">||x|| = 1.0 (流形边界)</div>
+                  <div className="text-xs text-muted-foreground absolute bottom-3 font-mono tabular-nums">Poincaré Ball Model</div>
 
                   {/* 节点在圆盘上的投影点 */}
                   {TECH_NODES.map((n) => {
@@ -148,7 +148,7 @@ export function HyperbolicPanel() {
                           }`}
                         />
                         <span
-                          className={`text-xs font-mono px-1.5 py-0.5 rounded shadow-2xs transition-colors ${
+                          className={`text-xs font-mono tabular-nums px-1.5 py-0.5 rounded shadow-2xs transition-colors ${
                             isTarget
                               ? 'bg-violet-600 text-white font-bold'
                               : 'bg-background/90 text-foreground border border-border/60 hover:border-violet-500/40'
@@ -165,7 +165,7 @@ export function HyperbolicPanel() {
                 <div className="space-y-3">
                   <div className="text-xs font-semibold text-muted-foreground flex items-center justify-between">
                     <span>基于测地距离 d_B(u, v) 求解候选：</span>
-                    <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">当前锚点: {activeTech.name}</Badge>
+                    <Badge variant="outline" className="text-xs font-mono tabular-nums px-2 py-0.5">当前锚点: {activeTech.name}</Badge>
                   </div>
                   <div className="space-y-2">
                     {hyperbolicAlts.slice(0, 4).map((alt, idx) => (
@@ -175,7 +175,7 @@ export function HyperbolicPanel() {
                       >
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-full bg-violet-500/10 text-violet-700 dark:text-violet-400 text-xs font-bold flex items-center justify-center font-mono">
+                            <span className="w-5 h-5 rounded-full bg-violet-500/10 text-violet-700 dark:text-violet-400 text-xs font-bold flex items-center justify-center font-mono tabular-nums">
                               #{idx + 1}
                             </span>
                             <span className="text-sm font-semibold group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
@@ -183,14 +183,14 @@ export function HyperbolicPanel() {
                             </span>
                             <Badge variant="secondary" className="text-xs px-2 py-0.5">{alt.category}</Badge>
                           </div>
-                          <div className="text-xs text-muted-foreground font-mono flex gap-3">
+                          <div className="text-xs text-muted-foreground font-mono tabular-nums flex gap-3">
                             <span>双曲测地距: <strong className="text-foreground">{alt.dist}</strong></span>
                             {/* 引擎不暴露 depthParity 中间量，这里展示它最终产出的亲和分（0~100） */}
                             <span>亲和分: <strong className="text-foreground">{alt.score}</strong></span>
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-base font-extrabold font-mono text-violet-600 dark:text-violet-400">
+                          <div className="text-base font-extrabold font-mono tabular-nums text-violet-600 dark:text-violet-400">
                             {alt.score}%
                           </div>
                           <span className="text-xs text-muted-foreground">平替置信度</span>

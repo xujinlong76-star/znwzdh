@@ -189,7 +189,7 @@ export function VaultPanel() {
                 <label className="text-muted-foreground font-semibold">
                   待加密的内部私密书签：
                 </label>
-                <div className="p-2.5 rounded-lg border border-border/50 bg-muted/30 space-y-1.5 font-mono text-xs">
+                <div className="p-2.5 rounded-lg border border-border/50 bg-muted/30 space-y-1.5 font-mono tabular-nums text-xs">
                   {vaultItems.map((item) => (
                     <div
                       key={item.id}
@@ -217,7 +217,7 @@ export function VaultPanel() {
                   value={vaultPassword}
                   onChange={(e) => setVaultPassword(e.target.value)}
                   placeholder="设置用于派生 AES 密钥的强密码..."
-                  className="font-mono text-xs h-9 border-border/70"
+                  className="font-mono tabular-nums text-xs h-9 border-border/70"
                 />
               </div>
 
@@ -233,17 +233,17 @@ export function VaultPanel() {
 
               <div className="p-3 rounded-lg border border-border/50 bg-muted/30 space-y-1 text-xs">
                 <div className="font-bold">KDF 参数（公开常量）</div>
-                <div className="font-mono">
+                <div className="font-mono tabular-nums">
                   PBKDF2 · 哈希 {PBKDF2_HASH} · 迭代{" "}
                   {PBKDF2_ITERATIONS.toLocaleString()} 次
                 </div>
-                <div className="font-mono">
+                <div className="font-mono tabular-nums">
                   派生密钥 AES-GCM {KEY_LENGTH_BITS} 位 · Salt{" "}
                   {VAULT_SALT_LENGTH_BYTES} 字节 · IV {VAULT_IV_LENGTH_BYTES}{" "}
                   字节（96 位）
                 </div>
                 {deriveMs !== null && (
-                  <div className="font-mono">
+                  <div className="font-mono tabular-nums">
                     派生耗时 {deriveMs.toFixed(1)} ms
                   </div>
                 )}
@@ -254,7 +254,7 @@ export function VaultPanel() {
               </div>
 
               {encryptedPayload && (
-                <div className="p-3.5 rounded-lg border border-border/50 bg-muted/40 space-y-2.5 text-xs font-mono">
+                <div className="p-3.5 rounded-lg border border-border/50 bg-muted/40 space-y-2.5 text-xs font-mono tabular-nums">
                   <div className="text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1">
                     <Check className="w-3.5 h-3.5" /> 密封封包已生成 (AES-GCM)：
                   </div>
@@ -350,7 +350,7 @@ export function VaultPanel() {
                   value={decryptInputPassword}
                   onChange={(e) => setDecryptInputPassword(e.target.value)}
                   placeholder="输入正确或错误密码进行测试..."
-                  className="font-mono text-xs h-9 border-border/70"
+                  className="font-mono tabular-nums text-xs h-9 border-border/70"
                 />
               </div>
 
@@ -406,7 +406,7 @@ export function VaultPanel() {
                     <CheckCircle2 className="w-4 h-4 text-emerald-500" />{" "}
                     解密成功！还原 {decryptedItems.length} 条私密书签：
                   </div>
-                  <div className="space-y-1 font-mono text-xs">
+                  <div className="space-y-1 font-mono tabular-nums text-xs">
                     {decryptedItems.map((item) => (
                       <div
                         key={item.id}

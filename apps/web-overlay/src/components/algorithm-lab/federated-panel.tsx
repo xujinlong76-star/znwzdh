@@ -28,7 +28,7 @@ export function FederatedPanel() {
     { id: 'ollama', name: 'Ollama / DeepSeek (本地 AI)', featureVector: [0.2, 0.98, 0.4, 0.1, 0.7] },
     { id: 'k8s', name: 'Kubernetes (云原生编排)', featureVector: [0.1, 0.2, 0.95, 0.4, 0.6] },
     { id: 'pgvector', name: 'PostgreSQL + pgvector (向量库)', featureVector: [0.2, 0.85, 0.5, 0.95, 0.5] },
-    { id: 'turborepo', name: 'Turborepo (现代化Monorepo工具)', featureVector: [0.8, 0.3, 0.3, 0.1, 0.95] },
+    { id: 'turborepo', name: 'Turborepo（现代化 Monorepo 工具）', featureVector: [0.8, 0.3, 0.3, 0.1, 0.95] },
   ], [])
 
   const handlePrivatize = () => {
@@ -68,7 +68,7 @@ export function FederatedPanel() {
                     通过数学拉普拉斯扰动机制在客户端注入受控噪声，保证个体特征绝对不可重构，同时与脱敏群体共识向量结合计算最佳混合排序。
                   </CardDescription>
                 </div>
-                <Badge variant="outline" className="text-blue-500 border-blue-500/30 bg-blue-500/5 text-xs font-mono">
+                <Badge variant="outline" className="text-blue-500 border-blue-500/30 bg-blue-500/5 text-xs font-mono tabular-nums">
                   Laplace(0, 1/ε)
                 </Badge>
               </div>
@@ -80,7 +80,7 @@ export function FederatedPanel() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold flex items-center gap-1.5">
                       <Sliders className="w-3.5 h-3.5 text-blue-500" />
-                      隐私预算 ε (Epsilon): <span className="font-mono text-primary font-bold">{fedEpsilon}</span>
+                      隐私预算 ε (Epsilon): <span className="font-mono tabular-nums text-primary font-bold">{fedEpsilon}</span>
                     </span>
                     <Badge variant="secondary" className="text-[10px]">
                       {fedEpsilon <= 0.5 ? '极高隐私 (强混淆)' : fedEpsilon <= 1.0 ? '均衡隐私' : '效用优先 (弱扰动)'}
@@ -123,9 +123,9 @@ export function FederatedPanel() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold flex items-center gap-1.5">
                       <Activity className="w-3.5 h-3.5 text-blue-500" />
-                      排序权重：本地偏好占比 <span className="font-mono text-primary font-bold">{Math.round(fedPersonalWeight * 100)}%</span>
+                      排序权重：本地偏好占比 <span className="font-mono tabular-nums text-primary font-bold">{Math.round(fedPersonalWeight * 100)}%</span>
                     </span>
-                    <span className="text-[11px] text-muted-foreground font-mono">
+                    <span className="text-[11px] text-muted-foreground font-mono tabular-nums">
                       群体趋势: {Math.round((1 - fedPersonalWeight) * 100)}%
                     </span>
                   </div>
@@ -166,9 +166,9 @@ export function FederatedPanel() {
                   {['前端', 'AI模型', '云原生', '数据库', '工具链'].map((label, idx) => (
                     <div key={label} className="p-2.5 rounded-lg bg-background border border-border/50 text-center space-y-1">
                       <div className="text-[10px] text-muted-foreground">{label}</div>
-                      <div className="font-mono font-bold text-xs">{localFeatureVector[idx]}</div>
+                      <div className="font-mono tabular-nums font-bold text-xs">{localFeatureVector[idx]}</div>
                       {noisyVector.length > 0 && (
-                        <div className="text-[10px] font-mono text-blue-500 pt-0.5 border-t border-border/40">
+                        <div className="text-[10px] font-mono tabular-nums text-blue-500 pt-0.5 border-t border-border/40">
                           加噪: {noisyVector[idx]}
                         </div>
                       )}
@@ -224,16 +224,16 @@ export function FederatedPanel() {
                     <div key={item.itemId} className="p-3.5 rounded-xl border border-border/60 bg-muted/20 space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold flex items-center gap-1.5">
-                          <span className="w-4 h-4 rounded-full bg-blue-500/10 text-blue-500 font-mono text-[10px] flex items-center justify-center">
+                          <span className="w-4 h-4 rounded-full bg-blue-500/10 text-blue-500 font-mono tabular-nums text-[10px] flex items-center justify-center">
                             {idx + 1}
                           </span>
                           {item.name}
                         </span>
-                        <Badge variant="outline" className="text-blue-500 border-blue-500/30 text-xs font-mono font-bold">
+                        <Badge variant="outline" className="text-blue-500 border-blue-500/30 text-xs font-mono tabular-nums font-bold">
                           {item.score}
                         </Badge>
                       </div>
-                      <div className="flex items-center justify-between text-[11px] text-muted-foreground font-mono">
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground font-mono tabular-nums">
                         <span>个人匹配度: {item.personalMatch}</span>
                         <span>群体趋势度: {item.globalTrendMatch}</span>
                       </div>
@@ -262,16 +262,16 @@ export function FederatedPanel() {
                 <div key={item.itemId} className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold flex items-center gap-1.5">
-                      <span className="w-4 h-4 rounded-full bg-blue-500/10 text-blue-500 font-mono text-[10px] flex items-center justify-center">
+                      <span className="w-4 h-4 rounded-full bg-blue-500/10 text-blue-500 font-mono tabular-nums text-[10px] flex items-center justify-center">
                         {idx + 1}
                       </span>
                       {item.name}
                     </span>
-                    <Badge variant="outline" className="text-blue-500 border-blue-500/30 text-xs font-mono font-bold">
+                    <Badge variant="outline" className="text-blue-500 border-blue-500/30 text-xs font-mono tabular-nums font-bold">
                       {item.score}
                     </Badge>
                   </div>
-                  <div className="flex items-center justify-between text-[11px] text-muted-foreground font-mono">
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground font-mono tabular-nums">
                     <span>个人匹配度：{item.personalMatch}</span>
                     <span>群体趋势度：{item.globalTrendMatch}</span>
                   </div>

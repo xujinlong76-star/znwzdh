@@ -297,6 +297,10 @@ export const DEFUSED_GATES = [
     ],
     gates: [
       { id: "gate-syntax", label: "check-syntax（TS/TSX 语法）" },
+      // 2026-11-20 Batch 1 W2b 接线（03 §2.4）：navigation.json 每条 hubId 必须 = id
+      // 且内唯一；错指阻塞、缺失只告警。漏登它时 run 44891007823 的 5 例 ci-defused
+      // 失败全是同一句「gate-hub-id 没登进 check-web-overlay 的撤防登记表」。
+      { id: "gate-hub-id", label: "check-hub-id（hubId = id 且内唯一）" },
       { id: "gate-deps-integrity", label: "check-deps-integrity（依赖入口可解析）" },
       { id: "gate-video-scope", label: "typecheck-video-scope（视频作用域类型）" },
       { id: "gate-overlay", label: "check-web-overlay（覆写层与镜像同源）" },

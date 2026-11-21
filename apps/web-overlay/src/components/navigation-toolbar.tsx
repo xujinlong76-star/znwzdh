@@ -4,7 +4,8 @@
  * 首页顶部工具栏（从 navigation-content.tsx 拆出，2026-10-19 P1-2）。
  *
  * 只负责渲染搜索入口、探索矩阵、视图/密度/主题开关与多选入口；
- * 选中态与工作台过滤仍由 NavigationContent 持有，通过 props 注入。
+ * 工作区过滤已迁至 HomeCapsuleRow（本文件不再接收 activeWorkspace /
+ * onWorkspaceChange，2026-11-21 U-358 门禁修复：两者曾声明却从未使用）。
  */
 import { memo } from 'react'
 import Link from 'next/link'
@@ -48,7 +49,6 @@ import dynamic from 'next/dynamic'
 import type { SiteConfig } from '@/types/site'
 import { ModeToggle } from '@/components/mode-toggle'
 import { FontSizeToggle } from '@/components/font-size-toggle'
-import { type WorkspaceId } from '@/components/workspace-filter'
 import { cn } from '@/lib/utils'
 import { trackDiyEvent } from '@/lib/navhub-api'
 import { summarizeSelection } from '@/lib/selection'
@@ -74,8 +74,6 @@ const SearchPalette = dynamic(
 
 export interface NavigationToolbarProps {
   siteConfig: SiteConfig
-  activeWorkspace: WorkspaceId
-  onWorkspaceChange: (workspace: WorkspaceId) => void
   onToggleSidebar: () => void
   onOpenTools: () => void
   onOpenShortcuts: () => void
@@ -99,8 +97,6 @@ export interface NavigationToolbarProps {
 // P0-2：包 memo——父组件回调已全部 useCallback 化，浅比较才能生效。
 export const NavigationToolbar = memo(function NavigationToolbar({
   siteConfig,
-  activeWorkspace,
-  onWorkspaceChange,
   onToggleSidebar,
   onOpenTools,
   onOpenShortcuts,

@@ -1125,8 +1125,6 @@ export function NavigationContent({
           onToggleSidebar={handleToggleSidebar}
           onOpenTools={handleOpenTools}
           onOpenShortcuts={handleOpenShortcuts}
-          activeWorkspace={activeWorkspace}
-          onWorkspaceChange={handleWorkspaceChange}
           selectionMode={selectionMode}
           selectedIds={selectedIds}
           visibleSiteCount={visibleSites.length}

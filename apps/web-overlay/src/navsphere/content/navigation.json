@@ -1633,7 +1633,7 @@
               "id": "nav-509733179a52",
               "title": "Java",
               "href": "https://www.java.com/",
-              "description": "跨平台的企业级Java语言与JDK下载",
+              "description": "跨平台的企业级 Java 语言与运行环境（JRE）下载",
               "icon": "https://www.java.com/favicon.ico",
               "enabled": true,
               "tags": [
@@ -3654,7 +3654,7 @@
               "id": "nav-851b8e2cbc38",
               "title": "哔哩哔哩",
               "href": "https://www.bilibili.com",
-              "description": "国内视频社区，技术课程与学习资源丰富",
+              "description": "国内视频社区，技术课程与学习资源丰富，学习内容需站内搜索",
               "icon": "https://bilibili.com/favicon.ico",
               "enabled": true,
               "tags": [

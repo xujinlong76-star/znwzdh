@@ -110,6 +110,60 @@ export const PLUGIN_AUDIT_DEFAULTS = {
 } as const
 
 /**
+ * 审计资源上限（CodeQL #134 资源耗尽修复，fail-closed）。
+ *
+ * 背景：`probeUrls` / `auditPluginUrls` 原先只对 `concurrency` / `timeoutMs`
+ * 做 `Math.max(1, …)` 下限保护、没有任何上限——恶意插件声明数万条 URL、
+ * 或调用方传入超大 `sample` / `concurrency` / `timeoutMs` 时，单条虽有兜底超时
+ * 但总量无界（10 万条 × 4 秒 / 并发 12 ≈ 9 小时），一次审计能拖死 worker、
+ * 打爆出站预算并把出口 IP 送进目标站黑名单；`sampleUrls` 整包拷贝与
+ * `summarizeProbes` 明细数组还随探活数线性膨胀内存。
+ * 路由层虽有 `MAX_SAMPLE=100` 与出站预算，但那是路由防线——库函数本身必须自带防线，
+ * 否则任何新调用方（job / 脚本 / 未来路由）都能绕过。
+ *
+ * 策略（与路由层 `MAX_SAMPLE=100` / `MAX_TIMEOUT_MS=30_000` 对齐）：
+ * - 输入规模（`maxUrls`）与执行失控（`maxAuditMs` / `maxIterations`）：硬拒绝，
+ *   抛 `PluginAuditLimitError`，路由层捕获后转 400，绝不静默截断、绝不返回半份结果；
+ * - 调节旋钮（`sample` / `concurrency` / `timeoutMs`）：钳制到上限（只许调小、不许调大），
+ *   与路由既有的 `clampInt` 口径一致；
+ * - 总时限（`maxAuditMs`）：调用方只许缩短、不许延长（`Math.min(传入值, 上限)`）。
+ * `maxRedirects` 是深度等价控制（重定向链深度），由探活器执行，本处与默认值对齐声明。
+ */
+export const PLUGIN_AUDIT_LIMITS = {
+  /** 单次审计接受的 URL 总数上限（恶意插件清单再大也只认这么多，超限直接拒绝） */
+  maxUrls: 1000,
+  /** 抽样上限（与路由 MAX_SAMPLE=100 对齐） */
+  maxSample: 100,
+  /** 并发上限 */
+  maxConcurrency: 32,
+  /** 单条探活兜底超时上限（毫秒） */
+  maxTimeoutMs: 30_000,
+  /** 整轮审计总时限（毫秒）：从第一批探活开始算，超时即停并拒绝 */
+  maxAuditMs: 120_000,
+  /** 探活批次数上限（= maxSample 下的批次数，防循环失控） */
+  maxIterations: 100,
+  /** 重定向跳数上限（深度等价控制；由探活器执行） */
+  maxRedirects: 6,
+} as const
+
+/** 超限拒绝：fail-closed 的 typed 错误（路由层捕获后转 400 `audit_limit_exceeded`）。 */
+export class PluginAuditLimitError extends Error {
+  readonly code = "audit_limit_exceeded" as const
+  readonly limit: string
+  constructor(limit: string, detail: string) {
+    super(`插件审计触及资源上限（${limit}）：${detail}`)
+    this.name = "PluginAuditLimitError"
+    this.limit = limit
+  }
+}
+
+/** 钳制调节旋钮到 [min, max]（只许调小、不许调大）。 */
+function clampAuditInt(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min
+  return Math.min(max, Math.max(min, Math.floor(value)))
+}
+
+/**
  * 「存活但拒绝爬虫」的状态码集合 —— **定义已迁到 `@navhub/core` 的 `probe-policy`**。
  *
  * 这里保留同名导出，是为了不打断既有 import（含测试与 MCP 处理器）；
@@ -141,13 +195,15 @@ export function normalizeAuditUrl(url: string): string {
  */
 export function sampleUrls(urls: readonly string[], limit: number): string[] {
   const total = urls.length
-  if (limit <= 0) return []
+  // 防线纵深：抽样量同样钳制到上限（直接调用方传再大也只取这么多）
+  const capped = clampAuditInt(limit, 0, PLUGIN_AUDIT_LIMITS.maxSample)
+  if (capped <= 0) return []
   if (total === 0) return []
-  if (limit >= total) return [...urls]
+  if (capped >= total) return [...urls]
   const picked: string[] = []
   const seen = new Set<string>()
-  const step = total / limit
-  for (let i = 0; i < limit; i++) {
+  const step = total / capped
+  for (let i = 0; i < capped; i++) {
     // 取每个等分区间内的固定位置（区间中点偏左，避免总是取到端点导致首尾过采样）
     const index = Math.min(total - 1, Math.floor(i * step + step / 2))
     const url = urls[index]
@@ -231,21 +287,37 @@ export function summarizeProbes(probes: readonly UrlProbeResult[]): PluginAuditS
 export type UrlProber = (url: string, timeoutMs: number) => Promise<UrlProbeResult>
 
 /**
- * 并发探活编排：分批并发 + 单条兜底超时。
+ * 并发探活编排：分批并发 + 单条兜底超时 + 整轮总时限 + 批次数上限。
  *
  * 兜底超时的意义：探活器自己可能不守时（DNS 挂起、连接半开），
  * 这里用 Promise.race 保证单条不会把整批体检拖死；超时按 broken 记录 error='timeout'。
+ *
+ * 资源上限（CodeQL #134）：`concurrency` / `timeoutMs` 钳制到上限（只许调小、不许调大）；
+ * 每批开始前查整轮 deadline（`maxAuditMs`，调用方只许缩短、不许延长），超时即停并抛
+ * `PluginAuditLimitError`（fail-closed，不返回半份结果）；批次数超 `maxIterations` 同样拒绝。
+ * 注意 deadline 是粗粒度守卫：单批内部仍由各条的兜底超时约束，最坏多跑一批的时长。
  */
 export async function probeUrls(
   urls: readonly string[],
   probe: UrlProber,
-  options: { concurrency?: number; timeoutMs?: number } = {},
+  options: { concurrency?: number; timeoutMs?: number; maxAuditMs?: number; maxIterations?: number } = {},
 ): Promise<UrlProbeResult[]> {
-  const concurrency = Math.max(1, options.concurrency ?? PLUGIN_AUDIT_DEFAULTS.concurrency)
-  const timeoutMs = Math.max(1, options.timeoutMs ?? PLUGIN_AUDIT_DEFAULTS.timeoutMs)
+  const concurrency = clampAuditInt(options.concurrency ?? PLUGIN_AUDIT_DEFAULTS.concurrency, 1, PLUGIN_AUDIT_LIMITS.maxConcurrency)
+  const timeoutMs = clampAuditInt(options.timeoutMs ?? PLUGIN_AUDIT_DEFAULTS.timeoutMs, 1, PLUGIN_AUDIT_LIMITS.maxTimeoutMs)
+  const maxIterations = clampAuditInt(options.maxIterations ?? PLUGIN_AUDIT_LIMITS.maxIterations, 1, PLUGIN_AUDIT_LIMITS.maxIterations)
+  const maxAuditMs = Math.min(options.maxAuditMs ?? PLUGIN_AUDIT_LIMITS.maxAuditMs, PLUGIN_AUDIT_LIMITS.maxAuditMs)
+  const deadline = Date.now() + Math.max(1, maxAuditMs)
   const results: UrlProbeResult[] = []
 
+  let iterations = 0
   for (let i = 0; i < urls.length; i += concurrency) {
+    iterations++
+    if (iterations > maxIterations) {
+      throw new PluginAuditLimitError("maxIterations", `探活批次数超过上限 ${maxIterations} 批（待探 ${urls.length} 条）`)
+    }
+    if (Date.now() > deadline) {
+      throw new PluginAuditLimitError("maxAuditMs", `整轮审计超过总时限 ${maxAuditMs}ms，已探 ${results.length}/${urls.length} 条`)
+    }
     const batch = urls.slice(i, i + concurrency)
     const settled = await Promise.all(
       batch.map(async (url) => {
@@ -273,10 +345,18 @@ export async function probeUrls(
 export async function auditPluginUrls(
   urls: readonly string[],
   probe: UrlProber,
-  options: { sample?: number; concurrency?: number; timeoutMs?: number } = {},
+  options: { sample?: number; concurrency?: number; timeoutMs?: number; maxAuditMs?: number } = {},
 ): Promise<{ summary: PluginAuditSummary; sampledUrls: string[]; probes: UrlProbeResult[] }> {
-  const sampledUrls = sampleUrls(urls, options.sample ?? PLUGIN_AUDIT_DEFAULTS.sample)
-  const probes = await probeUrls(sampledUrls, probe, options)
+  // 硬拒绝：输入清单本身超限（恶意插件声明数万条 URL 的主向量）——绝不静默截断
+  if (urls.length > PLUGIN_AUDIT_LIMITS.maxUrls) {
+    throw new PluginAuditLimitError("maxUrls", `清单含 ${urls.length} 条 URL，超过上限 ${PLUGIN_AUDIT_LIMITS.maxUrls} 条`)
+  }
+  const sample = clampAuditInt(options.sample ?? PLUGIN_AUDIT_DEFAULTS.sample, 1, PLUGIN_AUDIT_LIMITS.maxSample)
+  const concurrency = clampAuditInt(options.concurrency ?? PLUGIN_AUDIT_DEFAULTS.concurrency, 1, PLUGIN_AUDIT_LIMITS.maxConcurrency)
+  const timeoutMs = clampAuditInt(options.timeoutMs ?? PLUGIN_AUDIT_DEFAULTS.timeoutMs, 1, PLUGIN_AUDIT_LIMITS.maxTimeoutMs)
+  const maxAuditMs = Math.min(options.maxAuditMs ?? PLUGIN_AUDIT_LIMITS.maxAuditMs, PLUGIN_AUDIT_LIMITS.maxAuditMs)
+  const sampledUrls = sampleUrls(urls, sample)
+  const probes = await probeUrls(sampledUrls, probe, { concurrency, timeoutMs, maxAuditMs })
   // 额外回传逐条探活结果：调用方要用它做指标聚合（原因分布 / 延迟直方图）。
   // 这是纯附加字段，既有解构 `{ summary }` 的调用方不受影响。
   return { summary: summarizeProbes(probes), sampledUrls, probes }

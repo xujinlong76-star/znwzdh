@@ -1081,7 +1081,7 @@ export function NavigationContent({
           id="mobile-nav-drawer"
           aria-label="站点导航"
           className={cn(
-            "fixed inset-y-0 left-0 w-3/4 max-w-xs bg-background shadow-lg transform transition-transform duration-[--duration-base] ease-in-out outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "fixed inset-y-0 left-0 w-3/4 max-w-xs bg-background depth-modal transform transition-transform duration-[--duration-base] ease-in-out outline-none focus-visible:ring-2 focus-visible:ring-ring",
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
@@ -1237,7 +1237,7 @@ export function NavigationContent({
                   variant="outline"
                   size="sm"
                   onClick={handleOpenRecoveryCenter}
-                  className="h-7 px-2.5 text-xs rounded-lg gap-1 border-primary/40 text-primary hover:bg-primary/10"
+                  className="h-7 px-2.5 text-xs rounded-lg gap-1 border-border-strong text-primary hover:bg-primary/10"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>🗑️ 回收站与功能矩阵 ({trashBin.length})</span>
@@ -1488,13 +1488,13 @@ export function NavigationContent({
               <span id="home-directory-title" className="text-xs font-semibold text-foreground">
                 站内目录
               </span>
-              <Link href="/category" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-primary hover:bg-primary/5 hover:underline transition-colors">
+              <Link href="/category" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-link hover:bg-primary/5 hover:underline transition-colors">
                 全部分类
               </Link>
-              <Link href="/sites" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-primary hover:bg-primary/5 hover:underline transition-colors">
+              <Link href="/sites" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-link hover:bg-primary/5 hover:underline transition-colors">
                 全部站点
               </Link>
-              <Link href="/tags" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-primary hover:bg-primary/5 hover:underline transition-colors">
+              <Link href="/tags" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-link hover:bg-primary/5 hover:underline transition-colors">
                 按标签浏览
               </Link>
               {directoryLinks.length > 0 && (

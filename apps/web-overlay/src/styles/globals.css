@@ -91,6 +91,9 @@
   --color-category: hsl(var(--category));
   --color-category-foreground: hsl(var(--category-foreground));
 
+  /* P2-8：信息蓝（blue-500 #3b82f6），供光晕/极光等装饰色走 Token。 */
+  --color-info: hsl(var(--info));
+
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
 
@@ -297,6 +300,7 @@
     --success-foreground: 163 94% 24%; /* emerald-700 */
     --category: 239 84% 67%; /* indigo-500 */
     --category-foreground: 245 58% 51%; /* indigo-700 */
+    --info: 217 91% 60%; /* blue-500 #3b82f6（P2-8 光晕/极光装饰色） */
     --border: 240 5.9% 90%;
     --input: 240 5.9% 90%;
     /* 控件边界加强档：#8F8F99，对白 3.22:1（WCAG 1.4.11 ≥3:1）。
@@ -570,7 +574,7 @@
     }
     .dark .nav-card-glow:hover {
       border-color: hsl(var(--primary) / 0.35);
-      box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.45), 0 0 18px 2px rgba(59, 130, 246, 0.07);
+      box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.45), 0 0 18px 2px hsl(var(--info) / 0.07);
     }
   }
   /* 移动端/触摸屏触控反馈：避免粘连 hover，使用瞬时弹性微动 */
@@ -600,8 +604,8 @@
 
   .canvas-bg-aurora {
     background-image: radial-gradient(circle at 15% 15%, hsl(var(--primary) / 0.08) 0%, transparent 45%),
-                      radial-gradient(circle at 85% 20%, rgba(99, 102, 241, 0.09) 0%, transparent 45%),
-                      radial-gradient(circle at 50% 85%, rgba(16, 185, 129, 0.07) 0%, transparent 50%);
+                      radial-gradient(circle at 85% 20%, hsl(var(--category) / 0.09) 0%, transparent 45%),
+                      radial-gradient(circle at 50% 85%, hsl(var(--success) / 0.07) 0%, transparent 50%);
   }
 
   .canvas-bg-clean {

@@ -571,7 +571,7 @@ export const NavigationCard = memo(function NavigationCard({
               data-navhub-site-id={item.id}
               data-navhub-selected={selected ? 'true' : undefined}
               className={cn(
-                "nav-card-deferred group/card relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 transition-all duration-[--duration-fast] transform hover:-translate-y-0.5",
+                "nav-card-deferred group/card relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-[var(--depth-float)] transition-all duration-[--duration-fast] transform hover:-translate-y-0.5",
                 isPinnedInCategory && "ring-1 ring-pinned/40 bg-pinned/4 border-pinned/30",
                 selectionClass
               )}
@@ -777,7 +777,7 @@ export const NavigationCard = memo(function NavigationCard({
               data-navhub-site-id={item.id}
               data-navhub-selected={selected ? 'true' : undefined}
               className={cn(
-                "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-[--duration-base] transform hover:-translate-y-0.5 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
+                "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-[var(--depth-float)] nav-card-glow transition-all duration-[--duration-base] transform hover:-translate-y-0.5 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
                 isPinnedInCategory && "ring-1 ring-pinned/40 bg-pinned/4 border-pinned/30",
                 selectionClass
               )}
@@ -844,7 +844,7 @@ export const NavigationCard = memo(function NavigationCard({
                     />
                   </div>
                 )}
-                <CardHeader className="p-3.5 flex-1">
+                <CardHeader className="p-[var(--density-card-padding,0.875rem)] flex-1">
                   <div className="flex items-start gap-3.5">
                     {!thumbnail && (
                     <div className="relative flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-[--duration-base] group-hover/card:scale-105 shadow-xs">
@@ -1079,7 +1079,7 @@ export const NavigationCard = memo(function NavigationCard({
             data-navhub-site-id={item.id}
             data-navhub-selected={selected ? 'true' : undefined}
             className={cn(
-              "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-[--duration-base] transform hover:-translate-y-0.5",
+              "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-[var(--depth-float)] nav-card-glow transition-all duration-[--duration-base] transform hover:-translate-y-0.5",
               isPinnedInCategory && "ring-1 ring-pinned/40 bg-pinned/4 border-pinned/30",
               selectionClass
             )}

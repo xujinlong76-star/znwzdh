@@ -56,6 +56,10 @@ export interface HubBriefWatchItem {
   playUrl: string
   episode: number
   priority: 'high' | 'normal'
+  /** 预约态开播日提醒才带：预计开播日（YYYY-MM-DD）。 */
+  premiereDate?: string | null
+  /** 预约态才为 true：平台待确认，无播放页。 */
+  reserved?: boolean
 }
 
 export interface HubBrief {
@@ -69,7 +73,12 @@ export interface HubBrief {
   /** today = 今天真有新增；recent = 无今日新增、展示最近收录（带日期） */
   newSitesScope: 'today' | 'recent'
   newSites: HubBriefNewSite[]
-  watch: { due: HubBriefWatchItem[]; check: HubBriefWatchItem[] } | null
+  watch: {
+    due: HubBriefWatchItem[]
+    check: HubBriefWatchItem[]
+    /** 今天开播的预约剧（预计开播日就是今天，平台待确认）。 */
+    premieringToday: HubBriefWatchItem[]
+  } | null
 }
 
 export async function loadHotlist(revalidate = 300): Promise<HubHotlist | null> {

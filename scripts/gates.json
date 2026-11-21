@@ -1,7 +1,7 @@
 {
- "_comment": "门禁清单的单一事实源：每一枚「会拦住提交/推送/合并」的检查都在这里登记。只登记能被自动核对的坐标（命令 / runner id / CI 作业）与它的测试，不复制实现。双向口径见 scripts/check-gates-registry.mjs：登记了没接线 = 以为在拦其实没跑；接线了没登记 = 下次改钩子会悄悄删掉它。test 里的文件必须真实存在；确实没有专属测试的写 whyNoTest 说明理由（没有理由的「裸门禁」不许入库）。",
+ "_comment": "门禁清单的单一事实源：每一枚「会拦住提交/推送/合并」的检查都在这里登记。只登记能被自动核对的坐标（命令 / runner id / CI 作业）与它的测试，不复制实现。双向口径见 scripts/check-gates-registry.mjs：登记了没接线 = 以为在拦其实没跑；接线了没登记 = 下次改钩子会悄悄删掉它。test 里的文件必须真实存在；确实没有专属测试的写 whyNoTest 说明理由（没有理由的「裸门禁」不许入库）。U-385（2026-11-21 钩子瘦身）：typecheck 与 impact-select 两枚 staged 登记已删——全量 typecheck 与选测 vitest 移出本地 pre-commit，全量只在 CI 跑（test-sqlite：pnpm run typecheck + 全量 vitest 三片；test-web：前端 tsc / lint / build），合入前分支保护不变；如需恢复为 staged，必须同步恢复钩子模板里的接线，否则本校验即红。",
  "version": 1,
- "updatedAt": "2026-11-06",
+ "updatedAt": "2026-11-21",
  "gates": [
   {
    "name": "large-files-staged",
@@ -139,25 +139,6 @@
    "test": "scripts/check-source-truth.test.ts",
    "why": "读路径按计数选源会把影子副本当正本（KV 74 条 vs 表 5578 条）；判据必须是显式开关；只查本次提交集（--changed），全仓口径归全量测试",
    "args": "--changed"
-  },
-  {
-   "name": "typecheck",
-   "when": "staged",
-   "script": "scripts/typecheck.mjs",
-   "blocks": true,
-   "test": "scripts/typecheck.test.ts",
-   "why": "@navhub/* 的 tsc --noEmit；前端类型由 CI 的 test-web 兜"
-  },
-  {
-   "name": "impact-select",
-   "when": "staged",
-   "script": "navhub-precommit-tests.mjs",
-   "blocks": true,
-   "test": [
-    "scripts/precommit-select.test.ts",
-    "scripts/test-impact.test.ts"
-   ],
-   "why": "按模块图选出的相关测试；生成物在 .git/hooks 下（生成源 scripts/install-git-hooks.mjs）"
   },
   {
    "name": "large-files-unpushed",

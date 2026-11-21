@@ -110,7 +110,7 @@ node scripts/check-large-files.mjs --unpushed || exit 1
 node scripts/prepush-gates.mjs || exit 1
 `
 
-// 提交前门禁（升级建议：把 CI 里已有的检查尽可能左移）：
+// 提交前门禁：本地钩子只做快查（仅改动文件、秒级），全量检查只在 CI 跑。
 //   0) 大文件：超过 50 MiB 的暂存 blob 直接拦（GitHub 硬限制 100 MiB 的一半）。
 //      真实事故：2026-10-26 并行会话 add -A 带进 141.42 MiB 的 Playwright 安装包，
 //      三次推送被服务端拒绝，最终只能重写三个未推送提交。
@@ -119,13 +119,18 @@ node scripts/prepush-gates.mjs || exit 1
 //      并发会话在改 overlay，导致连续两次提交中止）。全仓库判定交给 CI 的
 //      check-web-overlay 作业；本地只对「你这次要提交的东西」把关。
 //   2) 扩展规范 + 上游 ref 一致性：秒级
-//   3) 类型门禁：@navhub/* 的 tsc --noEmit（前端走 CI 的 test-web，避免本地几十秒）
-//   4) 语法解析（--staged）+ 变更相关测试：选测依据是**暂存区**（`git diff --cached`），
-//      不是工作区改动集。多会话并行时，别人未提交的改动不再被算进本次提交。
+//   3) 类型门禁与变更相关测试已移出钩子（U-385，2026-11-21）：全量 typecheck
+//      （70–77 秒，1.5 核本机）与选测 vitest（整包根可达约 94 秒）绑在每次
+//      提交上，理性选择永远是绕过——锚点累计 92 例绕过声明即其产物。
+//      全量仍在 CI 跑（test-sqlite：pnpm run typecheck + 全量 vitest 三片；
+//      test-web：前端 tsc / lint / build），合入前分支保护不变。本地按需跑：
+//      node scripts/typecheck.mjs；选测器见下（仍由本安装脚本生成）。
+//   4) 语法解析（--staged）：只查 staged 的 TS/TSX，秒级；先把标点级错误挡住。
 // 提交变慢时可临时跳过：NAVHUB_SKIP_PRECOMMIT=1 git commit ...（或 --no-verify，但请别滥用）
 const script = `#!/bin/sh
 # NavHub Pre-commit Hook
-# 自动校验覆盖层对齐（仅本次提交涉及的文件）、扩展规范、上游 ref、类型与变更相关测试
+# 自动校验覆盖层对齐（仅本次提交涉及的文件）、扩展规范、上游 ref（快查，秒级；
+# 全量类型与测试只在 CI 跑，见 U-385）
 
 if [ "$NAVHUB_SKIP_PRECOMMIT" = "1" ]; then
   echo "[pre-commit] NAVHUB_SKIP_PRECOMMIT=1，跳过全部检查"
@@ -164,13 +169,13 @@ node scripts/check-hooks-fresh.mjs || exit 1
 # CI 工作流 / 门禁清单变更时校验合并门禁与清单一致性（秒级，仅相关文件暂存时才跑）。
 # 门禁脚本读的就是 ci.yml 的聚合关系：改坏了只有 CI 会红，而 CI 自己正是被改的
 # 那一方——等于没有守门人。清单（gates.json / 本安装脚本 / prepush-gates）也一样：
-# 登记与接线不一致时只有下一次提交才会发现。放在 typecheck 之前，成本只有一次 YAML 解析。
+# 登记与接线不一致时只有下一次提交才会发现。放在快查末尾，成本只有一次 YAML 解析。
 if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^(\\.github/workflows/|scripts/gates\\.json|scripts/install-git-hooks\\.mjs|scripts/prepush-gates\\.mjs)'; then
   node scripts/check-ci-gate.mjs || exit 1
   node scripts/check-gates-registry.mjs || exit 1
 fi
 
-# 解析级快速门禁：只查 staged 的 TS/TSX，秒级；tsc 之前先把标点级错误挡住
+# 解析级快速门禁：只查 staged 的 TS/TSX，秒级；先把标点级错误挡住
 node scripts/check-syntax.mjs --staged || exit 1
 
 # 依赖完整性：秒级。装残的包会让几百个测试套件同时报「找不到模块 / resolve entry 失败」，
@@ -196,14 +201,20 @@ if git diff --cached --name-only --diff-filter=ACM | grep -qE '(storage|routes/v
   node scripts/check-source-truth.mjs --changed $(git diff --cached --name-only --diff-filter=ACM) || exit 1
 fi
 
-node scripts/typecheck.mjs || exit 1
-
-# 变更相关测试：选测依据是本次提交集（git diff --cached），不是工作区改动集。
-# 逻辑在同目录的 navhub-precommit-tests.mjs（本安装脚本生成，勿手改）。
-node "$(git rev-parse --git-path hooks)/navhub-precommit-tests.mjs" || exit 1
+# 全量检查不在钩子里跑（U-385，2026-11-21）：全量 typecheck（70–77 秒）与
+# 选测 vitest（整包根可达约 94 秒）已移出本地钩子，全量只在 CI 跑
+# （test-sqlite：pnpm run typecheck + 全量 vitest 三片；test-web：前端
+# tsc / lint / build），合入前分支保护不变。本地按需跑：
+#   node scripts/typecheck.mjs
+#   node "$(git rev-parse --git-path hooks)/navhub-precommit-tests.mjs"
+# 选测器仍由本安装脚本生成（按需工具，不再由钩子默认调用）。
 `
 
 // 选测器：从「本次提交集」挑测试，而不是从「工作区改动集」。
+// U-385（2026-11-21）：钩子瘦身后本选测器不再由 pre-commit 默认调用，
+// 改为按需工具（提交前手动跑 node .git/hooks/navhub-precommit-tests.mjs）；
+// 全量测试只在 CI 跑。生成逻辑与自检（scripts/precommit-select.test.ts）
+// 保持不变：选测器本身仍是“少跑”策略，漏选不报错，只能靠断言守住。
 //
 // 为什么不用 `vitest run --changed`：
 //   --changed 取的是「工作区 vs HEAD」的改动集。本仓库长期有多个会话并行编辑，A 提交时

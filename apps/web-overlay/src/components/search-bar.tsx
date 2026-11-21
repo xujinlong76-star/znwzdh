@@ -279,6 +279,12 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
         <Input
           ref={inputRef}
           type="search"
+          /* 2026-11-21 移动端输入人因：与 ui/search-input 同口径 */
+          inputMode="search"
+          enterKeyHint="search"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
           aria-label="搜索导航"
           role="combobox"
           aria-expanded={showResults}

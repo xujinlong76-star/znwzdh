@@ -126,7 +126,11 @@ export function CategorySiteFilterBar({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
           <input
             id={filterInputId}
-            type="text"
+            type="search"
+            inputMode="search"
+            enterKeyHint="search"
+            autoCapitalize="off"
+            autoCorrect="off"
             value={query}
             onChange={(e) => handleQueryChange(e.target.value)}
             placeholder={`在「${categoryName}」收录的 ${totalCount} 个站点中即时筛选 (名称 / 描述 / 域名)...`}

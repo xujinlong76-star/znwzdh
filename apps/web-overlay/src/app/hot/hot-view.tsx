@@ -629,7 +629,10 @@ export default function HotView({
               <div
                 role="group"
                 aria-label="领域筛选"
-                className="flex w-full flex-wrap items-center gap-1.5 pb-1"
+                /* 2026-11-21 移动端：5 个胶囊在 360px 下换行会挤压状态徽标，
+                   改为横滚 + 两端 mask-image 渐变提示「还有更多」。
+                   sm 起恢复换行（空间够，换行比滚动更省一次操作）。 */
+                className="no-scrollbar flex w-full snap-x items-center gap-1.5 overflow-x-auto pb-1 max-sm:[mask-image:linear-gradient(to_right,transparent_0,black_12px,black_calc(100%-12px),transparent_100%)] sm:flex-wrap sm:overflow-visible sm:[mask-image:none]"
               >
                 {RANK_DOMAINS.map((d) => (
                   <button
@@ -706,7 +709,13 @@ export default function HotView({
             <div className="relative flex-1">
               <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
-                type="text"
+                /* 2026-11-21 移动端输入人因：与全站搜索框同口径 */
+                type="search"
+                inputMode="search"
+                enterKeyHint="search"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
                 value={filterQuery}
                 onChange={(e) => setFilterQuery(e.target.value)}
                 placeholder={

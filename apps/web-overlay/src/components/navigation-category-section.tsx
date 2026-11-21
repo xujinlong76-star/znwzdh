@@ -40,6 +40,7 @@ import { countCategorySites } from '@/lib/modular/category-counts'
 import { observeGridColumns } from '@/lib/grid-column-observer'
 import { useGridColumns } from '@/hooks/usePreviewCount'
 import { previewCountForColumns } from '@/lib/preview-count'
+import { CARD_GRID, CARD_BODY, CARD_DESC } from '@/lib/responsive-grid'
 import { categoryHref } from '@/lib/seo/category-url'
 import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
 import { buildCategoryNameIndex, sanitizeSiteTags, isPollutedTag } from '@/lib/tag-hygiene'
@@ -276,10 +277,20 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
    * 窄模块（DIY 里被拖窄到 moduleColSpan ≤ 9）仍强制减列防挤压，但同样走容器查询。
    */
   const effectiveGridClass = useMemo(() => {
-    // 基础档：1 列 → 2 列（@2xl 672px）→ 3 列（@5xl 1024px）→ 4 列（@7xl 1280px）
-    const fullWidth = 'grid grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-3 @7xl:grid-cols-4'
+    /*
+     * 2026-11-21 断点重新标定（用 lib/responsive-grid 的 token）。
+     *
+     * 旧值 @5xl(1024) 做 3 列断点有个临界问题：主流笔记本（1280-1366 视口）
+     * 在侧栏展开时主区约 1020-1120px，正好落在 1024 附近——用户拖一下侧栏
+     * 就会在 2↔3 列之间抖动。
+     *
+     * 新值 @4xl(896) 让整个 1020-1120px 区间**稳定 3 列**，
+     * 而 1024 窄桌面/分屏（主区约 700-800px）仍稳在 2 列。
+     * 2 列断点也提前到 @xl(576)：手机横屏/小平板就该双列。
+     */
+    const fullWidth = CARD_GRID
     // 窄模块：最多 2 列，避免被拖窄后文字挤压
-    const narrow = 'grid grid-cols-1 @2xl:grid-cols-2'
+    const narrow = 'grid grid-cols-1 @xl:grid-cols-2'
 
     if (moduleColSpan <= 5) return 'grid grid-cols-1'
     if (moduleColSpan <= 9) return narrow
@@ -974,7 +985,11 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                 <div className="flex items-center gap-1 bg-background/90 border border-primary/40 focus-within:border-primary rounded-lg px-2 py-0.5 shadow-2xs">
                                   <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                                   <input
-                                    type="text"
+                                    type="search"
+                                    inputMode="search"
+                                    enterKeyHint="search"
+                                    autoCapitalize="off"
+                                    autoCorrect="off"
                                     value={filterKeyword}
                                     onChange={(e) => setFilterKeyword(e.target.value)}
                                     onKeyDown={(e) => {

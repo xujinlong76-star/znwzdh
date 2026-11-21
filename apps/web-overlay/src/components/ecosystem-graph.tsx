@@ -1054,7 +1054,12 @@ export function EcosystemGraph() {
       {/* SVG 画布 */}
       <div
         ref={containerRef}
-        className="flex-1 w-full h-full cursor-grab active:cursor-grabbing relative overflow-hidden bg-dot-grid"
+        /* 2026-11-21 移动端手势隔离：画布上要拖拽节点/平移视图，
+           浏览器默认会把它当成页面竖滚（手势冲突，拖一下节点页面就跑了）。
+           touch-none 让画布独占触摸手势。<768px 生效，桌面端不设——
+           桌面端若也设 none，触控板双指滚动会失效。
+           注意：图例条（下方 overflow-x-auto）仍保留 touch-pan-x，两者不冲突。 */
+        className="flex-1 w-full h-full cursor-grab active:cursor-grabbing relative overflow-hidden bg-dot-grid max-md:touch-none"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}

@@ -1442,6 +1442,15 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         <Input aria-label={effectivePlaceholder}
           data-search-input
           ref={inputRef}
+          /* 2026-11-21 移动端输入人因（与 ui/search-input 同口径）：
+             关闭 autoCapitalize/autoCorrect 防「react」被改写；
+             enterKeyHint 让 iOS/Android 回车键显示「搜索」。 */
+          type="search"
+          inputMode="search"
+          enterKeyHint="search"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
           role="combobox"
           aria-expanded={isFocused}
           aria-autocomplete="list"

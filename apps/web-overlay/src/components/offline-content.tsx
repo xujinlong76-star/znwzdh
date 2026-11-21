@@ -26,6 +26,10 @@ export function OfflineContent() {
           <input
             id="offline-title-filter"
             type="search"
+          inputMode="search"
+          enterKeyHint="search"
+          autoCapitalize="off"
+          autoCorrect="off"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="仅搜本机内容：按标题过滤最近访问、收藏与稍后再看"

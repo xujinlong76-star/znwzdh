@@ -848,6 +848,10 @@ export function SearchResults({
                   id="site-search-q"
                   name="q"
                   type="search"
+          inputMode="search"
+          enterKeyHint="search"
+          autoCapitalize="off"
+          autoCorrect="off"
                   defaultValue={q}
                   maxLength={SEARCH_QUERY_MAX_LENGTH}
                   placeholder="搜索站点名称、简介或标签…"

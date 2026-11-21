@@ -31,6 +31,7 @@
 
 import { fingerprintUrl } from './import-workbench'
 import { generateBookmarkId, sanitizeBookmarkUrl, type ParsedUniversalItem } from './favorites-export-import'
+import { stripHtmlTags } from './html-text'
 
 export type SocialPlatformId = 'x' | 'reddit' | 'github' | 'hackernews' | 'instagram' | 'tiktok'
 
@@ -315,7 +316,9 @@ function parseHnHtml(content: string, meta: SocialPlatformMeta): SocialParseResu
   let skipped = 0
   for (const m of anchors) {
     const rawHref = (m[1] ?? '').trim()
-    const title = (m[2] ?? '').replace(/<[^>]+>/g, '').trim()
+    // HN 标题里的内联标签用状态机剥（CodeQL #138）：单次正则 replace 会把
+    // 嵌套标签拼接复活、引号内的 `>` 会提前截断，见 ./html-text。
+    const title = stripHtmlTags(m[2] ?? '')
     if (!rawHref || !title) { skipped++; continue }
     // HN 站内导航（投票、用户页、提交页）不是收藏
     if (/^(vote|user\?|submit|newcomments|threads|ask|show|jobs|front|newest|active|noob)/i.test(rawHref)) continue

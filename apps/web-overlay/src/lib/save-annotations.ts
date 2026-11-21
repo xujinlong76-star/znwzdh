@@ -356,8 +356,21 @@ export function resolveQuoteSource(
   return null
 }
 
-function escapeMarkdownText(text: string): string {
-  return text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\[/g, '\\[').replace(/\]/g, '\\]')
+/**
+ * Markdown 导出转义：单遍映射表。反斜杠必须和其它字符在同一遍里转义——
+ * 分步 replace 会漏掉它：已有的 `\` 会吃掉后加的转义符，把 `]` 重新变回活
+ * 字符（CodeQL #136/#137）。单遍里每个输入字符恰好映射一次，不存在此问题。
+ */
+const MARKDOWN_TEXT_ESCAPES: Record<string, string> = {
+  '\\': '\\\\',
+  '<': '&lt;',
+  '>': '&gt;',
+  '[': '\\[',
+  ']': '\\]',
+}
+
+export function escapeMarkdownText(text: string): string {
+  return text.replace(/[\\<>\[\]]/g, (ch) => MARKDOWN_TEXT_ESCAPES[ch] ?? ch)
 }
 
 function formatAnnotationDate(ts: number): string {

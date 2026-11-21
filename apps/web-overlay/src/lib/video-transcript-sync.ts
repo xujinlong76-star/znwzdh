@@ -1,4 +1,5 @@
 import type { VideoTranscriptItem } from '@/types/navigation'
+import { stripHtmlTags } from './html-text'
 
 /**
  * Converts HH:MM:SS.mmm or MM:SS.mmm timestamp to seconds.
@@ -49,7 +50,7 @@ export function parseWebVTT(content: string): VideoTranscriptItem[] {
       const textLines: string[] = []
       while (i < lines.length && lines[i].trim() !== '') {
         // Strip inline formatting tags (e.g. <b>, <c>, <00:01.000>)
-        const cleanLine = lines[i].replace(/<[^>]+>/g, '').trim()
+        const cleanLine = stripHtmlTags(lines[i])
         if (cleanLine) textLines.push(cleanLine)
         i++
       }
@@ -103,7 +104,7 @@ export function parseSRT(content: string): VideoTranscriptItem[] {
       if (match) {
         const startSec = parseVttTimestamp(match[1])
         const endSec = parseVttTimestamp(match[2])
-        const textLines = lines.slice(timeLineIdx + 1).map(l => l.replace(/<[^>]+>/g, '').trim()).filter(Boolean)
+        const textLines = lines.slice(timeLineIdx + 1).map(l => stripHtmlTags(l)).filter(Boolean)
         if (textLines.length > 0) {
           cues.push({
             id: `srt-${cues.length + 1}-${Math.floor(startSec * 1000)}`,
@@ -155,9 +156,12 @@ export function detectCaptionFormat(content: string): CaptionFormat {
   return 'unknown'
 }
 
-function stripCueTags(line: string): string {
-  return line.replace(/<[^>]+>/g, '').trim()
-}
+/**
+ * 剥字幕行里的行内格式标签。旧实现是单次正则 replace（CodeQL #139），现改
+ * 走共享状态机 stripHtmlTags（见 ./html-text）：引号内的 `>` 不闭合标签，
+ * 嵌套标签删一次即干净，不存在拼接复活。
+ */
+export const stripCueTags = stripHtmlTags
 
 /**
  * Parses pasted/uploaded SRT or WebVTT text into cues, reporting every

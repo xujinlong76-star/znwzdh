@@ -32,6 +32,139 @@ function quotaInfo(error: LlmQuotaError) {
   };
 }
 
+/**
+ * 从抓取到的 HTML 里提取可见正文（供 LLM 分类用）。
+ *
+ * 绝不用正则剥标签：正则不懂 HTML 结构，`<a href="x>y">` 会在属性内的 `>`
+ * 处提前截断、`<script>var s="</script>"</script>` 会提前闭合导致脚本残留
+ * （CodeQL #146 错误的 HTML 过滤正则）。这里是逐字符状态机：识别标签 /
+ * 引号属性 / 注释 / `<script>`/`<style>` 原文区、解码白名单实体，线性时间、
+ * 无回溯；`<` 后不是字母 / `/` / `!` / `?` 的按纯文本保留（`a < b` 不丢）。
+ */
+const VISIBLE_TEXT_MAX_SCAN = 1_000_000;
+
+const HTML_NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  "#39": "'",
+  nbsp: " ",
+};
+
+export function extractVisibleText(html: string, maxLength = 600): string {
+  const src = html.length > VISIBLE_TEXT_MAX_SCAN ? html.slice(0, VISIBLE_TEXT_MAX_SCAN) : html;
+  const out: string[] = [];
+  const n = src.length;
+  let i = 0;
+  while (i < n) {
+    const ch = src[i]!;
+    if (ch === "<") {
+      // 注释 <!-- ... -->
+      if (src.startsWith("<!--", i)) {
+        const end = src.indexOf("-->", i + 4);
+        i = end === -1 ? n : end + 3;
+        out.push(" ");
+        continue;
+      }
+      // 声明 <!DOCTYPE ...> / <![CDATA[...]]> / 处理指令 <? ... ?>
+      if (src[i + 1] === "!" || src[i + 1] === "?") {
+        const end = src.indexOf(">", i + 2);
+        i = end === -1 ? n : end + 1;
+        out.push(" ");
+        continue;
+      }
+      // `<` 后不是字母 / `/`：纯文本小于号，原样保留。
+      const afterLt = src[i + 1];
+      if (afterLt === undefined || !/[A-Za-z/]/.test(afterLt)) {
+        out.push(ch);
+        i++;
+        continue;
+      }
+      // 读标签名（跳过 </ 前缀），判断是不是 script/style 原文区。
+      let j = i + 1;
+      if (src[j] === "/") j++;
+      const nameStart = j;
+      while (j < n && /[A-Za-z0-9]/.test(src[j]!)) j++;
+      const tagName = src.slice(nameStart, j).toLowerCase();
+      const isOpen = src[i + 1] !== "/";
+      // 跳过整个开始标签：引号内的 `>` 不闭合标签。
+      let quote: string | null = null;
+      let k = i + 1;
+      while (k < n) {
+        const c = src[k]!;
+        if (quote) {
+          if (c === quote) quote = null;
+        } else if (c === '"' || c === "'") {
+          quote = c;
+        } else if (c === ">") {
+          break;
+        }
+        k++;
+      }
+      if (k >= n) break; // 未闭合标签：丢弃剩余部分
+      i = k + 1;
+      out.push(" ");
+      // script/style 开始标签：跳过原文内容，直到同名闭合标签。
+      if (isOpen && (tagName === "script" || tagName === "style")) {
+        const closeTag = `</${tagName}`;
+        let found = -1;
+        let p = i;
+        while (p < n) {
+          if (
+            src[p] === "<" &&
+            src.slice(p, p + closeTag.length).toLowerCase() === closeTag
+          ) {
+            const after = src[p + closeTag.length];
+            if (after === undefined || after === ">" || after === "/" || /\s/.test(after)) {
+              found = p;
+              break;
+            }
+          }
+          p++;
+        }
+        if (found === -1) {
+          i = n;
+        } else {
+          const end = src.indexOf(">", found);
+          i = end === -1 ? n : end + 1;
+          out.push(" ");
+        }
+      }
+      continue;
+    }
+    if (ch === "&") {
+      // 实体：只解码白名单命名实体与数字实体，其余原样保留。
+      const semi = src.indexOf(";", i + 1);
+      if (semi !== -1 && semi - i <= 10) {
+        const body = src.slice(i + 1, semi);
+        if (body.startsWith("#")) {
+          const num =
+            body[1] === "x" || body[1] === "X"
+              ? Number.parseInt(body.slice(2), 16)
+              : Number.parseInt(body.slice(1), 10);
+          if (Number.isFinite(num) && num > 0 && num <= 0x10ffff) {
+            out.push(String.fromCodePoint(num));
+            i = semi + 1;
+            continue;
+          }
+        } else if (HTML_NAMED_ENTITIES[body] !== undefined) {
+          out.push(HTML_NAMED_ENTITIES[body]!);
+          i = semi + 1;
+          continue;
+        }
+      }
+      out.push(ch);
+      i++;
+      continue;
+    }
+    out.push(ch);
+    i++;
+  }
+  return out.join("").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
 export const submissionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
@@ -89,16 +222,10 @@ export const submissionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
           scrapedIcon = meta.icon || "";
           scrapedImage = meta.image || "";
           scrapedLang = meta.lang || "";
-          // 可见正文片段：剥标签取文本，给 LLM 多一点语料判断分类（title/desc
-          // 被防爬清空或全是营销词时，正文往往还留着真实定位信息）。
-          scrapedText = (fetched.body || "")
-            .replace(/<script[\s\S]*?<\/script>/gi, " ")
-            .replace(/<style[\s\S]*?<\/style>/gi, " ")
-            .replace(/<[^>]+>/g, " ")
-            .replace(/&[a-z#0-9]+;/gi, " ")
-            .replace(/\s+/g, " ")
-            .trim()
-            .slice(0, 600);
+          // 可见正文片段：状态机剥标签取文本（CodeQL #146：禁用正则剥标签），
+          // 给 LLM 多一点语料判断分类（title/desc 被防爬清空或全是营销词时，
+          // 正文往往还留着真实定位信息）。
+          scrapedText = extractVisibleText(fetched.body || "");
         }
       } catch {
         // 网页防爬或超时不阻断：交由 LLM 根据域名与已知知识库补全

@@ -4,6 +4,9 @@
  * 展示层元数据：只决定“未完成任务的按钮链到哪里”，不参与 XP 结算、
  * 不改任务判定。所有 href 均为站内真实路由（2026-11-21 逐个核实）：
  *  - `/`：首页（站点卡片、分类、AI 找站微胶囊、自定义站添加均在此）
+ *  - `/?scene=make-ppt`：首页 + AI 找站小窗自动跑「做 PPT」场景
+ *    （navigation-content 读 scene 参数 → HomeMicroStrip 自动开窗 →
+ *    ai-finder-dialog remount → ai-finder-panel 自动跑场景）
  *  - `/hot`：热榜页（growth-tracker 对其记 `recordPageVisitAction('hot')`）
  *  - `/brief`：每日简报（FEATURE_META.brief_read.href）
  *  - `/search`：站内搜索（FEATURE_META.search.href）
@@ -32,7 +35,7 @@ export const TASK_ACTIONS: Readonly<Record<string, TaskAction>> = {
   'sh-sites': { href: '/', cta: '去逛逛 →' },
   'sh-hot': { href: '/hot', cta: '去逛热榜 →' },
   // 每日三件事 · 核心槽（AI 主轨）
-  'core-ai-find': { href: '/', cta: '去试试 AI 找站 →' },
+  'core-ai-find': { href: '/?scene=make-ppt', cta: '去试试 AI 找站 →' },
   'core-search': { href: '/search', cta: '去搜一次 →' },
   // 每日三件事 · 核心槽（短剧主轨，仅有短剧历史的用户可见）
   'core-drama-progress': { href: '/me/watchlist', cta: '去更新进度 →' },
@@ -51,13 +54,13 @@ export const TASK_ACTIONS: Readonly<Record<string, TaskAction>> = {
   s2: { href: '/', cta: '去收藏 →' },
   s3: { href: '/brief', cta: '去读简报 →' },
   s4: { href: '/me/watchlist', cta: '去更新进度 →' },
-  s5: { href: '/', cta: '去试试 AI 找站 →' },
+  s5: { href: '/?scene=make-ppt', cta: '去试试 AI 找站 →' },
   s6: { href: '/', cta: '去逛分类 →' },
   s7: { href: '/', cta: '去逛逛 →' },
   s8: { href: '/submit', cta: '去提交收录 →' },
   // 新手一周（d3 设为首页是面板内动作，见 GrowthTasks onGoToGuide；d6/d7 无按钮）
   d1: { href: '/', cta: '去逛逛 →' },
-  d2: { href: '/', cta: '去试试 AI 找站 →' },
+  d2: { href: '/?scene=make-ppt', cta: '去试试 AI 找站 →' },
   d4: { href: '/me/watchlist', cta: '去加入清单 →' },
   d5: { href: '/', cta: '去收藏 →' },
   // 回归包
@@ -73,7 +76,7 @@ export const EVENT_METRIC_ACTIONS: Readonly<Record<string, TaskAction>> = {
   brief_days: { href: '/brief', cta: '去读简报 →' },
   watchlist_progress: { href: '/me/watchlist', cta: '去更新进度 →' },
   drama_days: { href: '/category/duanju', cta: '去逛短剧专区 →' },
-  ai_find_days: { href: '/', cta: '去试试 AI 找站 →' },
+  ai_find_days: { href: '/?scene=make-ppt', cta: '去试试 AI 找站 →' },
 }
 
 export function taskAction(id: string): TaskAction | undefined {

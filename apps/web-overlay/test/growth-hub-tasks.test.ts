@@ -73,7 +73,7 @@ function dayWithCounts(counts: GrowthDay['counts']): GrowthDay {
 const AI_IDS = new Set(['core-ai-find', 'core-search'])
 const DRAMA_IDS = new Set(['core-drama-progress', 'core-drama-new'])
 /** 已核实的站内真实路由（2026-11-21 逐个核实） */
-const REAL_ROUTES = new Set(['/', '/brief', '/hot', '/search', '/me/watchlist', '/category/duanju', '/submit'])
+const REAL_ROUTES = new Set(['/', '/?scene=make-ppt', '/brief', '/hot', '/search', '/me/watchlist', '/category/duanju', '/submit'])
 /** 完成动作就在当前面板内、无需跳转的任务 */
 const NO_BUTTON_IDS = new Set(['s1', 'd6', 'd7'])
 

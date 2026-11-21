@@ -62,3 +62,8 @@ function escapeMarkdownText(text: string): string {
 攻击原理：转义 `[`/`]` 时漏掉了反斜杠 `\` 本身。输入 `a\]b` 时，`]` 被转义成 `\]`，前面已有的 `\` 与新加的 `\` 组成 `\\`（Markdown 里等于一个字面反斜杠），后面的 `]` 重新变回“活”字符——在 `## [标题](url)` 里可提前终结链接文本、实施链接文本注入。
 
 修复：改为单遍映射表 `text.replace(/[\\<>\[\]]/g, ch => MAP[ch])`，其中 `\` → `\\`，`<` → `&lt;`，`>` → `&gt;`，`[` → `\[`，`]` → `\]`。每个输入字符恰好映射一次，已有的反斜杠先被转义，永远吃不掉后加的转义符。
+
+## 实施订正（2026-11-21 10:2x）
+
+- #139/#138 未按笔记原写的“各模块自带一份”实现：改为共享 `apps/web-overlay/src/lib/html-text.ts` 的 `stripHtmlTags`，video-transcript-sync.ts 与 social-saves-import.ts 均 import 它。理由：同一逻辑两份拷贝会漂移；共享纯函数无 DOM 依赖、无跨模块耦合问题。video-transcript-sync.ts 的 `stripCueTags` 保留为 `stripHtmlTags` 的导出别名（同文件 :221/:298 仍走它），:52/:106 的内联版也一并改走它。
+- `stripHtmlTags` 另有一条行为：`<` 后不是字母 / `/` / `!` / `?` 时按纯文本保留。理由：字幕/标题里的 `a < b` 是合法文本，旧正则会把 `< b >` 整个吃掉；这也是浏览器分词器的口径。

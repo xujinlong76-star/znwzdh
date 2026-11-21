@@ -126,6 +126,20 @@ describe('社交收藏本地导入解析器', () => {
       expect(r.items[0]!.href).toBe('https://example.com/story')
       expect(r.items[1]!.href).toBe('https://news.ycombinator.com/item?id=123')
     })
+
+    it('HN 标题里的嵌套/引号属性标签剥干净，不复活、不吞正文（CodeQL #138）', () => {
+      const html = `<html><body>
+        <a href="https://example.com/nested"><scr<script>ipt>alert(1)</scr</script>ipt>Real Title</a>
+        <a href="https://example.com/quoted"><b title="x>y">Bold Title</b></a>
+      </body></html>`
+      const r = parseSocialSaves(html, { platform: 'hackernews' })
+      expect(r.ok).toBe(true)
+      expect(r.items).toHaveLength(2)
+      expect(r.items[0]!.title).not.toContain('<script')
+      expect(r.items[0]!.title).toContain('Real Title')
+      // 旧正则在这里会输出 y">Bold Title
+      expect(r.items[1]!.title).toBe('Bold Title')
+    })
   })
 
   describe('Instagram', () => {

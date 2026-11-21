@@ -19,6 +19,7 @@ import {
   annotationExportFilename,
   buildSearchContext,
   deleteAnnotation,
+  escapeMarkdownText,
   exportAnnotationsToJson,
   exportAnnotationsToMarkdown,
   groupAnnotationsBySave,
@@ -433,5 +434,43 @@ describe('划线批注：界面接入（源码守卫）', () => {
     expect(page).toContain('导出全部 JSON')
     expect(page).toContain('还没有划线批注')
     expect(page).toContain('role="alert"')
+  })
+})
+
+describe('划线批注：Markdown 导出转义（CodeQL #136/#137）', () => {
+  it('反斜杠先转义：a\\]b 里的 ] 不得复活', () => {
+    // 旧实现：] -> \]，前面的 \ 与新加的 \ 组成 \\（字面反斜杠），] 重新变活。
+    // 单遍映射：\ -> \\、] -> \]，输出 a\\\]b，渲染后仍是字面 a\]b。
+    expect(escapeMarkdownText('a\\]b')).toBe('a\\\\\\]b')
+    expect(escapeMarkdownText('a\\b')).toBe('a\\\\b')
+    expect(escapeMarkdownText('x]y')).toBe('x\\]y')
+    expect(escapeMarkdownText('[link](http://evil)')).toBe('\\[link\\](http://evil)')
+  })
+
+  it('< > 转义成实体，HTML 不进导出的 Markdown', () => {
+    expect(escapeMarkdownText('<script>alert(1)</script>')).toBe(
+      '&lt;script&gt;alert(1)&lt;/script&gt;',
+    )
+    expect(escapeMarkdownText('plain')).toBe('plain')
+  })
+
+  it('导出的 Markdown 里含反斜杠的划线不提前终结链接文本', () => {
+    const ann: SaveAnnotation = {
+      id: 'a1',
+      siteId: 'site-1',
+      siteTitle: 'a]b 标题',
+      siteUrl: 'https://example.com/x',
+      quote: 'x]y 划线',
+      source: 'title',
+      note: 'note \\] note',
+      createdAt: 1700000000000,
+      updatedAt: 1700000000000,
+    }
+    const md = exportAnnotationsToMarkdown([ann])
+    // 标题里的 ] 已转义：链接文本不得在 a] 处提前闭合
+    expect(md).toContain('## [a\\]b 标题](https://example.com/x)')
+    expect(md).toContain('> x\\]y 划线')
+    // 批注里的 \] 不得被反斜杠吃掉后复活
+    expect(md).toContain('note \\\\\\] note')
   })
 })

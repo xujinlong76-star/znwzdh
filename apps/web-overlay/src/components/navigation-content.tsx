@@ -1229,22 +1229,38 @@ export function NavigationContent({
 
           {/* 首屏瘦身：工作区胶囊行与运营胶囊行合并为一行（HomeCapsuleRow，
               2026-11-20）：原来上下两行（工作区 ~63px + 运营 ~46px）压成单行
-              约 44px；<1024px 只留「全部探索」＋「AI 找站」，其余进「更多」折叠菜单。 */}
+              约 44px；<1024px 只留「全部探索」＋「AI 找站」，其余进「更多」折叠菜单。
+              首屏露出冲 40%（2026-11-21）：1536px+ 胶囊行与高频直达坞并排一行，
+              省一整行约 40px；窄屏保持上下叠放不变。 */}
           {viewMode !== 'workbench' ? (
-            <HomeCapsuleRow
-              cinemaInitial={cinemaInitial}
-              pluginItems={pluginItems}
-              showDramaCapsule={sectionOn('dramaCinema')}
-              showAiCapsule={sectionOn('aiFinder')}
-              showGuideBadge={!isModuleHidden('mod:onboarding-card')}
-              activeWorkspace={activeWorkspace}
-              onWorkspaceChange={handleWorkspaceChange}
-              initialSceneParam={sceneParam}
-              onOpenGuideTab={() => {
-                setAppearanceTab('guide')
-                setAppearanceOpen(true)
-              }}
-            />
+            <div className="min-[1536px]:flex min-[1536px]:items-center min-[1536px]:gap-3">
+              <div className="min-w-0 min-[1536px]:flex-[1.3]">
+                <HomeCapsuleRow
+                  cinemaInitial={cinemaInitial}
+                  pluginItems={pluginItems}
+                  showDramaCapsule={sectionOn('dramaCinema')}
+                  showAiCapsule={sectionOn('aiFinder')}
+                  showGuideBadge={!isModuleHidden('mod:onboarding-card')}
+                  activeWorkspace={activeWorkspace}
+                  onWorkspaceChange={handleWorkspaceChange}
+                  initialSceneParam={sceneParam}
+                  onOpenGuideTab={() => {
+                    setAppearanceTab('guide')
+                    setAppearanceOpen(true)
+                  }}
+                />
+              </div>
+              {/* 三合一单行高频直达坞（A4：合并 SpeedDialDock / 常用 / 最近访问） */}
+              {!isModuleHidden('mod:speed-dial') && (
+                <div data-feature-id="mod:speed-dial" className="relative min-w-0 min-[1536px]:flex-1">
+                  <HomeQuickDock
+                    allSites={visibleSites}
+                    activeWorkspace={activeWorkspace}
+                    dialDigitById={mounted ? dialMap.digitById : undefined}
+                  />
+                </div>
+              )}
+            </div>
           ) : null}
 
           {viewMode === 'workbench' ? (
@@ -1264,17 +1280,6 @@ export function NavigationContent({
             </div>
           ) : (
             <>
-              {/* 三合一单行高频直达坞（A4：合并 SpeedDialDock / 常用 / 最近访问） */}
-              {!isModuleHidden('mod:speed-dial') && (
-                <div data-feature-id="mod:speed-dial" className="relative">
-                  <HomeQuickDock
-                    allSites={visibleSites}
-                    activeWorkspace={activeWorkspace}
-                    dialDigitById={mounted ? dialMap.digitById : undefined}
-                  />
-                </div>
-              )}
-
               <DiyGridDragBoundary kit={dragKit} onDragEnd={handleCategoryDragEnd}>
               <div className="grid grid-cols-12 gap-6 sm:gap-8 items-start">
                 {renderedCategories.map((category, index) => {

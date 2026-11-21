@@ -8,8 +8,18 @@
  *   - `http://169.254.169.254` 云元数据 → 链路本地必须拦；
  *   - `http://host:6379` 打内网 Redis → 危险端口必须拦。
  */
-import { describe, expect, it } from "vitest";
-import { SsrfBlockedError, assertUrlShape, isBlockedIp, isBlockedIpv4, isBlockedIpv6 } from "../src/ssrf.ts";
+import { describe, expect, it, vi } from "vitest";
+import {
+  DEFAULT_GUARD,
+  SsrfBlockedError,
+  assertUrlShape,
+  guardedFetch,
+  isBlockedIp,
+  isBlockedIpv4,
+  isBlockedIpv6,
+  isTrustedHost,
+  resolveAndCheck,
+} from "../src/ssrf.ts";
 
 describe("IPv4 网段", () => {
   const blocked = [
@@ -25,6 +35,7 @@ describe("IPv4 网段", () => {
     "192.0.2.5", // TEST-NET-1
     "192.88.99.1", // 6to4 中继
     "198.18.0.1", // 基准测试
+    "198.18.246.9", // 基准测试：本机网关合成地址（U-284 实测 weibo.com 所落地址）
     "198.51.100.7", // TEST-NET-2
     "203.0.113.9", // TEST-NET-3
     "224.0.0.1", // 组播
@@ -120,6 +131,92 @@ describe("URL 形态：协议 / 凭证 / 危险端口", () => {
       expect(err).toBeInstanceOf(SsrfBlockedError);
       expect((err as SsrfBlockedError).reason).toBe("blocked-port");
       expect((err as SsrfBlockedError).message).toContain("禁止访问该端口");
+    }
+  });
+});
+
+describe("trustedHosts 精确主机名白名单（U-284）", () => {
+  // 背景：本机出口网关把外域名解析到合成地址 198.18.246.x（198.18.0.0/15
+  // 基准测试段），无白名单时 resolveAndCheck 全拦。白名单只跳过 DNS-IP
+  // 校验，协议/端口/凭证/重定向逐跳校验一律保留。
+  // 环境无关写法：白名单命中时根本不做 DNS；未命中时只断言抛
+  // SsrfBlockedError，不限定 reason（本机是 blocked-ip，外网是 dns-failure）。
+
+  it("isTrustedHost 只认精确主机名（大小写不敏感，无后缀/通配）", () => {
+    const list = ["weibo.com"];
+    expect(isTrustedHost("weibo.com", list)).toBe(true);
+    expect(isTrustedHost("WEIBO.COM", list)).toBe(true);
+    expect(isTrustedHost("sub.weibo.com", list)).toBe(false);
+    expect(isTrustedHost("evil-weibo.com", list)).toBe(false);
+    expect(isTrustedHost("weibo.com.evil.com", list)).toBe(false);
+    expect(isTrustedHost("weibo.com", undefined)).toBe(false);
+    expect(isTrustedHost("weibo.com", [])).toBe(false);
+  });
+
+  it("白名单主机：跳过 DNS-IP 校验，不抛错", async () => {
+    const ips = await resolveAndCheck(new URL("https://weibo.com/ajax/side/hotSearch"), {
+      ...DEFAULT_GUARD,
+      trustedHosts: ["weibo.com"],
+    });
+    expect(ips).toEqual([]);
+  });
+
+  it("未列名主机：仍走 DNS 校验，解析失败也 fail-closed", async () => {
+    // .invalid 按 RFC 2606 保证不可解析，任何环境都应抛 SsrfBlockedError
+    await expect(
+      resolveAndCheck(new URL("https://nonexistent.invalid/"), {
+        ...DEFAULT_GUARD,
+        trustedHosts: ["weibo.com"],
+      }),
+    ).rejects.toThrow(SsrfBlockedError);
+    await expect(
+      resolveAndCheck(new URL("https://nonexistent.invalid/"), { ...DEFAULT_GUARD }),
+    ).rejects.toThrow(SsrfBlockedError);
+  });
+
+  it("白名单不适用于字面 IP：198.18.246.9 写进白名单也照拦", async () => {
+    await expect(
+      resolveAndCheck(new URL("http://198.18.246.9/"), {
+        ...DEFAULT_GUARD,
+        trustedHosts: ["198.18.246.9"],
+      }),
+    ).rejects.toThrow(SsrfBlockedError);
+  });
+
+  it("guardedFetch 全程走白名单：不做 DNS，桩 fetch 的响应照常返回", async () => {
+    let calledUrl = "";
+    const stub = vi.fn(async (input: unknown) => {
+      calledUrl = String(input);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", stub);
+    try {
+      const res = await guardedFetch("https://weibo.com/ajax/side/hotSearch", {
+        ...DEFAULT_GUARD,
+        trustedHosts: new Set(["weibo.com"]),
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).toContain("ok");
+      expect(stub).toHaveBeenCalledTimes(1);
+      expect(calledUrl).toContain("weibo.com/ajax/side/hotSearch");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("guardedFetch：白名单外主机不做 DNS 就放行不了（.invalid 抛错）", async () => {
+    const stub = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", stub);
+    try {
+      await expect(
+        guardedFetch("https://nonexistent.invalid/", { ...DEFAULT_GUARD }),
+      ).rejects.toThrow(SsrfBlockedError);
+      expect(stub).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 });

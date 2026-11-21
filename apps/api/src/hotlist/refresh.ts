@@ -7,17 +7,25 @@
  */
 import { guardedFetch } from "@navhub/ai";
 import type { AppContext } from "../context.ts";
-import { HOTLIST_SOURCES, type HotlistSourceDef } from "./sources.ts";
+import { HOTLIST_SOURCES, HOTLIST_TRUSTED_HOSTS, type HotlistSourceDef } from "./sources.ts";
 
 export type HotlistFetch = (
   url: string,
   headers: Record<string, string>,
 ) => Promise<{ status: number; body: string }>;
 
-/** 生产取数：走站内统一的 SSRF 安全抓取（与 health_check 同一套 guard 配置） */
+/**
+ * 生产取数：走站内统一的 SSRF 安全抓取（与 health_check 同一套 guard 配置）。
+ *
+ * U-284：只对热榜源注册表里写死的六个精确主机名跳过 DNS-IP 校验
+ * （出口网关合成地址 198.18.246.x 否则全拦）；协议/端口/凭证/超时/
+ * 响应体上限与重定向逐跳校验全部保留。drama 三任务共用本入口，但其
+ * 取数主机（www.soduanju.com、www.zongyimi.com）不在此白名单内，
+ * 仍会被拦，需另行裁决是否纳入。
+ */
 export function makeGuardedHotlistFetch(ctx: AppContext): HotlistFetch {
   return async (url, headers) => {
-    const res = await guardedFetch(url, { ...ctx.config.fetch }, { headers });
+    const res = await guardedFetch(url, { ...ctx.config.fetch, trustedHosts: HOTLIST_TRUSTED_HOSTS }, { headers });
     return { status: res.status, body: res.body };
   };
 }

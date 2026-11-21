@@ -60,10 +60,15 @@ describe('用户中心第二批页面', () => {
     const src = read('src/app/me/data/page.tsx')
     expect(src).toContain('id="main-content"')
     expect(src).toContain("'/api/me/export'")
-    expect(src).toContain("confirm: 'DELETE'")
     expect(src).toContain("fetch('/api/me'")
+    // 29cb8f8e（fix(web-budget)）：删除确认逻辑从 page.tsx 抽成独立组件
+    // MeDataDangerZone（next/dynamic ssr:false 按需加载），以下两条断言跟随
+    // 新位置改读该组件；页面仍挂载组件，接线不断。
+    const zone = read('src/components/user-center/me-data-danger-zone.tsx')
+    expect(zone).toContain("confirm: 'DELETE'")
     // 删除动作必须受输入框解锁，不能一个按钮直接删
-    expect(src).toContain("confirmText.trim().toUpperCase() !== 'DELETE'")
+    expect(zone).toContain("confirmText.trim().toUpperCase() !== 'DELETE'")
+    expect(src).toContain('MeDataDangerZone')
   })
 
   it('用户中心子页保持 noindex', () => {

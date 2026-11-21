@@ -1352,7 +1352,7 @@ export function resolveSiteIcon(
     if (lowerTitle.includes('通义灵码')) return 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'
     if (lowerTitle.includes('runway')) return '/brand-icons/runway.png'
     if (lowerTitle.includes('deepseek')) return '/brand-icons/deepseek.png'
-    if (lowerTitle.includes('gemini')) return '/assets/images/logos/gemini.svg'
+    if (lowerTitle.includes('gemini')) return '/brand-icons/gemini.svg'
     if (lowerTitle.includes('chatgpt') || lowerTitle.includes('openai')) return '/assets/images/logos/chatgpt.webp'
     if (lowerTitle.includes('claude')) return '/assets/images/logos/claude.webp'
     if (lowerTitle.includes('cloudflare')) return '/assets/images/logos/cloudflar.webp'

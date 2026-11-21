@@ -26,6 +26,7 @@ COPY scripts/install-git-hooks.mjs ./scripts/
 COPY scripts/lib/hooks-fresh.mjs ./scripts/lib/
 # 覆盖层的清单（vendor 之后它才是最终清单；这里先只放清单供解析）
 COPY apps/web-overlay/package.json ./apps/web/package.json
+COPY packages/core/package.json ./packages/core/
 RUN pnpm install --frozen-lockfile --filter "./apps/web"
 
 # 2) 上游底座（NavSphere，MIT）拉进 apps/web，再用 NavHub 覆盖层覆盖存储层

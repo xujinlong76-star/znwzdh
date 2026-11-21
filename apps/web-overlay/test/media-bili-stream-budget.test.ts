@@ -28,6 +28,29 @@ import {
 } from '@/lib/stream-budget'
 import { generateMediaSignature } from '@/lib/media-proxy'
 
+// 媒体代理的生产出站已收敛到 ssrf-guard.safeFetch（DNS/IP 校验 + IP 钉扎 +
+// 受控重定向）。本文件的假上游依赖 stub 全局 fetch，因此在测试边界替换 safeFetch
+// 为「直接调用当前全局 fetch」的薄封装：路由层的 413/415/缓存/流式限流逻辑仍按
+// 真实 Response 行为被测，而 SSRF 五道防线由 ssrf-policy/safe-fetch 测试单独覆盖。
+vi.mock('@/lib/ssrf-guard', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/ssrf-guard')>()
+  return {
+    ...actual,
+    safeFetch: async (rawUrl: string, options: { headers?: Record<string, string> } = {}) => {
+      const response = await fetch(rawUrl, { headers: options.headers, redirect: 'manual' })
+      return {
+        response,
+        finalUrl: rawUrl,
+        status: response.status,
+        contentType: response.headers.get('content-type'),
+        bytes: 0,
+        truncated: false,
+        redirects: [],
+      }
+    },
+  }
+})
+
 interface StreamCounter {
   pulls: number
   cancels: number

@@ -3,8 +3,26 @@
 /**
  * 首页顶部工具栏（从 navigation-content.tsx 拆出，2026-10-19 P1-2）。
  *
- * 只负责渲染搜索入口、探索矩阵、视图/密度/主题开关与多选入口；
- * 选中态与工作台过滤仍由 NavigationContent 持有，通过 props 注入。
+ * 2026-11-21 顶栏收敛（原始需求第 1 条，前四次被并发覆盖，本轮随提交落地）：
+ *
+ * 改造前右侧有 11 个纯图标按钮（今日/小组件盒/热度/探索矩阵/工具箱/用户/
+ * 快捷键/多选/字号/主题/DIY/GitHub），其中大多数只有 title 没有可见标签，
+ * 对新用户就是一排无字方块，认知成本极高。
+ *
+ * 改造后按「用得有多频繁」分三层：
+ *  ① 主栏常驻 4 个：多选（批量唯一出口，不能埋）、DIY 排版（保留可见文字）、
+ *     主题、通知+插件聚合；
+ *  ② 聚合菜单：今日中心 / 通知中心 / 小组件盒 / 插件市场 → 一个带红点的铃铛；
+ *  ③ 个人菜单：用户中心 / 字号 / 工具箱 / 快捷键 / 签到 / 偏好 / 工作台 /
+ *     GitHub → 一个头像。低频项全部下沉，但**一个功能都没丢**。
+ *
+ * 所有纯图标入口一律补 Radix Tooltip（不是裸 title：title 有约 1s 系统延迟、
+ * 键盘聚焦不显示，对可发现性帮助接近于零）。
+ *
+ * 「AI 找站」独立按钮已删除：SearchPalette 内部本就有 aiMode 双模式
+ * （lib/search-ai-mode.ts 持久化），同一入口不该在一屏出现两次。
+ *
+ * 保留不变：选中态与工作台过滤仍由 NavigationContent 持有，props 注入。
  */
 import Link from 'next/link'
 import { Button } from '@/registry/new-york/ui/button'
@@ -41,7 +59,10 @@ import {
   CalendarDays,
   Puzzle,
   SlidersHorizontal,
+  Bell,
+  MoreHorizontal,
 } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { GithubIcon } from '@/components/icons'
 import dynamic from 'next/dynamic'
 import type { SiteConfig } from '@/types/site'
@@ -92,7 +113,34 @@ export interface NavigationToolbarProps {
   onOpenTodayCenter?: () => void
   onOpenWidgetBox?: () => void
   onOpenAppearanceGuide?: () => void
+  /** @deprecated AI 找站入口已并入 SearchPalette 的 AI 双模式，保留形参仅为兼容调用方 */
   onOpenAiFinder?: () => void
+  /** 未读通知数（铃铛红点）；0 或缺省时只按 todayBadge 决定是否亮红点 */
+  unreadNotifications?: number
+}
+
+/**
+ * 带 Tooltip 的图标按钮包装。
+ * 用 Radix Tooltip 而不是裸 title：后者有约 1s 系统延迟、样式不可控、
+ * 键盘聚焦时不显示，对「一排无字图标」的可发现性帮助接近于零。
+ */
+function IconTip({
+  label,
+  children,
+  side = 'bottom',
+}: {
+  label: string
+  children: React.ReactNode
+  side?: 'top' | 'bottom'
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side={side} sideOffset={6}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 export function NavigationToolbar({
@@ -112,7 +160,7 @@ export function NavigationToolbar({
   onOpenTodayCenter,
   onOpenWidgetBox,
   onOpenAppearanceGuide,
-  onOpenAiFinder,
+  unreadNotifications = 0,
 }: NavigationToolbarProps) {
   const hasTodayAlert = Boolean(todayBadge && (todayBadge.urgentCount > 0 || todayBadge.todayCount > 0))
   return (
@@ -122,344 +170,47 @@ export function NavigationToolbar({
               （实测 scrollWidth 940 > 768）。改为在 <1024px 允许换行：
               搜索框独占一行、按钮簇折到第二行，1024px 起恢复单行。 */}
           <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-3 gap-y-1 lg:h-14 lg:flex-nowrap">
-            <div className="flex flex-1 min-w-[260px] max-w-[560px] items-center gap-1.5 transition-all duration-300 ease-out">
+            {/* max-w 560 → 880：1440px 下搜索框右侧原有约 300px 死区
+                （搜索框到 560 就截断、右侧按钮从 1151 才开始），顶栏像断开的两半。 */}
+            <div className="flex flex-1 min-w-[260px] max-w-[880px] items-center gap-1.5 transition-all duration-300 ease-out">
               <div className="flex-1 min-w-0">
                 {/* 山羊胡混合检索引擎 */}
                 <SearchPalette siteConfig={siteConfig} placeholder="搜索站点、标签或拼音…（按 / 快速搜索）" />
               </div>
-              {onOpenAiFinder ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={onOpenAiFinder}
-                  className="hidden sm:inline-flex h-10 shrink-0 items-center gap-1 rounded-lg border-primary/30 bg-primary/8 px-2.5 text-xs font-medium text-primary hover:bg-primary/15"
-                  title="打开 AI 智能找站小窗"
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>AI 找站</span>
-                </Button>
-              ) : null}
             </div>
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-              {/* 📅 今日中心小窗入口（A2：专注、考试提醒、简报、接力连胜统一收纳） */}
-              {onOpenTodayCenter ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={onOpenTodayCenter}
-                  className="relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-0 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors min-[1536px]:w-auto min-[1536px]:flex-row min-[1536px]:gap-1.5 min-[1536px]:px-2.5"
-                  title={todayBadge?.countdownLabel ? `今日中心（${todayBadge.countdownLabel}）` : '今日中心：专注、考试提醒、简报与连胜'}
-                  aria-label="打开今日中心小窗"
-                >
-                  <CalendarDays className="h-4 w-4 shrink-0" />
-                  {/* 可见文字标签（复用已 SSR 的 todayBadge.todayCount，0 新增请求/JS）：
-                      <1536px 只留图标 + title Tooltip + 红点徽章，文字标签隐藏——
-                      1280px 档文字标签 49px 会把搜索容器压窄、输入框只剩 18px（复核
-                      2026-11-20 实测）；≥1536px 横排，与「AI 找站」按钮同式。todayCount
-                      为 0 时只写「今日」，不谎报计数。 */}
-                  <span className="hidden whitespace-nowrap text-[10px] leading-none sm:text-xs min-[1536px]:inline">
-                    {todayBadge && todayBadge.todayCount > 0 ? `今日 ${todayBadge.todayCount} 项` : '今日'}
-                  </span>
-                  {hasTodayAlert ? (
-                    <span
-                      aria-hidden="true"
-                      className={
-                        todayBadge && todayBadge.urgentCount > 0
-                          ? 'absolute right-2 top-2 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background'
-                          : 'absolute right-2 top-2 h-2 w-2 rounded-full bg-primary ring-2 ring-background'
-                      }
-                    />
-                  ) : null}
-                </Button>
-              ) : null}
+            {/* 2026-11-21 顶栏收敛：11 个纯图标 → 4 个核心入口 + 2 个聚合菜单。
+                每一项功能都还在，只是按使用频次分了层（见文件头注释）。 */}
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
 
-              {/* 🧩 桌面小组件盒小窗入口（A3：按需小窗与角落固定微件） */}
-              {/* U-155（2026-11-19）：<390px 时收进探索菜单（下方「桌面小组件盒」条目），
-                  只为给外观/DIY 按钮腾出 44px——360px 下 8×44px + 7×2px 间隙 = 366px
-                  > 360−24px 可用宽，菜单按钮会被挤出视野；≥390px 恢复显示，
-                  8×44px + 14px = 366px 恰好占满 390−24px。小组件盒是桌面向功能
-                  （钉到桌面角落），小屏低频，且菜单条目保留入口，不丢功能。 */}
-              {onOpenWidgetBox ? (
+              {/* ① 多选模式：批量导出 / 复制 / 置顶的唯一出口，不能埋进菜单。 */}
+              <IconTip label={selectionMode ? '退出多选模式（M）' : '多选模式：批量导出 / 复制 / 置顶（M）'}>
                 <Button
-                  type="button"
                   variant="ghost"
                   size="icon"
-                  onClick={onOpenWidgetBox}
-                  className="relative hidden h-11 w-11 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors min-[390px]:inline-flex"
-                  title="打开桌面小组件盒（支持钉到桌面角落）"
-                  aria-label="打开桌面小组件盒"
+                  className={cn(
+                    'relative hidden h-9 w-9 rounded-lg transition-colors sm:inline-flex',
+                    selectionMode
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                  )}
+                  onClick={onToggleSelectMode}
+                  aria-pressed={selectionMode}
+                  aria-label="多选模式"
                 >
-                  <Puzzle className="h-4 w-4" />
-                  {pinnedWidgetCount > 0 ? (
-                    <span
-                      aria-hidden="true"
-                      className="absolute right-2 top-2 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-background"
-                    />
-                  ) : null}
+                  <CheckSquare className="h-4 w-4" />
+                  {selectionMode && selectedIds.length > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 min-w-4 h-4 rounded-full bg-primary px-1 font-mono text-xs leading-4 text-primary-foreground">
+                      {selectedIds.length}
+                    </span>
+                  )}
                 </Button>
-              ) : null}
-              {/* 发现与热度 */}
-              <Button
-                asChild
-                variant="ghost"
-                size="icon"
-                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors hidden xl:inline-flex"
-              >
-                <Link href="/hot" aria-label="热度榜" title="热度趋势与新品榜">
-                  <Flame className="h-4 w-4" />
-                </Link>
-              </Button>
-
-              {/* 探索功能矩阵下拉菜单 */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-                    title="探索矩阵与导航工具箱"
-                    aria-label="探索矩阵与导航工具箱"
-                  >
-                    <Compass className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56 p-1.5 shadow-xl bg-popover/95 backdrop-blur-md border border-border/80">
-                  <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1">
-                    工具与效率
-                  </DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => onOpenTools()} className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent xl:hidden">
-                    <Wrench className="h-4 w-4 text-emerald-500 shrink-0" />
-                    <div className="flex flex-col">
-                      <span className="font-medium text-foreground">开发者微工具箱</span>
-                      <span className="text-xs text-muted-foreground">Base64 / JSON / 正则 (T)</span>
-                    </div>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onOpenShortcuts()} className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent xl:hidden">
-                    <HelpCircle className="h-4 w-4 text-sky-500 shrink-0" />
-                    <div className="flex flex-col">
-                      <span className="font-medium text-foreground">快捷键指南</span>
-                      <span className="text-xs text-muted-foreground">全景快捷键列表 (?)</span>
-                    </div>
-                  </DropdownMenuItem>
-                  {/* U-155（2026-11-19）：小组件盒 <390px 的工具栏内替代入口（工具栏按钮
-                      在该宽度下隐藏，见上方注释）；≥390px 该条目隐藏，按钮恢复显示。 */}
-                  {onOpenWidgetBox ? (
-                    <DropdownMenuItem onClick={() => onOpenWidgetBox()} className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent min-[390px]:hidden">
-                      <Puzzle className="h-4 w-4 text-violet-500 shrink-0" />
-                      <div className="flex flex-col">
-                        <span className="font-medium text-foreground">桌面小组件盒</span>
-                        <span className="text-xs text-muted-foreground">按需小窗与角落固定微件</span>
-                      </div>
-                    </DropdownMenuItem>
-                  ) : null}
-                  <DropdownMenuItem asChild className="xl:hidden">
-                    <Link href="/hot" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
-                      <Flame className="h-4 w-4 text-amber-500 shrink-0" />
-                      <div className="flex flex-col">
-                        <span className="font-medium text-foreground">热度趋势榜</span>
-                        <span className="text-xs text-muted-foreground">全站高频流行站点</span>
-                      </div>
-                    </Link>
-                  </DropdownMenuItem>
-
-                  <DropdownMenuSeparator className="my-1 xl:hidden" />
-
-                  <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1">
-                    认知与前沿矩阵
-                  </DropdownMenuLabel>
-                  <DropdownMenuItem asChild>
-                    <Link href="/graph" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
-                      <Network className="h-4 w-4 text-pink-500 shrink-0" />
-                      <div className="flex flex-col">
-                        <span className="font-medium text-foreground">技术生态图谱</span>
-                        <span className="text-xs text-muted-foreground">架构选型与平替网络</span>
-                      </div>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/algorithms" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
-                      <Cpu className="h-4 w-4 text-cyan-500 shrink-0" />
-                      <div className="flex flex-col">
-                        <span className="font-medium text-foreground">前沿算法实验室</span>
-                        <span className="text-xs text-muted-foreground">LinUCB / 双曲 / E2EE</span>
-                      </div>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/custom" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
-                      <LayoutGrid className="h-4 w-4 text-emerald-500 shrink-0" />
-                      <div className="flex flex-col">
-                        <span className="font-medium text-foreground">模块化工作台</span>
-                        <span className="text-xs text-muted-foreground">自由拖拽与小组件排版</span>
-                      </div>
-                    </Link>
-                  </DropdownMenuItem>
-
-                  <DropdownMenuSeparator className="my-1" />
-
-                  <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1">
-                    每日回访
-                  </DropdownMenuLabel>
-                  <DropdownMenuItem asChild>
-                    <Link href="/drama" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
-                      <Clapperboard className="h-4 w-4 text-rose-500 shrink-0" />
-                      <div className="flex flex-col">
-                        <span className="font-medium text-foreground">短剧专区</span>
-                        <span className="text-xs text-muted-foreground">热门短剧与追剧清单</span>
-                      </div>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/brief" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
-                      <Newspaper className="h-4 w-4 text-sky-500 shrink-0" />
-                      <div className="flex flex-col">
-                        <span className="font-medium text-foreground">每日简报</span>
-                        <span className="text-xs text-muted-foreground">全网热点一页读完</span>
-                      </div>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/exam" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
-                      <GraduationCap className="h-4 w-4 text-violet-500 shrink-0" />
-                      <div className="flex flex-col">
-                        <span className="font-medium text-foreground">考试日历</span>
-                        <span className="text-xs text-muted-foreground">国考倒计时与备考提醒</span>
-                      </div>
-                    </Link>
-                  </DropdownMenuItem>
-
-                  <DropdownMenuSeparator className="my-1" />
-
-                  <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1">
-                    全景与发现
-                  </DropdownMenuLabel>
-                  <DropdownMenuItem asChild>
-                    <Link href="/collections" className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
-                      <Layers className="h-4 w-4 text-violet-500 shrink-0" />
-                      <span className="font-medium text-foreground">精选专题合集</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/tags" className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
-                      <Tags className="h-4 w-4 text-indigo-500 shrink-0" />
-                      <span className="font-medium text-foreground">全景标签云</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/videos" className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
-                      <MonitorPlay className="h-4 w-4 text-blue-500 shrink-0" />
-                      <span className="font-medium text-foreground">视频教程导航</span>
-                    </Link>
-                  </DropdownMenuItem>
-
-                  <DropdownMenuSeparator className="my-1" />
-
-                  <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1">
-                    社区与工具
-                  </DropdownMenuLabel>
-                  <DropdownMenuItem asChild>
-                    <Link href="/import" className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
-                      <Upload className="h-4 w-4 text-emerald-500 shrink-0" />
-                      <span className="font-medium text-foreground">导入浏览器书签</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/marketplace" className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
-                      <Store className="h-4 w-4 text-rose-500 shrink-0" />
-                      <span className="font-medium text-foreground">插件市场（社区共享）</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/submit" className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
-                      <Send className="h-4 w-4 text-amber-500 shrink-0" />
-                      <span className="font-medium text-foreground">收录与提交网站</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/preferences" className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
-                      <Sparkles className="h-4 w-4 text-violet-500 shrink-0" />
-                      <span className="font-medium text-foreground">我的偏好（个性化画像）</span>
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild className="min-[1536px]:hidden">
-                    <Link
-                      href="https://github.com/tianyaxiang/NavSphere"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2.5 min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent"
-                    >
-                      <GithubIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <span className="font-medium text-foreground">GitHub 开源仓库</span>
-                    </Link>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <div className="h-4 w-px bg-border/60 mx-1 hidden xl:block" />
-
-              {/* 开发者极速微工具箱按钮 */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden xl:inline-flex"
-                onClick={() => onOpenTools()}
-                title="打开内置微工具箱 (快捷键: T)"
-                aria-label="微工具箱"
-              >
-                <Wrench className="h-4 w-4" />
-              </Button>
-              <Button
-                asChild
-                variant="ghost"
-                size="icon"
-                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 hidden lg:inline-flex"
-              >
-                <Link href="/me" title="用户中心" aria-label="用户中心">
-                  <User className="h-4 w-4" />
-                </Link>
-              </Button>
-
-              {/* 快捷键指南按钮 */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden xl:inline-flex"
-                onClick={() => onOpenShortcuts()}
-                title="快捷键全景指南 (快捷键: ?)"
-                aria-label="快捷键指南"
-              >
-                <HelpCircle className="h-4 w-4" />
-              </Button>
-
-              {/* 多选：批量导出 / 复制 / 置顶的唯一入口（此前只有孤立的操作坞，没有任何入口） */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "relative h-11 w-11 rounded-lg transition-colors",
-                  selectionMode
-                    ? "text-primary bg-primary/10"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-                )}
-                onClick={onToggleSelectMode}
-                aria-pressed={selectionMode}
-                title={selectionMode ? '退出多选模式（快捷键 M）' : '多选模式：批量导出 / 复制 / 置顶（快捷键 M）'}
-                aria-label="多选模式"
-              >
-                <CheckSquare className="h-4 w-4" />
-                {selectionMode && selectedIds.length > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-xs leading-4 font-mono">
-                    {selectedIds.length}
-                  </span>
-                )}
-              </Button>
+              </IconTip>
 
               {selectionMode && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-9 w-auto rounded-lg gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  className="h-8 w-auto gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                   onClick={onSelectAllVisible}
                   title={summarizeSelection(selectedIds, visibleSiteCount) + '（点击全选当前可见站点）'}
                 >
@@ -468,62 +219,298 @@ export function NavigationToolbar({
                 </Button>
               )}
 
-              <div className="h-4 w-px bg-border/60 mx-1 hidden lg:block" />
-              {/* 字号切换全尺寸可见（A13）：保留手机 1 键放大，不把长辈高频需求埋深 */}
-              <div className="inline-flex"><FontSizeToggle /></div>
-              <ModeToggle />
-              {/* U-155 方案 A（2026-11-19）：纯图标改为图标 + 可见文字标签「DIY 排版」，
-                  让 DIY 入口首屏可见可识别；<sm 沿用「今日」按钮的上下叠排（图标上、
-                  文字下），仍占 44px 宽；≥sm 横排，与「AI 找站」按钮同式。
-                  360px 宽度账：小组件盒 <390px 已收进探索菜单，行内 7×44px + 6×2px
-                  间隙 = 320px ≤ 360−24px 可用宽，菜单按钮不再被挤出；390px 时
-                  8×44px + 14px = 366px 恰好占满 390−24px。点击路径不动：仍打开
-                  外观向导小窗（默认 appearance 页签），底部「开启 DIY」进编排态。 */}
+              <div className="mx-1 hidden h-4 w-px bg-border/60 sm:block" />
+
+              {/* ② DIY 排版：保留可见文字。这是首屏最重要的个性化入口，
+                  纯图标会让新用户找不到「怎么改这一页」（U-155 的结论不能推翻）。 */}
               {onOpenAppearanceGuide ? (
                 <Button
                   type="button"
                   variant="ghost"
-                  // U-155：先报后开（fire-and-forget，绝不阻塞向导打开）
                   onClick={() => {
                     trackDiyEvent('diy_appearance_click')
                     onOpenAppearanceGuide()
                   }}
-                  className="relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-0 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors sm:w-auto sm:flex-row sm:gap-1.5 sm:px-2.5"
+                  className="relative flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                   title="DIY 排版、外观与皮肤（打开外观向导小窗）"
                   aria-label="打开外观排版与新手向导小窗"
                 >
                   <SlidersHorizontal className="h-4 w-4 shrink-0" />
-                  <span className="text-center text-xs leading-none whitespace-normal break-keep sm:whitespace-nowrap">DIY 排版</span>
+                  <span className="hidden whitespace-nowrap text-xs leading-none sm:inline">DIY 排版</span>
                 </Button>
               ) : null}
-              <div className="h-4 w-px bg-border/60 mx-1 hidden min-[1536px]:block" />
-              <Button
-                asChild
-                variant="ghost"
-                size="icon"
-                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 hidden min-[1536px]:inline-flex"
-              >
-                <Link
-                  href="https://github.com/tianyaxiang/NavSphere"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="访问 GitHub 仓库"
-                  title="GitHub 仓库"
-                  className="hidden min-[1536px]:inline-flex"
+
+              {/* ③ 主题切换 */}
+              <IconTip label="切换深浅主题">
+                <div className="inline-flex">
+                  <ModeToggle />
+                </div>
+              </IconTip>
+
+              {/* ④ 通知 + 插件聚合（带红点）：把原先散落的「今日中心 / 小组件盒 /
+                  通知」三项收成一个入口，避免它们各占一个图标位。 */}
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="relative h-9 w-9 rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                        aria-label={
+                          unreadNotifications > 0
+                            ? `通知与插件聚合，${unreadNotifications} 条未读`
+                            : '通知与插件聚合'
+                        }
+                      >
+                        <Bell className="h-4 w-4" />
+                        {unreadNotifications > 0 || hasTodayAlert ? (
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              'absolute right-1.5 top-1.5 h-2 w-2 rounded-full ring-2 ring-background',
+                              todayBadge && todayBadge.urgentCount > 0 ? 'bg-amber-500' : 'bg-primary',
+                            )}
+                          />
+                        ) : null}
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" sideOffset={6}>
+                    {hasTodayAlert ? `通知与插件（今日 ${todayBadge?.todayCount ?? 0} 项）` : '通知与插件聚合'}
+                  </TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="w-60 p-1.5">
+                  <DropdownMenuLabel className="px-2 py-1 text-xs font-semibold text-muted-foreground">
+                    今日与通知
+                  </DropdownMenuLabel>
+                  {onOpenTodayCenter ? (
+                    <DropdownMenuItem
+                      onClick={onOpenTodayCenter}
+                      className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-xs hover:bg-accent"
+                    >
+                      <CalendarDays className="h-4 w-4 shrink-0 text-sky-500" />
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">今日中心</span>
+                        <span className="text-xs text-muted-foreground">
+                          {todayBadge?.countdownLabel
+                            ? `倒计时 ${todayBadge.countdownLabel}`
+                            : todayBadge && todayBadge.todayCount > 0
+                              ? `今日 ${todayBadge.todayCount} 项`
+                              : '专注、简报、考试与连胜'}
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuItem asChild className="min-h-10">
+                    <Link href="/me/notifications" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                      <Bell className="h-4 w-4 shrink-0 text-primary" />
+                      <span className="font-medium text-foreground">
+                        通知中心{unreadNotifications > 0 ? `（${unreadNotifications} 条未读）` : ''}
+                      </span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="my-1" />
+                  <DropdownMenuLabel className="px-2 py-1 text-xs font-semibold text-muted-foreground">
+                    插件与组件
+                  </DropdownMenuLabel>
+                  {onOpenWidgetBox ? (
+                    <DropdownMenuItem
+                      onClick={onOpenWidgetBox}
+                      className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-xs hover:bg-accent"
+                    >
+                      <Puzzle className="h-4 w-4 shrink-0 text-violet-500" />
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">桌面小组件盒</span>
+                        <span className="text-xs text-muted-foreground">
+                          {pinnedWidgetCount > 0 ? `已固定 ${pinnedWidgetCount} 个` : '按需小窗与角落固定微件'}
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuItem asChild className="min-h-10">
+                    <Link href="/marketplace" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                      <Store className="h-4 w-4 shrink-0 text-rose-500" />
+                      <span className="font-medium text-foreground">插件市场</span>
+                    </Link>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* ⑤ 个人菜单：低频项（用户中心 / 字号 / 工具箱 / 快捷键 / 签到 /
+                  偏好 / 工作台 / GitHub）全部下沉到这里。 */}
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 rounded-full bg-muted/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        aria-label="个人菜单"
+                      >
+                        <User className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" sideOffset={6}>
+                    个人菜单（用户中心 / 字号 / 工具）
+                  </TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="w-60 p-1.5">
+                  <DropdownMenuLabel className="px-2 py-1 text-xs font-semibold text-muted-foreground">
+                    我的
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem asChild className="min-h-10">
+                    <Link href="/me" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                      <User className="h-4 w-4 shrink-0 text-primary" />
+                      <span className="font-medium text-foreground">用户中心</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  {/* 字号切换：设置一次就不再动的偏好，但可发现性不能丢——
+                      放个人菜单第一屏并带说明文字。onSelect 阻止关闭，方便连点。 */}
+                  <DropdownMenuItem
+                    onSelect={(e) => e.preventDefault()}
+                    className="flex cursor-default items-center gap-2.5 px-2 py-1.5 text-xs"
+                  >
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center font-mono text-[10px] font-bold text-muted-foreground">
+                      Aa
+                    </span>
+                    <div className="flex flex-1 items-center justify-between gap-2">
+                      <span className="font-medium text-foreground">字号</span>
+                      <FontSizeToggle />
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="my-1" />
+                  <DropdownMenuLabel className="px-2 py-1 text-xs font-semibold text-muted-foreground">
+                    工具
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onClick={onOpenTools}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-xs hover:bg-accent"
+                  >
+                    <Wrench className="h-4 w-4 shrink-0 text-emerald-500" />
+                    <div className="flex flex-col">
+                      <span className="font-medium text-foreground">开发者微工具箱</span>
+                      <span className="text-xs text-muted-foreground">Base64 / JSON / 正则（T）</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={onOpenShortcuts}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-xs hover:bg-accent"
+                  >
+                    <HelpCircle className="h-4 w-4 shrink-0 text-sky-500" />
+                    <div className="flex flex-col">
+                      <span className="font-medium text-foreground">快捷键指南</span>
+                      <span className="text-xs text-muted-foreground">全景快捷键列表（?）</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="my-1" />
+                  <DropdownMenuItem asChild className="min-h-10">
+                    <Link href="/me/growth" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                      <Sparkles className="h-4 w-4 shrink-0 text-amber-500" />
+                      <span className="font-medium text-foreground">签到与成长任务</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="min-h-10">
+                    <Link href="/custom" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                      <LayoutGrid className="h-4 w-4 shrink-0 text-emerald-500" />
+                      <span className="font-medium text-foreground">模块化工作台</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="min-h-10">
+                    <Link
+                      href="https://github.com/tianyaxiang/NavSphere"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2.5 px-2 py-1.5 text-xs"
+                    >
+                      <GithubIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span className="font-medium text-foreground">GitHub 开源仓库</span>
+                    </Link>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* ⑥ 「更多」窄屏折叠：<lg 时主栏放不下的探索入口收在这里。
+                  ≥lg 时图标隐藏，但菜单内容在主栏与聚合菜单里都可达。 */}
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground lg:hidden"
+                        aria-label="更多导航与探索"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" sideOffset={6}>
+                    更多导航与探索
+                  </TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="w-56 p-1.5">
+                  <DropdownMenuItem asChild className="min-h-10">
+                    <Link href="/hot" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                      <Flame className="h-4 w-4 shrink-0 text-amber-500" />
+                      <span className="font-medium text-foreground">热度趋势榜</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="min-h-10">
+                    <Link href="/graph" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                      <Network className="h-4 w-4 shrink-0 text-pink-500" />
+                      <span className="font-medium text-foreground">技术生态图谱</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="min-h-10">
+                    <Link href="/algorithms" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                      <Cpu className="h-4 w-4 shrink-0 text-cyan-500" />
+                      <span className="font-medium text-foreground">前沿算法实验室</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="my-1" />
+                  <DropdownMenuItem asChild className="min-h-10">
+                    <Link href="/tags" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                      <Tags className="h-4 w-4 shrink-0 text-indigo-500" />
+                      <span className="font-medium text-foreground">全景标签云</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="min-h-10">
+                    <Link href="/videos" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                      <MonitorPlay className="h-4 w-4 shrink-0 text-blue-500" />
+                      <span className="font-medium text-foreground">视频教程导航</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="min-h-10">
+                    <Link href="/import" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                      <Upload className="h-4 w-4 shrink-0 text-emerald-500" />
+                      <span className="font-medium text-foreground">导入浏览器书签</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="min-h-10">
+                    <Link href="/submit" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                      <Send className="h-4 w-4 shrink-0 text-amber-500" />
+                      <span className="font-medium text-foreground">收录与提交网站</span>
+                    </Link>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* 移动端菜单 */}
+              <IconTip label="打开菜单">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground md:hidden"
+                  onClick={onToggleSidebar}
+                  aria-label="打开菜单"
                 >
-                  <GithubIcon className="h-4 w-4" />
-                </Link>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-11 w-11 rounded-lg md:hidden text-muted-foreground hover:text-foreground"
-                onClick={() => onToggleSidebar()}
-                title="打开菜单"
-                aria-label="打开菜单"
-              >
-                <Menu className="h-4 w-4" />
-              </Button>
+                  <Menu className="h-4 w-4" />
+                </Button>
+              </IconTip>
             </div>
           </div>
 

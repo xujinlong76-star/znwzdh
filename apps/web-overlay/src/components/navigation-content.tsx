@@ -141,6 +141,8 @@ import { useNumberDial } from '@/hooks/use-number-dial'
 import { useBatchKeyboard } from '@/hooks/use-batch-keyboard'
 import { createCustomSiteId, normalizeCustomSiteHref } from '@/lib/modular/custom-site-input'
 import { useToast } from '@/components/ui/use-toast'
+import { useUnreadNotifications } from '@/hooks/useUnreadNotifications'
+import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 import { pushGlobalUndo } from '@/lib/undo-stack'
 import {
@@ -247,6 +249,10 @@ export function NavigationContent({
   const [appearanceOpen, setAppearanceOpen] = useState(false)
   const [appearanceTab, setAppearanceTab] = useState<'appearance' | 'guide'>('appearance')
   const [toolbarAiOpen, setToolbarAiOpen] = useState(false)
+  /* 顶栏铃铛红点（2026-11-21 顶栏收敛）：与侧栏通知铃共用同一个订阅源，
+     没有第二份轮询。eligibility 交给 useIdentityReady，匿名/未登录时不请求。 */
+  const identityState = useIdentityReady()
+  const unreadNotifications = useUnreadNotifications(identityState)
   const [sceneParam, setSceneParam] = useState<string | null>(null)
   const { mounted: pinnedMounted, pinned: pinnedCornerWidgets } = usePinnedCornerWidgets()
 
@@ -1093,6 +1099,7 @@ export function NavigationContent({
             setAppearanceOpen(true)
           }}
           onOpenAiFinder={() => setToolbarAiOpen(true)}
+          unreadNotifications={unreadNotifications}
         />
 
         {/* 半屏下沉栏（Batch 3 第 12 项）：挂在这里而非工具栏内——工具栏没有

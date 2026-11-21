@@ -283,6 +283,7 @@ export function sanitizeWatchEntry(raw: unknown): WatchEntry | null {
   const key = keyHint ? keyHint : dramaKeyFor(platformSiteId, title)
   const episodeRaw = typeof r.episode === 'number' && Number.isFinite(r.episode) ? Math.trunc(r.episode) : 0
   const createdAt = typeof r.createdAt === 'number' && r.createdAt > 0 ? r.createdAt : Date.now()
+  const premiereDate = asPremiereDate(r.premiereDate)
   return {
     key,
     title,
@@ -304,7 +305,9 @@ export function sanitizeWatchEntry(raw: unknown): WatchEntry | null {
       typeof r.lastProgressAt === 'number' && r.lastProgressAt > 0 ? r.lastProgressAt : createdAt,
     createdAt,
     updatedAt: typeof r.updatedAt === 'number' && r.updatedAt > 0 ? r.updatedAt : createdAt,
-    premiereDate: asPremiereDate(r.premiereDate),
+    // 只有真有开播日才带字段：无日期的条目不凭空多一个 premiereDate: null，
+    // 否则落盘往返 toEqual 会多出字段（旧测试「往返一致」的口径）。
+    ...(premiereDate !== null ? { premiereDate } : {}),
   }
 }
 

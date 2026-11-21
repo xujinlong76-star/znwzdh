@@ -182,7 +182,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
   }, [])
 
   const handleSidebarResizeStart = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
+    (e: React.PointerEvent<HTMLButtonElement>) => {
       e.preventDefault()
       e.stopPropagation()
       const startX = e.clientX
@@ -240,6 +240,41 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
     }
   }, [])
 
+  // P1-18：侧边栏宽度手柄键盘可用。方向键 ±16px（180–420px 钳制，与拖拽
+  // 边界一致）、Home/End 到两端、Enter 复位默认 256px（与双击同义）。
+  // 键盘改动与拖拽一样写 localStorage，下次打开保持同一宽度。
+  const handleSidebarResizeKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      const current = sidebarWidth ?? 256
+      const step = 16
+      let next: number | null = null
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = Math.max(180, current - step)
+      else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = Math.min(420, current + step)
+      else if (e.key === 'Home') next = 180
+      else if (e.key === 'End') next = 420
+      else if (e.key === 'Enter') {
+        e.preventDefault()
+        e.stopPropagation()
+        setSidebarWidth(null)
+        try {
+          window.localStorage?.removeItem('navhub_sidebar_width_px')
+        } catch {
+          // 忽略删除失败
+        }
+        return
+      } else return
+      e.preventDefault()
+      e.stopPropagation()
+      setSidebarWidth(next)
+      try {
+        window.localStorage?.setItem('navhub_sidebar_width_px', String(next))
+      } catch {
+        // 忽略写入失败
+      }
+    },
+    [sidebarWidth]
+  )
+
   return (
     <div
       style={!onClose && sidebarWidth ? { width: `${sidebarWidth}px` } : undefined}
@@ -248,17 +283,25 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
         className
       )}
     >
-      {/* 桌面端侧边栏右边缘左右拖拉调整宽度手柄 */}
+      {/* 桌面端侧边栏右边缘左右拖拉调整宽度手柄（P1-18：可聚焦按钮 + role=slider，键盘可用） */}
       {!onClose && (
-        <div
-          aria-hidden="true"
+        <button
+          type="button"
+          role="slider"
+          aria-label="调整侧边导航栏宽度"
+          aria-valuenow={sidebarWidth ?? 256}
+          aria-valuemin={180}
+          aria-valuemax={420}
+          aria-orientation="horizontal"
+          aria-valuetext={`${sidebarWidth ?? 256} 像素`}
           data-sidebar-resizer=""
           onPointerDown={handleSidebarResizeStart}
           onDoubleClick={handleSidebarResetWidth}
+          onKeyDown={handleSidebarResizeKeyDown}
           style={{ touchAction: 'none' }}
-          title="左右拖拉调整侧边导航栏宽度（双击恢复默认 256px）"
+          title="左右拖拉调整侧边导航栏宽度（双击或回车恢复默认 256px；方向键 ±16px）"
           className={cn(
-            "hidden md:flex absolute inset-y-0 -right-1.5 w-3 z-30 cursor-col-resize items-center justify-center select-none transition-opacity",
+            "hidden md:flex absolute inset-y-0 -right-1.5 w-3 z-30 cursor-col-resize items-center justify-center select-none transition-opacity focus-visible:opacity-100",
             isResizingSidebar ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100 hover:opacity-100"
           )}
         >
@@ -270,7 +313,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                 : "bg-border/80 hover:bg-primary hover:h-16"
             )}
           />
-        </div>
+        </button>
       )}
       <div className="flex min-h-[3.5rem] items-center justify-between px-3.5 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 gap-2">
         <Link href="/" className="flex items-center gap-2 font-bold text-sm tracking-tight hover:opacity-90 transition-opacity min-w-0 shrink-0">

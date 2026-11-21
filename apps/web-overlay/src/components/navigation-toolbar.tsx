@@ -118,7 +118,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
 }: NavigationToolbarProps) {
   const hasTodayAlert = Boolean(todayBadge && (todayBadge.urgentCount > 0 || todayBadge.todayCount > 0))
   return (
-        <div className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 shadow-2xs">
+        <header className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 shadow-2xs">
           <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 md:h-14 md:flex-nowrap">
             <div className="flex flex-1 min-w-[260px] max-w-[560px] items-center gap-1.5 transition-all duration-300 ease-out">
               <div className="flex-1 min-w-0">
@@ -524,7 +524,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
               </Button>
             </div>
           </div>
-        </div>
+        </header>
 
   )
 })

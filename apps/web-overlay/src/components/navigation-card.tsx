@@ -590,10 +590,21 @@ export const NavigationCard = memo(function NavigationCard({
                 aria-describedby={keyboardHintId}
                 aria-label={selectable ? `选择站点：${item.title}，按空格切换选中` : `访问 ${item.title}`}
                 draggable={false}
-                className="absolute inset-0 z-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
+                className="peer absolute inset-0 z-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
               >
                 <span className="sr-only">{`访问 ${item.title}`}</span>
               </a>
+
+{/* 键盘聚焦可见提示（P1-19）：主链接聚焦时显式给出快捷键，复用 Space 徽章样式；仅主链接聚焦时显示（peer-focus-visible），按 → 进操作区后自动隐去、不遮按钮。 */}
+              {effectiveCardElements.showQuickLookBadge && (
+                <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 peer-focus-visible:opacity-100 sm:group-hover/card:opacity-0 transition-opacity duration-150">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded shadow-xs">
+                    <span>Space 速览</span>
+                    <span aria-hidden="true">·</span>
+                    <span>→ 操作</span>
+                  </span>
+                </div>
+              )}
 
               <div className="relative z-10 pointer-events-none flex items-center gap-2 min-w-0 flex-1">
                 <div className="relative flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-150 group-hover/card:scale-105">
@@ -613,7 +624,7 @@ export const NavigationCard = memo(function NavigationCard({
                       onClick={handleDetailClick}
                       tabIndex={-1}
                       title={item.title}
-                      className="pointer-events-auto truncate rounded text-sm sm:text-base font-semibold tracking-tight text-foreground group-hover/card:text-primary hover:underline underline-offset-4 transition-colors focus-visible:outline-none min-w-0 flex-1"
+                      className="pointer-events-auto truncate rounded text-sm sm:text-base font-semibold tracking-tight text-foreground group-hover/card:text-primary hover:underline underline-offset-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 min-w-0 flex-1"
                     >
                       {item.title}
                     </Link>
@@ -803,10 +814,21 @@ export const NavigationCard = memo(function NavigationCard({
                 aria-describedby={keyboardHintId}
                 aria-label={selectable ? `选择站点：${item.title}，按空格切换选中` : `访问 ${item.title}`}
                 draggable={false}
-                className="absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
+                className="peer absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
               >
                 <span className="sr-only">{`访问 ${item.title}`}</span>
               </a>
+
+{/* 键盘聚焦可见提示（P1-19）：主链接聚焦时显式给出快捷键，复用 Space 徽章样式；仅主链接聚焦时显示（peer-focus-visible），按 → 进操作区后自动隐去、不遮按钮。 */}
+              {effectiveCardElements.showQuickLookBadge && (
+                <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 peer-focus-visible:opacity-100 sm:group-hover/card:opacity-0 transition-opacity duration-150">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded shadow-xs">
+                    <span>Space 速览</span>
+                    <span aria-hidden="true">·</span>
+                    <span>→ 操作</span>
+                  </span>
+                </div>
+              )}
 
               <div className="relative z-10 pointer-events-none flex flex-col flex-1">
                 {/* 视觉横幅（P1 #9）：有真实缩略图时才渲染，固定 h-28，不产生布局偏移；
@@ -846,7 +868,7 @@ export const NavigationCard = memo(function NavigationCard({
                               href={siteDetailHref}
                               onClick={handleDetailClick}
                               tabIndex={-1}
-                              title={item.title} className="pointer-events-auto block text-foreground group-hover/card:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-1 truncate leading-snug"
+                              title={item.title} className="pointer-events-auto block text-foreground group-hover/card:text-primary hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 min-w-0 line-clamp-1 truncate leading-snug"
                             >
                               {item.title}
                             </Link>
@@ -1083,17 +1105,18 @@ export const NavigationCard = memo(function NavigationCard({
               aria-describedby={keyboardHintId}
               aria-label={selectable ? `选择站点：${item.title}，按空格切换选中` : `访问 ${item.title}`}
               draggable={false}
-              className="absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
+              className="peer absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
             >
               <span className="sr-only">{`访问 ${item.title}`}</span>
             </a>
 
-            {/* 键盘聚焦显式快捷键角标 */}
+            {/* 键盘聚焦可见提示（P1-19）：主链接聚焦时显式给出快捷键，复用 Space 徽章样式；仅主链接聚焦时显示（peer-focus-visible），按 → 进操作区后自动隐去、不遮按钮。 */}
             {effectiveCardElements.showQuickLookBadge && (
-              <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 group-focus-visible/card:opacity-100 sm:group-hover/card:opacity-0 transition-opacity duration-150">
+              <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 peer-focus-visible:opacity-100 sm:group-hover/card:opacity-0 transition-opacity duration-150">
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded shadow-xs">
-                  <span>Space</span>
-                  <span>速览</span>
+                  <span>Space 速览</span>
+                  <span aria-hidden="true">·</span>
+                  <span>→ 操作</span>
                 </span>
               </div>
             )}
@@ -1152,7 +1175,7 @@ export const NavigationCard = memo(function NavigationCard({
                         href={siteDetailHref}
                         onClick={handleDetailClick}
                         tabIndex={-1}
-                        title={item.title} className="pointer-events-auto block text-foreground group-hover/card:text-primary hover:underline underline-offset-4 focus-visible:outline-none min-w-0 line-clamp-1 truncate leading-snug"
+                        title={item.title} className="pointer-events-auto block text-foreground group-hover/card:text-primary hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 min-w-0 line-clamp-1 truncate leading-snug"
                       >
                         {item.title}
                       </Link>

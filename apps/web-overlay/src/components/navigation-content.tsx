@@ -1060,13 +1060,13 @@ export function NavigationContent({
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
-      <div className="hidden md:block">
+      <nav aria-label="站点分类导航" className="hidden md:block">
         <Sidebar
           navigationData={sidebarNavigationData}
           siteInfo={siteData}
           className="sticky top-0 h-screen"
         />
-      </div>
+      </nav>
 
       <div className={cn(
         "fixed inset-0 z-50 md:hidden",

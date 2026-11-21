@@ -210,7 +210,11 @@ describe('P1 #10 触控目标：卡片星标与分类区', () => {
     expect(src).toContain('min-h-11 min-w-11 inline-flex items-center justify-center rounded-md text-muted-foreground/60 hover:text-primary')
     expect(src).toContain('min-h-11 min-w-11 px-1.5 rounded-md')
     expect(src).toContain("after:absolute after:-inset-3.5 after:content-['']")
-    expect(count(src, 'min-h-11 px-2.5 py-1 rounded-lg')).toBe(3)
+    // 3 -> 4（2026-11-21 首屏线 f43e7d8d）：子分类条接 HorizontalScrollFade 时
+    // 在条尾补了一个「全部」页签（与条首的「全部」同为 44px 的 min-h-11 样式），
+    // 横滚到底也能一点回全部；其余 3 个是直达页签与逐子分类页签。计数跟随新行为改写，
+    // 不是删断言——样式本身（min-h-11 = 44px 触屏目标）未变。
+    expect(count(src, 'min-h-11 px-2.5 py-1 rounded-lg')).toBe(4)
     expect(src).toContain('className="text-xs min-h-11"')
   })
 

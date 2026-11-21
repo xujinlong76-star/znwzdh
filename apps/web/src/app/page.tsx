@@ -110,9 +110,18 @@ const DIRECTORY_CATEGORY_LINKS = 50;
  * 列数由 navigation-category-section.tsx 的 ResizeObserver 读 grid-template-columns
  * 得出，不靠视口断点猜（左侧栏宽度可拖拽，视口宽度推不出列数）。
  *
+ * 2026-11-21 首屏露出冲 40%：默认改 6。1920px 下网格实为 6 列（容器 1600px，
+ * minmax(240px,1fr)），每组 4 张只占 4/6 行宽，首屏 3 组仅 12 张完整卡、
+ * 露出约 26%；改 6 后每组占满一行，首屏 3 组 18 张完整卡、露出约 40%。
+ * 孤儿收敛随之改写（见 globals.css）：3 列 6 张恰好两行不再藏卡；4 列藏
+ * 第 5、6 张（露 4 张一行）；5 列藏第 6 张（露 5 张一行）；6/2/1 列整行
+ * 不藏。SSR 卡数 208 -> 约 312 张，HTML 约 +100KB（RSC 数据本已全量下发，
+ * 只增卡片 markup），4MB 预算哨兵由 seo-audit-prod 在线上复核，不进 CI
+ * test-web 的产物模式（`/` 为动态渲染，不在预渲染产物里）。
+ *
  * `NAVHUB_HOME_CARDS_PER_GROUP` 可覆盖；传 0 即恢复全量 SSR 的旧行为。
  */
-const HOME_CARDS_PER_GROUP_DEFAULT = 4;
+const HOME_CARDS_PER_GROUP_DEFAULT = 6;
 
 function homeCardsPerGroup(): number {
   const raw = process.env.NAVHUB_HOME_CARDS_PER_GROUP?.trim();

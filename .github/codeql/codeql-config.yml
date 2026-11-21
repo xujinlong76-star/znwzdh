@@ -1,0 +1,44 @@
+# znwzdh CodeQL 扫描配置
+#
+# 生效方式：本仓库目前没有自定义 CodeQL 工作流（.github/workflows/ 里只有
+# ci.yml、video-harvest.yml、video-health-sweep.yml），走的是 GitHub 默认
+# CodeQL 配置（Default setup）。GitHub 默认配置会读取本文件，对
+# paths-ignore / queries 做定制；若以后要完全掌控扫描（定时、自定义查询、
+# 多语言矩阵），再把 .github/workflows/codeql.yml（高级配置）加上，
+# 并在其中用 `with: config-file: .github/codeql/codeql-config.yml` 指回本文件。
+#
+# 原则：
+#   - apps/、packages/、extensions/ 源码保持 security-extended 严格扫描；
+#   - 只忽略构建产物、第三方依赖、测试固件；测试文件本身不忽略——
+#     测试断言写法问题优先顺手修复（改用 new URL() 校验），仅对故意构造
+#     恶意载荷的测试样本用 `used in tests` 理由 dismiss（见
+#     docs/security/codeql-clearance-checklist.md §2）。
+#   - 不要把 paths-ignore 当成清零捷径：忽略掉的路径出了漏洞也不会再报警。
+
+name: znwzdh-codeql-config
+
+# 严格扫描：security-extended = security-and-quality 之上的扩展规则集，
+# 覆盖 ReDoS、不完整 URL 校验、请求伪造等本仓库高频规则。
+queries:
+  - uses: security-extended
+
+# 忽略的路径（构建产物、第三方依赖、测试固件；不含测试文件本身）。
+paths-ignore:
+  # 依赖与构建产物
+  - '**/node_modules/**'
+  - '**/dist/**'
+  - '**/build/**'
+  - '**/.next/**'
+  - '**/coverage/**'
+  - '**/*.min.js'
+  - '**/*.min.css'
+  # 第三方 vendored 代码（若以后引入 vendor 目录）
+  - '**/vendor/**'
+  - vendor/**
+  # 测试固件与样本数据（不是测试用例本身）
+  - '**/__fixtures__/**'
+  - '**/fixtures/**'
+  # 锁文件与生成物
+  - '**/pnpm-lock.yaml'
+  # 注意：apps/web 是生成镜像（gitignored），GitHub 检出里本来就没有，
+  # 不用单独忽略；它在 main 树上的 17 个跟踪文件仍正常扫描。

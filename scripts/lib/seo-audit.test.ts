@@ -138,6 +138,40 @@ describe("auditJsonLd：结构化数据", () => {
     });
     expect(auditJsonLd([block])).toContain("JSON-LD 出现 aggregateRating（禁止编造评分）");
   });
+
+  it("CodeQL #130：@context 子串绕过不再放行 schema.org 声明", () => {
+    // 旧实现 JSON.stringify(context).includes("schema.org") 会把以下三者都放行。
+    const missing = "JSON-LD 缺少 @context 或未声明 schema.org";
+    for (const evil of [
+      "https://evil.com/?schema.org",
+      "https://schema.org.evil.com/",
+      "https://evilschema.org/",
+    ]) {
+      expect(auditJsonLd([JSON.stringify({ "@context": evil, "@type": "WebSite" })])).toContain(
+        missing,
+      );
+    }
+    // 合法声明仍通过（http/https、数组、@vocab 对象形态）
+    expect(
+      auditJsonLd([JSON.stringify({ "@context": "http://schema.org", "@type": "WebSite" })]),
+    ).not.toContain(missing);
+    expect(
+      auditJsonLd([
+        JSON.stringify({
+          "@context": ["https://schema.org", { "@language": "zh" }],
+          "@type": "WebSite",
+        }),
+      ]),
+    ).not.toContain(missing);
+    expect(
+      auditJsonLd([
+        JSON.stringify({
+          "@context": { "@vocab": "https://schema.org/" },
+          "@type": "WebSite",
+        }),
+      ]),
+    ).not.toContain(missing);
+  });
 });
 
 describe("auditInternalLinks：站内链接闭环", () => {

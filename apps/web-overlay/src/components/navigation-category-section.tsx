@@ -38,11 +38,14 @@ import type { CardMoveDirection, DiyCardDragData } from '@/lib/modular/diy-drag'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { countCategorySites } from '@/lib/modular/category-counts'
 import { observeGridColumns } from '@/lib/grid-column-observer'
+import { useGridColumns } from '@/hooks/usePreviewCount'
+import { previewCountForColumns } from '@/lib/preview-count'
 import { categoryHref } from '@/lib/seo/category-url'
 import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
 import { buildCategoryNameIndex, sanitizeSiteTags, isPollutedTag } from '@/lib/tag-hygiene'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
 import { useToast } from '@/components/ui/use-toast'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { copyText } from '@/lib/clipboard'
 import type { CategoryNode } from '@/lib/modular/category-combine'
 import type { NavigationItem, NavigationCategory, NavigationSubItem } from '@/types/navigation'
@@ -210,6 +213,9 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     12: 'col-span-12',
   }[moduleColSpan] || 'col-span-12'
 
+  /** 网格 DOM 引用（供 useGridColumns 读 data-grid-cols；见 previewLimit）。 */
+  const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null)
+
   const isPinned = pinnedCategoryIds.includes(category.id)
   const isCustom = Boolean(category.isCustom)
   const isCollapsed = collapsedCategoryIds.includes(category.id)
@@ -227,8 +233,25 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
    */
   const gridColumnRef = useCallback((el: HTMLDivElement | null) => {
     if (!el) return
+    // 同时把元素交给 React state，供 usePreviewCount 读 data-grid-cols。
+    // observeGridColumns 返回的 cleanup 仍照原样交给 React 19 回收。
+    setGridEl(el)
     return observeGridColumns(el)
   }, [])
+
+  /**
+   * 折叠态预览张数（2026-11-21 要求 1）：由**真实列数**联动，previewCount = cols × 2。
+   *
+   * 旧行为是固定 6 张——6 在 1/2/3 列下恰好整行，但 **4 列会 4+2、5 列会 5+1**，
+   * 每行右端空一块（实测 1920×1080 下 30 个分组全部是孤儿行）。
+   * 旧补丁是在 globals.css 里 nth-child 把多出的卡 display:none 藏掉，不干净：
+   * SSR 仍输出 6 张（多渲染、多 favicon 请求），且点「展开全部」时那 2 张只是
+   * 从 hidden 变可见，用户会觉得「展开了却没变化」。
+   *
+   * 现在在数据层直接切片，任何列数下都是整行；展开态照旧全量。
+   */
+  const gridCols = useGridColumns(gridEl)
+  const previewLimit = gridCols > 0 ? previewCountForColumns(gridCols) : cardsPerGroup
 
   /**
    * 卡片网格列数（2026-11-21 P0 重写）。
@@ -361,7 +384,9 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
    * 初始态服务端与客户端一致（都收起），不产生 hydration 分叉。
    */
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
-  const limit = cardsPerGroup > 0 ? cardsPerGroup : Number.POSITIVE_INFINITY
+  /* 2026-11-21：limit 改由「真实列数 × 2」决定（见 previewLimit）。
+     未挂载/列数未知时退回服务端注入的 cardsPerGroup，保证 SSR 与水合首帧一致。 */
+  const limit = previewLimit > 0 ? previewLimit : Number.POSITIVE_INFINITY
   /**
    * 是否解除「每组只渲染前 N 张」的截断。
    *
@@ -823,25 +848,42 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                 </span>
                               )}
                             </h2>
-                            {/* 复制分类直达链接按钮 */}
-                            <button
-                              type="button"
-                              onClick={handleCopyCategoryLink}
-                              className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-muted/80 transition-all cursor-pointer opacity-70 hover:opacity-100"
-                              title={`复制「${category.title}」直达锚点链接`}
-                              aria-label={`复制「${category.title}」分类直达链接`}
-                            >
-                              <Link2 className="w-3.5 h-3.5" />
-                            </button>
-                            {/* 查看该领域技术生态图谱 */}
-                            <Link
-                              href={`/graph?category=${encodeURIComponent(category.id)}`}
-                              className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-md text-muted-foreground/60 hover:text-primary hover:bg-primary/10 transition-all cursor-pointer opacity-70 hover:opacity-100"
-                              title="查看该领域技术生态图谱"
-                              aria-label={`查看「${category.title}」领域技术生态图谱`}
-                            >
-                              <Network className="w-3.5 h-3.5" />
-                            </Link>
+                            {/* 2026-11-21 要求 3：分类头两个无文字小图标补齐语义区分。
+                                原来只有裸 title（约 1s 系统延迟、键盘聚焦不显示），
+                                且两者视觉上都是「一个小方块图标」，用户分不清哪个做什么。
+                                统一改成 Radix Tooltip + 明确动词短语：
+                                  🔗 复制锚点链接（复制，不是跳转）
+                                  🕸 打开生态图谱（新页面）
+                                视觉上也拉开：复制用中性色、图谱用主色 hover。 */}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  onClick={handleCopyCategoryLink}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/70 transition-all hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
+                                  aria-label={`复制「${category.title}」分类的直达链接`}
+                                >
+                                  <Link2 className="w-3.5 h-3.5" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom" sideOffset={6}>
+                                复制「{category.title}」直达链接
+                              </TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Link
+                                  href={`/graph?category=${encodeURIComponent(category.id)}`}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/70 transition-all hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  aria-label={`查看「${category.title}」的技术生态图谱`}
+                                >
+                                  <Network className="w-3.5 h-3.5" />
+                                </Link>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom" sideOffset={6}>
+                                打开「{category.title}」技术生态图谱
+                              </TooltipContent>
+                            </Tooltip>
                             <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground border border-border/40 font-medium">
                               {isFilterActive ? `${totalMatchedCount}/${totalCount} 匹配` : selectedSubCatId ? `${totalMatchedCount}/${totalCount} 站点` : `${totalCount} 站点`}
                             </span>
@@ -961,16 +1003,27 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                   </button>
                                 </div>
                               ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setIsFilterOpen(true)}
-                                  className="min-h-11 min-w-11 px-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors inline-flex items-center justify-center gap-1 text-xs cursor-pointer"
-                                  title={`在「${category.title}」内极速筛选`}
-                                  aria-label={`类目筛选：在「${category.title}」内极速筛选`}
-                                >
-                                  <Search className="w-3.5 h-3.5" />
-                                  <span className="hidden xl:inline text-[11px]">类目筛选</span>
-                                </button>
+                                /* 2026-11-21 要求 3：放大镜的行为确认——它**不是**重复聚焦
+                                   顶部大搜索框，而是 setIsFilterOpen(true) 就地展开本类的
+                                   内联筛选输入框（见上方 isFilterOpen 分支），
+                                   因此保留，只把裸 title 升级为 Radix Tooltip 并写清
+                                   「在『X』内筛选」以区别于全局搜索。 */
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() => setIsFilterOpen(true)}
+                                      className="inline-flex h-7 items-center justify-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
+                                      aria-label={`在「${category.title}」内快速筛选`}
+                                    >
+                                      <Search className="w-3.5 h-3.5" />
+                                      <span className="hidden text-[11px] xl:inline">类目筛选</span>
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="bottom" sideOffset={6}>
+                                    在「{category.title}」内快速筛选（不离开本页）
+                                  </TooltipContent>
+                                </Tooltip>
                               )}
                             </div>
                           )}
@@ -1095,24 +1148,6 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                     </button>
                                   )
                                 })}
-                                {/* 条尾「全部」收起：长条滚到最右时无需滚回开头即可复位 */}
-                                <button
-                                  type="button"
-                                  role="tab"
-                                  aria-selected={selectedSubCatId === null}
-                                  aria-label="显示全部子分类"
-                                  tabIndex={selectedSubCatId === null ? 0 : -1}
-                                  onClick={() => setSelectedSubCatId(null)}
-                                  className={cn(
-                                    "h-7 px-2.5 rounded-full text-[11px] font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
-                                    selectedSubCatId === null
-                                      ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
-                                      : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
-                                  )}
-                                >
-                                  <span>全部</span>
-                                  <span className={cn("text-[10px] font-mono", selectedSubCatId === null ? "text-primary-foreground/80" : "text-muted-foreground/60")}>{`(${totalCount})`}</span>
-                                </button>
                               </HorizontalScrollFade>
                             )}
 

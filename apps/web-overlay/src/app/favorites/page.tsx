@@ -28,10 +28,12 @@ import {
 } from '@/hooks/useFavorites'
 import { useFavoritesFolderManager } from '@/hooks/use-favorites-folder-manager'
 import { SmartCollectionsPanel } from '@/components/smart-collections-panel'
+import { VaultSecurityPopover } from '@/components/vault-security-popover'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { LOCAL_FOLDERS_STORAGE_KEY, parseLocalFolders, serializeLocalFolders, type LocalFolder } from '@/lib/favorites-folders'
 import { buildFavoritesSearch, parseFavoritesFilters, type FavoritesSort } from '@/lib/favorites-url'
 import {
+  countVaultQuicklinks,
   favoritesToVaultItems,
   formatVaultRestoreNotice,
   vaultExportFilename,
@@ -1246,6 +1248,8 @@ export default function FavoritesPage() {
                   <KeyRound className="w-3.5 h-3.5" /> 解密导入金库
                 </Button>
               </div>
+              {/* 空收藏时不渲染导出类操作（无可导出的内容）：避免 Header 在空态堆出多行禁用按钮；
+                  导入类操作始终可见；主操作「导出加密金库」仍保留（禁用态，单枚不堆砌）。 */}
               <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 border-t border-border/50 pt-3">
                 <span className="text-[11px] text-muted-foreground">更多导入导出</span>
                 <Button
@@ -1263,27 +1267,29 @@ export default function FavoritesPage() {
                   <FileUp className="w-3.5 h-3.5 mr-1" />
                   导入书签/MD
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleExportHtml}
-                  disabled={favorites.items.length === 0}
-                  className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
-                  title="导出为浏览器通用的 Netscape HTML 书签（包含文件夹结构）"
-                >
-                  <Download className="w-3.5 h-3.5 mr-1" />
-                  书签 HTML
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleExportMarkdown}
-                  disabled={favorites.items.length === 0}
-                  className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
-                  title="导出为分级结构化 Markdown 清单（适配 Notion/Obsidian）"
-                >
-                  Markdown
-                </Button>
+                {favorites.items.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleExportHtml}
+                    className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
+                    title="导出为浏览器通用的 Netscape HTML 书签（包含文件夹结构）"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1" />
+                    书签 HTML
+                  </Button>
+                )}
+                {favorites.items.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleExportMarkdown}
+                    className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
+                    title="导出为分级结构化 Markdown 清单（适配 Notion/Obsidian）"
+                  >
+                    Markdown
+                  </Button>
+                )}
                 <Button
                   asChild
                   variant="ghost"
@@ -1293,15 +1299,16 @@ export default function FavoritesPage() {
                 >
                   <Link href="/me/annotations">我的批注</Link>
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleExportPlain}
-                  disabled={favorites.items.length === 0}
-                  className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
-                >
-                  明文 JSON
-                </Button>
+                {favorites.items.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleExportPlain}
+                    className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
+                  >
+                    明文 JSON
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1316,16 +1323,17 @@ export default function FavoritesPage() {
                   导入 JSON
                 </Button>
                 {/* 导出为插件属于「发布到市场」，不是数据管理动作：标注清楚去向 */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleExportAsPlugin}
-                  disabled={favorites.items.length === 0}
-                  className="text-xs text-sky-700 dark:text-sky-400 h-8 rounded-lg hover:bg-sky-500/10"
-                  title="把全部收藏打包成网址包插件（.json），可在插件市场发布"
-                >
-                  <Package className="w-3.5 h-3.5" /> 导出为插件
-                </Button>
+                {favorites.items.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleExportAsPlugin}
+                    className="text-xs text-sky-700 dark:text-sky-400 h-8 rounded-lg hover:bg-sky-500/10"
+                    title="把全部收藏打包成网址包插件（.json），可在插件市场发布"
+                  >
+                    <Package className="w-3.5 h-3.5" /> 导出为插件
+                  </Button>
+                )}
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">
                 JSON 是唯一保真格式：快捷链接模板只随 JSON 导出 / 导入，HTML 与 Markdown 导出不含模板。
@@ -1348,10 +1356,8 @@ export default function FavoritesPage() {
                   🗑 回收站 ({favorites.trashCount})
                 </Link>
               )}
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
-                <KeyRound className="w-3 h-3 text-border" />
-                AES-256-GCM 认证加密
-              </span>
+              {/* AES 徽标可点击：弹出零知识金库安全白皮书（人话版 3 条清单） */}
+              <VaultSecurityPopover />
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
                 <EyeOff className="w-3 h-3 text-border" />
                 零知识：密码不上云
@@ -1618,6 +1624,7 @@ export default function FavoritesPage() {
             setShowVaultImport(false)
           }}
           itemCount={favorites.items.length}
+          quicklinkCount={countVaultQuicklinks(favorites.items)}
           password={vaultPassword}
           onPasswordChange={setVaultPassword}
           confirmPassword={vaultPasswordConfirm}

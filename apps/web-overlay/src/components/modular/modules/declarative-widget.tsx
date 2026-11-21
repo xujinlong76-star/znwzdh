@@ -68,8 +68,24 @@ interface DeclarativeWidgetProps {
   onConfigure?: () => void
 }
 
-/** 无数据空态：只做引导，不显示示例数字、不填假值 */
-function EmptyState({ onConfigure }: { onConfigure?: () => void }) {
+/**
+ * 无数据空态：只做引导，不显示示例数字、不填假值。
+ *
+ * props 用具名接口而非内联类型：check-component-contracts.mjs 按 props
+ * 类型名去查声明，内联 `{ onConfigure?: … }` 它解析不到，会把
+ * 第 204 行的 <WidgetEmptyState onConfigure={...}/> 误报成「未声明 onConfigure」。
+ * 具名接口既让门禁能判，也便于将来加字段。
+ */
+// 必须带 export：check-component-contracts.mjs 的正则锚定
+// `export interface XProps {`（见其 parsePropsInterface）。
+// 注意别在接口前放 /* */ 块注释：该解析器按花括号深度取属性，
+// 块注释里的 { } 会被计入深度，导致 onConfigure 被判成嵌套字段而漏报。
+export interface WidgetEmptyStateProps {
+  /** 空态「配置数据源」按钮回调；未传入时按钮不渲染（不留点不开的死按钮） */
+  onConfigure?: () => void
+}
+
+function WidgetEmptyState({ onConfigure }: WidgetEmptyStateProps) {
   return (
     <div className="h-full flex flex-col items-center justify-center gap-2 px-4 text-center">
       <h5 className="text-sm font-semibold text-foreground">暂无数据</h5>
@@ -201,7 +217,7 @@ export function DeclarativeWidget({ config, title: titleProp, onConfigure }: Dec
             <span>{errorMsg}</span>
           </div>
         ) : isEmpty ? (
-          <EmptyState onConfigure={onConfigure} />
+          <WidgetEmptyState onConfigure={onConfigure} />
         ) : layout === 'kpi-grid' ? (
           <div className="grid grid-cols-2 gap-2.5 h-full items-center">
             {dataList.map((kpi: DeclarativeWidgetKpiItem, idx: number) => (

@@ -77,6 +77,26 @@ test('小猫挂件遮挡与闲置贴边现状测量（桌面 1920x1080）', asyn
   await page.waitForLoadState('networkidle')
   await page.waitForTimeout(5000)
 
+  // U-260 前置（2026-11-21），两点：
+  // (1) 等挂件 attach：lazyOnload 脚本在冷编译下注入晚，本地 1920px 实测
+  //     8–15 秒才出现 #xiaomaomao，networkidle+5s 到不了，findCat 取到 null
+  //     （CI :82 同错，本地复现同错）。只加等待，不改量法。
+  // (2) 展开猫：全新 profile 下猫默认收起（closed: true），本用例量的是
+  //     展开态猫的遮挡与闲置贴边；点圆标（.xm-tab）展开后再量，65 秒闲置
+  //     计时从展开后算起（点徽标调 markActive() 重置计时）。断言一字不动。
+  await expect(page.locator('#xiaomaomao')).toBeAttached({ timeout: 60_000 })
+  const isClosed = await page.evaluate(
+    () => document.querySelector('#xiaomaomao')?.classList.contains('xm-closed') ?? false,
+  )
+  if (isClosed) {
+    await page.locator('#xiaomaomao .xm-tab').click({ timeout: 10_000 })
+    await page.waitForFunction(
+      () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-closed'),
+      { timeout: 10_000 },
+    )
+    await page.waitForTimeout(600) // 入场动画（xm-enter .32s）落定
+  }
+
   const fixed = await fixedElements(page)
   const cat = await findCat(page)
   expect(cat, '右下角应存在小猫挂件 fixed 元素（排除 toast 容器后）').toBeTruthy()
@@ -91,7 +111,13 @@ test('小猫挂件遮挡与闲置贴边现状测量（桌面 1920x1080）', asyn
   // ScrollToTop 只挂在 /videos），全页取不会撞 strict-mode。
   await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'instant' as ScrollBehavior }))
   await page.waitForTimeout(1200)
-  const topBox = await page.getByRole('button', { name: '回到顶部' }).boundingBox().catch(() => null)
+  // U-260 续（2026-11-21）：292937a2 已撤掉全局底部悬浮工具栏，首页不再有
+  // 「回到顶部」按钮（只剩 /videos 的 ScrollToTop）；对不存在的定位器调
+  // boundingBox() 会等满 30 秒默认超时才抛错，白白烧掉本用例 240 秒预算
+  // 的一大截。先 count() 判定存在再量，不存在即记 null（overlap 算 -1，
+  // 与原 catch(() => null) 语义一致）；只省等待，不改量法与断言。
+  const topBtn = page.getByRole('button', { name: '回到顶部' })
+  const topBox = (await topBtn.count()) ? await topBtn.boundingBox().catch(() => null) : null
   const footerBox = await page.locator('footer').first().boundingBox()
   const copyrightBox = await page.getByText('©').first().boundingBox().catch(() => null)
   await page.screenshot({ path: 'test-results/home-bottom-initial.png' })

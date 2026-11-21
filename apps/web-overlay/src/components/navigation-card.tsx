@@ -571,7 +571,7 @@ export const NavigationCard = memo(function NavigationCard({
               data-navhub-site-id={item.id}
               data-navhub-selected={selected ? 'true' : undefined}
               className={cn(
-                "nav-card-deferred group/card relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 transition-all duration-150 transform hover:-translate-y-0.5",
+                "nav-card-deferred group/card relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 transition-all duration-[--duration-fast] transform hover:-translate-y-0.5",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
                 selectionClass
               )}
@@ -597,8 +597,8 @@ export const NavigationCard = memo(function NavigationCard({
 
 {/* 键盘聚焦可见提示（P1-19）：主链接聚焦时显式给出快捷键，复用 Space 徽章样式；仅主链接聚焦时显示（peer-focus-visible），按 → 进操作区后自动隐去、不遮按钮。 */}
               {effectiveCardElements.showQuickLookBadge && (
-                <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 peer-focus-visible:opacity-100 sm:group-hover/card:opacity-0 transition-opacity duration-150">
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded shadow-xs">
+                <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 peer-focus-visible:opacity-100 sm:group-hover/card:opacity-0 transition-opacity duration-[--duration-fast]">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded-sm shadow-xs">
                     <span>Space 速览</span>
                     <span aria-hidden="true">·</span>
                     <span>→ 操作</span>
@@ -607,7 +607,7 @@ export const NavigationCard = memo(function NavigationCard({
               )}
 
               <div className="relative z-10 pointer-events-none flex items-center gap-2 min-w-0 flex-1">
-                <div className="relative flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-150 group-hover/card:scale-105">
+                <div className="relative flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-[--duration-fast] group-hover/card:scale-105">
                   <SiteFavicon
                     title={item.title}
                     url={item.href}
@@ -624,7 +624,7 @@ export const NavigationCard = memo(function NavigationCard({
                       onClick={handleDetailClick}
                       tabIndex={-1}
                       title={item.title}
-                      className="pointer-events-auto truncate rounded text-sm sm:text-base font-semibold tracking-tight text-foreground group-hover/card:text-primary hover:underline underline-offset-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 min-w-0 flex-1"
+                      className="pointer-events-auto truncate rounded-sm text-sm sm:text-base font-semibold tracking-tight text-foreground group-hover/card:text-primary hover:underline underline-offset-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 min-w-0 flex-1"
                     >
                       {item.title}
                     </Link>
@@ -637,7 +637,7 @@ export const NavigationCard = memo(function NavigationCard({
                     <Pin className="w-2.5 h-2.5 text-amber-500 fill-amber-500 shrink-0" />
                   )}
                   {item.liveMetrics?.githubStars && (
-                    <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 px-1 py-0.2 rounded">
+                    <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 px-1 py-0.2 rounded-sm">
                       <Star className="w-2 h-2 text-amber-500 fill-amber-500" />
                       {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
                     </span>
@@ -777,7 +777,7 @@ export const NavigationCard = memo(function NavigationCard({
               data-navhub-site-id={item.id}
               data-navhub-selected={selected ? 'true' : undefined}
               className={cn(
-                "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
+                "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-[--duration-base] transform hover:-translate-y-0.5 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
                 selectionClass
               )}
@@ -798,7 +798,7 @@ export const NavigationCard = memo(function NavigationCard({
                   自身返回 null；sm 以下隐藏（见 number-dial-badge）。 */}
               <NumberDialBadge
                 digit={dialDigit}
-                className="top-2 right-11 z-20 transition-opacity duration-150 group-hover/card:opacity-0 group-focus-within/card:opacity-0"
+                className="top-2 right-11 z-20 transition-opacity duration-[--duration-fast] group-hover/card:opacity-0 group-focus-within/card:opacity-0"
               />
 
               {/* 外链覆盖层：唯一 Tab 停留点（Enter 打开站点 / Space 速览 / → 进操作区） */}
@@ -821,8 +821,8 @@ export const NavigationCard = memo(function NavigationCard({
 
 {/* 键盘聚焦可见提示（P1-19）：主链接聚焦时显式给出快捷键，复用 Space 徽章样式；仅主链接聚焦时显示（peer-focus-visible），按 → 进操作区后自动隐去、不遮按钮。 */}
               {effectiveCardElements.showQuickLookBadge && (
-                <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 peer-focus-visible:opacity-100 sm:group-hover/card:opacity-0 transition-opacity duration-150">
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded shadow-xs">
+                <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 peer-focus-visible:opacity-100 sm:group-hover/card:opacity-0 transition-opacity duration-[--duration-fast]">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded-sm shadow-xs">
                     <span>Space 速览</span>
                     <span aria-hidden="true">·</span>
                     <span>→ 操作</span>
@@ -847,7 +847,7 @@ export const NavigationCard = memo(function NavigationCard({
                 <CardHeader className="p-3.5 flex-1">
                   <div className="flex items-start gap-3.5">
                     {!thumbnail && (
-                    <div className="relative flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover/card:scale-105 shadow-xs">
+                    <div className="relative flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-[--duration-base] group-hover/card:scale-105 shadow-xs">
                       <SiteFavicon
                         title={item.title}
                         url={item.href}
@@ -861,7 +861,7 @@ export const NavigationCard = memo(function NavigationCard({
                       {/* 标题行（卡片悬浮修复 2026-11-20）：右端给常驻星标留位
                           （pr-10）；有数字快捷键角标时改 pr-14，给角标
                           （right-11）+ 星标各留 10px 间隙。 */}
-                      <div className={cn("flex items-center justify-between gap-1.5 min-w-0 transition-all duration-150", dialDigit ? "pr-14" : "pr-10")}>
+                      <div className={cn("flex items-center justify-between gap-1.5 min-w-0 transition-all duration-[--duration-fast]", dialDigit ? "pr-14" : "pr-10")}>
                         <CardTitle className="text-sm sm:text-base font-bold tracking-tight text-foreground group-hover/card:text-primary transition-colors min-w-0 flex-1">
                           {hasSiteDetail ? (
                             <Link
@@ -948,7 +948,7 @@ export const NavigationCard = memo(function NavigationCard({
                   此处不再挂，避免同一按键被处理两次。 */}
               <div
                 className={cn(
-                  "nav-card-actionbar absolute bottom-0 left-0 right-0 z-10 flex items-center gap-0.5 px-1.5 pt-1.5 pb-1 bg-card/95 dark:bg-card/90 backdrop-blur-md before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-border before:to-transparent transition-opacity duration-150",
+                  "nav-card-actionbar absolute bottom-0 left-0 right-0 z-10 flex items-center gap-0.5 px-1.5 pt-1.5 pb-1 bg-card/95 dark:bg-card/90 backdrop-blur-md before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-border before:to-transparent transition-opacity duration-[--duration-fast]",
                   isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 group-hover/card:opacity-100 group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto"
                 )}
               >
@@ -1079,7 +1079,7 @@ export const NavigationCard = memo(function NavigationCard({
             data-navhub-site-id={item.id}
             data-navhub-selected={selected ? 'true' : undefined}
             className={cn(
-              "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5",
+              "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-[--duration-base] transform hover:-translate-y-0.5",
               isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
               selectionClass
             )}
@@ -1112,8 +1112,8 @@ export const NavigationCard = memo(function NavigationCard({
 
             {/* 键盘聚焦可见提示（P1-19）：主链接聚焦时显式给出快捷键，复用 Space 徽章样式；仅主链接聚焦时显示（peer-focus-visible），按 → 进操作区后自动隐去、不遮按钮。 */}
             {effectiveCardElements.showQuickLookBadge && (
-              <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 peer-focus-visible:opacity-100 sm:group-hover/card:opacity-0 transition-opacity duration-150">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded shadow-xs">
+              <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 peer-focus-visible:opacity-100 sm:group-hover/card:opacity-0 transition-opacity duration-[--duration-fast]">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded-sm shadow-xs">
                   <span>Space 速览</span>
                   <span aria-hidden="true">·</span>
                   <span>→ 操作</span>
@@ -1129,7 +1129,7 @@ export const NavigationCard = memo(function NavigationCard({
                 digit 为空时组件自身返回 null；sm 以下隐藏。 */}
             <NumberDialBadge
               digit={dialDigit}
-              className="top-2 right-11 transition-opacity duration-150 group-hover/card:opacity-0 group-focus-within/card:opacity-0"
+              className="top-2 right-11 transition-opacity duration-[--duration-fast] group-hover/card:opacity-0 group-focus-within/card:opacity-0"
             />
 
             <div className={cn(
@@ -1152,13 +1152,13 @@ export const NavigationCard = memo(function NavigationCard({
                     <CardThumbnailVisual
                       thumbnail={thumbnail}
                       title={item.title}
-                      boxClassName="flex-shrink-0 w-12 h-12 rounded-xl shadow-xs transition-transform duration-200 group-hover/card:scale-105"
+                      boxClassName="flex-shrink-0 w-12 h-12 rounded-xl shadow-xs transition-transform duration-[--duration-base] group-hover/card:scale-105"
                       imgClassName="h-9 w-9 object-contain"
                       monogramClassName="text-lg"
                     />
                   </div>
                 ) : (
-                <div className="relative flex-shrink-0 w-7 h-7 @[280px]:w-8 @[280px]:h-8 rounded-lg p-1 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover/card:scale-105 shadow-xs">
+                <div className="relative flex-shrink-0 w-7 h-7 @[280px]:w-8 @[280px]:h-8 rounded-lg p-1 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-[--duration-base] group-hover/card:scale-105 shadow-xs">
                   <SiteFavicon
                     title={item.title}
                     url={item.href}
@@ -1257,7 +1257,7 @@ export const NavigationCard = memo(function NavigationCard({
                 此处不再挂，避免同一按键被处理两次。 */}
             <div
               className={cn(
-                "nav-card-actionbar absolute bottom-0 left-0 right-0 z-10 flex items-center gap-0.5 px-1.5 pt-1.5 pb-1 bg-card/95 dark:bg-card/90 backdrop-blur-md before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-border before:to-transparent transition-opacity duration-150",
+                "nav-card-actionbar absolute bottom-0 left-0 right-0 z-10 flex items-center gap-0.5 px-1.5 pt-1.5 pb-1 bg-card/95 dark:bg-card/90 backdrop-blur-md before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-border before:to-transparent transition-opacity duration-[--duration-fast]",
                 isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 group-hover/card:opacity-100 group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto"
               )}
             >

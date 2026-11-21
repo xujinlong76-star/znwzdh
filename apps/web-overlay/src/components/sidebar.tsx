@@ -307,7 +307,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
         >
           <div
             className={cn(
-              "w-1 h-12 rounded-full transition-all duration-150",
+              "w-1 h-12 rounded-full transition-all duration-[--duration-fast]",
               isResizingSidebar
                 ? "bg-primary h-24 shadow-md shadow-primary/50"
                 : "bg-border/80 hover:bg-primary hover:h-16"
@@ -421,7 +421,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                 <div
                   id={`subcategory-${category.id}`}
                   className={cn(
-                    "grid transition-all duration-200 ease-in-out",
+                    "grid transition-all duration-[--duration-base] ease-in-out",
                     expandedCategories[category.id] ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
                   )}
                 >

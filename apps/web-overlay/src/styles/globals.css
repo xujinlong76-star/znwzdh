@@ -95,6 +95,11 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+  /* P2-5：xl/2xl/pill 补 Token 名（值与 Tailwind 默认档一致），使 rounded-xl /
+     rounded-2xl / rounded-full 皆有具名 Token；裸 rounded 一律改 rounded-sm。 */
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-pill: 9999px;
 
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
@@ -511,7 +516,7 @@
 
   .nav-card-glow {
     position: relative;
-    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all var(--duration-base) var(--ease-out);
   }
 
   @media (hover: hover) and (pointer: fine) {

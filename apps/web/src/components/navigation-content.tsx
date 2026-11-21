@@ -251,7 +251,7 @@ export function NavigationContent({
   // P1-5：移动抽屉闭合时不挂载 Sidebar（省一份完整分类树）。
   // 抽屉容器本身常驻 DOM（useOverlayBehavior 需要稳定节点做焦点圈养），
   // 但其内的 Sidebar 只在打开时挂载；关闭后延迟 200ms 卸载，
-  // 与面板的 translate-x-full 关闭动画（duration-200）对齐，避免空面板滑出。
+  // 与面板的 translate-x-full 关闭动画（duration-[--duration-base]，即 200ms）对齐，避免空面板滑出。
   const [drawerSidebarMounted, setDrawerSidebarMounted] = useState(false)
   useEffect(() => {
     if (isSidebarOpen) {
@@ -1081,7 +1081,7 @@ export function NavigationContent({
           id="mobile-nav-drawer"
           aria-label="站点导航"
           className={cn(
-            "fixed inset-y-0 left-0 w-3/4 max-w-xs bg-background shadow-lg transform transition-transform duration-200 ease-in-out outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "fixed inset-y-0 left-0 w-3/4 max-w-xs bg-background shadow-lg transform transition-transform duration-[--duration-base] ease-in-out outline-none focus-visible:ring-2 focus-visible:ring-ring",
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
@@ -1098,7 +1098,7 @@ export function NavigationContent({
 
       <main
         id="main-content"
-        className={cn("flex-1 min-h-screen flex flex-col min-w-0 transition-colors duration-300", canvasBgClass)}
+        className={cn("flex-1 min-h-screen flex flex-col min-w-0 transition-colors duration-[--duration-slow]", canvasBgClass)}
         // 水合安全：壁纸来自 localStorage（仅客户端），首帧与 SSR 保持一致（undefined），
         // 挂载后再上壁纸，避免 style 分叉触发 hydration mismatch；URL 白名单防 CSS url() 注入
         style={{

@@ -10,6 +10,7 @@
  * “有新集”只数在追剧：已完结的剧最新集数再大也不是“新集”。
  */
 import type { WatchEntry } from "./watchlist";
+import { isReservedEntry } from "./watchlist";
 import {
   episodesWatchedThisWeek,
   type WatchProgressLogEntry,
@@ -38,7 +39,8 @@ export function computeDramaWatchStats(
   progressLog: WatchProgressLogEntry[],
   now: Date = new Date(),
 ): DramaWatchStats {
-  const trackingEntries = entries.filter((e) => e.cadence.kind !== "finished");
+  // 在追的部数：已完结不算，预约态（还没开播、无平台）也不算在追。
+  const trackingEntries = entries.filter((e) => e.cadence.kind !== "finished" && !isReservedEntry(e));
   const hasNew =
     checkStates.size === 0
       ? null
@@ -66,12 +68,16 @@ export function latestEpisodeText(
   return `已更至第 ${state.latestEpisode} 集`;
 }
 
-/** 该行是否该贴“有新集”角标：只数在追剧（已完结不贴）。 */
+/** 该行是否该贴“有新集”角标：只数在追剧（已完结不贴）。预约态永不贴：
+ * 预约态不进新集检查、没有检查基线，latestEpisodeText(undefined) 本就是
+ * null；这里再显式守一道，免得以后检查口径变化时把“未查到最新集数”
+ * 噪音带进预约行。 */
 export function hasNewEpisodes(
   entry: WatchEntry,
   state: DramaCheckState | undefined,
 ): boolean {
   if (entry.cadence.kind === "finished") return false;
+  if (isReservedEntry(entry)) return false;
   return (
     state !== undefined &&
     state.latestEpisode !== null &&

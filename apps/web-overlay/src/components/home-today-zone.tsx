@@ -1,3 +1,10 @@
+'use client'
+
+// U-358：本区只在「今日中心」小窗打开时渲染，此前为服务端组件、由 page.tsx 经
+// 内容槽位透传——服务端每请求都渲染、客户端岛（daily-focus 等）也随首屏 JS 下发。
+// 改为客户端组件后由 NavigationContent 以 dynamic(ssr:false) 按需加载；
+// 本体只用纯函数（exam-calendar / drama-featured / safe-url）与客户端岛，无服务端取数，
+// 渲染结果与服务端版一致（日期按 Asia/Shanghai 显式算，见 todayLabel）。
 import Link from 'next/link'
 import { ArrowRight, ArrowUpRight, BellRing, CalendarDays, Clapperboard } from 'lucide-react'
 import DailyFocus from '@/components/daily-focus'

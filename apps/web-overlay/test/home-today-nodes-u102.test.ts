@@ -228,26 +228,37 @@ describe('A6：U-106 回归（11-18 成考可关注、可勾选三省查分）',
   })
 })
 
-describe('A7 源码守卫：不新增第三条带，page.tsx 挂载不动', () => {
+describe('A7 源码守卫：不新增第三条带，今日中心小窗收纳四条内容（U-358 懒加载）', () => {
   const page = read('src/app/page.tsx')
 
+  // U-358：首页考试面仍为两处（今日区内新增行 + 考试条），挂载点由 page.tsx
+  // todaySlots 移到导航中心 dynamic(ssr:false) 懒加载；不新增条带组件挂载。
   it('首页考试面仍为两处：HomeTodayZone 内新增行 + HomeExamStrip，不新增条带组件挂载', () => {
-    expect(page.match(/<HomeTodayZone \/>/g)?.length).toBe(1)
-    expect(page.match(/<HomeExamStrip \/>/g)?.length).toBe(1)
+    expect(page).not.toContain('<HomeTodayZone />')
+    expect(page).not.toContain('<HomeExamStrip />')
+    const nav = read('src/components/navigation-content.tsx')
+    expect(nav.match(/<TodayZoneContent \/>/g)?.length).toBe(1)
+    expect(nav.match(/<ExamStripContent \/>/g)?.length).toBe(1)
     expect(page).not.toContain('TodayBanner')
     expect(page).not.toContain('today-banner')
     expect(page).not.toContain('HomeTodayBanner')
   })
 
-  it('page.tsx todaySlots 收纳原有四条内容，不额外在正文上方堆叠条带', () => {
-    const slots = page.indexOf('todaySlots={{')
-    const endSlots = page.indexOf('}}', slots)
-    const block = page.slice(slots, endSlots)
-    expect(block).toContain('<HomeTodayZone />')
-    expect(block).toContain('<HomeBriefStrip />')
-    expect(block).toContain('<HomeExamStrip />')
-    expect(block).toContain('<HandoffCardWithCloud />')
-    expect(block).toContain('<StreakBar />')
+  it('今日中心小窗收纳原有四条内容（dynamic 懒加载），不额外在正文上方堆叠条带', () => {
+    expect(page).not.toContain('todaySlots={{')
+    const nav = read('src/components/navigation-content.tsx')
+    const dialog = nav.indexOf('<TodayCenterDialog')
+    expect(dialog).toBeGreaterThan(-1)
+    const todayAt = nav.indexOf('todayContent={<TodayZoneContent />}', dialog)
+    const briefAt = nav.indexOf('briefContent={<BriefStripContent />}', dialog)
+    const examAt = nav.indexOf('examContent={<ExamStripContent />}', dialog)
+    const handoffAt = nav.indexOf('<HandoffCardWithCloudContent />', dialog)
+    const streakAt = nav.indexOf('<StreakBarContent />', dialog)
+    expect(todayAt).toBeGreaterThan(dialog)
+    expect(briefAt).toBeGreaterThan(todayAt)
+    expect(examAt).toBeGreaterThan(briefAt)
+    expect(handoffAt).toBeGreaterThan(examAt)
+    expect(streakAt).toBeGreaterThan(handoffAt)
   })
 
   it('今日区不新增条带组件导出：只导出 HomeTodayZone 一个组件', () => {

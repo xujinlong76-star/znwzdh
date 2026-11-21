@@ -1,3 +1,8 @@
+'use client'
+
+// U-358：与 HomeTodayZone 同理——只在「今日中心」小窗打开时渲染，
+// 转客户端组件后由 NavigationContent 以 dynamic(ssr:false) 按需加载；
+// 外壳只用 exam-calendar 纯函数挑最近一场，无服务端取数，渲染结果不变。
 import Link from 'next/link'
 import { ArrowRight, CalendarDays } from 'lucide-react'
 import { nearestExam, nextExamNode } from '@/lib/exam-calendar'

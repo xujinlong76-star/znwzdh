@@ -14,9 +14,10 @@
  *    旧口径“考试条挂在简报条之后、连胜条之前（首屏顶部）”随 U-24 定义
  *    作废：今日区已把考试倒计时与下一步节点提上首屏第一位，完整考试条
  *    折叠收起不等于信息丢失。
- *  - 结构：服务端外壳（home-exam-strip.tsx）只挑全局最近场；
- *    个性化由客户端视图（home-exam-strip-view.tsx）挂载后接手——
- *    挂载前渲染与服务端直出一致，关注了未结束考试才切到已关注场。
+ *  - 结构：外壳（home-exam-strip.tsx，U-358 起为客户端组件、由导航中心
+ *    dynamic(ssr:false) 按需加载）只挑全局最近场；个性化由客户端视图
+ *    （home-exam-strip-view.tsx）挂载后接手——挂载前渲染与服务端直出一致，
+ *    关注了未结束考试才切到已关注场。
  */
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -149,7 +150,7 @@ describe('首页考试条源码守卫', () => {
   const strip = read('src/components/home-exam-strip.tsx')
   const view = read('src/components/home-exam-strip-view.tsx')
 
-  it('服务端外壳：最近一场与下一步节点都走 exam-calendar，不硬编码日期', () => {
+  it('外壳：最近一场与下一步节点都走 exam-calendar，不硬编码日期', () => {
     expect(strip).toContain("from '@/lib/exam-calendar'")
     expect(strip).toContain('nearestExam()')
     expect(strip).toContain('nextExamNode(nearest)')
@@ -159,8 +160,11 @@ describe('首页考试条源码守卫', () => {
     expect(strip).not.toContain('2026-12-19')
   })
 
-  it('服务端外壳保持服务端组件：十一场全结束时渲染静态空态条带（不再 return null），只把最近场交给客户端视图', () => {
-    expect(strip).not.toContain("'use client'")
+  // U-358：外壳由服务端组件转为客户端组件（只在「今日中心」小窗打开时才需要，
+  // 由导航中心 dynamic(ssr:false) 按需加载）；空态行为不变——十一场全结束时仍渲染
+  // 静态空态条带（不再 return null），只把最近场交给客户端视图。
+  it('外壳为客户端组件：十一场全结束时渲染静态空态条带（不再 return null），只把最近场交给客户端视图', () => {
+    expect(strip).toContain("'use client'")
     expect(strip).not.toContain('if (!nearest) return null')
     expect(strip).toContain('if (!nearest) return <HomeExamStripEmptyState />')
     expect(strip).toContain("import { HomeExamStripView } from './home-exam-strip-view'")
@@ -175,7 +179,9 @@ describe('首页考试条源码守卫', () => {
     expect(strip).not.toContain('四场考试已结束')
   })
 
-  it('空态条带：纯服务端静态，不挂倒计时岛、不挂客户端视图、不读存储', () => {
+  // 空态分支本身仍是静态 JSX：不挂倒计时岛、不挂客户端视图、不读存储
+  //（外壳文件 U-358 起为客户端组件，但空态分支不因此多挂任何岛）。
+  it('空态条带：静态直出，不挂倒计时岛、不挂客户端视图、不读存储', () => {
     expect(strip).not.toContain('ExamCountdown')
     // HomeExamStripView 全文件只出现 2 次（import + 有最近场分支），空态分支里没有
     expect(strip.match(/HomeExamStripView/g)?.length).toBe(2)
@@ -258,22 +264,26 @@ describe('首页考试条源码守卫', () => {
 describe('首页挂载位置守卫（U-24）', () => {
   const home = read('src/app/page.tsx')
 
-  it('今日区与考试日历均经 page.tsx todaySlots 注入今日中心小窗，首屏不再堆叠挡在导航上方', () => {
-    expect(home).toContain('import { HomeTodayZone } from "@/components/home-today-zone"')
-    expect(home).toContain('import { HomeExamStrip } from "@/components/home-exam-strip"')
-    const nav = home.indexOf('<NavigationContent')
-    const slots = home.indexOf('todaySlots={{')
-    const todaySlot = home.indexOf('today: <HomeTodayZone />')
-    const briefSlot = home.indexOf('brief: <HomeBriefStrip />')
-    const examSlot = home.indexOf('exam: <HomeExamStrip />')
-    const handoffSlot = home.indexOf('<HandoffCardWithCloud />')
-    const streakSlot = home.indexOf('<StreakBar />')
-    expect(nav).toBeGreaterThan(-1)
-    expect(slots).toBeGreaterThan(nav)
-    expect(todaySlot).toBeGreaterThan(slots)
-    expect(briefSlot).toBeGreaterThan(todaySlot)
-    expect(examSlot).toBeGreaterThan(briefSlot)
-    expect(handoffSlot).toBeGreaterThan(examSlot)
-    expect(streakSlot).toBeGreaterThan(handoffSlot)
+  // U-358：今日区与考试条不再经 page.tsx todaySlots 注入——两区只在「今日中心」小窗
+  // 打开时才需要，现由 NavigationContent 以 dynamic(ssr:false) 按需加载；
+  // 首屏不再堆叠挡在导航上方，也不再为它们付首屏 JS 体积。顺序仍为今日→简报→考试→接力。
+  it('今日区与考试日历均由导航中心 dynamic(ssr:false) 按需加载进今日中心小窗', () => {
+    expect(home).not.toContain('todaySlots')
+    expect(home).not.toContain('HomeTodayZone')
+    expect(home).not.toContain('HomeExamStrip')
+    const nav = read('src/components/navigation-content.tsx')
+    expect(nav).toContain("() => import('@/components/home-today-zone')")
+    expect(nav).toContain("() => import('@/components/home-exam-strip')")
+    expect(nav).toContain('{ ssr: false')
+    const todayAt = nav.indexOf('todayContent={<TodayZoneContent />}')
+    const briefAt = nav.indexOf('briefContent={<BriefStripContent />}')
+    const examAt = nav.indexOf('examContent={<ExamStripContent />}')
+    const handoffAt = nav.indexOf('<HandoffCardWithCloudContent />')
+    const streakAt = nav.indexOf('<StreakBarContent />')
+    expect(todayAt).toBeGreaterThan(-1)
+    expect(briefAt).toBeGreaterThan(todayAt)
+    expect(examAt).toBeGreaterThan(briefAt)
+    expect(handoffAt).toBeGreaterThan(examAt)
+    expect(streakAt).toBeGreaterThan(handoffAt)
   })
 })

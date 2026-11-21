@@ -46,14 +46,20 @@ function hasImport(src: string, path: string): boolean {
 }
 
 describe('接线：首页与 /me/history 复用同一云端外壳', () => {
-  it('首页经 todaySlots 将 <HandoffCardWithCloud /> 挂载于今日中心小窗（紧接简报条）', () => {
-    expect(hasImport(homePage, '@/components/handoff-card-with-cloud')).toBe(true)
-    expect(homePage).toContain('<HandoffCardWithCloud />')
-    const briefAt = homePage.indexOf('<HomeBriefStrip />')
-    const cardAt = homePage.indexOf('<HandoffCardWithCloud />')
-    const navAt = homePage.indexOf('<NavigationContent')
-    expect(navAt).toBeGreaterThan(-1)
-    expect(briefAt).toBeGreaterThan(navAt)
+  // U-358：接力卡不再经服务端 todaySlots 注入——它只在「今日中心」小窗打开时才需要，
+  // 现由 NavigationContent 以 dynamic(ssr:false) 按需加载（HandoffCardWithCloudContent），
+  // 与简报条同一顺序挂进小窗（简报之后、连胜条之前由 handoffContent 内的 fragment 保证）。
+  it('首页由导航中心 dynamic(ssr:false) 将 <HandoffCardWithCloud /> 挂载于今日中心小窗', () => {
+    expect(hasImport(homePage, '@/components/handoff-card-with-cloud')).toBe(false)
+    expect(homePage).not.toContain('<HandoffCardWithCloud />')
+    expect(homePage).not.toContain('todaySlots')
+    const nav = overlaySource('src/components/navigation-content.tsx')
+    expect(nav).toContain("() => import('@/components/handoff-card-with-cloud')")
+    expect(nav).toContain('{ ssr: false')
+    expect(nav).toContain('<HandoffCardWithCloudContent />')
+    const briefAt = nav.indexOf('BriefStripContent')
+    const cardAt = nav.indexOf('HandoffCardWithCloudContent')
+    expect(briefAt).toBeGreaterThan(-1)
     expect(cardAt).toBeGreaterThan(briefAt)
   })
 

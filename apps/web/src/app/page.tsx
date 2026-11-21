@@ -1,13 +1,8 @@
 import { cache } from "react";
 import { NavigationContent } from "@/components/navigation-content";
-import { HomeBriefStrip } from "@/components/home-brief-strip";
-import { HomeExamStrip } from "@/components/home-exam-strip";
-import { HomeTodayZone } from "@/components/home-today-zone";
 import { computeHomeTodayBadge } from "@/lib/home-today-summary";
 import { hubGet } from "@/lib/server/hub";
 import type { HubPluginItem } from "@/lib/navhub-api";
-import { HandoffCardWithCloud } from "@/components/handoff-card-with-cloud";
-import { StreakBar } from "@/components/growth/streak-bar";
 import { Metadata } from "next/types";
 import { getProcessedData } from "@/lib/data-loader";
 import { collectDramaSites, countCategorySites } from "@/lib/drama-sites";
@@ -356,17 +351,6 @@ export default async function HomePage() {
       cinemaInitial={cinemaInitial}
       pluginItems={featuredRes ? featuredRes.items : null}
       todayBadge={todayBadge}
-      todaySlots={{
-        today: <HomeTodayZone />,
-        brief: <HomeBriefStrip />,
-        exam: <HomeExamStrip />,
-        handoff: (
-          <>
-            <HandoffCardWithCloud />
-            <StreakBar />
-          </>
-        ),
-      }}
     />
       {origin ? (
         <>

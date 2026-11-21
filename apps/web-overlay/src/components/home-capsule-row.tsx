@@ -32,7 +32,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/registry/new-york/ui/dropdown-menu'
-import { WORKSPACES, type WorkspaceId } from '@/components/workspace-filter'
+import { WORKSPACES, type WorkspaceId } from '@/lib/workspaces'
 import {
   DAYPART_PLACEHOLDER,
   daypartText,

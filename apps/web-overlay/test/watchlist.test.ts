@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, afterEach, beforeEach } from 'vitest'
+import { createElement } from 'react'
+import { renderToString } from 'react-dom/server'
 import {
   applyWatchDelta,
   asPremiereDate,
@@ -23,6 +25,8 @@ import {
   describeWatchlistSyncBanner,
   shouldOfferWatchlistRetry,
 } from '../src/lib/watchlist-sync-copy'
+import { useWatchlist, type WatchlistApi } from '../src/hooks/useWatchlist'
+import { WATCHLIST_STORAGE_KEY } from '../src/lib/watchlist'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -417,5 +421,124 @@ describe('预约态 U-377：reserved::剧名占位键', () => {
     expect(deltaApplied).toHaveLength(1)
     const deltaWithLocal = applyWatchDelta([local], [{ ...cloudWithoutDate, updatedAt: Date.now() }])
     expect(deltaWithLocal.find((e) => e.key === local.key)?.premiereDate).toBe('2026-11-30')
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * U-377 返工：先预约、后平台加入——平台态 add 必须就地升级预约条目，
+ * 不生成第二条（复核实锤：原实现只按平台键去重，reserved:: 键恒不
+ * 相等，同一部剧会同时出现在预约区与在追区）。
+ *
+ * 真渲染 hook（diy-smart-autotune 同款：假浏览器 + renderToString
+ * 抓 api）。add/addReserved 读的是模块级 sharedEntries、不依赖水合，
+ * 效果器在 SSR 下不跑；用例间用 resetLocal() 清共享态。
+ * ------------------------------------------------------------------ */
+
+function installFakeBrowser(): { get: (key: string) => string | null } {
+  const store = new Map<string, string>()
+  const localStorage = {
+    getItem: (k: string) => (store.has(k) ? (store.get(k) as string) : null),
+    setItem: (k: string, v: string) => {
+      store.set(k, v)
+    },
+    removeItem: (k: string) => {
+      store.delete(k)
+    },
+    clear: () => store.clear(),
+    key: (i: number) => Array.from(store.keys())[i] ?? null,
+    get length() {
+      return store.size
+    },
+  }
+  const windowStub = {
+    localStorage,
+    sessionStorage: { getItem: () => null, setItem: () => {} },
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => true,
+    location: { hash: '', pathname: '/', search: '' },
+    history: { replaceState: () => {} },
+  }
+  ;(globalThis as unknown as { window: unknown }).window = windowStub
+  ;(globalThis as unknown as { localStorage: unknown }).localStorage = localStorage
+  return { get: (key: string) => (store.has(key) ? (store.get(key) as string) : null) }
+}
+
+function uninstallFakeBrowser() {
+  delete (globalThis as unknown as { window?: unknown }).window
+  delete (globalThis as unknown as { localStorage?: unknown }).localStorage
+}
+
+/** renderToString 真渲染一次 hook，抓出返回的 api。 */
+function renderWatchlistApi(): WatchlistApi {
+  const holder: { api: WatchlistApi | null } = { api: null }
+  function Probe() {
+    holder.api = useWatchlist()
+    return null
+  }
+  renderToString(createElement(Probe))
+  if (holder.api === null) throw new Error('useWatchlist 未返回 api')
+  return holder.api
+}
+
+describe('预约 → 平台加入就地升级（U-377 返工）', () => {
+  let storageGet: (key: string) => string | null
+
+  beforeEach(() => {
+    storageGet = installFakeBrowser().get
+    // 清掉上个用例的模块级共享态（resetLocal 只动清单与脏标记，不动水合标志）
+    renderWatchlistApi().resetLocal()
+  })
+
+  afterEach(() => {
+    uninstallFakeBrowser()
+  })
+
+  it('先预约、后平台加入不重复：清单仍只有 1 条该剧，平台字段已补、开播日保留', () => {
+    const api = renderWatchlistApi()
+    const reserved = api.addReserved('待开播剧', '2026-11-30')
+    expect(reserved).not.toBeNull()
+    expect(reserved?.key).toBe('reserved::待开播剧')
+    expect(reserved?.premiereDate).toBe('2026-11-30')
+
+    // 平台加入：标题带首尾空白也应命中归一回查
+    const upgraded = api.add(
+      { siteId: 'nav-hongguo', title: '红果短剧', href: 'https://www.hongguo.com' },
+      { title: ' 待开播剧 ' },
+    )
+    expect(upgraded).not.toBeNull()
+    expect(upgraded?.key).toBe('nav-hongguo::待开播剧')
+    expect(upgraded?.platformSiteId).toBe('nav-hongguo')
+    expect(upgraded?.platformTitle).toBe('红果短剧')
+    expect(upgraded?.playUrl).toBe('https://www.hongguo.com')
+    // 已有进度与开播日保留（预约时 episode 为 0）
+    expect(upgraded?.episode).toBe(0)
+    expect(upgraded?.premiereDate).toBe('2026-11-30')
+
+    // 清单仍只有 1 条该剧：以落盘 JSON 为准（renderToString 下 hook 的 entries
+    // 恒取服务端空快照，读不到模块态；落盘 JSON 就是 loadLocal 下次读回的清单）
+    const stored = JSON.parse(storageGet(WATCHLIST_STORAGE_KEY) ?? '[]') as WatchEntry[]
+    expect(stored.map((e) => e.key)).toEqual(['nav-hongguo::待开播剧'])
+    expect(stored).toHaveLength(1)
+    expect(stored[0]?.platformSiteId).toBe('nav-hongguo')
+    expect(stored[0]?.premiereDate).toBe('2026-11-30')
+  })
+
+  it('升级后预约占位不滞留：分区里不再有该剧的 reserved 条目', () => {
+    const api = renderWatchlistApi()
+    api.addReserved('待开播剧', '2026-11-30')
+    api.add(
+      { siteId: 'nav-hongguo', title: '红果短剧', href: 'https://www.hongguo.com' },
+      { title: '待开播剧' },
+    )
+    // 以落盘 JSON（下次 loadLocal 读回的清单）为准：不再有 reserved:: 键，
+    // 且该剧正常进在追分区（unknown 节奏 → check 区），不是凭空消失
+    const stored = JSON.parse(storageGet(WATCHLIST_STORAGE_KEY) ?? '[]') as WatchEntry[]
+    expect(stored.every((e) => !isReservedEntry(e))).toBe(true)
+    const parts = partitionWatchlist(stored, WED)
+    expect(parts.reserved).toEqual([])
+    expect([...parts.due, ...parts.check, ...parts.active, ...parts.finished].map((e) => e.title)).toEqual([
+      '待开播剧',
+    ])
   })
 })

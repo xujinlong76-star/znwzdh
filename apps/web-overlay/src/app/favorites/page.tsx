@@ -45,7 +45,10 @@ import {
   type QuicklinkEntry,
 } from '@/lib/quicklinks'
 import { describeAnonymousFavoritesNote, describeSyncBanner, shouldOfferRetry, type SyncBannerInput } from '@/lib/favorites-sync-copy'
-import { FAVORITES_EMPTY_COPY } from '@/lib/empty-states'
+import { FavoritesSyncBadge } from '@/components/favorites/favorites-sync-badge'
+import { deriveBadgeState, type SyncEngineSnapshot } from '@/lib/favorites-sync'
+import { ConflictDrawer } from '@/components/favorites/conflict-drawer'
+import { FavoriteSyncDot, favoriteSyncRing } from '@/components/favorites/favorite-sync-dot'
 import {
   filterFavorites,
   filterByTriage,
@@ -75,6 +78,12 @@ import {
 } from '@/lib/favorites-hibernation'
 import { useTriageSettings } from '@/hooks/useTriageSettings'
 import { useHibernationSettings } from '@/hooks/useHibernationSettings'
+import { recordCustomSiteAddedAction, recordGrowthEvent } from '@/lib/growth-lazy'
+import { toast } from '@/components/ui/use-toast'
+import {
+  FavoritesManualAddModal,
+  FavoritesQuickStartEmpty,
+} from '@/components/user-center/favorites-quickstart'
 import { TriageInboxRow } from '@/components/triage-inbox-row'
 import { HibernationRow } from '@/components/hibernation-row'
 import {
@@ -195,6 +204,7 @@ export default function FavoritesPage() {
   const [importText, setImportText] = useState('')
   const [showImport, setShowImport] = useState(false)
   const [showUniversalImport, setShowUniversalImport] = useState(false)
+  const [showManualAdd, setShowManualAdd] = useState(false)
   const [showLinkPack, setShowLinkPack] = useState(false)
   const [batchMode, setBatchMode] = useState(false)
   const [selectedSiteIds, setSelectedSiteIds] = useState<Set<string>>(new Set())
@@ -334,7 +344,14 @@ export default function FavoritesPage() {
     if (!filtersReady) return
     const next =
       window.location.pathname +
-      buildFavoritesSearch({ q: favoriteQuery, folder: activeFolder, sort: sortBy }) +
+      // view 由 parseFavoritesFilters 从当前 URL 读回，写回时原样保留，
+      // 避免切换筛选把用户所在的 view 冲掉（FavoritesFilters.view 是必填）
+      buildFavoritesSearch({
+        q: favoriteQuery,
+        folder: activeFolder,
+        sort: sortBy,
+        view: parseFavoritesFilters(window.location.search).view,
+      }) +
       window.location.hash
     const current = window.location.pathname + window.location.search + window.location.hash
     if (next !== current) window.history.replaceState(window.history.state, '', next)
@@ -538,6 +555,41 @@ export default function FavoritesPage() {
   // 同步状态条的输入与文案（纯函数在 lib/favorites-sync-copy）。
   // 这里显式映射而不是直接传 cloudResult：CloudSyncResult 的云端条数在 cloud 数组里，
   // 直接传会把「cloud 为 null（没同步成功）」误读成「云端 0 条」。
+  /**
+   * 同步徽标快照（2026-11-21）。
+   *
+   * 这是 Header 徽标 / 卡片微点 / 冲突抽屉共享的**唯一真相**。
+   * 当前阶段先接已有状态（登录态 + 在线 + 同步中 + 错误文案），
+   * Outbox 计数与冲突集合由后续接入 IndexedDB 队列时补齐——
+   * 未接时 pendingCount/冲突恒为 0，不影响现有行为。
+   */
+  /** 冲突裁决抽屉是否打开（2026-11-21） */
+  const [showConflictDrawer, setShowConflictDrawer] = useState(false)
+  /** 是否有已勾选但未确认的冲突选择——仅这种情况才做离开提醒 */
+  const [hasUnconfirmedConflict, setHasUnconfirmedConflict] = useState(false)
+
+  const syncSnapshot: SyncEngineSnapshot = {
+    badgeState: deriveBadgeState({
+      // 登录态判定与页面其余处同口径：identityReady 是对象，不是布尔
+      isAuthed: identityReady.ready && !identityReady.isAnonymous && !!identityReady.identity,
+      isOnline: typeof navigator === 'undefined' ? true : navigator.onLine,
+      pendingCount: 0,
+      conflictCount: 0,
+      isSyncing: syncingCloud,
+      error: syncStatus === 'error' ? { kind: 'server_5xx', message: syncNote ?? '', canAutoRetry: true } : null,
+    }),
+    isOnline: typeof navigator === 'undefined' ? true : navigator.onLine,
+    pendingCount: 0,
+    dirtyItemIds: new Set<string>(),
+    conflictItemIds: new Set<string>(),
+    conflicts: [],
+    lastSyncedAtMs: null,
+    nextRetryAtMs: null,
+    ...(syncStatus === 'error'
+      ? { error: { kind: 'server_5xx' as const, message: syncNote ?? '', canAutoRetry: true } }
+      : {}),
+  }
+
   const syncBannerInput: SyncBannerInput | null = syncingCloud
     ? { syncing: true }
     : cloudResult
@@ -555,7 +607,10 @@ export default function FavoritesPage() {
   // B15：匿名收藏只活在本机。判定与上面「确认匿名」的效果同款（无身份或 anon- 前缀），
   // 且必须等 identityReady.ready——否则登录用户在会话同步完成前会闪一下这条提示。
   // 登录用户不触发云端同步失败时 syncBanner 为 hidden，这条提示是匿名态唯一的同步风险说明。
+  // 合并 3 处重复警告（任务 52）：全页只保留这一条，可关闭（仅本次会话，刷新复现）。
+  const [anonymousNoteDismissed, setAnonymousNoteDismissed] = useState(false)
   const showAnonymousNote =
+    !anonymousNoteDismissed &&
     identityReady.ready && (!identityReady.identity || identityReady.identity.startsWith('anon-'))
 
   useEffect(() => {
@@ -1018,6 +1073,16 @@ export default function FavoritesPage() {
           (skipped > 0 ? `，跳过 ${skipped} 条重复项` : ''),
       )
       setSyncStatus('success')
+      // 成长记账：逐条收藏事件（净增锁防重复刷分），并给首次导入里程碑提示
+      for (const id of result.addedSiteIds ?? []) {
+        recordGrowthEvent('favorite_add', { siteId: id })
+      }
+      if ((result.imported ?? 0) > 0) {
+        celebrateFirstMilestone(
+          'navhub.favorites.firstImportCelebrated.v1',
+          '第一次批量搬家完成，收藏只存本机；登录后可跨设备同步。',
+        )
+      }
       return {
         imported: result.imported,
         skipped: skipped + result.alreadyExisted,
@@ -1033,6 +1098,45 @@ export default function FavoritesPage() {
       skipped,
       foldersCreated,
     }
+  }
+
+  /**
+   * 手动新建自定义收藏（0 收藏破冰空态第三卡）。
+   * 与星标按钮同一落库入口（favorites.toggle），Schema 兼容 LocalFavorite；
+   * 首次手动新建触发成长事件（数字方舟 / 自定义站同口径），并给克制 Toast。
+   */
+  const handleManualAdd = async (item: {
+    siteId: string
+    title: string
+    href: string
+    folderId: string | null
+  }): Promise<boolean> => {
+    const ok = await favorites.toggle({
+      siteId: item.siteId,
+      title: item.title,
+      href: item.href,
+      folderId: item.folderId,
+    })
+    if (!ok) return false
+    // 成长记账：自定义站新增（与站内「自定义站」同一事件，净增锁防重复刷分）
+    recordCustomSiteAddedAction()
+    recordGrowthEvent('favorite_add', { siteId: item.siteId })
+    toast({
+      title: '已收进私密书签',
+      description: `「${item.title}」已保存在本机金库${item.folderId ? '，已归入收藏夹' : ''}。`,
+    })
+    return true
+  }
+
+  /** 首次导入/首次加密备份的克制成功提示（成长事件由 useFavorites 落库链路统一记账）。 */
+  const celebrateFirstMilestone = (key: string, message: string) => {
+    try {
+      if (window.localStorage.getItem(key)) return
+      window.localStorage.setItem(key, '1')
+    } catch {
+      // 存不了就每次提示——比静默漏掉里程碑更好
+    }
+    toast({ title: '数字方舟进度 +1', description: message })
   }
 
   const handleImportPlain = () => {
@@ -1095,6 +1199,10 @@ export default function FavoritesPage() {
 
       setSyncNote(`🔒 成功导出已加密金库，共 ${vaultItems.length} 条收藏（AES-256-GCM 保护）`)
       setSyncStatus('success')
+      celebrateFirstMilestone(
+        'navhub.favorites.firstVaultExportCelebrated.v1',
+        '第一份加密备份已下载：密码不上云，丢了无法找回，请妥善保管。',
+      )
       setShowVaultExport(false)
       setVaultPassword('')
       setVaultPasswordConfirm('')
@@ -1210,7 +1318,15 @@ export default function FavoritesPage() {
                     <Shield className="w-5 h-5 sm:w-6 sm:h-6" />
                   </div>
                   <span>我的离线收藏与零知识金库</span>
+                  {/* 2026-11-21 六态同步徽标：与标题同一行右侧对齐。
+                      常态克制低饱和，仅冲突/失败态提亮。 */}
+                  <FavoritesSyncBadge
+                    snapshot={syncSnapshot}
+                    onOpenConflicts={() => setShowConflictDrawer(true)}
+                    onRetry={undefined}
+                  />
                 </h1>
+
                 <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
                   本地离线优先：收藏先存在本机，登录后自动与云端同步；也可用 AES-256-GCM 加密导出为 <code>.navhub.vault</code> 文件，密码不上云、不可逆、防篡改。
                 </p>
@@ -1413,7 +1529,8 @@ export default function FavoritesPage() {
 
         {/* B15：匿名收藏只活在本机——登录前没有任何同步尝试，状态条恒为 hidden，
             必须在这里把风险说出来，否则用户攒了收藏、清一次缓存才发现全丢了。
-            登录后自动同步，这条提示随身份切换消失（不与同步状态条叠加出现）。 */}
+            登录后自动同步，这条提示随身份切换消失（不与同步状态条叠加出现）。
+            全页唯一一条匿名警告，支持关闭（仅本次会话生效）。 */}
         {showAnonymousNote && (
           <div
             data-testid="anonymous-favorites-note"
@@ -1428,6 +1545,14 @@ export default function FavoritesPage() {
               <LogIn className="w-3.5 h-3.5" />
               登录同步收藏
             </Link>
+            <button
+              type="button"
+              onClick={() => setAnonymousNoteDismissed(true)}
+              aria-label="关闭本次会话的匿名提示"
+              className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md text-amber-700/70 hover:bg-amber-500/15 hover:text-amber-800 dark:text-amber-400/70 dark:hover:text-amber-300"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
         )}
 
@@ -1659,151 +1784,187 @@ export default function FavoritesPage() {
           </div>
         )}
 
-        {/* 收藏夹管理：只在登录身份下出现（文件夹是云端数据，匿名用户没有归属） */}
+        {/* 移动端：顶部文件夹下拉选择器（桌面用左侧树，见下） */}
         {favorites.items.length > 0 && (
-          <div className="mb-4 rounded-xl border border-border/70 bg-card/50 p-3 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <Folder className="h-3.5 w-3.5" />
-                收藏夹
-              </span>
-              <button
-                type="button"
-                onClick={() => setActiveFolder('all')}
-                className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
-                  activeFolder === 'all'
-                    ? 'border-primary/40 bg-primary/10 text-primary'
-                    : 'border-border/60 bg-background/60 text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                全部 {favorites.items.length}
-              </button>
-              {visibleFolders.map((folder) => {
-                const count = folderCounts.get(folder.id) ?? 0
-                const active = activeFolder === folder.id
-                return (
-                  <span key={folder.id} className="inline-flex items-center gap-1">
-                    {editingFolder === folder.id ? (
-                      <>
-                        <Input
-                          value={editingName}
-                          onChange={(e) => setEditingName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') void saveFolderName(folder.id)
-                            if (e.key === 'Escape') setEditingFolder(null)
-                          }}
-                          aria-label="收藏夹名称"
-                          className="h-7 w-32 text-[11px]"
-                          autoFocus
-                        />
-                        <Button size="sm" variant="ghost" className="h-7 px-1.5" onClick={() => void saveFolderName(folder.id)} aria-label="保存名称">
-                          <Check className="h-3.5 w-3.5" />
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setActiveFolder(active ? 'all' : folder.id)}
-                          className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
-                            active
-                              ? 'border-primary/40 bg-primary/10 text-primary'
-                              : 'border-border/60 bg-background/60 text-muted-foreground hover:text-foreground'
+          <div className="mb-4 lg:hidden">
+            <label htmlFor="favorites-folder-select" className="sr-only">
+              选择收藏夹
+            </label>
+            <select
+              id="favorites-folder-select"
+              value={activeFolder}
+              onChange={(e) => setActiveFolder(e.target.value)}
+              className="h-9 w-full rounded-lg border border-border/70 bg-background px-2.5 text-xs text-foreground"
+            >
+              <option value="all">全部收藏 {favorites.items.length}</option>
+              {visibleFolders.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.name} {folderCounts.get(folder.id) ?? 0}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 桌面双栏工作区：左文件夹树（sticky），右筛选 + 站点卡片 */}
+        <div className="lg:flex lg:items-start lg:gap-5">
+          {/* 左侧文件夹树（桌面）：竖排结构，选中项高亮 + 计数 + 快捷新建 */}
+          {favorites.items.length > 0 && (
+            <aside
+              aria-label="收藏夹树"
+              className="hidden lg:block lg:w-52 lg:shrink-0 lg:sticky lg:top-4"
+            >
+              <nav className="rounded-xl border border-border/70 bg-card/50 p-2 space-y-0.5">
+                <button
+                  type="button"
+                  onClick={() => setActiveFolder('all')}
+                  aria-current={activeFolder === 'all' ? 'true' : undefined}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
+                    activeFolder === 'all'
+                      ? 'bg-primary/10 font-medium text-primary'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                  }`}
+                >
+                  <Folder className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">全部收藏</span>
+                  <span className="shrink-0 tabular-nums">{favorites.items.length}</span>
+                </button>
+                {visibleFolders.map((folder) => {
+                  const count = folderCounts.get(folder.id) ?? 0
+                  const active = activeFolder === folder.id
+                  return (
+                    <div key={folder.id} className="group/folder">
+                      {editingFolder === folder.id ? (
+                        <div className="flex items-center gap-1 px-1 py-1">
+                          <Input
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') void saveFolderName(folder.id)
+                              if (e.key === 'Escape') setEditingFolder(null)
+                            }}
+                            aria-label="收藏夹名称"
+                            className="h-7 flex-1 text-[11px]"
+                            autoFocus
+                          />
+                          <Button size="sm" variant="ghost" className="h-7 px-1.5" onClick={() => void saveFolderName(folder.id)} aria-label="保存名称">
+                            <Check className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div
+                          className={`flex items-center gap-1 rounded-lg transition-colors ${
+                            active ? 'bg-primary/10' : 'hover:bg-accent'
                           }`}
                         >
-                          {folder.name} {count}
-                        </button>
-                        {active && (
-                          <>
+                          <button
+                            type="button"
+                            onClick={() => setActiveFolder(active ? 'all' : folder.id)}
+                            aria-current={active ? 'true' : undefined}
+                            className={`flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left text-xs ${
+                              active ? 'font-medium text-primary' : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+                            <span className="shrink-0 tabular-nums">{count}</span>
+                          </button>
+                          <span className="flex shrink-0 items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover/folder:opacity-100">
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-6 px-1 text-muted-foreground"
-                              aria-label="上移收藏夹"
+                              className="h-6 w-6 px-0 text-muted-foreground"
+                              aria-label={`上移收藏夹 ${folder.name}`}
                               onClick={() => void moveFolder(folder.id, -1)}
                             >
-                              <ChevronUp className="h-3 w-3" />
+                              <ChevronUp className="h-2.5 w-2.5" />
                             </Button>
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-6 px-1 text-muted-foreground"
-                              aria-label="下移收藏夹"
+                              className="h-6 w-6 px-0 text-muted-foreground"
+                              aria-label={`下移收藏夹 ${folder.name}`}
                               onClick={() => void moveFolder(folder.id, 1)}
                             >
-                              <ChevronDown className="h-3 w-3" />
+                              <ChevronDown className="h-2.5 w-2.5" />
                             </Button>
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-6 px-1 text-muted-foreground"
-                              aria-label="重命名收藏夹"
+                              className="h-6 w-6 px-0 text-muted-foreground"
+                              aria-label={`重命名收藏夹 ${folder.name}`}
                               onClick={() => {
                                 setEditingFolder(folder.id)
                                 setEditingName(folder.name)
                               }}
                             >
-                              <Pencil className="h-3 w-3" />
+                              <Pencil className="h-2.5 w-2.5" />
                             </Button>
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-6 px-1 text-muted-foreground hover:text-destructive-text"
-                              aria-label="删除收藏夹"
+                              className="h-6 w-6 px-0 text-muted-foreground hover:text-destructive-text"
+                              aria-label={`删除收藏夹 ${folder.name}`}
                               onClick={() => void removeFolder(folder.id)}
                             >
-                              <Trash2 className="h-3 w-3" />
+                              <Trash2 className="h-2.5 w-2.5" />
                             </Button>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </span>
-                )
-              })}
-            </div>
-            {/* 新建收藏夹：匿名建本地夹子，登录建云端夹子（P2 起两边都能建） */}
-            <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-2">
-              <Input
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void addFolder()
-                }}
-                placeholder="新建收藏夹"
-                aria-label="新建收藏夹名称"
-                className="h-8 w-40 text-xs"
-              />
-              <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!newFolderName.trim() || folderBusy} onClick={() => void addFolder()}>
-                <FolderPlus className="mr-1.5 h-3.5 w-3.5" />
-                创建
-              </Button>
-              {manageBusy && <span className="text-[11px] text-muted-foreground">正在同步…</span>}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+                {/* 新建收藏夹：匿名建本地夹子，登录建云端夹子 */}
+                <div className="flex items-center gap-1 border-t border-border/60 pt-2">
+                  <Input
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void addFolder()
+                    }}
+                    placeholder="新建收藏夹"
+                    aria-label="新建收藏夹名称"
+                    className="h-7 flex-1 text-[11px]"
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 px-0 shrink-0"
+                    disabled={!newFolderName.trim() || folderBusy}
+                    onClick={() => void addFolder()}
+                    aria-label="创建收藏夹"
+                  >
+                    <FolderPlus className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                {manageBusy && <p className="px-2 text-[11px] text-muted-foreground">正在同步…</p>}
+              </nav>
               {!cloudIdentity && (
-                <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <LogIn className="h-3 w-3 shrink-0" />
+                <p className="mt-2 flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                  <LogIn className="h-3 w-3 shrink-0 mt-0.5" />
                   本地收藏夹仅存本机；登录后按名称合并到云端
-                </span>
+                </p>
               )}
-            </div>
-            {/* 清空云端收藏只对登录态有意义 */}
-            {cloudIdentity && (
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2">
-                <span className="text-[11px] text-muted-foreground">清空只影响云端收藏；本机缓存会一并清除</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 border-destructive/30 text-[11px] text-destructive-text hover:bg-destructive/15"
-                  disabled={manageBusy}
-                  onClick={() => void clearCloud()}
-                >
-                  <Trash2 className="mr-1 h-3 w-3" />
-                  {confirmClearCloud ? '再次点击确认清空' : '清空云端收藏'}
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
+              {cloudIdentity && (
+                <div className="mt-2 space-y-1.5 rounded-lg border border-border/60 p-2">
+                  <p className="text-[11px] text-muted-foreground">清空只影响云端收藏；本机缓存会一并清除</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 w-full border-destructive/30 text-[11px] text-destructive-text hover:bg-destructive/15"
+                    disabled={manageBusy}
+                    onClick={() => void clearCloud()}
+                  >
+                    <Trash2 className="mr-1 h-3 w-3" />
+                    {confirmClearCloud ? '再次点击确认清空' : '清空云端收藏'}
+                  </Button>
+                </div>
+              )}
+            </aside>
+          )}
+
+          {/* 右侧主工作区：智能整理 / 公开页 / 筛选条 / 批量工具 / 站点卡片 */}
+          <div className="min-w-0 flex-1">
 
         {/* 智能整理（P1 #6）：只给建议，用户点「采用」后才建夹、才移动——绝不自动应用 */}
         {favorites.items.length > 0 && (
@@ -2122,23 +2283,11 @@ export default function FavoritesPage() {
             </div>
           </div>
         ) : favorites.items.length === 0 ? (
-          <EmptyState
-            icon={Shield}
-            iconTone="success"
-            title={FAVORITES_EMPTY_COPY.title}
-            description={
-              <>
-                {FAVORITES_EMPTY_COPY.why} {FAVORITES_EMPTY_COPY.next}
-                {FAVORITES_EMPTY_COPY.tip ? (
-                  <span className="mt-1 block">提示：{FAVORITES_EMPTY_COPY.tip}</span>
-                ) : null}
-              </>
-            }
-            action={
-              <Button asChild size="sm" variant="outline" className="text-xs">
-                <Link href={FAVORITES_EMPTY_COPY.actionHref}>{FAVORITES_EMPTY_COPY.actionLabel}</Link>
-              </Button>
-            }
+          /* 0 收藏破冰空态：三选一快速起步卡片组（导入 / 探索 / 手动新建），
+             取代旧的纯文字空态——用户不必抬头找按钮，当前页即可完成第一次有效行动。 */
+          <FavoritesQuickStartEmpty
+            onImportClick={() => setShowUniversalImport(true)}
+            onManualAddClick={() => setShowManualAdd(true)}
           />
         ) : visibleFavorites.length === 0 ? (
           <EmptyState
@@ -2661,13 +2810,17 @@ export default function FavoritesPage() {
         )}
 
         <div className="mt-8 text-xs text-muted-foreground">
-          {/* 数据在哪由状态决定，不再写死「只在本机」——那与上方的云端同步状态条自相矛盾 */}
-          {cloudIdentity
-            ? '收藏已与云端同步（换设备登录即可看到），本机缓存用于离线与快速打开。'
-            : '当前为匿名身份：收藏只保存在本机浏览器，登录后可跨设备同步。'}
+          {/* 匿名风险提示只在工作区上方保留一条（可关闭），底部只留导航链接，
+              不再复读「当前为匿名身份……」——避免同一页出现 3 处重复警告。 */}
+          {cloudIdentity && (
+            <span>收藏已与云端同步（换设备登录即可看到），本机缓存用于离线与快速打开。</span>
+          )}
           <Link href="/tags" className="mx-1 text-primary hover:underline">去标签云看看</Link>
           或
           <Link href="/hot" className="mx-1 text-primary hover:underline">浏览热度榜</Link>
+        </div>
+
+          </div>
         </div>
 
         {/* 导出为插件市场清单向导弹窗 */}
@@ -2704,6 +2857,15 @@ export default function FavoritesPage() {
           />
         )}
 
+        {/* 手动新建自定义收藏（0 收藏破冰空态第三卡入口；有收藏时也可复用） */}
+        <FavoritesManualAddModal
+          open={showManualAdd}
+          onOpenChange={setShowManualAdd}
+          folders={visibleFolders}
+          onAdd={handleManualAdd}
+          onCreateFolder={createFolderDirectly}
+        />
+
         {/* 链接包（快照版）生成对话框：多选收藏 → 一页清单分享链接 */}
         {showLinkPack && (
           <LinkPackDialog
@@ -2719,6 +2881,21 @@ export default function FavoritesPage() {
             onClose={() => setShowLinkPack(false)}
           />
         )}
+      {/* 2026-11-21 冲突裁决抽屉：仅当存在需人工裁决的冲突时渲染 */}
+      {showConflictDrawer && syncSnapshot.conflicts.length > 0 ? (
+        <ConflictDrawer
+          conflicts={syncSnapshot.conflicts}
+          onClose={() => setShowConflictDrawer(false)}
+          onUnconfirmedChange={setHasUnconfirmedConflict}
+          onResolve={(conflictId) => {
+            // 真实裁决由 syncEngine.resolve() 处理；当前快照阶段的冲突集合为空，
+            // 这里仅关闭抽屉并复位未确认标记
+            void conflictId
+            setShowConflictDrawer(false)
+            setHasUnconfirmedConflict(false)
+          }}
+        />
+      ) : null}
       </div>
       <Footer />
     </Container>

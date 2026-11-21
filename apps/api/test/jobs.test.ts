@@ -74,12 +74,16 @@ describe("recompute_rank 任务", () => {
 
 describe("health_check 任务", () => {
   /**
-   * 判定规则在 2026-10-18 改为「连续 3 次失败才 broken」：
-   * 单次探测会被 403/429/超时命中，实测把 kubernetes.io / figma.com 等
-   * 可正常访问的站点误标为 broken（50 站点里 15 个，误判率 30%）。
-   * 因此这里断言两段行为：第 1 次只记录不判死，第 3 次才置 broken。
+   * 判定规则：连续 2 次失败才 broken（03 §3.3 裁决，见 packages/core/src/health-sentinel.ts
+   * 的 CONSECUTIVE_FAILURES_THRESHOLD；Batch 1 W1 测量 batch1-w1-measure.md §3 与
+   * 72b01b38「阈值统一为 2」——本站巡检周期是天级，阈值 3 会让一次真实下线多等一个
+   * 周期才标出；环境变量 NAVHUB_HEALTH_FAIL_THRESHOLD 仍可临时覆盖回 3）。
+   * 历史：2026-10-18 曾定为「连续 3 次失败才 broken」，依据是单次探测会被 403/429/
+   * 超时命中，实测把 kubernetes.io / figma.com 等可正常访问的站点误标为 broken
+   * （50 站点里 15 个，误判率 30%）——该实测只证明阈值不能是 1，不区分 2 与 3。
+   * 因此这里断言两段行为：第 1 次只记录不判死，第 2 次才置 broken。
    */
-  it("SSRF 目标：首次失败只记录，连续 3 次才判 broken，任务不失败", async () => {
+  it("SSRF 目标：首次失败只记录，连续 2 次才判 broken，任务不失败", async () => {
     const site = await ctx.repo.createSite({ url: "http://127.0.0.1:9/", title: "内网站", categoryId: "rc" });
     const runner = new JobRunner(ctx);
 
@@ -96,11 +100,12 @@ describe("health_check 任务", () => {
     expect(afterFirst!.health!.lastCheckedAt).toBeGreaterThan(0);
 
     await runOnce();
-    expect((await ctx.repo.getSite(site.id))!.status).toBe("active");
+    const afterSecond = await ctx.repo.getSite(site.id);
+    expect(afterSecond!.status).toBe("broken"); // 连续第 2 次即 broken（阈值 2，03 §3.3）
 
     await runOnce();
     const afterThird = await ctx.repo.getSite(site.id);
-    expect(afterThird!.status).toBe("broken"); // 连续第 3 次才 broken
+    expect(afterThird!.status).toBe("broken"); // 保持 broken，不回 active
 
     // 任务本身是 done 不是 failed（抓取失败是业务的正常结果）
     const jobs = await ctx.repo.listJobs("done", 10);

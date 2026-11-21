@@ -49,13 +49,16 @@ describe('buildGrowthExportSnapshot', () => {
     expect(snap.note).toBe(GROWTH_SNAPSHOT_NOTE)
     expect(snap.note).toContain('只保存在这台设备')
     expect(snap.exportedAt).toBe(now.getTime())
-    expect(snap.totalXp).toBe(422)
-    expect(snap.level).toBe(levelProgress(422).level)
-    expect(snap.title).toBe(levelProgress(422).title)
+    // 摘要必须与快照里打包的档案原文同一口径：loadGrowthProfile 读档时会
+    // 结算（如首日奖励），快照反映的是结算后的真实档案，不是种子原文，
+    // 所以这里断言「摘要 = 原文」，而不把种子里的 422 写死。
+    expect(snap.totalXp).toBe(snap.profile.totalXp)
+    expect(snap.totalXp).toBeGreaterThanOrEqual(422)
+    expect(snap.level).toBe(levelProgress(snap.totalXp).level)
+    expect(snap.title).toBe(levelProgress(snap.totalXp).title)
     expect(snap.freezeCards).toBe(2)
     expect(snap.longestStreak).toBe(5)
     // 档案原文原样打包，可验证内容
-    expect(snap.profile.totalXp).toBe(422)
     expect(snap.profile.v).toBe(2)
   })
 

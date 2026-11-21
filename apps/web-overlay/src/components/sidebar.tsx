@@ -48,13 +48,13 @@ function CrdtSyncStatusPillPlaceholder() {
     <button
       type="button"
       aria-label="多端协同中… - 查看多端协同状态"
-      className="inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 dark:bg-emerald-500/15 px-2.5 py-1 text-xs text-emerald-800 dark:text-emerald-300 font-medium transition-all hover:bg-emerald-500/20 shadow-2xs"
+      className="inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 rounded-full border border-success/30 bg-success/10 dark:bg-success/15 px-2.5 py-1 text-xs text-success-foreground font-medium transition-all hover:bg-success/20 shadow-2xs"
     >
       <span
         aria-hidden
         className="h-3 w-3 animate-spin rounded-full border-2 border-emerald-600/30 border-t-emerald-600 dark:border-t-emerald-400"
       />
-      <span className="text-[11px] shrink-0 whitespace-nowrap font-semibold text-emerald-800 dark:text-emerald-300 inline">
+      <span className="text-[11px] shrink-0 whitespace-nowrap font-semibold text-success-foreground inline">
         多端协同中…
       </span>
     </button>

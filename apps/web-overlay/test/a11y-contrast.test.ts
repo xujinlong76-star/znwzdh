@@ -34,7 +34,10 @@ describe('浅色模式对比度', () => {
     const footer = overlayFile('src/components/footer.tsx')
     const custom = footer.split('\n').find((l) => l.includes('href="/custom"'))
     const market = footer.split('\n').find((l) => l.includes('href="/marketplace"'))
-    expect(custom).toContain('text-emerald-700')
+    // P2-2（2026-11-21）：DIY 徽章由 emerald-700 改为语义 token text-success-foreground。
+    // success-foreground 与 emerald-700（浅 #047857 白底 5.48:1）/ emerald-400
+    // （深 #34d399 深底 10.35:1）同值，对比度等效；emerald-600（3.62:1 不达标）仍禁。
+    expect(custom).toContain('text-success-foreground')
     expect(custom).not.toContain('text-emerald-600')
     // P1-15（2026-11-21）：插件市场链由 rose-700 改为 text-primary（页脚链接统一样式）。
     // text-primary 浅色为近黑（hsl 240 5.9% 10%），白底对比度远超 AA 4.5:1；

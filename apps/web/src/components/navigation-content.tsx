@@ -1313,7 +1313,7 @@ export function NavigationContent({
               <div className="flex items-center justify-between pb-1">
                 <div>
                   <h2 className="text-base sm:text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                    <span className="w-1.5 h-4.5 rounded-full bg-emerald-500" />
+                    <span className="w-1.5 h-4.5 rounded-full bg-success" />
                     <span>模块化工作台主页</span>
                   </h2>
                   <p className="text-xs text-muted-foreground mt-0.5">

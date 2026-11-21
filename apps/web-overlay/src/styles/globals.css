@@ -83,6 +83,14 @@
   /* P2-1：渐变上白字。类名 text-on-gradient；内联 style 用 var(--color-on-gradient)。 */
   --color-on-gradient: hsl(var(--on-gradient));
 
+  /* P2-2：语义色。类名 bg/text/border/ring/fill-{pinned,success,category}(-foreground)。 */
+  --color-pinned: hsl(var(--pinned));
+  --color-pinned-foreground: hsl(var(--pinned-foreground));
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-category: hsl(var(--category));
+  --color-category-foreground: hsl(var(--category-foreground));
+
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
 
@@ -280,6 +288,15 @@
     /* 危险文字（浅）：#BC1C1C 系 red-700，对白 6.41:1；
        错误条底色提到 /15 后对其仍 5.12:1（#DC2626 实测仅 3.82:1，弃用） */
     --destructive-text: 0 74% 42%;
+    /* P2-2：语义色 Token（置顶 amber / 成功 emerald / 分类 indigo）。
+       foreground 档与调色板 -700（浅）/ -400（深）同值，对比度等效：
+       pinned 5.02/11.92、success 5.48/10.35、category 7.90/6.67（均 ≥4.5:1）。 */
+    --pinned: 38 92% 50%; /* amber-500 */
+    --pinned-foreground: 26 90% 37%; /* amber-700 */
+    --success: 160 84% 39%; /* emerald-500 */
+    --success-foreground: 163 94% 24%; /* emerald-700 */
+    --category: 239 84% 67%; /* indigo-500 */
+    --category-foreground: 245 58% 51%; /* indigo-700 */
     --border: 240 5.9% 90%;
     --input: 240 5.9% 90%;
     /* 控件边界加强档：#8F8F99，对白 3.22:1（WCAG 1.4.11 ≥3:1）。
@@ -376,6 +393,10 @@
     /* 危险文字（深）：#F37272，对深底 7.07:1。
        同态 --destructive 是暗红按钮底，当文字仅 1.98:1（F1 主故障之一）。 */
     --destructive-text: 0 84% 70%;
+    /* P2-2：语义色 foreground 深色档（-400）。 */
+    --pinned-foreground: 43 96% 56%; /* amber-400 */
+    --success-foreground: 158 64% 52%; /* emerald-400 */
+    --category-foreground: 234 89% 74%; /* indigo-400 */
     --border: 240 3.7% 15.9%;
     --input: 240 3.7% 15.9%;
     /* 控件边界加强档（深）：#66666E，对深底 3.17:1（≥3:1）。

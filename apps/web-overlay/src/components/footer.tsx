@@ -54,7 +54,7 @@ export function Footer({ siteInfo }: FooterProps) {
           <Link href="/collections" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">精选专题合集</Link>
           <span className="text-border" aria-hidden="true">·</span>
           {/* emerald-600 在 12px 白底上只有 3.62:1（AA 需 4.5），700 才达标 */}
-          <Link href="/custom" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">模块化工作台<span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">DIY</span></Link>
+          <Link href="/custom" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">模块化工作台<span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-success/10 text-success-foreground border border-success/20">DIY</span></Link>
           <span className="text-border" aria-hidden="true">·</span>
           {/* rose-600 在页脚底上实测 4.47:1 不足 AA，强调色走 700（a11y-contrast 门禁） */}
           <Link href="/marketplace" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors text-primary font-medium">插件市场</Link>

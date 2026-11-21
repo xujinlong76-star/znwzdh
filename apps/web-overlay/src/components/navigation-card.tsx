@@ -572,7 +572,7 @@ export const NavigationCard = memo(function NavigationCard({
               data-navhub-selected={selected ? 'true' : undefined}
               className={cn(
                 "nav-card-deferred group/card relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 transition-all duration-[--duration-fast] transform hover:-translate-y-0.5",
-                isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
+                isPinnedInCategory && "ring-1 ring-pinned/40 bg-pinned/4 border-pinned/30",
                 selectionClass
               )}
               onKeyDown={handleActionsKeyDown}
@@ -634,11 +634,11 @@ export const NavigationCard = memo(function NavigationCard({
                     </span>
                   )}
                   {isPinnedInCategory && (
-                    <Pin className="w-2.5 h-2.5 text-amber-500 fill-amber-500 shrink-0" />
+                    <Pin className="w-2.5 h-2.5 text-pinned fill-pinned shrink-0" />
                   )}
                   {item.liveMetrics?.githubStars && (
-                    <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 px-1 py-0.2 rounded-sm">
-                      <Star className="w-2 h-2 text-amber-500 fill-amber-500" />
+                    <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-pinned-foreground bg-pinned/10 px-1 py-0.2 rounded-sm">
+                      <Star className="w-2 h-2 text-pinned fill-pinned" />
                       {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
                     </span>
                   )}
@@ -662,7 +662,7 @@ export const NavigationCard = memo(function NavigationCard({
                     "h-6 w-6 rounded-lg transition-colors",
                     isEditingLayout
                       ? "text-destructive-text hover:text-destructive-text hover:bg-destructive/15"
-                      : "hidden sm:inline-flex text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
+                      : "hidden sm:inline-flex text-muted-foreground hover:text-destructive-text hover:bg-destructive/15"
                   )}
                   title="🙈 隐藏此站点（移入回收站，可按 Ctrl+Z 撤销或随时还原）"
                   aria-label={`隐藏站点：${item.title}`}
@@ -678,13 +678,13 @@ export const NavigationCard = memo(function NavigationCard({
                     size="icon"
                     className={cn(
                       "h-6 w-6 rounded-lg transition-colors",
-                      isSpeedDialPinned ? "text-amber-500 bg-amber-500/15" : "text-muted-foreground hover:text-amber-500"
+                      isSpeedDialPinned ? "text-pinned bg-pinned/15" : "text-muted-foreground hover:text-pinned"
                     )}
                     title={isSpeedDialPinned ? "从首屏速览坞取消固定" : "📌 钉入首屏速览坞"}
                     aria-label={isSpeedDialPinned ? `从速览坞取消固定：${item.title}` : `钉入速览坞：${item.title}`}
                     onClick={handleToggleSpeedDial}
                   >
-                    <Zap className={cn("w-3 h-3", isSpeedDialPinned && "fill-amber-500")} />
+                    <Zap className={cn("w-3 h-3", isSpeedDialPinned && "fill-pinned")} />
                   </Button>
                 )}
                 {onTogglePinInCategory && (
@@ -695,13 +695,13 @@ export const NavigationCard = memo(function NavigationCard({
                     size="icon"
                     className={cn(
                       "h-6 w-6 rounded-lg",
-                      isPinnedInCategory ? "text-amber-500 bg-amber-500/10" : "text-muted-foreground hover:text-amber-500"
+                      isPinnedInCategory ? "text-pinned bg-pinned/10" : "text-muted-foreground hover:text-pinned"
                     )}
                     title={isPinnedInCategory ? "取消分类内置顶" : "置顶在当前分类首位"}
                     aria-label={isPinnedInCategory ? `取消分类内置顶：${item.title}` : `置顶在当前分类首位：${item.title}`}
                     onClick={handleCategoryPin}
                   >
-                    <ArrowUpToLine className={cn("w-3 h-3", isPinnedInCategory && "fill-amber-500")} />
+                    <ArrowUpToLine className={cn("w-3 h-3", isPinnedInCategory && "fill-pinned")} />
                   </Button>
                 )}
                 {detailAction('h-6 w-6 rounded-lg')}
@@ -726,7 +726,7 @@ export const NavigationCard = memo(function NavigationCard({
                   data-card-action=""
                   variant="ghost"
                   size="icon"
-                  className="hidden sm:inline-flex h-6 w-6 rounded-lg text-muted-foreground hover:text-emerald-500"
+                  className="hidden sm:inline-flex h-6 w-6 rounded-lg text-muted-foreground hover:text-success"
                   title="📌 固定到工作台"
                   aria-label={`固定到工作台：${item.title}`}
                   onClick={handleWorkbenchPin}
@@ -778,14 +778,14 @@ export const NavigationCard = memo(function NavigationCard({
               data-navhub-selected={selected ? 'true' : undefined}
               className={cn(
                 "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-[--duration-base] transform hover:-translate-y-0.5 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
-                isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
+                isPinnedInCategory && "ring-1 ring-pinned/40 bg-pinned/4 border-pinned/30",
                 selectionClass
               )}
               onKeyDown={handleActionsKeyDown}
             >
               {isPinnedInCategory && effectiveCardElements.showPinnedBadge && (
-                <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-medium">
-                  <Pin className="w-2.5 h-2.5 fill-amber-500" />
+                <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-pinned/15 text-pinned-foreground border border-pinned/30 font-medium">
+                  <Pin className="w-2.5 h-2.5 fill-pinned" />
                   <span>已置顶</span>
                 </div>
               )}
@@ -888,8 +888,8 @@ export const NavigationCard = memo(function NavigationCard({
                       {effectiveCardElements.showPinnedBadge && (item.liveMetrics?.githubStars) && (
                         <div className="flex items-center gap-1.5 pt-1.5 flex-wrap">
                           {item.liveMetrics?.githubStars && (
-                            <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full shrink-0">
-                              <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
+                            <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-pinned-foreground bg-pinned/10 border border-pinned/20 px-1.5 py-0.5 rounded-full shrink-0">
+                              <Star className="w-2.5 h-2.5 text-pinned fill-pinned" />
                               {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
                             </span>
                           )}
@@ -925,13 +925,13 @@ export const NavigationCard = memo(function NavigationCard({
                       onPeek?.(item)
                     }}
                     aria-label={`查看平替：${topAlternative.targetTitle}`}
-                    className="pointer-events-auto inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer"
+                    className="pointer-events-auto inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-category/10 text-category-foreground font-medium hover:bg-category/20 border border-category/20 transition-colors cursor-pointer"
                   >
                     <span>平替: {topAlternative.targetTitle}</span>
                   </button>
                 )}
                 {item.actions && item.actions.length > 0 && (
-                  <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-700 dark:text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
+                  <span className="inline-flex items-center gap-0.5 text-[10px] text-pinned-foreground font-medium bg-pinned/10 border border-pinned/20 px-1.5 py-0.5 rounded-full">
                     <Zap className="w-2.5 h-2.5" />
                     <span>深链</span>
                   </span>
@@ -963,7 +963,7 @@ export const NavigationCard = memo(function NavigationCard({
                     "h-11 min-w-11 flex-1 rounded-lg transition-colors",
                     isEditingLayout
                       ? "text-destructive-text hover:text-destructive-text hover:bg-destructive/15"
-                      : "hidden sm:inline-flex text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
+                      : "hidden sm:inline-flex text-muted-foreground hover:text-destructive-text hover:bg-destructive/15"
                   )}
                   title="🙈 隐藏此站点（移入回收站，可按 Ctrl+Z 撤销或随时还原）"
                   aria-label={`隐藏站点：${item.title}`}
@@ -979,13 +979,13 @@ export const NavigationCard = memo(function NavigationCard({
                     size="icon"
                     className={cn(
                       "h-11 min-w-11 flex-1 rounded-lg transition-colors",
-                      isSpeedDialPinned ? "text-amber-500 bg-amber-500/15" : "text-muted-foreground hover:text-amber-500"
+                      isSpeedDialPinned ? "text-pinned bg-pinned/15" : "text-muted-foreground hover:text-pinned"
                     )}
                     title={isSpeedDialPinned ? "从首屏速览坞取消固定" : "📌 钉入首屏速览坞"}
                     aria-label={isSpeedDialPinned ? `从速览坞取消固定：${item.title}` : `钉入速览坞：${item.title}`}
                     onClick={handleToggleSpeedDial}
                   >
-                    <Zap className={cn("w-4 h-4", isSpeedDialPinned && "fill-amber-500")} />
+                    <Zap className={cn("w-4 h-4", isSpeedDialPinned && "fill-pinned")} />
                   </Button>
                 )}
                 {onTogglePinInCategory && (
@@ -996,13 +996,13 @@ export const NavigationCard = memo(function NavigationCard({
                     size="icon"
                     className={cn(
                       "h-11 min-w-11 flex-1 rounded-lg transition-colors",
-                      isPinnedInCategory ? "text-amber-500 bg-amber-500/10" : "text-muted-foreground hover:text-amber-500"
+                      isPinnedInCategory ? "text-pinned bg-pinned/10" : "text-muted-foreground hover:text-pinned"
                     )}
                     title={isPinnedInCategory ? "取消分类内置顶" : "置顶在当前分类首位"}
                     aria-label={isPinnedInCategory ? `取消分类内置顶：${item.title}` : `置顶在当前分类首位：${item.title}`}
                     onClick={handleCategoryPin}
                   >
-                    <ArrowUpToLine className={cn("w-4 h-4", isPinnedInCategory && "fill-amber-500")} />
+                    <ArrowUpToLine className={cn("w-4 h-4", isPinnedInCategory && "fill-pinned")} />
                   </Button>
                 )}
                 {detailAction('h-11 min-w-11 flex-1 rounded-lg')}
@@ -1027,7 +1027,7 @@ export const NavigationCard = memo(function NavigationCard({
                   data-card-action=""
                   variant="ghost"
                   size="icon"
-                  className="hidden sm:inline-flex h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
+                  className="hidden sm:inline-flex h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors"
                   title="📌 固定到工作台"
                   aria-label={`固定到工作台：${item.title}`}
                   onClick={handleWorkbenchPin}
@@ -1080,14 +1080,14 @@ export const NavigationCard = memo(function NavigationCard({
             data-navhub-selected={selected ? 'true' : undefined}
             className={cn(
               "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-[--duration-base] transform hover:-translate-y-0.5",
-              isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
+              isPinnedInCategory && "ring-1 ring-pinned/40 bg-pinned/4 border-pinned/30",
               selectionClass
             )}
             onKeyDown={handleActionsKeyDown}
           >
             {isPinnedInCategory && effectiveCardElements.showPinnedBadge && (
-              <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-medium">
-                <Pin className="w-2.5 h-2.5 fill-amber-500" />
+              <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-pinned/15 text-pinned-foreground border border-pinned/30 font-medium">
+                <Pin className="w-2.5 h-2.5 fill-pinned" />
                 <span>已置顶</span>
               </div>
             )}
@@ -1197,8 +1197,8 @@ export const NavigationCard = memo(function NavigationCard({
               {effectiveCardElements.showPinnedBadge && (item.liveMetrics?.githubStars || topAlternative || (item.actions && item.actions.length > 0)) && (
                 <div className="flex items-center gap-1.5 pt-1.5 flex-wrap">
                   {item.liveMetrics?.githubStars && (
-                    <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full shrink-0">
-                      <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
+                    <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-pinned-foreground bg-pinned/10 border border-pinned/20 px-1.5 py-0.5 rounded-full shrink-0">
+                      <Star className="w-2.5 h-2.5 text-pinned fill-pinned" />
                       {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
                     </span>
                   )}
@@ -1213,13 +1213,13 @@ export const NavigationCard = memo(function NavigationCard({
                         onPeek?.(item)
                       }}
                       aria-label={`查看平替：${topAlternative.targetTitle}`}
-                      className="pointer-events-auto inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer shrink-0"
+                      className="pointer-events-auto inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-category/10 text-category-foreground font-medium hover:bg-category/20 border border-category/20 transition-colors cursor-pointer shrink-0"
                     >
                       <span>平替: {topAlternative.targetTitle}</span>
                     </button>
                   )}
                   {item.actions && item.actions.length > 0 && (
-                    <span className="inline-flex items-center gap-0.5 text-xs text-amber-700 dark:text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full shrink-0">
+                    <span className="inline-flex items-center gap-0.5 text-xs text-pinned-foreground font-medium bg-pinned/10 border border-pinned/20 px-1.5 py-0.5 rounded-full shrink-0">
                       <Zap className="w-2.5 h-2.5" />
                       <span>深链</span>
                     </span>
@@ -1272,7 +1272,7 @@ export const NavigationCard = memo(function NavigationCard({
                   "h-11 min-w-11 flex-1 rounded-lg transition-colors",
                   isEditingLayout
                     ? "text-destructive-text hover:text-destructive-text hover:bg-destructive/15"
-                    : "hidden sm:inline-flex text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
+                    : "hidden sm:inline-flex text-muted-foreground hover:text-destructive-text hover:bg-destructive/15"
                 )}
                 title="🙈 隐藏此站点（移入回收站，可按 Ctrl+Z 撤销或随时还原）"
                 aria-label={`隐藏站点：${item.title}`}
@@ -1288,13 +1288,13 @@ export const NavigationCard = memo(function NavigationCard({
                   size="icon"
                   className={cn(
                     "h-11 min-w-11 flex-1 rounded-lg transition-colors",
-                    isSpeedDialPinned ? "text-amber-500 bg-amber-500/15" : "text-muted-foreground hover:text-amber-500"
+                    isSpeedDialPinned ? "text-pinned bg-pinned/15" : "text-muted-foreground hover:text-pinned"
                   )}
                   title={isSpeedDialPinned ? "从首屏速览坞取消固定" : "📌 钉入首屏速览坞"}
                   aria-label={isSpeedDialPinned ? `从速览坞取消固定：${item.title}` : `钉入速览坞：${item.title}`}
                   onClick={handleToggleSpeedDial}
                 >
-                  <Zap className={cn("w-4 h-4", isSpeedDialPinned && "fill-amber-500")} />
+                  <Zap className={cn("w-4 h-4", isSpeedDialPinned && "fill-pinned")} />
                 </Button>
               )}
               {onTogglePinInCategory && (
@@ -1305,13 +1305,13 @@ export const NavigationCard = memo(function NavigationCard({
                   size="icon"
                   className={cn(
                     "h-11 min-w-11 flex-1 rounded-lg transition-colors",
-                    isPinnedInCategory ? "text-amber-500 bg-amber-500/10" : "text-muted-foreground hover:text-amber-500"
+                    isPinnedInCategory ? "text-pinned bg-pinned/10" : "text-muted-foreground hover:text-pinned"
                   )}
                   title={isPinnedInCategory ? "取消分类内置顶" : "置顶在当前分类首位"}
                   aria-label={isPinnedInCategory ? `取消分类内置顶：${item.title}` : `置顶在当前分类首位：${item.title}`}
                   onClick={handleCategoryPin}
                 >
-                  <ArrowUpToLine className={cn("w-4 h-4", isPinnedInCategory && "fill-amber-500")} />
+                  <ArrowUpToLine className={cn("w-4 h-4", isPinnedInCategory && "fill-pinned")} />
                 </Button>
               )}
               {detailAction('h-11 min-w-11 flex-1 rounded-lg')}
@@ -1336,7 +1336,7 @@ export const NavigationCard = memo(function NavigationCard({
                   data-card-action=""
                 variant="ghost"
                 size="icon"
-                className="hidden sm:inline-flex h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
+                className="hidden sm:inline-flex h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors"
                 title="📌 固定到模块化工作台快捷启动坞"
                 aria-label={`固定到工作台：${item.title}`}
                 onClick={handleWorkbenchPin}

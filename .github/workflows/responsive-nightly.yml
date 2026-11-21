@@ -1,0 +1,54 @@
+name: 响应式夜间全量验收
+
+# 2026-11-22：把 6 视口 x 8 页面的完整响应式矩阵放夜间跑。
+#
+# ## 为什么分层
+#
+# playwright.config.ts 里 workers=1 / fullyParallel=false 是刻意设定
+#（避免本地 SQLite 并发写锁争用），所以这套测试**无法靠并行提速**，
+# 只能靠减少用例数：
+#   PR 门禁  2 视口（390 + 1366）= 60 条，约 6 分钟 —— 见 ci.yml
+#   夜间全量 6 视口            = 164 条，约 25 分钟 —— 本文件
+#
+# 这两档恰好是历史上出问题最多的宽度（手机底线 + 主流办公笔记本），
+# 其余 4 档（360 / 768 / 1024 / 1440）在夜间兜底。
+
+on:
+  schedule:
+    - cron: '17 4 * * *'   # 每天 04:17 UTC = 北京时间 12:17
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: responsive-nightly
+  cancel-in-progress: false
+
+jobs:
+  responsive-full:
+    timeout-minutes: 45
+    name: 响应式矩阵全量（6 视口）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/vendor-web.mjs
+      - name: 放置猫挂件 E2E 夹具媒体
+        run: node scripts/ensure-cat-media.mjs
+      - name: 安装 Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: 执行响应式矩阵（全量 6 视口）
+        run: pnpm test:responsive:nightly --reporter=list
+      - name: 上传失败现场
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: responsive-nightly-failures
+          path: test-results/
+          retention-days: 14

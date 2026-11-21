@@ -92,7 +92,9 @@
     "verify:ui": "node scripts/verify-ui-acceptance.cjs",
     "video:catalog:reconcile": "node apps/api/src/video-catalog-main.ts --check --json",
     "mirror:web": "node scripts/generate-web-mirror.mjs",
-    "test:responsive": "playwright test e2e/responsive-matrix.spec.ts"
+    "test:responsive": "node scripts/run-responsive.mjs",
+    "test:responsive:pr": "node scripts/run-responsive.mjs pr",
+    "test:responsive:nightly": "node scripts/run-responsive.mjs nightly"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",

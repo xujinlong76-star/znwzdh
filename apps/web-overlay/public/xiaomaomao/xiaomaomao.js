@@ -608,7 +608,7 @@
     '#xiaomaomao .xm-input{min-height:36px}' +
     '@media (pointer:coarse){#xiaomaomao .xm-dock .xm-btn::after{inset:-6px}#xiaomaomao .xm-p-head .xm-hbtn::after{inset:-8px}#xiaomaomao .xm-sug{min-height:36px}}' +
     '@media (max-width:640px){#xiaomaomao .xm-input{font-size:16px;height:44px}#xiaomaomao .xm-send{height:44px;padding:0 18px}#xiaomaomao .xm-form{gap:8px}}' +
-    '@media (max-width:640px){#xiaomaomao{right:calc(12px + env(safe-area-inset-right,0px));bottom:calc(68px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-main-col{width:88px}#xiaomaomao .xm-wrap{width:88px;height:88px}#xiaomaomao .xm-mini-close{opacity:1}#xiaomaomao .xm-dock{gap:5px;padding:5px;bottom:calc(100% + 8px);width:auto}#xiaomaomao.xm-avoid-fab .xm-dock{bottom:10px;right:calc(100% + 10px)}#xiaomaomao.xm-avoid-fab .xm-bubble{bottom:10px;right:calc(100% + 10px)}#xiaomaomao .xm-dock .xm-btn{width:32px;height:32px}#xiaomaomao .xm-dock .xm-btn svg{width:18px;height:18px}#xiaomaomao .xm-bubble{max-width:min(220px,calc(100vw - 120px));font-size:12px}#xiaomaomao .xm-panel,#xiaomaomao .xm-game{position:fixed;left:12px;right:12px;width:auto;max-width:none;bottom:calc(68px + 88px + 10px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-panel.xm-left,#xiaomaomao .xm-game.xm-left{left:12px;right:12px}#xiaomaomao .xm-panel{height:min(380px,48vh)}#xiaomaomao .xm-game{height:min(340px,44vh)}}' +
+    '@media (max-width:640px){#xiaomaomao{right:calc(6px + env(safe-area-inset-right,0px));bottom:calc(3.5rem + env(safe-area-inset-bottom,0px) + 32px)}#xiaomaomao .xm-main-col{width:88px}#xiaomaomao .xm-wrap{width:88px;height:88px}#xiaomaomao .xm-tab{width:40px;height:40px;padding:3px}#xiaomaomao .xm-mini-close{opacity:1}#xiaomaomao .xm-dock{gap:5px;padding:5px;bottom:calc(100% + 8px);width:auto}#xiaomaomao.xm-avoid-fab .xm-dock{bottom:10px;right:calc(100% + 10px)}#xiaomaomao.xm-avoid-fab .xm-bubble{bottom:10px;right:calc(100% + 10px)}#xiaomaomao .xm-dock .xm-btn{width:32px;height:32px}#xiaomaomao .xm-dock .xm-btn svg{width:18px;height:18px}#xiaomaomao .xm-bubble{max-width:min(220px,calc(100vw - 120px));font-size:12px}#xiaomaomao .xm-panel,#xiaomaomao .xm-game{position:fixed;left:12px;right:12px;width:auto;max-width:none;bottom:calc(68px + 88px + 10px + env(safe-area-inset-bottom,0px))}#xiaomaomao .xm-panel.xm-left,#xiaomaomao .xm-game.xm-left{left:12px;right:12px}#xiaomaomao .xm-panel{height:min(380px,48vh)}#xiaomaomao .xm-game{height:min(340px,44vh)}}' +
     /* P1-1：市场页窄屏自动收起态——根节点整体滑出视口右侧（transform 只写位移，
        不动 left/top、不覆盖用户拖动位置；圆标本体随根节点一起出视口，点按与包围盒都不再挡页面元素）。
        Q1 返工：位移量不用固定值——拖动过的猫 left 不同，固定 70px 会留一部分在视口内；
@@ -637,7 +637,7 @@
        避免 1024px–1440px 桌面视口下盖住右侧任务卡片的「每项 +10 经验」或按钮；
        收起为圆标时尺寸更紧凑，绝不与卡片文字/按钮 BoundingBox 重叠。 */
     '#xiaomaomao.xm-me-safe{right:calc(20px + env(safe-area-inset-right,0px));bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:40}' +
-    '@media (min-width:640px) and (max-width:1023px){#xiaomaomao.xm-me-safe{bottom:calc(24px + env(safe-area-inset-bottom,0px))}}' +
+    '@media (min-width:640px) and (max-width:1023px){#xiaomaomao.xm-me-safe{bottom:calc(24px + env(safe-area-inset-bottom,0px))}}@media (max-width:640px){#xiaomaomao.xm-me-safe{bottom:calc(3.5rem + env(safe-area-inset-bottom,0px) + 32px)}}' +
     '#xiaomaomao.xm-me-safe:not(.xm-open) .xm-main-col{width:64px}' +
     '#xiaomaomao.xm-me-safe:not(.xm-open) .xm-wrap{width:64px;height:64px}' +
     /* 2026-11-21：/algorithms 页的挂件红点降噪。

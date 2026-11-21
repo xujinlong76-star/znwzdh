@@ -25,15 +25,43 @@ import { expect, test, type Page } from '@playwright/test'
  *   pnpm test:responsive -g hot       # 单跑某个页面
  */
 
-/** 6 个核心视口档位（小屏安卓 -> 桌面标配） */
+/**
+ * 6 个核心视口档位（小屏安卓 -> 桌面标配）。
+ *
+ * tier 决定跑在哪个门禁：
+ *   'pr'      PR 级必跑（最快发现「又改坏小屏/主流笔记本」）
+ *   'nightly' 只在夜间全量跑（面积大、耗时长）
+ *
+ * 为什么 PR 只跑 390 与 1366：
+ *   playwright.config 里 workers=1 / fullyParallel=false 是刻意设定
+ *   （避免本地 SQLite 并发写锁争用），所以**不能靠并行提速**，
+ *   只能靠减少用例数。390 覆盖手机底线、1366 覆盖主流办公笔记本，
+ *   这两档恰好是历史上出问题最多的宽度。其余 4 档下沉 nightly。
+ */
 const VIEWPORTS = [
-  { name: '360x800', width: 360, height: 800 },
-  { name: '390x844', width: 390, height: 844 },
-  { name: '768x1024', width: 768, height: 1024 },
-  { name: '1024x768', width: 1024, height: 768 },
-  { name: '1366x768', width: 1366, height: 768 },
-  { name: '1440x900', width: 1440, height: 900 },
+  { name: '360x800', width: 360, height: 800, tier: 'nightly' },
+  { name: '390x844', width: 390, height: 844, tier: 'pr' },
+  { name: '768x1024', width: 768, height: 1024, tier: 'nightly' },
+  { name: '1024x768', width: 1024, height: 768, tier: 'nightly' },
+  { name: '1366x768', width: 1366, height: 768, tier: 'pr' },
+  { name: '1440x900', width: 1440, height: 900, tier: 'nightly' },
 ] as const
+
+/**
+ * 分层过滤（2026-11-22）。
+ *
+ *   RESPONSIVE_TIER=pr      只跑 390 + 1366（PR 门禁，约 6 分钟）
+ *   RESPONSIVE_TIER=nightly 6 档全跑（夜间任务，约 25 分钟）
+ *   未设置                  全跑（本地默认，行为与之前一致）
+ *
+ * 用环境变量而非 --grep：--grep 是按用例标题字符串匹配，
+ * 遇到「1366」这种数字时会误伤路径里含相同数字的用例。
+ */
+const TIER = (process.env.RESPONSIVE_TIER || '').toLowerCase()
+const ACTIVE_VIEWPORTS =
+  TIER === 'pr' ? VIEWPORTS.filter((v) => v.tier === 'pr')
+  : TIER === 'nightly' ? VIEWPORTS
+  : VIEWPORTS
 
 /** 8 条核心路由（7 个核心页 + /me 概览） */
 const PAGES = [
@@ -124,7 +152,7 @@ async function measureHomeGrid(page: Page): Promise<HomeGridMetrics | null> {
  * 断言 1+2+6：整页溢出 / 导航裁切 / 控制台报错
  * ========================================================================== */
 
-for (const vp of VIEWPORTS) {
+for (const vp of ACTIVE_VIEWPORTS) {
   test.describe('viewport ' + vp.name, () => {
     test.use({ viewport: { width: vp.width, height: vp.height } });
 
@@ -200,7 +228,7 @@ for (const vp of VIEWPORTS) {
  * 断言 3：悬浮浮坞不遮挡核心可点击元素与页脚版权
  * ========================================================================== */
 
-for (const vp of VIEWPORTS) {
+for (const vp of ACTIVE_VIEWPORTS) {
   test.describe('dock-overlap ' + vp.name, () => {
     test.use({ viewport: { width: vp.width, height: vp.height } });
 
@@ -292,7 +320,7 @@ for (const vp of VIEWPORTS) {
  * 断言 4：移动端触控热区达标（360 / 390）
  * ========================================================================== */
 
-for (const vp of VIEWPORTS) {
+for (const vp of ACTIVE_VIEWPORTS) {
   if (!MOBILE_WIDTHS.has(vp.width)) continue
   test.describe('touch ' + vp.name, () => {
     test.use({ viewport: { width: vp.width, height: vp.height } });

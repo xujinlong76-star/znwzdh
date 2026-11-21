@@ -22,8 +22,15 @@ export function Footer({ siteInfo }: FooterProps) {
   const footerText = site?.footerText
   const icp = site?.icp
 
+  /*
+   * 2026-11-22 底部安全区按浮坞实测高度抬到 6-7rem。
+   * 原值：移动端 5.5rem / 平板 4.5rem / 桌面 lg:pb-8(2rem)。
+   * 桌面 2rem 明显不够——右下角浮坞（猫 48px + 回顶钮 44px + gap 8px + bottom 16px
+   * ≈ 116px）会压住页脚右端的「短剧专区」「DIY」等链接，实测 390x844 复现。
+   * 现在统一 6rem(96px) 起、移动端 7rem(112px)，让版权行与链接永远高于浮坞。
+   */
   return (
-    <footer className="border-t border-border/40 pt-8 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] min-[640px]:max-[1024px]:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8 bg-muted/10 mt-auto">
+    <footer className="border-t border-border/40 pt-8 bg-muted/10 mt-auto pb-[calc(7rem+env(safe-area-inset-bottom,0px))] min-[640px]:max-[1024px]:pb-[calc(6rem+env(safe-area-inset-bottom,0px))] lg:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]">
       <div className="container flex flex-col items-center justify-between gap-4 md:flex-row px-4">
         {/* 2026-11-21 页脚链接改两组规整排布。
             原实现 17 个链接 + 16 个「·」分隔符全部塞进一个 flex-wrap，

@@ -691,6 +691,13 @@ jobs:
       # 语法快速门禁：解析级检查，不依赖 vendor，几秒内定位标点级错误
       - run: node scripts/check-syntax.mjs
         id: gate-syntax
+      # hubId 校验（03 §2.4，W2b 接线）：navigation.json 每条 hubId 必须 = id
+      # 且 383 条内唯一；错指阻塞（退出码 1）、缺失只告警（退出码 0）。
+      # 中枢交叉校验在 CI 里无库可用，脚本报 SKIPPED 不报通过（见
+      # scripts/check-hub-id.mjs 文件头）；交叉校验由本地 export-hub-list
+      # 导出全量清单后跑 --hub-list 完成。
+      - run: node scripts/check-hub-id.mjs
+        id: gate-hub-id
       # 依赖完整性：装残的包会让几百个测试套件同时报「找不到模块」，看起来像代码全坏
       # （2026-10-29 本地一天两次）。CI 也跑，否则干净检出后 node_modules 损坏时无从发现。
       - run: node scripts/check-deps-integrity.mjs

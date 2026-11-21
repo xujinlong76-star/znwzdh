@@ -42,6 +42,10 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "sites", column: "visit_count", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   { table: "sites", column: "last_visited_at", sqlite: "INTEGER", pg: "BIGINT" },
   { table: "sites", column: "trend_score", sqlite: "REAL NOT NULL DEFAULT 0", pg: "DOUBLE PRECISION NOT NULL DEFAULT 0" },
+  // 连续失败计数（03 §3.3，W1 §13 第 2 条 verdict ①）：sites 表内嵌列，
+  // 由 updateSiteHealth 与 health 写回 + lastCheckedAt 同事务写。
+  // 只改 CREATE TABLE / schema.ts 的话存量库永远缺列，所以 ALTER 必须同步登记。
+  { table: "sites", column: "consecutive_failures", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   { table: "sites", column: "deleted_at", sqlite: "INTEGER", pg: "BIGINT" },
   // 站点子类目指针：早期库没有这一列，而读路径（categorySiteCounts、
   // cleanupOrphanPluginCategories、dashboard 分布）都按双指针写 SQL ——

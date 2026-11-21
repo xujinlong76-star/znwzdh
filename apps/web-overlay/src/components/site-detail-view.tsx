@@ -73,7 +73,7 @@ import { copyText } from '@/lib/clipboard'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SiteFavicon } from '@/components/site-favicon'
-import { isBotBlockStatus, siteHealthBadge } from '@/lib/site-health'
+import { isBotBlockStatus, siteHealthState, siteHealthTitle } from '@/lib/site-health'
 import { buildDeadLinkWaybackUrl } from '@/lib/dead-link'
 import { safeHref } from '@/lib/safe-url'
 import { cn } from '@/lib/utils'
@@ -566,7 +566,7 @@ export function SiteDetailView({
   )
 
   const hasFacets = site.facets && Object.keys(site.facets).length > 0
-  const healthBadge = siteHealthBadge(site.health)
+  const healthState = siteHealthState(site.health)
   // 反爬状态（401/403/429）不等于站点下线：详情页只报 HTTP 码会被读成「打不开」，
   // 这一句把「我们被拒绝」和「站点不可用」分开（口径与 /search 的 broken 分区一致）。
   const botBlocked = isBotBlockStatus(site.health?.httpStatus)
@@ -665,18 +665,20 @@ export function SiteDetailView({
                   {site.title}
                 </h1>
                 <div className="flex flex-wrap items-center gap-2">
-                  {healthBadge && (
+                  {healthState && (
                     <span
                       className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs border ${
-                        healthBadge.tone === 'ok'
+                        healthState.tone === 'ok'
                           ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
-                          : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30'
+                          : healthState.tone === 'error'
+                            ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/30'
+                            : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30'
                       }`}
-                      title="服务端最新巡检结果"
+                      title={siteHealthTitle(site.health) ?? '服务端最新巡检结果'}
                     >
-                      <span className={`w-2 h-2 rounded-full ${healthBadge.tone === 'ok' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                      <span>{healthBadge.label}</span>
-                      {healthBadge.latencyMs != null && <span>({healthBadge.latencyMs}ms)</span>}
+                      <span className={`w-2 h-2 rounded-full ${healthState.tone === 'ok' ? 'bg-emerald-500 animate-pulse' : healthState.tone === 'error' ? 'bg-rose-500' : 'bg-amber-500'}`} />
+                      <span>{healthState.label}</span>
+                      {healthState.latencyMs != null && <span>({healthState.latencyMs}ms)</span>}
                     </span>
                   )}
                   {healthHistory.length >= 2 && (
@@ -1069,9 +1071,9 @@ export function SiteDetailView({
               </div>
             )}
           </dl>
-          {botBlocked ? (
+          {botBlocked && healthState ? (
             <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-400">
-              最近一次巡检返回 HTTP {site.health?.httpStatus}：这通常表示对方站点拒绝了自动访问（反爬、登录墙或按 IP 限流），
+              最近一次巡检：{healthState.label}——对方站点拒绝了自动访问（反爬、登录墙或按 IP 限流），
               不代表站点无法打开。点「立即直达」通常仍可正常访问，巡检恢复后本条会自动更新。
             </p>
           ) : null}

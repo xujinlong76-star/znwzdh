@@ -816,6 +816,11 @@ async savedPluginEmbeddings(filter?: {
     return healthRepo.recentHealthChecks(this, siteId, limit);
   }
 
+  /** 某站点持久连续失败计数（sites.consecutive_failures，事实源） */
+  async getConsecutiveFailures(siteId: string): Promise<number> {
+    return healthRepo.getSiteConsecutiveFailures(this, siteId);
+  }
+
   /* ------------------------------ LLM 用量 ------------------------------ */
 
   /** 记录一次模型调用（成功/失败都记；失败静默，不影响调用结果） */

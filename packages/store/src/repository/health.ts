@@ -1,4 +1,5 @@
 import type { Repository } from "../repository.ts";
+import { computeConsecutiveFailures, isBotBlockedHealthRecord } from "@navhub/core";
 
 export async function updateSiteHealth(repo: Repository, siteId: string, health: {
     httpStatus: number | null
@@ -11,14 +12,33 @@ export async function updateSiteHealth(repo: Repository, siteId: string, health:
     currentStatus?: string
   }): Promise<void> {
   const now = Date.now();
-  // 两条写必须同生同死：只写了 sites 而没写进 health_checks，
-  // 连续失败判定（recentHealthChecks）就少算一次，站点会被误判或漏判为 broken
+  // 三条写必须同生同死：只写了 sites 而没写进 health_checks，
+  // 连续失败判定（recentHealthChecks）就少算一次，站点会被误判或漏判为 broken；
+  // consecutive_failures 与 health 写回 + lastCheckedAt 同一次写入、同一事务
+  // 可见（03 §3.3，W1 §13 第 2 条 verdict ①），否则计数与 health 状态漂移。
   return repo.withTransaction(async () => {
+  // 计数转移与 core 的 computeConsecutiveFailures 同一条规则（成功清零、
+  // bot-blocked 打断链、失败 +1）；旧值读库内行（事实源），不读进程内登记。
+  // bot-blocked 判定用 error 前缀（isBotBlockedHealthRecord），不用状态码猜：
+  // “站点拒绝巡检抓取”是未测准、不是失败，ok === false 也必须清零，否则
+  // 永久 WAF 站迟早被误标 broken（2026-10-18 事故）。
+  const prevRows = await repo.raw(
+    "SELECT consecutive_failures FROM sites WHERE id = ?",
+    [siteId],
+  );
+  const previous = Number(prevRows[0]?.consecutive_failures ?? 0) || 0;
+  const { consecutiveFailures } = computeConsecutiveFailures(previous, {
+    ok: health.ok,
+    httpStatus: health.httpStatus,
+    checkedAt: now,
+    botBlocked: isBotBlockedHealthRecord(health.error),
+  });
   await repo.run(
     `UPDATE sites SET http_status = ?, health_ok = ?, latency_ms = ?, redirect_to = ?,
-            health_error = ?, last_checked_at = ?, status = ? WHERE id = ?`,
+            health_error = ?, last_checked_at = ?, consecutive_failures = ?, status = ? WHERE id = ?`,
     [
       health.httpStatus, health.ok, health.latencyMs, health.redirectTo, health.error, now,
+      consecutiveFailures,
       health.ok ? (health.currentStatus ?? "active") : (health.markBroken === false ? (health.currentStatus ?? "active") : "broken"),
       siteId,
     ],
@@ -28,6 +48,22 @@ export async function updateSiteHealth(repo: Repository, siteId: string, health:
     [siteId, now, health.ok, health.httpStatus, health.latencyMs, health.redirectTo, health.error],
   );
   });
+}
+
+/**
+ * 读某站点的持久连续失败计数（sites.consecutive_failures，事实源）。
+ *
+ * 旧库缺列时抛 "no such column"：调用方（shouldBreak）按保守处理返回 false，
+ * 不在这里吞错——缺列是迁移未跑的部署问题，读路径静默返回 0 会把“没迁移”
+ * 伪装成“没失败过”。migrateColumns 在启动时补列，正常部署不会走到这里。
+ */
+export async function getSiteConsecutiveFailures(repo: Repository, siteId: string): Promise<number> {
+  const rows = await repo.raw(
+    "SELECT consecutive_failures FROM sites WHERE id = ?",
+    [siteId],
+  );
+  const v = Number(rows[0]?.consecutive_failures ?? 0);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
 }
 
 export async function healthCheckSeries(repo: Repository, since: number, limit = 5000): Promise<Array<{ siteId: string; checkedAt: number; ok: boolean; latencyMs: number | null }>> {

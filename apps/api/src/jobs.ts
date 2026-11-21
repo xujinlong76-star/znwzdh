@@ -17,7 +17,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { readFile, stat, unlink } from "node:fs/promises";
-import { canonicalizeUrl, runAutonomousHealing, planPatrol } from "@navhub/core";
+import { canonicalizeUrl, CONSECUTIVE_FAILURES_THRESHOLD, runAutonomousHealing, planPatrol } from "@navhub/core";
 import {
   bindSqlite,
   toPgSql,
@@ -74,9 +74,14 @@ type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
  * 为什么不是「一次失败即 broken」：单次探测会被 403/429/超时/CDN 抖动命中。
  * 实测（2026-10-18，50 站点）有 15 个被标 broken，其中 kubernetes.io、
  * figma.com、npmjs.com 等知名站点实际可正常访问 —— 误判率 30%。
- * 连续 N 次（默认 3）能把绝大多数瞬时抖动过滤掉。
+ * 连续 N 次（默认 2）能把绝大多数瞬时抖动过滤掉。
+ *
+ * 默认值 2 是 03 方案 §3.3 已裁决的本站值（core 的
+ * CONSECUTIVE_FAILURES_THRESHOLD，唯一事实源；本站巡检周期是天级，
+ * 阈值 3 会让一次真实下线多等一个周期才标出）。环境变量
+ * NAVHUB_HEALTH_FAIL_THRESHOLD 仍可覆盖（运维旋钮，不改语义）。
  */
-export const HEALTH_FAIL_THRESHOLD = Math.max(1, Number(process.env.NAVHUB_HEALTH_FAIL_THRESHOLD ?? 3));
+export const HEALTH_FAIL_THRESHOLD = Math.max(1, Number(process.env.NAVHUB_HEALTH_FAIL_THRESHOLD ?? CONSECUTIVE_FAILURES_THRESHOLD));
 
 /**
  * 健康判定的纯函数部分（可单测，不碰网络）。

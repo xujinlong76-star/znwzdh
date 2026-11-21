@@ -175,12 +175,18 @@ export interface NavigationSubItemRaw {
    */
   tags?: string[]
   /**
+   * 中枢站点 id（03 §2.3 步骤 2）：情况一 hubId = id（W1 实测），
+   * 由回填脚本写进 navigation.json，processNavigationSubItem 原样透传。
+   * 卡片健康徽标靠它把分片条目与中枢巡检 health 对上。
+   */
+  hubId?: string
+  /**
    * 服务端巡检的健康状态（与 NavigationSubItem.health 同形）。
    * processNavigationSubItem 原样透传。注意：卡片上的死链徽标已于
    * 2026-11-12 移除（静态导航 JSON 从不带该字段，首页也不取中枢数据，
    * 徽标在生产里永远画不出来，见 dead-link.ts 文件头）——本字段目前
-   * 唯一的消费方是速览弹窗的健康提示（site-peek-dialog.tsx，经
-   * siteHealthBadge 渲染），卡片不读它。详情页的健康来自中枢站点
+   * 的消费方是速览弹窗的健康提示（site-peek-dialog.tsx，经
+   * siteHealthBadge 渲染）与卡片（hubId 打通后恢复，见 03 §4.1）。详情页的健康来自中枢站点
    * 本身（HubSite.health），不走这里。
    */
   health?: NavigationSubItem['health']
@@ -220,6 +226,11 @@ export interface NavigationSubItem {
   useDefaultIcon?: boolean
   enabled: boolean
   tags?: string[]
+  /**
+   * 中枢站点 id（03 §2.3 步骤 2）：情况一 hubId = id（W1 实测）。
+   * processNavigationSubItem 原样透传；卡片健康徽标的映射键。
+   */
+  hubId?: string
   actions?: SiteAction[]
   relations?: SiteRelation[]
   liveMetrics?: SiteLiveMetrics

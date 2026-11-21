@@ -42,6 +42,8 @@ interface NsItem {
   enabled: boolean;
   /** 站点状态（A10）：前台展示面靠它把 broken 站挡在精选/推荐位之外；分类列表仍保留展示并标失效。 */
   status?: string;
+  /** 中枢站点 id（03 §2.3 步骤 5）：情况一 hubId = id（W1 实测），读回时由站点行 id 派生。 */
+  hubId?: string;
   weight?: number;
   trendScore?: number;
   tags?: string[];
@@ -343,6 +345,10 @@ function projectNavigation(
       title: s.title,
       href: s.url,
       description: s.description ?? undefined,
+      // 03 §2.3 步骤 5（写回回归门禁）：整包写回再读回时 hubId 必须原样保留。
+      // 站点行没有独立的 hubId 列——情况一 hubId = id，读回直接由行 id 派生；
+      // 此前 toItem 不出该字段，写回一轮即丢映射（W2b 实测）。
+      hubId: s.id,
       // 自定义图标走 resolveSiteIcon 的第 3 参（而非 `iconKey || ...` 短路）：
       // 指向第三方图标服务的脏值会在这里被视同没有自定义图标，避免进快照 / RSC payload。
       icon: resolveSiteIcon(s.url, s.title, s.iconKey),

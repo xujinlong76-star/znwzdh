@@ -121,6 +121,21 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
   test('猫可拖动且位置持久化（拖过的猫以用户自选位置为准）', async ({ page }) => {
     await gotoHome(page, 700);
     await expectDockVisible(page);
+    // U-260 前置（2026-11-21，与 :178 同因）：首屏瘦身后全新 profile 下猫默认收起
+    // （closed: true），.xm-main-col 被 display:none，拖动监听挂在 .xm-stage 上，
+    // 收起态拖了也写不出行内 left/top（CI 抽样：:138「拖动后应写行内 left」；
+    // 本地复现同错）。先点收起徽标（.xm-tab）展开再拖；其余断言一字不动。
+    const isClosed = await page.evaluate(
+      () => document.querySelector('#xiaomaomao')?.classList.contains('xm-closed') ?? false,
+    );
+    if (isClosed) {
+      await page.locator(`${CAT} .xm-tab`).click({ timeout: 10_000 });
+      await page.waitForFunction(
+        () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-closed'),
+        { timeout: 10_000 },
+      );
+      await page.waitForTimeout(600); // 入场动画（xm-enter .32s）落定
+    }
     const cat = page.locator(`${CAT} .xm-stage`);
     const before = await page.locator(CAT).boundingBox();
     expect(before).not.toBeNull();
@@ -155,11 +170,30 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
   test('猫面板展开后仍在视口内（抬高后面板随猫上移、不出视口）', async ({ page }) => {
     await gotoHome(page, 700);
     await expectDockVisible(page);
+    // U-260 前置（2026-11-21，与 :121/:178 同因）：全新 profile 下猫默认收起，
+    // .xm-stage 被 display:none，boundingBox() 取到 null（CI :162 同错，
+    // 本地复现同错）。先点收起徽标展开再量面板；其余断言一字不动。
+    const isClosed = await page.evaluate(
+      () => document.querySelector('#xiaomaomao')?.classList.contains('xm-closed') ?? false,
+    );
+    if (isClosed) {
+      await page.locator(`${CAT} .xm-tab`).click({ timeout: 10_000 });
+      await page.waitForFunction(
+        () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-closed'),
+        { timeout: 10_000 },
+      );
+      await page.waitForTimeout(600); // 入场动画（xm-enter .32s）落定
+    }
     // 桌面悬停唤出悬浮坞，再点聊天钮开面板。注意不用 page.hover('.xm-stage')：
     // .xm-stage 带无限 xmFloat 浮动动画，Playwright 的 hover 要等元素 stable，
     // 永远等不到而超时；mouse.move 不做 stable 检查，同样能触发 root 的 pointerenter。
+    // U-260 续（2026-11-21）：点圆标展开时鼠标已在猫身上——pointerenter 在
+    // xm-closed 下被 ctlBlocked() 拦住，展开后鼠标不出根节点就不再触发，
+    // 坞永不出、聊天钮点不到（本地复现：.xm-chat-btn 10 秒 not visible）。
+    // 先把鼠标移出猫的范围再移入，触发一次新的 pointerenter。
     const stageBox = await page.locator(`${CAT} .xm-stage`).boundingBox();
     expect(stageBox).not.toBeNull();
+    await page.mouse.move(10, 10);
     await page.mouse.move(stageBox!.x + stageBox!.width / 2, stageBox!.y + stageBox!.height / 2);
     await page.locator(`${CAT} .xm-chat-btn`).click({ timeout: 10_000 });
     const panel = page.locator(`${CAT} .xm-panel`);

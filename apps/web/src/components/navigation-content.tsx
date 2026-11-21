@@ -716,15 +716,22 @@ export function NavigationContent({
   const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
   useEffect(() => {
     let active = true
-    readOfflineVisits(20)
-      .then((rows) => {
-        if (active && Array.isArray(rows)) setRecentVisits(rows)
-      })
-      .catch(() => {
-        // 降级容错：离线最近访问读取失败时映射退回「钉选 + 工作区 + 全站顺序」
-      })
+    // P2-14：窗口获焦时重读最近访问（与坞旧有的 focus 同步一致），使 dialSites
+    // 随之刷新——坞不再自己重算速拨顺序，改由父级透传 dialSites，获焦刷新不能丢。
+    const sync = () => {
+      readOfflineVisits(20)
+        .then((rows) => {
+          if (active && Array.isArray(rows)) setRecentVisits(rows)
+        })
+        .catch(() => {
+          // 降级容错：离线最近访问读取失败时映射退回「钉选 + 工作区 + 全站顺序」
+        })
+    }
+    sync()
+    window.addEventListener('focus', sync)
     return () => {
       active = false
+      window.removeEventListener('focus', sync)
     }
   }, [])
 
@@ -1302,6 +1309,8 @@ export function NavigationContent({
                     allSites={visibleSites}
                     activeWorkspace={activeWorkspace}
                     dialDigitById={mounted ? dialMap.digitById : undefined}
+                    // P2-14：速拨顺序由父级 dialSites 一次算好透传，坞不再自己重算。
+                    speedSites={dialSites}
                   />
                 </div>
               )}

@@ -55,12 +55,19 @@ function CardThumbnailVisual({
   boxClassName,
   imgClassName,
   monogramClassName,
+  // P2-11：与 imgClassName 的 CSS 显示尺寸一致（rich 56 / 默认 36），让 <img>
+  // 自带宽高、盒子尺寸不依赖父级 class；object-contain 下图片按原比例缩放，
+  // 宽高属性只定纵横比预留、不拉伸图片。
+  imgWidth,
+  imgHeight,
 }: {
   thumbnail: SiteThumbnail
   title: string
   boxClassName: string
   imgClassName: string
   monogramClassName: string
+  imgWidth: number
+  imgHeight: number
 }) {
   const [imgFailed, setImgFailed] = useState(false)
   const prevSrcRef = useRef(thumbnail.src)
@@ -82,6 +89,8 @@ function CardThumbnailVisual({
         <img
           src={thumbnail.src}
           alt=""
+          width={imgWidth}
+          height={imgHeight}
           loading="lazy"
           decoding="async"
           draggable={false}
@@ -798,7 +807,7 @@ export const NavigationCard = memo(function NavigationCard({
                   自身返回 null；sm 以下隐藏（见 number-dial-badge）。 */}
               <NumberDialBadge
                 digit={dialDigit}
-                className="top-2 right-11 z-20 transition-opacity duration-[--duration-fast] group-hover/card:opacity-0 group-focus-within/card:opacity-0"
+                className="top-2 right-11 z-20 transition-opacity duration-[--duration-fast] pointer-fine:group-hover/card:opacity-0 pointer-fine:group-focus-within/card:opacity-0"
               />
 
               {/* 外链覆盖层：唯一 Tab 停留点（Enter 打开站点 / Space 速览 / → 进操作区） */}
@@ -841,10 +850,22 @@ export const NavigationCard = memo(function NavigationCard({
                       boxClassName="h-28 w-full shrink-0"
                       imgClassName="h-14 w-14 object-contain drop-shadow-sm"
                       monogramClassName="text-3xl"
+                      imgWidth={56}
+                      imgHeight={56}
                     />
                   </div>
                 )}
-                <CardHeader className="p-[var(--density-card-padding,0.875rem)] flex-1">
+                <CardHeader
+                  className={cn(
+                    'flex-1',
+                    // P2-22：已置顶角标（absolute top-1.5 left-1.5，约 19px 高）会压住无缩略图时
+                    // 的 44px 图标左上角；置顶且无缩略图时上内边距改为 28px（pt-7），让图标从
+                    // 角标下方起排。有缩略图时角标压在横幅上（装饰图，读作置顶标签），不加。
+                    isPinnedInCategory && !thumbnail
+                      ? 'px-[var(--density-card-padding,0.875rem)] pb-[var(--density-card-padding,0.875rem)] pt-7'
+                      : 'p-[var(--density-card-padding,0.875rem)]',
+                  )}
+                >
                   <div className="flex items-start gap-3.5">
                     {!thumbnail && (
                     <div className="relative flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-[--duration-base] group-hover/card:scale-105 shadow-xs">
@@ -1129,7 +1150,7 @@ export const NavigationCard = memo(function NavigationCard({
                 digit 为空时组件自身返回 null；sm 以下隐藏。 */}
             <NumberDialBadge
               digit={dialDigit}
-              className="top-2 right-11 transition-opacity duration-[--duration-fast] group-hover/card:opacity-0 group-focus-within/card:opacity-0"
+              className="top-2 right-11 transition-opacity duration-[--duration-fast] pointer-fine:group-hover/card:opacity-0 pointer-fine:group-focus-within/card:opacity-0"
             />
 
             <div className={cn(
@@ -1137,7 +1158,15 @@ export const NavigationCard = memo(function NavigationCard({
               // 首屏瘦身：内边距已是 14px（= p-3.5）。保留密度变量（默认 0.875rem）
               // 而非写死 p-3.5，让用户仍可经密度切换调大/调小（见 globals.css
               // [data-density]），视觉默认值与 p-3.5 完全一致。
-              isCapsuleCollapsed ? "px-3 py-2" : "p-[var(--density-card-padding,0.875rem)]"
+              // P2-22：已置顶角标（absolute top-1.5 left-1.5）会压住 48px 图标左上角；
+              // 置顶时上内边距改为 28px（pt-7），让图标从角标下方起排（默认卡始终有图标）。
+              isCapsuleCollapsed
+                ? isPinnedInCategory
+                  ? 'px-3 pb-2 pt-7'
+                  : 'px-3 py-2'
+                : isPinnedInCategory
+                  ? 'px-[var(--density-card-padding,0.875rem)] pb-[var(--density-card-padding,0.875rem)] pt-7'
+                  : 'p-[var(--density-card-padding,0.875rem)]'
             )}>
               {/* Header 层：图标与标题同行，释放左侧死区；右端只给常驻星标留位
                   （卡片悬浮修复 2026-11-20：操作栏已移到底部，标题不再需要
@@ -1155,6 +1184,8 @@ export const NavigationCard = memo(function NavigationCard({
                       boxClassName="flex-shrink-0 w-12 h-12 rounded-xl shadow-xs transition-transform duration-[--duration-base] group-hover/card:scale-105"
                       imgClassName="h-9 w-9 object-contain"
                       monogramClassName="text-lg"
+                      imgWidth={36}
+                      imgHeight={36}
                     />
                   </div>
                 ) : (

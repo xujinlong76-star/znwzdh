@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Wrench, Copy, Check, RefreshCw, Braces, Binary, Clock, Link2, KeyRound, Timer, Terminal } from 'lucide-react'
 import { parseSpeculativeIntent } from '@/lib/speculative'
 import { copyText } from '@/lib/clipboard'
+import { generateSecureUuid } from '@/lib/secure-random'
 
 interface QuickToolsDrawerProps {
   open: boolean
@@ -37,6 +38,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
 
   // UUID & 时间戳工具状态
   const [uuid, setUuid] = useState('')
+  const [uuidError, setUuidError] = useState<string | null>(null)
   // 水合安全：Date.now() 在 SSR 与客户端必然不同，不能做 useState 初始值（文本水合不匹配）
   const [currentTs, setCurrentTs] = useState(0)
   const [tsInput, setTsInput] = useState('')
@@ -129,13 +131,15 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
     }
   }
 
-  // UUID 生成
+  // UUID 生成（CodeQL #132：永不用 Math.random()；见 @/lib/secure-random）
   const handleGenUuid = () => {
-    const newId = crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0
-      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
-    })
-    setUuid(newId)
+    try {
+      setUuid(generateSecureUuid())
+      setUuidError(null)
+    } catch (err) {
+      // crypto 完全不可用时明说，绝不静默降级到可预测的 Math.random()
+      setUuidError(err instanceof Error ? err.message : String(err))
+    }
   }
 
   // 时间戳转换
@@ -382,6 +386,11 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   {copied === 'uuid' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                 </Button>
               </div>
+              {uuidError && (
+                <p className="text-xs text-destructive-text bg-destructive/15 p-2.5 rounded-xl border border-destructive/20 font-mono shadow-2xs">
+                  {uuidError}
+                </p>
+              )}
             </div>
 
             {/* 当前时间戳 */}

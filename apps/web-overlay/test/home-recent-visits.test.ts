@@ -154,7 +154,7 @@ describe('SSR 半：容器首帧不渲染该行（无 hydration 风险）', () =
 })
 
 describe('接线守卫：首页真的在 hero 与分类网格之间挂了该行', () => {
-  it('navigation-content 通过三合一 HomeQuickDock 在工作台之后、分类网格之前呈现最近访问', () => {
+  it('navigation-content 通过三合一 HomeQuickDock 在合并胶囊行内（工作台分支之前）、分类网格之前呈现最近访问', () => {
     const src = readSrc('src/components/navigation-content.tsx')
     const dockSrc = readSrc('src/components/home-quick-dock.tsx')
     expect(src, 'navigation-content.tsx 读不到').not.toBeNull()
@@ -168,8 +168,11 @@ describe('接线守卫：首页真的在 hero 与分类网格之间挂了该行'
     const gridAt = src!.indexOf('<DiyGridDragBoundary')
     expect(rowAt).toBeGreaterThan(dockAt)
     expect(rowAt).toBeLessThan(gridAt)
+    // 29489f4c 首屏瘦身：HomeQuickDock 随运营胶囊行内联进 HomeCapsuleRow 所在的
+    // 合并行（1536px+ 与胶囊行并排一行），位于 viewMode === 'workbench' 分支之前、
+    // 分类网格之前；props 与 mod:speed-dial 条件不变，功能未删。
     const workbenchAt = src!.indexOf("viewMode === 'workbench'")
-    expect(rowAt).toBeGreaterThan(workbenchAt)
+    expect(rowAt).toBeLessThan(workbenchAt)
     expect(dockSrc).toContain('readOfflineVisits(OFFLINE_RECENT_LIMIT)')
   })
 

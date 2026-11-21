@@ -102,9 +102,12 @@ describe('首页极简结构与小窗懒加载边界', () => {
     expect(src).not.toContain('<HomepageBanner')
   })
 
-  it('navigation-content.tsx 采用 HomeMicroStrip + HomeQuickDock 与 dynamic({ ssr: false }) 小窗', () => {
+  it('navigation-content.tsx 采用 HomeCapsuleRow + HomeQuickDock 与 dynamic({ ssr: false }) 小窗', () => {
     const src = readOverlay('src/components/navigation-content.tsx')
-    expect(src).toContain('<HomeMicroStrip')
+    // 29489f4c 首屏瘦身：运营胶囊行 HomeMicroStrip 已内联进 HomeCapsuleRow（合并行），
+    // navigation-content 只挂载 <HomeCapsuleRow；旧文件 home-micro-strip.tsx 保留但不再挂载。
+    expect(src).toContain('<HomeCapsuleRow')
+    expect(readOverlay('src/components/home-capsule-row.tsx')).toContain('运营胶囊')
     expect(src).toContain('<HomeQuickDock')
     expect(src).toContain('<HomeDIYTrigger hideStaticButton />')
     expect(src).toContain('TodayCenterDialog')

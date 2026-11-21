@@ -415,6 +415,14 @@ export const NavigationCard = memo(function NavigationCard({
 
   /** 操作区内方向键导航：←/→ 移动，Esc 回到主链接 */
   const handleActionsKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // P0-3/P0-4：漫游处理器挂在卡片根节点（覆盖内容层的标签/平替与底栏按钮），
+    // 事件会从卡片内所有可聚焦元素冒泡上来；只有事件源本身就是某个
+    // [data-card-action]（或其子节点）时才处理。否则——例如焦点在覆盖层 <a> 上
+    // 按 →，它自己的 handleKeyDown 已把焦点挪到首个动作——这里再处理就会
+    // 连挪两次。守卫保证每个按键只被处理一次。
+    if (!(e.target as HTMLElement | null)?.closest?.('[data-card-action]')) {
+      return
+    }
     // 键盘拖拽进行中（Space 已拿起卡片）且焦点就在拖拽手柄上：
     // ←/→/Esc 归 dnd-kit KeyboardSensor——它在 document 捕获阶段监听，
     // 先于这里收到事件；这里再 preventDefault + 挪焦点，方向键就只动
@@ -567,6 +575,7 @@ export const NavigationCard = memo(function NavigationCard({
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
                 selectionClass
               )}
+              onKeyDown={handleActionsKeyDown}
             >
               {/* 外链覆盖层：唯一 Tab 停留点（Enter 打开站点 / Space 速览 / → 进操作区） */}
               <a
@@ -627,7 +636,7 @@ export const NavigationCard = memo(function NavigationCard({
 
               {/* 紧凑操作按钮（首屏瘦身）：收藏星与其它操作同款降透明度，悬停/聚焦/
                   触屏时才显，编排态常显；图标角标保留（行布局无「右上角」概念）。 */}
-              <div className="relative z-20 flex items-center gap-0.5" onKeyDown={handleActionsKeyDown}>
+              <div className="relative z-20 flex items-center gap-0.5">
                 <span className={cn(
                   "flex items-center gap-0.5 transition-opacity",
                   isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
@@ -761,6 +770,7 @@ export const NavigationCard = memo(function NavigationCard({
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
                 selectionClass
               )}
+              onKeyDown={handleActionsKeyDown}
             >
               {isPinnedInCategory && effectiveCardElements.showPinnedBadge && (
                 <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-medium">
@@ -876,22 +886,27 @@ export const NavigationCard = memo(function NavigationCard({
                     href={'/tags/' + encodeURIComponent(tagSlug(tag))}
                     onClick={handleTagClick}
                     tabIndex={-1}
+                    data-card-action
                     className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors min-h-6"
                   >
                     #{tag}
                   </Link>
                 ))}
                 {topAlternative && effectiveCardElements.showPinnedBadge && (
-                  <span
+                  <button
+                    type="button"
+                    data-card-action
+                    tabIndex={-1}
                     onClick={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
                       onPeek?.(item)
                     }}
+                    aria-label={`查看平替：${topAlternative.targetTitle}`}
                     className="pointer-events-auto inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer"
                   >
                     <span>平替: {topAlternative.targetTitle}</span>
-                  </span>
+                  </button>
                 )}
                 {item.actions && item.actions.length > 0 && (
                   <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-700 dark:text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
@@ -906,13 +921,14 @@ export const NavigationCard = memo(function NavigationCard({
               {/* 操作栏（卡片悬浮修复 2026-11-20）：由右上角药丸移到底部通栏，
                   与标准卡同款——悬浮时不再遮挡标题；卡片高度固定，操作栏
                   absolute 不参与布局、不产生 CLS；只用 opacity 过渡。
-                  触屏（hover: none）默认可见，见 globals.css .nav-card-actionbar。 */}
+                  触屏（hover: none）默认可见，见 globals.css .nav-card-actionbar。
+                  P0-3/P0-4：漫游处理器已移到卡片根节点（见 Card 的 onKeyDown），
+                  此处不再挂，避免同一按键被处理两次。 */}
               <div
                 className={cn(
                   "nav-card-actionbar absolute bottom-0 left-0 right-0 z-10 flex items-center gap-0.5 px-1.5 pt-1.5 pb-1 bg-card/95 dark:bg-card/90 backdrop-blur-md before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-border before:to-transparent transition-opacity duration-150",
                   isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 group-hover/card:opacity-100 group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto"
                 )}
-                onKeyDown={handleActionsKeyDown}
               >
                 <span className="flex flex-1 items-center gap-0.5">
                 {renderDragControls('h-11 w-11 rounded-lg')}
@@ -1045,6 +1061,7 @@ export const NavigationCard = memo(function NavigationCard({
               isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
               selectionClass
             )}
+            onKeyDown={handleActionsKeyDown}
           >
             {isPinnedInCategory && effectiveCardElements.showPinnedBadge && (
               <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-medium">
@@ -1163,16 +1180,20 @@ export const NavigationCard = memo(function NavigationCard({
                     </span>
                   )}
                   {topAlternative && (
-                    <span
+                    <button
+                      type="button"
+                      data-card-action
+                      tabIndex={-1}
                       onClick={(e) => {
                         e.preventDefault()
                         e.stopPropagation()
                         onPeek?.(item)
                       }}
+                      aria-label={`查看平替：${topAlternative.targetTitle}`}
                       className="pointer-events-auto inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer shrink-0"
                     >
                       <span>平替: {topAlternative.targetTitle}</span>
-                    </span>
+                    </button>
                   )}
                   {item.actions && item.actions.length > 0 && (
                     <span className="inline-flex items-center gap-0.5 text-xs text-amber-700 dark:text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full shrink-0">
@@ -1192,6 +1213,7 @@ export const NavigationCard = memo(function NavigationCard({
                       href={'/tags/' + encodeURIComponent(tagSlug(tag))}
                       onClick={handleTagClick}
                       tabIndex={-1}
+                      data-card-action
                       className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.2 rounded-full bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors"
                     >
                       #{tag}
@@ -1207,13 +1229,14 @@ export const NavigationCard = memo(function NavigationCard({
                 出现/消失只用 opacity 过渡，不用 display 切换。
                 触屏（hover: none）默认可见，见 globals.css .nav-card-actionbar。
                 z-10 与内容同层但位于底部，与标题层无重叠；背景用卡片底色，
-                顶部一条渐隐分隔线（before 渐变）与内容区隔开。 */}
+                顶部一条渐隐分隔线（before 渐变）与内容区隔开。
+                P0-3/P0-4：漫游处理器已移到卡片根节点（见 Card 的 onKeyDown），
+                此处不再挂，避免同一按键被处理两次。 */}
             <div
               className={cn(
                 "nav-card-actionbar absolute bottom-0 left-0 right-0 z-10 flex items-center gap-0.5 px-1.5 pt-1.5 pb-1 bg-card/95 dark:bg-card/90 backdrop-blur-md before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-border before:to-transparent transition-opacity duration-150",
                 isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 group-hover/card:opacity-100 group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto"
               )}
-              onKeyDown={handleActionsKeyDown}
             >
               <span className="flex flex-1 items-center gap-0.5">
               {renderDragControls('h-11 w-11 rounded-lg')}

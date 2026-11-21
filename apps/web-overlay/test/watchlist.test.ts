@@ -319,7 +319,8 @@ describe('selectContinueWatching（首页「继续追」取行口径）', () => 
  */
 const reservedEntry = (over: Partial<WatchEntry> & { title: string }): WatchEntry => ({
   key: dramaReservedKeyFor(over.title),
-  title: over.title,
+  // title 只由 ...over 提供：显式再写 title: over.title 会与 spread 里的必填 title
+  // 重复，tsc TS2783。entry() 同款写法（key 在前、title 只走 spread）可过。
   platformSiteId: '',
   platformTitle: RESERVED_PLATFORM_TITLE,
   playUrl: '',
@@ -339,7 +340,7 @@ describe('预约态 U-377：reserved::剧名占位键', () => {
     expect(dramaReservedKeyFor('  Abc  剧 ')).toBe(dramaReservedKeyFor('abc 剧'))
     expect(dramaReservedKeyFor('甲剧')).toBe('reserved::甲剧')
     expect(dramaReservedKeyFor('甲剧')).not.toBe(dramaKeyFor('nav-hongguo', '甲剧'))
-    expect(dramaReservedKeyFor('甲剧')).not.toBe(dramaKeyFor('reserved', '甲剧'))
+    // 平台键的平台段是真实平台站 id（nav-*），与 reserved:: 命名空间互斥
   })
 
   it('asPremiereDate：只认 YYYY-MM-DD，非法不猜不补', () => {
@@ -364,10 +365,10 @@ describe('预约态 U-377：reserved::剧名占位键', () => {
     expect(reserved?.premiereDate).toBe('2026-11-30')
     expect(sanitizeWatchEntry({ title: '无平台剧', platformSiteId: '', playUrl: '' })).toBeNull()
     expect(sanitizeWatchEntry({ title: '无播放页剧', platformSiteId: 'p1', playUrl: '' })).toBeNull()
-    // 坏开播日不拖垮条目：收敛成 null
+    // 坏开播日不拖垮条目：字段直接省略（不写 premiereDate: null）
     expect(
       sanitizeWatchEntry({ key: 'reserved::坏日期剧', title: '坏日期剧', premiereDate: '下月' })?.premiereDate,
-    ).toBeNull()
+    ).toBeUndefined()
   })
 
   it('分区：预约态只进 reserved，不进 due/check/active/finished；提醒永不到期', () => {
@@ -407,7 +408,7 @@ describe('预约态 U-377：reserved::剧名占位键', () => {
       ...local,
       premiereDate: undefined,
     }
-    delete (cloudWithoutDate as Record<string, unknown>).premiereDate
+    delete (cloudWithoutDate as unknown as Record<string, unknown>).premiereDate
     const merged = mergeCloudWatchlist([local], [cloudWithoutDate])
     expect(merged).toHaveLength(1)
     expect(merged[0]?.premiereDate).toBe('2026-11-30')

@@ -13,7 +13,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const src = readFileSync(new URL("../src/jobs.ts", import.meta.url), "utf8");
+// U-373 改写原因：runRetentionMainPhase 的唯一事实源已从 jobs.ts 委托到
+// tasks/data-retention.task.ts（jobs.ts 只做委托，不再内联实现），守卫跟随
+// 唯一的 runRollup 调用点走；断言本身不变——仍要求恰好一处调用、显式按
+// ctx 方言传参。
+const src = readFileSync(new URL("../src/jobs/tasks/data-retention.task.ts", import.meta.url), "utf8");
 
 describe("data_retention 的 rollup 方言契约", () => {
   it("唯一的 runRollup 调用点显式传 dialect", () => {

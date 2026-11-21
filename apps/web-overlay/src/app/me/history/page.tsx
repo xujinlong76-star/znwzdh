@@ -107,6 +107,8 @@ export default function SearchHistoryPage() {
   const [visitKeyword, setVisitKeyword] = useState('')
   /** 非空 = 当前展示的是离线快照（时间戳用于如实标注） */
   const [offlineSnapshotAt, setOfflineSnapshotAt] = useState<number | null>(null)
+  /** U-373：上次按保留期自动清理的时间（服务端真实审计，无记录为 null，不编造） */
+  const [lastCleanupAt, setLastCleanupAt] = useState<number | null>(null)
   /** A5：当前身份的最新值（ref 形式，供在途请求的归属比对） */
   const identityRef = useRef('')
 
@@ -118,6 +120,8 @@ export default function SearchHistoryPage() {
     }
     setState('loading')
     setOfflineSnapshotAt(null)
+    // 身份/重取时先清掉旧的上次清理时间：降级或快照态不更新它，残留会谎报时间
+    setLastCleanupAt(null)
     // 降级 ≠ 空：取数失败必须落 error（带重试），不能渲染成「还没有搜索记录」——
     // 后者会让用户以为历史被清空。fetchSearchHistoryPage 的 degrade 回调正是为此存在。
     let degraded = false
@@ -142,6 +146,9 @@ export default function SearchHistoryPage() {
     setItems(page.items)
     setHasMore(page.hasMore)
     setNextOffset(page.nextOffset)
+    // U-373：页脚显示的上次清理时间取自服务端真实清理审计；
+    // 降级/快照态不更新（旧值残留会谎报时间），无记录保持 null。
+    setLastCleanupAt(page.lastHistoryCleanupAt ?? null)
     setState('ready')
     writeHistorySnapshot(page.items)
   }, [])
@@ -755,6 +762,17 @@ export default function SearchHistoryPage() {
             {isFiltering ? '加载更多记录以扩大检索范围' : '加载更多'}
           </Button>
         </div>
+      )}
+
+      {/* U-373：历史页脚——上次按保留期自动清理的时间（真实清理审计）；
+          无记录时如实说「暂无清理记录」，不编造时间；离线快照态不展示，
+          快照不知道服务端最新的清理时间。 */}
+      {state === 'ready' && !offlineSnapshotAt && (
+        <p className="text-center text-[11px] leading-relaxed text-muted-foreground">
+          {lastCleanupAt
+            ? `历史自动清理：上次清理于 ${formatTime(lastCleanupAt)}，过期记录按你的保留期自动删除`
+            : '历史自动清理：暂无清理记录，过期记录将在每日自动清理时按你的保留期删除'}
+        </p>
       )}
 
       <Footer />

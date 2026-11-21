@@ -878,6 +878,7 @@ export interface SearchHistoryPageResponse {
   }[];
   hasMore: boolean;
   nextOffset: number;
+  lastHistoryCleanupAt: number | null;
 }
 
 /**

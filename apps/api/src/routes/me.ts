@@ -361,26 +361,26 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         });
       }
 
-      // 2. 检查并清理超出用户设定保留周期的过期搜索历史
+      // 2. 检查并清理超出用户设定保留周期的过期搜索历史与 click 信号
+      // （U-373：与每日定时清理共用 cleanupExpiredUserHistory；删掉 ≥1 条
+      // 时留 user.search_history_expired 审计，历史页脚据此显示上次清理时间）
       const settings = await ctx.repo.getUserSettings(canonical);
       const retentionDays = settings.historyRetentionDays || 180;
-      const cutoffTs = Date.now() - retentionDays * 86_400_000;
-      const expiredHistRows = await ctx.repo.raw(
-        "SELECT COUNT(*) AS c FROM search_history WHERE user_id = ? AND created_at < ?",
-        [canonical, cutoffTs],
-      );
-      const expiredHistCount = Number(expiredHistRows[0]?.c ?? 0);
-      if (expiredHistCount > 0) {
-        await ctx.repo.run(
-          "DELETE FROM search_history WHERE user_id = ? AND created_at < ?",
-          [canonical, cutoffTs],
-        );
-        repairedCount += expiredHistCount;
+      const cleaned = await ctx.repo.cleanupExpiredUserHistory(canonical, {
+        retentionDays,
+        actor: canonical,
+        actorKind: "user",
+      });
+      const expiredTotal = cleaned.historyDeleted + cleaned.clicksDeleted;
+      if (expiredTotal > 0) {
+        repairedCount += expiredTotal;
         checks.push({
           id: "history_retention",
           label: `历史保留窗口 (${retentionDays} 天) 巡检`,
           status: "repaired",
-          detail: `已自动清理 ${expiredHistCount} 条超过 ${retentionDays} 天保留期的陈旧搜索记录`,
+          detail:
+            `已自动清理 ${cleaned.historyDeleted} 条超过 ${retentionDays} 天保留期的陈旧搜索记录` +
+            (cleaned.clicksDeleted > 0 ? `与 ${cleaned.clicksDeleted} 条过期点击信号` : ""),
         });
       } else {
         checks.push({

@@ -16,7 +16,7 @@ export const historyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
 
   app.get("/api/search-history", async (req, reply) => {
     const rawIdentity = requestIdentityOf(req as never);
-    if (!rawIdentity) return { items: [], hasMore: false, nextOffset: 0 };
+    if (!rawIdentity) return { items: [], hasMore: false, nextOffset: 0, lastHistoryCleanupAt: null };
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     // 合并后的旧 id 仍会从扩展/旧标签页发来：读也要落到 canonical，否则看不到已合并的数据
     const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
@@ -26,6 +26,8 @@ export const historyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       items: page.items,
       hasMore: page.hasMore,
       nextOffset: offset + page.items.length,
+      // U-373：历史页脚的上次清理时间（真实清理审计，无记录为 null，不编造）
+      lastHistoryCleanupAt: await ctx.repo.getLastHistoryCleanupAt(identity),
     };
   });
 

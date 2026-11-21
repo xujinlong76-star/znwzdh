@@ -656,11 +656,15 @@ const SearchHistoryItemPayload = z.looseObject({
  * GET /api/search-history：键集分页壳。
  * hasMore 与 nextOffset 由服务端算好，前端不该自己拿 limit 推——
  * probe 式分页（多取一条判 hasMore）是仓储的实现细节，写进契约就会绑死它。
+ *
+ * lastHistoryCleanupAt（U-373）：该用户上次按保留期清理过期历史的时间
+ * （毫秒）；从未清理过为 null——历史页脚只显示真实时间，无记录时不编造。
  */
 export const SearchHistoryPageResponse = z.object({
   items: z.array(SearchHistoryItemPayload),
   hasMore: z.boolean(),
   nextOffset: z.number().int(),
+  lastHistoryCleanupAt: z.number().int().nullable(),
 });
 
 /* ------------------------------------------------------------------ *

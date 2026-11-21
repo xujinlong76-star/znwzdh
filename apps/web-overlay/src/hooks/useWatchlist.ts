@@ -29,9 +29,13 @@ import {
 import {
   WATCHLIST_STORAGE_KEY,
   applyWatchDelta,
+  asPremiereDate,
   dramaKeyFor,
+  dramaReservedKeyFor,
   localDateKey,
   mergeCloudWatchlist,
+  normalizeDramaTitle,
+  RESERVED_PLATFORM_TITLE,
   sanitizeWatchEntry,
   type WatchCadence,
   type WatchEntry,
@@ -48,10 +52,18 @@ export interface WatchlistApi {
   storageBlocked: string | null
   isWatching: (key: string) => boolean
   findByPlatformAndTitle: (platformSiteId: string, title: string) => WatchEntry | undefined
+  /** 按归一化剧名找条目（不分平台）：日历预约按钮据此判断“已预约/已在追” */
+  findByTitle: (title: string) => WatchEntry | undefined
   add: (
     platform: WatchPlatformRef,
     draft: { title: string; episode?: number; cadence?: WatchCadence; priority?: WatchPriority },
   ) => WatchEntry | null
+  /**
+   * 预约态加入（U-377）：开播日历上的剧没有平台信息，键为
+   * reserved::归一化剧名，不指向平台入口。同一剧名（归一后）已在清单
+   * 里（无论预约态还是在追）直接返回既有条目，不生成第二条。
+   */
+  addReserved: (title: string, premiereDate?: string | null) => WatchEntry | null
   /** 改进度：episode 增大时记一次成长经验（复用成长系统的既有递减口径）；改小只当纠错，不记 */
   setEpisode: (key: string, episode: number) => boolean
   update: (
@@ -206,6 +218,58 @@ export function useWatchlist(): WatchlistApi {
     [items],
   )
 
+  const findByTitle = useCallback(
+    (title: string) => {
+      const normalized = normalizeDramaTitle(title)
+      if (!normalized) return undefined
+      return items.find((e) => normalizeDramaTitle(e.title) === normalized)
+    },
+    [items],
+  )
+
+  const addReserved = useCallback<WatchlistApi['addReserved']>(
+    (title, premiereDate) => {
+      const cleanTitle = title.trim()
+      if (!cleanTitle) return null
+      const key = dramaReservedKeyFor(cleanTitle)
+      const current = sharedEntries
+      // 同一剧名已在清单（预约态或在追）= 不再占第二位；开播日有新值时补上
+      const existed = current.find(
+        (e) => e.key === key || normalizeDramaTitle(e.title) === normalizeDramaTitle(cleanTitle),
+      )
+      const now = Date.now()
+      const premiere = asPremiereDate(premiereDate)
+      if (existed) {
+        if (premiere && existed.premiereDate !== premiere) {
+          const next: WatchEntry = { ...existed, premiereDate: premiere, updatedAt: now }
+          if (!persist(current.map((e) => (e.key === existed.key ? next : e)))) return null
+          markDirty([existed.key])
+          return next
+        }
+        return existed
+      }
+      const entry: WatchEntry = {
+        key,
+        title: cleanTitle,
+        platformSiteId: '',
+        platformTitle: RESERVED_PLATFORM_TITLE,
+        playUrl: '',
+        episode: 0,
+        priority: 'normal',
+        cadence: { kind: 'unknown' },
+        remind: true,
+        lastProgressAt: now,
+        createdAt: now,
+        updatedAt: now,
+        premiereDate: premiere,
+      }
+      if (!persist([entry, ...current])) return null
+      markDirty([key])
+      return entry
+    },
+    [persist],
+  )
+
   const add = useCallback<WatchlistApi['add']>(
     (platform, draft) => {
       const title = draft.title.trim()
@@ -340,7 +404,9 @@ export function useWatchlist(): WatchlistApi {
     storageBlocked,
     isWatching,
     findByPlatformAndTitle,
+    findByTitle,
     add,
+    addReserved,
     setEpisode,
     update,
     dismissToday,

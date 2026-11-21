@@ -51,8 +51,8 @@ describe("parseDramaFeatured", () => {
     expect(parseDramaFeatured({ dramas: many }).dramas).toHaveLength(
       DRAMA_FEATURED_MAX,
     );
-    expect(parseDramaFeatured(null)).toEqual({ dramas: [], skipped: 0 });
-    expect(parseDramaFeatured({})).toEqual({ dramas: [], skipped: 0 });
+    expect(parseDramaFeatured(null)).toEqual({ dramas: [], skipped: 0, updatedAt: null, updatedAtStale: true });
+    expect(parseDramaFeatured({})).toEqual({ dramas: [], skipped: 0, updatedAt: null, updatedAtStale: true });
   });
 
   it("剧目键与追剧清单同一把键", () => {

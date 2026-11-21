@@ -48,6 +48,90 @@ export interface DramaFeaturedFile {
 
 export const DRAMA_FEATURED_MAX = 18;
 
+/**
+ * 新鲜度哨兵（U-378 小步）：drama-featured.json 顶层的 updatedAt 是
+ * “热门”榜单上次被人工复核 / 刷新的日期；短剧日更、榜单声称当日热度，
+ * 超过 N 天不更新即视为过期，测试里红。
+ *
+ * N = 3 的理由（2026-11-22 定）：
+ * - 本文件自身的维护节律：updatedAt 2026-11-14 → 11-15 → 11-17 → 11-18，
+ *   两次更新之间最长只隔 2 天；
+ * - 新集检查任务每天跑一轮（apps/api drama-check.task，intervalMs 86_400_000），
+ *   榜单刷新本应跟得上日更节奏；
+ * - N 取历史最大间隔 2 天 + 1 天宽限：3 天整仍算新鲜，第 4 天起过期。
+ *   实盘现状 updatedAt 2026-11-18，截至 2026-11-22 已 4 天，哨兵应红——
+ *   绿它的办法是中步真正重核 18 部剧并刷新数据，不是改这个数字、不是只改时间戳。
+ * - updatedAt 只有日粒度（YYYY-MM-DD），按 Asia/Shanghai 自然日算整天数：
+ *   本站日期口径（brief.ts BRIEF_TIME_ZONE / drama/calendar.ts：源站是中国站、
+ *   榜单日期是北京时间）；按 UTC 算会在北京时间上午少算一天——2026-11-22 03:19 CST
+ *   是 UTC 11-21，UTC 口径下 11-18 只算 3 天（新鲜），上海口径算 4 天（过期），
+ *   后者才符合“已过期多日”的实盘判断；缺失 / 非法 updatedAt 按过期处理
+ *   （fail-closed：新鲜度未知 ≠ 新鲜）。
+ * 完结剧下沉与轮换位规则不在本线范围（“热门”排序口径未定），本哨兵只拦过期。
+ */
+export const DRAMA_FEATURED_MAX_AGE_DAYS = 3;
+
+const DAY_MS = 86_400_000;
+
+/** 本站日期口径：now 落在 Asia/Shanghai 的哪一天（YYYY-MM-DD），与 brief/calendar 一致。 */
+const shanghaiDateFmt = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+function shanghaiDateKey(now: Date | number): string {
+  return shanghaiDateFmt.format(new Date(now));
+}
+
+/** 接受 YYYY-MM-DD 或 ISO 日期时间；返回归一化的日期（YYYY-MM-DD，ISO 时间按 Asia/Shanghai 取日），非法返回 null。 */
+export function parseDramaFeaturedUpdatedAt(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (text.length === 0) return null;
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (dateOnly !== null) {
+    const year = Number(dateOnly[1]);
+    const month = Number(dateOnly[2]);
+    const day = Number(dateOnly[3]);
+    const ms = Date.UTC(year, month - 1, day);
+    const check = new Date(ms);
+    if (
+      check.getUTCFullYear() !== year ||
+      check.getUTCMonth() !== month - 1 ||
+      check.getUTCDate() !== day
+    ) {
+      return null;
+    }
+    return text;
+  }
+  const ms = Date.parse(text);
+  if (!Number.isFinite(ms)) return null;
+  return shanghaiDateKey(ms);
+}
+
+/** updatedAt 距 now 的整天数（Asia/Shanghai 自然日之差）；updatedAt 缺失 / 非法返回 null；未来日期为负数。 */
+export function dramaFeaturedAgeDays(
+  updatedAt: string | null,
+  now: Date | number = new Date(),
+): number | null {
+  if (updatedAt === null) return null;
+  const updatedMs = Date.parse(`${updatedAt}T00:00:00.000Z`);
+  if (!Number.isFinite(updatedMs)) return null;
+  const nowMs = Date.parse(`${shanghaiDateKey(now)}T00:00:00.000Z`);
+  return Math.floor((nowMs - updatedMs) / DAY_MS);
+}
+
+/** 超过 DRAMA_FEATURED_MAX_AGE_DAYS 天未更新、或 updatedAt 缺失 / 非法，即过期。 */
+export function isDramaFeaturedUpdatedAtStale(
+  updatedAt: string | null,
+  now: Date | number = new Date(),
+): boolean {
+  const age = dramaFeaturedAgeDays(updatedAt, now);
+  return age === null || age > DRAMA_FEATURED_MAX_AGE_DAYS;
+}
+
 const CHECK_KINDS: ReadonlySet<string> = new Set([
   "migu-list",
   "wikipedia",
@@ -149,15 +233,28 @@ export interface ParsedDramaFeatured {
   dramas: DramaFeatured[];
   /** 因字段不全 / 自相矛盾被跳过的行数 */
   skipped: number;
+  /** 顶层 updatedAt（归一化为 YYYY-MM-DD）；缺失 / 非法为 null */
+  updatedAt: string | null;
+  /** updatedAt 超过 DRAMA_FEATURED_MAX_AGE_DAYS 天未更新、或缺失 / 非法 */
+  updatedAtStale: boolean;
 }
 
 /**
  * 校验整份剧目文件：坏行跳过并计数；首屏只取前 18 部有效剧目。
  * 顶层不是对象、没有 dramas 数组时返回空列表（页面照常渲染平台区）。
+ * 同时读顶层 updatedAt 并算新鲜度（哨兵只报过期、不丢剧目行）。
+ * now 仅供测试注入“今天”，默认真实当前时间。
  */
-export function parseDramaFeatured(raw: unknown): ParsedDramaFeatured {
+export function parseDramaFeatured(
+  raw: unknown,
+  now: Date | number = new Date(),
+): ParsedDramaFeatured {
+  const updatedAt = isRecord(raw)
+    ? parseDramaFeaturedUpdatedAt(raw.updatedAt)
+    : null;
+  const updatedAtStale = isDramaFeaturedUpdatedAtStale(updatedAt, now);
   if (!isRecord(raw) || !Array.isArray(raw.dramas)) {
-    return { dramas: [], skipped: 0 };
+    return { dramas: [], skipped: 0, updatedAt, updatedAtStale };
   }
   const dramas: DramaFeatured[] = [];
   let skipped = 0;
@@ -169,7 +266,7 @@ export function parseDramaFeatured(raw: unknown): ParsedDramaFeatured {
     }
     if (dramas.length < DRAMA_FEATURED_MAX) dramas.push(parsed);
   }
-  return { dramas, skipped };
+  return { dramas, skipped, updatedAt, updatedAtStale };
 }
 
 /** 与追剧清单同一把键：platformSiteId:归一化剧名（见 lib/watchlist）。 */
@@ -177,7 +274,9 @@ export function featuredDramaKey(drama: DramaFeatured): string {
   return dramaKeyFor(drama.platformSiteId, drama.title);
 }
 
-/** 读随仓库发布的剧目文件（构建期静态导入，带校验）。 */
-export function loadDramaFeatured(): ParsedDramaFeatured {
-  return parseDramaFeatured(featuredRaw);
+/** 读随仓库发布的剧目文件（构建期静态导入，带校验）。now 仅供测试注入。 */
+export function loadDramaFeatured(
+  now: Date | number = new Date(),
+): ParsedDramaFeatured {
+  return parseDramaFeatured(featuredRaw, now);
 }

@@ -25,7 +25,62 @@ import {
   isHarvestEligibleForItem,
 } from './video-harvest-guard'
 import { enrichVideoItemSeo } from './video-seo'
-import { guardedFetch, isProbablySafeUrl } from './ssrf-guard'
+import { guardedFetch, isProbablySafeUrl, safeFetch } from './ssrf-guard'
+
+/**
+ * 视频抓取允许的固定平台域名白名单（2026-11-21）。
+ *
+ * 本模块只对接少数已知平台（B 站/YouTube/TED 等），没有任何正当理由
+ * 去访问任意公网 URL。把它写成显式白名单有两个收益：
+ *  1. 安全上把攻击面从「整个公网」压到「这几个域」；
+ *  2. CodeQL 的污点分析在「URL 由字符串拼接而来」处会告警，加了白名单
+ *     约束后数据流可被静态证明有界，从根上消除那两条 Critical。
+ */
+/**
+ * 用注入的 fetch 实现发请求，但**先过域名白名单**。
+ *
+ * 为什么不能直接 fetchImpl：本模块允许调用方注入 fetch（测试、插件宿主），
+ * 一旦注入就绕开了模块自带的 guardedFetch。这个包装把「目标 host 必须
+ * 在白名单内」这条硬约束提到注入之前，两条分支因此共享同一个边界。
+ */
+async function guardedFetchVia(
+  url: string,
+  impl: typeof fetch,
+  init: { timeoutMs?: number; maxBytes?: number; headers?: Record<string, string> } = {},
+): Promise<Response> {
+  const host = new URL(url).hostname
+  const allowed = VIDEO_FETCH_HOST_ALLOWLIST.some((p) =>
+    p.startsWith('*.') ? host.endsWith('.' + p.slice(2)) : host === p,
+  )
+  if (!allowed) {
+    throw new Error(`视频抓取目标不在白名单内: ${host}`)
+  }
+  // 白名单已确认，这里用注入实现发请求；超时由 AbortSignal 兜底
+  return impl(url, {
+    headers: init.headers,
+    redirect: 'manual',
+    signal: AbortSignal.timeout(init.timeoutMs ?? 6000),
+  })
+}
+
+export const VIDEO_FETCH_HOST_ALLOWLIST = [
+  'api.bilibili.com',
+  'www.bilibili.com',
+  'b23.tv',
+  'www.youtube.com',
+  'youtube.com',
+  'youtu.be',
+  'www.ted.com',
+  'ted.com',
+  'vimeo.com',
+  'www.vimeo.com',
+  'www.dailymotion.com',
+  'api.dailymotion.com',
+  // 子域通配：部分平台把接口放在区域子域上
+  '*.bilibili.com',
+  '*.youtube.com',
+  '*.ted.com',
+] as const
 
 import { VIDEO_PLATFORM_REGISTRY, type PlatformCapabilityDescriptor } from './video-platform-registry'
 
@@ -553,9 +608,12 @@ export async function resolveMultiPlatformVideoUrl(
   if (platform === 'peertube' && instanceOrigin) {
     try {
       const apiUrl = `${instanceOrigin}/api/v1/videos/${encodeURIComponent(externalId)}`
+      // 2026-11-21：两个分支都收敛到白名单受控出口。
+      // 旧实现在 fetchImpl !== fetch 时走裸 fetch —— 注入自定义 fetch
+      // （比如测试或插件）时 SSRF 防护整个被绕过，这正是 CodeQL #36 的形态。
       const res = fetchImpl === fetch
         ? (await guardedFetch(apiUrl, { timeoutMs: 6000, maxBytes: 1024 * 1024 })).response
-        : await fetchImpl(apiUrl, { signal: AbortSignal.timeout(6000) })
+        : await guardedFetchVia(apiUrl, fetchImpl)
       if (res.ok) {
         const d = await res.json()
         if (d && d.name) {
@@ -665,14 +723,16 @@ export async function resolveMultiPlatformVideoUrl(
       })
       htmlRes = guarded.response
     } else {
-      htmlRes = await fetchImpl(canonicalUrl, {
+      // 2026-11-21：同上——注入的 fetchImpl 也必须过白名单，否则是绕过点（CodeQL #37）
+      htmlRes = await guardedFetchVia(canonicalUrl, fetchImpl, {
+        timeoutMs: 6500,
+        maxBytes: 2 * 1024 * 1024,
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         },
-        signal: AbortSignal.timeout(6500),
       })
     }
 

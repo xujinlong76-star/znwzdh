@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { safeFetch } from '@/lib/ssrf-guard'
 import { verifyAdminSession } from '@/lib/auth'
 import { findResourceReferences } from '@/lib/resource-references';
 import { commitFile, getFileContent } from '@/lib/github'
@@ -112,25 +113,39 @@ async function uploadImageToGitHub(binaryData: Uint8Array, token: string, folder
     // Convert Uint8Array to Base64
     const base64String = uint8ArrayToBase64(binaryData);
     const currentFileUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${githubPath}?ref=${branch}`
-    const response = await fetch(currentFileUrl, {
-        method: 'PUT',
-        headers: {
-            'Authorization': `token ${token}`,
-            'Accept': 'application/vnd.github.v3+json',
-        },
-        body: JSON.stringify({
-            message: `Upload ${githubPath}`,
-            content: base64String,
-            branch: branch,
-        }),
+    /**
+     * 2026-11-21：改用统一出口 safeFetch + 严格域名白名单。
+     *
+     * 旧实现直接 fetch 这个拼出来的 URL——虽然 owner/repo/branch 都来自
+     * 环境变量，但 CodeQL 仍按「字符串拼接进 fetch」判为 SSRF 污点流。
+     * 加 allowedHosts 后，即便将来有人把 owner/repo 接到用户输入上，
+     * 连接目标也锁死在 api.github.com，静态数据流层面污点被切断。
+     */
+    const response = await safeFetch(currentFileUrl, {
+      method: 'PUT',
+      allowedHosts: ['api.github.com'],
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: `Upload ${githubPath}`,
+        content: base64String,
+        branch: branch,
+      }),
+      timeoutMs: 15000,
+      maxBytes: 2 * 1024 * 1024,
     });
+    const bodyText = new TextDecoder().decode(response.body);
     if (!response.ok) {
-        const errorData = await response.json();
+        let errorData: { message?: string } = {};
+        try { errorData = JSON.parse(bodyText) } catch { /* 非 JSON 响应，用原文 */ }
         console.error('Failed to upload image to GitHub:', errorData);
-        throw new Error(`Failed to upload image to GitHub: ${errorData.message || 'Unknown error'}`);
+        throw new Error(`Failed to upload image to GitHub: ${errorData.message || bodyText.slice(0, 200) || 'Unknown error'}`);
     }
 
-    const responseData = await response.json();
+    const responseData = JSON.parse(bodyText);
     const commitHash = responseData.commit.sha;
 
     return { path, commitHash };

@@ -19,26 +19,39 @@ const readRepo = (rel: string) => readFileSync(resolve(ROOT, '../..', rel), 'utf
 const AI = read('../../packages/ai/src/ssrf.ts')
 const WEB = read('src/lib/ssrf-guard.ts')
 
-describe('safeFetch 五道防线（权威层 + web 镜像层口径一致）', () => {
-  for (const [label, src] of [['packages/ai', AI], ['web-overlay', WEB]] as const) {
-    it(`${label}: 连接级 IP 钉扎（lookup 回调）`, () => {
-      expect(src).toContain('pinnedLookup')
-      expect(src).toContain('lookup: pinnedLookup')
-      expect(src).toContain('servername:')
-    })
-    it(`${label}: 协议/端口/凭据 + DNS 后 IP 黑名单`, () => {
-      expect(src).toContain('assertUrlShape')
-      expect(src).toContain('resolveAndCheck')
-      expect(src).toContain('::ffff:')
-    })
-    it(`${label}: 严格域名白名单 + 受控重定向 + 超时体积`, () => {
-      expect(src).toContain('allowedHosts')
-      expect(src).toContain('isHostAllowed')
-      expect(src).toMatch(/redirect:\s*['"]manual['"]/)
-      expect(src).toContain('maxBytes')
-      expect(src).toContain('maxRedirects')
-    })
-  }
+describe('safeFetch 五道防线', () => {
+  /**
+   * 2026-11-21 架构变更：web 层从「第二份完整实现」收口为 packages/ai 的
+   * 薄壳 re-export。原测试对两侧都做同一组字面量断言（因为当时是两份代码，
+   * 怕漂移）；现在只有一处实现，断言相应改为：
+   *   - 权威层：五道防线的符号必须都在；
+   *   - web 层：必须是转发而非自带第二份实现。
+   * 后者比原来的双份比对更强——双份写错时原断言会通过，收口断言不会。
+   */
+  it('权威层: 连接级 IP 钉扎（lookup 回调）', () => {
+    expect(AI).toContain('pinnedLookup')
+    expect(AI).toContain('lookup: pinnedLookup')
+    expect(AI).toContain('servername:')
+  })
+  it('权威层: 协议/端口/凭据 + DNS 后 IP 黑名单', () => {
+    expect(AI).toContain('assertUrlShape')
+    expect(AI).toContain('resolveAndCheck')
+    expect(AI).toContain('::ffff:')
+  })
+  it('权威层: 严格域名白名单 + 受控重定向 + 超时体积', () => {
+    expect(AI).toContain('allowedHosts')
+    expect(AI).toContain('isHostAllowed')
+    expect(AI).toMatch(/redirect:\s*['"]manual['"]/)
+    expect(AI).toContain('maxBytes')
+    expect(AI).toContain('maxRedirects')
+  })
+  it('web 层: 从权威层转发，不自带第二份实现', () => {
+    expect(WEB).toContain("from '@navhub/ai/ssrf'")
+    expect(WEB).toContain('safeFetch')
+    // 薄壳不该再有自己的 IP 黑名单/钉扎实现
+    expect(WEB).not.toContain('lookup: pinnedLookup')
+    expect(WEB).not.toContain('::ffff:')
+  })
 })
 
 describe('8 个原告警站点已迁移到 safeFetch', () => {

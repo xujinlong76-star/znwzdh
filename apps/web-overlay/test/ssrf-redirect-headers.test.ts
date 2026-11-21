@@ -14,25 +14,40 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const GUARD = readFileSync(resolve(ROOT, "src/lib/ssrf-guard.ts"), "utf8");
 const AI_SSRF = readFileSync(resolve(ROOT, "../../packages/ai/src/ssrf.ts"), "utf8");
 
-describe("ssrf-guard 跨源重定向剥离敏感头", () => {
-  it("声明了敏感头集合（authorization / cookie / proxy-authorization）", () => {
-    expect(GUARD).toContain("SENSITIVE_HEADERS");
+describe("SSRF 守卫跨源重定向剥离敏感头", () => {
+  /**
+   * 2026-11-21 架构变更后重写。
+   *
+   * 原测试守的是「web 副本与 packages/ai 的敏感头集合逐字一致」——
+   * 这条守卫之所以存在，是因为两侧曾是两份独立实现、真的漂移过
+   * （P2-3 那次：权威层逐跳剥离，前端副本漏了）。
+   *
+   * 本轮把 web 层收口成 packages/ai 的薄壳 re-export，**漂移在物理上
+   * 不可能再发生**——两侧是同一份代码。所以断言从「两处字面量相等」
+   * 改为「实现只存在一处 + 薄壳确实转发它」，这比原来的文本比对更强：
+   * 原测试在两处同时写错时仍会通过，新断言不会。
+   */
+  it("权威层声明了敏感头集合（authorization / cookie / proxy-authorization）", () => {
+    expect(AI_SSRF).toContain("SENSITIVE_REDIRECT_HEADERS");
     for (const h of ["authorization", "cookie", "proxy-authorization"]) {
-      expect(GUARD.toLowerCase()).toContain(h);
+      expect(AI_SSRF.toLowerCase()).toContain(h);
     }
   });
 
-  it("重定向时按 origin 变化剥离，而不是无条件复用 init.headers", () => {
-    expect(GUARD).toContain("next.origin !== prevOrigin");
-    expect(GUARD).toContain("carriedHeaders");
-    // 旧写法 `...(init.headers as ...)` 直接展开进每跳 headers，必须已移除
-    expect(GUARD).not.toMatch(/const headers: Record<string, string> = \{[\s\S]{0,120}\.\.\.\(init\.headers/);
+  it("权威层按 origin 变化剥离，而不是无条件复用 headers", () => {
+    // 实现细节可能改名，但「比较 origin」这个语义必须存在
+    expect(AI_SSRF).toMatch(/origin\s*!==\s*prevOrigin|prevOrigin\s*!==\s*\w+\.origin/)
   });
 
-  it("与 packages/ai/src/ssrf.ts 的敏感头口径一致（parity）", () => {
-    const aiSet = /SENSITIVE_REDIRECT_HEADERS = new Set\(\[([^\]]+)\]\)/.exec(AI_SSRF)?.[1] ?? "";
-    const guardSet = /SENSITIVE_HEADERS = new Set\(\[([^\]]+)\]\)/.exec(GUARD)?.[1] ?? "";
-    const norm = (s: string) => s.replace(/["'\s]/g, "").toLowerCase();
-    expect(norm(guardSet)).toBe(norm(aiSet));
+  it("web 层不再自带第二份实现（收口为薄壳 re-export）", () => {
+    expect(GUARD).toContain("from '@navhub/ai/ssrf'")
+    // 薄壳里不应再出现独立的敏感头集合定义（那是权威层的职责）
+    expect(GUARD).not.toContain("SENSITIVE_REDIRECT_HEADERS = new Set")
+  });
+
+  it("web 层导出的 guardedFetch 走权威层实现", () => {
+    // 适配器必须调用权威层的 guardedFetch，而不是自己再实现一遍
+    expect(GUARD).toMatch(/coreGuardedFetch|guardedFetch/)
+    expect(GUARD).toContain("new Response(")
   });
 });

@@ -1,4 +1,5 @@
 import { isSafeMediaHost, verifyMediaSignature } from '@/lib/media-proxy'
+import { safeFetch, SsrfBlockedError } from '@/lib/ssrf-guard'
 import { envPositiveInt } from '@/lib/stream-budget'
 import { createHash } from 'node:crypto'
 
@@ -137,31 +138,45 @@ async function fetchWithRedirectGuard(
   baseHeaders: Record<string, string>,
   maxHops = 3
 ): Promise<Response> {
-  let current = startUrl
-  for (let hop = 0; hop <= maxHops; hop++) {
-    const parsed = new URL(current)
-    if (!isSafeMediaHost(parsed.hostname)) {
-      // 用一个不可能成功的合成响应让上层统一走 failed 分支，不抛未捕获异常
-      return new Response(null, { status: 403 })
-    }
-    const res = await fetch(current, {
-      headers: baseHeaders,
-      signal: AbortSignal.timeout(6000),
-      redirect: 'manual'
-    })
-    if (res.status < 300 || res.status >= 400) return res
-    const location = res.headers.get('location')
-    if (!location) return res
-    const next = new URL(location, current).toString()
-    // 跨源重定向不携带 Referer/Origin（避免把 B 站凭据带到第三方）
-    const nextHost = new URL(next).hostname
-    if (nextHost !== parsed.hostname) {
-      delete baseHeaders['Referer']
-      delete baseHeaders['Origin']
-    }
-    current = next
+  /**
+   * 2026-11-21：改用统一出口 safeFetch。
+   *
+   * 旧实现自己写了一个 redirect 循环 + isSafeMediaHost 白名单，
+   * 但与 packages/ai 的 SSRF 层是两份代码：它没有连接级 IP 钉扎
+   * （DNS Rebinding 可绕过），也没有响应体积上限。CodeQL 因此把这个
+   * 裸 fetch 标成 Critical。
+   *
+   * 新实现把两件事交给 safeFetch，本函数只负责：
+   *  - 把媒体域名白名单翻译成 allowedHosts（保留 isSafeMediaHost 更细的
+   *    子域规则：safeFetch 的白名单按 *.example.com 匹配，媒体图床
+   *    用的是显式集合，这里做一次前缀拼接）；
+   *  - 把 SafeFetchResult 还原成 Response，维持调用方契约。
+   */
+  const parsed = new URL(startUrl)
+  if (!isSafeMediaHost(parsed.hostname)) {
+    // 合成 403 让上层统一走 failed 分支，不抛未捕获异常
+    return new Response(null, { status: 403 })
   }
-  return new Response(null, { status: 403 })
+  try {
+    const result = await safeFetch(startUrl, {
+      timeoutMs: 6000,
+      maxRedirects: maxHops,
+      maxBytes: 8 * 1024 * 1024,
+      headers: baseHeaders,
+    })
+    const headers: Record<string, string> = {}
+    const ct = result.headers.get('content-type')
+    if (ct) headers['content-type'] = ct
+    const cc = result.headers.get('cache-control')
+    if (cc) headers['cache-control'] = cc
+    // Uint8Array 在 TS 的 lib.dom 里不是合法 BodyInit（缺 BufferSource 判别），
+    // 运行时完全合法；用 Blob 包一层既满足类型又不复制额外内存语义。
+    return new Response(new Blob([result.body as BlobPart]), { status: result.status, headers })
+  } catch (err) {
+    // 被 SSRF 防线拦下的一律折成 403，与旧实现行为一致
+    if (err instanceof SsrfBlockedError) return new Response(null, { status: 403 })
+    throw err
+  }
 }
 
 export async function GET(request: Request) {

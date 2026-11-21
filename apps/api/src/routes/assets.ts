@@ -214,52 +214,47 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
       const SAFE_ICON_TYPES = /^(image\/(png|jpeg|webp|gif|x-icon|vnd\.microsoft\.icon|avif))(;|$)/;
 
       try {
+        /**
+         * 2026-11-21：改用统一出口 safeFetch（packages/ai）。
+         *
+         * 这里原本是**第三套** SSRF 实现：自己 dns.lookup + isBlockedIp
+         * + 逐跳校验 Location。它与 packages/ai 的权威层、web-overlay 的
+         * 副本三份并行维护，任何一处防线升级都要改三遍。CodeQL 把它标成
+         * Critical 的直接原因是：校验用的 IP 与 fetch 实际连接的 IP 是两个
+         * 独立解析结果（TOCTOU），钉扎只靠注释声称。
+         * safeFetch 用连接级 lookup 把校验 IP 钉到 socket，中间没有第二次解析。
+         */
         while (queue.length > 0) {
           const pUrl = queue.shift()!;
           try {
-            const resp = await fetch(pUrl, {
-              signal: controller.signal,
-              redirect: "manual", // 不自动跟随重定向：防 DNS 重绑定 + 开放重定向 SSRF
+            const result = await safeFetch(pUrl, {
+              timeoutMs: 3500,
+              maxRedirects: MAX_REDIRECT_HOPS,
+              maxBytes: 512 * 1024,
               headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
                 Accept: "image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon,image/avif",
               },
             });
-            // 3xx：解析 Location 并重新校验目标（逐跳 SSRF 防线）
-            if (resp.status >= 300 && resp.status < 400) {
-              const loc = resp.headers.get("location");
-              if (loc && hops < MAX_REDIRECT_HOPS) {
-                try {
-                  const nextUrl = new URL(loc, pUrl).href;
-                  const redirectHost = new URL(nextUrl).hostname;
-                  const rAddrs = await lookup(redirectHost, { all: true });
-                  if (rAddrs.some((a) => isBlockedIp(a.address))) break; // 重定向到内网：放弃
-                  if (!visited.has(nextUrl)) {
-                    visited.add(nextUrl);
-                    hops++;
-                    queue.push(nextUrl);
-                  }
-                } catch { break }
-              }
-              continue;
-            }
-            if (resp.ok) {
-              const buf = Buffer.from(await resp.arrayBuffer());
-              if (buf.length > 32 && buf.length < 1024 * 1024) {
-                const ct = (resp.headers.get("content-type") ?? "").split(";")[0]!.trim();
-                if (SAFE_ICON_TYPES.test(ct)) {
-                  iconBuffer = buf;
-                  contentType = ct;
-                }
-                // MIME 不在白名单（含 svg+xml）→ 不缓存不回显，直接丢弃
+            // safeFetch 内部已逐跳校验并跟随重定向，这里只看最终结果
+            if (result.status >= 300 && result.status < 400) break;
+            if (result.status === 200) {
+              const ct = (result.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+              if (SAFE_ICON_TYPES.test(ct)) {
+                binary = result.body;
+                contentType = ct;
                 break;
               }
+              // MIME 不在白名单（含 svg+xml）→ 不缓存不回显，直接丢弃
+              break;
             }
-          } catch {
-            // 继续尝试备用探测
+          } catch (err) {
+            // 被 SSRF 防线拦下（含重定向到内网）→ 换下一个候选；
+            // 其它异常同样只记录，不中断整轮探测。
+            if (err instanceof SsrfBlockedError) break;
           }
         }
-      } finally {
+ finally {
         clearTimeout(timeout);
       }
 

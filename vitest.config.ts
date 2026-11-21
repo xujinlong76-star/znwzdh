@@ -28,6 +28,17 @@ export default defineConfig({
         find: /^@navhub\/core$/,
         replacement: fileURLToPath(new URL("./packages/core/src/index.ts", import.meta.url)).replace(/\\/g, "/"),
       },
+      // 2026-11-21：SSRF 出口收口到 packages/ai，web 层 ssrf-guard 改为薄壳
+      // re-export。与 @navhub/core 同理需要测试期 alias，否则 overlay 里
+      // import '@navhub/ai/ssrf' 解析不到（该包同样不在 workspace 内）。
+      {
+        find: /^@navhub\/ai\/ssrf$/,
+        replacement: fileURLToPath(new URL("./packages/ai/src/ssrf.ts", import.meta.url)).replace(/\\/g, "/"),
+      },
+      {
+        find: /^@navhub\/ai\/(.*)$/,
+        replacement: fileURLToPath(new URL("./packages/ai/src/", import.meta.url)).replace(/\\/g, "/") + "$1",
+      },
     ],
   },
   test: {

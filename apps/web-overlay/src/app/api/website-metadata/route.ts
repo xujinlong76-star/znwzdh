@@ -468,7 +468,9 @@ async function downloadAndUploadIcon(
     let lastError: Error | null = null
 
     if (!isProbablySafeUrl(iconUrl)) {
-        throw new SsrfBlockedError(`图标 URL 协议不允许: ${iconUrl.slice(0, 128)}`)
+        // 权威层的 SsrfBlockedError 需要 (message, reason) 两个参数——
+        // reason 用于观测/审计分类，是更严格的契约（旧 web 副本只要 message）。
+        throw new SsrfBlockedError(`图标 URL 协议不允许: ${iconUrl.slice(0, 128)}`, 'protocol-not-allowed')
     }
 
     for (const strategy of strategies) {

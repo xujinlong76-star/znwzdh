@@ -23,12 +23,18 @@ describe('ssrf-guard DNS 边界', () => {
       { address: '93.184.216.34', family: 4 },
       { address: '10.0.0.5', family: 4 },
     ])
-    await expect(resolveAndCheck(new URL('https://mixed.example'), OPTS)).rejects.toThrow(/受保护地址/)
+    // 2026-11-21 收口后走权威层实现，错误措辞为「解析到受保护网段」；
+    // 断言锚定语义（受保护）而不是某一版的精确字面量。
+    await expect(resolveAndCheck(new URL('https://mixed.example'), OPTS)).rejects.toThrow(/受保护/)
   })
 
-  it('全部解析结果安全时放行', async () => {
+  it('全部解析结果安全时放行，并返回可用于钉扎的安全 IP 列表', async () => {
     lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }])
-    await expect(resolveAndCheck(new URL('https://public.example'), OPTS)).resolves.toBeUndefined()
+    // 旧 web 副本返回 void；收口后权威层返回安全 IP 数组——
+    // 这个返回值正是连接级钉扎的输入，语义更强，故按新契约断言。
+    await expect(resolveAndCheck(new URL('https://public.example'), OPTS)).resolves.toEqual([
+      '93.184.216.34',
+    ])
   })
 
   it('阻断 100::/64 丢弃前缀', () => {

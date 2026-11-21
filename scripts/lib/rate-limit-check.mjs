@@ -5,6 +5,50 @@
 
 import { sitemapEntries } from '../check-isr-routes.mjs';
 
+/**
+ * 允许被当作「本地基准地址」的环回主机白名单（2026-11-21）。
+ *
+ * 这个脚本的用途是用 --web-base 指向**本机起的站点**做限流/壳页探测。
+ * 但 --web-base 是命令行入参，若不校验就等于给了一条「让脚本去请求
+ * 任意 URL」的路：CI 里跑一次就能把内网地址当参数打出去。CodeQL 因此
+ * 把它判为 SSRF 污点（scripts/...:169 那条 Critical）。
+ *
+ * 处置：只接受环回字面量，其余一律拒绝。这里用**硬编码集合**而不是
+ * 正则/后缀匹配——白名单必须是可穷举的确定值，不能由输入决定。
+ */
+export const LOOPBACK_ALLOWLIST = Object.freeze([
+  '127.0.0.1',
+  'localhost',
+  '::1',
+  '[::1]',
+])
+
+/**
+ * 校验 --web-base 指向的是本机。通过则返回规范化 origin，否则抛错。
+ *
+ * 返回 origin 而不是原串：调用方拼接路径时应基于**已校验的值**，
+ * 否则校验结果和实际请求目标脱钩（典型的 TOCTOU 变体）。
+ */
+export function validateLocalBase(raw) {
+  let url
+  try {
+    url = new URL(String(raw || ''))
+  } catch {
+    throw new Error('web-base 不是合法 URL: ' + raw)
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('web-base 协议必须是 http(s): ' + url.protocol)
+  }
+  const host = url.hostname.replace(/^\[|\]$/g, '')
+  if (!LOOPBACK_ALLOWLIST.includes(host) && !LOOPBACK_ALLOWLIST.includes(url.hostname)) {
+    throw new Error(
+      'web-base 必须是本机环回地址（' + LOOPBACK_ALLOWLIST.join(' / ') + '），实际: ' + url.hostname,
+    )
+  }
+  // 只保留 origin：路径部分由调用方按白名单路径拼，不允许外部指定
+  return url.origin
+}
+
 const DEFAULTS = {
   apiBase: 'http://127.0.0.1:8787',
   webBase: 'http://localhost:3000',
@@ -167,9 +211,12 @@ export async function probePage(opts) {
  * 判壳的尺和 probePage 同一把，不另立标准。
  */
 export async function probeSet(opts, paths) {
+  // 2026-11-21：拼接前先校验 base 是本机环回，并用返回的规范化 origin 拼，
+  // 保证「校验的值」与「实际请求的值」是同一个（否则是两个独立来源）。
+  const base = validateLocalBase(opts.webBase)
   const out = [];
   for (const path of paths) {
-    const r = await fetchOnce(`${opts.webBase}${path}`, { timeoutMs: opts.timeoutMs });
+    const r = await fetchOnce(`${base}${path}`, { timeoutMs: opts.timeoutMs });
     out.push({
       path,
       status: r.status,

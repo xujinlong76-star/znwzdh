@@ -166,14 +166,49 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
 
   const [sidebarWidth, setSidebarWidth] = useState<number | null>(null)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
+  // P1-1 残留（2026-11-21）：侧栏最大宽随视口钳制。工具栏最小需 ~704px
+  //（搜索 min 260 + 右侧工具组 ~430 + gap）+ 头部 padding 48px，主区至少留
+  // 780px；420px 侧栏在 1024px 档只剩 604px，工具栏溢出约 148px
+  //（header-layout-guard 锁 md:flex-nowrap，不能靠换行修）。故最大宽 =
+  // min(420, 视口宽 − 780)，下限仍为最小宽 180（窄视口下桌面侧栏本就贴边）。
+  const [viewportMaxWidth, setViewportMaxWidth] = useState(420)
+
+  useEffect(() => {
+    const applyViewportMax = () => {
+      const max =
+        typeof window === 'undefined'
+          ? 420
+          : Math.max(180, Math.min(420, window.innerWidth - 780))
+      setViewportMaxWidth(max)
+      setSidebarWidth((prev) => {
+        if (prev === null || prev <= max) return prev
+        try {
+          window.localStorage?.setItem('navhub_sidebar_width_px', String(max))
+        } catch {
+          // 忽略写入失败
+        }
+        return max
+      })
+    }
+    applyViewportMax()
+    window.addEventListener('resize', applyViewportMax)
+    return () => window.removeEventListener('resize', applyViewportMax)
+  }, [])
 
   useEffect(() => {
     try {
       const saved = window.localStorage?.getItem('navhub_sidebar_width_px')
       if (saved) {
         const parsed = parseInt(saved, 10)
-        if (Number.isFinite(parsed) && parsed >= 180 && parsed <= 420) {
+        // 存量宽度同样受视口钳制（1024px 档存 420 会读回 244）。
+        const max =
+          typeof window === 'undefined'
+            ? 420
+            : Math.max(180, Math.min(420, window.innerWidth - 780))
+        if (Number.isFinite(parsed) && parsed >= 180 && parsed <= max) {
           setSidebarWidth(parsed)
+        } else if (Number.isFinite(parsed) && parsed > max) {
+          setSidebarWidth(max)
         }
       }
     } catch {
@@ -200,7 +235,8 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
         if (rafId !== null) return
         rafId = requestAnimationFrame(() => {
           rafId = null
-          const nextW = Math.max(180, Math.min(420, Math.round(startW + (ev.clientX - startX))))
+          // P1-1 残留：拖拽上界为视口钳制后的最大宽（窄视口下 < 420）。
+          const nextW = Math.max(180, Math.min(viewportMaxWidth, Math.round(startW + (ev.clientX - startX))))
           latestW = nextW
           setSidebarWidth(nextW)
         })
@@ -226,7 +262,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
       window.addEventListener('pointerup', onUp)
       window.addEventListener('pointercancel', onUp)
     },
-    [sidebarWidth]
+    [sidebarWidth, viewportMaxWidth]
   )
 
   const handleSidebarResetWidth = useCallback((e: React.MouseEvent) => {
@@ -240,7 +276,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
     }
   }, [])
 
-  // P1-18：侧边栏宽度手柄键盘可用。方向键 ±16px（180–420px 钳制，与拖拽
+  // P1-18：侧边栏宽度手柄键盘可用。方向键 ±16px（180–视口钳制最大宽，与拖拽
   // 边界一致）、Home/End 到两端、Enter 复位默认 256px（与双击同义）。
   // 键盘改动与拖拽一样写 localStorage，下次打开保持同一宽度。
   const handleSidebarResizeKeyDown = useCallback(
@@ -249,9 +285,9 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
       const step = 16
       let next: number | null = null
       if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = Math.max(180, current - step)
-      else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = Math.min(420, current + step)
+      else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = Math.min(viewportMaxWidth, current + step)
       else if (e.key === 'Home') next = 180
-      else if (e.key === 'End') next = 420
+      else if (e.key === 'End') next = viewportMaxWidth
       else if (e.key === 'Enter') {
         e.preventDefault()
         e.stopPropagation()
@@ -272,7 +308,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
         // 忽略写入失败
       }
     },
-    [sidebarWidth]
+    [sidebarWidth, viewportMaxWidth]
   )
 
   return (
@@ -291,7 +327,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
           aria-label="调整侧边导航栏宽度"
           aria-valuenow={sidebarWidth ?? 256}
           aria-valuemin={180}
-          aria-valuemax={420}
+          aria-valuemax={viewportMaxWidth}
           aria-orientation="horizontal"
           aria-valuetext={`${sidebarWidth ?? 256} 像素`}
           data-sidebar-resizer=""

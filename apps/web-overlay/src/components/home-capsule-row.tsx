@@ -146,7 +146,11 @@ export function HomeCapsuleRow({
 
   return (
     <>
-      <div className="flex items-center gap-2">
+      {/* 2026-11-21 修横向溢出（1024px 实测 scrollWidth 1069 > 1024）：
+          本行是 flex 容器，子项里有 shrink-0 的胶囊；根节点缺 min-w-0 时
+          flex 子项不能收缩到容器宽，滚动行的 overflow-x-auto 就永不触发，
+          整行把文档顶宽。补 min-w-0 后 scrollClassName 的横向滚动才真正生效。 */}
+      <div className="flex min-w-0 items-center gap-2">
         <HorizontalScrollFade
           className="min-w-0 flex-1"
           scrollClassName="flex items-center gap-1.5 py-0.5 text-xs"
@@ -278,7 +282,11 @@ export function HomeCapsuleRow({
           ) : null}
 
           {/* 时段场景推荐（lg+ 才显示，与旧工作区行同款文案与动作） */}
-          <div className="hidden lg:flex items-center gap-2 text-xs text-muted-foreground shrink-0 whitespace-nowrap pl-1">
+          {/* 1024–1279px 是这一行最挤的档位。此前这段在 lg 起常驻且 shrink-0 +
+            whitespace-nowrap，会把整行顶出视口（实测 1024px 时 scrollWidth 1069）。
+            窄档直接不渲染它（与插件/向导胶囊同一策略），≥1280px 才显示完整文案；
+            时段建议本身是锦上添花，不该以撑破布局为代价。 */}
+        <div className="hidden min-w-0 shrink-0 items-center gap-2 whitespace-nowrap pl-1 text-xs text-muted-foreground xl:flex">
             {daypartSceneEnabled ? (
               suggestedWorkspace ? (
                 <button

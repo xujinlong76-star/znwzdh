@@ -162,6 +162,12 @@ export const HorizontalScrollFade = forwardRef<HTMLDivElement, HorizontalScrollF
     const maskStyle: CSSProperties =
       mask === 'none' ? {} : { maskImage: mask, WebkitMaskImage: mask }
 
+    /* overflow-hidden 不是「再来一层裁切」，而是必须的：本组件被放在 flex/grid
+       父容器里时，根节点自身 overflow 仍是 visible，内部滚动容器虽然
+       overflow-x:auto，但它的**滚动内容**（shrink-0 的胶囊）仍会经由根节点
+       把视觉溢出泄漏到文档流 —— 1024px 实测 documentElement.scrollWidth
+       1069 > clientWidth 1024，二分法定位到「AI 找站|场景」胶囊。
+       在根节点补 overflow-hidden 后溢出被本组件吸收，文档不再被顶宽。 */
     return (
       /* 2026-11-21 修复横向溢出：根节点原先只有 relative，没有限宽。
          在 flex / grid 容器里（子分类轨、速览坞、分类筛选行都是），
@@ -169,7 +175,7 @@ export const HorizontalScrollFade = forwardRef<HTMLDivElement, HorizontalScrollF
          因此永远不触发，整个文档被顶出横向滚动（768px 实测 940>768）。
          min-w-0 让 flex 子项允许收缩到容器宽，overflow 才真正生效；
          w-full 兜住块级父容器下的同等场景。 */
-      <div className={cn('relative w-full min-w-0', className)} aria-label={ariaLabel}>
+      <div className={cn('relative w-full min-w-0 overflow-hidden', className)} aria-label={ariaLabel}>
         {showArrows && canScrollLeft ? (
           <button
             type="button"

@@ -13,6 +13,7 @@
  * 在线自适应计算 5 大通道（exact, fts, pinyin, semantic, personal）的动态置信度上界权重。
  */
 
+import { PINYIN_SYLLABLES, PINYIN_INITIALS, NON_PINYIN_WORDS } from './pinyin-syllables'
 export type RetrievalChannel = 'exact' | 'fts' | 'pinyin' | 'semantic' | 'personal';
 
 export const CHANNELS: RetrievalChannel[] = ['exact', 'fts', 'pinyin', 'semantic', 'personal'];
@@ -76,9 +77,9 @@ export function extractContextFeatures(query: string): number[] {
   const alphaRatio = alphaCount / len;
   const digitRatio = digitCount / len;
 
-  // 拼音特征：全由英文字母构成，无空格，且长度在 2 到 15 之间
-  const isPinyinCandidate = /^[a-zA-Z]+$/.test(q) && len >= 2 && len <= 15;
-  const pinyinLikelihood = isPinyinCandidate ? 1.0 : 0.0;
+  // 拼音似然：见 computePinyinLikelihood()。原实现「纯字母且长度 2–15 → 1.0」
+  // 会把 vsc / react / github 全判成 100% 拼音（2026-11-21 修复）。
+  const pinyinLikelihood = computePinyinLikelihood(q);
 
   return [lengthNorm, cjkRatio, alphaRatio, pinyinLikelihood, digitRatio];
 }
@@ -369,4 +370,104 @@ export function expandPoly2Features(features: number[]): number[] {
     }
   }
   return expanded;
+}
+
+
+/**
+ * 汉语拼音似然 [0, 1]（2026-11-21 重写）。
+ *
+ * 旧实现（本文件 73-75 行，已删除）：
+ *     /^[a-zA-Z]+$/.test(q) && len >= 2 && len <= 15  →  1.0
+ * 缺陷：任何纯英文串都拿满分。'vsc'、'react'、'github'、'nginx'、'http'
+ * 全被判成「100% 是拼音」——而 v 根本不是汉语拼音声母、sc 也不是合法音节。
+ * 后果：LinUCB 的 5 维上下文里第 4 维对英文查询恒为 1，该特征彻底失去区分度，
+ * PINYIN 通道的预估收益被系统性高估。
+ *
+ * 新实现四步，按证据强度递进：
+ *  1. 含非拉丁字母（中文/数字/符号）→ 0。
+ *  2. 已知英文词/技术缩写表命中 → 0.05。
+ *  3. DP 全覆盖切分：整串能被合法音节切完才算真拼音，得分按平均音节长度给
+ *     （zhihu / kaogong / duanju 这类接近 1；碎片化切分拿不到高分）。
+ *  4. 声母简拼启发式：全由合法声母构成（qdjb / zgh）→ 0.35–0.55。
+ *     这是「首字母缩写」而非音节拼写，可能性真实但远低于完整拼音。
+ *
+ * 'v' 既不在声母表也不在音节表（ü 只作韵母；输入法里 lv/nv 的 v 是音节内部成分），
+ * 因此含孤立 v 的串自然落到低分——这正是修复 'vsc' 的关键。
+ */
+export function computePinyinLikelihood(raw: string): number {
+  const q = raw.trim().toLowerCase()
+  if (!q) return 0
+  if (!/^[a-z]+$/.test(q)) return 0
+  if (NON_PINYIN_WORDS.has(q)) return 0.05
+
+  const n = q.length
+  const NEG = Number.NEGATIVE_INFINITY
+  const dp: number[] = new Array(n + 1).fill(NEG)
+  const prev: number[] = new Array(n + 1).fill(-1)
+  /** 每个可达位置是否「全部由音节（而非声母碎片）构成」 */
+  const pure: boolean[] = new Array(n + 1).fill(true)
+  dp[0] = 0
+  for (let i = 0; i < n; i++) {
+    if (dp[i] === NEG) continue
+    for (let L = 1; L <= 6 && i + L <= n; L++) {
+      const seg = q.slice(i, i + L)
+      const isSyllable = PINYIN_SYLLABLES.has(seg)
+      // 关键：单字母声母（q/z/j/b…）也允许作为片段，但只给 1 分权重。
+      // 否则 'qdjb' 连第一步都切不动（q 不是独立音节），DP 全程不可达，
+      // 简拼启发式根本轮不到执行——这正是首版 lastReach=0 的原因。
+      const isInitial = !isSyllable && L === 1 && PINYIN_INITIALS.has(seg)
+      if (!isSyllable && !isInitial) continue
+      const gain = isSyllable ? L * L : 1
+      const score = dp[i] + gain
+      if (score > dp[i + L]) {
+        dp[i + L] = score
+        prev[i + L] = i
+        pure[i + L] = pure[i] && isSyllable
+      }
+    }
+  }
+
+  if (dp[n] !== NEG) {
+    let syllables = 0
+    let allSyllable = true
+    for (let cur = n; cur > 0; cur = prev[cur]) {
+      syllables++
+      const seg = q.slice(prev[cur] < 0 ? 0 : prev[cur], cur)
+      if (!PINYIN_SYLLABLES.has(seg)) allSyllable = false
+    }
+    // 含声母碎片（如 qdjb）→ 走简拼档；纯音节 → 按平均音节长度给分
+    if (!allSyllable) {
+      const bonus = Math.min(0.2, (q.length - 2) * 0.05)
+      return round2(0.35 + Math.max(0, bonus))
+    }
+    const avgLen = n / syllables
+    // 平均音节长度 1→0.58, 2→0.76, 3→0.94, 4+→1.0
+    return round2(Math.min(1, 0.4 + avgLen * 0.18))
+  }
+
+  if (isAllPinyinInitials(q)) {
+    const bonus = Math.min(0.2, (q.length - 2) * 0.05)
+    return round2(0.35 + Math.max(0, bonus))
+  }
+
+  let best = 0
+  for (let i = 1; i <= n; i++) if (dp[i] !== NEG) best = i
+  return round2((best / n) * 0.3)
+}
+
+/** 整串能否全部拆成合法声母（zh/ch/sh 双字母优先）。 */
+function isAllPinyinInitials(q: string): boolean {
+  if (q.length < 2) return false
+  let i = 0
+  while (i < q.length) {
+    const two = q.slice(i, i + 2)
+    if (PINYIN_INITIALS.has(two)) { i += 2; continue }
+    if (PINYIN_INITIALS.has(q[i])) { i += 1; continue }
+    return false
+  }
+  return i === q.length
+}
+
+function round2(v: number): number {
+  return Math.round(v * 100) / 100
 }

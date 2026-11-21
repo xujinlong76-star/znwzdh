@@ -125,7 +125,7 @@ import {
   isSafeSiteHref,
 } from '@/lib/modular/diy-presets'
 import { filterNavigationByWorkspace } from '@/lib/modular/workspace-matching'
-import { countCategorySites } from '@/lib/modular/category-counts'
+import { countCategorySites, estimateTruncatedSectionHeight } from '@/lib/modular/category-counts'
 import {
   combineAndSortCategories,
   customCategoriesToNavigation,
@@ -1370,6 +1370,7 @@ export function NavigationContent({
                       sectionId={category.id}
                       title={category.title}
                       count={countCategorySites(category)}
+                      estimatedHeight={estimateTruncatedSectionHeight(category, cardsPerGroup)}
                       force={false}
                       placeholder={
                         isEditingLayout ? (

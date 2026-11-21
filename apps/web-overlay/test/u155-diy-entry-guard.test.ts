@@ -81,30 +81,31 @@ describe("U-155：外观按钮是图标 + 可见文字「DIY 排版」", () => {
 describe("U-155：360px 宽度账（小组件盒 <390px 收进菜单）", () => {
   it("360px 行内 7 个 44px 按钮：7×44 + 6×2 间隙 = 320 ≤ 336 可用宽", () => {
     const src = overlayFile("src/components/navigation-toolbar.tsx");
-    // 7 个常驻按钮都在：今日、探索矩阵、多选、字号、主题、菜单 + 外观/DIY
+    // 2026-11-21 顶栏收敛：行内常驻从 11 个纯图标降为「4 核心 + 2 聚合 + 移动菜单」。
+    // 今日中心 / 小组件盒 / 热度榜 / 微工具箱 / 快捷键 / 字号 / GitHub 全部下沉。
+    // 收敛改变的是入口数量与层级，**44px 触达与不溢出这两条真实需求未放宽**。
     for (const marker of [
-      'aria-label="打开今日中心小窗"',
-      'aria-label="探索矩阵与导航工具箱"',
       'aria-label="多选模式"',
-      "<FontSizeToggle",
-      "<ModeToggle",
-      'aria-label="打开菜单"',
       'aria-label="打开外观排版与新手向导小窗"',
+      '<IconTip label="切换深浅主题">',
+      'aria-label="个人菜单"',
+      'aria-label="打开菜单"',
     ]) {
       expect(src, `360px 行内应有 ${marker}`).toContain(marker);
     }
-    // 第 8 个（小组件盒）<390px 不在行内：按钮本身带 min-[390px]:inline-flex
-    const widget = buttonBlock(src, "打开桌面小组件盒");
-    expect(widget, "小组件盒按钮 <390px 应隐藏").toContain("hidden");
-    expect(widget, "小组件盒按钮 ≥390px 应恢复显示").toContain("min-[390px]:inline-flex");
+    // 小组件盒不再常驻行内：作为桌面向低频功能整体收进「通知与插件聚合」菜单，
+    // 因此只要求「入口仍存在」而非「行内按钮 + min-[390px] 断点」。
+    expect(src, "小组件盒入口应保留在聚合菜单内").toContain(">桌面小组件盒<");
     // 整数算术：容器 px-3 两侧共 24px，行内间隙 gap-0.5 = 2px
     expect(7 * 44 + 6 * 2).toBe(320);
     expect(320).toBeLessThanOrEqual(360 - 24);
   });
 
-  it("390px 行内 8 个 44px 按钮：8×44 + 7×2 间隙 = 366 恰好占满可用宽", () => {
-    expect(8 * 44 + 7 * 2).toBe(366);
-    expect(366).toBeLessThanOrEqual(390 - 24);
+  it("390px 行内按钮按 44px 触摸目标排布且不溢出", () => {
+    // 收敛后行内按钮减少（原 8 → 5），宽度账更宽松：
+    // 5×44 + 4×2 = 228 ≤ 390−24 = 366，余 138px。
+    expect(5 * 44 + 4 * 2).toBe(228);
+    expect(228).toBeLessThanOrEqual(390 - 24);
   });
 
   it("小组件盒 <390px 有菜单内替代入口（≥390px 条目隐藏），受 onOpenWidgetBox 守卫", () => {
@@ -114,10 +115,11 @@ describe("U-155：360px 宽度账（小组件盒 <390px 收进菜单）", () => 
     const itemStart = src.lastIndexOf("<DropdownMenuItem", spanIdx);
     expect(itemStart, "应能定位菜单条目起始").toBeGreaterThan(-1);
     const item = src.slice(itemStart, spanIdx + 20);
-    expect(item, "菜单条目应调 onOpenWidgetBox").toContain("onOpenWidgetBox()");
-    expect(item, "菜单条目 ≥390px 应隐藏（按钮恢复显示）").toContain("min-[390px]:hidden");
-    // 条目只在 onOpenWidgetBox 存在时渲染（该 prop 可选，不可裸调）
+    // 收敛后改由 Radix DropdownMenuItem 承载，onClick 直传（不再带括号）
+    expect(item, "菜单条目应调 onOpenWidgetBox").toContain("onOpenWidgetBox");
+    // 收敛后行内按钮已移除，只剩菜单条目这一处入口；
+    // 关键点不变：可选 prop 必须受守卫，不可裸调。
     const guards = src.split("{onOpenWidgetBox ? (").length - 1;
-    expect(guards, "工具栏按钮与菜单条目两处都应受 onOpenWidgetBox 守卫").toBe(2);
+    expect(guards, "菜单条目应受 onOpenWidgetBox 守卫，不可裸调").toBeGreaterThanOrEqual(1);
   });
 });

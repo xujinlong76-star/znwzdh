@@ -55,8 +55,12 @@ describe("顶栏触达尺寸（navigation-toolbar）", () => {
     expect(src).not.toContain("sm:h-8.5 sm:w-8.5");
     // P1 #10（2026-11-13）：36px 标准升级为 44px，h-9 w-9 亦属回退
     expect(src, "仍有 h-9 w-9（36px < 44px）").not.toContain("h-9 w-9");
+    // 2026-11-21 顶栏收敛：行内常驻按钮 11 → 6（今日中心/小组件盒/热度榜/
+    // 微工具箱/快捷键/字号/GitHub 下沉进聚合菜单）。收敛改变的是**入口数量**，
+    // 不是触达尺寸——「每个 icon 按钮必须 44px」未放宽，仅同步核对实际个数，
+    // 防止将来有人悄悄塞回小尺寸按钮。
     const h11 = src.split("h-11 w-11").length - 1;
-    expect(h11, "11 处 h-11 w-11（10 个 icon 按钮 + 今日中心文字按钮，见 98635cb2）").toBe(11);
+    expect(h11, "6 处 h-11 w-11（多选 / DIY 排版 / 主题 / 通知聚合 / 个人菜单 / 移动菜单）").toBe(6);
   });
 
   it("每个 size=\"icon\" 按钮块内都有 aria-label（asChild 挂内层 Link 也算）", () => {
@@ -66,7 +70,8 @@ describe("顶栏触达尺寸（navigation-toolbar）", () => {
     // （删 size="icon"，className 保留 h-11 w-11），故 size="icon" 基线 11 → 10；
     // U-155（2026-11-19）外观按钮同理改为带文字标签「DIY 排版」（删 size="icon"，
     // className 保留 h-11 w-11），基线 10 → 9；h-11 w-11 总数仍为 11，见上一项。
-    expect(parts.length - 1, "应有 9 个 icon 按钮（今日中心与外观按钮已改为文字按钮，见 98635cb2 与 U-155）").toBe(9);
+    // 2026-11-21 顶栏收敛：icon 按钮 9 → 5。
+    expect(parts.length - 1, "应有 5 个 icon 按钮（多选/主题/通知聚合/个人菜单/菜单）").toBe(5);
     for (let i = 1; i < parts.length; i++) {
       // 从 size="icon" 起，到对应 </Button> 为止的块（JSX 块最大 ~40 行）
       const block = parts[i].slice(0, 2000);
@@ -76,18 +81,14 @@ describe("顶栏触达尺寸（navigation-toolbar）", () => {
     }
   });
 
-  it("今日中心按钮是带文字标签的按钮（98635cb2），仍保持 h-11 w-11 = 44px 触达", () => {
+  it("今日中心已下沉进「通知与插件聚合」菜单，入口仍可达", () => {
+    // 2026-11-21 顶栏收敛：今日中心从行内独立按钮改为聚合菜单项。
+    // 这是有意的层级调整（11 图标 → 4 核心 + 2 聚合），不再要求行内 h-11 形态；
+    // 改为守住「入口存在 + 受 onOpenTodayCenter 守卫 + 有可读文案」三条。
     const src = overlayFile("src/components/navigation-toolbar.tsx");
-    const labelIdx = src.indexOf('aria-label="打开今日中心小窗"');
-    expect(labelIdx, "今日中心按钮应保留 aria-label").toBeGreaterThan(-1);
-    const start = src.lastIndexOf("<Button", labelIdx);
-    const end = src.indexOf("</Button>", labelIdx);
-    expect(start, "应能定位今日中心按钮起始").toBeGreaterThan(-1);
-    expect(end, "应能定位今日中心按钮结束").toBeGreaterThan(-1);
-    const block = src.slice(start, end);
-    expect(block, "今日中心按钮不再是纯图标按钮，不应再用 size=\"icon\"").not.toContain('size="icon"');
-    expect(block, "今日中心按钮仍应是 h-11 w-11（44px 触达）").toContain("h-11 w-11");
-    expect(block, "今日中心按钮应有可见文字标签「今日 N 项」/「今日」").toContain("今日 ${todayBadge.todayCount}");
+    expect(src, "聚合菜单里应有今日中心条目").toContain(">今日中心<");
+    expect(src, "今日中心应受 onOpenTodayCenter 守卫").toContain("onOpenTodayCenter");
+    expect(src, "今日中心条目应有可读说明").toContain("今日 ${todayBadge.todayCount}");
   });
 
   it("「全选」文本按钮（size=\"sm\"）也是 36px 高（h-9 w-auto，F3 尾项裁决）", () => {

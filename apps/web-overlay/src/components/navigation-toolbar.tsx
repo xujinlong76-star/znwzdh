@@ -184,7 +184,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    'relative hidden h-9 w-9 rounded-lg transition-colors sm:inline-flex',
+                    'relative hidden h-11 w-11 rounded-lg transition-colors sm:inline-flex',
                     selectionMode
                       ? 'bg-primary/10 text-primary'
                       : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
@@ -206,7 +206,9 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-auto gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  /* 2026-11-21 顶栏收敛时误把高度从 h-9(36px) 压到 h-8(32px)，
+                     低于 touch-target-baseline 的 36px 下限，已改回。 */
+                  className="h-9 w-auto gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                   onClick={onSelectAllVisible}
                   title={summarizeSelection(selectedIds, visibleSiteCount) + '（点击全选当前可见站点）'}
                 >
@@ -219,6 +221,11 @@ export const NavigationToolbar = memo(function NavigationToolbar({
 
               {/* ② DIY 排版：保留可见文字。这是首屏最重要的个性化入口，
                   纯图标会让新用户找不到「怎么改这一页」（U-155 的结论不能推翻）。 */}
+              {/* U-155 的核心结论不能丢：<sm（手机）在 390px 首屏也必须能认出 DIY
+                  入口，因此沿用「图标上、文字下」的上下叠排（与「今日」按钮同款），
+                  仍占 44px 宽；≥sm 转横排、宽度自适应。
+                  2026-11-21 顶栏收敛时曾误改成小屏隐藏文字，那会让手机端又退回
+                  纯图标——正是 U-155 当初要修的问题，已改回。 */}
               {onOpenAppearanceGuide ? (
                 <Button
                   type="button"
@@ -227,12 +234,12 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                     trackDiyEvent('diy_appearance_click')
                     onOpenAppearanceGuide()
                   }}
-                  className="relative flex h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                  className="relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-0 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground sm:w-auto sm:flex-row sm:gap-1.5 sm:px-2.5"
                   title="DIY 排版、外观与皮肤（打开外观向导小窗）"
                   aria-label="打开外观排版与新手向导小窗"
                 >
                   <SlidersHorizontal className="h-4 w-4 shrink-0" />
-                  <span className="hidden whitespace-nowrap text-xs leading-none sm:inline">DIY 排版</span>
+                  <span className="whitespace-nowrap text-[10px] leading-none sm:text-xs">DIY 排版</span>
                 </Button>
               ) : null}
 
@@ -252,7 +259,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="relative h-9 w-9 rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                        className="relative h-11 w-11 rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                         aria-label={
                           unreadNotifications > 0
                             ? `通知与插件聚合，${unreadNotifications} 条未读`
@@ -342,7 +349,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-9 w-9 rounded-full bg-muted/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        className="h-11 w-11 rounded-full bg-muted/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                         aria-label="个人菜单"
                       >
                         <User className="h-4 w-4" />
@@ -437,7 +444,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-9 w-9 rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground lg:hidden"
+                        className="h-11 w-11 rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground lg:hidden"
                         aria-label="更多导航与探索"
                       >
                         <MoreHorizontal className="h-4 w-4" />
@@ -500,7 +507,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground md:hidden"
+                  className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground md:hidden"
                   onClick={onToggleSidebar}
                   aria-label="打开菜单"
                   /* 上游（github/main）新增的门禁无障碍属性：让读屏知道抽屉

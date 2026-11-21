@@ -83,7 +83,7 @@ async function recordDramaFailure(ctx: AppContext, dramaKey: string, now: number
 export async function handleDramaUpdateCheck(ctx: AppContext, deps: DramaCheckDeps = {}): Promise<void> {
  const now = (deps.now?? Date.now)();
  const fetchImpl = deps.fetchImpl?? makeGuardedHotlistFetch(ctx);
- const loaded = deps.dramas? { dramas: deps.dramas, skipped: 0, path: null as string | null}: loadDramaFeaturedForCheck();
+ const loaded = deps.dramas? { dramas: deps.dramas, skipped: 0, path: null as string | null, updatedAt: null, updatedAtStale: true }: loadDramaFeaturedForCheck();
  const summary: DramaCheckSummary = {
  checked: 0,
  updated: 0,

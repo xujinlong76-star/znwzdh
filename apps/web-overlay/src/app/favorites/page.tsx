@@ -14,6 +14,13 @@ import { Container } from '@/components/ui/container'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { FavoriteButton } from '@/components/favorite-button'
 import { SiteFavicon } from '@/components/site-favicon'
@@ -30,7 +37,7 @@ import { useFavoritesFolderManager } from '@/hooks/use-favorites-folder-manager'
 import { SmartCollectionsPanel } from '@/components/smart-collections-panel'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { LOCAL_FOLDERS_STORAGE_KEY, parseLocalFolders, serializeLocalFolders, type LocalFolder } from '@/lib/favorites-folders'
-import { buildFavoritesSearch, parseFavoritesFilters, type FavoritesSort } from '@/lib/favorites-url'
+import { buildFavoritesSearch, parseFavoritesFilters, type FavoritesSort, type FavoritesView } from '@/lib/favorites-url'
 import {
   favoritesToVaultItems,
   formatVaultRestoreNotice,
@@ -48,7 +55,9 @@ import { describeAnonymousFavoritesNote, describeSyncBanner, shouldOfferRetry, t
 import { FavoritesSyncBadge } from '@/components/favorites/favorites-sync-badge'
 import { deriveBadgeState, type SyncEngineSnapshot } from '@/lib/favorites-sync'
 import { ConflictDrawer } from '@/components/favorites/conflict-drawer'
-import { FavoriteSyncDot, favoriteSyncRing } from '@/components/favorites/favorite-sync-dot'
+import { useFavoritesSyncBridge } from '@/hooks/useFavoritesSyncBridge'
+import { createFavoritesSyncEngine, type FavoritesSyncEngine } from '@/lib/favorites-sync-engine'
+import { createFavoritesPush } from '@/lib/favorites-sync-adapter'
 import {
   filterFavorites,
   filterByTriage,
@@ -112,7 +121,7 @@ import {
   type HubFavoriteFolder,
 } from '@/lib/navhub-api'
 import {
-  Shield, KeyRound, CheckCircle2, AlertTriangle, EyeOff,
+  Shield, KeyRound, CheckCircle2, AlertTriangle,
   RefreshCw, CloudOff, Search, X, Package, Folder, FolderPlus, Pencil, Trash2, Check, LogIn, ChevronUp, ChevronDown, Tag,
   Download, FileUp, CheckSquare, Square, Layers, Zap, Inbox, Link2, Moon, Sun,
 } from 'lucide-react'
@@ -205,6 +214,7 @@ export default function FavoritesPage() {
   const [showImport, setShowImport] = useState(false)
   const [showUniversalImport, setShowUniversalImport] = useState(false)
   const [showManualAdd, setShowManualAdd] = useState(false)
+  const [showCryptoHint, setShowCryptoHint] = useState(false)
   const [showLinkPack, setShowLinkPack] = useState(false)
   const [batchMode, setBatchMode] = useState(false)
   const [selectedSiteIds, setSelectedSiteIds] = useState<Set<string>>(new Set())
@@ -232,6 +242,11 @@ export default function FavoritesPage() {
     typeof window === 'undefined' ? [] : readLocalFolders(),
   )
   const [activeFolder, setActiveFolder] = useState<string>('all')
+  /** 工作区 Tab（?view= 同步）：站点收藏 / 星标插件 / 我的批注 / 公开导航页 */
+  const [activeView, setActiveView] = useState<FavoritesView>('sites')
+  /** 星标插件计数（Tab 角标用）：StarredPluginsSection 取数后回传 */
+  const [starredCount, setStarredCount] = useState(0)
+  const [starredCountLoaded, setStarredCountLoaded] = useState(false)
   const [noteEditor, setNoteEditor] = useState<string | null>(null)
   const [noteDraft, setNoteDraft] = useState('')
   // 标签编辑器（T22）：逗号分隔输入，保存时归一（≤8 个、各 ≤24 字符）
@@ -333,6 +348,7 @@ export default function FavoritesPage() {
       setFavoriteQuery(parsed.q)
       setActiveFolder(parsed.folder)
       setSortBy(parsed.sort)
+      setActiveView(parsed.view)
     }
     syncFromUrl()
     setFiltersReady(true)
@@ -344,18 +360,16 @@ export default function FavoritesPage() {
     if (!filtersReady) return
     const next =
       window.location.pathname +
-      // view 由 parseFavoritesFilters 从当前 URL 读回，写回时原样保留，
-      // 避免切换筛选把用户所在的 view 冲掉（FavoritesFilters.view 是必填）
       buildFavoritesSearch({
         q: favoriteQuery,
         folder: activeFolder,
         sort: sortBy,
-        view: parseFavoritesFilters(window.location.search).view,
+        view: activeView,
       }) +
       window.location.hash
     const current = window.location.pathname + window.location.search + window.location.hash
     if (next !== current) window.history.replaceState(window.history.state, '', next)
-  }, [filtersReady, favoriteQuery, activeFolder, sortBy])
+  }, [filtersReady, favoriteQuery, activeFolder, sortBy, activeView])
 
   /** 按意思搜的查询生效中（有查询词且已拿到排序结果） */
   const meaningActive = saveSearchMode === 'meaning' && meaningQuery !== '' && meaningMatches !== null
@@ -563,12 +577,69 @@ export default function FavoritesPage() {
    * Outbox 计数与冲突集合由后续接入 IndexedDB 队列时补齐——
    * 未接时 pendingCount/冲突恒为 0，不影响现有行为。
    */
-  /** 冲突裁决抽屉是否打开（2026-11-21） */
-  const [showConflictDrawer, setShowConflictDrawer] = useState(false)
+  /**
+   * 同步引擎实例与桥接（2026-11-21）。
+   *
+   * 引擎负责 Outbox 排队、退避重试、冲突检测；
+   * bridge 用快照差异把收藏变化喂给它，不侵入 useFavorites 内部。
+   */
+  const syncEngineRef = useRef<FavoritesSyncEngine | null>(null)
   /** 是否有已勾选但未确认的冲突选择——仅这种情况才做离开提醒 */
   const [hasUnconfirmedConflict, setHasUnconfirmedConflict] = useState(false)
+  if (syncEngineRef.current === null && typeof window !== 'undefined') {
+    const sinceRef = { v: 0 }
+    syncEngineRef.current = createFavoritesSyncEngine({
+      // 登录态判定与页面其余处同口径（identityReady 来自 useIdentityReady）
+      isAuthed: () => identityReady.ready && !identityReady.isAnonymous && !!identityReady.identity,
+      push: createFavoritesPush({
+        getSince: () => sinceRef.v,
+        setSince: (v) => { sinceRef.v = v },
+        applyRemote: (payload) => {
+          // 远端增量（含墓碑）由 useFavorites 的既有合并链路消费；
+          // 这里只记录 version，实际条目合并交给 syncFavoritesToCloud
+          void payload
+        },
+      }),
+    })
+  }
+  /** 引擎快照：由 onChange 回调驱动，不轮询（轮询会让徽标延迟且浪费帧） */
+  const [engineSnapshot, setEngineSnapshot] = useState<SyncEngineSnapshot | null>(null)
+  useEffect(() => {
+    const engine = syncEngineRef.current
+    if (!engine) return
+    engine.start()
+    setEngineSnapshot(engine.snapshot())
+    return () => engine.stop()
+  }, [])
 
-  const syncSnapshot: SyncEngineSnapshot = {
+  // 2026-11-21：收藏变化 → Outbox 桥接（纯观察，不侵入 useFavorites）
+  useFavoritesSyncBridge(favorites.items, syncEngineRef.current, favorites.ready)
+
+  /**
+   * 离开提醒只在**有未确认的冲突裁决选择**时生效。
+   *
+   * Local-First 下同步中/待同步都不该拦截离开——IndexedDB 事务已提交，
+   * 关掉标签页数据 100% 安全，下次打开自动续传 Outbox。
+   * 唯一例外是用户打开了冲突抽屉、看了但没点确认，那是未提交的 UI 决策。
+   */
+  useEffect(() => {
+    if (!hasUnconfirmedConflict) return
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [hasUnconfirmedConflict])
+
+  /** 冲突裁决抽屉是否打开（2026-11-21） */
+  const [showConflictDrawer, setShowConflictDrawer] = useState(false)
+
+  /**
+   * 优先用引擎快照（含真实 Outbox 计数与冲突集合）；
+   * 引擎尚未初始化完成时回退到手工构造的保守快照，避免徽标闪空。
+   */
+  const fallbackSnapshot: SyncEngineSnapshot = {
     badgeState: deriveBadgeState({
       // 登录态判定与页面其余处同口径：identityReady 是对象，不是布尔
       isAuthed: identityReady.ready && !identityReady.isAnonymous && !!identityReady.identity,
@@ -589,6 +660,8 @@ export default function FavoritesPage() {
       ? { error: { kind: 'server_5xx' as const, message: syncNote ?? '', canAutoRetry: true } }
       : {}),
   }
+
+  const syncSnapshot: SyncEngineSnapshot = engineSnapshot ?? fallbackSnapshot
 
   const syncBannerInput: SyncBannerInput | null = syncingCloud
     ? { syncing: true }
@@ -1286,195 +1359,237 @@ export default function FavoritesPage() {
     <Container as="main" id="main-content">
       <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">
         <UserCenterNav />
-        {/* 沉浸式 Hero 展板 */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-4 sm:p-8 shadow-xs">
-          <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl" />
-          <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-48 h-48 bg-sky-400/10 rounded-full blur-3xl" />
-          <Shield
-            aria-hidden
-            strokeWidth={1}
-            className="pointer-events-none absolute right-5 top-5 hidden sm:block w-16 h-16 text-border/70"
-          />
-
-          <div className="relative z-10 space-y-4">
-            <div className="flex items-center gap-2">
-              <Link
-                href="/"
-                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1 rounded-md bg-background/60 hover:bg-background border border-border/60"
-              >
-                <Shield className="w-3.5 h-3.5" />
-                <span>返回主页</span>
-              </Link>
-              <span className="text-border">/</span>
-              <span className="text-xs text-emerald-700 dark:text-emerald-400 font-medium">
-                私密书签与 E2EE 金库
-              </span>
+        {/* 紧凑 Header（单行/紧凑双行，高度 ~120px）：标题 + 状态徽标行 + 主动作 + 双下拉菜单。
+            删除了 Hero 内冗余的返回主页面包屑与 E2EE 副标题——顶部 UserCenterNav
+            已有「← 返回首页」。JSON 保真格式说明移入「备份与导出」菜单底部注脚。 */}
+        <div className="rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-4 sm:p-5 shadow-xs">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            {/* 左：精炼标题 + 轻量状态徽标行 */}
+            <div className="min-w-0">
+              <h1 className="flex flex-wrap items-center gap-2 text-lg sm:text-2xl font-extrabold tracking-tight">
+                <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                  <Shield className="w-4 h-4" aria-hidden />
+                </span>
+                <span>我的收藏与零知识金库</span>
+                <FavoritesSyncBadge
+                  snapshot={syncSnapshot}
+                  onOpenConflicts={() => setShowConflictDrawer(true)}
+                  onRetry={undefined}
+                />
+              </h1>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  <Shield className="w-3 h-3" aria-hidden />
+                  本地 {favorites.ready ? favorites.items.length : '—'} 条
+                </span>
+                <span aria-hidden className="text-border">·</span>
+                <span className="inline-flex items-center gap-1">
+                  <KeyRound className="w-3 h-3" aria-hidden />
+                  AES-256-GCM 离线加密
+                  <span className="relative inline-flex">
+                    <button
+                      type="button"
+                      aria-expanded={showCryptoHint}
+                      aria-label="展开加密技术说明"
+                      title="密码不上云、不可逆、防篡改"
+                      onClick={() => setShowCryptoHint((v) => !v)}
+                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border/60 text-[9px] font-semibold text-muted-foreground hover:text-foreground"
+                    >
+                      ?
+                    </button>
+                    {showCryptoHint && (
+                      <span
+                        role="tooltip"
+                        className="absolute left-0 top-6 z-20 w-56 rounded-lg border border-border/70 bg-popover p-2 text-[11px] leading-relaxed text-foreground shadow-md"
+                      >
+                        密码不上云：主密码只在本机派生密钥，绝不明文传输；AES-256-GCM
+                        认证加密，密文不可逆、防篡改；密码丢失无法解密，请妥善保管。
+                      </span>
+                    )}
+                  </span>
+                </span>
+                {favorites.trashCount > 0 && (
+                  <Link
+                    href="/favorites/trash"
+                    className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground underline underline-offset-2"
+                  >
+                    <Trash2 className="w-3 h-3" aria-hidden />
+                    🗑 回收站 ({favorites.trashCount})
+                  </Link>
+                )}
+              </div>
             </div>
 
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <div className="max-w-2xl">
-                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 shadow-xs">
-                    <Shield className="w-5 h-5 sm:w-6 sm:h-6" />
-                  </div>
-                  <span>我的离线收藏与零知识金库</span>
-                  {/* 2026-11-21 六态同步徽标：与标题同一行右侧对齐。
-                      常态克制低饱和，仅冲突/失败态提亮。 */}
-                  <FavoritesSyncBadge
-                    snapshot={syncSnapshot}
-                    onOpenConflicts={() => setShowConflictDrawer(true)}
-                    onRetry={undefined}
-                  />
-                </h1>
-
-                <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
-                  本地离线优先：收藏先存在本机，登录后自动与云端同步；也可用 AES-256-GCM 加密导出为 <code>.navhub.vault</code> 文件，密码不上云、不可逆、防篡改。
-                </p>
-              </div>
-
-              {/* IA 收敛（N9）：主任务只留一个主操作，其余四个降级为「更多导入导出」，
-                 分开摆放——它们本质是导入/导出的备选格式，与「管理收藏」不是同一层级。 */}
-              <div className="flex flex-col gap-2 lg:items-end">
-              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            {/* 右：1 个主动作 + 2 个高级下拉（导入 ▾ / 备份与导出 ▾） */}
+            <div className="flex flex-wrap items-center gap-2">
+              {favorites.items.length === 0 ? (
+                /* 0 条时：导入书签提升为主视觉高亮按钮（当前页即可完成第一次行动） */
                 <Button
-                  variant="default"
                   size="sm"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 shadow-xs h-8.5 rounded-xl text-xs"
-                  onClick={() => {
-                    setShowVaultExport(!showVaultExport)
-                    setShowVaultImport(false)
-                    setShowImport(false)
-                  }}
-                  disabled={favorites.items.length === 0}
-                >
-                  <Shield className="w-3.5 h-3.5" /> 导出加密金库
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex items-center gap-1.5 h-8.5 rounded-xl text-xs border-border/70"
-                  onClick={() => {
-                    setShowVaultImport(!showVaultImport)
-                    setShowVaultExport(false)
-                    setShowImport(false)
-                  }}
-                >
-                  <KeyRound className="w-3.5 h-3.5" /> 解密导入金库
-                </Button>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 border-t border-border/50 pt-3">
-                <span className="text-[11px] text-muted-foreground">更多导入导出</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
+                  className="h-8.5 rounded-xl text-xs gap-1.5 shadow-xs"
                   onClick={() => {
                     setShowUniversalImport(true)
                     setShowVaultExport(false)
                     setShowVaultImport(false)
                     setShowImport(false)
                   }}
-                  className="text-xs text-emerald-700 dark:text-emerald-400 h-8 rounded-lg hover:bg-emerald-500/10 font-medium"
-                  title="支持 Chrome/Edge 导出的 HTML 书签或 Markdown 链接清单"
                 >
-                  <FileUp className="w-3.5 h-3.5 mr-1" />
-                  导入书签/MD
+                  <FileUp className="w-3.5 h-3.5" aria-hidden />
+                  导入书签
                 </Button>
+              ) : (
                 <Button
-                  variant="ghost"
                   size="sm"
-                  onClick={handleExportHtml}
-                  disabled={favorites.items.length === 0}
-                  className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
-                  title="导出为浏览器通用的 Netscape HTML 书签（包含文件夹结构）"
-                >
-                  <Download className="w-3.5 h-3.5 mr-1" />
-                  书签 HTML
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleExportMarkdown}
-                  disabled={favorites.items.length === 0}
-                  className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
-                  title="导出为分级结构化 Markdown 清单（适配 Notion/Obsidian）"
-                >
-                  Markdown
-                </Button>
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs text-muted-foreground min-h-11 rounded-lg hover:bg-accent"
-                  title="查看在收藏标题 / 简介上划过的线与批注，可搜索、可导出"
-                >
-                  <Link href="/me/annotations">我的批注</Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleExportPlain}
-                  disabled={favorites.items.length === 0}
-                  className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
-                >
-                  明文 JSON
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white h-8.5 rounded-xl text-xs gap-1.5 shadow-xs"
                   onClick={() => {
-                    setShowImport(!showImport)
-                    setShowVaultExport(false)
+                    setShowVaultExport(!showVaultExport)
                     setShowVaultImport(false)
-                    setShowUniversalImport(false)
+                    setShowImport(false)
                   }}
-                  className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
                 >
-                  导入 JSON
+                  <Shield className="w-3.5 h-3.5" aria-hidden />
+                  导出加密金库
                 </Button>
-                {/* 导出为插件属于「发布到市场」，不是数据管理动作：标注清楚去向 */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleExportAsPlugin}
-                  disabled={favorites.items.length === 0}
-                  className="text-xs text-sky-700 dark:text-sky-400 h-8 rounded-lg hover:bg-sky-500/10"
-                  title="把全部收藏打包成网址包插件（.json），可在插件市场发布"
-                >
-                  <Package className="w-3.5 h-3.5" /> 导出为插件
-                </Button>
-              </div>
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                JSON 是唯一保真格式：快捷链接模板只随 JSON 导出 / 导入，HTML 与 Markdown 导出不含模板。
-              </p>
-              </div>
-            </div>
-
-            <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 text-xs text-emerald-700 dark:text-emerald-400">
-                <Shield className="w-3 h-3" />
-                本地收藏 {favorites.ready ? favorites.items.length : '—'} 条
-              </span>
-              {/* 回收站角标：非空时显示入口（删除的收藏在这里保留 30 天） */}
-              {favorites.trashCount > 0 && (
-                <Link
-                  href="/favorites/trash"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  🗑 回收站 ({favorites.trashCount})
-                </Link>
               )}
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
-                <KeyRound className="w-3 h-3 text-border" />
-                AES-256-GCM 认证加密
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
-                <EyeOff className="w-3 h-3 text-border" />
-                零知识：密码不上云
-              </span>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8.5 rounded-xl text-xs gap-1.5 border-border/70">
+                    <FileUp className="w-3.5 h-3.5" aria-hidden />
+                    导入
+                    <ChevronDown className="w-3 h-3 opacity-60" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setShowUniversalImport(true)
+                      setShowVaultExport(false)
+                      setShowVaultImport(false)
+                      setShowImport(false)
+                    }}
+                  >
+                    <FileUp className="w-3.5 h-3.5 mr-2" aria-hidden />
+                    导入浏览器书签 / Markdown
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setShowVaultImport(true)
+                      setShowVaultExport(false)
+                      setShowImport(false)
+                      setShowUniversalImport(false)
+                    }}
+                  >
+                    <KeyRound className="w-3.5 h-3.5 mr-2" aria-hidden />
+                    解密导入加密金库 (.navhub.vault)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setShowImport(true)
+                      setShowVaultExport(false)
+                      setShowVaultImport(false)
+                      setShowUniversalImport(false)
+                    }}
+                  >
+                    <Link2 className="w-3.5 h-3.5 mr-2" aria-hidden />
+                    导入明文 JSON
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={favorites.items.length === 0}
+                    title={favorites.items.length === 0 ? '收藏至少 1 个站点后可导出' : undefined}
+                    className="h-8.5 rounded-xl text-xs gap-1.5 border-border/70 disabled:opacity-50"
+                  >
+                    <Download className="w-3.5 h-3.5" aria-hidden />
+                    备份与导出
+                    <ChevronDown className="w-3 h-3 opacity-60" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setShowVaultExport(true)
+                      setShowVaultImport(false)
+                      setShowImport(false)
+                      setShowUniversalImport(false)
+                    }}
+                  >
+                    <Shield className="w-3.5 h-3.5 mr-2 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                    <span className="flex-1">导出加密金库 (.navhub.vault)</span>
+                    <span className="ml-2 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                      推荐
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={handleExportPlain}>
+                    <Link2 className="w-3.5 h-3.5 mr-2" aria-hidden />
+                    导出明文 JSON（唯一保留快捷模板）
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={handleExportHtml}>
+                    <Download className="w-3.5 h-3.5 mr-2" aria-hidden />
+                    导出书签 HTML
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={handleExportMarkdown}>
+                    <Download className="w-3.5 h-3.5 mr-2" aria-hidden />
+                    导出 Markdown
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={handleExportAsPlugin}>
+                    <Package className="w-3.5 h-3.5 mr-2" aria-hidden />
+                    导出为插件
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <p className="px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
+                    JSON 是唯一保真格式：快捷链接模板只随 JSON 导出 / 导入，HTML 与 Markdown 导出不含模板。
+                  </p>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </div>
+
+        {/* 工作区同级 Tab 切换栏（?view= 同步）：站点收藏 / 星标插件 / 我的批注 / 公开导航页。
+            星标插件与公开导航页从首屏常驻卡改为 Tab 承接——不再需要解释「两套东西」。 */}
+        <div
+          role="tablist"
+          aria-label="收藏工作区视图"
+          className="mt-4 flex flex-wrap items-center gap-1 rounded-xl border border-border/60 bg-card/40 p-1"
+        >
+          {(
+            [
+              ['sites', `站点收藏 (${favorites.ready ? favorites.items.length : '—'})`, '管理文件夹与私密书签'],
+              ['plugins', `星标插件${starredCount > 0 ? ` (${starredCount})` : ''}`, '插件星标独立于网站收藏'],
+              ['annotations', '我的批注', '划线批注汇总，可搜索可导出'],
+              ['public', '公开导航页 (/pub)', '把收藏夹发布成只读页面'],
+            ] as const
+          ).map(([view, label, tip]) => (
+            <button
+              key={view}
+              type="button"
+              role="tab"
+              aria-selected={activeView === view}
+              aria-pressed={activeView === view}
+              title={tip}
+              onClick={() => {
+                setActiveView(view)
+                if (view === 'plugins') setStarredCountLoaded(false)
+              }}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                activeView === view
+                  ? 'bg-primary text-primary-foreground shadow-xs'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* 我的批注：Tab 承接（直达 /me/annotations 完整页） */}
 
         {/* 云端同步状态：失败必须说出来，否则用户以为换设备也能看到。
             文案与图标由 lib/favorites-sync-copy 的纯函数决定（五种分支有单测）。 */}
@@ -1625,10 +1740,30 @@ export default function FavoritesPage() {
           </p>
         )}
 
-        {/* P1-6 星标 ≠ 收藏：星标插件不在收藏模型里，常驻分区直接列出来，
-            0 星标也不藏——空态本身就是「星标在哪」的解释；入口指向
-            /marketplace?starred=1（星标列表）与 /me/plugins（插件中心）。 */}
-        <StarredPluginsSection />
+        {/* 星标插件 Tab：插件星标独立于网站收藏（P1-6），由 Tab 承接而非首屏常驻卡 */}
+        {activeView === 'plugins' && (
+          <StarredPluginsSection
+            onCountChange={(total) => {
+              setStarredCount(total)
+              setStarredCountLoaded(true)
+            }}
+          />
+        )}
+        {/* 我的批注 Tab：直达完整批注页（划线批注按收藏聚合，可搜索可导出） */}
+        {activeView === 'annotations' && (
+          <section
+            aria-label="我的批注"
+            className="rounded-xl border border-border/70 bg-card/50 p-6 text-center"
+          >
+            <p className="text-sm font-medium text-foreground">划线批注汇总</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              在收藏标题 / 简介上划过的线与批注，按收藏聚合，可搜索、可导出 Markdown / JSON。
+            </p>
+            <Button asChild size="sm" variant="outline" className="mt-3 text-xs">
+              <Link href="/me/annotations">前往我的批注页</Link>
+            </Button>
+          </section>
+        )}
 
         {/* 好久没打开：超过 90 天没有记录到的打开的收藏，给一条回访入口，
             而不是让它们在列表里悄悄变旧（徽标在每张卡的日期旁）。 */}
@@ -1784,6 +1919,19 @@ export default function FavoritesPage() {
           </div>
         )}
 
+        {/* 公开导航页 Tab：把一个收藏夹发布成 /pub/ 只读页；未登录时区内置灰说明 */}
+        {activeView === 'public' && (
+          <PublicPageManager
+            cloudIdentity={cloudIdentity}
+            folders={visibleFolders}
+            activeFolder={activeFolder}
+            activeFolderCount={activeFolder === 'all' ? favorites.items.length : (folderCounts.get(activeFolder) ?? 0)}
+          />
+        )}
+
+        {/* 站点收藏 Tab：移动端文件夹下拉 + 桌面双栏（左树右卡）+ 筛选 + 列表（默认视图） */}
+        {activeView === 'sites' && (
+        <>
         {/* 移动端：顶部文件夹下拉选择器（桌面用左侧树，见下） */}
         {favorites.items.length > 0 && (
           <div className="mb-4 lg:hidden">
@@ -1963,7 +2111,7 @@ export default function FavoritesPage() {
             </aside>
           )}
 
-          {/* 右侧主工作区：智能整理 / 公开页 / 筛选条 / 批量工具 / 站点卡片 */}
+          {/* 右侧主工作区：筛选条 / 批量工具 / 站点卡片（站点收藏 Tab 内容） */}
           <div className="min-w-0 flex-1">
 
         {/* 智能整理（P1 #6）：只给建议，用户点「采用」后才建夹、才移动——绝不自动应用 */}
@@ -1974,14 +2122,6 @@ export default function FavoritesPage() {
             onMoveToFolder={assignFolder}
           />
         )}
-
-        {/* 公开导航页（Batch 3 第 6 项）：把一个收藏夹发布成 /pub/ 只读页；未登录时区内置灰说明 */}
-        <PublicPageManager
-          cloudIdentity={cloudIdentity}
-          folders={visibleFolders}
-          activeFolder={activeFolder}
-          activeFolderCount={activeFolder === 'all' ? favorites.items.length : (folderCounts.get(activeFolder) ?? 0)}
-        />
 
         {/* 本地筛选条：只在确实有收藏时出现（没有收藏时不需要筛选控件） */}
         {favorites.ready && favorites.items.length > 0 && (
@@ -2822,6 +2962,8 @@ export default function FavoritesPage() {
 
           </div>
         </div>
+        </>
+        )}
 
         {/* 导出为插件市场清单向导弹窗 */}
         {showPluginExport && (

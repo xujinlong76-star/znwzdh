@@ -32,6 +32,7 @@ import {
 } from '@/lib/rank-mode'
 import { filterAllRankGroups, shouldMergeInstallRanks } from '@/lib/plugins/rank-eligibility'
 import { freshnessClass, freshnessLabel, freshnessLevel } from '@/lib/rank-freshness'
+import { filterDisplayTags, normalizeTag } from '@/lib/tag-hygiene'
 import {
   PLUGIN_KIND_CLASS,
   PLUGIN_KIND_LABEL,
@@ -63,6 +64,7 @@ export default function HotView({
   initialTab = 'trending',
   initialFilterQuery = '',
   initialDomain = 'all',
+  categoryNames = [],
 }: {
   initialTrending?: HubSite[]
   initialFresh?: HubSite[]
@@ -79,6 +81,14 @@ export default function HotView({
   initialFilterQuery?: string
   /** 2026-11-21：服务端从 ?domain= 读回的首帧领域，消掉深链先全部再切换 */
   initialDomain?: string
+  /**
+   * 全站分类名（一级 + 二级），用于卡片标签清洗。
+   *
+   * /hot 的站点卡此前直接渲染 site.tags 原始值，于是 # ai-编程 / # 对话ai /
+   * # ai赋能 这类**分类 slug 复读**与大小写失范标签直接漏到界面。
+   * 全站已有单一事实源 lib/tag-hygiene（首页分类区在用），/hot 绕过了它。
+   */
+  categoryNames?: readonly string[]
 }) {
   const externalRel = externalLinkRelAttr(useSiteViewModel()?.externalLinkRel)
   const [trending, setTrending] = useState<HubSite[]>(initialTrending)
@@ -126,6 +136,31 @@ export default function HotView({
    *  - 用精选权重排序，取代退化成数据库顺序的 `sort ASC`。
    * 数据积累达标后自动切 'live'，无需改代码。
    */
+  /**
+   * 分类名索引（归一化后），供 filterDisplayTags 判"是否只是分类名复读"。
+   * 归一化口径与 tag-hygiene 内部一致，否则 `组件与 UI 体系` 与
+   * `组件与-ui-体系` 会被当成两个不同名字而漏判。
+   */
+  const categoryIndex = useMemo(() => {
+    const set = new Set<string>()
+    for (const name of categoryNames) {
+      const key = normalizeTag(name)
+      if (key) set.add(key)
+    }
+    return set
+  }, [categoryNames])
+
+  /**
+   * 清洗后用于展示的站点标签（最多 2 个）。
+   *
+   * 走全站统一管道 filterDisplayTags：剥分类 slug 复读、同义词归并、
+   * 大小写规范化（AI / MDN / Node.js），再取前 2 个——与首页卡片同一口径。
+   */
+  const cleanTagsOf = useMemo(() => {
+    return (site: HubSite): string[] =>
+      filterDisplayTags(site.tags, categoryIndex, { maxTags: 2 })
+  }, [categoryIndex])
+
   const heatMode = useMemo(() => resolveHeatMode(trending), [trending])
 
   /** 先按领域过滤，冷启动态再套精选排序 */
@@ -518,7 +553,7 @@ export default function HotView({
                         {curatedBadge(site)}
                       </span>
                     )}
-                    {site.tags?.slice(0, 2).map((t) => (
+                    {cleanTagsOf(site).map((t) => (
                       <span key={t} className="px-2 py-0.5 rounded-full bg-muted border border-border/40">
                         #{t}
                       </span>

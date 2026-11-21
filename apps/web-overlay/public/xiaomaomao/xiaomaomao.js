@@ -672,7 +672,14 @@
    * 兼容 SPA 路由变化：同时监听 popstate 与 Next 的 route-change 事件，
    * 切走 /algorithms 时会摘掉 class，不留残留样式。
    */
-  var FOCUS_ROUTES = ['/algorithms'];
+  /**
+   * 内容浏览型路由：挂件角标收敛为微点。
+   *
+   * /algorithms 是专注实验页；/hot 是纯白极简的榜单页，右下角大红胶囊
+   * 紧挨「查看全部插件 →」，会强行抢走主视线（2026-11-21 视觉走查）。
+   * 这两类页面都只降视觉权重、不删语义：角标仍存在、读屏与 title 仍可读。
+   */
+  var FOCUS_ROUTES = ['/algorithms', '/hot'];
   function syncFocusRoute() {
     var path = window.location.pathname || '';
     var onFocus = FOCUS_ROUTES.some(function (p) {

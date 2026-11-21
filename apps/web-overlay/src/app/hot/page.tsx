@@ -49,15 +49,47 @@ const PLUGIN_RANK_LIMIT = 5
 
 /** 两个榜单共用一次服务端取数；失败各自降级为空数组 */
 async function loadHot() {
-  const [trendingRes, freshRes, pluginTrendingRes, pluginPopularRes, pluginRatingRes, pluginFreshRes] =
-    await Promise.all([
+  const [
+    trendingRes,
+    freshRes,
+    pluginTrendingRes,
+    pluginPopularRes,
+    pluginRatingRes,
+    pluginFreshRes,
+    categoriesRes,
+  ] = await Promise.all([
       hubGet<{ hits: RankHit[]; recomputedAt?: number | null }>('/api/rank/trending?limit=30', 60),
       hubGet<{ hits: RankHit[] }>('/api/rank/new?limit=30', 60),
       hubGet<HubPluginsResponse>(`/api/plugins?sort=trending&limit=${PLUGIN_RANK_LIMIT}`, 60),
       hubGet<HubPluginsResponse>(`/api/plugins?sort=popular&limit=${PLUGIN_RANK_LIMIT}`, 60),
       hubGet<HubPluginsResponse>(`/api/plugins?sort=rating&limit=${PLUGIN_RANK_LIMIT}`, 60),
       hubGet<HubPluginsResponse>(`/api/plugins?sort=new&limit=${PLUGIN_RANK_LIMIT}`, 60),
+      // 2026-11-21：取分类表用于卡片标签清洗——/hot 的站点卡此前直接渲染
+      // site.tags 原始值，于是 # ai-编程 / # 对话ai / # ai赋能 这类分类 slug
+      // 和大小写失范标签直接漏到界面。清洗需要"分类名集合"做重复判定。
+      hubGet<Array<{ title?: string; name?: string; subcategories?: Array<{ title?: string; name?: string }> }>>(
+        '/api/categories',
+        3600,
+      ),
     ])
+  /**
+   * 收集全部分类名（一级 + 二级）供卡片标签清洗使用。
+   *
+   * /api/categories 返回的是树：一级带 subcategories。这里展开成扁平集合，
+   * 供 tag-hygiene 的 isPollutedTag 判断「这个标签是否只是分类名的复读」。
+   * 取不到（中枢降级）时返回空集——清洗退化为只做 slug/大小写规范化，
+   * 不会因为拿不到分类表而让标签全部消失。
+   */
+  const categoryNames: string[] = []
+  for (const c of categoriesRes ?? []) {
+    const top = String(c?.title ?? c?.name ?? '').trim()
+    if (top) categoryNames.push(top)
+    for (const sub of c?.subcategories ?? []) {
+      const s2 = String(sub?.title ?? sub?.name ?? '').trim()
+      if (s2) categoryNames.push(s2)
+    }
+  }
+
   const pick = (res: { hits: RankHit[] } | null): HubSite[] =>
     (res?.hits ?? []).map((h) => h.site).filter((s): s is HubSite => Boolean(s))
   const pickPlugins = (res: HubPluginsResponse | null): HubPluginItem[] => res?.items ?? []
@@ -73,6 +105,7 @@ async function loadHot() {
       rating: pickPlugins(pluginRatingRes),
       fresh: pickPlugins(pluginFreshRes),
     } satisfies PluginRankGroups,
+    categoryNames,
     pluginDegraded:
       pluginTrendingRes === null ||
       pluginPopularRes === null ||
@@ -97,7 +130,8 @@ export default async function HotPage({
   // 2026-11-21：?domain= 领域分榜的首帧值（非法值由 parseDomain 归一到 all）
   const domainParam = Array.isArray(sp.domain) ? sp.domain[0] : sp.domain
   const initialDomain = parseDomain(domainParam)
-  const { trending, fresh, recomputedAt, degraded, pluginRankings, pluginDegraded } = await loadHot()
+  const { trending, fresh, recomputedAt, degraded, pluginRankings, pluginDegraded, categoryNames } =
+    await loadHot()
   return (
     <Container as="main" id="main-content">
       <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">
@@ -117,6 +151,7 @@ export default async function HotPage({
           initialTab={initialTab}
           initialFilterQuery={initialFilterQuery}
           initialDomain={initialDomain}
+          categoryNames={categoryNames}
         />
       </div>
       <Footer />

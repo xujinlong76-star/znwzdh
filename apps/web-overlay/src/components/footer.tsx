@@ -25,45 +25,36 @@ export function Footer({ siteInfo }: FooterProps) {
   return (
     <footer className="border-t border-border/40 pt-8 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] min-[640px]:max-[1024px]:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8 bg-muted/10 mt-auto">
       <div className="container flex flex-col items-center justify-between gap-4 md:flex-row px-4">
-        <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <Link href="/" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">主页</Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/me" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">用户中心</Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/me" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">设为首页领 +{HOMEPAGE_CLAIM_XP} 经验</Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/favorites" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">我的收藏 (E2EE)</Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/graph" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">技术生态图谱</Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/algorithms" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">前沿算法实验室<span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">Lab</span></Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/import" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">智能书签导入</Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/hot" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">热度趋势榜</Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/brief" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">每日简报</Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/drama" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">短剧专区</Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/tags" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">全景标签云</Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          {/* SEO：站点目录与合集入口 */}
-          <Link href="/sites" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">全部站点目录</Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/collections" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">精选专题合集</Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          {/* emerald-600 在 12px 白底上只有 3.62:1（AA 需 4.5），700 才达标 */}
-          <Link href="/custom" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">模块化工作台<span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-success/10 text-success-foreground border border-success/20">DIY</span></Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          {/* rose-600 在页脚底上实测 4.47:1 不足 AA，强调色走 700（a11y-contrast 门禁） */}
-          <Link href="/marketplace" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors text-primary font-medium">插件市场</Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          {/* SEO：/videos 与 /submit 入口 */}
-          <Link href="/videos" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">视频资源墙</Link>
-          <span className="text-border" aria-hidden="true">·</span>
-          <Link href="/submit" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">网站投稿</Link>
-        </div>
+        {/* 2026-11-21 页脚链接改两组规整排布。
+            原实现 17 个链接 + 16 个「·」分隔符全部塞进一个 flex-wrap，
+            宽屏下自由折成 3 行、每行长度不均，视觉上很松垮。现按语义分两组：
+              第一行「核心入口」：主页 / 用户中心 / 收藏 / 热门 / 简报
+              第二行「探索与工具」：图谱 / 算法实验室 / 短剧 / 标签 / 站点目录 /
+                                    合集 / 模块化 / 插件市场 / 视频 / 投稿 / 导入
+            每组内部用 gap 而非分隔符排布，左对齐、统一基线。 */}
+        <nav aria-label="页脚导航" className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground md:items-start">
+          <ul className="flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 md:justify-start">
+            <li><Link href="/" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">主页</Link></li>
+            <li><Link href="/me" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">用户中心</Link></li>
+            <li><Link href="/me" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">设为首页领 +{HOMEPAGE_CLAIM_XP} 经验</Link></li>
+            <li><Link href="/favorites" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">我的收藏 (E2EE)</Link></li>
+            <li><Link href="/hot" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">趋势榜单</Link></li>
+            <li><Link href="/brief" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">今日简报</Link></li>
+          </ul>
+          <ul className="flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 md:justify-start">
+            <li><Link href="/graph" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">技术生态图谱</Link></li>
+            <li><Link href="/algorithms" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">前沿算法实验室<span className="ml-1 rounded-full border border-primary/20 bg-primary/10 px-1.5 py-px text-[10px] font-semibold text-primary">Lab</span></Link></li>
+            <li><Link href="/drama" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">短剧专区</Link></li>
+            <li><Link href="/tags" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">标签云</Link></li>
+            <li><Link href="/sites" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">站点目录</Link></li>
+            <li><Link href="/collections" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">精选合集</Link></li>
+            <li><Link href="/custom" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">模块化工作台<span className="ml-1 rounded-full border border-success/20 bg-success/10 px-1.5 py-px text-[10px] font-semibold text-success-foreground">DIY</span></Link></li>
+            <li><Link href="/marketplace" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 font-medium text-primary transition-colors hover:text-foreground">插件市场</Link></li>
+            <li><Link href="/videos" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">视频资源墙</Link></li>
+            <li><Link href="/submit" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">网站投稿</Link></li>
+            <li><Link href="/import" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">导入书签</Link></li>
+          </ul>
+        </nav>
         {/* 2026-11-21 修右侧悬浮挂件遮挡版权：
             本块在 md 起右对齐、贴容器右缘，而小猫猫挂件固定在
             right:24px / bottom:24px。1024×768 实测挂件左下角 (958,608)
@@ -71,9 +62,18 @@ export function Footer({ siteInfo }: FooterProps) {
             「大全」二字；1280/1440 只是侥幸没撞上，用户一拖动猫就会再撞。
             这里给右缘留出挂件宽度 + 呼吸位（约 96px），仅在 ≥md 生效
             （窄屏页脚是居中单列，不贴右缘，无需避让）。 */}
-        <div className="flex flex-col items-center gap-1.5 md:items-end md:pr-24 lg:pr-28">
-          <p className="text-center text-xs text-muted-foreground font-mono md:text-right">
-            &copy; <span suppressHydrationWarning>{currentYear}</span> {title} · AI-Native Cognitive Navigation
+        <div className="flex min-w-0 flex-col items-center gap-1 md:min-w-[18rem] md:shrink-0 md:items-end md:pr-24 lg:pr-28">
+          {/* 2026-11-21 品牌版权区改两行结构。
+              原实现把「© 年份 品牌名 · AI-Native Cognitive Navigation」塞进一个 <p>，
+              宽屏下容器宽度不足时被自动折行，正好把品牌名劈成「山羊胡网址导航」
+              与「大全」两段（汉字可在任意字间断行），观感很生硬。
+              现在拆成两个独立行：品牌名整行 whitespace-nowrap 保证不被劈开，
+              英文副标题独立成行、浅灰等宽小字——信息层级也更清楚。 */}
+          <p className="whitespace-nowrap text-center text-xs text-muted-foreground md:text-right">
+            &copy; <span suppressHydrationWarning>{currentYear}</span> {title}
+          </p>
+          <p className="whitespace-nowrap text-center font-mono text-[11px] text-muted-foreground/70 md:text-right">
+            AI-Native Cognitive Navigation
           </p>
           {/* 后台「页脚文案」：纯文本渲染，绝不 dangerouslySetInnerHTML */}
           {footerText && (

@@ -28,22 +28,39 @@
  *    打开走站点行同款的安全闸与记录。
  *
  * 匹配 —— 与现有分组同一套容错（`matchSuggestionText`）：归一化子串
- * 为主，Latin token 再加 Levenshtein 容错。拼音：本仓库没有拼音转换
- * 基础设施（中枢的拼音通道只负责服务端站点召回），本地匹配不做拼音
- * 转写；折中是关键词里给中文名配了罗马化写法（如主题 zhuti），打
- * 拼音也能命中操作与工具。中文收藏标题的拼音不在此列，见测试注释。
+ * 为主，Latin token 再加 Levenshtein 容错。拼音（04 §1.4）：本地行走
+ * `matchSuggestionTextWithPinyin` 第二通道——拼音库加载后按标题缓存的
+ * `PinyinKeys` 计分（`matchPinyin` 供 name 字段分，见 §6）；未加载时
+ * 回落到旧匹配。手写罗马化 keywords（如主题 zhuti）首批只做加法、不删除。
  */
 
-import { matchSuggestionText } from './search-suggestions'
+import { matchSuggestionText, matchSuggestionTextWithPinyin } from './search-suggestions'
+import { buildPinyinKeys, isPinyinLoaded, matchPinyin, type PinyinKeys } from './palette-pinyin'
 import { safeHref } from './safe-url'
 import { parseSpeculativeIntent, type SpeculativeIntentType } from './speculative'
 import {
   matchQuicklinkCommand,
-  type QuicklinkCommandMatch,
   type QuicklinkEntry,
 } from './quicklinks'
 
 /* --------------------------- 本地行总分（04 §6） --------------------------- */
+
+/**
+ * 拼音键缓存（04 §1.4，写死）：`buildPinyinKeys(title)` 按标题缓存，标题是
+ * 静态数据、实际不变更；禁止在每次按键时对全量本地行重算拼音。
+ * 拼音库未加载时返回 undefined（调用方回落到旧匹配，不抛错、不阻塞）。
+ * 缓存键用标题原文（操作/工具/收藏的标题各自稳定，不会跨行串味）。
+ */
+const pinyinKeysByTitleCache = new Map<string, PinyinKeys>()
+
+export function getPinyinKeysForTitle(title: string): PinyinKeys | undefined {
+  if (!isPinyinLoaded()) return undefined
+  const cached = pinyinKeysByTitleCache.get(title)
+  if (cached) return cached
+  const keys = buildPinyinKeys(title)
+  pinyinKeysByTitleCache.set(title, keys)
+  return keys
+}
 
 /**
  * 本地行总分（04 §6，写死；只用于本地行内部排序，服务端 hits 的 RRF 排名不动）：
@@ -59,8 +76,8 @@ import {
  *   取 100 作分母是保守归一）；权重 0.15 只做平局打破与轻微提权，
  *   不做主导排序（是否上调需实测后定，见方案 §10 P-c）。
  * - 拼音分计入 `nameMatch`（标题拼音是 name 的派生，不单独占权重）：
- *   本 PoC 不含拼音层（`palette-pinyin.ts` 另有 worker 负责），nameMatch
- *   现按标题原文计分，拼音接线后同一槽位由 `matchPinyin` 供分。
+ *   拼音库加载后，`fieldMatchScore(query, name, keys)` 取文本分与
+ *   `matchPinyin` 分的较高者；未加载时只按标题原文计分。
  */
 export interface LocalRowFields {
   /** 行标题（操作 label / 工具 label / 收藏 title） */
@@ -72,18 +89,27 @@ export interface LocalRowFields {
 }
 
 /** 单个字段的匹配分：命中查询 token 的比例（0~1）。 */
-export function fieldMatchScore(query: string, field: string): number {
+export function fieldMatchScore(query: string, field: string, pinyinKeys?: PinyinKeys): number {
   const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   if (tokens.length === 0 || !field.trim()) return 0
   let matched = 0
   for (const token of tokens) if (matchSuggestionText(token, field)) matched++
-  return matched / tokens.length
+  const textScore = matched / tokens.length
+  // 拼音分只计入 name 字段（调用方只给 name 传 pinyinKeys；标题拼音是
+  // name 的派生，不单独占权重）：取文本分与拼音分的较高者。
+  if (!pinyinKeys) return textScore
+  return Math.max(textScore, matchPinyin(query, pinyinKeys))
 }
 
 /** 本地行总分（见上式；`mruNorm` 默认 0，即无 MRU 记录的行）。 */
-export function scoreLocalRow(query: string, fields: LocalRowFields, mruNorm = 0): number {
+export function scoreLocalRow(
+  query: string,
+  fields: LocalRowFields,
+  mruNorm = 0,
+  pinyinKeys?: PinyinKeys,
+): number {
   return (
-    0.5 * fieldMatchScore(query, fields.name) +
+    0.5 * fieldMatchScore(query, fields.name, pinyinKeys) +
     0.3 * fieldMatchScore(query, fields.keywords) +
     0.2 * fieldMatchScore(query, fields.subtitle) +
     0.15 * mruNorm
@@ -100,13 +126,14 @@ export function sortLocalRowsByScore<T>(
   rows: readonly T[],
   fieldsOf: (row: T) => LocalRowFields,
   mruNormOf: (row: T) => number = () => 0,
+  pinyinKeysOf: (row: T) => PinyinKeys | undefined = () => undefined,
 ): T[] {
   const q = query.trim()
   if (!q) return [...rows]
   const scored = rows.map((row, index) => ({
     row,
     index,
-    score: scoreLocalRow(q, fieldsOf(row), mruNormOf(row)),
+    score: scoreLocalRow(q, fieldsOf(row), mruNormOf(row), pinyinKeysOf(row)),
   }))
   scored.sort((a, b) => b.score - a.score || a.index - b.index)
   return scored.map((s) => s.row)
@@ -178,12 +205,22 @@ export function matchPaletteActions(query: string, opts: PaletteActionOptions): 
   if (!q) return buildPaletteActions(opts)
   if (q.length < 2) return []
   const all = buildPaletteActions(opts)
-  const matched = all.filter((action) => matchSuggestionText(q, `${action.label} ${action.description} ${action.keywords}`))
+  // 拼音第二通道（04 §1.4）：有拼音键时调新函数、无键时调旧函数；
+  // 手写罗马化 keywords 首批只做加法、不删除。
+  const matched = all.filter((action) =>
+    matchSuggestionTextWithPinyin(
+      q,
+      `${action.label} ${action.description} ${action.keywords}`,
+      getPinyinKeysForTitle(action.label),
+    ),
+  )
   // 本地行内部按 §6 总分降序（操作行无 MRU 记录，mruNorm 恒为 0）
   return sortLocalRowsByScore(
     q,
     matched,
     (a) => ({ name: a.label, keywords: a.keywords, subtitle: a.description }),
+    () => 0,
+    (a) => getPinyinKeysForTitle(a.label),
   )
 }
 
@@ -378,13 +415,19 @@ export function matchPaletteTools(query: string): PaletteToolEntry[] {
   const q = query.trim()
   if (!q || q.length < 2) return []
   const matched = ZERO_RTT_TOOLS.filter((tool) =>
-    matchSuggestionText(q, `${tool.label} ${tool.description} ${tool.keywords}`),
+    matchSuggestionTextWithPinyin(
+      q,
+      `${tool.label} ${tool.description} ${tool.keywords}`,
+      getPinyinKeysForTitle(tool.label),
+    ),
   )
   // 本地行内部按 §6 总分降序（工具行无 MRU 记录，mruNorm 恒为 0）
   return sortLocalRowsByScore(
     q,
     matched,
     (t) => ({ name: t.label, keywords: t.keywords, subtitle: t.description }),
+    () => 0,
+    (t) => getPinyinKeysForTitle(t.label),
   )
 }
 
@@ -421,8 +464,8 @@ export interface MatchPaletteFavoritesOptions {
 /**
  * 收藏夹匹配：只在有查询词时召回（空查询的收藏在空面板另有入口）。
  * 匹配面是用户自己的数据——标题 / 网址 / 描述 / 标签；单字查询不匹配。
- * 拼音：中文标题的拼音不在此列（无拼音转换基础设施），标题里的 Latin
- * 词（如 GitHub）走子串 + 容错。
+ * 拼音：中文标题走 `matchSuggestionTextWithPinyin` 第二通道（标题的
+ * Latin 词如 GitHub 仍走子串 + 容错）。
  */
 export function matchPaletteFavorites(
   query: string,
@@ -442,7 +485,7 @@ export function matchPaletteFavorites(
     // 点一下还会往离线记录里写一条 '#' 的假访问。源头过滤，不占 5 条名额。
     if (!safeHref(fav.href, '')) continue
     const haystack = `${fav.title} ${fav.href} ${fav.description ?? ''} ${(fav.tags ?? []).join(' ')}`
-    if (!matchSuggestionText(q, haystack)) continue
+    if (!matchSuggestionTextWithPinyin(q, haystack, getPinyinKeysForTitle(fav.title))) continue
     matched.push({ ...fav, key: `favorite-${fav.siteId}` })
   }
   // 本地行内部按 §6 总分降序再取 limit（先排后切：MRU 加分可以把行顶进前 5）。
@@ -453,6 +496,7 @@ export function matchPaletteFavorites(
     matched,
     (f) => ({ name: f.title, keywords: (f.tags ?? []).join(' '), subtitle: f.description ?? '' }),
     (f) => opts.mruNormBySiteId?.get(f.siteId) ?? 0,
+    (f) => getPinyinKeysForTitle(f.title),
   ).slice(0, limit)
 }
 
@@ -481,8 +525,8 @@ export function matchPaletteQuicklinks(
   query: string,
   entries: readonly QuicklinkEntry[],
 ): PaletteQuicklinkItem[] {
-  const hit: QuicklinkCommandMatch | null = matchQuicklinkCommand(query, entries)
-  if (!hit || !hit.url) return []
+  const hit = matchQuicklinkCommand(query, entries)
+  if (hit.kind !== 'hit' || !hit.url) return []
   return [{ key: `quicklink-${hit.entry.siteId}`, entry: hit.entry, arg: hit.arg, url: hit.url }]
 }
 

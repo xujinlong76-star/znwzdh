@@ -80,6 +80,9 @@
      故文字一律走 text-destructive-text。类名 text-destructive-text。 */
   --color-destructive-text: hsl(var(--destructive-text));
 
+  /* P2-1：渐变上白字。类名 text-on-gradient；内联 style 用 var(--color-on-gradient)。 */
+  --color-on-gradient: hsl(var(--on-gradient));
+
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
 
@@ -285,6 +288,26 @@
     /* 对白 4.93:1（旧 240 5% 64.9% 仅 2.56:1，键盘焦点环不可见） */
     --ring: 240 5% 46%;
     --radius: 0.5rem;
+    /* P2-1：确定性渐变色板 Token 化（site-favicon.tsx 的 PRESET_GRADIENTS 只引
+       变量名，hex 值只出现在这里）。浅深同值：渐变是图标底块，白字在其上浅深
+       对比度相同，深色模式无需变体。 */
+    --gradient-brand-01-from: #6366f1; --gradient-brand-01-to: #a855f7; /* 蓝紫极光 */
+    --gradient-brand-02-from: #3b82f6; --gradient-brand-02-to: #06b6d4; /* 蔚蓝海流 */
+    --gradient-brand-03-from: #10b981; --gradient-brand-03-to: #14b8a6; /* 极光翡翠 */
+    --gradient-brand-04-from: #f59e0b; --gradient-brand-04-to: #ef4444; /* 暖阳晚霞 */
+    --gradient-brand-05-from: #ec4899; --gradient-brand-05-to: #8b5cf6; /* 霓虹浆果 */
+    --gradient-brand-06-from: #06b6d4; --gradient-brand-06-to: #3b82f6; /* 赛博电光 */
+    --gradient-brand-07-from: #84cc16; --gradient-brand-07-to: #10b981; /* 春晓青柠 */
+    --gradient-brand-08-from: #f43f5e; --gradient-brand-08-to: #fb923c; /* 珊瑚朝霞 */
+    --gradient-brand-09-from: #8b5cf6; --gradient-brand-09-to: #ec4899; /* 幻境晶体 */
+    --gradient-brand-10-from: #0ea5e9; --gradient-brand-10-to: #6366f1; /* 深邃星空 */
+    --gradient-brand-11-from: #14b8a6; --gradient-brand-11-to: #0ea5e9; /* 浅滩清波 */
+    --gradient-brand-12-from: #d946ef; --gradient-brand-12-to: #8b5cf6; /* 幻彩紫晶 */
+    --gradient-brand-13-from: #f97316; --gradient-brand-13-to: #e11d48; /* 熔岩烈焰 */
+    --gradient-brand-14-from: #059669; --gradient-brand-14-to: #0284c7; /* 森林薄雾 */
+    --gradient-brand-15-from: #4f46e5; --gradient-brand-15-to: #06b6d4; /* 钛金属辉光 */
+    --gradient-brand-16-from: #7c3aed; --gradient-brand-16-to: #2563eb; /* 极夜苍穹 */
+    --on-gradient: 0 0% 100%; /* 渐变上白字（#ffffff） */
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;

@@ -361,7 +361,15 @@ for (const vp of ACTIVE_VIEWPORTS) {
 const MEASURE_VIEWPORTS = ['390x844', '1024x768', '1366x768', '1440x900'] as const
 
 test.describe('grid-metrics', () => {
-  for (const vpName of MEASURE_VIEWPORTS) {
+  // 2026-11-22：网格度量也要遵循分层。
+  // 此前 PR 档过滤了主矩阵 6→2 视口，但这里仍写死 4 档，
+  // 导致 PR 多跑 1024/1440 两条 nightly 用例（分层形同虚设）。
+  // 量测报告至少保留 390 与 1366 两档——恰好是 PR 要盯的手机底线与主流笔记本。
+  const activeMetrics = MEASURE_VIEWPORTS.filter((name) => {
+    const v = VIEWPORTS.find((x) => x.name === name)
+    return v && ACTIVE_VIEWPORTS.some((a) => a.name === name)
+  })
+  for (const vpName of activeMetrics) {
     const vp = VIEWPORTS.find((v) => v.name === vpName)!
     test('home · ' + vpName + ' 网格度量', async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height })

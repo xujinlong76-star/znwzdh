@@ -21,6 +21,16 @@ import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
 import { fetchNewSites, fetchTrendingMeta, fetchPlugins, reportClick, type HubSite, type HubPluginItem } from '@/lib/navhub-api'
 import { rankingMetric, type PluginRankGroups } from '@/lib/plugins/marketplace-rankings'
+import {
+  RANK_DOMAINS,
+  curatedBadge,
+  filterByDomain,
+  parseDomain,
+  resolveHeatMode,
+  sortCurated,
+  type RankDomain,
+} from '@/lib/rank-mode'
+import { filterAllRankGroups, shouldMergeInstallRanks } from '@/lib/plugins/rank-eligibility'
 import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-relative-time'
 import { useLocalSearchRecorder } from '@/lib/local-search-record'
 import { getIdentity } from '@/lib/identity'
@@ -47,6 +57,7 @@ export default function HotView({
   pluginDegraded = false,
   initialTab = 'trending',
   initialFilterQuery = '',
+  initialDomain = 'all',
 }: {
   initialTrending?: HubSite[]
   initialFresh?: HubSite[]
@@ -61,6 +72,8 @@ export default function HotView({
   initialTab?: 'trending' | 'new' | 'plugins'
   /** U-239：服务端从 ?fq= 读回的首帧筛选词，消掉深链先全量再过滤 */
   initialFilterQuery?: string
+  /** 2026-11-21：服务端从 ?domain= 读回的首帧领域，消掉深链先全部再切换 */
+  initialDomain?: string
 }) {
   const externalRel = externalLinkRelAttr(useSiteViewModel()?.externalLinkRel)
   const [trending, setTrending] = useState<HubSite[]>(initialTrending)
@@ -85,13 +98,41 @@ export default function HotView({
    */
   const [tab, setTab] = useState<'trending' | 'new' | 'plugins'>(initialTab)
   const [filterQuery, setFilterQuery] = useState(initialFilterQuery)
+  /**
+   * 领域分榜（2026-11-21）。
+   *
+   * 解决的问题是"文不对题"：标题写"技术风向标"，列表里却混着 KPL、
+   * 蓝领招聘、政务通报这种泛生活站——因为冷启动时排序退化成数据库
+   * 插入顺序，什么站先入库就排前面。领域胶囊让想看技术内容的开发者
+   * 一键隔离掉不相关类目。
+   *
+   * 状态同步到 URL ?domain=，刷新/分享能停在同一个视图（与 ?tab= 同口径）。
+   */
+  const [domain, setDomain] = useState<RankDomain>(() => parseDomain(initialDomain))
   /** U-239：fq 读回完成前不写回 URL，免得把进页的 ?fq= 冲掉（照抄 /drama 的 filterReady 守门）。 */
   const [fqReady, setFqReady] = useState(false)
 
+  /**
+   * 冷启动态判定（2026-11-21）。
+   *
+   * 实测全站 active 站点总 visit 只有 16（10 个站点有记录），远低于
+   * Top10 总热度 ≥50 的门槛，因此当前必然是 'cold'。冷启动态下：
+   *  - 不展示 "1 次热度" 这种极小值（改为开源/编辑推荐等领域元数据）；
+   *  - 用精选权重排序，取代退化成数据库顺序的 `sort ASC`。
+   * 数据积累达标后自动切 'live'，无需改代码。
+   */
+  const heatMode = useMemo(() => resolveHeatMode(trending), [trending])
+
+  /** 先按领域过滤，冷启动态再套精选排序 */
+  const domainTrending = useMemo(() => {
+    const scoped = filterByDomain(trending, domain)
+    return heatMode === 'cold' ? sortCurated(scoped) : scoped
+  }, [trending, domain, heatMode])
+
   const filteredTrending = useMemo(() => {
-    if (!filterQuery.trim()) return trending
+    if (!filterQuery.trim()) return domainTrending
     const q = filterQuery.trim().toLowerCase()
-    return trending.filter((s) => {
+    return domainTrending.filter((s) => {
       const titleMatch = s.title.toLowerCase().includes(q)
       const descMatch = (s.description ?? '').toLowerCase().includes(q)
       const urlMatch = (s.url ?? '').toLowerCase().includes(q)
@@ -111,21 +152,33 @@ export default function HotView({
       return titleMatch || descMatch || urlMatch || tagMatch
     })
   }, [fresh, filterQuery])
-  // 插件排行筛选：与站点榜同口径（名称、简介、标签），四组各自过滤
+  /**
+   * 入榜资格过滤 + 关键词筛选（2026-11-21）。
+   *
+   * 资格必须在筛选之前：0 安装的插件本来就不该出现在安装榜里，
+   * 与用户是否在搜索无关。所以先 filterAllRankGroups 再套关键词。
+   *
+   * 修的就是「飙升榜第 1 名是 0 安装」与「口碑榜 5 条全是暂无评价」
+   * 这两个 Bug——它们的根因是接口结果被原样透传，没有入榜门槛。
+   */
+  const eligiblePluginRankings = useMemo(
+    () => filterAllRankGroups(pluginRankings),
+    [pluginRankings],
+  )
   const filteredPluginRankings = useMemo(() => {
-    if (!filterQuery.trim()) return pluginRankings
+    if (!filterQuery.trim()) return eligiblePluginRankings
     const q = filterQuery.trim().toLowerCase()
     const match = (p: HubPluginItem) =>
       p.name.toLowerCase().includes(q) ||
       (p.description ?? '').toLowerCase().includes(q) ||
       (p.tags ?? []).some((t) => t.toLowerCase().includes(q))
     return {
-      trending: pluginRankings.trending.filter(match),
-      popular: pluginRankings.popular.filter(match),
-      rating: pluginRankings.rating.filter(match),
-      fresh: pluginRankings.fresh.filter(match),
+      trending: eligiblePluginRankings.trending.filter(match),
+      popular: eligiblePluginRankings.popular.filter(match),
+      rating: eligiblePluginRankings.rating.filter(match),
+      fresh: eligiblePluginRankings.fresh.filter(match),
     } satisfies PluginRankGroups
-  }, [pluginRankings, filterQuery])
+  }, [eligiblePluginRankings, filterQuery])
   const pluginTotal = useMemo(
     () =>
       pluginRankings.trending.length +
@@ -186,6 +239,22 @@ export default function HotView({
     const qs = params.toString()
     const next = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash
     window.history.replaceState(window.history.state, '', next)
+  }
+
+  /**
+   * 切换领域并写回 URL ?domain=（2026-11-21）。
+   *
+   * 与 changeTab 同口径：replaceState 不产生历史记录、保留其它参数、
+   * 'all' 时 delete 掉参数不留残留。
+   */
+  const changeDomain = (next: RankDomain) => {
+    setDomain(next)
+    const params = new URLSearchParams(window.location.search)
+    if (next === 'all') params.delete('domain')
+    else params.set('domain', next)
+    const qs = params.toString()
+    const target = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash
+    window.history.replaceState(window.history.state, '', target)
   }
 
   const reload = () => setReloadToken((n) => n + 1)
@@ -283,8 +352,24 @@ export default function HotView({
     },
   ]
 
-  const renderPluginRankings = (groups: PluginRankGroups) => (
+  /**
+   * 是否合并"热门装机 / 最新上架"（2026-11-21）。
+   *
+   * 冷启动期有安装记录的插件总共就十来个，飙升榜与安装榜几乎必然同一批，
+   * 分成两个一模一样的小榜单只会让人觉得"怎么都是这几个"。
+   * 重合率 >80% 时在界面上明确标注两者同源，并把"新作榜"提上来补位；
+   * 真实数据丰富后自动展开完整四榜。
+   */
+  const renderPluginRankings = (groups: PluginRankGroups) => {
+    const mergeInstall = shouldMergeInstallRanks(groups.trending, groups.popular)
+    return (
     <div className="space-y-4">
+      {mergeInstall ? (
+        <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+          当前有安装记录的插件较少，<strong className="font-medium text-foreground">飙升榜与安装榜高度重合</strong>
+          ，两者暂时同源展示；新作品另见下方「新作榜」。安装数据丰富后会自动展开完整四榜。
+        </p>
+      ) : null}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {pluginRankingGroups.map((group) => {
           const rows = groups[group.key]
@@ -299,7 +384,29 @@ export default function HotView({
                 {group.title}
               </div>
               {rows.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground py-2">暂无数据</p>
+                /* 2026-11-21：空态不再只说"暂无数据"——
+                   口碑榜空是因为还没有用户评价（reviewCount 全为 0），
+                   这是产品冷启动而非故障，应该给出可行动的引导而不是干巴巴的占位。
+                   其余榜（安装/飙升）空则说明确实没有符合条件的插件。 */
+                group.key === 'rating' ? (
+                  <div className="space-y-2 py-2">
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      口碑榜待你开启 · 使用插件后写下第一条评价即可点亮榜单
+                    </p>
+                    <Link
+                      href="/marketplace"
+                      className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      去逛插件市场 →
+                    </Link>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground py-2">
+                    {group.key === 'fresh'
+                      ? '暂无新上架插件'
+                      : '暂无达到入榜门槛的插件（需至少 1 次安装）'}
+                  </p>
+                )
               ) : (
                 <ol className="space-y-1.5">
                   {rows.map((p, index) => (
@@ -334,7 +441,8 @@ export default function HotView({
         </Button>
       </div>
     </div>
-  )
+    )
+  }
 
   const renderList = (sites: HubSite[]) => (
     <div
@@ -368,9 +476,17 @@ export default function HotView({
                     </div>
                   )}
                   <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground font-mono flex-wrap">
-                    {typeof site.visitCount === 'number' && site.visitCount > 0 && (
-                      <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium">
-                        {site.visitCount} 次热度
+                    {/* 2026-11-21 双态：冷启动不展示 "1 次热度" 这种极小值，
+                        改为有信息量的真实元数据（开源 / 编辑推荐 / 领域 / 新收录） */}
+                    {heatMode === 'live' ? (
+                      typeof site.visitCount === 'number' && site.visitCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium">
+                          {site.visitCount} 次热度
+                        </span>
+                      )
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 font-medium">
+                        {curatedBadge(site)}
                       </span>
                     )}
                     {site.tags?.slice(0, 2).map((t) => (
@@ -443,15 +559,51 @@ export default function HotView({
                 <div className="p-2 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 shadow-xs">
                   <Trophy className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
-                <span>全站技术风向标与热度榜</span>
+                <span>{heatMode === 'live' ? '全站技术风向标与热度榜' : '全站精选风向标与趋势榜'}</span>
               </h1>
+              {/* 2026-11-21 双态标题：冷启动时诚实改写定位，不假装有热度 */}
               <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
-                按站点访问量排序展示已收录资源。当前访问量统计尚未积累，榜单暂不反映真实热度。
+                {heatMode === 'live'
+                  ? '按站点真实访问量与趋势分排序，附趋势变化与热度值。'
+                  : '编辑部按开源属性、收录质量与近期新增精选排序；真实热度仍在积累，达到门槛后自动切换为实时热榜。'}
                 另附插件市场四组排行（飙升 / 安装 / 口碑 / 新作），点开即进插件市场。
               </p>
             </div>
 
             <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2">
+              {/* 2026-11-21 领域分榜胶囊：让想看技术风向标的开发者一键隔离泛生活类目 */}
+              <div
+                role="group"
+                aria-label="领域筛选"
+                className="flex w-full flex-wrap items-center gap-1.5 pb-1"
+              >
+                {RANK_DOMAINS.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => changeDomain(d.id)}
+                    aria-pressed={domain === d.id}
+                    className={
+                      domain === d.id
+                        ? 'inline-flex items-center rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                        : 'inline-flex items-center rounded-full border border-border/60 bg-background/60 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                    }
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+              {/* 2026-11-21 冷启动/实时 双态徽标：诚实告知当前榜单性质 */}
+              <span
+                className={
+                  heatMode === 'live'
+                    ? 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/[0.06] text-xs font-medium text-emerald-700 dark:text-emerald-400'
+                    : 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs font-medium text-muted-foreground'
+                }
+              >
+                <Flame className="w-3 h-3" />
+                {heatMode === 'live' ? '实时热度排序' : '编辑部精选排序 · 真实热度积累中'}
+              </span>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-amber-500/25 bg-amber-500/5 text-xs text-amber-700 dark:text-amber-400">
                 <Flame className="w-3 h-3" />
                 热度榜 {loading ? '—' : trending.length} 条
@@ -475,8 +627,11 @@ export default function HotView({
                 插件排行 {loading ? '—' : pluginTotal} 条
               </span>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
-                <Trophy className="w-3 h-3 text-border" />
-                访问量统计中，排序暂为默认顺序
+                <TrendingUp className="w-3 h-3" />
+                {/* 2026-11-21：原为"访问量统计中，排序暂为默认顺序"——
+                    与新加的"编辑部精选排序"徽标重复，且"默认顺序"已不准确
+                    （冷启动态现在走精选权重排序）。改为按态说明。 */}
+                {heatMode === 'live' ? '按真实访问量与趋势分排序' : '按精选权重排序'}
               </span>
             </div>
           </div>

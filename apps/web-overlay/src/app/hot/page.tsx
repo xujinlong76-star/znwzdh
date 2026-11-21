@@ -7,6 +7,7 @@ import type { HubSite, HubPluginItem } from '@/lib/navhub-api'
 import type { PluginRankGroups } from '@/lib/plugins/marketplace-rankings'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 import { normalizeSearchQuery } from '@/lib/search-page'
+import { parseDomain } from '@/lib/rank-mode'
 import HotView from './hot-view'
 
 /**
@@ -93,6 +94,9 @@ export default async function HotPage({
   const tabParam = Array.isArray(sp.tab) ? sp.tab[0] : sp.tab
   const initialTab = tabParam === 'new' ? 'new' : tabParam === 'plugins' ? 'plugins' : 'trending'
   const initialFilterQuery = normalizeSearchQuery(sp.fq)
+  // 2026-11-21：?domain= 领域分榜的首帧值（非法值由 parseDomain 归一到 all）
+  const domainParam = Array.isArray(sp.domain) ? sp.domain[0] : sp.domain
+  const initialDomain = parseDomain(domainParam)
   const { trending, fresh, recomputedAt, degraded, pluginRankings, pluginDegraded } = await loadHot()
   return (
     <Container as="main" id="main-content">
@@ -112,6 +116,7 @@ export default async function HotPage({
           pluginDegraded={pluginDegraded}
           initialTab={initialTab}
           initialFilterQuery={initialFilterQuery}
+          initialDomain={initialDomain}
         />
       </div>
       <Footer />

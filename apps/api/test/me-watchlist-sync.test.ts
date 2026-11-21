@@ -239,4 +239,38 @@ describe("POST /api/me/watchlist/sync", () => {
     const item = body.items.find((i) => i.key === "nav-hongguo::长剧名");
     expect(item?.title.length).toBe(80);
   });
+
+  it("预约态（U-377）：无平台占位键 reserved::剧名可同步往返，平台待确认、不指向入口", async () => {
+    const at = Date.now() + 10000;
+    const res = await sync(USER, {
+      ops: [
+        {
+          op: "add",
+          key: "reserved::待开播剧",
+          title: "待开播剧",
+          platformSiteId: "",
+          platformTitle: "平台待确认",
+          playUrl: "",
+          episode: 0,
+          priority: "normal",
+          cadence: { kind: "unknown" },
+          remind: true,
+          lastProgressAt: at,
+          createdAt: at,
+          at,
+        },
+      ],
+      since: 0,
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as SyncBody;
+    expect(body.ok).toBe(true);
+    const item = body.items.find((i) => i.key === "reserved::待开播剧");
+    expect(item).toBeDefined();
+    expect(item?.title).toBe("待开播剧");
+    expect(item?.platformSiteId).toBe("");
+    expect(item?.platformTitle).toBe("平台待确认");
+    expect(item?.playUrl).toBe("");
+    expect(item?.deletedAt ?? null).toBeNull();
+  });
 });

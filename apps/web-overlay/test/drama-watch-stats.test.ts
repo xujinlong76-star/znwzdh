@@ -97,6 +97,23 @@ describe("latestEpisodeText / hasNewEpisodes", () => {
     expect(hasNewEpisodes(active, state("nav-test::剧a", 10))).toBe(false);
     expect(hasNewEpisodes(active, undefined)).toBe(false);
   });
+
+  it("预约态（U-377）：不计入在追、不贴有新集角标——不进新集检查，无「未查到最新集数」噪音", () => {
+    const reserved: WatchEntry = {
+      ...entry({ title: "待开播剧", episode: 0, cadence: { kind: "unknown" } }),
+      key: "reserved::待开播剧",
+      platformSiteId: "",
+      platformTitle: "平台待确认",
+      playUrl: "",
+      premiereDate: "2026-11-30",
+    };
+    const stats = computeDramaWatchStats([reserved], new Map(), [], new Date());
+    expect(stats.tracking).toBe(0);
+    expect(stats.hasNew).toBeNull();
+    // 即使服务端误带一条基线，预约行也不贴角标、不显示已更集数
+    expect(hasNewEpisodes(reserved, state(reserved.key, 99))).toBe(false);
+    expect(latestEpisodeText(undefined)).toBeNull();
+  });
 });
 
 describe("episodesWatchedThisWeek", () => {

@@ -53,6 +53,8 @@ import { collectDramaSites, type DramaSite } from '@/lib/drama-sites'
 import { safeHref } from '@/lib/safe-url'
 import {
   cadenceLabel,
+  isReservedEntry,
+  isReservedPremiereDue,
   partitionWatchlist,
   type WatchCadence,
   type WatchEntry,
@@ -295,6 +297,52 @@ function EntryRow({
   )
 }
 
+/* ------------------------------ 预约行 ------------------------------ */
+
+/**
+ * 预约态行（U-377）：开播日历上预约的、无平台的剧。
+ *  - 没有播放页：不画“去平台搜”入口，只写「平台待确认」；
+ *  - 没有集数步进与节奏改选：还没开播，没进度可记、没节奏可标；
+ *  - 开播日到了也不消失：文案改成「已到开播日 · 平台待确认」，等人来补平台。
+ */
+function ReservedRow({ entry, now, watchlist }: { entry: WatchEntry; now: Date; watchlist: ReturnType<typeof useWatchlist> }) {
+  const premiereDue = isReservedPremiereDue(entry, now)
+  const premiereLabel = !entry.premiereDate
+    ? '开播日待定（榜单只给了月份）'
+    : premiereDue
+      ? `已到开播日 · 平台待确认`
+      : `预计 ${Number(entry.premiereDate.slice(5, 7))}月${Number(entry.premiereDate.slice(8, 10))}日开播`
+  return (
+    <li className="flex flex-col gap-2 rounded-2xl border border-amber-200 bg-amber-50/50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20 sm:flex-row sm:items-center sm:gap-3">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold">
+          《{entry.title}》
+          <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+            平台待确认
+          </span>
+        </p>
+        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+          {premiereLabel} · 档期为平台预计，以官方为准
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+          开播后在平台确认了播出入口，再回来补平台
+        </span>
+        <button
+          type="button"
+          onClick={() => watchlist.remove(entry.key)}
+          aria-label={`取消预约《${entry.title}》`}
+          title="取消预约"
+          className="inline-flex items-center justify-center rounded-full border border-zinc-300 p-1.5 text-zinc-500 transition-colors hover:border-red-400 hover:text-red-500 dark:border-zinc-700 dark:text-zinc-400"
+        >
+          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </div>
+    </li>
+  )
+}
+
 /* ------------------------------ 页面 ------------------------------ */
 
 /** 水合前的固定时刻：服务端与首渲共用同一值；此时 entries 为空，不渲染任何
@@ -500,8 +548,9 @@ export default function WatchlistPage() {
         )}
 
         {/* 本周追剧表：静态周视图，只排用户已标注的节奏，不推断平台是否更新。
-            清单为空时整段不渲染；只有未标注的剧时只显示「还没排进来」区，不画空表。 */}
-        {watchlist.entries.length > 0 && (
+            清单为空时整段不渲染；只有未标注的剧时只显示「还没排进来」区，不画空表。
+            只有预约态时也不画表——预约的剧没节奏可排，它在下面的预约区。 */}
+        {watchlist.entries.some((e) => !isReservedEntry(e)) && (
           <section aria-label="本周追剧表" className="mt-6">
             <h2 className="text-base font-bold">本周追剧表</h2>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
@@ -677,6 +726,23 @@ export default function WatchlistPage() {
             <ul className="mt-3 space-y-2">
               {parts.check.map((entry) => (
                 <EntryRow key={entry.key} entry={entry} watchlist={watchlist} checkState={checkStates.byKey.get(entry.key)} checkable={checkableFeaturedKeys.has(entry.key)} />
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {/* 预约区：开播日历上预约的、无平台的剧。独立分组，不进待看/去看看/
+            在追/已完结；开播日到了也留在这里，只改文案，不静默消失。 */}
+        {parts.reserved.length > 0 && (
+          <section aria-label="已预约的剧" className="mt-6">
+            <h2 className="text-base font-bold">已预约 · 等开播（{parts.reserved.length}）</h2>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              从开播日历预约的剧：榜单没给平台信息，先按剧名占着位，不指向任何平台入口。
+              到了开播日简报会提醒你；开播后平台确认了，再回来补播出入口。
+            </p>
+            <ul className="mt-3 space-y-2">
+              {parts.reserved.map((entry) => (
+                <ReservedRow key={entry.key} entry={entry} now={effectiveNow} watchlist={watchlist} />
               ))}
             </ul>
           </section>

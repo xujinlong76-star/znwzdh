@@ -1,6 +1,8 @@
 "use client";
 
 import { useDramaCalendar } from "@/hooks/useDramaData";
+import { useWatchlist } from "@/hooks/useWatchlist";
+import { isReservedEntry } from "@/lib/watchlist";
 import type { DramaCalendarResponse } from "@/lib/rest-contracts.generated";
 
 /**
@@ -17,8 +19,11 @@ import type { DramaCalendarResponse } from "@/lib/rest-contracts.generated";
  * - 只放榜单抓到的真实数据：精确到日的进按日分组，仅到月的进“月份待定”，
  *   无日期的不展示；过期未兑现的单列，不静默删除；
  * - 日历不给单剧外链：榜单没给剧在哪个平台播，乱指一个平台入口是误导。
+ *   但可以一键预约（U-377）：按钮只按剧名把剧放进追剧清单预约态
+ *   （键 reserved::归一化剧名，平台待确认），不预填平台、不链平台入口；
+ *   已预约 / 已在追的剧按钮置灰，不重复加。
  * - “刚开播”区是推断：离开预约榜 ≠ 确认开播，文案写清这一点；
- *   日历剧没有平台信息，不挂追剧按钮（没法预填平台），只链到清单添加表单。
+ *   日历剧没有平台信息，预约后在清单里等开播日提醒，开播后平台确认了再补。
  */
 
 function formatDataDate(fetchedAt: number | null): string {
@@ -29,6 +34,39 @@ function formatDataDate(fetchedAt: number | null): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(fetchedAt));
+}
+
+/**
+ * 日历剧的一键预约按钮（U-377）：只按剧名预约，不指向平台入口。
+ * 已预约（预约态）/ 已在追（平台态）时置灰，不重复加。
+ */
+function ReserveButton({ title, premiereDate }: { title: string; premiereDate: string | null }) {
+  const watchlist = useWatchlist();
+  const existing = watchlist.findByTitle(title);
+  if (existing && isReservedEntry(existing)) {
+    return (
+      <span className="mt-2 inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+        已预约 · 平台待确认
+      </span>
+    );
+  }
+  if (existing) {
+    return (
+      <span className="mt-2 inline-flex rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+        已在追
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      disabled={Boolean(watchlist.storageBlocked)}
+      onClick={() => watchlist.addReserved(title, premiereDate)}
+      className="mt-2 inline-flex rounded-full bg-rose-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
+    >
+      预约追剧
+    </button>
+  );
 }
 
 export function DramaCalendarSection() {
@@ -94,6 +132,7 @@ function CalendarBody({ data }: { data: DramaCalendarResponse }) {
                       >
                         <span className="block text-sm font-medium">{item.title}</span>
                         <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">{item.rawLabel}</span>
+                        <ReserveButton title={item.title} premiereDate={item.premiereDate} />
                       </li>
                     ))}
                   </ul>
@@ -122,9 +161,18 @@ function CalendarBody({ data }: { data: DramaCalendarResponse }) {
                         {group.items.length} 部
                       </span>
                     </p>
-                    <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                      {group.items.map((i) => i.title).join("、")}
-                    </p>
+                    <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {group.items.map((i) => (
+                        <li
+                          key={i.title}
+                          className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 p-3 shadow-sm"
+                        >
+                          <span className="block text-sm font-medium">{i.title}</span>
+                          <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">{i.rawLabel}</span>
+                          <ReserveButton title={i.title} premiereDate={null} />
+                        </li>
+                      ))}
+                    </ul>
                   </li>
                 ))}
               </ul>
@@ -149,11 +197,8 @@ function CalendarBody({ data }: { data: DramaCalendarResponse }) {
               <h3 className="text-base font-semibold">刚开播</h3>
               <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
                 近 7 天离开预约榜的剧——可能是已开播，也可能是下架或改档，
-                榜单没给确认信息，以平台为准。想追的剧去
-                <a href="/me/watchlist" className="underline">
-                  我的追剧
-                </a>
-                里手动加上（这里不知道它在哪个平台播，没法一键加）。
+                榜单没给确认信息，以平台为准。想追的剧点「预约追剧」先进清单
+                （这里不知道它在哪个平台播，先按剧名预约着，开播后平台确认了再补）。
               </p>
               <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {data.recentlyDropped.map((item) => (
@@ -165,6 +210,7 @@ function CalendarBody({ data }: { data: DramaCalendarResponse }) {
                     <span className="mt-1 block text-xs text-zinc-500 dark:text-zinc-400">
                       {item.lastLabel ?? "离开预约榜"}
                     </span>
+                    <ReserveButton title={item.title} premiereDate={item.lastDate} />
                   </li>
                 ))}
               </ul>
@@ -180,6 +226,9 @@ function CalendarBody({ data }: { data: DramaCalendarResponse }) {
                 {data.expired.map((item) => (
                   <li key={item.title}>
                     《{item.title}》原定 {item.premiereDate} 上线
+                    <span className="ml-2 inline-flex align-middle">
+                      <ReserveButton title={item.title} premiereDate={item.premiereDate} />
+                    </span>
                   </li>
                 ))}
               </ul>

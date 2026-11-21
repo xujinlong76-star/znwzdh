@@ -11,7 +11,7 @@
  *  3. **抓取必须过 SSRF 防护。** 见 ssrf.ts。
  */
 import { z } from "zod";
-import { getEnhancedSiteData, type SiteRelation } from "@navhub/core";
+import { getEnhancedSiteData, isAbsoluteHttpUrl, isAllowedHost, type SiteRelation } from "@navhub/core";
 import { guardedFetch, type FetchGuardOptions } from "./ssrf.ts";
 import { extractMetadata } from "./metadata.ts";
 import { LlmError, chatCompletion, type ChatOptions, type ChatResult, type JsonMode } from "./llm.ts";
@@ -584,13 +584,14 @@ export function stripCodeFence(s: string): string {
  */
 export function heuristicFacets(url: string, text: string, lang?: string | null): Record<string, string[]> {
   const facets: Record<string, string[]> = {};
-  const lowerUrl = url.toLowerCase();
   const lowerText = text.toLowerCase();
 
   // 1. 付费模式 (Pricing)
+  // CodeQL #128/#129：`lowerUrl.includes("github.com")` 是子串匹配，
+  // `https://evil.com/?github.com` / `https://github.com.evil.com` 都会误判；
+  // 改用 isAllowedHost（new URL + 协议校验 + 主机名严格比对）。
   if (
-    lowerUrl.includes("github.com") ||
-    lowerUrl.includes("gitee.com") ||
+    isAllowedHost(url, ["github.com", "gitee.com"]) ||
     lowerText.includes("开源") ||
     lowerText.includes("open source") ||
     lowerText.includes("mit license") ||
@@ -639,16 +640,16 @@ export function heuristicFacets(url: string, text: string, lang?: string | null)
   if (lowerText.includes("linux")) {
     platforms.push("linux");
   }
-  if (platforms.length === 0 || lowerText.includes("web") || lowerText.includes("在线") || lowerText.includes("网页") || lowerUrl.startsWith("http")) {
+  if (platforms.length === 0 || lowerText.includes("web") || lowerText.includes("在线") || lowerText.includes("网页") || isAbsoluteHttpUrl(url)) {
     platforms.push("web");
   }
   facets.platform = [...new Set(platforms)];
 
   // 3. 产品形态 (Form)
   const forms: string[] = [];
+  // CodeQL #128/#129：同付费模式，子串匹配换 isAllowedHost。
   if (
-    lowerUrl.includes("github.com") ||
-    lowerUrl.includes("gitee.com") ||
+    isAllowedHost(url, ["github.com", "gitee.com"]) ||
     lowerText.includes("npm") ||
     lowerText.includes("pypi") ||
     lowerText.includes("crate")

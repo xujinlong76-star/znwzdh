@@ -117,7 +117,11 @@ export function NavigationToolbar({
   const hasTodayAlert = Boolean(todayBadge && (todayBadge.urgentCount > 0 || todayBadge.todayCount > 0))
   return (
         <div className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 shadow-2xs">
-          <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 md:h-14 md:flex-nowrap">
+          {/* 2026-11-21：md:flex-nowrap 在 768px 档会把「搜索 260px 最小宽 +
+              右侧按钮簇 388px」硬塞进 768-48px 的可用宽里，整行顶出文档
+              （实测 scrollWidth 940 > 768）。改为在 <1024px 允许换行：
+              搜索框独占一行、按钮簇折到第二行，1024px 起恢复单行。 */}
+          <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-3 gap-y-1 lg:h-14 lg:flex-nowrap">
             <div className="flex flex-1 min-w-[260px] max-w-[560px] items-center gap-1.5 transition-all duration-300 ease-out">
               <div className="flex-1 min-w-0">
                 {/* 山羊胡混合检索引擎 */}
@@ -137,7 +141,7 @@ export function NavigationToolbar({
                 </Button>
               ) : null}
             </div>
-            <div className="shrink-0 flex items-center gap-1.5">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
               {/* 📅 今日中心小窗入口（A2：专注、考试提醒、简报、接力连胜统一收纳） */}
               {onOpenTodayCenter ? (
                 <Button

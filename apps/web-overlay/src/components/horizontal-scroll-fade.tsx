@@ -156,7 +156,13 @@ export const HorizontalScrollFade = forwardRef<HTMLDivElement, HorizontalScrollF
       mask === 'none' ? {} : { maskImage: mask, WebkitMaskImage: mask }
 
     return (
-      <div className={cn('relative', className)} aria-label={ariaLabel}>
+      /* 2026-11-21 修复横向溢出：根节点原先只有 relative，没有限宽。
+         在 flex / grid 容器里（子分类轨、速览坞、分类筛选行都是），
+         内部 shrink-0 的胶囊会把根节点撑到内容总宽——overflow-x-auto
+         因此永远不触发，整个文档被顶出横向滚动（768px 实测 940>768）。
+         min-w-0 让 flex 子项允许收缩到容器宽，overflow 才真正生效；
+         w-full 兜住块级父容器下的同等场景。 */
+      <div className={cn('relative w-full min-w-0', className)} aria-label={ariaLabel}>
         {showArrows && canScrollLeft ? (
           <button
             type="button"
@@ -170,7 +176,9 @@ export const HorizontalScrollFade = forwardRef<HTMLDivElement, HorizontalScrollF
 
         <div
           ref={setRefs}
-          className={cn('overflow-x-auto no-scrollbar', scrollClassName)}
+          /* pr-7 pl-0.5：两侧箭头绝对定位在容器边缘，给它们留出不吃内容的
+             呼吸位，避免箭头压住第一个/最后一个胶囊的文字。 */
+          className={cn('overflow-x-auto no-scrollbar pl-0.5 pr-7', scrollClassName)}
           style={maskStyle}
         >
           {children}

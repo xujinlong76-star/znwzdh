@@ -45,12 +45,18 @@ describe('safeFetch 五道防线', () => {
     expect(AI).toContain('maxBytes')
     expect(AI).toContain('maxRedirects')
   })
-  it('web 层: 从权威层转发，不自带第二份实现', () => {
-    expect(WEB).toContain("from '@navhub/ai/ssrf'")
-    expect(WEB).toContain('safeFetch')
-    // 薄壳不该再有自己的 IP 黑名单/钉扎实现
-    expect(WEB).not.toContain('lookup: pinnedLookup')
-    expect(WEB).not.toContain('::ffff:')
+  it('web 层: 独立实现（依赖边界禁止 @navhub/*），行为由 parity 测试守', () => {
+    /*
+     * 2026-11-22 订正：原断言要求 web 层 re-export 权威层，但
+     * scripts/check-import-boundaries.mjs 明确禁止 overlay 依赖 @navhub/*
+     *（理由：vendored 底座生产镜像只含 overlay，不含 workspace 包）。
+     * 因此 web 层必须是独立实现，两侧行为一致性由 ssrf-parity.test.ts
+     * 与 ssrf-ports-drift.test.ts 守——这才是符合架构约束的形态。
+     */
+    expect(WEB).not.toContain("from '@navhub/ai")
+    expect(WEB).toContain('export async function safeFetch')
+    expect(WEB).toContain('export function isHostAllowed')
+    expect(WEB).toContain('::ffff:')
   })
 })
 

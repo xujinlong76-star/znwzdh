@@ -6,7 +6,7 @@
  * 为什么需要独立 store：通告条的**开关**在左侧边栏底部（「探索与专题」），
  * 本体渲染在主内容区（HomeMicroStrip）。两者分处两棵互不相邻的子树，
  * 没有共同父组件可以提状态；用 window 事件桥接是这套代码既有做法
- * （见 xiaomaomao-toggle.tsx 的 window.XIAOMAOMAO + navhub:xiaomaomao-state）。
+ * （见 public/xiaomaomao/xiaomaomao.js 的 window.XIAOMAOMAO + navhub:xiaomaomao-state）。
  *
  * 三态语义：
  *  - 'auto'      默认。**不渲染**——要求 2 的硬指标是「默认不挤占主工作区

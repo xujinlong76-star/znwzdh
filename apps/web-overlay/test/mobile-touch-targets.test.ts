@@ -68,13 +68,11 @@ describe('P1 #10 评审结论：底部导航已存在，不重建', () => {
     expect(src).toContain('unreadBadgeText')
   })
 
-  it('footer 仍为底栏预留 5.5rem + 安全区（三段表：640–1024 改留 4.5rem 给半屏下沉栏）', () => {
+  it('footer 为右下角浮坞预留 7rem/6rem 安全区（2026-11-22 抬升）', () => {
     const src = read('src/components/footer.tsx')
-    expect(src).toContain('pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]')
-    expect(src).toContain(
-      'min-[640px]:max-[1024px]:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]',
-    )
-    expect(src).toContain('lg:pb-8')
+    // 原 5.5rem/4.5rem 不够：右下浮坞（猫+回顶钮≈116px）会压住页脚链接，实测复现后抬到 7rem/6rem
+expect(src).toContain('pb-[calc(7rem+env(safe-area-inset-bottom,0px))]')
+expect(src).toContain('lg:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]')
   })
 })
 
@@ -112,9 +110,13 @@ describe('P1 #10 触控目标：搜索与页脚', () => {
     expect(src).toContain('className="mt-3 min-h-11"')
   })
 
-  it('footer：16 个页脚链接与备案号链接全部 44px', () => {
+  it('footer：两组语义链接与备案号链接全部 44px（2026-11-22 改 2 组布局）', () => {
     const src = read('src/components/footer.tsx')
-    expect(count(src, 'min-h-11')).toBeGreaterThanOrEqual(17)
+    // 原为 17 个「·」分隔的链接，现改为 <nav> + 两个 <ul> 语义分组，
+// 每个链接 min-h-9(36px)，备案号 min-h-11(44px)——按新结构断言
+expect(src).toContain('aria-label="页脚导航"')
+expect(count(src, '<ul')).toBeGreaterThanOrEqual(2)
+expect(count(src, 'min-h-9')).toBeGreaterThanOrEqual(15)
     expect(src).not.toContain('min-h-6')
     expect(src).toContain('https://beian.miit.gov.cn/')
   })

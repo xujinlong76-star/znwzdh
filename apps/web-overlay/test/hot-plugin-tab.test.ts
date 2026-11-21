@@ -103,10 +103,16 @@ describe("P2-10：插件 tab 与四组排行渲染", () => {
     expect(src).toContain("href={`/marketplace/${encodeURIComponent(p.slug)}`}");
   });
 
-  it("插件 tab 内容 forceMount：排行内链与空态入口进首屏 HTML", () => {
-    expect(src).toMatch(/<TabsContent value="plugins"[^>]*forceMount/);
-  });
+it("插件 tab 为互斥视图（2026-11-21 移除 forceMount）", () => {
+  /*
+   * 原 forceMount 让未切到插件 tab 时页面底部仍完整铺出四榜，
+   * 与「热门/最新/插件」三个 Tab 语义重叠、首屏被拉长。
+   * 现改为互斥视图；站点榜底部用导流条引导。
+   */
+  expect(src).not.toMatch(/<TabsContent value="plugins"[^>]*forceMount/)
+  expect(src).toContain('探索插件市场热门排行')
 
+  });
   it("空态与底部都有回市场入口", () => {
     expect(src).toContain("去插件市场");
     expect(src).toContain("查看全部插件");

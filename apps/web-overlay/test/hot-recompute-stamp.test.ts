@@ -38,6 +38,8 @@ describe('/hot 热度重算时间戳接线', () => {
           pluginDegraded={pluginDegraded}
           initialTab={initialTab}
           initialFilterQuery={initialFilterQuery}
+          initialDomain={initialDomain}
+          categoryNames={categoryNames}
         />`,
     )
   })
@@ -50,7 +52,10 @@ describe('/hot 热度重算时间戳接线', () => {
 
   it('时间戳只在热度 tab 显示：条件同时要求 tab 与非 null', () => {
     expect(view).toContain("tab === 'trending' && recomputedAt != null")
-    expect(view).toContain('热度分{formatRelativeTime(recomputedAt)}重算')
+    // 2026-11-21 时效分级：<6h/6-24h/>24h 三档，超 24h 用琥珀色明示已过期，
+    // 文案由 freshnessLabel 统一生成（不再是固定「热度分X重算」）
+    expect(view).toContain('freshnessClass(freshnessLevel(recomputedAt))')
+    expect(view).toContain('freshnessLabel(freshnessLevel(recomputedAt), recomputedAt)')
     // 新品 tab 的内容区（TabsContent value="new"）之后不应再出现时间戳文案
     const newTabIdx = view.indexOf('<TabsContent value="new"')
     expect(newTabIdx).toBeGreaterThan(-1)

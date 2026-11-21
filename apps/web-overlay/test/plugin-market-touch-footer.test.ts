@@ -115,11 +115,13 @@ describe("P2-16 市场页底部安全区", () => {
     expect(src).toContain("sm:pb-0");
   });
 
-  it("页脚三段底垫未被动过：<640 留 5.5rem、640–1024 留 4.5rem、≥1024 留 pb-8", () => {
+  it("页脚底垫已抬升避开右下浮坞：<640 留 7rem、≥640 留 6rem（2026-11-22）", () => {
     const src = readOverlay("components/footer.tsx");
-    expect(src).toContain("pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]");
-    expect(src).toContain("min-[640px]:max-[1024px]:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]");
-    expect(src).toContain("lg:pb-8");
+    // 原 5.5/4.5rem + lg:pb-8(2rem) 不够：右下浮坞（猫+回顶钮≈116px）
+    // 在 390x844 与 1366x768 下都压住了页脚右端链接，实测复现后抬升。
+    expect(src).toContain("pb-[calc(7rem+env(safe-area-inset-bottom,0px))]");
+    expect(src).toContain("min-[640px]:max-[1024px]:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]");
+    expect(src).toContain("lg:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]");
   });
 });
 

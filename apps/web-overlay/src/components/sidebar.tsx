@@ -146,6 +146,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
   }
 
   const handleCategoryClick = (categoryId: string) => {
+    setActiveCategoryId(categoryId)
     scrollToSection(categoryId)
 
     // 如果有子分类，切换展开/收起状态
@@ -177,13 +178,64 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
     return <NavIcon name={iconName} className="h-4 w-4" />;
   }
 
-  // 使用对象存储每个分类的展开状态
+  // 使用对象存储每个分类的展开状态（默认收起）
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>(() => {
     return navigationData.navigationItems.reduce((acc, category) => {
       acc[category.id] = false
       return acc
     }, {} as Record<string, boolean>)
   })
+
+  // 当前在视口内激活的一级分类 ID（用于左侧导航高亮与指示条）
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(() => {
+    return navigationData.navigationItems[0]?.id ?? null
+  })
+
+  // 监听主区分类滚动位置与侧边栏主动点击，实时同步当前激活分类
+  useEffect(() => {
+    const onTarget = (e: Event) => {
+      const targetId = (e as CustomEvent<{ sectionId?: string }>).detail?.sectionId
+      if (!targetId) return
+      const matchedCat = navigationData.navigationItems.find(
+        (cat) => cat.id === targetId || cat.subCategories?.some((s) => s.id === targetId),
+      )
+      if (matchedCat) setActiveCategoryId(matchedCat.id)
+    }
+    window.addEventListener('lazy-mount-target', onTarget)
+
+    let rafId: number | null = null
+    const onScroll = () => {
+      if (rafId !== null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        if ((window as unknown as { __navhub_programmatic_scroll?: boolean }).__navhub_programmatic_scroll) {
+          return
+        }
+        let bestId: string | null = null
+        let bestOffset = Number.POSITIVE_INFINITY
+        for (const cat of navigationData.navigationItems) {
+          const el = document.getElementById(cat.id)
+          if (!el) continue
+          const rect = el.getBoundingClientRect()
+          if (rect.bottom > 110 && rect.top < window.innerHeight * 0.65) {
+            const dist = Math.abs(rect.top - 110)
+            if (dist < bestOffset) {
+              bestOffset = dist
+              bestId = cat.id
+            }
+          }
+        }
+        if (bestId) setActiveCategoryId(bestId)
+      })
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      window.removeEventListener('lazy-mount-target', onTarget)
+      window.removeEventListener('scroll', onScroll)
+      if (rafId !== null) cancelAnimationFrame(rafId)
+    }
+  }, [navigationData.navigationItems])
 
   const toggleCategory = (categoryId: string) => {
     setExpandedCategories(prev => ({
@@ -443,8 +495,8 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
         <WorkspaceSwitcher />
       </div>
 
-      <ScrollArea className="flex-1 px-3 py-3">
-        <div className="space-y-1">
+      <ScrollArea className="flex-1 px-2.5 py-2 [&_[data-radix-scroll-area-viewport]>div]:!block">
+        <div className="space-y-0.5">
           {navigationData.navigationItems
             .filter((category) => {
               if (!bypassMaskTemporarily && (hiddenCategoryIds.includes(category.id) || isCategoryHidden(category.id))) {
@@ -461,31 +513,77 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                   (!sub.items || sub.items.length > 0) &&
                   (bypassMaskTemporarily || !isSubcategoryHidden(sub.id))
               );
+              const directCount = category.items?.length || 0;
+              const subTotalCount = visibleSubCategories.reduce((acc, sub) => acc + (sub.items?.length || 0), 0);
+              const totalSiteCount = directCount + subTotalCount;
+              const isActive = activeCategoryId === category.id;
+              const isExpanded = Boolean(expandedCategories[category.id]);
+
               return (
-            <div key={category.id} className="py-1">
-              <div className="flex items-center group">
+            <div key={category.id} className="py-0">
+              <div
+                className={cn(
+                  "group relative flex min-w-0 items-center rounded-xl transition-all duration-150",
+                  isActive
+                    ? "bg-primary/[0.08] text-foreground shadow-2xs ring-1 ring-inset ring-primary/20 dark:bg-primary/[0.14]"
+                    : "hover:bg-muted/65"
+                )}
+              >
+                {isActive && (
+                  <span
+                    aria-hidden
+                    className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-primary"
+                  />
+                )}
                 <Button
                   variant="ghost"
-                  className="flex-1 justify-start gap-2.5 h-8.5 px-2.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
+                  className={cn(
+                    "min-w-0 flex-1 justify-start gap-2 h-8 px-2 rounded-xl text-[12.5px] transition-colors cursor-pointer hover:bg-transparent",
+                    isActive
+                      ? "font-semibold text-foreground"
+                      : "font-medium text-foreground/80 group-hover:text-foreground"
+                  )}
                   onClick={() => handleCategoryClick(category.id)}
                 >
-                  <span className="text-muted-foreground group-hover:text-primary transition-colors">
+                  <span
+                    className={cn(
+                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border transition-all",
+                      isActive
+                        ? "border-primary/30 bg-primary/15 text-primary shadow-2xs"
+                        : "border-border/50 bg-muted/45 text-muted-foreground group-hover:border-primary/25 group-hover:bg-primary/10 group-hover:text-primary"
+                    )}
+                  >
                     {renderIcon(category.icon)}
                   </span>
-                  <span className="truncate min-w-0">{category.title}</span>
+                  <span className="truncate min-w-0 flex-1 text-left">{category.title}</span>
+                  {totalSiteCount > 0 && (
+                    <span
+                      className={cn(
+                        "ml-1 shrink-0 rounded-full px-1.5 py-0.2 font-mono text-[10px] tabular-nums transition-colors",
+                        isActive
+                          ? "bg-primary/15 font-semibold text-primary"
+                          : "bg-muted/70 text-muted-foreground/80 group-hover:bg-muted group-hover:text-foreground/80"
+                      )}
+                    >
+                      {totalSiteCount}
+                    </span>
+                  )}
                 </Button>
 
                 {visibleSubCategories.length > 0 && (
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-8 w-7 px-0 hover:bg-muted/50 cursor-pointer text-muted-foreground"
+                    className={cn(
+                      "h-7 w-6 shrink-0 px-0 mr-0.5 rounded-lg hover:bg-muted/70 cursor-pointer transition-colors",
+                      isActive ? "text-primary" : "text-muted-foreground/70 group-hover:text-foreground"
+                    )}
                     onClick={() => toggleCategory(category.id)}
-                    aria-label={expandedCategories[category.id] ? `折叠分类：${category.title}` : `展开分类：${category.title}`}
-                    aria-expanded={Boolean(expandedCategories[category.id])}
+                    aria-label={isExpanded ? `折叠分类：${category.title}` : `展开分类：${category.title}`}
+                    aria-expanded={isExpanded}
                     aria-controls={`subcategory-${category.id}`}
                   >
-                    {expandedCategories[category.id] ? (
+                    {isExpanded ? (
                       <ChevronDown className="h-3.5 w-3.5" />
                     ) : (
                       <ChevronRight className="h-3.5 w-3.5" />
@@ -499,22 +597,31 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                   id={`subcategory-${category.id}`}
                   className={cn(
                     "grid transition-all duration-[--duration-base] ease-in-out",
-                    expandedCategories[category.id] ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                    isExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
                   )}
                 >
-                  <div className="mt-1 ml-3 pl-2.5 border-l border-border/50 space-y-0.5 overflow-hidden">
-                    {visibleSubCategories.map((subCategory) => (
-                      <Button
-                        key={subCategory.id}
-                        variant="ghost"
-                        className="w-full justify-start h-7.5 px-2 text-xs rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer"
-                        onClick={() => {
-                          scrollToSection(subCategory.id, category.id)
-                        }}
-                      >
-                        <span className="truncate min-w-0">{subCategory.title}</span>
-                      </Button>
-                    ))}
+                  <div className="mt-0.5 mb-1 ml-4 pl-2.5 border-l border-border/60 space-y-0.5 overflow-hidden">
+                    {visibleSubCategories.map((subCategory) => {
+                      const subCount = subCategory.items?.length || 0;
+                      return (
+                        <Button
+                          key={subCategory.id}
+                          variant="ghost"
+                          className="w-full justify-between h-7 px-2 text-xs rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 cursor-pointer"
+                          onClick={() => {
+                            setActiveCategoryId(category.id)
+                            scrollToSection(subCategory.id, category.id)
+                          }}
+                        >
+                          <span className="truncate min-w-0 text-left">{subCategory.title}</span>
+                          {subCount > 0 && (
+                            <span className="ml-1.5 shrink-0 font-mono text-[10px] text-muted-foreground/70 tabular-nums">
+                              {subCount}
+                            </span>
+                          )}
+                        </Button>
+                      );
+                    })}
                   </div>
                 </div>
               )}

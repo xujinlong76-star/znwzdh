@@ -103,15 +103,15 @@ describe('根布局挂载', () => {
 })
 
 describe('与 footer 预留的契约', () => {
-  it('footer 三段底垫：<640 留 5.5rem（MobileNav），640–1024 留 4.5rem（HalfScreenDock），≥1024 只留 pb-8', () => {
+  it('footer 底垫：为右下浮坞抬到 <640 留 7rem、≥640 留 6rem（2026-11-22）', () => {
     const footer = read(FOOTER)
-    expect(footer).toContain('pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]')
+    // 原 5.5/4.5rem + pb-8 不够：右下浮坞（猫+回顶钮≈116px）
+    // 在 390x844 与 1366x768 下都压住了页脚链接，实测复现后抬升。
+    expect(footer).toContain('pb-[calc(7rem+env(safe-area-inset-bottom,0px))]')
     expect(footer).toContain(
-      'min-[640px]:max-[1024px]:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]',
+      'min-[640px]:max-[1024px]:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]',
     )
-    expect(footer).toContain('lg:pb-8')
-    // 旧 sm:pb-8 会在 640–1024 区间把预留收回成 32px，下沉栏（56px）会压住页脚链接
-    expect(footer).not.toContain('sm:pb-8')
+    expect(footer).toContain('lg:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]')
   });
 
   it('组件不得自带会让 footer 空隙失效的负 margin', () => {

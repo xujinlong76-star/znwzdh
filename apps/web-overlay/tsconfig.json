@@ -51,14 +51,6 @@
       "@navhub/core/*": [
         "../../packages/core/src/*"
       ],
-      // 2026-11-21：SSRF 出口收口到 packages/ai，web 层改为薄壳 re-export。
-      // 与 @navhub/core 同理需要源码映射（该包同样不在 workspace 内）。
-      "@navhub/ai/ssrf": [
-        "../../packages/ai/src/ssrf.ts"
-      ],
-      "@navhub/ai/*": [
-        "../../packages/ai/src/*"
-      ]
     }
   },
   "include": [

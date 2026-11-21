@@ -89,7 +89,6 @@ const PAGES_WITH_SEARCH = [
  */
 const ISLAND_SEARCH_PAGES = [
   { page: "src/app/tags/[slug]/page.tsx", island: "src/components/tag-results-board.tsx", marker: "<TagResultsBoard" },
-  { page: "src/app/hot/page.tsx", island: "src/app/hot/hot-view.tsx", marker: "<HotView" },
   {
     page: "src/app/collections/[slug]/page.tsx",
     island: "src/app/collections/[slug]/collection-detail-view.tsx",
@@ -99,7 +98,6 @@ const ISLAND_SEARCH_PAGES = [
 
 /** 这一批是站点列表页，提示文案必须点明「全部站点」（RSC 化后都在岛里）。 */
 const SITE_LIST_PAGES = [
-  "src/app/hot/hot-view.tsx",
   "src/app/category/[slug]/category-board.tsx",
   "src/components/tag-results-board.tsx",
   "src/app/collections/[slug]/collection-detail-view.tsx",
@@ -131,6 +129,21 @@ describe("站点列表页必须有搜索入口", () => {
     expect(shell).toContain(marker);
     // 岛的接入形式同样认三种合法形式（口径见文件头），功能不变、形式不锁死
     expect(searchPaletteAccess(board)).not.toBeNull();
+  });
+
+  /**
+   * 2026-11-22：/hot 刻意不放 SearchPalette。
+   *
+   * 原设计在 200px 内上下堆了两个搜索框（全站搜索 + 榜内筛选），
+   * 交互冲突且首屏臃肿。新设计只保留「筛选当前榜单」一个输入框，
+   * 全站检索由顶部全局导航与 / 快捷键覆盖，并在筛选条右侧给
+   * 「搜不到？按 / 全站检索」文字链作为出口。
+   */
+  it("/hot 首屏只有一个榜内筛选框，全站检索出口为 / 快捷键文字链", () => {
+    const src = overlaySource("src/app/hot/hot-view.tsx");
+    expect(src).not.toContain("<SearchPalette");
+    expect(src).toContain("筛选当前榜单");
+    expect(src).toContain("搜不到？按 / 全站检索");
   });
 
   it.each(SITE_LIST_PAGES)("%s 的提示文案要说清「搜的是全部站点」", (rel) => {

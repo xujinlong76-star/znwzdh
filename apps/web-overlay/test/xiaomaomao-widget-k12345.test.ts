@@ -58,8 +58,15 @@ describe("K1 悬浮栈规范", () => {
     expect(WIDGET).not.toContain("4.5rem + 18px");
   });
 
-  it("移动端猫底边仍为 68px（只动胶囊，不动猫）", () => {
-    expect(WIDGET).toContain("bottom:calc(68px + env(safe-area-inset-bottom,0px))");
+  it("移动端猫底边抬到 3.5rem+32px（避开底部导航与整行按钮）", () => {
+    /*
+     * 2026-11-22 订正：原值 68px 在 390x844 下压住两处内容——
+     *   1. 移动端底部导航（fixed bottom-0、高 56px）的「我的」入口；
+     *   2. /me「默认搜索引擎」、/favorites「一键搬家」等整行宽按钮的右端。
+     * 实测 elementFromPoint 命中猫自己，入口点不到。
+     * 抬到 3.5rem(56px)+32px=88px 后，与两者矩形均不再相交。
+     */
+    expect(WIDGET).toContain("bottom:calc(3.5rem + env(safe-area-inset-bottom,0px) + 32px)");
   });
 
   it("移动端胶囊底边抬到猫顶之上 168px（68+88+12），sm 起仍 bottom-12", () => {
@@ -67,7 +74,7 @@ describe("K1 悬浮栈规范", () => {
     // 存在，故无需再把它抬到猫顶之上；锁「组件已删、猫底边仍为 68px（移动端）
     // 与 112px（640–1023px 档）」即可。
     expect(existsSync(join(ROOT, "src/components/floating-quick-nav.tsx"))).toBe(false);
-    expect(WIDGET).toContain("bottom:calc(68px + env(safe-area-inset-bottom,0px))");
+    expect(WIDGET).toContain("bottom:calc(3.5rem + env(safe-area-inset-bottom,0px) + 32px)");
     expect(WIDGET).toContain(
       "@media (min-width:640px) and (max-width:1023px){#xiaomaomao{bottom:calc(112px + env(safe-area-inset-bottom,0px))}}",
     );

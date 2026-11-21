@@ -10,12 +10,16 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import {
   normalizeTag,
+  canonicalizeTag,
+  computeTagSimilarity,
+  isHyphenatedSlugTag,
   buildCategoryNameIndex,
   isPollutedTag,
   filterDisplayTags,
   sanitizeSiteTags,
   GENERIC_TAG_DENYLIST,
   SPECIAL_TAG_MAPPING,
+  TAG_SYNONYM_MAP,
 } from '../src/lib/tag-hygiene.ts'
 
 const ROOTS = buildCategoryNameIndex('AI 工具', ['AI 编程助手', '模型与数据集', '对话助手'])
@@ -172,5 +176,46 @@ describe('真实导航数据：污染规模与清洗效果', () => {
       expect(globalIndex.has(normalizeTag(tag))).toBe(false)
       expect(normalizeTag(tag)).not.toBe('ai赋能')
     }
+  })
+})
+
+describe('2026-11-20 标签治理增强：>70% 相似度剔除 / 连字符 slug / 同义词归并 / 正交优先', () => {
+  it('剔除与所属一级/二级分类名称相似度 > 70% 的近似复读标签', () => {
+    const aiAlign = buildCategoryNameIndex('AI 工具', ['AI 安全与对齐', '模型与数据集'])
+    expect(computeTagSimilarity('ai-安全与对齐研究', 'AI 安全与对齐')).toBeGreaterThan(0.7)
+    expect(isPollutedTag('#ai-安全与对齐研究', aiAlign)).toBe(true)
+    expect(computeTagSimilarity('模型与数据集社区', '模型与数据集')).toBeGreaterThan(0.7)
+    expect(isPollutedTag('#模型与数据集社区', aiAlign)).toBe(true)
+  })
+
+  it('剔除未映射的机器化连字符 slug 标签', () => {
+    const idx = buildCategoryNameIndex('AI 工具', ['对话助手'])
+    expect(isHyphenatedSlugTag('#ai-搜索与知识')).toBe(true)
+    expect(isHyphenatedSlugTag('#向量库与-rag-应用')).toBe(true)
+    expect(isHyphenatedSlugTag('#ai-音频与语音')).toBe(true)
+    expect(isPollutedTag('#ai-搜索与知识', idx)).toBe(true)
+    expect(isPollutedTag('#向量库与-rag-应用', idx)).toBe(true)
+    expect(isPollutedTag('#ai-音频与语音', idx)).toBe(true)
+  })
+
+  it('同义词字典统一归并并去重（视频生成 / AI视频 -> AI视频）', () => {
+    const idx = buildCategoryNameIndex('AI 工具', ['对话助手'])
+    expect(TAG_SYNONYM_MAP['视频生成']).toBe('AI视频')
+    expect(canonicalizeTag('视频生成')).toBe('AI视频')
+    expect(canonicalizeTag('#ai-绘图')).toBe('AI绘图')
+    expect(filterDisplayTags(['视频生成', 'AI视频', '文生视频', '国产直连'], idx)).toEqual([
+      '国产直连',
+      'AI视频',
+    ])
+  })
+
+  it('正交决策属性标签优先排前，且支持 maxTags 截断至 2-3 个', () => {
+    const idx = buildCategoryNameIndex('开发者资源', ['工具箱'])
+    const out = filterDisplayTags(
+      ['社区', '文档', '开源', 'API', '自托管', '效率'],
+      idx,
+      { maxTags: 3 },
+    )
+    expect(out).toEqual(['开源', '支持 API', '自托管'])
   })
 })

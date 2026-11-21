@@ -21,6 +21,7 @@
               "description": "OpenAI 的对话式 AI 助手",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "对话",
                 "大模型"
               ]
@@ -33,6 +34,7 @@
               "icon": "https://chat.deepseek.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "中文",
                 "大模型"
               ]
@@ -44,6 +46,7 @@
               "description": "Anthropic 的大语言模型对话助手，擅长长文本与代码理解",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "对话",
                 "大模型"
               ]
@@ -56,9 +59,9 @@
               "icon": "https://www.kimi.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "长文本",
-                "搜索",
-                "Moonshot"
+                "搜索"
               ]
             },
             {
@@ -69,9 +72,9 @@
               "icon": "https://qianwen.aliyun.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "阿里",
-                "办公",
-                "通义"
+                "办公"
               ]
             },
             {
@@ -82,9 +85,9 @@
               "icon": "https://www.doubao.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "字节",
-                "智能助手",
-                "多模态"
+                "智能助手"
               ]
             },
             {
@@ -95,9 +98,9 @@
               "icon": "https://wenxin.baidu.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "百度",
-                "搜索",
-                "生成式"
+                "搜索"
               ]
             },
             {
@@ -108,9 +111,9 @@
               "icon": "https://chatglm.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "清华",
-                "GLM",
-                "代码"
+                "GLM"
               ]
             },
             {
@@ -121,9 +124,9 @@
               "icon": "https://xinghuo.xfyun.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "讯飞",
-                "语音",
-                "翻译"
+                "语音"
               ]
             },
             {
@@ -134,9 +137,9 @@
               "icon": "https://gemini.google.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "Google",
-                "多模态",
-                "对话"
+                "多模态"
               ]
             }
           ]
@@ -156,7 +159,7 @@
               "icon": "https://so.qq.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI 搜索",
+                "免费",
                 "搜索"
               ]
             },
@@ -168,7 +171,7 @@
               "icon": "https://kimi.moonshot.cn/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI 搜索",
+                "免费额度",
                 "搜索"
               ]
             },
@@ -180,7 +183,7 @@
               "icon": "https://metaso.cn/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI 搜索",
+                "免费",
                 "搜索"
               ]
             },
@@ -192,7 +195,7 @@
               "icon": "https://www.perplexity.ai/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI 搜索",
+                "免费额度",
                 "搜索"
               ]
             },
@@ -204,7 +207,7 @@
               "icon": "https://www.tiangong.cn/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI 搜索",
+                "免费额度",
                 "搜索"
               ]
             },
@@ -216,9 +219,9 @@
               "icon": "https://notebook.google.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "AI笔记",
-                "研究",
-                "Google"
+                "研究"
               ]
             }
           ]
@@ -238,9 +241,9 @@
               "icon": "https://github.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "agent",
-                "自主",
-                "ai-编程"
+                "自主"
               ]
             },
             {
@@ -251,8 +254,8 @@
               "icon": "https://github.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "代码补全",
-                "编程助手"
+                "免费额度",
+                "代码补全"
               ]
             },
             {
@@ -263,8 +266,8 @@
               "icon": "https://cursor.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "代码编辑器",
-                "ai-编程"
+                "免费额度",
+                "代码编辑器"
               ]
             },
             {
@@ -275,8 +278,7 @@
               "icon": "https://windsurf.ai/favicon.ico",
               "enabled": true,
               "tags": [
-                "agentic-ide",
-                "ai-编程"
+                "免费额度"
               ]
             },
             {
@@ -287,9 +289,9 @@
               "icon": "https://www.codegeex.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "代码生成",
-                "智谱",
-                "IDE插件"
+                "智谱"
               ]
             },
             {
@@ -300,9 +302,9 @@
               "icon": "https://www.trae.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "AI IDE",
-                "字节",
-                "编程代理"
+                "字节"
               ]
             },
             {
@@ -313,9 +315,9 @@
               "icon": "https://comate.baidu.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "百度",
-                "代码补全",
-                "智能修复"
+                "代码补全"
               ]
             },
             {
@@ -326,9 +328,9 @@
               "icon": "https://lingma.aliyun.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "阿里云",
+                "免费额度",
                 "企业级",
-                "代码解释"
+                "阿里云"
               ]
             },
             {
@@ -361,7 +363,7 @@
               "icon": "https://midjourney.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "ai-绘图",
+                "AI绘图",
                 "生成"
               ]
             },
@@ -373,7 +375,8 @@
               "icon": "https://openai.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "文生图",
+                "免费额度",
+                "AI绘图",
                 "OpenAI"
               ]
             },
@@ -385,6 +388,7 @@
               "icon": "https://www.adobe.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "图像编辑",
                 "商用"
               ]
@@ -397,6 +401,7 @@
               "icon": "https://leonardo.ai/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "游戏资产",
                 "视觉模型"
               ]
@@ -409,6 +414,7 @@
               "icon": "https://krea.ai/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "实时生成",
                 "图像编辑"
               ]
@@ -421,6 +427,7 @@
               "icon": "https://deepdreamgenerator.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "艺术风格",
                 "视觉模型"
               ]
@@ -433,6 +440,7 @@
               "icon": "https://remove.bg/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "ai",
                 "抠图"
               ]
@@ -454,7 +462,8 @@
               "icon": "https://suno.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "ai-音乐",
+                "免费额度",
+                "AI音乐",
                 "生成"
               ]
             },
@@ -466,9 +475,9 @@
               "icon": "https://www.xfyun.cn/favicon.ico",
               "enabled": true,
               "tags": [
-                "语音合成",
-                "ASR",
-                "TTS"
+                "免费额度",
+                "AI配音",
+                "ASR"
               ]
             },
             {
@@ -479,9 +488,9 @@
               "icon": "https://tianyin.163.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "AI音乐",
-                "音频生成",
-                "创作工具"
+                "音频生成"
               ]
             },
             {
@@ -492,6 +501,7 @@
               "icon": "https://www.udio.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "AI音乐",
                 "歌曲生成"
               ]
@@ -504,9 +514,9 @@
               "icon": "https://soundraw.io/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "AI音乐",
-                "配乐",
-                "免版税"
+                "配乐"
               ]
             },
             {
@@ -517,7 +527,8 @@
               "icon": "https://www.aiva.ai/assets/img/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI作曲",
+                "免费额度",
+                "AI音乐",
                 "配乐"
               ]
             },
@@ -529,6 +540,7 @@
               "icon": "https://boomy.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "AI音乐",
                 "歌曲生成"
               ]
@@ -541,9 +553,9 @@
               "icon": "https://mubert.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "AI音乐",
-                "免版税",
-                "配乐"
+                "免版税"
               ]
             },
             {
@@ -554,6 +566,7 @@
               "icon": "",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "AI音乐",
                 "配乐"
               ]
@@ -566,6 +579,7 @@
               "icon": "https://www.loudly.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "AI音乐",
                 "歌曲生成"
               ]
@@ -578,8 +592,8 @@
               "icon": "https://elevenlabs.io/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "AI配音",
-                "语音合成",
                 "声音克隆"
               ]
             },
@@ -591,8 +605,8 @@
               "icon": "https://cdn.prod.website-files.com/66b3765153a8a0c399c70981/670cb2af23deffa700aa8a09_favicon.ico",
               "enabled": true,
               "tags": [
-                "AI配音",
-                "语音合成"
+                "免费额度",
+                "AI配音"
               ]
             },
             {
@@ -603,6 +617,7 @@
               "icon": "https://speechify.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "文字转语音",
                 "朗读"
               ]
@@ -615,8 +630,9 @@
               "icon": "https://cdn.prod.website-files.com/673384264721b089c7e053a7/6af242f7fcd95abf454dceda_favicon.png",
               "enabled": true,
               "tags": [
-                "AI配音",
-                "企业旁白"
+                "免费额度",
+                "企业级",
+                "AI配音"
               ]
             },
             {
@@ -627,6 +643,7 @@
               "icon": "https://www.naturalreaders.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "文字转语音",
                 "朗读"
               ]
@@ -639,9 +656,9 @@
               "icon": "https://moyin.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "AI配音",
-                "短视频",
-                "中文"
+                "短视频"
               ]
             },
             {
@@ -652,9 +669,9 @@
               "icon": "https://www.descript.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "音视频剪辑",
-                "转录",
-                "AI"
+                "转录"
               ]
             }
           ]
@@ -674,7 +691,7 @@
               "icon": "https://cdn.prod.website-files.com/6807ee8d73c233fb82842313/681e121b52f97ed0b2098aab_Favicon.png",
               "enabled": true,
               "tags": [
-                "AI写作",
+                "免费额度",
                 "营销文案"
               ]
             },
@@ -686,7 +703,7 @@
               "icon": "https://cdn.prod.website-files.com/628288c5cd3e8411b90a36a4/6793eea386b5ac27242bb8eb_favicon_32x32px%20(1).png",
               "enabled": true,
               "tags": [
-                "AI写作",
+                "免费额度",
                 "营销文案"
               ]
             },
@@ -698,7 +715,7 @@
               "icon": "https://writesonic.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI写作",
+                "免费额度",
                 "内容生成"
               ]
             },
@@ -710,9 +727,9 @@
               "icon": "https://static-web.grammarly.com/cms/master/public/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "语法校对",
-                "写作润色",
-                "英文写作"
+                "写作润色"
               ]
             },
             {
@@ -723,6 +740,7 @@
               "icon": "https://xiezuocat.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "中文写作",
                 "校对纠错"
               ]
@@ -735,8 +753,8 @@
               "icon": "",
               "enabled": true,
               "tags": [
-                "小说写作",
-                "AI写作"
+                "免费额度",
+                "小说写作"
               ]
             },
             {
@@ -747,6 +765,7 @@
               "icon": "https://cdn.prod.website-files.com/5f7e0f9d75fee6f6f546df46/64edbd73b743162bd24f64bc_favicon.png",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "改写润色",
                 "英文写作"
               ]
@@ -804,6 +823,7 @@
               "icon": "https://github.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "多智能体",
                 "编排"
               ]
@@ -816,9 +836,9 @@
               "icon": "https://www.coze.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "智能体",
-                "工作流",
-                "低代码"
+                "工作流"
               ]
             },
             {
@@ -830,7 +850,7 @@
               "enabled": true,
               "tags": [
                 "开源",
-                "LLM",
+                "大模型",
                 "开发框架"
               ]
             },
@@ -842,9 +862,9 @@
               "icon": "https://n8n.io/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "自动化",
-                "工作流",
-                "开源"
+                "工作流"
               ]
             },
             {
@@ -855,9 +875,9 @@
               "icon": "https://flowiseai.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "可视化",
-                "LLM",
-                "无代码"
+                "大模型"
               ]
             },
             {
@@ -868,9 +888,9 @@
               "icon": "https://apify.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "爬虫",
-                "自动化",
-                "云服务"
+                "自动化"
               ]
             },
             {
@@ -881,9 +901,9 @@
               "icon": "https://cdn.prod.website-files.com/6a294495bc84130c6dd0c4fd/6a7b944121e8a94aaf6ca04f_favicon-32x32.png",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "自动化",
-                "工作流",
-                "集成"
+                "工作流"
               ]
             },
             {
@@ -925,8 +945,9 @@
               "icon": "https://modelscope.cn/favicon.ico",
               "enabled": true,
               "tags": [
-                "国内",
-                "模型库"
+                "开源",
+                "免费",
+                "国内"
               ]
             },
             {
@@ -937,8 +958,9 @@
               "icon": "https://huggingface.co/favicon.ico",
               "enabled": true,
               "tags": [
-                "模型库",
-                "数据集"
+                "开源",
+                "免费额度",
+                "模型库"
               ]
             },
             {
@@ -949,7 +971,8 @@
               "icon": "https://ollama.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "本地部署",
+                "开源",
+                "自托管",
                 "大模型"
               ]
             },
@@ -973,6 +996,7 @@
               "icon": "https://github.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "高吞吐",
                 "模型推理"
               ]
@@ -985,9 +1009,9 @@
               "icon": "https://www.paddlepaddle.org.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "深度学习",
-                "开源框架",
-                "百度"
+                "开源框架"
               ]
             },
             {
@@ -998,9 +1022,9 @@
               "icon": "https://openai.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "大模型",
-                "GPT",
-                "前沿技术"
+                "GPT"
               ]
             },
             {
@@ -1011,9 +1035,9 @@
               "icon": "https://stability.ai/favicon.ico",
               "enabled": true,
               "tags": [
-                "图像生成",
-                "SD模型",
-                "开源"
+                "开源",
+                "免费额度",
+                "AI绘图"
               ]
             },
             {
@@ -1024,9 +1048,9 @@
               "icon": "https://mistral.ai/favicon.ico",
               "enabled": true,
               "tags": [
-                "开源LLM",
-                "欧洲",
-                "Mistral"
+                "开源",
+                "免费额度",
+                "开源LLM"
               ]
             },
             {
@@ -1037,9 +1061,9 @@
               "icon": "https://dev.meta.ai/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Meta",
-                "开源模型",
-                "多模态"
+                "开源模型"
               ]
             },
             {
@@ -1050,9 +1074,9 @@
               "icon": "https://moark.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "模型社区",
-                "数据集",
-                "Gitee"
+                "数据集"
               ]
             }
           ]
@@ -1072,8 +1096,7 @@
               "icon": "https://www.klingai.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI视频",
-                "视频生成"
+                "免费额度"
               ]
             },
             {
@@ -1084,8 +1107,7 @@
               "icon": "https://hailuoai.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI视频",
-                "视频生成"
+                "免费额度"
               ]
             },
             {
@@ -1096,8 +1118,7 @@
               "icon": "https://runway.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI视频",
-                "视频生成"
+                "免费额度"
               ]
             },
             {
@@ -1108,9 +1129,8 @@
               "icon": "https://jimeng.jianying.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI视频",
-                "AI图像",
-                "视频生成"
+                "免费额度",
+                "AI图像"
               ]
             },
             {
@@ -1121,7 +1141,7 @@
               "icon": "https://pika.art/favicon.ico",
               "enabled": true,
               "tags": [
-                "文生视频",
+                "免费额度",
                 "图像视频",
                 "创意工具"
               ]
@@ -1134,7 +1154,7 @@
               "icon": "https://lumalabs.ai/favicon.ico",
               "enabled": true,
               "tags": [
-                "视频生成",
+                "免费额度",
                 "影视特效",
                 "AI创作"
               ]
@@ -1147,9 +1167,9 @@
               "icon": "https://viggle.ai/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "人物视频",
-                "动作模仿",
-                "趣味创作"
+                "动作模仿"
               ]
             },
             {
@@ -1160,9 +1180,9 @@
               "icon": "https://haiper.ai/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "短视频",
-                "AI生成",
-                "视觉创作"
+                "AI生成"
               ]
             },
             {
@@ -1173,9 +1193,9 @@
               "icon": "https://genmo.ai/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "实时视频",
-                "开发工具",
-                "AI引擎"
+                "开发工具"
               ]
             },
             {
@@ -1186,7 +1206,7 @@
               "icon": "https://www.vidu.cn/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI视频",
+                "免费额度",
                 "漫剧",
                 "图生视频"
               ]
@@ -1199,9 +1219,9 @@
               "icon": "https://cdn.prod.website-files.com/6388604483b03a9ecb34d695/64351a9e4e9223f5e0f46d64_ico-final.png",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "短视频",
-                "AI剪辑",
-                "字幕"
+                "AI剪辑"
               ]
             },
             {
@@ -1212,9 +1232,9 @@
               "icon": "https://www.capcut.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "视频剪辑",
-                "AI配音",
-                "语音识别"
+                "AI配音"
               ]
             }
           ]
@@ -1234,10 +1254,9 @@
               "icon": "https://youxi.fullpeace.net/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI短剧",
-                "漫剧",
-                "分镜",
-                "短剧创作"
+                "免费额度",
+                "短剧",
+                "漫剧"
               ]
             },
             {
@@ -1248,10 +1267,9 @@
               "icon": "https://xyq.jianying.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI短剧",
-                "短剧创作",
-                "分镜",
-                "成片"
+                "免费额度",
+                "短剧",
+                "分镜"
               ]
             },
             {
@@ -1262,8 +1280,8 @@
               "icon": "https://www.topview.ai/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI短剧",
-                "短剧创作",
+                "免费额度",
+                "短剧",
                 "剧本"
               ]
             },
@@ -1275,10 +1293,9 @@
               "icon": "https://www.skyreels.ai/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI短剧",
-                "短剧创作",
-                "分镜",
-                "成片"
+                "免费额度",
+                "短剧",
+                "分镜"
               ]
             },
             {
@@ -1289,10 +1306,9 @@
               "icon": "https://typemovie.art/favicon.ico",
               "enabled": true,
               "tags": [
-                "AI短剧",
-                "短剧创作",
-                "分镜",
-                "剧本"
+                "免费额度",
+                "短剧",
+                "分镜"
               ]
             }
           ]
@@ -1321,6 +1337,7 @@
               "icon": "https://registry.npmmirror.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "镜像",
                 "包管理"
               ]
@@ -1333,6 +1350,7 @@
               "icon": "https://npmjs.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "javascript",
                 "包管理"
               ]
@@ -1345,6 +1363,7 @@
               "icon": "https://vite.dev/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "构建工具",
                 "脚手架"
               ]
@@ -1357,6 +1376,7 @@
               "icon": "https://rollupjs.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "打包器",
                 "ES模块"
               ]
@@ -1369,6 +1389,7 @@
               "icon": "https://webpack.js.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "构建工具",
                 "工程化"
               ]
@@ -1381,6 +1402,7 @@
               "icon": "https://esbuild.github.io/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "编译器",
                 "构建工具"
               ]
@@ -1393,6 +1415,7 @@
               "icon": "https://turborepo.dev/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Monorepo",
                 "构建工具"
               ]
@@ -1414,6 +1437,7 @@
               "icon": "https://uiverse.io/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "组件",
                 "css"
               ]
@@ -1426,8 +1450,9 @@
               "icon": "https://ant.design/favicon.ico",
               "enabled": true,
               "tags": [
-                "UI框架",
-                "React"
+                "开源",
+                "企业级",
+                "UI框架"
               ]
             },
             {
@@ -1438,6 +1463,7 @@
               "icon": "https://element-plus.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Vue",
                 "UI组件"
               ]
@@ -1450,6 +1476,7 @@
               "icon": "https://www.naiveui.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Vue",
                 "UI库"
               ]
@@ -1462,6 +1489,7 @@
               "icon": "https://mantine.dev/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "React",
                 "UI库"
               ]
@@ -1474,6 +1502,7 @@
               "icon": "https://ui.shadcn.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Tailwind",
                 "组件"
               ]
@@ -1486,6 +1515,7 @@
               "icon": "https://www.radix-ui.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Headless",
                 "无障碍"
               ]
@@ -1498,6 +1528,7 @@
               "icon": "https://chakra-ui.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "React",
                 "主题化"
               ]
@@ -1510,6 +1541,7 @@
               "icon": "https://storybook.js.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "组件开发",
                 "测试工具"
               ]
@@ -1540,6 +1572,7 @@
               "icon": "https://bun.sh/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "运行时",
                 "极速"
               ]
@@ -1552,9 +1585,9 @@
               "icon": "https://nodejs.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "JavaScript",
-                "后端",
-                "运行时"
+                "后端"
               ]
             },
             {
@@ -1565,9 +1598,9 @@
               "icon": "https://www.python.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Python",
-                "语言",
-                "脚本"
+                "语言"
               ]
             },
             {
@@ -1578,9 +1611,9 @@
               "icon": "https://www.rust-lang.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Rust",
-                "系统",
-                "语言"
+                "系统"
               ]
             },
             {
@@ -1591,9 +1624,9 @@
               "icon": "https://go.dev/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Go",
-                "并发",
-                "语言"
+                "并发"
               ]
             },
             {
@@ -1604,9 +1637,9 @@
               "icon": "https://www.java.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "Java",
-                "JDK",
-                "语言"
+                "免费",
+                "企业级",
+                "Java"
               ]
             }
           ]
@@ -1626,8 +1659,8 @@
               "icon": "https://fastify.dev/favicon.ico",
               "enabled": true,
               "tags": [
-                "高性能",
-                "后端框架"
+                "开源",
+                "高性能"
               ]
             },
             {
@@ -1638,9 +1671,9 @@
               "icon": "https://expressjs.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Node.js",
-                "Web",
-                "框架"
+                "Web"
               ]
             },
             {
@@ -1651,9 +1684,9 @@
               "icon": "https://nestjs.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "TypeScript",
-                "架构",
-                "框架"
+                "架构"
               ]
             },
             {
@@ -1664,9 +1697,9 @@
               "icon": "https://laravel.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "PHP",
-                "ORM",
-                "框架"
+                "ORM"
               ]
             },
             {
@@ -1677,9 +1710,9 @@
               "icon": "https://www.djangoproject.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Python",
-                "Web",
-                "框架"
+                "Web"
               ]
             },
             {
@@ -1690,9 +1723,9 @@
               "icon": "https://spring.io/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Java",
-                "Spring",
-                "框架"
+                "Spring"
               ]
             },
             {
@@ -1703,9 +1736,9 @@
               "icon": "https://go-zero.dev/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Go",
-                "微服务",
-                "框架"
+                "微服务"
               ]
             }
           ]
@@ -1725,9 +1758,9 @@
               "icon": "https://orm.drizzle.team/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "typescript",
-                "orm",
-                "数据库"
+                "orm"
               ]
             },
             {
@@ -1738,9 +1771,9 @@
               "icon": "https://www.mysql.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "SQL",
-                "数据库",
-                "关系型"
+                "数据库"
               ]
             },
             {
@@ -1751,8 +1784,8 @@
               "icon": "https://www.postgresql.org/favicon.ico",
               "enabled": true,
               "tags": [
-                "SQL",
                 "开源",
+                "SQL",
                 "数据库"
               ]
             },
@@ -1764,9 +1797,9 @@
               "icon": "https://redis.io/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "缓存",
-                "NoSQL",
-                "内存"
+                "NoSQL"
               ]
             },
             {
@@ -1777,9 +1810,9 @@
               "icon": "https://www.mongodb.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "NoSQL",
-                "文档",
-                "数据库"
+                "文档"
               ]
             },
             {
@@ -1790,9 +1823,9 @@
               "icon": "https://min.io/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "对象存储",
-                "S3",
-                "分布式"
+                "S3"
               ]
             }
           ]
@@ -1812,6 +1845,7 @@
               "icon": "https://hub.docker.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "部署",
                 "容器"
               ]
@@ -1824,6 +1858,7 @@
               "icon": "https://kubernetes.io/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "编排",
                 "容器"
               ]
@@ -1836,9 +1871,9 @@
               "icon": "https://podman.io/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "容器",
-                "无守护",
-                "引擎"
+                "无守护"
               ]
             },
             {
@@ -1849,9 +1884,9 @@
               "icon": "https://helm.sh/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "K8s",
-                "包管理",
-                "部署"
+                "包管理"
               ]
             },
             {
@@ -1862,9 +1897,9 @@
               "icon": "https://docs.docker.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Docker",
-                "编排",
-                "多容器"
+                "编排"
               ]
             },
             {
@@ -1875,9 +1910,9 @@
               "icon": "https://www.rancher.com/assets/img/favicon.png",
               "enabled": true,
               "tags": [
-                "K8s",
-                "编排",
-                "集群"
+                "开源",
+                "企业级",
+                "K8s"
               ]
             },
             {
@@ -1887,9 +1922,9 @@
               "description": "开源容器可视化管理面板，图形界面管理镜像、容器与堆栈。",
               "enabled": true,
               "tags": [
+                "开源",
                 "Docker",
-                "容器",
-                "可视化"
+                "容器"
               ]
             },
             {
@@ -1899,9 +1934,9 @@
               "description": "企业级 Kubernetes 平台，内置 CI/CD 与镜像仓库。",
               "enabled": true,
               "tags": [
-                "容器",
-                "编排",
-                "K8s"
+                "免费额度",
+                "企业级",
+                "容器"
               ]
             },
             {
@@ -1911,9 +1946,9 @@
               "description": "HashiCorp 的轻量调度器，容器与非容器混部简单。",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "容器",
-                "编排",
-                "调度"
+                "编排"
               ]
             }
           ]
@@ -1932,6 +1967,7 @@
               "description": "前端部署平台，推送即上线",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "托管",
                 "部署"
               ]
@@ -1944,9 +1980,9 @@
               "icon": "https://developer.hashicorp.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "IaC",
-                "基础设施",
-                "开源"
+                "基础设施"
               ]
             },
             {
@@ -1957,9 +1993,9 @@
               "icon": "https://www.ansible.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "自动化",
-                "配置",
-                "无代理"
+                "配置"
               ]
             },
             {
@@ -1970,9 +2006,9 @@
               "icon": "https://www.pulumi.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "IaC",
-                "云原生",
-                "编程"
+                "云原生"
               ]
             },
             {
@@ -1996,9 +2032,9 @@
               "icon": "https://www.qiniu.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "对象存储",
-                "CDN",
-                "开发"
+                "CDN"
               ]
             },
             {
@@ -2035,9 +2071,9 @@
               "icon": "https://coolify.io/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "自托管",
-                "部署",
-                "开源"
+                "部署"
               ]
             },
             {
@@ -2048,9 +2084,9 @@
               "icon": "https://zeabur.com/favicon.svg",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "部署",
-                "云平台",
-                "全栈"
+                "云平台"
               ]
             },
             {
@@ -2061,9 +2097,9 @@
               "icon": "https://www.cloudflare.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "静态托管",
-                "边缘网络",
-                "部署"
+                "边缘网络"
               ]
             }
           ]
@@ -2091,6 +2127,7 @@
               "description": "CDN、DNS、Workers 边缘计算与 Pages 部署",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "cdn",
                 "边缘计算"
               ]
@@ -2129,9 +2166,9 @@
               "icon": "https://www.f5.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "企业级",
                 "负载均衡",
-                "流量管理",
-                "企业级"
+                "流量管理"
               ]
             },
             {
@@ -2173,7 +2210,7 @@
               "icon": "https://gitee.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "代码托管",
+                "免费额度",
                 "国内"
               ]
             },
@@ -2185,23 +2222,24 @@
               "icon": "https://github.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "代码托管",
                 "开源",
+                "免费额度",
                 "协作"
               ]
             },
-      {
-        "id": "nav-94404995d9c7",
-        "title": "GitHub Trending",
-        "href": "https://github.com/trending",
-        "description": "GitHub 热门趋势开源项目",
-        "icon": "https://github.com/favicon.ico",
-        "enabled": true,
-        "tags": [
-          "开源",
-          "趋势"
-        ]
-      },
+            {
+              "id": "nav-94404995d9c7",
+              "title": "GitHub Trending",
+              "href": "https://github.com/trending",
+              "description": "GitHub 热门趋势开源项目",
+              "icon": "https://github.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "开源",
+                "免费",
+                "趋势"
+              ]
+            },
             {
               "id": "nav-c8edc7dd0b67",
               "title": "GitLab",
@@ -2210,9 +2248,9 @@
               "icon": "https://gitlab.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "DevOps",
-                "CI/CD",
-                "代码管理"
+                "CI/CD"
               ]
             },
             {
@@ -2224,7 +2262,7 @@
               "enabled": true,
               "tags": [
                 "开源",
-                "代码托管",
+                "免费额度",
                 "技术社区"
               ]
             },
@@ -2236,9 +2274,9 @@
               "icon": "https://coding.net/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "腾讯云",
-                "敏捷研发",
-                "代码托管"
+                "敏捷研发"
               ]
             },
             {
@@ -2249,9 +2287,9 @@
               "icon": "https://codeup.aliyun.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "阿里云",
+                "免费额度",
                 "企业级",
-                "代码管理"
+                "阿里云"
               ]
             },
             {
@@ -2262,9 +2300,8 @@
               "icon": "https://sourcehut.org/favicon.ico",
               "enabled": true,
               "tags": [
-                "极简",
                 "开源",
-                "代码托管"
+                "极简"
               ]
             },
             {
@@ -2275,8 +2312,8 @@
               "icon": "https://gogs.io/favicon.ico",
               "enabled": true,
               "tags": [
-                "轻量级",
                 "开源",
+                "轻量级",
                 "自建"
               ]
             },
@@ -2288,9 +2325,9 @@
               "icon": "https://bitbucket.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "Atlassian",
-                "云托管",
-                "协作"
+                "云托管"
               ]
             }
           ]
@@ -2310,6 +2347,7 @@
               "icon": "https://stackoverflow.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "问答",
                 "社区"
               ]
@@ -2322,6 +2360,7 @@
               "icon": "https://juejin.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "前端",
                 "全栈"
               ]
@@ -2334,6 +2373,7 @@
               "icon": "https://www.csdn.net/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "博客",
                 "资料"
               ]
@@ -2346,8 +2386,9 @@
               "icon": "https://segmentfault.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "问答",
-                "开源"
+                "开源",
+                "免费",
+                "问答"
               ]
             },
             {
@@ -2358,6 +2399,7 @@
               "icon": "https://zhihu.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "问答",
                 "社区"
               ]
@@ -2370,6 +2412,7 @@
               "icon": "https://www.v2ex.com/static/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "问答",
                 "社区"
               ]
@@ -2382,6 +2425,7 @@
               "icon": "https://zhidao.baidu.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "问答",
                 "社区"
               ]
@@ -2403,6 +2447,7 @@
               "icon": "https://developer.mozilla.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "web",
                 "文档"
               ]
@@ -2415,9 +2460,9 @@
               "icon": "https://docs.oracle.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "Java",
-                "API",
-                "规范"
+                "免费",
+                "支持 API",
+                "Java"
               ]
             },
             {
@@ -2428,9 +2473,9 @@
               "icon": "https://www.w3.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "Web标准",
-                "HTML",
-                "CSS"
+                "HTML"
               ]
             },
             {
@@ -2441,9 +2486,9 @@
               "icon": "https://datatracker.ietf.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "网络协议",
-                "RFC",
-                "标准"
+                "RFC"
               ]
             },
             {
@@ -2467,6 +2512,7 @@
               "icon": "https://docs.python.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "Python",
                 "文档"
               ]
@@ -2479,6 +2525,7 @@
               "icon": "https://go.dev/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "Go",
                 "文档"
               ]
@@ -2491,9 +2538,9 @@
               "icon": "https://learn.microsoft.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "微软",
-                "文档",
-                "教程"
+                "文档"
               ]
             }
           ]
@@ -2513,6 +2560,7 @@
               "icon": "https://roadmap.sh/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "路线图",
                 "规划"
               ]
@@ -2525,6 +2573,7 @@
               "icon": "https://csdiy.wiki/images/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "路线图",
                 "自学"
               ]
@@ -2537,6 +2586,7 @@
               "icon": "https://javaguide.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "Java",
                 "面试"
               ]
@@ -2549,6 +2599,7 @@
               "icon": "https://www.w3schools.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "教程",
                 "Web 开发"
               ]
@@ -2561,6 +2612,7 @@
               "icon": "https://assets.exercism.org/meta/favicon-32x32.png",
               "enabled": true,
               "tags": [
+                "免费",
                 "编程",
                 "练习"
               ]
@@ -2582,6 +2634,7 @@
               "icon": "https://leetcode.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "算法",
                 "练习"
               ]
@@ -2594,9 +2647,9 @@
               "icon": "https://www.nowcoder.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "编程题库",
-                "企业真题",
-                "技术社区"
+                "企业真题"
               ]
             },
             {
@@ -2607,9 +2660,9 @@
               "icon": "https://www.luogu.com.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "竞赛平台",
-                "在线判题",
-                "信奥赛题"
+                "在线判题"
               ]
             },
             {
@@ -2620,9 +2673,9 @@
               "icon": "https://codeforces.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "算法竞赛",
-                "国际评测",
-                "编程比赛"
+                "国际评测"
               ]
             },
             {
@@ -2633,9 +2686,9 @@
               "icon": "https://atcoder.jp/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "在线竞技",
-                "高难度题",
-                "国际评测"
+                "高难度题"
               ]
             },
             {
@@ -2646,9 +2699,9 @@
               "icon": "https://www.lintcode.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "面试刷题",
-                "算法题库",
-                "在线编程"
+                "算法题库"
               ]
             },
             {
@@ -2659,9 +2712,9 @@
               "icon": "https://leetcode.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "算法刷题",
-                "外企面试",
-                "编程挑战"
+                "外企面试"
               ]
             }
           ]
@@ -2690,6 +2743,7 @@
               "icon": "https://dribbble.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "灵感",
                 "社区"
               ]
@@ -2702,6 +2756,7 @@
               "icon": "https://www.behance.net/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "创意",
                 "社区"
               ]
@@ -2714,6 +2769,7 @@
               "icon": "https://www.pinterest.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "灵感",
                 "视觉"
               ]
@@ -2726,6 +2782,7 @@
               "icon": "https://www.awwwards.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "网页",
                 "奖项"
               ]
@@ -2738,6 +2795,7 @@
               "icon": "https://www.siteinspire.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "网页",
                 "案例"
               ]
@@ -2770,6 +2828,7 @@
               "description": "在线图片压缩，显著减小体积且保持画质",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "压缩",
                 "图片处理"
               ]
@@ -2782,6 +2841,7 @@
               "icon": "https://www.canva.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "设计",
                 "模板"
               ]
@@ -2794,9 +2854,9 @@
               "icon": "https://squoosh.app/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "压缩",
-                "图片处理",
-                "开源"
+                "图片处理"
               ]
             },
             {
@@ -2819,6 +2879,7 @@
               "icon": "https://www.photopea.com/promo/icon512.png",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "修图",
                 "图片处理"
               ]
@@ -2840,6 +2901,7 @@
               "icon": "https://iconify.design/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "图标",
                 "素材"
               ]
@@ -2851,6 +2913,7 @@
               "description": "免费开源字体库，中英文字体齐全",
               "enabled": true,
               "tags": [
+                "开源",
                 "免费",
                 "字体"
               ]
@@ -2863,6 +2926,7 @@
               "icon": "https://fontawesome.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "图标",
                 "字体"
               ]
@@ -2875,8 +2939,8 @@
               "icon": "https://www.flaticon.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "图标",
-                "免费"
+                "免费",
+                "图标"
               ]
             },
             {
@@ -2887,6 +2951,7 @@
               "icon": "https://www.dafont.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "字体",
                 "下载"
               ]
@@ -2911,8 +2976,8 @@
               "icon": "https://lucide.dev/favicon.ico",
               "enabled": true,
               "tags": [
-                "图标",
                 "开源",
+                "图标",
                 "UI"
               ]
             },
@@ -2924,6 +2989,7 @@
               "icon": "https://www.iconfont.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "图标",
                 "字体"
               ]
@@ -2945,6 +3011,7 @@
               "icon": "https://coolors.co/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "工具",
                 "配色"
               ]
@@ -2957,6 +3024,7 @@
               "icon": "https://color.adobe.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "配色",
                 "工具"
               ]
@@ -2969,6 +3037,7 @@
               "icon": "https://paletton.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "配色",
                 "工具"
               ]
@@ -2981,6 +3050,7 @@
               "icon": "https://colorhunt.co/img/colorhunt-favicon.svg?2",
               "enabled": true,
               "tags": [
+                "免费",
                 "配色",
                 "色板"
               ]
@@ -2993,6 +3063,7 @@
               "icon": "https://www.khroma.co/assets/icons/fav.png",
               "enabled": true,
               "tags": [
+                "免费",
                 "AI",
                 "配色"
               ]
@@ -3005,6 +3076,7 @@
               "icon": "https://colormind.io/favicon32.gif",
               "enabled": true,
               "tags": [
+                "免费",
                 "AI",
                 "配色"
               ]
@@ -3017,6 +3089,7 @@
               "icon": "https://cdn.prod.website-files.com/5dd40aa8049df8748c72d0ee/5dd9b94105da589ba59c4907_happy-hues-fav.png",
               "enabled": true,
               "tags": [
+                "免费",
                 "配色",
                 "色板"
               ]
@@ -3037,8 +3110,8 @@
               "description": "免费高清图片素材库，可商用",
               "enabled": true,
               "tags": [
-                "图片素材",
-                "免费"
+                "免费",
+                "图片素材"
               ]
             },
             {
@@ -3049,6 +3122,7 @@
               "icon": "https://www.pexels.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "图片",
                 "视频"
               ]
@@ -3061,6 +3135,7 @@
               "icon": "https://pixabay.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "素材",
                 "CC0"
               ]
@@ -3073,8 +3148,8 @@
               "icon": "https://mixkit.co/favicon.ico",
               "enabled": true,
               "tags": [
-                "视频",
-                "免费"
+                "免费",
+                "视频"
               ]
             },
             {
@@ -3117,8 +3192,9 @@
               "description": "在线 UI 设计与原型协作工具，多人实时编辑",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "协作",
-                "ui-设计"
+                "UI设计"
               ]
             },
             {
@@ -3154,8 +3230,8 @@
               "enabled": true,
               "tags": [
                 "开源",
-                "UI 设计",
-                "原型"
+                "自托管",
+                "UI设计"
               ]
             },
             {
@@ -3166,9 +3242,9 @@
               "icon": "https://pixso.cn/favicon.ico",
               "enabled": true,
               "tags": [
-                "UI 设计",
-                "协作",
-                "国产"
+                "免费额度",
+                "UI设计",
+                "协作"
               ]
             },
             {
@@ -3209,6 +3285,7 @@
               "icon": "https://excalidraw.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "流程图",
                 "白板"
               ]
@@ -3221,6 +3298,7 @@
               "icon": "https://www.xmind.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "思维导图",
                 "知识管理"
               ]
@@ -3233,6 +3311,7 @@
               "icon": "https://www.mindmanager.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "企业级",
                 "思维导图",
                 "企业办公"
               ]
@@ -3245,6 +3324,7 @@
               "icon": "https://www.processon.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "流程图",
                 "在线协作"
               ]
@@ -3257,6 +3337,7 @@
               "icon": "https://boardmix.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "在线白板",
                 "AI辅助"
               ]
@@ -3269,6 +3350,7 @@
               "icon": "https://gitmind.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "AI思维导图",
                 "思维导图"
               ]
@@ -3281,9 +3363,9 @@
               "icon": "https://www.tldraw.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "白板",
-                "画布",
-                "协作"
+                "画布"
               ]
             },
             {
@@ -3294,9 +3376,9 @@
               "icon": "https://app.diagrams.net/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "流程图",
-                "架构图",
-                "开源"
+                "架构图"
               ]
             },
             {
@@ -3307,6 +3389,7 @@
               "icon": "https://miro.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "白板",
                 "协作"
               ]
@@ -3328,9 +3411,9 @@
               "icon": "https://docs.qq.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "在线文档",
-                "在线表格",
-                "协作"
+                "在线表格"
               ]
             },
             {
@@ -3341,9 +3424,9 @@
               "icon": "https://shimo.im/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "在线文档",
-                "在线表格",
-                "协作"
+                "在线表格"
               ]
             },
             {
@@ -3354,9 +3437,9 @@
               "icon": "https://www.feishu.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "在线文档",
-                "多维表格",
-                "协作"
+                "多维表格"
               ]
             },
             {
@@ -3367,9 +3450,9 @@
               "icon": "https://www.kdocs.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "在线文档",
-                "在线表格",
-                "WPS"
+                "在线表格"
               ]
             },
             {
@@ -3380,9 +3463,9 @@
               "icon": "https://www.yuque.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "知识库",
-                "在线文档",
-                "笔记"
+                "在线文档"
               ]
             },
             {
@@ -3393,9 +3476,9 @@
               "icon": "https://www.notion.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "知识库",
-                "在线文档",
-                "表格"
+                "在线文档"
               ]
             },
             {
@@ -3406,9 +3489,9 @@
               "icon": "https://obsidian.md/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "笔记",
-                "知识库",
-                "Markdown"
+                "知识库"
               ]
             },
             {
@@ -3419,9 +3502,9 @@
               "icon": "https://appflowy.io/favicon.ico",
               "enabled": true,
               "tags": [
-                "笔记",
                 "开源",
-                "看板"
+                "自托管",
+                "笔记"
               ]
             },
             {
@@ -3432,9 +3515,9 @@
               "icon": "https://affine.pro/favicon.ico",
               "enabled": true,
               "tags": [
-                "笔记",
-                "白板",
-                "开源"
+                "开源",
+                "免费额度",
+                "笔记"
               ]
             },
             {
@@ -3445,9 +3528,9 @@
               "icon": "https://logseq.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "笔记",
-                "大纲",
-                "开源"
+                "大纲"
               ]
             },
             {
@@ -3458,8 +3541,8 @@
               "icon": "https://b3log.org/favicon.ico",
               "enabled": true,
               "tags": [
-                "笔记",
                 "开源",
+                "笔记",
                 "双链"
               ]
             },
@@ -3471,9 +3554,9 @@
               "icon": "https://todoist.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "待办",
-                "任务管理",
-                "协作"
+                "任务管理"
               ]
             }
           ]
@@ -3502,6 +3585,7 @@
               "icon": "https://runoob.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "入门",
                 "教程"
               ]
@@ -3514,6 +3598,7 @@
               "icon": "https://www.codecademy.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "编程",
                 "交互学习"
               ]
@@ -3525,6 +3610,7 @@
               "description": "免费在线编程学习平台，交互式课程与实战项目",
               "enabled": true,
               "tags": [
+                "免费",
                 "编程",
                 "交互学习"
               ]
@@ -3537,6 +3623,7 @@
               "icon": "https://liaoxuefeng.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "入门",
                 "教程"
               ]
@@ -3549,6 +3636,7 @@
               "icon": "https://www.theodinproject.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "开源",
                 "编程",
                 "学习路径"
               ]
@@ -3570,6 +3658,7 @@
               "icon": "https://bilibili.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "视频",
                 "课程"
               ]
@@ -3582,6 +3671,7 @@
               "icon": "https://coursera.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "课程",
                 "国际"
               ]
@@ -3594,6 +3684,7 @@
               "icon": "https://www.icourse163.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "高校",
                 "MOOC"
               ]
@@ -3618,6 +3709,7 @@
               "icon": "https://study.163.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "IT",
                 "设计"
               ]
@@ -3654,6 +3746,7 @@
               "icon": "https://www.imooc.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "课程",
                 "编程"
               ]
@@ -3678,6 +3771,7 @@
               "icon": "https://www.xuexi.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "学习",
                 "课程"
               ]
@@ -3690,6 +3784,7 @@
               "icon": "https://www.edx.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "课程",
                 "名校"
               ]
@@ -3711,6 +3806,7 @@
               "icon": "https://zh.wikipedia.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "知识",
                 "百科"
               ]
@@ -3723,6 +3819,7 @@
               "icon": "https://www.nlc.cn/template_resource/20186/img/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "官方",
                 "文献"
               ]
@@ -3735,6 +3832,7 @@
               "icon": "https://www.gutenberg.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "电子书",
                 "公共领域"
               ]
@@ -3747,6 +3845,7 @@
               "icon": "https://archive.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "电子书",
                 "档案"
               ]
@@ -3759,6 +3858,7 @@
               "icon": "https://openlibrary.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "电子书",
                 "借阅"
               ]
@@ -3780,9 +3880,9 @@
               "icon": "https://www.zhipin.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "招聘",
-                "求职",
-                "找工作"
+                "求职"
               ]
             },
             {
@@ -3793,9 +3893,9 @@
               "icon": "https://www.lagou.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "招聘",
-                "求职",
-                "互联网"
+                "求职"
               ]
             },
             {
@@ -3806,6 +3906,7 @@
               "icon": "https://www.zhaopin.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "招聘",
                 "求职"
               ]
@@ -3818,6 +3919,7 @@
               "icon": "https://www.51job.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "招聘",
                 "求职"
               ]
@@ -3830,9 +3932,9 @@
               "icon": "https://www.liepin.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "招聘",
-                "求职",
-                "猎头"
+                "求职"
               ]
             },
             {
@@ -3843,9 +3945,9 @@
               "icon": "https://www.wondercv.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "简历",
-                "简历模板",
-                "求职"
+                "简历模板"
               ]
             },
             {
@@ -3856,9 +3958,9 @@
               "icon": "https://www.500d.me/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "简历",
-                "简历模板",
-                "求职"
+                "简历模板"
               ]
             }
           ]
@@ -3878,9 +3980,9 @@
               "icon": "http://www.scs.gov.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "公务员",
-                "国考",
-                "报名"
+                "国考"
               ]
             },
             {
@@ -3891,9 +3993,9 @@
               "icon": "http://www.scs.gov.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "国考",
-                "准考证",
-                "公务员"
+                "准考证"
               ]
             },
             {
@@ -3904,9 +4006,9 @@
               "icon": "http://www.scs.gov.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "遴选",
-                "选调",
-                "公务员"
+                "选调"
               ]
             },
             {
@@ -3917,9 +4019,9 @@
               "icon": "https://yz.chsi.com.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "考研",
-                "报名",
-                "研究生"
+                "报名"
               ]
             },
             {
@@ -3930,6 +4032,7 @@
               "icon": "https://cet.neea.edu.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "四六级",
                 "考试"
               ]
@@ -3942,6 +4045,7 @@
               "icon": "https://cet.neea.edu.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "四六级",
                 "成绩查询"
               ]
@@ -3954,6 +4058,7 @@
               "icon": "https://www.neea.edu.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "考试",
                 "官方"
               ]
@@ -3966,6 +4071,7 @@
               "icon": "https://yz.chsi.com.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "考研",
                 "报名"
               ]
@@ -3978,9 +4084,9 @@
               "icon": "https://www.fenbi.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "考公",
-                "题库",
-                "刷题"
+                "题库"
               ]
             },
             {
@@ -3991,9 +4097,9 @@
               "icon": "https://www.huatu.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "考公",
-                "培训",
-                "课程"
+                "培训"
               ]
             },
             {
@@ -4004,9 +4110,9 @@
               "icon": "https://www.offcn.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "考公",
-                "培训",
-                "课程"
+                "培训"
               ]
             },
             {
@@ -4017,9 +4123,9 @@
               "icon": "https://www.koolearn.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "考研",
-                "英语",
-                "课程"
+                "英语"
               ]
             }
           ]
@@ -4048,6 +4154,7 @@
               "icon": "https://arxiv.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "论文",
                 "科研"
               ]
@@ -4060,8 +4167,9 @@
               "icon": "https://paperswithcode.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "论文",
-                "代码"
+                "开源",
+                "免费",
+                "论文"
               ]
             },
             {
@@ -4132,6 +4240,7 @@
               "icon": "https://www.semanticscholar.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "智能推荐",
                 "语义搜索"
               ]
@@ -4144,6 +4253,7 @@
               "icon": "https://www.ncpssd.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "社科资源",
                 "智库成果"
               ]
@@ -4169,6 +4279,7 @@
               "icon": "https://www.jstor.org/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "学术",
                 "论文"
               ]
@@ -4199,6 +4310,7 @@
               "icon": "https://www.36kr.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "科技",
                 "创投"
               ]
@@ -4211,6 +4323,7 @@
               "icon": "https://www.huxiu.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "商业",
                 "资讯"
               ]
@@ -4222,6 +4335,7 @@
               "description": "关注前沿科技与互联网行业动态",
               "enabled": true,
               "tags": [
+                "免费",
                 "科技",
                 "互联网"
               ]
@@ -4234,6 +4348,7 @@
               "icon": "https://www.infoq.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "开发",
                 "技术"
               ]
@@ -4246,6 +4361,7 @@
               "icon": "https://sspai.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "数码",
                 "效率"
               ]
@@ -4258,6 +4374,7 @@
               "icon": "https://www.ifanr.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "产品",
                 "生活"
               ]
@@ -4288,6 +4405,7 @@
               "icon": "https://douban.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "书影音",
                 "评分"
               ]
@@ -4300,6 +4418,7 @@
               "icon": "https://www.imdb.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "电影",
                 "评分"
               ]
@@ -4312,6 +4431,7 @@
               "icon": "https://maoyan.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "票房",
                 "影讯"
               ]
@@ -4324,6 +4444,7 @@
               "icon": "https://www.mtime.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "影评",
                 "资讯"
               ]
@@ -4336,6 +4457,7 @@
               "icon": "https://letterboxd.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "欧美电影",
                 "日记"
               ]
@@ -4348,6 +4470,7 @@
               "icon": "https://www.rottentomatoes.com/assets/pizza-pie/images/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "影评",
                 "评分"
               ]
@@ -4360,6 +4483,7 @@
               "icon": "https://www.metacritic.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "评分",
                 "综评"
               ]
@@ -4381,9 +4505,9 @@
               "icon": "https://www.qidian.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "小说",
-                "网文",
-                "阅读"
+                "网文"
               ]
             },
             {
@@ -4394,8 +4518,8 @@
               "icon": "https://www.fanqienovel.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "小说",
                 "免费",
+                "小说",
                 "网文"
               ]
             },
@@ -4407,9 +4531,9 @@
               "icon": "https://www.jjwxc.net/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "小说",
-                "言情",
-                "投稿"
+                "言情"
               ]
             },
             {
@@ -4419,8 +4543,8 @@
               "description": "免费小说平台，全本小说免费阅读，更新快",
               "enabled": true,
               "tags": [
-                "小说",
                 "免费",
+                "小说",
                 "阅读"
               ]
             },
@@ -4432,9 +4556,9 @@
               "icon": "https://www.zongheng.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "小说",
-                "网文",
-                "投稿"
+                "网文"
               ]
             },
             {
@@ -4445,9 +4569,9 @@
               "icon": "https://www.faloo.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "小说",
-                "同人",
-                "阅读"
+                "同人"
               ]
             },
             {
@@ -4458,9 +4582,9 @@
               "icon": "https://www.17k.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "小说",
-                "网文",
-                "投稿"
+                "网文"
               ]
             },
             {
@@ -4471,8 +4595,8 @@
               "icon": "https://www.shuqi.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "小说",
                 "免费",
+                "小说",
                 "阅读"
               ]
             }
@@ -4502,6 +4626,7 @@
               "icon": "https://taobao.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "电商",
                 "购物"
               ]
@@ -4514,6 +4639,7 @@
               "icon": "https://jd.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "电商",
                 "购物"
               ]
@@ -4526,6 +4652,7 @@
               "icon": "https://tmall.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "电商",
                 "购物"
               ]
@@ -4538,6 +4665,7 @@
               "icon": "https://www.pinduoduo.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "社交电商",
                 "低价好物"
               ]
@@ -4550,6 +4678,7 @@
               "icon": "https://www.vip.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "品牌特卖",
                 "服饰美妆"
               ]
@@ -4562,6 +4691,7 @@
               "icon": "https://www.suning.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "家电数码",
                 "线上下融合"
               ]
@@ -4574,6 +4704,7 @@
               "icon": "https://www.1688.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "批发源头",
                 "商家进货"
               ]
@@ -4586,6 +4717,7 @@
               "icon": "https://www.alipay.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "支付",
                 "生活缴费"
               ]
@@ -4607,6 +4739,7 @@
               "icon": "https://map.baidu.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "地图",
                 "导航"
               ]
@@ -4619,6 +4752,7 @@
               "icon": "https://12306.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "出行",
                 "购票"
               ]
@@ -4631,6 +4765,7 @@
               "icon": "https://amap.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "路况",
                 "地图"
               ]
@@ -4643,6 +4778,7 @@
               "icon": "https://www.ctrip.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "机票预订",
                 "酒店预订"
               ]
@@ -4655,6 +4791,7 @@
               "icon": "https://www.didiglobal.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "打车服务",
                 "网约车"
               ]
@@ -4667,6 +4804,7 @@
               "icon": "https://www.dianping.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "餐厅预订",
                 "休闲娱乐"
               ]
@@ -4679,6 +4817,7 @@
               "icon": "https://www.sf-express.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "快递寄送",
                 "物流跟踪"
               ]
@@ -4691,6 +4830,7 @@
               "icon": "https://www.yto.net.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "快递服务",
                 "包裹跟踪"
               ]
@@ -4712,6 +4852,7 @@
               "icon": "https://xiaohongshu.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "生活",
                 "社区"
               ]
@@ -4724,9 +4865,9 @@
               "icon": "https://www.weibo.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "社交媒体",
-                "热点",
-                "资讯"
+                "热点"
               ]
             },
             {
@@ -4737,9 +4878,9 @@
               "icon": "https://www.soulapp.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "兴趣社交",
-                "匿名聊天",
-                "青年社区"
+                "匿名聊天"
               ]
             },
             {
@@ -4750,9 +4891,9 @@
               "icon": "https://www.jimoapp.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "潮流社交",
-                "青年社区",
-                "生活方式"
+                "青年社区"
               ]
             },
             {
@@ -4763,9 +4904,9 @@
               "icon": "/brand-icons/tantan.png",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "约会软件",
-                "位置匹配",
-                "陌生人社交"
+                "位置匹配"
               ]
             },
             {
@@ -4776,9 +4917,9 @@
               "icon": "https://www.baihe.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "婚恋交友",
-                "严肃交友",
-                "真人认证"
+                "严肃交友"
               ]
             },
             {
@@ -4789,9 +4930,9 @@
               "icon": "https://www.jiayuan.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "婚恋服务",
-                "红娘推荐",
-                "相亲交友"
+                "红娘推荐"
               ]
             },
             {
@@ -4802,9 +4943,9 @@
               "icon": "https://www.yidui.net/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "直播相亲",
-                "红娘助友",
-                "婚恋交友"
+                "红娘助友"
               ]
             },
             {
@@ -4815,9 +4956,9 @@
               "icon": "",
               "enabled": true,
               "tags": [
+                "免费",
                 "聊天",
-                "社交",
-                "支付"
+                "社交"
               ]
             }
           ]
@@ -4837,7 +4978,7 @@
               "icon": "https://www.amazon.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "跨境电商",
+                "免费",
                 "海淘",
                 "开店"
               ]
@@ -4850,7 +4991,7 @@
               "icon": "https://www.aliexpress.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "跨境电商",
+                "免费",
                 "外贸",
                 "开店"
               ]
@@ -4863,7 +5004,7 @@
               "icon": "https://www.temu.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "跨境电商",
+                "免费",
                 "购物",
                 "海外"
               ]
@@ -4876,7 +5017,7 @@
               "icon": "https://shopee.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "跨境电商",
+                "免费",
                 "东南亚",
                 "开店"
               ]
@@ -4889,7 +5030,7 @@
               "icon": "https://www.shein.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "跨境电商",
+                "免费",
                 "服装",
                 "购物"
               ]
@@ -4902,7 +5043,7 @@
               "icon": "https://www.ebay.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "跨境电商",
+                "免费",
                 "海淘",
                 "拍卖"
               ]
@@ -4916,8 +5057,7 @@
               "enabled": true,
               "tags": [
                 "独立站",
-                "建站",
-                "跨境电商"
+                "建站"
               ]
             }
           ]
@@ -4946,6 +5086,7 @@
               "icon": "https://12377.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "政务",
                 "举报"
               ]
@@ -4958,9 +5099,9 @@
               "icon": "https://www.gov.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "政务",
-                "新闻",
-                "政策"
+                "新闻"
               ]
             },
             {
@@ -4971,9 +5112,9 @@
               "icon": "https://www.gjxfj.gov.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "信访",
-                "维权",
-                "政府"
+                "维权"
               ]
             },
             {
@@ -4984,9 +5125,9 @@
               "icon": "https://www.mps.gov.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "公安",
-                "安全",
-                "资讯"
+                "安全"
               ]
             },
             {
@@ -4997,9 +5138,9 @@
               "icon": "https://www.chinatax.gov.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "税务",
-                "办事",
-                "政策"
+                "办事"
               ]
             },
             {
@@ -5010,9 +5151,9 @@
               "icon": "https://www.nhsa.gov.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "医保",
-                "社保",
-                "服务"
+                "社保"
               ]
             },
             {
@@ -5023,9 +5164,9 @@
               "icon": "https://www.forestry.gov.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "林业",
-                "草原",
-                "保护"
+                "草原"
               ]
             },
             {
@@ -5035,6 +5176,7 @@
               "description": "人力资源社会保障部官方平台：社保查询、就业服务与人社业务办理",
               "enabled": true,
               "tags": [
+                "免费",
                 "社保",
                 "政务"
               ]
@@ -5056,6 +5198,7 @@
               "icon": "https://weather.com.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "天气",
                 "查询"
               ]
@@ -5068,9 +5211,9 @@
               "icon": "https://www.nmc.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "气象",
-                "预报",
-                "权威"
+                "预报"
               ]
             },
             {
@@ -5081,9 +5224,9 @@
               "icon": "https://www.mee.gov.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "环保",
-                "生态",
-                "政府"
+                "生态"
               ]
             },
             {
@@ -5094,9 +5237,9 @@
               "icon": "https://permit.mee.gov.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "排污",
-                "许可",
-                "环保"
+                "许可"
               ]
             },
             {
@@ -5107,6 +5250,7 @@
               "icon": "https://www.windy.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "天气",
                 "预报"
               ]
@@ -5119,6 +5263,7 @@
               "icon": "https://www.caiyunapp.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "天气",
                 "预报"
               ]
@@ -5149,7 +5294,6 @@
               "icon": "https://hongguoduanju.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧",
                 "免费",
                 "热门"
               ]
@@ -5162,7 +5306,6 @@
               "icon": "https://mydramawave.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧",
                 "免费",
                 "海外"
               ]
@@ -5175,7 +5318,6 @@
               "icon": "https://www.shorttv.live/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧",
                 "免费",
                 "海外"
               ]
@@ -5188,7 +5330,6 @@
               "icon": "https://www.goodshort.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧",
                 "免费"
               ]
             },
@@ -5200,7 +5341,6 @@
               "icon": "https://netshort.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧",
                 "免费",
                 "无广告"
               ]
@@ -5213,7 +5353,6 @@
               "icon": "https://www.flextv.cc/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧",
                 "免费",
                 "海外"
               ]
@@ -5226,7 +5365,6 @@
               "icon": "https://www.moboreels.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧",
                 "免费",
                 "海外"
               ]
@@ -5239,7 +5377,6 @@
               "icon": "https://melolo.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧",
                 "免费",
                 "海外"
               ]
@@ -5261,7 +5398,7 @@
               "icon": "https://www.douyin.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧",
+                "免费",
                 "热门"
               ]
             },
@@ -5273,7 +5410,7 @@
               "icon": "https://www.kuaishou.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧"
+                "免费"
               ]
             },
             {
@@ -5284,7 +5421,7 @@
               "icon": "https://www.iqiyi.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧",
+                "免费额度",
                 "会员"
               ]
             },
@@ -5296,7 +5433,7 @@
               "icon": "https://v.qq.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧",
+                "免费额度",
                 "会员"
               ]
             },
@@ -5308,7 +5445,7 @@
               "icon": "https://www.youku.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧"
+                "免费额度"
               ]
             },
             {
@@ -5319,7 +5456,7 @@
               "icon": "https://www.mgtv.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧",
+                "免费额度",
                 "会员"
               ]
             },
@@ -5331,9 +5468,9 @@
               "icon": "https://www.miguvideo.com/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费额度",
                 "移动",
-                "运营商",
-                "短剧"
+                "运营商"
               ]
             },
             {
@@ -5344,9 +5481,9 @@
               "icon": "https://m.yangshipin.cn/favicon.ico",
               "enabled": true,
               "tags": [
+                "免费",
                 "央视",
-                "主旋律",
-                "官方"
+                "主旋律"
               ]
             },
             {
@@ -5357,7 +5494,7 @@
               "icon": "https://v-mps.crazymaplestudios.com/images/211d3420-d721-11f0-84ad-6b5693b490dc.png",
               "enabled": true,
               "tags": [
-                "短剧",
+                "免费额度",
                 "海外",
                 "付费"
               ]
@@ -5370,7 +5507,7 @@
               "icon": "https://www.dramaboxdb.com/favicon.ico",
               "enabled": true,
               "tags": [
-                "短剧",
+                "免费额度",
                 "海外",
                 "付费"
               ]

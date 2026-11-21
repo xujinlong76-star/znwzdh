@@ -124,6 +124,84 @@ export async function deleteSearchHistoryBefore(repo: Repository, userId: string
   return repo.runCount("DELETE FROM search_history WHERE user_id = ? AND created_at < ?", [userId, cutoff]);
 }
 
+/**
+ * 按身份删除早于 cutoff 的 click 信号（U-373）。
+ *
+ * click 信号存在 events 表（kind='click'，identity 列归属），与 search_history
+ * 一样是「该用户的行为数据」，须按同一保留期清理；此前只在 rollup 聚合后
+ * 间接删明细，从未按用户保留期执行过。
+ */
+export async function deleteClickEventsBefore(repo: Repository, identity: string, cutoff: number): Promise<number> {
+  return repo.runCount(
+    "DELETE FROM events WHERE identity = ? AND kind = 'click' AND created_at < ?",
+    [identity, cutoff],
+  );
+}
+
+/**
+ * 该用户上次「按保留期清理过期历史」的时间（U-373：历史页脚的真实来源）。
+ *
+ * 唯一事实源是 audit_logs 里 action='user.search_history_expired' 的记录——
+ * 定时清理与手动自检（POST /api/me/diagnostics）删掉 ≥1 条时都会写一条；
+ * 从未清理过返回 null，调用方不得编造时间。
+ */
+export async function getLastHistoryCleanupAt(repo: Repository, userId: string): Promise<number | null> {
+  const rows = await repo.raw(
+    "SELECT MAX(created_at) AS t FROM audit_logs WHERE action = 'user.search_history_expired' AND target = ?",
+    [userId],
+  );
+  const t = Number(rows[0]?.t ?? 0);
+  return t > 0 ? t : null;
+}
+
+export interface ExpiredHistoryCleanupResult {
+  identity: string;
+  retentionDays: number;
+  historyDeleted: number;
+  clicksDeleted: number;
+  /** 删掉 ≥1 条时为本次清理时间，否则 null（无清理记录） */
+  cleanedAt: number | null;
+}
+
+const HISTORY_DAY_MS = 86_400_000;
+
+/**
+ * 按某用户的保留期删过期历史 + click 信号（U-373：定时任务与手动自检共用）。
+ *
+ * 删掉 ≥1 条时写一条 user.search_history_expired 审计——这就是
+ * getLastHistoryCleanupAt 的事实源；审计写失败不阻断清理本身（与仓储内
+ * 其他「审计尽力而为」的口径一致），只是页脚那次拿不到时间。
+ */
+export async function cleanupExpiredUserHistory(
+  repo: Repository,
+  identity: string,
+  opts: { retentionDays: number; now?: number; actor: string; actorKind?: "system" | "user" },
+): Promise<ExpiredHistoryCleanupResult> {
+  const retentionDays = Math.trunc(opts.retentionDays);
+  if (!(retentionDays > 0)) {
+    throw new Error(`保留天数必须为正数，收到 retentionDays=${opts.retentionDays}（identity=${identity}）`);
+  }
+  const now = opts.now ?? Date.now();
+  const cutoff = now - retentionDays * HISTORY_DAY_MS;
+  const historyDeleted = await deleteSearchHistoryBefore(repo, identity, cutoff);
+  const clicksDeleted = await deleteClickEventsBefore(repo, identity, cutoff);
+  const cleanedAt = historyDeleted + clicksDeleted > 0 ? now : null;
+  if (cleanedAt !== null) {
+    await repo
+      .audit({
+        actor: opts.actor,
+        actorKind: opts.actorKind,
+        action: "user.search_history_expired",
+        target: identity,
+        diff: { retentionDays, historyDeleted, clicksDeleted },
+      })
+      .catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+      });
+  }
+  return { identity, retentionDays, historyDeleted, clicksDeleted, cleanedAt };
+}
+
 /** 服务端筛选删除：清理全部零结果记录（result_count = 0），返回删除数 */
 export async function deleteZeroResultSearchHistory(repo: Repository, userId: string): Promise<number> {
   return repo.runCount("DELETE FROM search_history WHERE user_id = ? AND result_count = 0", [userId]);

@@ -22,11 +22,6 @@ import {
   bindSqlite,
   toPgSql,
   chunkList,
-  DEFAULT_RETENTION_TARGETS,
-  DEFAULT_ROLLUP_TARGETS,
-  runRetention,
-  runRollup,
-  type RetentionAdapter,
 } from "@navhub/store";
 import type { AppContext } from "./context.ts";
 import { assertRestoreStagingPath } from "./restore-staging.ts";
@@ -47,6 +42,13 @@ import {
   handleDramaCalendarRefresh,
   handleDramaRankingsRefresh,
   handlePluginUrlHealth,
+  // 数据保留的执行体唯一事实源在 tasks/data-retention.task.ts；
+  // 本文件底部的旧本地副本已删，避免两份实现悄悄分叉（U-373）。
+  runRetentionMainPhase,
+  previewRetentionSideEffects,
+  applyRetentionSideEffects,
+  previewTelemetry,
+  applyHistoryRetentionCleanup,
 } from "./jobs/index.ts";
 
 export {
@@ -157,6 +159,13 @@ export interface DataRetentionPayload {
   mode?: "cleanup" | "rollup";
   /** 默认 false。定时调度刻意不自动删除 —— 先看见，再决定。 */
   apply?: boolean;
+  /**
+   * 每日自动按各用户保留期删过期搜索历史 + click 信号（U-373），独立于 apply：
+   * 定时调度显式开启；手动触发默认 false（仍走预演/apply 的旧语义）。
+   */
+  historyCleanup?: boolean;
+  /** historyCleanup 单轮最多处理多少用户，默认 500；超限留待下一轮 */
+  historyMaxUsers?: number;
   /** rollup：单表单轮最多处理多少天，默认 30 */
   maxDays?: number;
   /** rollup：单天分组数上限，默认 5000（超限的整天跳过） */
@@ -211,7 +220,10 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   { kind: "plugin_url_health", intervalMs: 86_400_000 },
   // 数据治理默认只做 rollup 的 dry-run：自动化可以先"看见"，不该先"动手"。
   // 确认过输出后再把 payload 改成 { mode: "rollup", apply: true }（或手动触发一次）。
-  { kind: "data_retention", intervalMs: 86_400_000, payload: { mode: "rollup", apply: false, maxDays: 30, telemetryDays: 90 } },
+  // 例外（U-373）：historyCleanup 每天自动按各用户保留期删过期搜索历史与
+  // click 信号——那是写在设置里的保留承诺，不是 rollup 的明细删除；
+  // rollup/cleanup 的明细删除仍由 apply 把关，apply:false 时只预演。
+  { kind: "data_retention", intervalMs: 86_400_000, payload: { mode: "rollup", apply: false, maxDays: 30, telemetryDays: 90, historyCleanup: true } },
   // 用户数据质量巡检（T24）：只统计与上报，不修复不删除——
   // 修复动作属于用户自检（POST /api/me/diagnostics 自动修）或运维决策。
   { kind: "user_data_audit", intervalMs: 86_400_000 },
@@ -254,8 +266,13 @@ export function jobEnqueueScope(kind: JobKind, payload: unknown): "write" | "adm
   if (kind === "data_retention") {
     const apply =
       typeof payload === "object" && payload !== null && (payload as { apply?: unknown }).apply === true;
+    // historyCleanup:true 也会真的删数据（过期搜索历史 + click 信号），同级提级
+    const historyCleanup =
+      typeof payload === "object" &&
+      payload !== null &&
+      (payload as { historyCleanup?: unknown }).historyCleanup === true;
     // dry-run 只统计不删，保持 write；apply:true 会真的删事件/审计，提级
-    return apply ? "admin" : "write";
+    return apply || historyCleanup ? "admin" : "write";
   }
   return "write";
 }
@@ -1284,11 +1301,13 @@ export class JobRunner {
         const changed = await this.ctx.repo.completeJob(jobId, null, { durationMs });
         if (changed && kind === "data_retention") {
           const apply = (payload as DataRetentionPayload | null)?.apply === true;
+          // historyCleanup 每天真的删过期历史（U-373），标题不能再说「未删除数据」
+          const historyCleanup = (payload as DataRetentionPayload | null)?.historyCleanup === true;
           await this.ctx.repo.emitNotification({
             identity: ADMIN_NOTIFICATION_IDENTITY,
             idempotencyKey: `job:${jobId}:retention_completed`,
             kind: "retention_completed",
-            title: apply ? "数据保留执行完成" : "数据保留预演完成（未删除数据）",
+            title: apply || historyCleanup ? "数据保留执行完成" : "数据保留预演完成（未删除数据）",
             body: `任务 ${jobId} 已完成。详细统计请查看任务与数据保留记录。`,
           });
         }
@@ -2424,9 +2443,19 @@ export class JobRunner {
     }
     const apply = payload.apply === true;
     const summary = await runRetentionMainPhase(this.ctx, payload, apply);
-    const sideEffects = apply
-      ? await applyRetentionSideEffects(this.ctx, payload)
-      : await previewRetentionSideEffects(this.ctx, payload);
+    // U-373：historyCleanup 是独立于 apply 的开关——定时调度每天带它跑，
+    // 只删「各用户保留期外」的搜索历史与 click 信号；rollup/cleanup 的
+    // 明细删除仍由 apply 把关（apply:false 时只预演）。historyCleanup 与
+    // apply 同时为 true 时历史清理只走前一条路，不重复删。
+    const sideEffects =
+      payload.historyCleanup === true
+        ? {
+            ...(await previewTelemetry(this.ctx, payload)),
+            userRetention: await applyHistoryRetentionCleanup(this.ctx, payload, run),
+          }
+        : apply
+          ? await applyRetentionSideEffects(this.ctx, payload)
+          : await previewRetentionSideEffects(this.ctx, payload);
     Object.assign(summary, sideEffects);
     await this.ctx.repo.recordEvent("data_retention", { meta: summary }).catch(() => {
       // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
@@ -2503,163 +2532,6 @@ export class JobRunner {
     }
     const res = await db.pg!.query(toPgSql(sqlText), params);
     return Number(res.rowCount ?? 0);
-  }
-}
-
-function createRetentionAdapter(ctx: AppContext): RetentionAdapter {
-  const db = ctx.db;
-  const isPg = db.dialect === 'pg';
-  return {
-    placeholder: (i: number) => (isPg ? '$' + i : '?'),
-    select: async (sql: string, params: readonly unknown[]) => {
-      if (isPg) {
-        const res = await db.pg!.query(sql, params as unknown[]);
-        return res.rows as never;
-      }
-      return db.sqlite!.prepare(sql).all(...(params as unknown[])) as never;
-    },
-    execute: async (sql: string, params: readonly unknown[]) => {
-      if (isPg) {
-        const res = await db.pg!.query(sql, params as unknown[]);
-        return Number(res.rowCount ?? 0);
-      }
-      const info = db.sqlite!.prepare(sql).run(...(params as unknown[])) as { changes?: number };
-      return Number(info?.changes ?? 0);
-    },
-  };
-}
-
-async function runRetentionMainPhase(
-  ctx: AppContext,
-  payload: DataRetentionPayload,
-  apply: boolean,
-): Promise<Record<string, unknown>> {
-  const adapter = createRetentionAdapter(ctx);
-  const mode = payload.mode === "cleanup" ? "cleanup" : "rollup";
-  if (mode === "rollup") {
-    const res = await runRollup(adapter, {
-      targets: DEFAULT_ROLLUP_TARGETS.map((target) => ({ spec: target.spec, keepDays: target.keepDays })),
-      dialect: ctx.db.dialect === "pg" ? "postgres" : "sqlite",
-      maxDaysPerRun: payload.maxDays ?? 30,
-      maxGroupsPerDay: payload.maxGroups ?? 5000,
-      dryRun: !apply,
-    });
-    return {
-      mode,
-      apply,
-      days: res.tables.map((table) => table.days),
-      groups: res.tables.reduce((sum, table) => sum + table.groups, 0),
-      rows: res.tables.reduce((sum, table) => sum + table.rows, 0),
-      deleted: res.tables.reduce((sum, table) => sum + table.deleted, 0),
-      skippedDays: res.tables.reduce((sum, table) => sum + table.skippedDays, 0),
-      truncated: res.tables.map((table) => table.truncated),
-    };
-  }
-
-  const res = await runRetention(adapter, {
-    targets: DEFAULT_RETENTION_TARGETS,
-    maxScan: payload.maxScan ?? 200_000,
-    dryRun: true,
-  });
-  return {
-    mode,
-    apply: false,
-    reason: "cleanup 在任务里只做 dry-run，真正删除请用 CLI",
-    scanned: res.tables.reduce((sum, table) => sum + table.scanned, 0),
-    truncated: res.tables.map((table) => table.truncated),
-  };
-}
-
-async function previewRetentionSideEffects(
-  ctx: AppContext,
-  payload: DataRetentionPayload,
-): Promise<Record<string, unknown>> {
-  const adapter = createRetentionAdapter(ctx);
-  const telemetryDays = Math.max(1, payload.telemetryDays ?? 90);
-  const since = Date.now() - telemetryDays * 86_400_000;
-  const health = await adapter.select(
-    `SELECT COUNT(*) AS count FROM health_checks WHERE checked_at < ${adapter.placeholder(1)}`,
-    [since],
-  );
-  const usage = await adapter.select(
-    `SELECT COUNT(*) AS count FROM llm_usage WHERE created_at < ${adapter.placeholder(1)}`,
-    [since],
-  );
-
-  let usersAffected = 0;
-  let rowsDeleted = 0;
-  try {
-    const custom = await ctx.repo.listCustomHistoryRetention();
-    const now = Date.now();
-    for (const { identity, retentionDays } of custom) {
-      const cutoff = now - retentionDays * 86_400_000;
-      const rows = await adapter.select(
-        `SELECT COUNT(*) AS count FROM search_history WHERE user_id = ${adapter.placeholder(1)} AND created_at < ${adapter.placeholder(2)}`,
-        [identity, cutoff],
-      );
-      const count = Number(rows[0]?.count ?? 0);
-      if (count > 0) {
-        usersAffected += 1;
-        rowsDeleted += count;
-      }
-    }
-    return {
-      telemetry: {
-        days: telemetryDays,
-        healthChecks: Number(health[0]?.count ?? 0),
-        llmUsage: Number(usage[0]?.count ?? 0),
-      },
-      userRetention: { usersAffected, rowsDeleted },
-    };
-  } catch (err) {
-    return {
-      telemetry: {
-        days: telemetryDays,
-        healthChecks: Number(health[0]?.count ?? 0),
-        llmUsage: Number(usage[0]?.count ?? 0),
-      },
-      userRetention: { error: String((err as Error)?.message ?? "unknown") },
-    };
-  }
-}
-
-async function applyRetentionSideEffects(
-  ctx: AppContext,
-  payload: DataRetentionPayload,
-): Promise<Record<string, unknown>> {
-  const telemetryDays = Math.max(1, payload.telemetryDays ?? 90);
-  const since = Date.now() - telemetryDays * 86_400_000;
-  const telemetry = {
-    days: telemetryDays,
-    healthChecks: await ctx.repo.pruneHealthChecks(since),
-    llmUsage: await ctx.repo.pruneLlmUsage(since),
-  };
-
-  try {
-    const custom = await ctx.repo.listCustomHistoryRetention();
-    let usersAffected = 0;
-    let rowsDeleted = 0;
-    const now = Date.now();
-    for (const { identity, retentionDays } of custom) {
-      const cutoff = now - retentionDays * 86_400_000;
-      const deleted = await ctx.repo.deleteSearchHistoryBefore(identity, cutoff);
-      if (deleted > 0) {
-        usersAffected += 1;
-        rowsDeleted += deleted;
-        await ctx.repo.audit({
-          actor: "system:data_retention",
-          actorKind: "system",
-          action: "user.search_history_expired",
-          target: identity,
-          diff: { retentionDays, deleted },
-        }).catch(() => {
-          // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
-        });
-      }
-    }
-    return { telemetry, userRetention: { usersAffected, rowsDeleted } };
-  } catch (err) {
-    return { telemetry, userRetention: { error: String((err as Error)?.message ?? "unknown") } };
   }
 }
 

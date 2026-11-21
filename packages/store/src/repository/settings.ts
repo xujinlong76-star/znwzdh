@@ -166,6 +166,45 @@ export async function listCustomHistoryRetention(
   return out;
 }
 
+export interface HistoryRetentionPolicy {
+  identity: string;
+  retentionDays: number;
+}
+
+/**
+ * 全量历史保留策略（U-373：定时清理的候选集）。
+ *
+ * 与 listCustomHistoryRetention 的区别：后者只列「显式设了非默认保留期」的
+ * 用户——默认 180 天的用户（无设置行、或行里没写保留期、或显式写了 180）
+ * 从未被清理过，保留期的承诺对他们是空的。这里列的是「有数据要管」的
+ * 全部身份：search_history 或 click 信号里出现过的身份（并集），各取其
+ * 有效保留期（有设置行按解析值、非法值回落默认；无设置行默认 180）。
+ * 按 identity 排序：分批处理到上限停手时，下一轮从同一顺序继续，行为确定。
+ */
+export async function listHistoryRetentionPolicies(repo: Repository): Promise<HistoryRetentionPolicy[]> {
+  const historyIds = await repo.raw("SELECT DISTINCT user_id AS id FROM search_history");
+  const clickIds = await repo.raw(
+    "SELECT DISTINCT identity AS id FROM events WHERE kind = 'click' AND identity IS NOT NULL",
+  );
+  const settingsRows = await repo.raw("SELECT identity, preferences_json FROM user_settings");
+  const daysByIdentity = new Map<string, number>();
+  for (const row of settingsRows) {
+    daysByIdentity.set(
+      String(row.identity),
+      parseExtendedPreferences(row.preferences_json).historyRetentionDays,
+    );
+  }
+  const ids = new Set<string>();
+  for (const row of [...historyIds, ...clickIds]) {
+    const id = String(row.id ?? "");
+    if (id) ids.add(id);
+  }
+  return [...ids].sort().map((identity) => ({
+    identity,
+    retentionDays: daysByIdentity.get(identity) ?? DEFAULT_EXTENDED_PREFERENCES.historyRetentionDays,
+  }));
+}
+
 export async function getUserSettings(repo: Repository, identity: string): Promise<UserSettingsRecord> {
   const row = (
     await repo.raw(

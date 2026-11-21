@@ -1293,6 +1293,29 @@ async savedPluginEmbeddings(filter?: {
     return settingsRepo.listCustomHistoryRetention(this);
   }
 
+  /** 全量历史保留策略：有搜索历史或 click 信号的全部身份 + 各自有效保留期（U-373） */
+  async listHistoryRetentionPolicies(): Promise<Array<{ identity: string; retentionDays: number }>> {
+    return settingsRepo.listHistoryRetentionPolicies(this);
+  }
+
+  /** 按身份删除早于 cutoff 的 click 信号（U-373），返回删除数 */
+  async deleteClickEventsBefore(identity: string, cutoff: number): Promise<number> {
+    return historyRepo.deleteClickEventsBefore(this, identity, cutoff);
+  }
+
+  /** 该用户上次按保留期清理过期历史的时间；从未清理过为 null（U-373） */
+  async getLastHistoryCleanupAt(userId: string): Promise<number | null> {
+    return historyRepo.getLastHistoryCleanupAt(this, userId);
+  }
+
+  /** 按某用户的保留期删过期历史 + click 信号，删掉 ≥1 条时留清理审计（U-373） */
+  async cleanupExpiredUserHistory(
+    identity: string,
+    opts: { retentionDays: number; now?: number; actor: string; actorKind?: "system" | "user" },
+  ): Promise<historyRepo.ExpiredHistoryCleanupResult> {
+    return historyRepo.cleanupExpiredUserHistory(this, identity, opts);
+  }
+
   async clearSearchHistory(userId: string): Promise<void> {
     return historyRepo.clearSearchHistory(this, userId);
   }

@@ -77,6 +77,9 @@ export const JobPayloadSchemas = {
       maxGroups: z.number().int().min(1).max(1_000_000).optional(),
       maxScan: z.number().int().min(1).max(10_000_000).optional(),
       telemetryDays: z.number().int().min(1).max(3650).optional(),
+      // U-373：每日自动按各用户保留期删过期搜索历史 + click 信号（独立于 apply）
+      historyCleanup: z.boolean().optional(),
+      historyMaxUsers: z.number().int().min(1).max(100_000).optional(),
     })
     .strict(),
 

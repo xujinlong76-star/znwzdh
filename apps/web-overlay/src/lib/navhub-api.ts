@@ -1529,7 +1529,7 @@ export async function fetchSearchHistoryPage(
   const limit = options.limit ?? 20
   const offset = options.offset ?? 0
   return degrade(
-    { items: [], hasMore: false, nextOffset: offset },
+    { items: [], hasMore: false, nextOffset: offset, lastHistoryCleanupAt: null },
     () =>
       getJson<SearchHistoryPageResponse>(
         '/api/search-history?limit=' + limit + '&offset=' + offset,

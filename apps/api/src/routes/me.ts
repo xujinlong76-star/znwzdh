@@ -631,6 +631,10 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
           ])
           .optional(),
         settings: z.record(z.string(), z.unknown()).optional(),
+        // 本机成长快照（U-372 诚实化小步）：导出时浏览器把本机档案打包进备份，
+        // 但成长档案只存本机 localStorage、服务端从不持有——这里只显式接住、
+        // 绝不回写，响应里 growthSnapshotIgnored 如实回传，别让用户以为它已恢复。
+        growthSnapshot: z.unknown().optional(),
         // 分批续导的窗口起点：界面用响应里的 nextHistoryOffset 回填，
         // 这样「再导一次」推进的是剩下的条目，而不是永远重复同一批。
         searchHistoryOffset: z.number().int().min(0).max(1_000_000).optional(),
@@ -757,6 +761,10 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       }
 
       // 5. 恢复插件星标与评价（T2 导入导出对称化）：导出了就必须能恢复。
+      // 唯独本机成长快照不在此列：它只存浏览器 localStorage，服务端没有
+      // 对应的写入口，收到也只忽略，响应里 growthSnapshotIgnored 如实回传。
+      const growthSnapshotIgnored =
+        parsed.data.growthSnapshot !== undefined && parsed.data.growthSnapshot !== null;
       // 重放语义与正常用户动作一致——star 走幂等插入并守恒 star_count，
       // 评价要求「已安装该插件」的既有门禁（未安装 = 如实跳过，不绕过门禁）。
       let starsImported = 0;
@@ -850,6 +858,8 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         reviewsSkippedInvalid,
         /** 导出端也带上收藏截断口径，界面提示「备份不止这些」 */
         favoritesExportLimit: EXPORT_FAVORITES_LIMIT,
+        /** 备份里带本机成长快照：只作存档，未写回服务端（U-372） */
+        growthSnapshotIgnored,
       };
     },
   );

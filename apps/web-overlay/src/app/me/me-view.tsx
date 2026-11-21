@@ -309,6 +309,10 @@ function SettingsSummary({
  *   文案 `Lv.4 · 422/600 XP` = 总经验 / 下一级门槛（Lv.5 在 600 XP），
  *   进度条可视化同一分数（422/600 ≈ 70%）；成长面板内的 in-level 进度条
  *  （levelProgress.progress，本级 62/240 ≈ 26%）是另一口径，留在成长 Tab 内。
+ *
+ * 诚实口径（U-372）：成长档案只存本机 localStorage、不回传服务端，
+ * 横幅 Lv/XP 旁挂「本机」角标，别让用户以为等级已同步到云端；
+ * 完整披露仍在成长页深处（growth-panel.tsx），两处文案同一口径。
  */
 function GrowthBanner() {
   const [profile, setProfile] = useState<GrowthProfile | null>(null)
@@ -360,6 +364,12 @@ function GrowthBanner() {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="text-sm font-semibold tracking-tight">
             Lv.{lp.level} {lp.title} · {profile.totalXp}/{lp.nextXp ?? profile.totalXp} XP
+          </span>
+          <span
+            className="rounded-full border border-border/70 bg-muted/60 px-1.5 py-px text-[10px] font-medium text-muted-foreground"
+            title="成长档案只保存在这台设备的浏览器里，不会同步到云端"
+          >
+            本机
           </span>
           <span className="text-xs text-muted-foreground">连续 {streak} 天</span>
           <span className="text-xs text-muted-foreground">今日任务 {doneCount}/3</span>

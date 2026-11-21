@@ -346,6 +346,42 @@ describe("备份导入：恢复多少就报多少", () => {
     expect(body.favoritesSkipped - body.favoritesSkippedMissingSite).toBe(1);
   });
 
+  it("U-372：备份里的本机成长快照只作存档、不回写，响应如实标记忽略", async () => {
+    const res = await importBackup({
+      favoriteFolders: [{ id: "old-f1", name: "诚实导入夹" }],
+      favorites: [{ siteId, folderId: "old-f1" }],
+      // 快照是本机档案原文：服务端没有对应的写入口，收到也只能忽略，
+      // 绝不能把它当云端数据写进任何一张表。
+      growthSnapshot: {
+        scope: "local-only",
+        source: "browser-localStorage",
+        note: "成长档案只保存在这台设备的浏览器里",
+        exportedAt: Date.now(),
+        level: 4,
+        title: "测试称号",
+        totalXp: 422,
+        streak: 3,
+        longestStreak: 5,
+        freezeCards: 1,
+        profile: { v: 2, totalXp: 422 },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.growthSnapshotIgnored).toBe(true);
+    // 收藏照常恢复，快照的存在不影响正常导入
+    expect(body.favoritesImported).toBeGreaterThanOrEqual(0);
+  });
+
+  it("U-372：无快照的备份 growthSnapshotIgnored 为 false", async () => {
+    const res = await importBackup({
+      favoriteFolders: [{ id: "old-f1", name: "诚实导入夹" }],
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().growthSnapshotIgnored).toBe(false);
+  });
+
   it("超出单次上限的历史：写入按上限、剩余条数与续导起点都回传", async () => {
     const total = 260;
     const before = await historyCount();

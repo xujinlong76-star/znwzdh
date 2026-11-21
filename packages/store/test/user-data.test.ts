@@ -223,6 +223,9 @@ describe("数据主权补齐（M2）：导出覆盖四类、注销不留残渣",
     expect(exported.pluginReviews).toHaveLength(1);
     expect(exported.pluginReviews[0].content).toContain("正文");
     expect(exported.pluginStars).toHaveLength(1);
+    // U-372 诚实化小步：成长档案只存本机 localStorage，服务端从不持有——
+    // 导出字段存在，但服务端诚实地置 null；浏览器下载时才填本机快照。
+    expect(exported.growthSnapshot).toBeNull();
     expect(exported.workspaces.map((w) => w.key).sort()).toEqual([
       "workspaces:" + user,
       "ws_members:" + user + ":ws-1",

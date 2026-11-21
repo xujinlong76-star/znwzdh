@@ -242,6 +242,19 @@ export function NavigationContent({
 }: NavigationContentProps) {
   const { toast } = useToast()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  // P1-5：移动抽屉闭合时不挂载 Sidebar（省一份完整分类树）。
+  // 抽屉容器本身常驻 DOM（useOverlayBehavior 需要稳定节点做焦点圈养），
+  // 但其内的 Sidebar 只在打开时挂载；关闭后延迟 200ms 卸载，
+  // 与面板的 translate-x-full 关闭动画（duration-200）对齐，避免空面板滑出。
+  const [drawerSidebarMounted, setDrawerSidebarMounted] = useState(false)
+  useEffect(() => {
+    if (isSidebarOpen) {
+      setDrawerSidebarMounted(true)
+      return
+    }
+    const t = setTimeout(() => setDrawerSidebarMounted(false), 200)
+    return () => clearTimeout(t)
+  }, [isSidebarOpen])
   const [todayOpen, setTodayOpen] = useState(false)
   const [widgetBoxOpen, setWidgetBoxOpen] = useState(false)
   const [appearanceOpen, setAppearanceOpen] = useState(false)
@@ -1065,12 +1078,14 @@ export function NavigationContent({
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
-          <Sidebar
-            navigationData={sidebarNavigationData}
-            siteInfo={siteData}
-            brandAsHeading={false}
-            onClose={handleCloseSidebar}
-          />
+          {drawerSidebarMounted && (
+            <Sidebar
+              navigationData={sidebarNavigationData}
+              siteInfo={siteData}
+              brandAsHeading={false}
+              onClose={handleCloseSidebar}
+            />
+          )}
         </div>
       </div>
 

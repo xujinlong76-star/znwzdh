@@ -462,7 +462,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                   title={summarizeSelection(selectedIds, visibleSiteCount) + '（点击全选当前可见站点）'}
                 >
                   <ListChecks className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">{summarizeSelection(selectedIds, visibleSiteCount)}</span>
+                  <span className="hidden xl:inline">{summarizeSelection(selectedIds, visibleSiteCount)}</span>
                 </Button>
               )}
 

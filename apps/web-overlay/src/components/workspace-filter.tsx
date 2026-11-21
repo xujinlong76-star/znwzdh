@@ -74,7 +74,7 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
         role="tablist"
         aria-label="工作区视图切换"
         onKeyDown={handleTabKeyDown}
-        className="flex items-center gap-1.5 overflow-x-auto w-full lg:w-auto pb-0.5 scrollbar-none touch-pan-x overscroll-x-contain shrink-0"
+        className="flex items-center gap-1.5 overflow-x-auto w-full lg:w-auto pb-0.5 scrollbar-none touch-pan-x overscroll-x-contain min-w-0"
       >
         {WORKSPACES.map((ws) => {
           const Icon = ws.icon

@@ -632,6 +632,23 @@
        区间与栏的显隐区间 [640,1024) 逐字对齐（max-width:1023px）；放在 ≤640 规则之后，
        640px 整点处以本规则为准（≤640 规则会把 bottom 写回 68px）。 */
     '@media (min-width:640px) and (max-width:1023px){#xiaomaomao{bottom:calc(112px + env(safe-area-inset-bottom,0px))}}' +
+    /* /me/* 用户中心路由避让（2026-11-21 UX 重构）：
+       在用户中心及成长任务页下，默认把小猫锚点收敛至视口底部绝对安全区（bottom:24px right:20px z-index:40），
+       避免 1024px–1440px 桌面视口下盖住右侧任务卡片的「每项 +10 经验」或按钮；
+       收起为圆标时尺寸更紧凑，绝不与卡片文字/按钮 BoundingBox 重叠。 */
+    '#xiaomaomao.xm-me-safe{right:calc(20px + env(safe-area-inset-right,0px));bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:40}' +
+    '@media (min-width:640px) and (max-width:1023px){#xiaomaomao.xm-me-safe{bottom:calc(24px + env(safe-area-inset-bottom,0px))}}' +
+    '#xiaomaomao.xm-me-safe:not(.xm-open) .xm-main-col{width:64px}' +
+    '#xiaomaomao.xm-me-safe:not(.xm-open) .xm-wrap{width:64px;height:64px}' +
+    /* 2026-11-21：/algorithms 页的挂件红点降噪。
+       算法实验室是"专注实验"的页面，右下角一颗高饱和红点会持续抢注意力
+       （页面主体是克制的中性色 Bento 卡片，红点对比度被放大）。
+       在该路由下把角标收成低调微点：尺寸 18 → 8px、去掉图标、降不透明度。
+       注意只降视觉权重，不删元素——它仍承担"有新消息"的语义，
+       读屏与 title 都能读到，只是不再视觉喧宾夺主。 */
+    '#xiaomaomao.xm-focus-route .xm-tab-badge{width:8px;height:8px;right:-1px;bottom:-1px;opacity:.55;background:#a1a1aa;box-shadow:none}' +
+    'html.dark #xiaomaomao.xm-focus-route .xm-tab-badge{background:#52525b}' +
+    '#xiaomaomao.xm-focus-route .xm-tab-badge svg{display:none}' +
     '@media (prefers-reduced-motion: reduce){#xiaomaomao *,#xiaomaomao{animation-duration:.01s !important;animation-iteration-count:1 !important;transition-duration:.01s !important}}';
   var style = document.createElement('style');
   style.textContent = css;
@@ -639,6 +656,39 @@
 
   var root = document.createElement('div');
   root.id = 'xiaomaomao';
+
+  /**
+   * 「专注型」路由标记（2026-11-21）。
+   *
+   * 算法实验室（/algorithms）这类页面的主体是克制的中性色 Bento 卡片，
+   * 右下角一颗 18px 高饱和红点在低对比背景上异常扎眼，会持续抢走
+   * 实验区的注意力。这里在进入该路由时给根节点打 class，
+   * 由样式表把角标收成 8px 低调微点（语义不丢，只是降视觉权重）。
+   *
+   * 为什么用 JS 判路径而不是 CSS 属性选择器：根 <body> 在服务端 layout 里
+   * 渲染，拿不到 pathname，没有现成的 data-route 可挂。本脚本本来就常驻
+   * 客户端，直接读 location.pathname 最省事。
+   *
+   * 兼容 SPA 路由变化：同时监听 popstate 与 Next 的 route-change 事件，
+   * 切走 /algorithms 时会摘掉 class，不留残留样式。
+   */
+  var FOCUS_ROUTES = ['/algorithms'];
+  function syncFocusRoute() {
+    var path = window.location.pathname || '';
+    var onFocus = FOCUS_ROUTES.some(function (p) {
+      return path === p || path.indexOf(p + '/') === 0;
+    });
+    if (onFocus) root.classList.add('xm-focus-route');
+    else root.classList.remove('xm-focus-route');
+  }
+  syncFocusRoute();
+  window.addEventListener('popstate', syncFocusRoute);
+  // Next App Router 的客户端导航不触发 popstate，靠 MutationObserver 兜底：
+  // 只在 <title>/主内容变化时轻量重算，不轮询。
+  try {
+    var routeMo = new MutationObserver(syncFocusRoute);
+    routeMo.observe(document.body, { childList: true, subtree: false });
+  } catch (e) { /* 观察失败时退化为只在首屏与 popstate 判定 */ }
   root.innerHTML =
     '<div class="xm-main-col">' +
       '<div class="xm-bubble" aria-live="polite"></div>' +
@@ -2406,7 +2456,25 @@
   function clearParkX() {
     try { root.style.removeProperty('--xm-park-x'); } catch (e) { /* 忽略 */ }
   }
+  function syncMeRouteSafeAnchor() {
+    var p = '';
+    try { p = window.location.pathname || ''; } catch (e) { /* 忽略 */ }
+    var onMe = p === '/me' || p.indexOf('/me/') === 0;
+    if (onMe) {
+      root.classList.add('xm-me-safe');
+      /* 若此前用户在别的页面拖过猫导致它留在右侧腰部，进 /me/* 时暂让它回归底部安全区 */
+      if (!store.pos) {
+        root.style.left = '';
+        root.style.top = '';
+        root.style.right = '';
+        root.style.bottom = '';
+      }
+    } else {
+      root.classList.remove('xm-me-safe');
+    }
+  }
   function syncMarketPark() {
+    syncMeRouteSafeAnchor();
     var p = '';
     try { p = window.location.pathname || ''; } catch (e) { /* 忽略 */ }
     var onMarket = p === '/marketplace' || p.indexOf('/marketplace/') === 0;

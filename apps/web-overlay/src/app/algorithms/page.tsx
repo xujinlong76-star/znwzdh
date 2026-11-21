@@ -33,7 +33,11 @@ export async function generateMetadata(): Promise<Metadata> {
 export default function AlgorithmsPage() {
   return (
     <div className="flex flex-col min-h-screen">
-      <main id="main-content" className="flex-1">
+      {/* pb-16：给右下角悬浮挂件留出绝对安全区。
+          挂件高约 48px + bottom:24px，滚动到底时其纵向范围落在
+          [vh-96, vh-24]；主内容底部垫高后，页脚版权行整体上移，
+          与挂件在同一屏内不再处于同一条水平带。 */}
+      <main id="main-content" className="flex-1 pb-16">
         <AlgorithmLab />
       </main>
       <Footer />

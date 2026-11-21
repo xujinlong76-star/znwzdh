@@ -7,6 +7,46 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/registry/new-york/ui
 
 const LAB_TABS = ['linucb', 'hyperbolic', 'graph', 'visual', 'webmcp', 'federated', 'speculation', 'synthesizer', 'mesh', 'health', 'intent', 'vault'] as const
 
+/**
+ * 12 个引擎的 3 大技术域分组（2026-11-21）。
+ *
+ * 原先 12 个 Tab 按 2×6 平铺，排序算法、知识图谱、端侧基建、隐私安全混在
+ * 一起——用户看不出「这一组是干什么的」。现按技术域分组，组标题即心智锚点。
+ * 成员严格覆盖 LAB_TABS 全集（有单测守卫，见 algorithm-lab-groups.test.ts）。
+ */
+export const LAB_GROUPS = [
+  {
+    id: 'retrieval',
+    label: '检索与排序',
+    items: [
+      { value: 'linucb', label: 'LinUCB', icon: Layers, tone: 'text-primary' },
+      { value: 'intent', label: '0-RTT 推测', icon: Zap, tone: 'text-amber-500' },
+      { value: 'health', label: '文本熵巡检', icon: Activity, tone: 'text-emerald-600' },
+    ],
+  },
+  {
+    id: 'graph',
+    label: '图谱与视觉',
+    items: [
+      { value: 'hyperbolic', label: '庞加莱平替', icon: Orbit, tone: 'text-violet-500' },
+      { value: 'graph', label: '知识星图', icon: Network, tone: 'text-indigo-500' },
+      { value: 'visual', label: '视觉指纹', icon: Palette, tone: 'text-pink-500' },
+    ],
+  },
+  {
+    id: 'infra',
+    label: '端侧基建与隐私',
+    items: [
+      { value: 'webmcp', label: 'WebMCP', icon: Bot, tone: 'text-emerald-500' },
+      { value: 'synthesizer', label: '工具合成', icon: Wrench, tone: 'text-orange-500' },
+      { value: 'federated', label: '差分隐私', icon: Radio, tone: 'text-blue-500' },
+      { value: 'mesh', label: 'P2P 共识', icon: Share2, tone: 'text-teal-500' },
+      { value: 'speculation', label: '推测预渲染', icon: Rocket, tone: 'text-amber-500' },
+      { value: 'vault', label: 'E2EE 金库', icon: Lock, tone: 'text-cyan-500' },
+    ],
+  },
+] as const
+
 function tabFromHash(): string {
   if (typeof window === 'undefined') return 'linucb'
   const h = window.location.hash.replace(/^#/, "")
@@ -26,8 +66,11 @@ import {
   Bot,
   Radio,
   Share2,
-  Wrench
+  Wrench,
+  Activity,
+  Rocket,
 } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import Link from 'next/link'
 
 /**
@@ -149,7 +192,9 @@ const hud = useAlgorithmHud()
   useEffect(() => { const t = tabFromHash(); if (t !== 'linucb') { loadedTabsRef.current.add(t); setActiveTab(t) } }, [])
   useEffect(() => { const next = "#" + activeTab; if (window.location.hash !== next) window.history.replaceState(null, "", next) }, [activeTab])
   useEffect(() => { const sync = () => { const t = tabFromHash(); loadedTabsRef.current.add(t); setActiveTab(t) }; window.addEventListener("hashchange", sync); return () => window.removeEventListener("hashchange", sync) }, [])
-  const scrollToSandbox = (tab: string) => { activateTab(tab); document.getElementById('algorithm-sandbox')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
+  /* scrollToSandbox 已随「12 个静态指标块」一并退役（2026-11-21）：
+     那个块是唯一调用方（点指示牌滚动到沙箱）。删块之后它成了死代码，
+     留着会被 lint 判未使用。分组切换栏直接切 Tab，不需要额外滚动。 */
 
   return (
     <div className="container max-w-6xl mx-auto py-4 sm:py-8 px-3 sm:px-4 space-y-5 sm:space-y-8">
@@ -175,197 +220,95 @@ const hud = useAlgorithmHud()
               </Badge>
             </div>
 
-            {/* 顶栏快速特性胶囊 */}
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 font-medium">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                12 大前沿认知与自治计算引擎 · 实验室演示
-              </span>
+            {/* 2026-11-21：原先这里另有一枚「12 大前沿认知与自治计算引擎」胶囊，
+                与下方副标题、以及 12 个 Tab 三重重述同一件事，已删除。
+                HUD 开关保留；「仅本地展示」收成带 Tooltip 的轻量徽标。 */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" role="switch" aria-checked={hud.enabled} aria-label="算法 HUD：显示主导通道角标" data-testid="algorithm-hud-toggle" onClick={hud.toggle} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-zinc-50 px-2.5 py-1 font-mono text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                <span aria-hidden="true">{hud.enabled ? "●" : "○"}</span>
+                <span>算法 HUD {hud.enabled ? "开" : "关"}</span>
+              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    tabIndex={0}
+                    aria-label="数据说明：全部计算在本机浏览器完成，不上报任何参数"
+                    className="inline-flex cursor-help items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-emerald-400"
+                  >
+                    <ShieldCheck className="h-3 w-3" aria-hidden />
+                    仅本地展示，不上报
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={6}>
+                  全部计算在本机浏览器完成，不上报任何参数；personal 角标出现即代表用了登录画像
+                </TooltipContent>
+              </Tooltip>
             </div>
-      <button type="button" role="switch" aria-checked={hud.enabled} aria-label="算法 HUD：显示主导通道角标" data-testid="algorithm-hud-toggle" onClick={hud.toggle} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-zinc-50 px-2.5 py-1 font-mono text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-        <span aria-hidden="true">{hud.enabled ? "●" : "○"}</span>
-        <span>算法 HUD {hud.enabled ? "开" : "关"}</span>
-      </button>
-      <span className="text-xs text-muted-foreground">仅本地展示，不上报；personal 角标出现即代表用了登录画像</span>
+
           </div>
 
-          <div className="max-w-3xl space-y-2">
-            <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-xs">
-                <Cpu className="w-6 h-6 sm:w-7 sm:h-7" />
-              </div>
-              <span>前沿自适应算法与认知引擎全景测试台</span>
+          {/* 2026-11-21 首屏重构：原先这里是「三连复读」的第一环——
+              一段把 12 个引擎名逐个念一遍的长段落（实测把 Hero 撑到 328–372px）。
+              现在压成 2 行：主标题 + 一句克制的副标题。
+              12 个引擎的名字交给下方按技术域分组的切换栏去表达，
+              同一个信息不在首屏出现三次。 */}
+          <div className="min-w-0">
+            <h1 className="flex items-center gap-2.5 text-xl font-extrabold tracking-tight sm:text-2xl">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary shadow-xs">
+                <Cpu className="h-5 w-5" />
+              </span>
+              <span>山羊胡 5.0+ 算法实验室</span>
             </h1>
-            <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
-              实时推演与体验超越传统导航的技术奇点：<span className="text-foreground font-medium">LinUCB 浏览器端在线多臂学习</span>、
-              <span className="text-foreground font-medium">Poincaré 双曲空间平替拓扑推演</span>、
-              <span className="text-foreground font-medium">技术拓扑星图与多跳 Dijkstra 寻路</span>、
-              <span className="text-foreground font-medium">视觉指纹与 WCAG 2.1 色彩和谐度</span>、
-              <span className="text-foreground font-medium">端侧 WebMCP JSON-RPC 2.0 网桥</span>、
-              <span className="text-foreground font-medium">本地差分隐私协同推荐 (LDP Laplace)</span>、
-              <span className="text-foreground font-medium">W3C Speculation Rules 推测预渲染</span>、
-              <span className="text-foreground font-medium">动态 WebMCP 工具合成器沙箱</span>、
-              <span className="text-foreground font-medium">P2P Mesh 去中心化状态向量共识</span>、
-              <span className="text-foreground font-medium">Shannon 文本熵防假 200 巡检</span>、
-              <span className="text-foreground font-medium">0-RTT 推测性意图瞬时计算</span> 与
-              <span className="text-foreground font-medium">AES-256-GCM 零知识端到端私密金库</span>。
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground sm:text-sm">
+              12 个端侧认知、排序与零知识计算引擎的本地交互验证台
             </p>
           </div>
 
-          {/* 12 大算法指标快速指示牌 */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-2 pt-2" onClick={(e) => { const t = (e.target as HTMLElement).closest("[data-tab]"); if (t) scrollToSandbox(t.getAttribute("data-tab") || "linucb") }} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { const t = (e.target as HTMLElement).closest("[data-tab]"); if (t) { e.preventDefault(); scrollToSandbox(t.getAttribute("data-tab") || "linucb") } } }} onMouseOver={(e) => { const t = (e.target as HTMLElement).closest("[data-tab]"); if (t) preloadTab(t.getAttribute("data-tab") || "linucb") }} onFocus={(e) => { const t = (e.target as HTMLElement).closest("[data-tab]"); if (t) preloadTab(t.getAttribute("data-tab") || "linucb") }}>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="linucb" aria-label="打开多臂自适应沙箱">
-              <div className="text-[11px] text-muted-foreground">多臂自适应</div>
-              <div className="font-bold font-mono text-primary text-xs">LinUCB</div>
-            </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="hyperbolic" aria-label="打开双曲平替沙箱">
-              <div className="text-[11px] text-muted-foreground">双曲平替</div>
-              <div className="font-bold font-mono text-violet-500 text-xs">Poincaré</div>
-            </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="graph" aria-label="打开知识星图沙箱">
-              <div className="text-[11px] text-muted-foreground">知识星图</div>
-              <div className="font-bold font-mono text-indigo-500 text-xs">Dijkstra</div>
-            </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="visual" aria-label="打开视觉指纹沙箱">
-              <div className="text-[11px] text-muted-foreground">视觉指纹</div>
-              <div className="font-bold font-mono text-pink-500 text-xs">WCAG 2.1</div>
-            </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="webmcp" aria-label="打开端侧网格沙箱">
-              <div className="text-[11px] text-muted-foreground">端侧网桥</div>
-              <div className="font-bold font-mono text-emerald-500 text-xs">WebMCP</div>
-            </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="federated" aria-label="打开差分隐私沙箱">
-              <div className="text-[11px] text-muted-foreground">差分隐私</div>
-              <div className="font-bold font-mono text-blue-500 text-xs">LDP Lap</div>
-            </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="speculation" aria-label="打开推测渲染沙箱">
-              <div className="text-[11px] text-muted-foreground">推测渲染</div>
-              <div className="font-bold font-mono text-amber-500 text-xs">SpecRules</div>
-            </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="synthesizer" aria-label="打开工具合成沙箱">
-              <div className="text-[11px] text-muted-foreground">工具合成</div>
-              <div className="font-bold font-mono text-orange-500 text-xs">Synthesizer</div>
-            </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="mesh" aria-label="打开网格共识沙箱">
-              <div className="text-[11px] text-muted-foreground">网格共识</div>
-              <div className="font-bold font-mono text-teal-500 text-xs">P2P Mesh</div>
-            </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="health" aria-label="打开防假死链沙箱">
-              <div className="text-[11px] text-muted-foreground">防假死链</div>
-              <div className="font-bold font-mono text-emerald-700 dark:text-emerald-400 text-xs">Entropy</div>
-            </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="intent" aria-label="打开推测执行沙箱">
-              <div className="text-[11px] text-muted-foreground">推测执行</div>
-              <div className="font-bold font-mono text-amber-500 text-xs">0-RTT</div>
-            </div>
-            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 cursor-pointer hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary" role="button" tabIndex={0} data-tab="vault" aria-label="打开密码金库沙箱">
-              <div className="text-[11px] text-muted-foreground">密码金库</div>
-              <div className="font-bold font-mono text-cyan-500 text-xs">AES-256</div>
-            </div>
-          </div>
+          {/* 2026-11-21：删除 12 个纯装饰静态指标块（三连复读第二环）。
+              它们不可切换、不可点击进沙箱，只是在重复引擎名；
+              真正承担导航职责的是下方按技术域分组的切换栏。 */}
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={activateTab} className="w-full scroll-mt-20" id="algorithm-sandbox">
         <p className="sm:hidden text-center text-[11px] text-muted-foreground pb-1">左右滑动查看全部 12 个沙箱</p>
-      <TabsList className="sticky top-0 z-30 flex items-center gap-1 overflow-x-auto no-scrollbar touch-pan-x sm:grid sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-12 w-full h-auto p-1.5 bg-muted/40 border border-border/60 rounded-xl backdrop-blur-md">
-          <TabsTrigger
-            value="linucb"
-            onMouseEnter={() => preloadTab('linucb')}
-            onFocus={() => preloadTab('linucb')}
-            className="py-2 px-3 sm:px-1.5 whitespace-nowrap shrink-0 sm:shrink text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
-          >
-            <Layers className="w-3.5 h-3.5 text-primary" /> LinUCB
-          </TabsTrigger>
-          <TabsTrigger
-            value="hyperbolic"
-            onMouseEnter={() => preloadTab('hyperbolic')}
-            onFocus={() => preloadTab('hyperbolic')}
-            className="py-2 px-3 sm:px-1.5 whitespace-nowrap shrink-0 sm:shrink text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
-          >
-            <Orbit className="w-3.5 h-3.5 text-violet-500" /> 庞加莱平替
-          </TabsTrigger>
-          <TabsTrigger
-            value="graph"
-            onMouseEnter={() => preloadTab('graph')}
-            onFocus={() => preloadTab('graph')}
-            className="py-2 px-3 sm:px-1.5 whitespace-nowrap shrink-0 sm:shrink text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
-          >
-            <Network className="w-3.5 h-3.5 text-indigo-500" /> 知识星图
-          </TabsTrigger>
-          <TabsTrigger
-            value="visual"
-            onMouseEnter={() => preloadTab('visual')}
-            onFocus={() => preloadTab('visual')}
-            className="py-2 px-3 sm:px-1.5 whitespace-nowrap shrink-0 sm:shrink text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
-          >
-            <Palette className="w-3.5 h-3.5 text-pink-500" /> 视觉指纹
-          </TabsTrigger>
-          <TabsTrigger
-            value="webmcp"
-            onMouseEnter={() => preloadTab('webmcp')}
-            onFocus={() => preloadTab('webmcp')}
-            className="py-2 px-3 sm:px-1.5 whitespace-nowrap shrink-0 sm:shrink text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
-          >
-            <Bot className="w-3.5 h-3.5 text-emerald-500" /> WebMCP
-          </TabsTrigger>
-          <TabsTrigger
-            value="federated"
-            onMouseEnter={() => preloadTab('federated')}
-            onFocus={() => preloadTab('federated')}
-            className="py-2 px-3 sm:px-1.5 whitespace-nowrap shrink-0 sm:shrink text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
-          >
-            <Radio className="w-3.5 h-3.5 text-blue-500" /> 差分隐私
-          </TabsTrigger>
-          <TabsTrigger
-            value="speculation"
-            onMouseEnter={() => preloadTab('speculation')}
-            onFocus={() => preloadTab('speculation')}
-            className="py-2 px-3 sm:px-1.5 whitespace-nowrap shrink-0 sm:shrink text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
-          >
-            <Zap className="w-3.5 h-3.5 text-amber-500" /> 推测预渲染
-          </TabsTrigger>
-          <TabsTrigger
-            value="synthesizer"
-            onMouseEnter={() => preloadTab('synthesizer')}
-            onFocus={() => preloadTab('synthesizer')}
-            className="py-2 px-3 sm:px-1.5 whitespace-nowrap shrink-0 sm:shrink text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
-          >
-            <Wrench className="w-3.5 h-3.5 text-orange-500" /> 工具合成
-          </TabsTrigger>
-          <TabsTrigger
-            value="mesh"
-            onMouseEnter={() => preloadTab('mesh')}
-            onFocus={() => preloadTab('mesh')}
-            className="py-2 px-3 sm:px-1.5 whitespace-nowrap shrink-0 sm:shrink text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
-          >
-            <Share2 className="w-3.5 h-3.5 text-teal-500" /> P2P共识
-          </TabsTrigger>
-          <TabsTrigger
-            value="health"
-            onMouseEnter={() => preloadTab('health')}
-            onFocus={() => preloadTab('health')}
-            className="py-2 px-3 sm:px-1.5 whitespace-nowrap shrink-0 sm:shrink text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> 文本熵巡检
-          </TabsTrigger>
-          <TabsTrigger
-            value="intent"
-            onMouseEnter={() => preloadTab('intent')}
-            onFocus={() => preloadTab('intent')}
-            className="py-2 px-3 sm:px-1.5 whitespace-nowrap shrink-0 sm:shrink text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
-          >
-            <Zap className="w-3.5 h-3.5 text-amber-500" /> 0-RTT 推测
-          </TabsTrigger>
-          <TabsTrigger
-            value="vault"
-            onMouseEnter={() => preloadTab('vault')}
-            onFocus={() => preloadTab('vault')}
-            className="py-2 px-3 sm:px-1.5 whitespace-nowrap shrink-0 sm:shrink text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
-          >
-            <Lock className="w-3.5 h-3.5 text-cyan-500" /> E2EE 金库
-          </TabsTrigger>
-        </TabsList>
+      {/* 2026-11-21 分组导航（替代原 2×6 平铺）：
+          12 个引擎原本一字排开，排序、图谱、端侧基建、隐私安全混在一起，
+          缺少系统架构层次。现按技术域分 3 组，桌面端横向排列、窄屏横向滚动：
+            检索与排序  → LinUCB / 0-RTT 推测 / 文本熵巡检
+            图谱与视觉  → 庞加莱平替 / 知识星图 / 视觉指纹
+            端侧基建与隐私 → WebMCP / 工具合成 / 差分隐私 / P2P 共识 / 推测预渲染 / E2EE 金库
+          仍是同一套 Tabs 原语，故 #hash 深链与前进后退行为完全不变。 */}
+      {/* 布局：1280px 实测「12 个 Tab + 3 个组标签」一行放不下，
+          右侧「推测预渲染」被截断。改为按组换行（每组建自己的 flex 行），
+          ≥xl 才尝试单行；任何宽度下都不隐藏引擎，也不出现截断。
+          overflow-x-auto 仍保留作最后兜底（极窄屏），但通常不会触发。 */}
+      <TabsList className="sticky top-0 z-30 flex h-auto w-full flex-wrap items-center gap-x-2 gap-y-1.5 overflow-x-auto no-scrollbar rounded-xl border border-border/60 bg-muted/40 p-2 backdrop-blur-md touch-pan-x">
+        {LAB_GROUPS.map((group, gi) => (
+          /* 组间用竖线分隔 + 明确左右留白：首版只靠 gap 区分，实测
+             1280px 下「检索与排序」的组标签与相邻 Tab 文字视觉粘连。
+             组标签改为独立小色块（bg-muted 底 + 圆角），边界一眼可辨。 */
+          <div key={group.id} className="flex min-w-0 shrink-0 items-center gap-1 lg:shrink">
+            {gi > 0 ? (
+              <span aria-hidden="true" className="mx-1.5 hidden h-4 w-px shrink-0 bg-border lg:block" />
+            ) : null}
+            <span className="mr-0.5 shrink-0 whitespace-nowrap rounded-md bg-background/70 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
+              {group.label}
+            </span>
+            {group.items.map((item) => (
+              <TabsTrigger
+                key={item.value}
+                value={item.value}
+                onMouseEnter={() => preloadTab(item.value)}
+                onFocus={() => preloadTab(item.value)}
+                className="shrink-0 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-medium transition-all data-[state=active]:border data-[state=active]:border-border/60 data-[state=active]:bg-background data-[state=active]:shadow-xs"
+              >
+                <item.icon className={`h-3.5 w-3.5 ${item.tone}`} aria-hidden /> {item.label}
+              </TabsTrigger>
+            ))}
+          </div>
+        ))}
+</TabsList>
 
 
 

@@ -64,7 +64,14 @@ export function Footer({ siteInfo }: FooterProps) {
           <span className="text-border" aria-hidden="true">·</span>
           <Link href="/submit" className="inline-flex items-center min-h-11 px-3 py-2 rounded-md hover:text-foreground transition-colors">网站投稿</Link>
         </div>
-        <div className="flex flex-col items-center gap-1.5 md:items-end">
+        {/* 2026-11-21 修右侧悬浮挂件遮挡版权：
+            本块在 md 起右对齐、贴容器右缘，而小猫猫挂件固定在
+            right:24px / bottom:24px。1024×768 实测挂件左下角 (958,608)
+            与版权文字「山羊胡网址导航大全」右端 (1008,657) 相交，正好压住
+            「大全」二字；1280/1440 只是侥幸没撞上，用户一拖动猫就会再撞。
+            这里给右缘留出挂件宽度 + 呼吸位（约 96px），仅在 ≥md 生效
+            （窄屏页脚是居中单列，不贴右缘，无需避让）。 */}
+        <div className="flex flex-col items-center gap-1.5 md:items-end md:pr-24 lg:pr-28">
           <p className="text-center text-xs text-muted-foreground font-mono md:text-right">
             &copy; <span suppressHydrationWarning>{currentYear}</span> {title} · AI-Native Cognitive Navigation
           </p>

@@ -168,21 +168,28 @@ test('市场页 390px：滚到底后页脚链接与回到顶部可点', async ({
 
   const reached = await scrollToRealBottom(page)
   expect(reached, '应能滚到页面底部').toBe(true)
-  await page.waitForTimeout(800) // 回到顶部按钮是 scrollY>300 后才现身的 React 状态
+  // A3-1（回到顶部，新入口）：292937a2（2026-11-20）已删 floating-quick-nav.tsx，
+  // 回顶改由命令面板指令 cmd-scroll-top 覆盖（spotlight-modal.tsx:749-750）；
+  // ScrollToTop 只挂在 /videos，/marketplace 从无「回到顶部」按钮，旧段按按钮
+  // 计数的前提已失效。改走新入口：Ctrl+Shift+K 呼出命令面板，指令模式（> 前缀）
+  // 筛出「回到页面顶部」指令，点它回顶；断言与旧段等价——滚到底后指令可点、
+  // 点后回到顶部（scrollY 回 0）。
+  const scrollYBefore = await page.evaluate(() => window.scrollY)
+  expect(scrollYBefore, '滚到底后 scrollY 应大于 0').toBeGreaterThan(0)
+  await page.keyboard.press('Control+Shift+K')
+  const spotlightInput = page.getByRole('combobox', { name: '全局超级搜索与系统指令' })
+  await expect(spotlightInput).toBeVisible({ timeout: 5000 })
+  await spotlightInput.fill('> 回到页面顶部')
+  const cmd = page.locator('#spotlight-cmd-listbox [role="option"]', { hasText: '回到页面顶部 (Back to Top)' })
+  await expect(cmd).toBeVisible({ timeout: 5000 })
+  await cmd.click()
+  await page.waitForFunction(() => window.scrollY === 0, { timeout: 5000 })
+  const scrollYAfter = await page.evaluate(() => window.scrollY)
+  expect(scrollYAfter, '点「回到页面顶部」指令后应回到页面顶部').toBe(0)
 
-  // A3-1（回到顶部）：取按钮顶部附近一点——此处正处猫带的高度（y 718–776），
-  // 猫若未收走会盖住它；底栏（y 788–844）不覆盖此点。
-  const topButtons = page.locator('button[aria-label="回到顶部"]')
-  const topCount = await topButtons.count()
-  expect(topCount, '滚到底后至少应有一个回到顶部按钮').toBeGreaterThan(0)
-  for (let i = 0; i < topCount; i++) {
-    const btn = topButtons.nth(i)
-    if (!(await btn.isVisible().catch(() => false))) continue
-    const box = await btn.boundingBox()
-    if (!box) continue
-    const ok = await hitIs(page, box.x + box.width / 2, box.y + 5, 'button[aria-label="回到顶部"]')
-    expect(ok, '回到顶部按钮顶部应可点（猫不应盖住）').toBe(true)
-  }
+  // 回顶验证完后滚回底部：页脚段的前提仍是「滚到底后视口内有页脚链接」。
+  const backToBottom = await scrollToRealBottom(page)
+  expect(backToBottom, '应能重新滚到页面底部').toBe(true)
 
   // A3-1（页脚链接）：视口内、底栏（y 788–844）之上的页脚链接逐个断言；
   // 命中须是页脚链接本身（或其子孙），且绝不能是猫挂件（#xiaomaomao 内元素）。

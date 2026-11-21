@@ -374,7 +374,7 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
                   <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-primary text-primary-foreground">
                     {displayShortcut.prefix}
                   </span>
-                  <div className="text-xs sm:text-sm text-foreground truncate">
+                  <div className="text-xs sm:text-sm text-foreground truncate min-w-0">
                     <span>在 </span>
                     <strong className="text-primary">{displayShortcut.engineName}</strong>
                     <span> 搜索：</span>
@@ -466,7 +466,7 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
                         </div>
                         <div className="flex flex-col flex-1 gap-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-sm font-medium truncate">
+                            <span className="text-sm font-medium truncate min-w-0">
                               {highlightText(item.title)}
                             </span>
                             {renderBadges((item as any).matchedChannels)}
@@ -520,7 +520,7 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
                             </div>
                             <div className="flex flex-col flex-1 gap-1 min-w-0">
                               <div className="flex items-center justify-between gap-2">
-                                <span className="text-sm font-medium truncate">
+                                <span className="text-sm font-medium truncate min-w-0">
                                   {highlightText(item.title)}
                                 </span>
                                 {renderBadges((item as any).matchedChannels)}

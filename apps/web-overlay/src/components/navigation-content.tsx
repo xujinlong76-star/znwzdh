@@ -1391,7 +1391,7 @@ export function NavigationContent({
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div className="flex items-center gap-2 min-w-0">
                                 <span className="w-1.5 h-5 rounded-full bg-primary/60" />
-                                <h2 className="text-base sm:text-xl font-bold tracking-tight text-foreground truncate">
+                                <h2 className="text-base sm:text-xl font-bold tracking-tight text-foreground truncate min-w-0">
                                   {category.title}
                                 </h2>
                                 <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground border border-border/40 shrink-0">

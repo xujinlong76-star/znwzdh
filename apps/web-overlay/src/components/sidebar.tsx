@@ -134,7 +134,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
       return (
         <Image
           src={iconName}
-          alt="icon"
+          alt=""
           width={16}
           height={16}
           className="h-4 w-4"
@@ -316,7 +316,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
         </button>
       )}
       <div className="flex min-h-[3.5rem] items-center justify-between px-3.5 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 gap-2">
-        <Link href="/" className="flex items-center gap-2 font-bold text-sm tracking-tight hover:opacity-90 transition-opacity min-w-0 shrink-0">
+        <Link href="/" className="flex items-center gap-2 font-bold text-sm tracking-tight hover:opacity-90 transition-opacity min-w-0">
           {siteInfo.appearance.logo ? (
             <Image
               src={siteInfo.appearance.logo}
@@ -330,15 +330,15 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
               <Compass className="h-4 w-4 text-primary" />
             </div>
           )}
-          <div className="flex flex-col min-w-0 shrink-0">
+          <div className="flex flex-col min-w-0">
             {/* 首屏瘦身：侧边栏品牌为页面唯一 h1（主内容区大号 H1 已移除；
                 不走 sr-only 隐藏术）。侧边栏在桌面与移动抽屉各渲染一次，
                 移动抽屉传 brandAsHeading={false} 渲染为 span，保证 DOM 内
                 恰好一个 h1（复核 2026-11-20 首屏瘦身第 1 项）。 */}
             {brandAsHeading ? (
-              <h1 className="leading-tight font-bold text-foreground text-[14px] tracking-tight whitespace-nowrap">{siteInfo.basic.title}</h1>
+              <h1 className="leading-tight font-bold text-foreground text-sm tracking-tight truncate">{siteInfo.basic.title}</h1>
             ) : (
-              <span className="leading-tight font-bold text-foreground text-[14px] tracking-tight whitespace-nowrap">{siteInfo.basic.title}</span>
+              <span className="leading-tight font-bold text-foreground text-sm tracking-tight truncate">{siteInfo.basic.title}</span>
             )}
             <span className="text-[11px] text-muted-foreground font-mono font-normal">AI-Native Hub</span>
           </div>
@@ -395,7 +395,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                   <span className="text-muted-foreground group-hover:text-primary transition-colors">
                     {renderIcon(category.icon)}
                   </span>
-                  <span className="truncate">{category.title}</span>
+                  <span className="truncate min-w-0">{category.title}</span>
                 </Button>
 
                 {visibleSubCategories.length > 0 && (
@@ -433,7 +433,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                           scrollToSection(subCategory.id, category.id)
                         }}
                       >
-                        <span className="truncate">{subCategory.title}</span>
+                        <span className="truncate min-w-0">{subCategory.title}</span>
                       </Button>
                     ))}
                   </div>

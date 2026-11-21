@@ -48,6 +48,7 @@ function safetyFixture(overrides: Partial<DataSafety> = {}): DataSafety {
     sync: {
       favorites: { lastSuccessAt: now - 60 * 60_000, lastFailureAt: null, lastErrorCode: null },
       watchlist: { lastSuccessAt: now - 2 * 60 * 60_000, lastFailureAt: null, lastErrorCode: null },
+      exams: { lastSuccessAt: now - 2 * 60 * 60_000, lastFailureAt: null, lastErrorCode: null },
       vault: { exists: true, version: 3, updatedAt: now - DAY },
       crdt: { exists: true, updatedAt: now - DAY },
       unreadSyncFailures: 0,
@@ -172,6 +173,7 @@ describe('DataSafetyCard 四态渲染', () => {
         sync: {
           favorites: { lastSuccessAt: null, lastFailureAt: null, lastErrorCode: null },
           watchlist: { lastSuccessAt: null, lastFailureAt: null, lastErrorCode: null },
+          exams: { lastSuccessAt: null, lastFailureAt: null, lastErrorCode: null },
           vault: { exists: false, version: null, updatedAt: null },
           crdt: { exists: false, updatedAt: null },
           unreadSyncFailures: 0,
@@ -192,6 +194,7 @@ describe('DataSafetyCard 四态渲染', () => {
           sync: {
             favorites: { lastSuccessAt: now - 2 * 60 * 60_000, lastFailureAt: now - 10 * 60_000, lastErrorCode: 'timeout' },
             watchlist: { lastSuccessAt: null, lastFailureAt: null, lastErrorCode: null },
+            exams: { lastSuccessAt: null, lastFailureAt: null, lastErrorCode: null },
             vault: { exists: false, version: null, updatedAt: null },
             crdt: { exists: false, updatedAt: null },
             unreadSyncFailures: 1,

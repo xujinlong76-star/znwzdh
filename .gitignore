@@ -120,3 +120,19 @@ apps/api/seed-content/
 
 # 小猫猫挂件媒体包（二进制，不进仓库、部署时另放）：透明视频与 WebP/GIF 兜底
 apps/web-overlay/public/xiaomaomao/media/
+
+# --- 根目录临时探针与验证据（2026-11-21 保洁）---
+# 背景：一轮首屏调优过程中，根目录堆了 38 个一次性脚本（diag-*/measure-*/verify-*）
+# 与 4 份笔记，全部被误提交。已清理并归档（见 docs/audits/ 与 scripts/perf/）。
+# 下面的规则防止同类文件再被误提交；长期保留的探针请放 scripts/perf/。
+/tmp-probe-*.mjs
+/diag-*.mjs
+/measure-*.mjs
+/verify-*.mjs
+/shot-*.mjs
+/probe-*.mjs
+/*-notes.md
+/verify-evidence/
+/tmp-*.png
+/*-evidence/
+/*.shot.png

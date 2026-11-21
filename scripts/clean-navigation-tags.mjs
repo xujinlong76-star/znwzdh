@@ -235,6 +235,8 @@ export function cleanSiteItemTags(item, categoryTitles, options = {}) {
   const slugFixes = []
   const synonymMerges = []
   const removedVerbose = []
+  /** 单卡包含关系去重记录（二期新增）：短标签被更具体的长标签吸收。 */
+  const containedMerges = []
   const seen = new Set()
   const kept = []
 
@@ -305,6 +307,43 @@ export function cleanSiteItemTags(item, categoryTitles, options = {}) {
       synonymMerges.push({ from: raw, to: canonical, deduplicated: true })
       continue
     }
+
+    /**
+     * 4b. 单卡同义包含去重（2026-11-21 二期）。
+     *
+     * seen 只做「完全相等」去重，挡不住包含关系：实测库里仍有 6 对，
+     * 例如「开源 / 开源框架」「AI思维导图 / 思维导图」「简历 / 简历模板」。
+     * 两张标签并存时，同一张卡上「开源」与「开源框架」占掉两个宝贵的标签位
+     * （单卡上限 3），信息密度反而下降。
+     *
+     * 规则：短标签是长标签的子串时，**保留长标签**（信息量更大），
+     * 但短标签若是正交决策属性（开源/免费额度/自托管…）则反过来保留它——
+     * 决策属性是跨站可比的一等公民，不能因为某个站多了个「开源框架」就丢掉。
+     */
+    const containMatch = kept.find((existing) => {
+      const ek = normalizeTag(existing)
+      if (!ek || ek === canonicalKey) return false
+      return ek.includes(canonicalKey) || canonicalKey.includes(ek)
+    })
+    if (containMatch) {
+      const matchKey = normalizeTag(containMatch)
+      const keepExistingIsOrthogonal = ORTHOGONAL_PRIORITY_MAP.has(matchKey)
+      const keepNewIsOrthogonal = ORTHOGONAL_PRIORITY_MAP.has(canonicalKey)
+      // 两边都是（或都不是）决策属性时，留更长的那个；仅在「一边是决策属性」时优先它
+      const preferExisting =
+        keepExistingIsOrthogonal !== keepNewIsOrthogonal
+          ? keepExistingIsOrthogonal
+          : matchKey.length >= canonicalKey.length
+      if (preferExisting) {
+        containedMerges.push({ from: raw, to: containMatch, reason: 'contained_substring' })
+        continue
+      }
+      // 新标签更该留：把旧的从 kept 里摘掉
+      kept.splice(kept.indexOf(containMatch), 1)
+      seen.delete(matchKey)
+      containedMerges.push({ from: containMatch, to: canonical, reason: 'contained_substring' })
+    }
+
     seen.add(canonicalKey)
     kept.push(canonical)
   }
@@ -345,6 +384,7 @@ export function cleanSiteItemTags(item, categoryTitles, options = {}) {
     synonymMerges,
     removedVerbose,
     addedOrthogonal,
+    containedMerges,
   }
 }
 
@@ -382,6 +422,8 @@ export function cleanNavigationDocument(doc, options = {}) {
     slugRemovedCount: 0,
     verboseRemovedCount: 0,
     orthogonalAddedCount: 0,
+    /** 单卡包含关系去重（二期）：短标签被更具体的长标签吸收的次数。 */
+    containedMergesCount: 0,
   }
   const slugFixList = []
   const siteDiffs = []
@@ -402,6 +444,7 @@ export function cleanNavigationDocument(doc, options = {}) {
       stats.synonymMergesCount += res.synonymMerges.length
       stats.verboseRemovedCount += res.removedVerbose.length
       stats.orthogonalAddedCount += res.addedOrthogonal.length
+    stats.containedMergesCount += res.containedMerges.length
 
       for (const fix of res.slugFixes) {
         slugFixList.push(fix)
@@ -420,6 +463,7 @@ export function cleanNavigationDocument(doc, options = {}) {
           removedCategoryDuplicates: res.removedCategoryDuplicates,
           synonymMerges: res.synonymMerges,
           addedOrthogonal: res.addedOrthogonal,
+          containedMerges: res.containedMerges,
         })
       }
       allItemsAfter.push({ tags: Array.isArray(item.tags) ? item.tags : [] })
@@ -499,6 +543,7 @@ function printReport(file, report, mode, limit) {
   console.log(`  - 异常 slug 直接剔除:       ${stats.slugRemovedCount}`)
   console.log(`  - 冗长标签(>5汉字)剔除:     ${stats.verboseRemovedCount}`)
   console.log(`  - 正交决策属性标签补齐:     ${stats.orthogonalAddedCount}`)
+  console.log(`  - 单卡包含关系去重(二期):   ${stats.containedMergesCount}`)
 
   if (slugFixList.length > 0) {
     console.log(`\n--- 异常连字符 Slug 修复/剔除清单 (${slugFixList.length} 处) ---`)

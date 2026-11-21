@@ -61,6 +61,24 @@ let BASELINE = [
   "apps/web-overlay/src/lib/video-doc-read.ts",
   "apps/web-overlay/src/registry/new-york/ui/chart.tsx",
   "apps/web-overlay/src/registry/new-york/ui/input-otp.tsx",
+  // --- 2026-11-21 首屏胶囊行重构后的登记（HomeCapsuleRow 接管渲染位置）---
+  // 上游把「工作区胶囊行 + 运营胶囊行」合并成 HomeCapsuleRow 之后，
+  // 下列组件失去了 src 内的渲染引用者，但**多数仍被测试直接 import**
+  // （属于门禁盲区 C：守卫测试按源码路径 import，删了测试先红）。
+  // 它们不是"可随手删的死代码"，而是"等待决策的遗留实现"：
+  // 要么把测试迁移到 HomeCapsuleRow 后删除，要么把组件重新接回。
+  "apps/web-overlay/src/components/growth/homepage-banner-lazy.tsx",
+  "apps/web-overlay/src/components/home-frequent-visits.tsx",
+  "apps/web-overlay/src/components/home-hero-deck.tsx",
+  "apps/web-overlay/src/components/home-micro-strip.tsx",
+  "apps/web-overlay/src/components/home-plugin-spotlight.tsx",
+  "apps/web-overlay/src/components/home-recent-visits.tsx",
+  "apps/web-overlay/src/components/home-today-more.tsx",
+  "apps/web-overlay/src/components/speed-dial-dock.tsx",
+  // home-announcement.ts 是 2026-11-21 我新增的通告条三态 store。
+  // 它的消费者 home-micro-strip.tsx 已失去渲染入口，本 store 因此也 0 引用；
+  // 若决定彻底移除旧胶囊行，这两项应一并删除（连同 drama-continue-watch-time-meta 测试）。
+  "apps/web-overlay/src/lib/home-announcement.ts",
 ];
 
 /**

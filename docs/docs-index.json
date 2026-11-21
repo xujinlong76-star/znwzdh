@@ -4,12 +4,12 @@
   "generatedAt": "2026-11-06",
   "generator": "scripts/gen-docs-index.mjs",
   "counts": {
-    "docsMdDisk": 97,
+    "docsMdDisk": 104,
     "docsMdGitTracked": 87,
     "docsMdUntrackedAdr": 4,
     "deliverablesTopLevelDirs": 15,
     "deliverablesMdReports": 20,
-    "scriptsCheckMjs": 44
+    "scriptsCheckMjs": 46
   },
   "notes": [
     "任务书给的 docs/ 87 份 = git 已跟踪口径（GIT_TRACKED_DOCS 常量，2026-11-06 git ls-files 实测）；本索引以磁盘全量为登记口径，逐份标注 tracked，不伪造 87。",
@@ -434,9 +434,27 @@
       "status": "decision"
     },
     {
+      "path": "audits/codeql-notes.md",
+      "tracked": false,
+      "source": "disk-extra",
+      "status": "historical"
+    },
+    {
       "path": "competitor-walkthrough/README.md",
       "tracked": true,
       "source": "git-tracked",
+      "status": "historical"
+    },
+    {
+      "path": "evolution-round-2026-11-20-1722-w7-u290.md",
+      "tracked": false,
+      "source": "disk-extra",
+      "status": "historical"
+    },
+    {
+      "path": "me-growth-copy-table.md",
+      "tracked": false,
+      "source": "disk-extra",
       "status": "historical"
     },
     {
@@ -462,6 +480,30 @@
       "tracked": true,
       "source": "git-tracked",
       "status": "current"
+    },
+    {
+      "path": "security/codeql-clearance-checklist.md",
+      "tracked": false,
+      "source": "disk-extra",
+      "status": "historical"
+    },
+    {
+      "path": "security/codeql-triage-report-2026-11-21.md",
+      "tracked": false,
+      "source": "disk-extra",
+      "status": "historical"
+    },
+    {
+      "path": "security/dependabot-upgrade-checklist.md",
+      "tracked": false,
+      "source": "disk-extra",
+      "status": "historical"
+    },
+    {
+      "path": "security/pr-security-gate.md",
+      "tracked": false,
+      "source": "disk-extra",
+      "status": "historical"
     },
     {
       "path": "seo-keyword-research.md",
@@ -776,6 +818,14 @@
       {
         "file": "check-dead-modules.mjs",
         "purpose": "死模块候选扫描棘轮：overlay 内 0 引用模块，仅「不在基线里的新候选」判红；BASELINE_NOTES 逐份登记 keep/delete 结论"
+      },
+      {
+        "file": "check-tag-data.mjs",
+        "purpose": "标签数据护栏（只读）：扫全库站点，报告零标签站点 / 超长标签(CJK>6) / 单卡包含关系三类瑕疵；--strict 时任一违规退出码 1，用于防新增站点漏填标签与分类名复读回归"
+      },
+      {
+        "file": "check-root-hygiene.mjs",
+        "purpose": "根目录卫生门禁：检查被 git 跟踪的根目录条目，命中 diag-/measure-/verify-/shot-/probe- 一次性脚本、*-notes.md 过程笔记或 *-evidence/ 验证据目录即报错；--strict 用于 CI，防止临时产物再堆回仓库根目录"
       },
       {
         "file": "check-frontend-typecheck.mjs",

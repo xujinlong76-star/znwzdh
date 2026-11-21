@@ -25,7 +25,8 @@ export function isAllowedHost(rawUrl, allowedHosts) {
   try {
     const u = new URL(rawUrl.trim());
     if (u.protocol !== "http:" && u.protocol !== "https:") return false;
-    hostname = u.hostname.toLowerCase();
+    // WHATWG 保留主机名末尾的点（https://github.com./x -> "github.com."），去点再比对。
+    hostname = u.hostname.toLowerCase().replace(/\.$/, "");
   } catch {
     return false;
   }
@@ -60,7 +61,10 @@ export function parseSiteUrl(raw) {
   try {
     const u = new URL(trimmed);
     if (u.protocol === "http:" || u.protocol === "https:") return u;
-    // 非 http(s) 方案：可能是裸串被误解析（如 example.com:8080），统一补方案再试。
+    // 非 http(s) 方案：若串里已有 `://`，它就是带方案的绝对 URL（如 httpx://），
+    // 不补方案（`https://httpx://evil.com` 会被 WHATWG 解析成主机名 httpx，
+    // 属于误解析）；只有无 `://` 的裸串才补 `https://` 再试。
+    if (trimmed.includes("://")) return null;
   } catch {
     // 无方案裸串，补 https:// 再试。
   }

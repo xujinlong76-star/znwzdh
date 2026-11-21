@@ -118,7 +118,8 @@ schema.org，否则报同一条 issue。文案与 issue 去重逻辑不变。
 - `https://github.com/x` → 解析出 hostname `github.com`
 - `github.com/x` → 补 `https://` 后解析出 `github.com`
 - `httpx://evil.com` → null（非 http(s) 方案不直接采用；补方案后非法）
-- `http:evil.com` → 解析出 hostname ``（与旧行为一致：协议 http 但无主机名，
+- `http:evil.com` → 解析出 protocol `http:`、hostname `evil.com`
+  （WHATWG 对 http 特殊方案宽容解析，与旧 `new URL` 行为一致；
   下游 map 查不到，回落默认图标）
 
 `heuristicFacets` 用例（`packages/ai/test/enrich-heuristics.test.ts`）：

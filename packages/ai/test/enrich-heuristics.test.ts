@@ -80,6 +80,27 @@ describe("heuristicFacets", () => {
     expect(f.platform).toContain("web");
   });
 
+  it("CodeQL #128/#129：URL 子串绕过不再误判为开源库", () => {
+    // 旧实现 lowerUrl.includes("github.com") 会把以下三者都误判为 library/open_source。
+    // 文本不含任何开源信号，隔离变量：只测 URL 主机判定。
+    const text = "一个普通工具";
+    for (const evil of [
+      "https://evil.com/?github.com",
+      "https://github.com.evil.com/x",
+      "https://evilgithub.com/x",
+      "https://evil.com/?gitee.com",
+      "https://gitee.com.evil.com/x",
+    ]) {
+      const f = heuristicFacets(evil, text);
+      expect(f.form ?? []).not.toContain("library");
+      expect(f.pricing ?? []).not.toContain("open_source");
+    }
+    // 合法子域与 gitee 仍命中（行为不变）
+    expect(heuristicFacets("https://sub.github.com/x", text).form).toContain("library");
+    expect(heuristicFacets("https://gitee.com/foo/bar", text).form).toContain("library");
+    expect(heuristicFacets("https://gitee.com/foo/bar", text).pricing).toEqual(["open_source"]);
+  });
+
   it("付费模式三档：freemium / free 互斥分支", () => {
     expect(heuristicFacets("https://x.com", "基础免费增值订阅制").pricing).toEqual(["freemium"]);
     expect(heuristicFacets("https://x.com", "100% 免费使用").pricing).toEqual(["free"]);

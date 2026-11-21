@@ -18,6 +18,12 @@ import { test, expect, type Page } from '@playwright/test';
  * 原因见该用例上方注释。
  */
 
+// C-W7-5（2026-11-21，待雷达落号）修正：右组实际 gap-1.5 = 6px，
+// 上文「7×2px 间隙 = 320px」「390px 366=366 恰好占满」与当前 HEAD 代码不符；
+// 修正后预算：360px 行 344px（超 8px）、390px 行 394px（超 28px），
+// Part 1 后：360px 行 294px ≤ 336px、390px 行 344px ≤ 366px，
+// 详见 evolution-round-2026-11-21-0522-w5.md §2（吸顶约 184px，见 W8 修正）。
+
 async function measureToolbarRow(page: Page) {
   return await page.evaluate(() => {
     const menuBtn = document.querySelector('button[aria-label="打开菜单"]');
@@ -58,8 +64,8 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
       const m = await measureToolbarRow(page);
       expect(m.found).toBe(true);
       if (!m.found) return;
-      // 实测数进日志：改前 360px 为 scrollWidth=366 > clientWidth=336；
-      // 改后应为 320 ≤ 336（U-155：小组件盒 <390px 收进菜单省 46px，外观按钮保留）。
+      // 实测数进日志：C-W7-5 修正前 360px 行 scrollWidth=344 > clientWidth=336；
+      // 改后应为 294 ≤ 336（C-W7-5：多选按钮 <640px 收进菜单省 50px）。
       console.log(
         `[toolbar360] ${width}px: rowScrollWidth=${m.rowScrollWidth} rowClientWidth=${m.rowClientWidth} buttons=${m.boxes.length} menuRight=${m.boxes.find((b) => b.label === '打开菜单')?.right}`,
       );
@@ -137,5 +143,55 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     await capsule.click();
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole('tab', { name: '外观与排版' })).toBeVisible();
+  });
+
+  test('360px/390px：按钮行实测不超宽（C-W7-5，待雷达落号）', async ({ page }) => {
+    // 直接量工具栏 flex 行（菜单按钮 → 右组 → flex-wrap 行容器），
+    // 不经过 closest('div.overflow-hidden')——旧 helper 的目标祖先
+    // 在当前壳里定位不明（navigation-content.tsx / app/page.tsx /
+    // app/layout.tsx 内 grep overflow-hidden 0 命中），实施轮须以
+    // 本用例的 console.log 核对旧 helper 实际量的是哪一层。
+    for (const width of [360, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto('/');
+      const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
+      await expect(todayBtn).toBeVisible({ timeout: 60_000 });
+      const m = await page.evaluate(() => {
+        const menuBtn = document.querySelector('button[aria-label="打开菜单"]');
+        const row = menuBtn?.parentElement?.parentElement; // 右组 → flex-wrap 行
+        if (!menuBtn || !row) return { found: false as const };
+        return {
+          found: true as const,
+          rowScrollWidth: row.scrollWidth,
+          rowClientWidth: row.clientWidth,
+        };
+      });
+      expect(m.found).toBe(true);
+      if (!m.found) return;
+      console.log(
+        `[toolbar360-cw75] ${width}px: rowScrollWidth=${m.rowScrollWidth} rowClientWidth=${m.rowClientWidth}`,
+      );
+      expect(
+        m.rowScrollWidth,
+        `按钮行溢出：scrollWidth=${m.rowScrollWidth} > clientWidth=${m.rowClientWidth}`,
+      ).toBeLessThanOrEqual(m.rowClientWidth);
+    }
+  });
+
+  test('360px：多选按钮收进探索菜单，菜单内可点开多选态（C-W7-5，待雷达落号）', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.goto('/');
+    const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
+    await expect(todayBtn).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('button[aria-label="多选模式"]')).toBeHidden();
+    await page
+      .getByRole('button', { name: '探索矩阵与导航工具箱', exact: true })
+      .click();
+    const menuItem = page.getByRole('menuitem', { name: /多选模式/ });
+    await expect(menuItem).toBeVisible();
+    await menuItem.click();
+    await expect(
+      page.locator('button[aria-label="多选模式"][aria-pressed="true"]'),
+    ).toHaveCount(1);
   });
 });

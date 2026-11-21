@@ -238,6 +238,16 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                       <span className="text-xs text-muted-foreground">全景快捷键列表 (?)</span>
                     </div>
                   </DropdownMenuItem>
+                  {/* C-W7-5（2026-11-21，待雷达落号）：多选按钮 <sm 收进探索菜单（工具栏内
+                      按钮 <640px 隐藏，见下方多选按钮注释）；≥sm 该条目隐藏，
+                      按钮恢复显示。点击路径与工具栏按钮一致。 */}
+                  <DropdownMenuItem onClick={() => onToggleSelectMode()} aria-pressed={selectionMode} className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent sm:hidden">
+                    <CheckSquare className="h-4 w-4 text-primary shrink-0" />
+                    <div className="flex flex-col">
+                      <span className="font-medium text-foreground">多选模式</span>
+                      <span className="text-xs text-muted-foreground">批量导出 / 复制 / 置顶 (M)</span>
+                    </div>
+                  </DropdownMenuItem>
                   {/* U-155（2026-11-19）：小组件盒 <390px 的工具栏内替代入口（工具栏按钮
                       在该宽度下隐藏，见上方注释）；≥390px 该条目隐藏，按钮恢复显示。 */}
                   {onOpenWidgetBox ? (
@@ -428,12 +438,14 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                 <HelpCircle className="h-4 w-4" />
               </Button>
 
-              {/* 多选：批量导出 / 复制 / 置顶的唯一入口（此前只有孤立的操作坞，没有任何入口） */}
+              {/* 多选：批量导出 / 复制 / 置顶的入口（此前只有孤立的操作坞，没有任何入口）。
+                  C-W7-5（2026-11-21，待雷达落号）：<sm 时按钮收进探索菜单（同文件上方「多选模式」
+                  条目），行宽 344px → 294px ≤ 336px；≥sm 按钮恢复显示。 */}
               <Button
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "relative h-11 w-11 rounded-lg transition-colors",
+                  "relative h-11 w-11 rounded-lg transition-colors hidden sm:inline-flex",
                   selectionMode
                     ? "text-primary bg-primary/10"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
@@ -451,11 +463,13 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                 )}
               </Button>
 
+              {/* C-W7-5（2026-11-21，待雷达落号）：全选按钮 <sm 隐藏（否则多选态下 360px
+                  行宽仍为 344px）；全选入口保留在多选操作坞（BatchOperationDock「全选 (N)」）。 */}
               {selectionMode && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-9 w-auto rounded-lg gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  className="hidden h-9 w-auto rounded-lg gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground sm:inline-flex"
                   onClick={onSelectAllVisible}
                   title={summarizeSelection(selectedIds, visibleSiteCount) + '（点击全选当前可见站点）'}
                 >
@@ -471,9 +485,13 @@ export const NavigationToolbar = memo(function NavigationToolbar({
               {/* U-155 方案 A（2026-11-19）：纯图标改为图标 + 可见文字标签「DIY 排版」，
                   让 DIY 入口首屏可见可识别；<sm 沿用「今日」按钮的上下叠排（图标上、
                   文字下），仍占 44px 宽；≥sm 横排，与「AI 找站」按钮同式。
-                  360px 宽度账：小组件盒 <390px 已收进探索菜单，行内 7×44px + 6×2px
-                  间隙 = 320px ≤ 360−24px 可用宽，菜单按钮不再被挤出；390px 时
-                  8×44px + 14px = 366px 恰好占满 390−24px。点击路径不动：仍打开
+                  360px 宽度账（2026-11-21 C-W7-5 修正：右组 gap-1.5 = 6px，
+                  旧注「6×2px 间隙」与代码不符）：小组件盒 <390px 已收进探索菜单，
+                  但行内仍为 7×44px + 6×6px = 344px > 360−24px 可用宽，
+                  菜单按钮右缘被 html overflow-x: clip 裁掉 8px；390px 时
+                  8×44px + 7×6px = 394px > 390−24px，裁掉 28px。
+                  C-W7-5：多选按钮 <sm 收进探索菜单（360px 行 294px ≤ 336px；
+                  390px 行 344px ≤ 366px）。点击路径不动：仍打开
                   外观向导小窗（默认 appearance 页签），底部「开启 DIY」进编排态。 */}
               {onOpenAppearanceGuide ? (
                 <Button

@@ -15,6 +15,12 @@ export interface SyncBannerInput {
   syncing?: boolean
   ok?: boolean
   pushed?: number
+  /** U-371：服务端确认应用的 ops 数（缺失时回退 pushed，老调用方仍能用） */
+  applied?: number
+  /** U-371：被另一台设备的更新版本覆盖、LWW 跳过的 ops 数 */
+  skipped?: number
+  /** 服务端截断超长备注的条数 */
+  truncatedNotes?: number
   cloudCount?: number | null
   remoteRemoved?: number
   error?: string
@@ -34,24 +40,46 @@ export function describeSyncBanner(input: SyncBannerInput | null): SyncBanner {
 
   if (input.ok) {
     const cloud = typeof input.cloudCount === 'number' ? `（云端共 ${input.cloudCount} 条）` : ''
-    const text =
-      input.pushed && input.pushed > 0
-        ? `已把本机 ${input.pushed} 条收藏合并到云端${cloud}`
-        : `云端同步正常${cloud}`
+    // U-371：成功数按 applied 说，不许拿 pushed（提交数）冒充「已合并」。
+    // 老调用方没传 applied 时回退 pushed，文案与以前一致。
+    const pushed = input.pushed ?? 0
+    const applied = typeof input.applied === 'number' ? input.applied : pushed
+    const skipped = input.skipped ?? 0
+    // 被跳过的改动必须说出来：用户要知道「有改动没上去、本机还留着」，
+    // 而不是看到一句「已合并」以为万事大吉。
+    if (skipped > 0) {
+      const text =
+        applied > 0
+          ? `已把本机 ${applied} 条收藏合并到云端${cloud}；另有 ${skipped} 条被另一台设备的更新版本覆盖，本机改动已保留，再改一次即可重试同步`
+          : `本次提交的 ${pushed} 条收藏改动都被另一台设备的更新版本覆盖，未合并到云端；本机改动已保留，再改一次即可重试同步`
+      const removed =
+        input.remoteRemoved && input.remoteRemoved > 0
+          ? `；另一台设备删除了 ${input.remoteRemoved} 条收藏，已与云端保持一致`
+          : ''
+      return { tone: 'success', text: text + removed }
+    }
     // 墓碑提示优先级高于普通成功文案：用户需要知道「有东西被另一台设备删了」
     if (input.remoteRemoved && input.remoteRemoved > 0) {
       return { tone: 'success', text: `另一台设备删除了 ${input.remoteRemoved} 条收藏，已与云端保持一致` }
     }
+    let text =
+      applied > 0
+        ? `已把本机 ${applied} 条收藏合并到云端${cloud}`
+        : `云端同步正常${cloud}`
+    if (input.truncatedNotes && input.truncatedNotes > 0) {
+      text += `；其中 ${input.truncatedNotes} 条备注过长，已按 200 字截断保存`
+    }
     return { tone: 'success', text }
   }
 
-  // 失败必须带原因：只说"同步失败"用户无法判断该重试还是该登录
+  // 失败必须带原因、说清后果：只说"已保存在本机"会让用户以为改动已经安全了，
+  // 实际上它还没上云端、换设备就看不到——必须点明「未同步」与「重试」。
   const reason = input.error?.trim()
   return {
     tone: 'error',
     text: reason
-      ? `云端同步失败：${reason}。收藏已保存在本机浏览器，换设备登录可能看不到。`
-      : '云端同步失败：原因未知。收藏已保存在本机浏览器，换设备登录可能看不到。',
+      ? `云端同步失败：${reason}。本次改动未同步到云端，只保存在本机浏览器；请检查网络后重试同步，换设备登录可能看不到未同步的改动。`
+      : '云端同步失败：原因未知。本次改动未同步到云端，只保存在本机浏览器；请稍后重试同步。',
   }
 }
 

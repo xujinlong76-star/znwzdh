@@ -46,6 +46,8 @@ const headersFor = (identity: string) => ({
 type SyncBody = {
   ok: boolean;
   applied: number;
+  skipped?: number;
+  skippedSiteIds?: string[];
   version: number;
   items: Array<{
     siteId: string;
@@ -197,5 +199,55 @@ describe("POST /api/me/favorites/sync", () => {
       ops: [{ op: "add", siteId: siteA, note: "x".repeat(2001), at: Date.now() }],
     });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("U-371：LWW 跳过必须显式回传（计数 + siteId），不再只回 applied", () => {
+  // 与复现同一场景，但用独立身份 + 固定时间戳钉死契约（复现临时文件已删）。
+  const U371 = "github:u-sync-u371";
+  const T0 = 1700000000000;
+
+  it("R1：离线改备注 op at=t0 遇云端 t0+60000 → 200 ok:true，但 applied=0、skipped=1、云端仍是 B 版", async () => {
+    const first = await sync(U371, { ops: [{ op: "add", siteId: siteA, note: "A版备注", at: T0 }] });
+    expect(first.statusCode).toBe(200);
+    expect((first.json() as SyncBody).applied).toBe(1);
+
+    const second = await sync(U371, { ops: [{ op: "add", siteId: siteA, note: "B版备注", at: T0 + 60000 }] });
+    expect((second.json() as SyncBody).applied).toBe(1);
+
+    const stale = await sync(U371, { ops: [{ op: "add", siteId: siteA, note: "A版备注改", at: T0 }] });
+    expect(stale.statusCode).toBe(200);
+    const body = stale.json() as SyncBody;
+    expect(body.ok).toBe(true);
+    expect(body.applied).toBe(0);
+    expect(body.skipped).toBe(1);
+    expect(body.skippedSiteIds).toEqual([siteA]);
+    expect(body.items.find((i) => i.siteId === siteA)?.note).toBe("B版备注");
+  });
+
+  it("再改一次（at 取新的 updatedAt）就能赢下 LWW：applied=1、skipped=0", async () => {
+    const fresh = await sync(U371, { ops: [{ op: "add", siteId: siteA, note: "A版备注再改", at: T0 + 120000 }] });
+    expect(fresh.statusCode).toBe(200);
+    const body = fresh.json() as SyncBody;
+    expect(body.applied).toBe(1);
+    expect(body.skipped).toBe(0);
+    expect(body.skippedSiteIds).toEqual([]);
+    expect(body.items.find((i) => i.siteId === siteA)?.note).toBe("A版备注再改");
+  });
+
+  it("混合批量：只列被跳过的 siteId，已应用的不进 skippedSiteIds", async () => {
+    const res = await sync(U371, {
+      ops: [
+        { op: "add", siteId: siteA, note: "旧 at", at: T0 },
+        { op: "add", siteId: siteB, note: "新 at", at: T0 + 180000 },
+      ],
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as SyncBody;
+    expect(body.applied).toBe(1);
+    expect(body.skipped).toBe(1);
+    expect(body.skippedSiteIds).toEqual([siteA]);
+    expect(body.items.find((i) => i.siteId === siteB)?.note).toBe("新 at");
+    expect(body.items.find((i) => i.siteId === siteA)?.note).toBe("A版备注再改");
   });
 });

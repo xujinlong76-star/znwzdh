@@ -493,14 +493,14 @@ runAbCompareRef.current = runAbCompare
 <div>
 <h5 className="text-xs font-semibold mb-2">静态 RRF Top 3</h5>
 <div className="space-y-2">              {abResult.staticTop.map((s, i) => (                <div key={s.hit.siteId} ref={(el) => { abRowRefs.current.set("s:" + s.hit.siteId, el) }}>
-<p className="text-xs font-mono text-muted-foreground mb-1">#{i + 1} · 本地分数 {s.score.toFixed(4)}</p>
+<p className="text-xs font-mono tabular-nums text-muted-foreground mb-1">#{i + 1} · 本地分数 {s.score.toFixed(3)}</p>
 <ResultRow hit={s.hit} q={abQuery} />
 </div>              ))}              {abResult.staticTop.length === 0 && <p className="text-xs text-muted-foreground">无结果</p>}            </div>
 </div>
 <div>
 <h5 className="text-xs font-semibold mb-2">动态 LinUCB Top 3</h5>
 <div className="space-y-2">              {abResult.dynamicTop.map((s, i) => (                <div key={s.hit.siteId} ref={(el) => { abRowRefs.current.set("d:" + s.hit.siteId, el) }}>
-<p className="text-xs font-mono text-muted-foreground mb-1">#{i + 1} · 本地分数 {s.score.toFixed(4)}</p>
+<p className="text-xs font-mono tabular-nums text-muted-foreground mb-1">#{i + 1} · 本地分数 {s.score.toFixed(3)}</p>
 <ResultRow hit={s.hit} q={abQuery} />
 </div>              ))}              {abResult.dynamicTop.length === 0 && <p className="text-xs text-muted-foreground">无结果</p>}            </div>
 </div>

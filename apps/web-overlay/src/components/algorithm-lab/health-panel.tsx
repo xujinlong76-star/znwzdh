@@ -108,8 +108,12 @@ export function HealthPanel() {
                 <div className="p-4 rounded-xl border border-border/60 bg-card flex flex-col justify-between shadow-2xs">
                   <div>
                     <span className="text-xs text-muted-foreground">Shannon 文本信息熵 H(S)</span>
+                    {/* 2026-11-21 精度统一：原来直接渲染 {healthAudit.entropy}，
+                        实测显示 4.2554（4 位小数）；同面板判据里的阈值写的是
+                        H < 2.0，精度口径不一致会让人以为熵值"更精确"。
+                        固定 2 位，与判据阈值同档。 */}
                     <div className="text-3xl font-extrabold font-mono tabular-nums text-emerald-600 dark:text-emerald-400 mt-1">
-                      {healthAudit.entropy}
+                      {healthAudit.entropy.toFixed(2)}
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground mt-3 pt-2 border-t border-border/40">

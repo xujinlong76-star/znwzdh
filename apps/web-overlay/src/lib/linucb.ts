@@ -13,7 +13,10 @@
  * 在线自适应计算 5 大通道（exact, fts, pinyin, semantic, personal）的动态置信度上界权重。
  */
 
-import { PINYIN_SYLLABLES, PINYIN_INITIALS, NON_PINYIN_WORDS } from './pinyin-syllables'
+// 注意：packages/core 内部相对导入一律带 .ts 扩展名（见 diy-layout.ts 等），
+// 这是该包在 Node/Next 下解析的既有约定；漏掉扩展名会让 Web 构建
+// ERR_MODULE_NOT_FOUND（2026-11-21 实测踩过）。
+import { PINYIN_SYLLABLES, PINYIN_INITIALS, NON_PINYIN_WORDS } from './pinyin-syllables.ts'
 export type RetrievalChannel = 'exact' | 'fts' | 'pinyin' | 'semantic' | 'personal';
 
 export const CHANNELS: RetrievalChannel[] = ['exact', 'fts', 'pinyin', 'semantic', 'personal'];

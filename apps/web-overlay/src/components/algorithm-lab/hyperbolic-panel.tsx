@@ -184,7 +184,9 @@ export function HyperbolicPanel() {
                             <Badge variant="secondary" className="text-xs px-2 py-0.5">{alt.category}</Badge>
                           </div>
                           <div className="text-xs text-muted-foreground font-mono tabular-nums flex gap-3">
-                            <span>双曲测地距: <strong className="text-foreground">{alt.dist}</strong></span>
+                            {/* 2026-11-21 精度统一：原来直接输出原始浮点（实测 0.1995 等 4 位），
+                    与同面板 alt.score 的 1 位小数口径不一致。测地距固定 3 位。 */}
+                <span>双曲测地距: <strong className="text-foreground tabular-nums">{Number(alt.dist).toFixed(3)}</strong></span>
                             {/* 引擎不暴露 depthParity 中间量，这里展示它最终产出的亲和分（0~100） */}
                             <span>亲和分: <strong className="text-foreground">{alt.score}</strong></span>
                           </div>

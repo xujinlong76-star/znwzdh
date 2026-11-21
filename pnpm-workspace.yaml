@@ -99,6 +99,19 @@ overrides:
   # pnpm 字段搬进 workspace 配置、真正生效后，生产面 audit 立刻红灯）。
   nanoid@<4: 3.3.18
   sharp: '>=0.35.5'
+  # dompurify：5 条 Low（IN_PLACE / SAFE_FOR_TEMPLATES / xhtml+xml SMIL 绕过，
+  #   修复版均 >=3.4.17）。唯一来源 monaco-editor@0.57.0（生产依赖）精确钉 3.4.15，
+  #   且 monaco npm 最新仍是 0.57.0，无父包升级路径，只能用 override 抬到最新 3.x 补丁版。
+  dompurify: 3.4.18
+  # minimatch：CVE-2026-118764 / GHSA-g3hv-75wg-m249（globparts 放大 DoS），
+  #   影响 >=7.0.0 <11.0.1，修复版仅 11.0.1+，10.2.6 无补丁。
+  #   10.x 分支（@ts-morph/common ^10.0.1）只能用范围选择器 override 抬到 11.0.9：
+  #   父包升级需 ts-morph 26→28 大版本且被 shadcn ^26.0.0 卡住；10→11 均为 ESM 且
+  #   保留 CJS 入口，@ts-morph/common 仅用 minimatch(path, pattern)，不碰 11.0 移除的
+  #   makeRe/AST/regexp 等 API。3.1.5 不在受影响区间，严禁覆盖。
+  #   11.x 分支（eslint ^11.0.5）范围本就放行 11.0.9，这里显式钉死避免锁回落。
+  minimatch@>=10.0.0 <11.0.0: 11.0.9
+  minimatch@>=11.0.0 <12.0.0: 11.0.9
   undici: '>=7.29.1'
   # body-parser <2.4.0 的高危 DoS（生产依赖）：express@5.3.0（经 MCP SDK）仍解析到
   # 2.3.0，而 ci.yml 的 `audit --prod --audit-level high` 因此变红。统一到修复版。

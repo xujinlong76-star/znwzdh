@@ -29,7 +29,8 @@ describe("撤防账厚度棘轮：写侧报的道数必须等于登记表期望"
       row({ job: "test-e2e", gateTotal: 2, ran: 2 }),
       row({ job: "check-isr-live", gateTotal: 4, ran: 4 }),
       // 2026-11-07：check-web-overlay 增了 check-web-config-parity，期望 7 → 8
-      row({ job: "check-web-overlay", gateTotal: 8, ran: 8 }),
+      // 2026-11-21：check-web-overlay 增了 check-hub-id（Batch 1 W2b hubId 校验），期望 8 → 9
+      row({ job: "check-web-overlay", gateTotal: 9, ran: 9 }),
       row({ job: "docker-smoke", gateTotal: 2, ran: 2 }),
       row({ job: "audit", gateTotal: 2, ran: 2 }),
     ];
@@ -127,13 +128,14 @@ describe("撤防账厚度棘轮：写侧报的道数必须等于登记表期望"
     expect(naive).toHaveLength(1);
   });
 
-  it("登记表唯一合计仍是 31（改登记表要连带改这里的期望）", () => {
+  it("登记表唯一合计仍是 32（改登记表要连带改这里的期望）", () => {
     // 2026-11-06：26 → 29。增量为三处，逐一说明，避免「数字对不上就随手改大」：
     //   +1 coverage 作业的 2 道（vitest-coverage / coverage-threshold）→ +2
     //   +1 test-e2e 的 quarantine-e2e（E2E 隔离用例取证，不阻塞但必须进读数）→ +1
     // 2026-11-07：29 → 30（check-web-overlay 的 check-web-config-parity +1）。
     // 2026-11-09：30 → 31（test-web 的 web-no-explicit-any +1，显式 any 棘轮进 CI）。
-    // 合计 26 + 2 + 1 + 1 + 1 = 31。
-    expect(DEFUSED_GATES.reduce((s, e) => s + (e.gates ?? []).length, 0)).toBe(31);
+    // 2026-11-21：31 → 32（check-web-overlay 的 check-hub-id +1，Batch 1 W2b hubId 校验进 CI）。
+    // 合计 26 + 2 + 1 + 1 + 1 + 1 = 32。
+    expect(DEFUSED_GATES.reduce((s, e) => s + (e.gates ?? []).length, 0)).toBe(32);
   });
 });

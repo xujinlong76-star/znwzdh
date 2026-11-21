@@ -756,7 +756,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
 
                       <div className="space-y-4">
                         {/* 一级分类标题头 */}
-                        <div className="flex items-center justify-between pb-2 border-b border-border/50">
+                        <div className="flex items-center justify-between pb-1 border-b border-border/50">
                           <div className="flex items-center gap-2 flex-wrap">
                             {/* 手风琴折叠展开按钮 */}
                             <button
@@ -982,7 +982,11 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                           <div
                             id={categoryContentId}
                             className={cn(
-                              "space-y-4",
+                              // 首屏露出冲 40%（2026-11-21）：组间距 space-y-4 -> space-y-2。
+                              // 组 mt-2（8px）与 space-y 取大者折叠，16px 的 space-y
+                              // 是行距下限；压到 8px 后行距 206 -> 198px，首访态
+                              // 第 4 行也开始露头（此前首访 39.8% 仅差 0.2pp）。
+                              "space-y-2",
                               moduleHeightPx && "overflow-y-auto pr-1.5 custom-scrollbar"
                             )}
                             style={moduleHeightPx ? { maxHeight: `${moduleHeightPx}px` } : undefined}
@@ -1160,8 +1164,12 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                 // 一组，拿它当同级会把 ↑/↓ 全禁掉。
                                 const siblingIds = sortedSubCategories.map((s) => s.subCategory.id)
                                 const subIndex = siblingIds.indexOf(subCategory.id)
+                                // 首屏露出冲 40%（2026-11-21）：组间距 mt-8 -> mt-2、组内
+                                // space-y-3 -> space-y-2。默认 6 张/组 = 满一行，32px 组
+                                // 间距过大；8px + 组头 28px + 8px 仍可清晰分区。行距
+                                // 实测 222 -> 198px，1920x911 下第 4 行开始露头。
                                 return (
-                                  <div key={subCategory.id} id={subCategory.id} className="mt-8 space-y-3 first:mt-2">
+                                  <div key={subCategory.id} id={subCategory.id} className="mt-2 space-y-2">
                                     <div className="flex items-center justify-between pb-0.5 pt-1">
                                       <div className="flex items-center gap-2">
                                         <span className="w-[3px] h-3.5 rounded-full bg-gradient-to-b from-primary to-primary/50 shadow-2xs" />

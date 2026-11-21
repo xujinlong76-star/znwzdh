@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import { cn } from '@/lib/utils'
-import { isAbsoluteHttpUrl, parseSiteUrl } from '@/lib/safe-url'
+import { isAbsoluteHttpUrl, isAllowedHost, parseSiteUrl } from '@/lib/safe-url'
 
 export interface SiteFaviconProps {
   title?: string
@@ -1423,9 +1423,14 @@ export function SiteFavicon({
   }
 
   // 特殊站点图标自愈：部分站点原生返回纯白/透明矢量图，在浅色底色下对比度不足（如 Cursor 官网透明白立方体）
+  //
+  // 2026-11-21 修 CodeQL #140：原判定是 url.toLowerCase().includes('cursor.com')，
+  // 属**子串匹配**——https://evil.com/?cursor.com 与 https://cursor.com.evil.com/
+  // 都会命中，等于让任意站点冒充 Cursor 拿到它的图标自愈逻辑（可被用来做
+  // 视觉仿冒/钓鱼页的图标伪装）。改为标准 URL 解析 + hostname 严格比对。
   const isCursorSite = Boolean(
     (title && title.toLowerCase().includes('cursor')) ||
-    (url && url.toLowerCase().includes('cursor.com'))
+    (url && isAllowedHost(url, ['cursor.com']))
   )
 
   // 深色底块统一处理：黑标/黑字标给浅色块、白字标给深色块（LOGO_TILE_MAP）；
@@ -1493,7 +1498,9 @@ export function SiteFavicon({
               (e.currentTarget.naturalWidth <= 1 ||
                 (e.currentTarget.naturalWidth === 16 &&
                   e.currentTarget.naturalHeight === 16 &&
-                  effectiveIcon.includes('google.com/s2/favicons')))
+                  // 同理：includes 会被 https://evil.com/?google.com/s2/favicons 骗过，
+                  // 改为按 hostname 判断图标是否来自 Google favicon 服务。
+                  isAllowedHost(effectiveIcon, ['google.com', 'gstatic.com'])))
             ) {
               markIconFailed(effectiveIcon)
               setImgError(true)

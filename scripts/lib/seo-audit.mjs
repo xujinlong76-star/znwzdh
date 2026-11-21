@@ -10,6 +10,8 @@
  * 纯字符串返回值，给旧调用方和单测用。
  */
 
+import { isAllowedHost } from "./url-host.mjs";
+
 const NAMED_ENTITIES = {
   amp: "&",
   lt: "<",
@@ -179,6 +181,35 @@ function findAggregateRating(value, add) {
   }
 }
 
+/**
+ * JSON-LD 的 `@context` 是否声明了 schema.org。
+ *
+ * CodeQL #130：`JSON.stringify(context).includes("schema.org")` 是子串匹配，
+ * `"https://evil.com/?schema.org"` / `"https://schema.org.evil.com/"` 都会
+ * 通过检查。改为递归收集 @context 里的全部字符串值（字符串 / 数组 /
+ * 对象 `@vocab` 等），逐个用 isAllowedHost（new URL + 协议校验 + 主机名
+ * 严格比对）校验；任一通过即视为声明。`http://schema.org` 与
+ * `https://schema.org` 均合法；协议相对（`//schema.org`）与相对路径
+ * （`/schema.org`）`new URL` 抛错，视为未声明。
+ */
+export function declaresSchemaOrg(context) {
+  const stack = [context];
+  const seen = new Set();
+  while (stack.length > 0) {
+    const value = stack.pop();
+    if (typeof value === "string") {
+      if (isAllowedHost(value, ["schema.org"])) return true;
+    } else if (Array.isArray(value)) {
+      for (const item of value) stack.push(item);
+    } else if (value && typeof value === "object") {
+      if (seen.has(value)) continue;
+      seen.add(value);
+      for (const item of Object.values(value)) stack.push(item);
+    }
+  }
+  return false;
+}
+
 export function auditJsonLd(blocks) {
   const issues = [];
   const seen = new Set();
@@ -204,7 +235,7 @@ export function auditJsonLd(blocks) {
         continue;
       }
       const context = root["@context"];
-      if (!context || !JSON.stringify(context).includes("schema.org")) {
+      if (!context || !declaresSchemaOrg(context)) {
         add("JSON-LD 缺少 @context 或未声明 schema.org");
       }
       auditJsonLdNode(root, add);

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react'
 import { cn } from '@/lib/utils'
+import { isAbsoluteHttpUrl, parseSiteUrl } from '@/lib/safe-url'
 
 export interface SiteFaviconProps {
   title?: string
@@ -1033,7 +1034,9 @@ export const LOCAL_LOGO_MAP: Record<string, string> = Object.fromEntries(
     const sep = entry.indexOf('=')
     const host = entry.slice(0, sep)
     const file = entry.slice(sep + 1)
-    if (file.startsWith('/') || file.startsWith('http')) return [host, file]
+    // CodeQL #140：`startsWith('http')` 会把 httpx:// 等非 http(s) 串误判为
+    // 绝对 URL；改用 new URL() + 协议校验的 isAbsoluteHttpUrl。
+    if (file.startsWith('/') || isAbsoluteHttpUrl(file)) return [host, file]
     const ext = LOGO_EXT[file.slice(-1)]
     const name = ext ? file.slice(0, -1) + ext : file
     return [host, '/brand-icons/' + name]
@@ -1105,7 +1108,10 @@ export const LOGO_TILE_CLASSES: Record<LogoTileTone, string> = {
 export function resolveLogoTile(url?: string): LogoTileTone | null {
   if (!url || typeof url !== 'string') return null
   try {
-    const parsed = new URL(url.trim().startsWith('http') ? url.trim() : `https://${url.trim()}`)
+    // CodeQL #140：`startsWith('http')` 方案嗅探不完整（httpx:// 等会误判）；
+    // 改用 parseSiteUrl（new URL + http(s) 协议校验，裸串补 https://）。
+    const parsed = parseSiteUrl(url.trim())
+    if (!parsed) return null
     let hostname = parsed.hostname.toLowerCase()
     if (hostname.startsWith('www.')) {
       hostname = hostname.slice(4)
@@ -1203,7 +1209,10 @@ export function resolveSiteIcon(
 
   try {
     const rawUrl = url.trim()
-    const parsed = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`)
+    // CodeQL #140：同 resolveLogoTile，`startsWith('http')` 换 parseSiteUrl；
+    // 非法/非 http(s) 输入返回 ''（与旧回落一致：走默认渐变字母徽标）。
+    const parsed = parseSiteUrl(rawUrl)
+    if (!parsed) return ''
     let hostname = parsed.hostname.toLowerCase()
 
     if (hostname.startsWith('www.')) {

@@ -137,7 +137,11 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                 </Button>
               ) : null}
             </div>
-            <div className="shrink-0 flex items-center gap-1.5">
+            {/* U-382（2026-11-21）：行容器供 e2e/toolbar-360-overflow.spec.ts 直接量宽
+                （data-testid）；旧探针 closest('div.overflow-hidden') 在 8ebc4b08
+                重构后恒为 null。布局本身不改：gap-1.5 保留，窄屏溢出由
+                d28b4b84（多选按钮 <sm 收进探索菜单）解决。 */}
+            <div data-testid="toolbar-button-row" className="shrink-0 flex items-center gap-1.5">
               {/* 📅 今日中心小窗入口（A2：专注、考试提醒、简报、接力连胜统一收纳） */}
               {onOpenTodayCenter ? (
                 <Button
@@ -172,10 +176,13 @@ export const NavigationToolbar = memo(function NavigationToolbar({
 
               {/* 🧩 桌面小组件盒小窗入口（A3：按需小窗与角落固定微件） */}
               {/* U-155（2026-11-19）：<390px 时收进探索菜单（下方「桌面小组件盒」条目），
-                  只为给外观/DIY 按钮腾出 44px——360px 下 8×44px + 7×2px 间隙 = 366px
-                  > 360−24px 可用宽，菜单按钮会被挤出视野；≥390px 恢复显示，
-                  8×44px + 14px = 366px 恰好占满 390−24px。小组件盒是桌面向功能
-                  （钉到桌面角落），小屏低频，且菜单条目保留入口，不丢功能。 */}
+                  只为给外观/DIY 按钮腾出 44px；≥390px 恢复显示。小组件盒是桌面向功能
+                  （钉到桌面角落），小屏低频，且菜单条目保留入口，不丢功能。
+                  U-382（2026-11-21）订正：上文旧注「8×44px + 7×2px 间隙 = 366px」
+                  「8×44px + 14px = 366px 恰好占满」与代码不符——右组 gap-1.5 = 6px，
+                  且 d28b4b84 已把多选按钮 <sm 收进探索菜单；现宽度账：360px 行内
+                  6 钮 6×44+5×6 = 294px ≤ 336px、390px 行内 7 钮 7×44+6×6 = 344px
+                  ≤ 366px，菜单按钮不再被挤出。 */}
               {onOpenWidgetBox ? (
                 <Button
                   type="button"

@@ -23,13 +23,28 @@ import { test, expect, type Page } from '@playwright/test';
 // 修正后预算：360px 行 344px（超 8px）、390px 行 394px（超 28px），
 // Part 1 后：360px 行 294px ≤ 336px、390px 行 344px ≤ 366px，
 // 详见 evolution-round-2026-11-21-0522-w5.md §2（吸顶约 184px，见 W8 修正）。
+//
+// U-382/U-383（2026-11-21，基底 52e919e2）：d28b4b84（C-W7-5 Part 1）已把
+// 布局侧溢出修掉——多选按钮 <sm 收进探索菜单，360px 行 294≤336、390px 行
+// 344≤366，gap-1.5 保持不变；但 :53/:105 仍红，根因未动：①:53 的旧探针
+// measureToolbarRow 仍用 closest('div.overflow-hidden')，8ebc4b08 后恒为
+// null → found:false；现改按 data-testid="toolbar-button-row" 直接量行
+// （navigation-toolbar.tsx），布局不再动 gap。②:105 后半段仍定位行内
+// 「向导与设首页」按钮，c5a83877 后该按钮 hidden lg:inline-flex，360px 下
+// 不在无障碍树里；改走「更多」菜单内同名条目，见该用例上方注释。
+// d28b4b84 新增的 :148（行实测）与 :181（多选菜单）用例本身已通过，不动。
 
 async function measureToolbarRow(page: Page) {
   return await page.evaluate(() => {
-    const menuBtn = document.querySelector('button[aria-label="打开菜单"]');
-    if (!menuBtn) return { found: false as const };
-    const row = menuBtn.closest('div.overflow-hidden');
+    // U-382（2026-11-21）：旧探针用 menuBtn.closest('div.overflow-hidden') 找行，
+    // 8ebc4b08 顶栏重构后行容器为 <div class="shrink-0 flex items-center gap-1.5">，
+    // 祖先链上再无 div.overflow-hidden，closest() 恒返回 null、found:false，
+    // 与真实溢出无关。现直接按 data-testid 定位行容器（navigation-toolbar.tsx），
+    // 对 header 内容宽量 scrollWidth/clientWidth。
+    const row = document.querySelector('[data-testid="toolbar-button-row"]');
     if (!row) return { found: false as const };
+    const menuBtn = row.querySelector('button[aria-label="打开菜单"]');
+    if (!menuBtn) return { found: false as const };
     const boxes = [...row.querySelectorAll('button, a')]
       .filter((el) => {
         const r = el.getBoundingClientRect();
@@ -80,6 +95,21 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
           `${b.label} 右缘出视口（right=${b.right} > innerWidth=${m.innerWidth}）`,
         ).toBeLessThanOrEqual(m.innerWidth);
       }
+      // U-382（2026-11-21，基底 52e919e2）：窄屏溢出由 d28b4b84 收多选按钮进
+      // 探索菜单解决，行 gap 保持 1.5（6px）未动；此处锁定 gap 仍为 6px，
+      // 防止后人以挤间距代替减入口修溢出（桌面档由下方 1280px 用例锁定）。
+      const gap = await page
+        .getByTestId('toolbar-button-row')
+        .evaluate((el) => getComputedStyle(el).columnGap);
+      expect(gap, `${width}px 行 gap 应仍为 6px（gap-1.5），溢出靠减入口解决`).toBe('6px');
+      // U-382：390px 菜单按钮曾被裁 16px、右缘 406 > 390 点不到；右缘在视口内
+      // 还不够，须真点一次验证可点：点开后 aria-expanded 翻为 true、
+      // 移动端抽屉 #mobile-nav-drawer 滑入（translate-x-0）。
+      const menuBtn = page.getByRole('button', { name: '打开菜单', exact: true });
+      await expect(menuBtn).toHaveAttribute('aria-expanded', 'false');
+      await menuBtn.click();
+      await expect(menuBtn).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.locator('#mobile-nav-drawer')).toHaveClass(/translate-x-0/);
     });
   }
 
@@ -96,6 +126,18 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     await expect(todayBtn).toBeVisible({ timeout: 60_000 });
     const label = todayBtn.locator('span:not([aria-hidden])');
     await expect(label).toBeHidden();
+  });
+
+  // U-382（2026-11-21）：d28b4b84 只收窄屏档的入口，行容器 gap-1.5 全宽度保留；
+  // 本用例锁定桌面端（≥sm）间距仍为 6px，防止窄屏修复误伤桌面同行按钮间距。
+  test('1280px：工具栏行 gap 仍为 6px（桌面间距不变）', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/');
+    const row = page.getByTestId('toolbar-button-row');
+    await expect(row).toBeVisible({ timeout: 60_000 });
+    const gap = await row.evaluate((el) => getComputedStyle(el).columnGap);
+    console.log(`[toolbar360] 1280px: rowGap=${gap}`);
+    expect(gap, '桌面端行 gap 应仍为 6px（gap-1.5），窄屏修复不得收窄桌面').toBe('6px');
   });
 
   test('1600px（2xl）：「今日」标签仍可见', async ({ page }) => {
@@ -132,15 +174,24 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
       'data-state',
       'active',
     );
-    // 第二入口仍在：关窗后微胶囊行「向导与设首页」开同一小窗。
+    // 第二入口仍在，但已折叠（U-383，2026-11-21）：c5a83877「胶囊行合并」后
+    // 行内胶囊按钮为 hidden lg:inline-flex，360px 下 display:none、不在无障碍树里，
+    // 旧定位 getByRole('button', { name: '向导与设首页' }) 在此宽度恒为 not found；
+    // 360px 下唯一入口是 home-capsule-row.tsx:367 藏在「更多」菜单内的同名
+    // DropdownMenuItem（role=menuitem）。本用例随新行为改写定位方式：先点
+    // 「更多工作区与快捷功能」开菜单、再点其中条目；不断言行内按钮（产品侧
+    // 不把入口搬回行内，与首屏批目标一致）。只改测试，零产品风险。
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    const capsule = page.getByRole('button', { name: '向导与设首页', exact: true });
-    // 胶囊由客户端水合后据 localStorage 决定是否渲染（guidePending 默认 false，
+    const moreMenu = page.getByRole('button', { name: '更多工作区与快捷功能', exact: true });
+    await expect(moreMenu).toBeVisible({ timeout: 60_000 });
+    await moreMenu.click();
+    // 菜单条目由客户端水合后据 localStorage 决定是否渲染（guidePending 默认 false，
     // useEffect 读存储后才置 true），冷启动水合长尾下 15 秒默认超时不够；
     // 与本仓库 U-155 用例同例，用 60 秒预算只防冷启动，不代表常规耗时。
-    await expect(capsule).toBeVisible({ timeout: 60_000 });
-    await capsule.click();
+    const capsuleItem = page.getByRole('menuitem', { name: '向导与设首页', exact: true });
+    await expect(capsuleItem).toBeVisible({ timeout: 60_000 });
+    await capsuleItem.click();
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole('tab', { name: '外观与排版' })).toBeVisible();
   });

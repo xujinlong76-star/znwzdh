@@ -260,9 +260,39 @@ export function resetLlmCapabilityCache(): void {
   streamUsageUnsupported.clear();
 }
 
+/** baseUrl 长度上限（字符）：合法端点地址远短于此值；超长输入直接拒掉（ReDoS 纵深防御）。 */
+export const MAX_BASE_URL_LENGTH = 2048;
+
+/**
+ * 剥离字符串末尾的 `/`（线性时间，无回溯）。
+ *
+ * 原实现 `value.replace(/\/+$/, "")` 会被 CodeQL 判为多项式回溯
+ * （js/polynomial-redos，llm.ts #143/#144/#145）：对「N 个 `/` 后接一个
+ * 非 `/` 字符」的输入，正则引擎要在每个起始位置回溯量词长度，总步数 O(N²)
+ * ——实测 N=5000 时 65ms、N=40000 时 1815ms（翻倍输入、耗时翻 4 倍）。
+ * 这里用倒序单遍扫描替代，时间复杂度 O(n)，行为与原正则逐字符等价。
+ */
+export function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* "/" */) end--;
+  return value.slice(0, end);
+}
+
+/**
+ * baseUrl 归一化：trim + 长度上限 + 去尾斜杠。
+ * 超长抛 config 错（与各调用点「未配置」校验同口径），拒绝恶意超长输入进入后续流程。
+ */
+export function normalizeBaseUrl(raw: string): string {
+  const trimmed = (raw ?? "").trim();
+  if (trimmed.length > MAX_BASE_URL_LENGTH) {
+    throw new LlmError("config", `接口地址过长（超过 ${MAX_BASE_URL_LENGTH} 字符）`);
+  }
+  return stripTrailingSlashes(trimmed);
+}
+
 /** baseUrl 归一化为 chat/completions 终点 */
 export function chatCompletionsUrl(baseUrl: string): string {
-  const trimmed = (baseUrl ?? "").trim().replace(/\/+$/, "");
+  const trimmed = normalizeBaseUrl(baseUrl);
   if (trimmed.endsWith("/chat/completions")) return trimmed;
   return trimmed + "/chat/completions";
 }
@@ -319,7 +349,7 @@ export async function assertLlmEndpoint(baseUrl: string, allowPrivateNetwork = f
 }
 
 function capabilityKey(provider: LlmProvider): string {
-  return provider.baseUrl.replace(/\/+$/, "") + "|" + provider.model;
+  return stripTrailingSlashes(provider.baseUrl) + "|" + provider.model;
 }
 
 function normalizeContent(content: unknown): string | null {
@@ -972,7 +1002,7 @@ async function generateImageSingle(opts: ImageGenerationOptions, key: string): P
   if (!opts.baseUrl?.trim() || !opts.model?.trim()) {
     throw new LlmError("config", "未配置 AI 图像模型：请填写图像服务的接口地址与模型");
   }
-  const baseUrl = opts.baseUrl.replace(/\/+$/, "");
+  const baseUrl = normalizeBaseUrl(opts.baseUrl);
   const endpoint = baseUrl.endsWith("/images/generations") ? baseUrl : `${baseUrl}/images/generations`;
   const fetchFn = opts.fetchImpl ?? fetch;
   const model = opts.model;
@@ -1089,7 +1119,7 @@ async function createVideoTaskSingle(opts: VideoGenerationOptions, key: string):
   if (!opts.baseUrl?.trim() || !opts.model?.trim()) {
     throw new LlmError("config", "未配置 AI 视频模型：请填写视频服务的接口地址与模型");
   }
-  const baseUrl = opts.baseUrl.replace(/\/+$/, "");
+  const baseUrl = normalizeBaseUrl(opts.baseUrl);
   const endpoint = baseUrl.endsWith("/videos") ? baseUrl : `${baseUrl}/videos`;
   const fetchFn = opts.fetchImpl ?? fetch;
   const model = opts.model;
@@ -1245,6 +1275,7 @@ export async function pollVideoTask(opts: {
   if (!opts.baseUrl?.trim() || !opts.model?.trim()) {
     throw new LlmError("config", "未配置 AI 视频轮询端点：请填写视频服务的轮询地址与模型");
   }
+  const baseUrl = normalizeBaseUrl(opts.baseUrl);
   const keys = extractApiKeys(opts.apiKey);
   const key = keys[0] || "";
   const model = opts.model;
@@ -1255,7 +1286,7 @@ export async function pollVideoTask(opts: {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const url = `${opts.baseUrl.replace(/\/+$/, "")}?video_id=${encodeURIComponent(opts.taskId)}&model_name=${encodeURIComponent(model)}`;
+    const url = `${baseUrl}?video_id=${encodeURIComponent(opts.taskId)}&model_name=${encodeURIComponent(model)}`;
     const res = await fetchFn(url, {
       method: "GET",
       headers: {

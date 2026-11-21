@@ -27,6 +27,7 @@ import {
   createLinUCBModel,
   deserializeLinUCB,
   predictArmWeights,
+  predictArmBreakdown,
   serializeLinUCB,
   updateArmReward,
   extractContextFeatures,
@@ -95,6 +96,23 @@ export function LinucbPanel() {
     return out
     // tick 是刻意的重算触发器：引擎原地改模型，引用不变
   }, [model, banditQuery, tick])
+
+  /**
+   * 逐通道 UCB 拆分（2026-11-21）：prior / 利用项 / 探索项。
+   * 界面用它画双段条——实心段=利用（已知收益），浅色段=探索（不确定度上界）。
+   * 与 predictedWeights 共用同一模型与特征，只是把标量拆开。
+   */
+  const armBreakdown = useMemo(
+    () => predictArmBreakdown(model, banditQuery),
+    [model, banditQuery, tick],
+  )
+
+  /**
+   * 强化后的增量高亮（"+0.12" 浮动）。
+   * 每次 rewardArm 时记录各通道 ucb 的前后差值，2 秒后清空。
+   */
+  const [recentDelta, setRecentDelta] = useState<Record<string, number>>({})
+  const deltaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 /** A/B 对比：一次检索的 contributions 在本地复算两套 Top 3 */;const [abLoading, setAbLoading] = useState(false);const [abError, setAbError] = useState<string | null>(null);const [abResult, setAbResult] = useState<{ staticTop: LabScoredHit[];
 dynamicTop: LabScoredHit[] } | null>(null);const [abChannels, setAbChannels] = useState<string[] | null>(null);const [abQuery, setAbQuery] = useState("");const abRowRefs = useRef(new Map<string, HTMLDivElement | null>());const abPrevTops = useRef(new Map<string, number>());/** 手写 FLIP：重排后把行从旧位置平移到新位置（无动画库依赖） */;useLayoutEffect(() => { if (!abResult) return;
 abRowRefs.current.forEach((el, key) => { if (!el) return;
@@ -119,13 +137,32 @@ setAbQuery(q);
 } catch { setAbError("检索失败，请稍后重试。");
 } finally { setAbLoading(false);
 } };
+// effect 里引用「最新一版」runAbCompare：函数体每次渲染重建，
+// 用 ref 转发可避免把它塞进依赖导致无限触发。
+const runAbCompareRef = useRef<(() => Promise<void>) | null>(null)
+runAbCompareRef.current = runAbCompare
+
 
   /** 臂的点击次数（纯展示统计，与引擎状态分开维护） */
   const [armClicks, setArmClicks] = useState<Record<string, number>>({})
 
-  /** 给某通道一次正反馈：走引擎 updateArmReward（会更新 A 与 b） */
+  /**
+   * 给某通道一次正反馈（2026-11-21 增强）。
+   *
+   * 除了更新 A/b 与点击计数，还记录**强化前后 ucb 的差值**，供界面在数值
+   * 右上角短暂浮现 "+0.12"——让用户亲眼看到「收益上升、探索区间收窄」。
+   * 差值 2 秒后自动清除，不长期驻留干扰读数。
+   */
   const rewardArm = (channel: string) => {
+    const before = predictArmBreakdown(model, banditQuery)[channel as RetrievalChannel]
     updateArmReward(model, channel as RetrievalChannel, banditQuery, 1)
+    const after = predictArmBreakdown(model, banditQuery)[channel as RetrievalChannel]
+    if (before && after) {
+      const d = Number((after.ucb - before.ucb).toFixed(2))
+      setRecentDelta((prev) => ({ ...prev, [channel]: d }))
+      if (deltaTimerRef.current) clearTimeout(deltaTimerRef.current)
+      deltaTimerRef.current = setTimeout(() => setRecentDelta({}), 2000)
+    }
     setArmClicks((prev) => ({ ...prev, [channel]: (prev[channel] ?? 0) + 1 }))
     setTick((t) => t + 1)
   }
@@ -134,9 +171,38 @@ setAbQuery(q);
   const resetArms = () => {
     setModel(createLinUCBModel(0.25))
     setArmClicks({})
+    setRecentDelta({})
     setTick((t) => t + 1)
+    // A/B 结果随模型重置失效：清空让下面的自动推演重新跑一次
+    setAbResult(null)
   }
 
+
+  /**
+   * A/B 自动推演（2026-11-21 要求 3）。
+   *
+   * 改造前：页面已有默认词 'vsc'，但下方 A/B 区是空占位，必须手点一次按钮；
+   * 点「+ 点击强化」后对比结果也不刷新——强化了却看不到排位变化，闭环断在半路。
+   *
+   * 现在：
+   *  - 挂载后（以及查询词变化时）防抖 400ms 自动跑一次对比；
+   *  - tick 变化（点强化/重置）也触发重算，从而实时反映模型更新；
+   *  - 保留 [用当前查询运行对比] 按钮供手动刷新。
+   *
+   * 防抖与并发守卫：abLoading 期间不重复发请求；卸载时中断。
+   */
+  const abAutoKey = `${banditQuery}|${tick}`
+  useEffect(() => {
+    const q = banditQuery.trim()
+    if (!q) return
+    const timer = setTimeout(() => {
+      void runAbCompareRef.current?.()
+    }, 400)
+    return () => clearTimeout(timer)
+    // abAutoKey 把「查询词」与「模型 tick」合成一个依赖，
+    // 两者任一变化都会重跑，等价于「输入变了」或「强化了」都重算。
+    // runAbCompare 经 ref 转发，故无需进依赖数组。
+  }, [abAutoKey])
 
   return (
     <div className="space-y-4">
@@ -234,37 +300,90 @@ setAbQuery(q);
                   </span>
                   <span className="text-xs text-muted-foreground font-normal">点击下方强化按钮模拟真实用户采纳反馈闭环</span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
-                  {(Object.keys(predictedWeights) as (keyof typeof predictedWeights)[]).map((ch) => (
+                {/* 2026-11-21 重构：单色黑条 → 双段堆叠条（利用 + 探索），
+                    并修三处排版瑕疵：
+                      ① 数字统一 toFixed(2) + tabular-nums 等宽对齐
+                      ② 卡片改上下两层：「通道名 + 点击次数」一行，「大号数值」一行，
+                         消除 SEMANTIC / PERSONAL 与「历史点击」贴脸
+                      ③ 网格 @container 响应：窄容器 2 列、中 3 列、宽 5 列，不溢出 */}
+                <div className="@container">
+                  {/* 断点按实测标定（2026-11-21）：
+                      容器是「主内容减去卡片内边距」，1440 视口实测 1070px。
+                      Tailwind v4 容器断点：@2xl=672 / @3xl=768 / @4xl=896 / @5xl=1024 / @6xl=1152。
+                      首版写 @6xl(1152) 导致 1070px 只落 3 列——5 张卡被挤成 3+2。
+                      改 @5xl(1024)：1070 ≥ 1024 → 5 列；窄屏仍是 2 → 3 列递进。 */}
+                  <div className="grid grid-cols-2 gap-3 @3xl:grid-cols-3 @5xl:grid-cols-5">
+                  {(Object.keys(predictedWeights) as (keyof typeof predictedWeights)[]).map((ch) => {
+                    const bd = armBreakdown[ch as RetrievalChannel]
+                    // 条的比例：以 2.5 为满标（与旧实现同口径），利用段在前、探索段在后
+                    const SCALE = 2.5
+                    const explPct = Math.min(100, (bd.exploitation / SCALE) * 100)
+                    const explorePct = Math.min(100 - explPct, (bd.exploration / SCALE) * 100)
+                    const delta = recentDelta[ch]
+                    return (
                     <div
                       key={ch}
-                      className="p-3.5 rounded-xl border border-border/60 bg-card hover:border-primary/40 transition-all flex flex-col justify-between space-y-3 shadow-2xs group"
+                      className="flex flex-col justify-between gap-2.5 rounded-xl border border-border/60 bg-card p-3 shadow-2xs transition-all hover:border-primary/40"
                     >
+                      {/* 第一层：通道名 + 点击次数（两行，彻底消除贴脸） */}
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="truncate text-xs font-semibold uppercase tracking-wide">{ch}</span>
+                        <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">
+                          点击 {armClicks[ch] ?? 0} 次
+                        </span>
+                      </div>
+
+                      {/* 第二层：大号等宽数值 + 增量浮动 */}
+                      <div className="relative">
+                        <div className="font-mono text-2xl font-bold tabular-nums text-primary">
+                          {(predictedWeights[ch] ?? 0).toFixed(2)}
+                        </div>
+                        {typeof delta === 'number' && Math.abs(delta) >= 0.005 ? (
+                          <span
+                            aria-live="polite"
+                            className={`absolute right-0 top-0 font-mono text-[11px] font-semibold tabular-nums ${delta > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}
+                          >
+                            {delta > 0 ? '+' : ''}{delta.toFixed(2)}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {/* 双段堆叠条：实心=利用，浅色=探索 */}
                       <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold uppercase">{ch} 通道</span>
-                          <span className="text-xs text-muted-foreground">历史点击: {armClicks[ch] ?? 0}</span>
-                        </div>
-                        <div className="text-2xl font-bold font-mono text-primary mt-1">
-                          {predictedWeights[ch]}
-                        </div>
-                        <div className="w-full bg-muted h-1.5 rounded-full overflow-hidden mt-1.5">
+                        <div
+                          className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted"
+                          role="img"
+                          aria-label={`${ch} 通道：已知收益 ${bd.exploitation.toFixed(2)}，不确定度上界 ${bd.exploration.toFixed(2)}`}
+                        >
+                          <div className="h-full bg-primary transition-all duration-300" style={{ width: `${explPct}%` }} />
                           <div
-                            className="bg-primary h-full transition-all duration-300"
-                            style={{ width: `${Math.min(100, (predictedWeights[ch] / 2.5) * 100)}%` }}
+                            className="h-full transition-all duration-300"
+                            style={{
+                              width: `${explorePct}%`,
+                              backgroundImage:
+                                'repeating-linear-gradient(45deg, hsl(var(--primary) / 0.35) 0 3px, transparent 3px 6px)',
+                            }}
                           />
                         </div>
+                        {/* 拆分数值：收益 + 探索 */}
+                        <div className="mt-1 flex items-center justify-between gap-1 font-mono text-[10px] tabular-nums text-muted-foreground">
+                          <span title="利用项 θᵀx：已观测到的均值收益">收益 {bd.exploitation.toFixed(2)}</span>
+                          <span title="探索项 α√(xᵀA⁻¹x)：不确定度上界">探索 {bd.exploration.toFixed(2)}</span>
+                        </div>
                       </div>
+
                       <Button
                         size="sm"
                         variant="outline"
-                        className="w-full text-xs h-7 mt-1 hover:bg-primary hover:text-primary-foreground"
+                        className="h-7 w-full text-xs hover:bg-primary hover:text-primary-foreground"
                         onClick={() => rewardArm(ch)}
                       >
                         + 点击强化
                       </Button>
                     </div>
-                  ))}
+                    )
+                  })}
+                  </div>
                 </div>
               </div>
               {/* A/B 对比：静态 RRF vs 动态 LinUCB（本地复算） */}    <div className="space-y-3 pt-4 mt-4 border-t border-border/50">

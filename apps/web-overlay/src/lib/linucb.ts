@@ -471,3 +471,69 @@ function isAllPinyinInitials(q: string): boolean {
 function round2(v: number): number {
   return Math.round(v * 100) / 100
 }
+
+/**
+ * 单臂 UCB 拆分明细（2026-11-21）。
+ *
+ * 为什么要拆：`predictArmWeights` 只给最终标量，界面只能画一根黑条，
+ * 用户看不出 LinUCB 的核心——**利用（已知收益）与探索（不确定度上界）**的
+ * 此消彼长。强化后「收益上升、探索区间收窄」这一关键直觉因此完全不可见。
+ *
+ * 三个字段的关系（与 UCB 公式逐项对应）：
+ *   prior      业务先验基线（各通道静态起点，如 exact 1.4）
+ *   exploitation  theta^T x        —— 已观测到的均值收益（利用项）
+ *   exploration   alpha*sqrt(x^T A_inv x) —— 不确定度上界（探索项）
+ *   ucb         prior + exploitation + exploration（与 predictArmWeights 同值，
+ *               仅差最终的 0.1 下限截断）
+ */
+export interface ArmPredictionBreakdown {
+  prior: number
+  exploitation: number
+  exploration: number
+  ucb: number
+}
+
+/** 各通道静态先验（与 predictArmWeights 的默认参数保持同源）。 */
+export const CHANNEL_PRIORS: Record<RetrievalChannel, number> = {
+  exact: 1.4,
+  fts: 1.0,
+  pinyin: 0.9,
+  semantic: 1.15,
+  personal: 0.3,
+}
+
+/**
+ * 逐通道返回 UCB 的三项拆分，供界面画双段条与 tooltip。
+ * 与 predictArmWeights 共用同一套矩阵运算，数字不会漂移。
+ */
+export function predictArmBreakdown(
+  model: LinUCBModel,
+  query: string,
+  basePriors: Record<RetrievalChannel, number> = CHANNEL_PRIORS
+): Record<RetrievalChannel, ArmPredictionBreakdown> {
+  const x = extractContextFeatures(query)
+  const out = {} as Record<RetrievalChannel, ArmPredictionBreakdown>
+
+  for (const channel of CHANNELS) {
+    const arm = model.arms[channel]
+    const A_inv = invertMatrix(arm.A)
+    const theta = matVecMul(A_inv, arm.b)
+
+    const exploitation = dotProduct(theta, x)
+    const A_inv_x = matVecMul(A_inv, x)
+    const variance = Math.max(0, dotProduct(x, A_inv_x))
+    const exploration = model.alpha * Math.sqrt(variance)
+
+    const prior = basePriors[channel] ?? 1.0
+    const ucb = Math.max(0.1, prior + exploitation + exploration)
+
+    out[channel] = {
+      prior: Number(prior.toFixed(4)),
+      exploitation: Number(exploitation.toFixed(4)),
+      exploration: Number(exploration.toFixed(4)),
+      ucb: Number(ucb.toFixed(4)),
+    }
+  }
+
+  return out
+}

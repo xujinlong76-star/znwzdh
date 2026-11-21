@@ -418,7 +418,8 @@ const BriefWatchItemPayload = z.looseObject({
 /**
  * GET /api/brief/today：今日简报。
  * watch 是唯一的用户维度段：无可信身份时为 null（通用版），有身份时
- * 按其追剧清单现算 due（到更新日）/ check（节奏未标注、只提示去看看）。
+ * 按其追剧清单现算 due（到更新日）/ check（节奏未标注、只提示去看看）
+ * / premieringToday（U-377：预约态的剧预计今天开播，平台待确认）。
  */
 export const BriefTodayResponse = z.looseObject({
   ok: z.literal(true),
@@ -434,6 +435,7 @@ export const BriefTodayResponse = z.looseObject({
     .looseObject({
       due: z.array(BriefWatchItemPayload),
       check: z.array(BriefWatchItemPayload),
+      premieringToday: z.array(BriefWatchItemPayload),
     })
     .nullable(),
 });

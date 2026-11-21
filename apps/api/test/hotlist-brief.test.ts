@@ -27,6 +27,11 @@ import {
   generateDailyBrief,
   type BriefPayload,
 } from "../src/brief/brief.ts";
+import {
+  DRAMA_CALENDAR_SNAPSHOT_KEY,
+  type DramaCalendarSnapshot,
+} from "../src/drama/calendar.ts";
+import { normalizeDramaTitle } from "../src/drama/featured.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 function fixtureBody(name: string): string {
@@ -98,7 +103,78 @@ beforeAll(async () => {
       createdAt: Date.now() - 86_400_000 * 2,
       at: Date.now() - 1000,
     },
+    // 预约态（U-377）：无平台占位键 reserved::归一化剧名，平台待确认
+    {
+      op: "add",
+      key: "reserved::今日开播的预约剧",
+      title: "今日开播的预约剧",
+      platformSiteId: "",
+      platformTitle: "平台待确认",
+      playUrl: "",
+      episode: 0,
+      cadence: { kind: "unknown" },
+      remind: true,
+      createdAt: Date.now() - 86_400_000 * 2,
+      at: Date.now() - 1000,
+    },
+    {
+      op: "add",
+      key: "reserved::明天开播的预约剧",
+      title: "明天开播的预约剧",
+      platformSiteId: "",
+      platformTitle: "平台待确认",
+      playUrl: "",
+      episode: 0,
+      cadence: { kind: "unknown" },
+      remind: true,
+      createdAt: Date.now() - 86_400_000 * 2,
+      at: Date.now() - 1000,
+    },
   ]);
+
+  // 开播日历快照：预约态的开播日按快照现算（同步协议不存开播日）。
+  // 今天开播一部、明天开播一部——只有今天那部能进 premieringToday。
+  const todayKey = briefDateKey(Date.now());
+  const tomorrowKey = briefDateKey(Date.now() + 86_400_000);
+  const [ty, tm, td] = todayKey.split("-").map(Number);
+  const [ny, nm, nd] = tomorrowKey.split("-").map(Number);
+  const snapshot: DramaCalendarSnapshot = {
+    version: 1,
+    source: "soduanju-yuyue",
+    sourceUrl: "https://www.soduanju.com/paihang/yuyue.html",
+    sourceName: "搜短剧预约榜",
+    fetchedAt: Date.now(),
+    sourceDateModified: null,
+    entries: [
+      {
+        title: "今日开播的预约剧",
+        key: normalizeDramaTitle("今日开播的预约剧"),
+        dateKind: "day",
+        month: tm ?? 1,
+        year: ty ?? 2026,
+        day: td,
+        premiereDate: todayKey,
+        reservations: null,
+        rawLabel: `预计${tm}月${td}日上线`,
+      },
+      {
+        title: "明天开播的预约剧",
+        key: normalizeDramaTitle("明天开播的预约剧"),
+        dateKind: "day",
+        month: nm ?? 1,
+        year: ny ?? 2026,
+        day: nd,
+        premiereDate: tomorrowKey,
+        reservations: null,
+        rawLabel: `预计${nm}月${nd}日上线`,
+      },
+    ],
+    changes: [],
+    dropped: [],
+    lastError: null,
+    lastOkAt: Date.now(),
+  };
+  await ctx.repo.setSystemState(DRAMA_CALENDAR_SNAPSHOT_KEY, snapshot);
 
   // 前置刷新进 beforeAll（见文件头约束 0）：第一个 it 不再是全文件的
   // 隐式前置——单跑、乱序时后面的 it 仍有完整的 fixture 缓存可用。
@@ -186,6 +262,32 @@ describe("每日简报组版", () => {
     expect(body.watch).not.toBeNull();
     expect(body.watch.due.map((i: { title: string }) => i.title)).toEqual(["每日一剧"]);
     expect(body.watch.check.map((i: { title: string }) => i.title)).toEqual(["没标节奏的剧"]);
+  });
+
+  it("带身份请求：预约态不进 due/check，今天开播的进 premieringToday、明天开播的不进", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/brief/today",
+      headers: { "x-navhub-user-id": USER },
+    });
+    const body = res.json();
+    expect(body.watch).not.toBeNull();
+    // 预约态永不进 due/check（没更新日可催），也不因节奏 unknown 被当成“去看看”
+    expect(body.watch.due.map((i: { title: string }) => i.title)).toEqual(["每日一剧"]);
+    expect(body.watch.check.map((i: { title: string }) => i.title)).toEqual(["没标节奏的剧"]);
+    expect(body.watch.premieringToday.map((i: { title: string }) => i.title)).toEqual([
+      "今日开播的预约剧",
+    ]);
+    const premiering = body.watch.premieringToday[0] as {
+      platformTitle: string;
+      playUrl: string;
+      reserved: boolean;
+      premiereDate: string;
+    };
+    expect(premiering.platformTitle).toBe("平台待确认");
+    expect(premiering.playUrl).toBe("");
+    expect(premiering.reserved).toBe(true);
+    expect(premiering.premiereDate).toBe(briefDateKey(Date.now()));
   });
 
   it("往期回看：不存在的日期如实 404；生成过的日期可取回", async () => {

@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyWatchDelta,
+  asPremiereDate,
   cadenceLabel,
   dramaKeyFor,
+  dramaReservedKeyFor,
   isCadenceDay,
   isReminderDue,
+  isReservedEntry,
+  isReservedPremiereDue,
   mergeCloudWatchlist,
   normalizeWatchCadence,
   partitionWatchlist,
+  RESERVED_PLATFORM_TITLE,
   sanitizeWatchEntry,
   selectContinueWatching,
   type HubWatchEntry,
@@ -299,5 +304,117 @@ describe('selectContinueWatching（首页「继续追」取行口径）', () => 
     const only = [entry({ title: '提醒关掉的剧', remind: false })]
     expect(partitionWatchlist(only, WED).check).toEqual([])
     expect(selectContinueWatching(only, WED).map((e) => e.title)).toEqual(['提醒关掉的剧'])
+  })
+})
+
+/* ------------------------------ 预约态（U-377） ------------------------------ */
+
+/**
+ * 开播日历上的剧没有平台信息（预约榜不给平台），追剧清单键是
+ * platformSiteId:归一化剧名，无平台就无键——修法是只按剧名占位
+ * （reserved::归一化剧名），不乱指平台入口。
+ *  - 预约态不进新集检查：键不在 featured 检查集合里（平台键才在），
+ *    partition 也不把它放进 check 区，故「未查到最新集数」无从写起；
+ *  - 开播日到了也不静默消失：仍在 reserved 分区，只改文案。
+ */
+const reservedEntry = (over: Partial<WatchEntry> & { title: string }): WatchEntry => ({
+  key: dramaReservedKeyFor(over.title),
+  title: over.title,
+  platformSiteId: '',
+  platformTitle: RESERVED_PLATFORM_TITLE,
+  playUrl: '',
+  episode: 0,
+  priority: 'normal',
+  cadence: { kind: 'unknown' },
+  remind: true,
+  lastProgressAt: WED.getTime() - 3 * DAY_MS,
+  createdAt: WED.getTime() - 10 * DAY_MS,
+  updatedAt: WED.getTime() - 3 * DAY_MS,
+  premiereDate: '2026-11-30',
+  ...over,
+})
+
+describe('预约态 U-377：reserved::剧名占位键', () => {
+  it('键只按归一化剧名，不指向平台：空格/大小写归一，与一切平台键互斥', () => {
+    expect(dramaReservedKeyFor('  Abc  剧 ')).toBe(dramaReservedKeyFor('abc 剧'))
+    expect(dramaReservedKeyFor('甲剧')).toBe('reserved::甲剧')
+    expect(dramaReservedKeyFor('甲剧')).not.toBe(dramaKeyFor('nav-hongguo', '甲剧'))
+    expect(dramaReservedKeyFor('甲剧')).not.toBe(dramaKeyFor('reserved', '甲剧'))
+  })
+
+  it('asPremiereDate：只认 YYYY-MM-DD，非法不猜不补', () => {
+    expect(asPremiereDate('2026-11-30')).toBe('2026-11-30')
+    expect(asPremiereDate('11月30日')).toBeNull()
+    expect(asPremiereDate(null)).toBeNull()
+    expect(asPremiereDate(20261130)).toBeNull()
+  })
+
+  it('sanitize：预约态无平台无播放页是合法形状，平台名固定「平台待确认」；非预约态缺平台/播放页仍丢弃', () => {
+    const reserved = sanitizeWatchEntry({
+      key: 'reserved::待开播剧',
+      title: '待开播剧',
+      platformSiteId: '',
+      platformTitle: '',
+      playUrl: '',
+      premiereDate: '2026-11-30',
+    })
+    expect(reserved).not.toBeNull()
+    expect(reserved?.platformTitle).toBe('平台待确认')
+    expect(reserved?.playUrl).toBe('')
+    expect(reserved?.premiereDate).toBe('2026-11-30')
+    expect(sanitizeWatchEntry({ title: '无平台剧', platformSiteId: '', playUrl: '' })).toBeNull()
+    expect(sanitizeWatchEntry({ title: '无播放页剧', platformSiteId: 'p1', playUrl: '' })).toBeNull()
+    // 坏开播日不拖垮条目：收敛成 null
+    expect(
+      sanitizeWatchEntry({ key: 'reserved::坏日期剧', title: '坏日期剧', premiereDate: '下月' })?.premiereDate,
+    ).toBeNull()
+  })
+
+  it('分区：预约态只进 reserved，不进 due/check/active/finished；提醒永不到期', () => {
+    const reserved = reservedEntry({ title: '待开播剧' })
+    expect(isReservedEntry(reserved)).toBe(true)
+    expect(isReminderDue(reserved, WED)).toBe(false)
+    const parts = partitionWatchlist(
+      [reserved, entry({ title: '待查剧' }), entry({ title: '今日待看剧', cadence: { kind: 'daily' } })],
+      WED,
+    )
+    expect(parts.reserved.map((e) => e.title)).toEqual(['待开播剧'])
+    expect(parts.check.map((e) => e.title)).toEqual(['待查剧'])
+    expect(parts.due.map((e) => e.title)).toEqual(['今日待看剧'])
+    expect(parts.active).toEqual([])
+    expect(parts.finished).toEqual([])
+  })
+
+  it('开播日到了也不静默消失：仍在 reserved 分区，只改到期判定', () => {
+    const past = reservedEntry({ title: '已到开播日的剧', premiereDate: '2026-11-10' })
+    expect(isReservedPremiereDue(past, WED)).toBe(true)
+    expect(isReservedPremiereDue(reservedEntry({ title: '未到开播日的剧' }), WED)).toBe(false)
+    expect(isReservedPremiereDue(reservedEntry({ title: '无日期的剧', premiereDate: null }), WED)).toBe(false)
+    const parts = partitionWatchlist([past], WED)
+    expect(parts.reserved.map((e) => e.title)).toEqual(['已到开播日的剧'])
+    expect([...parts.due, ...parts.check, ...parts.active, ...parts.finished]).toEqual([])
+  })
+
+  it('「继续追」不取预约态：还没开播的剧不叫继续追', () => {
+    const list = [reservedEntry({ title: '待开播剧' }), entry({ title: '在追剧', cadence: { kind: 'weekly', weekdays: [1] } })]
+    expect(selectContinueWatching(list, WED).map((e) => e.title)).toEqual(['在追剧'])
+    expect(selectContinueWatching([reservedEntry({ title: '只有预约' })], WED)).toEqual([])
+  })
+
+  it('云端往返：预约态开播日只存本机，云端没带就用本地缓存补回', () => {
+    const local = reservedEntry({ title: '待开播剧', premiereDate: '2026-11-30' })
+    const cloudWithoutDate: HubWatchEntry = {
+      ...local,
+      premiereDate: undefined,
+    }
+    delete (cloudWithoutDate as Record<string, unknown>).premiereDate
+    const merged = mergeCloudWatchlist([local], [cloudWithoutDate])
+    expect(merged).toHaveLength(1)
+    expect(merged[0]?.premiereDate).toBe('2026-11-30')
+    // 增量同样补回
+    const deltaApplied = applyWatchDelta([], [cloudWithoutDate])
+    expect(deltaApplied).toHaveLength(1)
+    const deltaWithLocal = applyWatchDelta([local], [{ ...cloudWithoutDate, updatedAt: Date.now() }])
+    expect(deltaWithLocal.find((e) => e.key === local.key)?.premiereDate).toBe('2026-11-30')
   })
 })

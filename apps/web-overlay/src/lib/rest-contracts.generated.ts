@@ -571,6 +571,15 @@ export interface BriefTodayResponse {
       priority: "high" | "normal";
       [key: string]: unknown;
     })[];
+    premieringToday: ({
+      key: string;
+      title: string;
+      platformTitle: string;
+      playUrl: string;
+      episode: number;
+      priority: "high" | "normal";
+      [key: string]: unknown;
+    })[];
     [key: string]: unknown;
   } | null;
   [key: string]: unknown;

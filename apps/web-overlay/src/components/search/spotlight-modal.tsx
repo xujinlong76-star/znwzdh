@@ -396,8 +396,8 @@ export function SpotlightModal({
     () => matchQuicklinkCommand(query, quicklinkEntries),
     [query, quicklinkEntries],
   )
-  const quicklinkActive = !isCommandMode && !isAiMode && quicklinkMatch !== null
-  const quicklinkOffset = quicklinkActive && quicklinkMatch?.url ? 1 : 0
+  const quicklinkActive = !isCommandMode && !isAiMode && quicklinkMatch.kind === 'hit'
+  const quicklinkOffset = quicklinkActive && quicklinkMatch.kind === 'hit' && quicklinkMatch.url ? 1 : 0
 
   // 4. 指令模式内置动作列表
   const systemCommands: CommandAction[] = useMemo(() => [
@@ -915,7 +915,7 @@ export function SpotlightModal({
    * 上报带上搜索参数 `{query: arg}`。url 为 null 时 toast、不开页。
    */
   const openQuicklink = useCallback(() => {
-    if (!quicklinkMatch?.url) {
+    if (quicklinkMatch.kind !== 'hit' || !quicklinkMatch.url) {
       toast.error('快捷链接打不开', { description: '参数超过 500 字符或模板不安全，已拦截。' })
       return
     }
@@ -960,7 +960,7 @@ export function SpotlightModal({
     // 快捷链接：命令命中时占导航位 0，回车优先于站点；代入失败（参数超
     // 500 字符 / 模板已不安全）时 toast、不开页，也不落到站点首条。
     if (quicklinkActive) {
-      if (!quicklinkMatch?.url) {
+      if (quicklinkMatch.kind !== 'hit' || !quicklinkMatch.url) {
         toast.error('快捷链接打不开', { description: '参数超过 500 字符或模板不安全，已拦截。' })
         return
       }
@@ -1217,7 +1217,7 @@ export function SpotlightModal({
           {!isCommandMode && !isAiMode && (
             <>
               {/* 快捷链接：命令命中时置顶一行（mono 前缀 chip + 在哪搜 + 回车直达），占导航位 0 */}
-              {quicklinkActive && quicklinkMatch?.url && (
+              {quicklinkActive && quicklinkMatch.kind === 'hit' && quicklinkMatch.url && (
                 <div role="listbox" id="spotlight-quicklink-listbox" aria-label="快捷链接" className="space-y-1">
                   <div
                     onClick={() => openQuicklink()}

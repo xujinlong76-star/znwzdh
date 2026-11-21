@@ -53,6 +53,7 @@ import {
 } from '@/lib/quicklinks'
 import { describeAnonymousFavoritesNote, describeSyncBanner, shouldOfferRetry, type SyncBannerInput } from '@/lib/favorites-sync-copy'
 import { FavoritesSyncBadge } from '@/components/favorites/favorites-sync-badge'
+import { FavoriteSyncDot, favoriteSyncRing } from '@/components/favorites/favorite-sync-dot'
 import { deriveBadgeState, type SyncEngineSnapshot } from '@/lib/favorites-sync'
 import { ConflictDrawer } from '@/components/favorites/conflict-drawer'
 import { useFavoritesSyncBridge } from '@/hooks/useFavoritesSyncBridge'
@@ -2516,8 +2517,13 @@ export default function FavoritesPage() {
                   'group relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 p-3.5 flex flex-col justify-between',
                   batchMode && 'cursor-pointer select-none',
                   batchMode && selectedSiteIds.has(f.siteId) && 'border-primary ring-1 ring-primary/40 bg-primary/5',
+                  favoriteSyncRing(syncSnapshot, f.siteId),
                 )}
               >
+                {/* 2026-11-22 卡片级同步微点：待同步蓝灰 / 冲突琥珀，与 Header 徽标同源 */}
+                <span className="absolute top-2.5 right-2.5 z-20">
+                  <FavoriteSyncDot snapshot={syncSnapshot} itemId={f.siteId} onLocateConflict={() => setShowConflictDrawer(true)} />
+                </span>
                 {/* 批量选择标记 */}
                 {batchMode && (
                   <div className="absolute top-2.5 left-2.5 z-20">

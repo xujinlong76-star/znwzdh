@@ -28,13 +28,14 @@ describe('ssrf-guard DNS 边界', () => {
     await expect(resolveAndCheck(new URL('https://mixed.example'), OPTS)).rejects.toThrow(/受保护/)
   })
 
-  it('全部解析结果安全时放行，并返回可用于钉扎的安全 IP 列表', async () => {
+  it('全部解析结果安全时放行（独立实现返回 void，钉扎用 resolveAndCheckAddresses）', async () => {
     lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }])
-    // 旧 web 副本返回 void；收口后权威层返回安全 IP 数组——
-    // 这个返回值正是连接级钉扎的输入，语义更强，故按新契约断言。
-    await expect(resolveAndCheck(new URL('https://public.example'), OPTS)).resolves.toEqual([
-      '93.184.216.34',
-    ])
+    /*
+     * 2026-11-22 订正：overlay 不能依赖 @navhub/*（依赖边界），
+     * 因此恢复独立实现。resolveAndCheck 返回 void，
+     * 内部 resolveAndCheckAddresses 返回安全 IP 列表供钉扎使用。
+     */
+    await expect(resolveAndCheck(new URL('https://public.example'), OPTS)).resolves.toBeUndefined()
   })
 
   it('阻断 100::/64 丢弃前缀', () => {

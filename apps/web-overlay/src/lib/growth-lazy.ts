@@ -323,3 +323,32 @@ export function markMemberSeenAction(seen: boolean): void {
     m.markMemberSeenAction(seen)
   })
 }
+
+/** 动态开箱动作（供跨页全清宝箱 Toast 原地一键开箱使用，保持 growth.ts 懒加载边界） */
+export function openDailyChestLazy(): Promise<{
+  ok: boolean
+  fixedXp: number
+  bonusXp: number
+  gotCard: boolean
+  tier?: string | null
+} | null> {
+  return import('@/lib/growth')
+    .then((m) => {
+      const { result } = m.openDailyChestAction()
+      return {
+        ok: result.ok,
+        fixedXp: result.fixedXp,
+        bonusXp: result.bonusXp,
+        gotCard: result.gotCard,
+        tier: result.tier,
+      }
+    })
+    // 可以吞：这是懒加载边界上的**可选增强**入口（跨页 Toast 的「一键开箱」）。
+    // import 失败（chunk 404 / 离网 / 浏览器禁用动态 import）时返回 null，
+    // 调用方据此不弹 Toast、静默跳过本次开箱；宝箱数据本身仍在本机，
+    // 下次进成长页照样能开，用户没有不可恢复的损失。
+    .catch(() => {
+      /* 懒加载失败=可选增强不可用，调用方按 null 跳过，不改变任何持久状态 */
+      return null
+    })
+}

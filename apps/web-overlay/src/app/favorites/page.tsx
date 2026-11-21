@@ -548,6 +548,11 @@ export default function FavoritesPage() {
       ? {
           ok: cloudResult.ok,
           pushed: cloudResult.pushed,
+          // U-371：banner 按 applied 说成功数、按 skipped 报被覆盖数，
+          // 再不许拿 pushed 冒充「已合并」。
+          applied: cloudResult.applied,
+          skipped: cloudResult.skipped,
+          truncatedNotes: cloudResult.truncatedNotes,
           cloudCount: cloudResult.cloud ? cloudResult.cloud.length : null,
           remoteRemoved: cloudResult.remoteRemoved,
           error: cloudResult.error,
@@ -671,7 +676,7 @@ export default function FavoritesPage() {
     const ok = await updateFavoriteMeta(cloudIdentity, siteId, { folderId })
     setManageBusy(false)
     if (!ok) {
-      setSyncNote('移动收藏失败：云端暂不可用，已在本机保留位置')
+      setSyncNote('移动收藏失败：云端暂不可用，本次移动未同步到云端，只保留在本机位置；请稍后在收藏页重试同步')
       setSyncStatus('error')
     }
   }, [cloudIdentity, favorites])
@@ -685,7 +690,7 @@ export default function FavoritesPage() {
     const ok = await updateFavoriteMeta(cloudIdentity, siteId, { note })
     setManageBusy(false)
     if (!ok) {
-      setSyncNote('保存备注失败：云端暂不可用，已保存在本机')
+      setSyncNote('保存备注失败：云端暂不可用，本次备注未同步到云端，只保存在本机；请稍后在收藏页重试同步')
       setSyncStatus('error')
     }
   }, [cloudIdentity, favorites, noteDraft])
@@ -706,7 +711,7 @@ export default function FavoritesPage() {
     const ok = await updateFavoriteMeta(cloudIdentity, siteId, { tags: deduped.length > 0 ? deduped : null })
     setManageBusy(false)
     if (!ok) {
-      setSyncNote('保存标签失败：云端暂不可用，已保存在本机')
+      setSyncNote('保存标签失败：云端暂不可用，本次标签未同步到云端，只保存在本机；请稍后在收藏页重试同步')
       setSyncStatus('error')
     }
   }, [cloudIdentity, favorites, tagDraft])

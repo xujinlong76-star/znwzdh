@@ -1050,11 +1050,11 @@ async savedPluginEmbeddings(filter?: {
     return favoritesRepo.listFavoritesSince(this, userId, since);
   }
 
-  /** 批量应用客户端收藏 ops（LWW + 事务） */
+  /** 批量应用客户端收藏 ops（LWW + 事务；U-371：回传被跳过的 siteId） */
   async applyFavoriteOps(
     userId: string,
     ops: favoritesRepo.FavoriteOp[],
-  ): Promise<{ applied: number; version: number }> {
+  ): Promise<{ applied: number; version: number; skippedSiteIds: string[] }> {
     return favoritesRepo.applyFavoriteOps(this, userId, ops);
   }
 

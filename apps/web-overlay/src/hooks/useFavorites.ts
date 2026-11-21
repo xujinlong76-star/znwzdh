@@ -96,6 +96,15 @@ export interface LocalFavorite {
   folderId?: string | null
   createdAt: number
   /**
+   * 内容最后改动时间（毫秒，U-371）。
+   * 同步 op 的 at 取它——离线改备注/标签/移夹后它才是最新的，createdAt 是
+   * 收藏创建时间，拿它当 at 会让 LWW 把离线改动当旧事件跳过。
+   * 缺失时回退 createdAt（老数据 / 云端全量合并前）；只由内容写入点
+   * （toggle 新增、applyMetaUpdate、importJson、恢复）维护，打开/分流
+   * 等本机私有变化不碰它。
+   */
+  updatedAt?: number
+  /**
    * 上次从「重温」入口打开的时间（本机私有，见 lib/resurface）。
    * 只由 recordOpened 写：不置脏、不推云端——同步 ops 只带
    * folderId/note/tags，打开时间不是收藏内容；云端合并（mergeCloudFavorites /
@@ -593,7 +602,9 @@ export function addFavoritesLocal(
     }
     existing.add(item.siteId)
     if (fp !== '') existingFingerprints.add(fp)
-    added.push(item)
+    // U-371：新 pin 的条目带上更新时刻（没有就回退 createdAt），
+    // 否则同步 op.at 回退到 createdAt——对新条目两者本就同一时刻。
+    added.push({ ...item, updatedAt: updatedAtOf(item) })
   }
   if (added.length === 0) return { added, skippedSiteIds }
   const next = [...added, ...sharedFavorites]
@@ -635,11 +646,18 @@ export function restoreRemovedFavorites(
   source: 'undo' | 'trash',
 ): { ok: boolean; message?: string } {
   if (sharedBlocked) return { ok: false, message: '本机存储不可用，恢复未完成' }
-  const next = insertRestoredFavorites(sharedFavorites, removed)
+  const restoreAt = Date.now()
+  // U-371：恢复是此刻的一次内容改动，记更新时刻（op.at 仍以 restoreAt
+  // 覆盖为准，见下；updatedAt 只是让恢复后的条目自带正确的水位）。
+  const restoredIds = new Set(removed.map((r) => r.item.siteId))
+  const stamped = insertRestoredFavorites(sharedFavorites, removed).map((i) =>
+    restoredIds.has(i.siteId) ? { ...i, updatedAt: restoreAt } : i,
+  )
+  const next = stamped
   if (!persistLocalFavorites(next)) return { ok: false, message: '本机存储写不进去，恢复未完成' }
   const ids = removed.map((r) => r.item.siteId)
   markDirty(ids)
-  setRestoreAt(ids, Date.now())
+  setRestoreAt(ids, restoreAt)
   if (source === 'undo') dropFromTrash(ids)
   return { ok: true }
 }
@@ -667,6 +685,16 @@ export function buildRemoveUndoEntry(
     trashRef: { batchId, count: removed.length },
     undo: async () => restoreRemovedFavorites(removed, 'undo'),
   }
+}
+
+/**
+ * 导入类写入的 updatedAt 回退（U-371）：文件里带就用文件的，没有就用
+ * createdAt，再没有用现在——绝不能留 undefined 让 op.at 回退到更旧的值。
+ */
+function updatedAtOf(item: { updatedAt?: unknown; createdAt?: unknown }): number {
+  if (typeof item.updatedAt === 'number' && Number.isFinite(item.updatedAt)) return item.updatedAt
+  if (typeof item.createdAt === 'number' && Number.isFinite(item.createdAt)) return item.createdAt
+  return Date.now()
 }
 
 /**
@@ -726,6 +754,11 @@ export function applyMetaUpdate(
     if (patch.templateUrl !== undefined) {
       const template = patch.templateUrl == null ? '' : patch.templateUrl.trim()
       merged.templateUrl = template || undefined
+    }
+    // U-371：同步字段（夹子/备注/标签）变了 = 内容改动，记更新时刻，
+    // 同步 op 的 at 用它。quicklink 是本机私有、不推云端，不记。
+    if (patch.folderId !== undefined || patch.note !== undefined || patch.tags !== undefined) {
+      merged.updatedAt = Date.now()
     }
     return merged
   })
@@ -946,8 +979,8 @@ export function useFavorites(): FavoritesApi {
     // 待读分流：分流开关开着时新收进待读箱（inbox 戳 + triageAt = now）；
     // 关掉时新收藏直接进 permanent；老收藏不受影响（祖父规则）。
     const fresh: LocalFavorite = readTriageSettings().enabled
-      ? enterInbox({ ...site, createdAt: now }, now)
-      : { ...site, createdAt: now }
+      ? enterInbox({ ...site, createdAt: now, updatedAt: now }, now)
+      : { ...site, createdAt: now, updatedAt: now }
     if (existed) {
       // 取消收藏 = 删除：先快照进回收站、再改本地、再推撤销条（与 remove 同路）
       const removed = snapshotAndRemoveLocal([site.siteId], 'single')
@@ -1070,6 +1103,9 @@ export function useFavorites(): FavoritesApi {
       tags: restored.tags,
       folderId: restored.folderId,
       createdAt: restored.createdAt,
+      // U-371：从已移出区恢复是此刻的一次内容改动，记更新时刻，
+      // 否则同步 op.at 回退到旧 createdAt，会被云端 LWW 跳过。
+      updatedAt: now,
       quickPrefix: restored.quickPrefix,
       templateUrl: restored.templateUrl,
     }
@@ -1152,16 +1188,19 @@ export function useFavorites(): FavoritesApi {
     if (items.length === 0) return { restored: [] as string[], skipped: [] as string[] }
     const current = sharedFavorites
     const restored = items.filter((i) => !current.some((c) => c.siteId === i.siteId))
+    const restoreAt = Date.now()
+    const restoredIds = new Set(restored.map((i) => i.siteId))
     const next = insertRestoredFavorites(
       current,
       items.map((item, k) => ({ item, index: item.index ?? current.length + k })),
-    )
+    // U-371：恢复是此刻的一次内容改动，记更新时刻（op.at 仍以 restoreAt 覆盖为准）
+    ).map((i) => (restoredIds.has(i.siteId) ? { ...i, updatedAt: restoreAt } : i))
     if (!persist(next)) {
       return { restored: [] as string[], skipped: items.map((i) => i.siteId) }
     }
     const ids = restored.map((i) => i.siteId)
     markDirty(ids)
-    setRestoreAt(ids, Date.now())
+    setRestoreAt(ids, restoreAt)
     return {
       restored: ids,
       skipped: items.filter((i) => !ids.includes(i.siteId)).map((i) => i.siteId),
@@ -1186,7 +1225,9 @@ export function useFavorites(): FavoritesApi {
    */
   const clearFolderForItems = useCallback((siteIds: string[]): boolean => {
     const ids = new Set(siteIds)
-    const next = sharedFavorites.map((i) => (ids.has(i.siteId) ? { ...i, folderId: null } : i))
+    const now = Date.now()
+    // U-371：移出文件夹是内容改动，同步字段变了就记更新时刻
+    const next = sharedFavorites.map((i) => (ids.has(i.siteId) ? { ...i, folderId: null, updatedAt: now } : i))
     const ok = persist(next)
     if (ok && ids.size > 0) markDirty([...ids])
     return ok
@@ -1300,7 +1341,7 @@ export function useFavorites(): FavoritesApi {
             quickPrefix: quickPrefix || undefined,
             templateUrl: templateUrl || undefined,
           }
-          if (!Array.isArray(i.tags) || i.tags.length === 0) return { ...i, note, tags: undefined, ...quicklinkFields, triageStatus: undefined, triageAt: undefined }
+          if (!Array.isArray(i.tags) || i.tags.length === 0) return { ...i, note, tags: undefined, ...quicklinkFields, triageStatus: undefined, triageAt: undefined, updatedAt: updatedAtOf(i) }
           const seen = new Set<string>()
           for (const raw of i.tags) {
             if (typeof raw !== 'string') continue
@@ -1311,7 +1352,7 @@ export function useFavorites(): FavoritesApi {
           }
           // 导入的条目是旧存量，一律进 permanent：文件里带的分流字段
           // （哪怕是别的设备导出的）也不能把一条旧收藏塞进 24 小时箱。
-          return { ...i, note, tags: seen.size > 0 ? [...seen] : undefined, ...quicklinkFields, triageStatus: undefined, triageAt: undefined }
+          return { ...i, note, tags: seen.size > 0 ? [...seen] : undefined, ...quicklinkFields, triageStatus: undefined, triageAt: undefined, updatedAt: updatedAtOf(i) }
         })
       // 合并键是指纹（SSOT）：同一站带 utm / www / http 与不带判同一条，
       // 绝不按 siteId（原始 href 的 djb2）重复入库。siteId 生成本身不动。
@@ -1352,7 +1393,8 @@ export function useFavorites(): FavoritesApi {
           if (sameFields(existing, item)) {
             alreadyExisted++
           } else {
-            merged[at] = { ...existing, ...item, siteId: existing.siteId, createdAt: existing.createdAt }
+            // U-371：导入覆盖了已存条目 = 此刻的一次内容改动，记更新时刻
+            merged[at] = { ...existing, ...item, siteId: existing.siteId, createdAt: existing.createdAt, updatedAt: Date.now() }
             updated++
           }
           continue
@@ -1425,6 +1467,8 @@ export interface FavoritesSyncStatus {
   ok: boolean
   pushed: number
   remoteRemoved: number
+  /** U-371：最近一次同步被另一台设备的更新版本覆盖（LWW 跳过）的 op 数 */
+  skipped?: number
   error?: string
 }
 
@@ -1446,6 +1490,7 @@ export function readSyncStatus(): FavoritesSyncStatus | null {
       ok: Boolean(parsed.ok),
       pushed: Number(parsed.pushed) || 0,
       remoteRemoved: Number(parsed.remoteRemoved) || 0,
+      skipped: typeof parsed.skipped === 'number' ? parsed.skipped : undefined,
       error: typeof parsed.error === 'string' ? parsed.error : undefined,
     }
   } catch {
@@ -1608,6 +1653,9 @@ export function applyFavoriteDelta(
       tags: remote.tags ?? undefined,
       folderId: remote.folderId,
       createdAt: remote.createdAt || cached?.createdAt || Date.now(),
+      // U-371：云端行的更新时刻带回本地（增量覆盖后它就是本条的水位）；
+      // 云端没给时保留本地值，别回退到 createdAt 把水位洗旧。
+      updatedAt: remote.updatedAt ?? cached?.updatedAt ?? cached?.createdAt,
     }
     if (cached) map.set(remote.siteId, next)
     else fresh.push(next)
@@ -1638,6 +1686,12 @@ export interface CloudSyncResult {
   localCount: number
   /** 本次实际提交到云端的 ops 数（M1 三期起只推脏条目：0 = 纯拉取） */
   pushed: number
+  /** U-371：服务端确认应用的 ops 数（applied + skipped = pushed） */
+  applied: number
+  /** U-371：被另一台设备的更新版本覆盖、LWW 跳过的 ops 数 */
+  skipped: number
+  /** U-371：服务端截断超长备注的条数（客户端类型此前未声明该字段） */
+  truncatedNotes: number
   /** 合并后的云端收藏；**失败时为 null**（空数组表示云端确实没有收藏） */
   cloud: HubFavorite[] | null
   /** 云端收藏夹；失败时为 null（与 cloud 同生命周期，页面无需再发一次请求） */
@@ -1665,6 +1719,9 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       ok: false,
       localCount: 0,
       pushed: 0,
+      applied: 0,
+      skipped: 0,
+      truncatedNotes: 0,
       cloud: null,
       cloudFolders: null,
       error: blocked,
@@ -1678,6 +1735,9 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       ok: false,
       localCount: local.length,
       pushed: 0,
+      applied: 0,
+      skipped: 0,
+      truncatedNotes: 0,
       cloud: null,
       cloudFolders: null,
       error: '未登录：收藏只保存在本机浏览器',
@@ -1734,7 +1794,10 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
         folderId: f.folderId ?? null,
         note: f.note && f.note.length > 200 ? f.note.slice(0, 200) : f.note ?? null,
         tags: f.tags ?? null,
-        at: restoreAt[f.siteId] ?? f.createdAt,
+        // U-371：at 取真正的 updatedAt（最后改动时间），不再拿 createdAt 当 at——
+        // 离线改备注后 createdAt 仍是收藏当天，LWW 会把这次改动当旧事件跳过。
+        // 撤销覆盖仍优先（见上）；老数据没有 updatedAt 时回退 createdAt。
+        at: restoreAt[f.siteId] ?? f.updatedAt ?? f.createdAt,
       })
     }
     for (const siteId of dirty) {
@@ -1749,6 +1812,12 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
     let version = since
     let aggregated: HubFavoriteSyncItem[] = []
     let folders: HubFavoriteFolder[] = []
+    // U-371：分片汇总服务端回执的 applied / skipped / truncatedNotes。
+    // skippedSiteIds 是「只清已确认应用的 op」的依据——新服务端恒回它
+    // （可为空数组）；旧协议回执没有它时按旧行为整批确认（见下）。
+    let appliedCount = 0
+    let truncatedCount = 0
+    const skippedIds: string[] = []
 
     // 所有分片都用同一个 since：这样每片的响应都覆盖「自游标以来的全部变化」，
     // 不会因为逐片推进游标而漏掉「at 早于新游标」的条目（拼接后按 siteId 去重）。
@@ -1760,6 +1829,9 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
           ok: false,
           localCount: local.length,
           pushed: 0,
+          applied: 0,
+          skipped: 0,
+          truncatedNotes: 0,
           cloud: null,
           cloudFolders: null,
           error: failure.message,
@@ -1771,6 +1843,15 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       version = Math.max(version, result.version)
       aggregated.push(...result.items)
       folders = result.folders
+      const chunkApplied = typeof result.applied === 'number' ? result.applied : chunk.length
+      appliedCount += chunkApplied
+      truncatedCount += typeof result.truncatedNotes === 'number' ? result.truncatedNotes : 0
+      if (Array.isArray(result.skippedSiteIds)) skippedIds.push(...result.skippedSiteIds)
+      // 旧协议回执（无 skippedSiteIds、无 skipped）：服务端没给跳过信息，
+      // 按旧行为整批确认——绝不能拿 applied < 提交数就反推「整批被跳过」
+      // （老桩 applied 只是增量条数，remove 批的 applied=0 是常态）。
+      // 新服务端恒回 skippedSiteIds（可为空数组），该分支只兜底旧服务端。
+      else if (typeof result.skipped === 'number' && result.skipped > 0) skippedIds.push(...chunk.map((o) => o.siteId))
     }
 
     // 本机没有可推条目时仍需拉取：首拉（since=0）要全集，已有游标时要知道云端新增与墓碑
@@ -1782,6 +1863,9 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
           ok: false,
           localCount: local.length,
           pushed: 0,
+          applied: 0,
+          skipped: 0,
+          truncatedNotes: 0,
           cloud: null,
           cloudFolders: null,
           error: failure.message,
@@ -1793,6 +1877,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       aggregated = pulled.items
       version = pulled.version
       folders = pulled.folders
+      truncatedCount += typeof pulled.truncatedNotes === 'number' ? pulled.truncatedNotes : 0
     }
 
     // 游标只在全部请求成功后推进一次（失败时保持原值，重试仍覆盖这段区间，幂等）
@@ -1802,18 +1887,35 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
     const remoteRemoved = aggregated.length - alive.length
     // since=0 是全集，可以走「云端覆盖本地」；since>0 是增量，必须按行 upsert，
     // 否则本地尚未推送的条目会被整体替换误删。
-    const nextItems =
+    let nextItems =
       since === 0 ? mergeCloudFavorites(local, alive) : applyFavoriteDelta(local, aggregated)
-    // 全部请求成功：本次脏条目已获云端确认，清空标记。
-    // 失败路径（上面几处 return）故意不清——下次重试仍会推这些条目。
-    clearDirty()
-    // 撤销时刻覆盖也随之清掉：已获云端确认，不再需要覆盖
-    clearRestoreAt(ops.map((o) => o.siteId))
+    // U-371：被跳过的 op 对应的本地改动不能被云端增量覆盖掉——
+    // 覆盖掉就等于「败方改动静默丢失」，脏标记留着也没东西可重试。
+    // 把跳过条目的同步前本地值原样放回（仍脏着，下次同步会重推；用户再改
+    // 一次会刷新 updatedAt，之后就能赢下 LWW）。
+    const skippedLocal = new Map(local.filter((f) => skippedIds.includes(f.siteId)).map((f) => [f.siteId, f]))
+    if (skippedLocal.size > 0) {
+      nextItems = nextItems.map((item) => skippedLocal.get(item.siteId) ?? item)
+      // 云端墓碑（另一台设备删的、且比本机改动新）会把条目从 nextItems 里
+      // 拿掉：同样放回，否则本机改动从界面上消失、脏标记却还在——用户连
+      // 「被覆盖的是哪条」都看不到，更谈不上再改一次重试。
+      const present = new Set(nextItems.map((i) => i.siteId))
+      for (const f of local) {
+        if (skippedLocal.has(f.siteId) && !present.has(f.siteId)) nextItems.push(f)
+      }
+    }
+    // U-371：只清已确认应用的 op。被跳过的 op 保留脏标记，下次同步仍会
+    // 推（可重试）；全部请求失败的路径（上面几处 return）故意一个不清。
+    // 撤销时刻覆盖同样只清已确认的——跳过条目的恢复仍待确认。
+    const appliedIds = ops.map((o) => o.siteId).filter((id) => !skippedIds.includes(id))
+    clearDirty(appliedIds)
+    clearRestoreAt(appliedIds)
     writeSyncStatus({
       at: Date.now(),
       ok: true,
       pushed: ops.length,
       remoteRemoved,
+      skipped: skippedIds.length,
     })
     return {
       ok: true,
@@ -1821,6 +1923,11 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       // pushed = 本次实际提交的 ops 数（0 = 纯拉取，什么都没有推）；
       // localCount 仍是本机条数，两者语义不同，别混
       pushed: ops.length,
+      // applied/skipped 是服务端确认的口径：banner 必须按 applied 说成功数，
+      // 再不许拿 pushed 冒充「已合并」。
+      applied: appliedCount,
+      skipped: skippedIds.length,
+      truncatedNotes: truncatedCount,
       cloud: alive,
       cloudFolders: folders,
       retryable: false,
@@ -1842,6 +1949,9 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       ok: false,
       localCount: local.length,
       pushed,
+      applied: 0,
+      skipped: 0,
+      truncatedNotes: 0,
       cloud: null,
       cloudFolders: null,
       error: failure.message,
@@ -1861,6 +1971,10 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
     ok: !cloudFailed,
     localCount: local.length,
     pushed,
+    // 匿名通道走逐条端点、无 applied/skipped 回执：推上去的都算已应用。
+    applied: cloudFailed ? 0 : pushed,
+    skipped: 0,
+    truncatedNotes: 0,
     cloud: cloudFailed ? null : list.items,
     cloudFolders: cloudFailed ? null : list.folders,
     error: failure.message,

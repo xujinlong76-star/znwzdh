@@ -50,6 +50,36 @@ describe('同步状态条文案', () => {
   it('没有输入时不占位', () => {
     expect(describeSyncBanner(null)).toEqual({ tone: 'hidden', text: '' })
   })
+
+  it('U-371：部分跳过——按 applied 报成功数，并报出被覆盖数，不拿 pushed 冒充', () => {
+    const banner = describeSyncBanner({ syncing: false, ok: true, pushed: 3, applied: 1, skipped: 2, cloudCount: 12 })
+    expect(banner.text).toContain('已把本机 1 条收藏合并到云端')
+    expect(banner.text).toContain('另有 2 条被另一台设备的更新版本覆盖')
+    expect(banner.text).toContain('本机改动已保留')
+    expect(banner.text).not.toContain('已把本机 3 条收藏合并到云端')
+  })
+
+  it('U-371：全部跳过——不再出现“已合并”', () => {
+    const banner = describeSyncBanner({ syncing: false, ok: true, pushed: 2, applied: 0, skipped: 2 })
+    expect(banner.text).toContain('都被另一台设备的更新版本覆盖，未合并到云端')
+    expect(banner.text).not.toContain('已合并')
+  })
+
+  it('U-371：失败说清“未同步到云端”与重试，不再只说“已保存在本机”', () => {
+    const banner = describeSyncBanner({ syncing: false, ok: false, error: '登录已过期，请重新登录后同步收藏' })
+    expect(banner.tone).toBe('error')
+    expect(banner.text).toContain('登录已过期')
+    expect(banner.text).toContain('本次改动未同步到云端')
+    expect(banner.text).toContain('重试同步')
+    expect(banner.text).toContain('换设备登录可能看不到')
+  })
+
+  it('U-371：失败但没有原因——仍说“原因未知”与“未同步到云端”', () => {
+    const banner = describeSyncBanner({ syncing: false, ok: false })
+    expect(banner.tone).toBe('error')
+    expect(banner.text).toContain('原因未知')
+    expect(banner.text).toContain('未同步到云端')
+  })
 })
 
 describe('重试按钮', () => {

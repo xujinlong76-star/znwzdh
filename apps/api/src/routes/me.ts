@@ -1325,7 +1325,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         }
         return op;
       });
-      let applied: { applied: number; version: number };
+      let applied: { applied: number; version: number; skippedSiteIds: string[] };
       let slice: Awaited<ReturnType<typeof ctx.repo.listFavoritesSince>>;
       let folders: Awaited<ReturnType<typeof ctx.repo.listFavoriteFolders>>;
       let siteMap: Map<string, unknown>;
@@ -1375,6 +1375,11 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       return {
         ok: true,
         applied: applied.applied,
+        // U-371：LWW 跳过的 op 必须显式回传（计数 + 哪些 siteId），
+        // 客户端按它清脏、报数——只回 applied 时客户端只能拿「提交数」
+        // 冒充成功数，跳过的改动还会被静默清脏丢掉。
+        skipped: applied.skippedSiteIds.length,
+        skippedSiteIds: applied.skippedSiteIds,
         version: Math.max(applied.version, slice.version),
         items: slice.items.map((item) => ({ ...item, site: siteMap.get(item.siteId) ?? null })),
         folders,

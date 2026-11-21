@@ -1019,6 +1019,12 @@ export type HubFavoriteSyncItem = HubFavorite & {
 export interface HubFavoritesSyncPayload {
   ok: boolean
   applied: number
+  /** U-371：本批被 LWW 跳过的 op 数（applied + skipped = 提交的 ops 数） */
+  skipped?: number
+  /** U-371：被跳过的 op 对应的 siteId（客户端按它保留脏标记、可重试） */
+  skippedSiteIds?: string[]
+  /** 超长备注被服务端截断的条数（此前类型未声明，回了也被丢弃） */
+  truncatedNotes?: number
   version: number
   items: HubFavoriteSyncItem[]
   folders: HubFavoriteFolder[]

@@ -336,9 +336,10 @@ export async function applyFavoriteOps(
   repo: Repository,
   userId: string,
   ops: FavoriteOp[],
-): Promise<{ applied: number; version: number }> {
+): Promise<{ applied: number; version: number; skippedSiteIds: string[] }> {
   return repo.withTransaction(async () => {
     let applied = 0;
+    const skippedSiteIds: string[] = [];
     const ownedFolders = await ownedFolderIds(repo, userId, ops.map((op) => op.folderId));
     for (const op of ops) {
       const at = typeof op.at === "number" && Number.isFinite(op.at) ? Math.trunc(op.at) : Date.now();
@@ -346,7 +347,12 @@ export async function applyFavoriteOps(
         "SELECT id, updated_at, deleted_at FROM favorites WHERE user_id = ? AND site_id = ? LIMIT 1",
         [userId, op.siteId],
       ))[0];
-      if (row && at <= Number(row.updated_at ?? 0)) continue;
+      // LWW 跳过：op 比云端存量旧（U-371：客户端必须知道哪些 op 被跳过，
+      // 否则会把「提交数」当成「成功数」报给用户，还会清掉它们的脏标记）。
+      if (row && at <= Number(row.updated_at ?? 0)) {
+        skippedSiteIds.push(op.siteId);
+        continue;
+      }
 
       if (!row) {
         // update 无事可做；add/remove 都需要落一行（remove 落墓碑，
@@ -408,7 +414,7 @@ export async function applyFavoriteOps(
     }
 
     const version = await currentVersion(repo, userId, 0);
-    return { applied, version };
+    return { applied, version, skippedSiteIds };
   });
 }
 

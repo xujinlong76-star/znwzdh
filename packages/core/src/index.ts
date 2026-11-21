@@ -65,5 +65,6 @@ export * from "./bookmark-exporter.ts";
 export * from "./canonical-json.ts";
 export * from "./rest-responses.ts";
 export * from "./copilot-frame.ts";
+export * from "./url-host.ts";
 
 export * from "./llm-utils.ts";

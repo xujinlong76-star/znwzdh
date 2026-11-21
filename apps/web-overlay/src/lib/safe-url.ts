@@ -85,3 +85,79 @@ export function safeWindowOpen(value?: string | null): Window | null {
   return window.open(target, '_blank', 'noopener,noreferrer')
 }
 
+/**
+ * URL 主机归属判定（CodeQL `js/incomplete-url-substring-sanitization` 根治）。
+ *
+ * 与 `packages/core/src/url-host.ts` 及 `scripts/lib/url-host.mjs` 同语义实现：
+ * 前端为独立 vendored 底座、不依赖 `@navhub/*`（加 workspace 依赖会炸
+ * `Dockerfile.web` 的 `docker-smoke`，见 U-352 A′ 教训），故就地一份；
+ * 三份共用同一套测试用例，行为必须一致。改动任一份时须同步另外两份 + 三份测试。
+ *
+ * 规则：`new URL(rawUrl)` 解析，非法 URL 返回 `false`；协议必须为
+ * `http:` / `https:`；主机名严格比对 `hostname === host ||
+ * hostname.endsWith('.' + host)`（均小写；端口不影响判定）。
+ * 只判定“主机归属”，不管 userinfo（渲染层另有 `safeHref` 拦 userinfo）；
+ * 无方案裸串 `new URL` 抛错 -> `false`，不自动补方案。
+ */
+function normalizeAllowedHost(host: string): string {
+  return host.trim().toLowerCase().replace(/\.$/, '')
+}
+
+export function isAllowedHost(rawUrl: string, allowedHosts: string[]): boolean {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) return false
+  let hostname: string
+  try {
+    const u = new URL(rawUrl.trim())
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false
+    hostname = u.hostname.toLowerCase()
+  } catch {
+    return false
+  }
+  if (!hostname) return false
+  for (const host of allowedHosts) {
+    const h = normalizeAllowedHost(host)
+    if (!h) continue
+    if (hostname === h || hostname.endsWith(`.${h}`)) return true
+  }
+  return false
+}
+
+/** 是否为可解析的 http(s) 绝对 URL（替代 `value.startsWith('http')` 嗅探）。 */
+export function isAbsoluteHttpUrl(value: string): boolean {
+  if (typeof value !== 'string' || !value.trim()) return false
+  try {
+    const u = new URL(value.trim())
+    return u.protocol === 'http:' || u.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 站点 URL 归一化解析（替代 `raw.startsWith('http') ? raw : `https://${raw}``）。
+ *
+ *   - http(s) 绝对 URL -> 原样解析返回；
+ *   - 裸主机名 / 带端口裸串（如 `example.com:8080/path`，`new URL` 会误解析出
+ *     `example.com:` 这种“方案”）-> 补 `https://` 再解析；
+ *   - 真正的非 http(s) 绝对 URL（如 `httpx://evil.com`，补方案后仍非法）或
+ *     完全非法串 -> `null`，调用方按原有回落处理。
+ */
+export function parseSiteUrl(raw: string): URL | null {
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  try {
+    const u = new URL(trimmed)
+    if (u.protocol === 'http:' || u.protocol === 'https:') return u
+    // 非 http(s) 方案：可能是裸串被误解析（如 example.com:8080），也可能是
+    // httpx:// 之类——统一按裸串补 https:// 再试一次，非法则 null。
+  } catch {
+    // 无方案裸串，补 https:// 再试。
+  }
+  try {
+    return new URL(`https://${trimmed}`)
+  } catch {
+    return null
+  }
+}
+

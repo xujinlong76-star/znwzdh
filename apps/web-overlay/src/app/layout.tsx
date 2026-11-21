@@ -17,6 +17,7 @@ import {
   WebVitalsReporter,
 } from '@/components/shell-background'
 import MobileNav from '@/components/mobile-nav'
+import { GlobalFloatingDock } from '@/components/global-floating-dock'
 import { Suspense } from 'react'
 import { GrowthTracker } from '@/components/growth/growth-tracker'
 // 横幅改走客户端动态边界（第 75 轮第二小刀）：根 layout 是 Server
@@ -294,6 +295,9 @@ export default async function RootLayout({
           {/* 全局撤销条（8 秒内存撤销的唯一出口，不复用 toast：见 components/undo-bar.tsx） */}
           <UndoBar />
           {/* 小猫猫 AI 助手挂件 v7：右下角悬浮小猫（public/xiaomaomao/xiaomaomao.js，头像真图多姿势 + 聊天找站 + 摸猫/喂鱼/接星星/成长联动/语音输入；v6：深色整套图自动切换 + 庆祝视频钩子（media 文件就位即生效）+ 拖动补强（触摸/真尺寸钳制）+ 闲时贴边吸附（安全内边距） + 用户自改形象（图库/上传，本机保存）；v7：猫自身控件平时零遮挡——控件收进猫上方悬浮坞、悬停/轻点才唤出、闲置 3 秒自动收起，全套 UI 图标换手工 SVG；640–1024px 区间猫默认抬到半屏下沉栏之上（见 xiaomaomao.js 内媒体规则，栏高 56px + 呼吸位），拖动过的猫以用户自选位置为准、可能再盖住底栏） */}
+          {/* 2026-11-21 统一右下角浮坞：回顶按钮由 React 侧渲染，
+              小猫挂件由下面的脚本自绘（已在 CSS 里对齐同一套 right/bottom/z 值）。 */}
+          <GlobalFloatingDock />
           {settings.features.xiaomaomao ? (
             <Script src="/xiaomaomao/xiaomaomao.js" strategy="lazyOnload" />
           ) : null}

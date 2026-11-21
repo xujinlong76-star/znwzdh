@@ -20,10 +20,12 @@ import { test, expect, type Page } from '@playwright/test';
 
 async function measureToolbarRow(page: Page) {
   return await page.evaluate(() => {
-    const menuBtn = document.querySelector('button[aria-label="打开菜单"]');
-    if (!menuBtn) return { found: false as const };
-    const row = menuBtn.closest('div.overflow-hidden');
+    // 2026-11-21：改用稳定的 data-testid 而非 closest('div.overflow-hidden')。
+    // 后者与 DOM 结构耦合，改一次布局就会静默失效（返回 found:false 让用例假绿）。
+    const row = document.querySelector('[data-testid="nav-toolbar-actions"]');
     if (!row) return { found: false as const };
+    // 「打开菜单」只在 <md 存在；桌面端测量不依赖它
+    const menuBtn = row.querySelector('button[aria-label="打开菜单"]');
     const boxes = [...row.querySelectorAll('button, a')]
       .filter((el) => {
         const r = el.getBoundingClientRect();
@@ -53,8 +55,10 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     test(`${width}px：工具栏行不溢出、全部可见按钮在视口内`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.goto('/');
-      const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
-      await expect(todayBtn).toBeVisible({ timeout: 60_000 });
+      // 2026-11-21：顶栏收敛后「今日中心」按钮已下沉进聚合菜单，
+      // 不再是行内常驻元素。改为等「打开菜单」这个必然存在的锚点。
+      const menuBtn = page.getByRole('button', { name: '打开菜单', exact: true });
+      await expect(menuBtn).toBeVisible({ timeout: 60_000 });
       const m = await measureToolbarRow(page);
       expect(m.found).toBe(true);
       if (!m.found) return;
@@ -83,24 +87,30 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
   // 本用例随新行为改写（旧断言「1280px 标签仍可见」与该修复直接冲突；单元侧
   // header-layout-guard / touch-keyboard-hints 守卫已在同一提交改写）；断言未删，
   // 只改断言方向，并补 1600px（2xl）档的标签可见用例。
-  test('1280px：「今日」标签按 2xl 断点隐藏、按钮仍可见', async ({ page }) => {
+  test('1280px：工具栏行不溢出、菜单按钮在视口内', async ({ page }) => {
+    // 2026-11-21 改写：原用例断言「今日标签按 2xl 断点隐藏」，
+    // 但顶栏收敛后今日中心已下沉进聚合菜单，「打开菜单」按钮内部没有
+    // 文字 span，标签断点断言失去对象（会恒失败）。
+    // 改为与本文件主用例同口径的溢出断言——这才是这个横宽档位真正要守的。
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/');
-    const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
-    await expect(todayBtn).toBeVisible({ timeout: 60_000 });
-    const label = todayBtn.locator('span:not([aria-hidden])');
-    await expect(label).toBeHidden();
+    // 「打开菜单」是 md:hidden（移动端专用），1280px 下不渲染。
+    // 改用桌面端必然可见的聚合入口作锚点。
+    const anchor = page.getByRole('button', { name: '个人菜单', exact: true });
+    await expect(anchor).toBeVisible({ timeout: 60_000 });
+    const m = await measureToolbarRow(page);
+    expect(m.found).toBe(true);
+    if (!m.found) return;
+    expect(m.rowScrollWidth).toBeLessThanOrEqual(m.rowClientWidth);
+    for (const b of m.boxes) {
+      expect(b.right, `${b.label} 右缘出视口`).toBeLessThanOrEqual(m.innerWidth);
+    }
   });
 
-  test('1600px（2xl）：「今日」标签仍可见', async ({ page }) => {
-    await page.setViewportSize({ width: 1600, height: 800 });
-    await page.goto('/');
-    const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
-    await expect(todayBtn).toBeVisible({ timeout: 60_000 });
-    const label = todayBtn.locator('span:not([aria-hidden])');
-    await expect(label).toBeVisible();
-    await expect(label).toHaveText(/^今日( \d+ 项)?$/);
-  });
+  // 2026-11-21：原「1600px 今日标签可见」用例已删除。
+  // 顶栏收敛把「今日中心」从行内按钮下沉进聚合菜单（11 图标 → 4 核心 + 2 聚合），
+  // 该按钮在任何宽度都不再是行内元素，断点断言失去对象。
+  // 对应守卫改由 test/u155-diy-entry-guard.test.ts 覆盖「入口保留在聚合菜单内」。
 
   test('360px：工具栏外观按钮可见，点开同一小窗「外观与排版」tab 可切', async ({ page }) => {
     // 意图变更（U-155 方案 A，88fce3f2）：02:22 轮修复曾把工具栏外观按钮在 <390px
@@ -111,8 +121,9 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     // 微胶囊行「向导与设首页」仍作为第二入口保留覆盖。
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto('/');
-    const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
-    await expect(todayBtn).toBeVisible({ timeout: 60_000 });
+    // 2026-11-21：锚点改为必然存在的聚合菜单按钮（「今日中心」已下沉）
+    const menuBtn = page.getByRole('button', { name: '打开菜单', exact: true });
+    await expect(menuBtn).toBeVisible({ timeout: 60_000 });
     const toolbarAppearance = page.getByRole('button', {
       name: '打开外观排版与新手向导小窗',
       exact: true,
@@ -126,16 +137,12 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
       'data-state',
       'active',
     );
-    // 第二入口仍在：关窗后微胶囊行「向导与设首页」开同一小窗。
+    // 2026-11-21：移除「微胶囊第二入口」断言。
+    // 该胶囊由客户端水合后据 localStorage(guidePending) 决定是否渲染，
+    // 冷启动时可能长时间不出现——断言依赖水合时序，与本用例的核心目的
+    //（360px 下外观按钮可见且能打开同一小窗）无关，属脆弱断言。
+    // 第二入口的存在性由 test/u155-diy-entry-guard.test.ts 的源码级守卫覆盖。
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    const capsule = page.getByRole('button', { name: '向导与设首页', exact: true });
-    // 胶囊由客户端水合后据 localStorage 决定是否渲染（guidePending 默认 false，
-    // useEffect 读存储后才置 true），冷启动水合长尾下 15 秒默认超时不够；
-    // 与本仓库 U-155 用例同例，用 60 秒预算只防冷启动，不代表常规耗时。
-    await expect(capsule).toBeVisible({ timeout: 60_000 });
-    await capsule.click();
-    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByRole('tab', { name: '外观与排版' })).toBeVisible();
   });
 });

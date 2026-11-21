@@ -176,7 +176,12 @@ export const NavigationToolbar = memo(function NavigationToolbar({
             </div>
             {/* 2026-11-21 顶栏收敛：11 个纯图标 → 4 个核心入口 + 2 个聚合菜单。
                 每一项功能都还在，只是按使用频次分了层（见文件头注释）。 */}
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+            {/* data-testid 供 e2e 稳定测量：不依赖 class 结构（此前探针用
+                closest('div.overflow-hidden') 找行，改布局就会失效）。 */}
+            <div
+              data-testid="nav-toolbar-actions"
+              className="flex shrink-0 flex-wrap items-center justify-end gap-0.5 sm:gap-1.5"
+            >
 
               {/* ① 多选模式：批量导出 / 复制 / 置顶的唯一出口，不能埋进菜单。 */}
               <IconTip label={selectionMode ? '退出多选模式（M）' : '多选模式：批量导出 / 复制 / 置顶（M）'}>

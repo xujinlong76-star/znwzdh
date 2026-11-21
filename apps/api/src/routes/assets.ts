@@ -14,7 +14,8 @@ import { lookup } from "node:dns/promises";
 import { existsSync, mkdirSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { isBlockedIp } from "@navhub/ai";
+// ssrf 能力从主入口导出（packages/ai/src/index.ts 有 export * from "./ssrf.ts"）
+import { isBlockedIp, safeFetch, SsrfBlockedError } from "@navhub/ai";
 import type { AppContext } from "../context.ts";
 
 interface CachedIcon {
@@ -239,9 +240,11 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
             // safeFetch 内部已逐跳校验并跟随重定向，这里只看最终结果
             if (result.status >= 300 && result.status < 400) break;
             if (result.status === 200) {
-              const ct = (result.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+              // split(";")[0] 在 TS 的 noUncheckedIndexedAccess 下可能为 undefined，
+              // 用 ?? "" 兜住（空串不会命中 MIME 白名单，行为安全）
+              const ct = ((result.headers.get("content-type") || "").split(";")[0] ?? "").trim().toLowerCase();
               if (SAFE_ICON_TYPES.test(ct)) {
-                binary = result.body;
+                iconBuffer = Buffer.from(result.body);
                 contentType = ct;
                 break;
               }
@@ -254,7 +257,7 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
             if (err instanceof SsrfBlockedError) break;
           }
         }
- finally {
+      } finally {
         clearTimeout(timeout);
       }
 

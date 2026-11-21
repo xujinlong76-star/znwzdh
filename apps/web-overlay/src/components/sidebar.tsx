@@ -23,7 +23,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { NavIcon } from '@/components/nav-icon'
 import { NAV_ICON_FALLBACK, isIconUrl, resolveNavIcon } from '@/lib/nav-icons'
 import { WorkspaceSwitcher } from '@/components/workspace/workspace-switcher'
-import { XiaomaomaoToggle } from '@/components/xiaomaomao-toggle'
 /**
  * CRDT 同步状态小药丸（Bundle 瘦身续刀：CRDT 引擎按需加载）。
  *
@@ -600,7 +599,9 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <XiaomaomaoToggle />
+          {/* 2026-11-21：原此处有第二个小猫挂件开关（XiaomaomaoToggle），
+              与右下角浮坞里的挂件重复。全站统一为唯一入口——右下角浮坞。
+              侧栏这里保留位置给未来可能的其它状态徽标。 */}
         </div>
       </div>
     </div>

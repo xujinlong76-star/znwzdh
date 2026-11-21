@@ -104,13 +104,19 @@ describe("顶栏触达尺寸（navigation-toolbar）", () => {
 });
 
 describe("无障碍细节（footer 分隔符与移动表单字号）", () => {
-  it("footer 的「·」装饰分隔符全部 aria-hidden", () => {
+  it("footer 用语义分组列表而非「·」分隔符（2026-11-21 改版）", () => {
+    // 原实现 17 个链接 + 16 个「·」分隔符全塞进一个 flex-wrap，
+    // 宽屏下自由折成 3 行、每行长度不均，视觉松垮。
+    // 2026-11-21 改为 <nav> + 两个 <ul> 语义分组（核心入口 / 探索与工具），
+    // 组内用 gap 排布，不再需要装饰分隔符——「必须 16 个 ·」的断言失去对象。
+    //
+    // 保留并强化的是**无障碍意图**：不允许出现未 aria-hidden 的装饰字符。
     const src = overlayFile("src/components/footer.tsx");
     const bare = src.match(/<span(?![^>]*aria-hidden)[^>]*>·<\/span>/g);
     expect(bare, "存在未 aria-hidden 的「·」分隔符（读屏会念成无意义字符）").toBeNull();
-    const hidden = src.split('aria-hidden="true">·</span>').length - 1;
-    // 16 = 15 + 1（短剧专区上线新增页脚「短剧专区」链接的分隔符）
-    expect(hidden, "16 处分隔符都应带 aria-hidden").toBe(16);
+    // 新结构：语义 nav + 两个分组列表
+    expect(src, "页脚导航应用 <nav aria-label> 承载").toContain("aria-label=\"页脚导航\"");
+    expect(src, "页脚链接应分成两个 <ul> 组").toContain("<ul");
   });
 
   it("globals.css 有移动端表单字号 ≥16px 规则（防 iOS 聚焦缩放）", () => {

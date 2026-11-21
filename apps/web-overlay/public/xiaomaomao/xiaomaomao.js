@@ -349,7 +349,7 @@
   var css =
     /* v5 设计令牌：颜色/阴影/缓动收敛成变量，深色只换令牌值（站点 .dark 挂在 html 上） */
     /* 黑白极简令牌：猫本体全透明无边框无光影，气泡/悬浮胶囊/聊天与游戏窗统一素白（深色自适应纯深）实底 + 1px 细框，零阴影零毛玻璃零渐变 */
-    '#xiaomaomao{--xm-accent:#18181b;--xm-accent-deep:#09090b;--xm-btn-ink:#ffffff;--xm-ink:#18181b;--xm-ink-soft:#52525b;--xm-surface:transparent;--xm-solid:transparent;--xm-chip:transparent;--xm-ring:transparent;--xm-win-bg:#ffffff;--xm-win-muted:#f4f4f5;--xm-win-border:rgba(24,24,27,.14);--xm-win-line:rgba(24,24,27,.08);--xm-shadow-panel:none;--xm-shadow-pop:none;--xm-ease:cubic-bezier(.16,1,.3,1);--xm-spring:cubic-bezier(.34,1.56,.64,1);position:fixed;right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(112px + env(safe-area-inset-bottom,0px));z-index:60;font-family:inherit;color:var(--xm-ink);-webkit-tap-highlight-color:transparent}' +
+    '#xiaomaomao{--xm-accent:#18181b;--xm-accent-deep:#09090b;--xm-btn-ink:#ffffff;--xm-ink:#18181b;--xm-ink-soft:#52525b;--xm-surface:transparent;--xm-solid:transparent;--xm-chip:transparent;--xm-ring:transparent;--xm-win-bg:#ffffff;--xm-win-muted:#f4f4f5;--xm-win-border:rgba(24,24,27,.14);--xm-win-line:rgba(24,24,27,.08);--xm-shadow-panel:none;--xm-shadow-pop:none;--xm-ease:cubic-bezier(.16,1,.3,1);--xm-spring:cubic-bezier(.34,1.56,.64,1);position:fixed;right:calc(16px + env(safe-area-inset-right,0px));bottom:calc(72px + env(safe-area-inset-bottom,0px));z-index:40;font-family:inherit;color:var(--xm-ink);-webkit-tap-highlight-color:transparent}' +
     'html.dark #xiaomaomao{--xm-accent:#fafafa;--xm-accent-deep:#ffffff;--xm-btn-ink:#09090b;--xm-ink:#f4f4f5;--xm-ink-soft:#a1a1aa;--xm-surface:transparent;--xm-solid:transparent;--xm-chip:transparent;--xm-ring:transparent;--xm-win-bg:#18181b;--xm-win-muted:#27272a;--xm-win-border:rgba(244,244,245,.16);--xm-win-line:rgba(244,244,245,.10);--xm-shadow-panel:none;--xm-shadow-pop:none}' +
     '#xiaomaomao.xm-enter{animation:xmPop .32s var(--xm-spring)}' +
     '@keyframes xmPop{0%{transform:scale(.9) translateY(10px);opacity:0}100%{transform:scale(1) translateY(0);opacity:1}}' +
@@ -2466,10 +2466,14 @@
   function syncMeRouteSafeAnchor() {
     var p = '';
     try { p = window.location.pathname || ''; } catch (e) { /* 忽略 */ }
+    /* /me/* 与 /favorites* 都走底部安全锚点（bottom-6 right-5）：
+       收藏页首屏右侧有导入/导出按钮与卡片边框，右下角 1024/1280/1440
+       视口下原 18px/112px 位置会压住「加载更多」与页脚，故纳入安全区。 */
     var onMe = p === '/me' || p.indexOf('/me/') === 0;
-    if (onMe) {
+    var onFavorites = p === '/favorites' || p.indexOf('/favorites/') === 0;
+    if (onMe || onFavorites) {
       root.classList.add('xm-me-safe');
-      /* 若此前用户在别的页面拖过猫导致它留在右侧腰部，进 /me/* 时暂让它回归底部安全区 */
+      /* 若此前用户在别的页面拖过猫导致它留在右侧腰部，进 /me/* 或 /favorites 时暂让它回归底部安全区 */
       if (!store.pos) {
         root.style.left = '';
         root.style.top = '';

@@ -32,35 +32,44 @@ function windowAround(src: string, needle: string, before = 800, after = 400): s
 describe('navigation-toolbar：顶栏 Flex 布局', () => {
   const src = read('src/components/navigation-toolbar.tsx')
 
-  it('搜索容器 flex-1 min-w-[260px] max-w-[560px]（可缩、不顶出）', () => {
-    expect(src).toContain('flex flex-1 min-w-[260px] max-w-[560px] items-center gap-1.5')
+  it('搜索容器 flex-1 min-w-[260px] max-w-[880px]（可缩、不顶出）', () => {
+    // 2026-11-21：max-w 560 → 880。1440px 下搜索框右侧原约 300px 死区
+    //（搜索框到 560 就截断、右侧按钮从 1151 才开始），顶栏像断开的两半。
+    expect(src).toContain('flex flex-1 min-w-[260px] max-w-[880px] items-center gap-1.5')
     expect(src).not.toContain('max-w-md sm:max-w-xl')
   })
 
-  it('顶栏行 gap-3（不再用 gap-1.5 挤两组）', () => {
-    expect(src).toContain('justify-between gap-3 md:h-14 md:flex-nowrap')
+  it('顶栏行允许在 <1024 换行、工具组按宽度预算收紧 gap（2026-11-21）', () => {
+    // md:flex-nowrap 在 768px 档会把「搜索 260px + 按钮簇 388px」硬塞进
+    // 768-48px 的可用宽里，整行顶出文档（实测 scrollWidth 940 > 768）。
+    // 改为 <1024 允许换行：搜索框独占一行、按钮簇折到第二行。
+    expect(src).toContain('gap-x-3 gap-y-1')
+    expect(src).toContain('lg:flex-nowrap')
+    // 360/390 宽度预算：gap 由 gap-1.5 收紧到 gap-0.5，sm 起恢复
+    expect(src).toContain('gap-0.5 sm:gap-1.5')
   })
 
-  it('右侧工具组 shrink-0 flex items-center gap-1.5（不再 basis-full + overflow-hidden 裁剪）', () => {
-    expect(src).toContain('shrink-0 flex items-center gap-1.5')
+  it('右侧工具组 shrink-0 且带 data-testid 供 e2e 稳定测量', () => {
+    expect(src).toContain('data-testid="nav-toolbar-actions"')
+    expect(src).toContain('flex shrink-0 flex-wrap items-center justify-end')
+    // 旧实现曾用 basis-full + overflow-hidden 裁剪，会静默吃掉按钮
     expect(src).not.toContain('basis-full max-w-none md:basis-auto overflow-hidden')
   })
 
-  // 订正（2026-11-20 复核阻塞项 ②）：1280px 档文字标签 49px 会把搜索容器压窄、
-  // 输入框只剩 18px，xl 改 min-[1536px]，<1536px 只留图标；Tooltip 与红点徽章不受影响。
-  it('「今日」按钮 <1536px 只留图标：按钮 min-[1536px]:w-auto、文字标签 hidden min-[1536px]:inline', () => {
-    const btn = windowAround(src, 'aria-label="打开今日中心小窗"', 800, 1500)
-    expect(btn).toContain('min-[1536px]:w-auto')
-    expect(btn).not.toContain('sm:w-auto')
-    expect(btn).toContain('hidden whitespace-nowrap')
-    expect(btn).toContain('min-[1536px]:inline')
+  it('「今日中心」已下沉进聚合菜单（2026-11-21 顶栏收敛）', () => {
+    // 顶栏收敛把 11 个纯图标压成「4 核心 + 2 聚合」，今日中心成为菜单项
+    //（DropdownMenuItem 内的 <span>今日中心</span>），不再有行内按钮形态。
+    expect(src).toContain('>今日中心<')
+    // 行内不应再保留独立的今日中心按钮（避免两处入口语义重复）
+    expect(src).not.toContain('aria-label="打开今日中心小窗"')
   })
 
-  it('「今日」按钮保留 title Tooltip 与红点徽章（只藏文字，不丢入口）', () => {
-    const btn = windowAround(src, 'aria-label="打开今日中心小窗"', 800, 1500)
-    expect(btn).toContain("title={todayBadge?.countdownLabel")
-    expect(btn).toContain('hasTodayAlert')
-    expect(btn).toContain('rounded-full bg-amber-500')
+  it('「今日中心」入口保留在聚合菜单内', () => {
+    // 入口完整性：菜单项受 onOpenTodayCenter 守卫，且带可读的今日项数说明
+    expect(src).toContain('onOpenTodayCenter')
+    expect(src).toContain('todayBadge.todayCount')
+    // 有紧急项时仍要有视觉红点提示（从行内按钮移到了菜单项上）
+    expect(src).toContain('hasTodayAlert')
   })
 })
 

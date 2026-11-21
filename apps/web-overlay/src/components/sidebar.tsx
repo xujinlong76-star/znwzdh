@@ -283,7 +283,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
               className="h-6.5 w-6.5 rounded-md object-contain shrink-0"
             />
           ) : (
-            <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs shrink-0">
+            <div className="w-7 h-7 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs shrink-0">
               <Compass className="h-4 w-4 text-primary" />
             </div>
           )}
@@ -385,7 +385,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                       <Button
                         key={subCategory.id}
                         variant="ghost"
-                        className="w-full justify-start h-7.5 px-2 text-xs rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer"
+                        className="w-full justify-start h-7.5 px-2 text-xs rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer"
                         onClick={() => {
                           scrollToSection(subCategory.id, category.id)
                         }}
@@ -421,7 +421,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
             {unreadText && (
               <span
                 aria-hidden
-                className="absolute -right-0.5 -top-0.5 min-w-[15px] rounded-full bg-primary px-1 text-center text-[9px] font-semibold leading-[15px] text-primary-foreground tabular-nums"
+                className="absolute -right-0.5 -top-0.5 min-w-[15px] rounded-full bg-primary px-1 text-center text-[10px] font-semibold leading-[15px] text-primary-foreground tabular-nums"
               >
                 {unreadText}
               </span>

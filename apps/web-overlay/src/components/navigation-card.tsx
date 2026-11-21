@@ -571,7 +571,7 @@ export const NavigationCard = memo(function NavigationCard({
               data-navhub-site-id={item.id}
               data-navhub-selected={selected ? 'true' : undefined}
               className={cn(
-                "nav-card-deferred group/card relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.25 focus:outline-none focus:ring-1.5 focus:ring-primary/40",
+                "nav-card-deferred group/card relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 transition-all duration-150 transform hover:-translate-y-0.5 focus:outline-none focus:ring-1.5 focus:ring-primary/40",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
                 selectionClass
               )}
@@ -613,12 +613,12 @@ export const NavigationCard = memo(function NavigationCard({
                       onClick={handleDetailClick}
                       tabIndex={-1}
                       title={item.title}
-                      className="pointer-events-auto truncate rounded text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover/card:text-primary hover:underline underline-offset-4 transition-colors focus-visible:outline-none min-w-0 flex-1"
+                      className="pointer-events-auto truncate rounded text-sm sm:text-base font-semibold tracking-tight text-foreground group-hover/card:text-primary hover:underline underline-offset-4 transition-colors focus-visible:outline-none min-w-0 flex-1"
                     >
                       {item.title}
                     </Link>
                   ) : (
-                    <span title={item.title} className="truncate text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover/card:text-primary transition-colors min-w-0 flex-1">
+                    <span title={item.title} className="truncate text-sm sm:text-base font-semibold tracking-tight text-foreground group-hover/card:text-primary transition-colors min-w-0 flex-1">
                       {item.title}
                     </span>
                   )}
@@ -641,16 +641,16 @@ export const NavigationCard = memo(function NavigationCard({
                   "flex items-center gap-0.5 transition-opacity",
                   isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
                 )}>
-                {renderDragControls('h-6 w-6 rounded-md')}
+                {renderDragControls('h-6 w-6 rounded-lg')}
                 <Button
                   type="button"
                   tabIndex={-1}
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "h-6 w-6 rounded-md transition-colors",
+                    "h-6 w-6 rounded-lg transition-colors",
                     isEditingLayout
-                      ? "text-rose-700 hover:text-rose-700 hover:bg-rose-500/15 dark:text-rose-400 dark:hover:text-rose-400"
+                      ? "text-destructive-text hover:text-destructive-text hover:bg-destructive/15"
                       : "hidden sm:inline-flex text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
                   )}
                   title="🙈 隐藏此站点（移入回收站，可按 Ctrl+Z 撤销或随时还原）"
@@ -666,7 +666,7 @@ export const NavigationCard = memo(function NavigationCard({
                     variant="ghost"
                     size="icon"
                     className={cn(
-                      "h-6 w-6 rounded-md transition-colors",
+                      "h-6 w-6 rounded-lg transition-colors",
                       isSpeedDialPinned ? "text-amber-500 bg-amber-500/15" : "text-muted-foreground hover:text-amber-500"
                     )}
                     title={isSpeedDialPinned ? "从首屏速览坞取消固定" : "📌 钉入首屏速览坞"}
@@ -683,7 +683,7 @@ export const NavigationCard = memo(function NavigationCard({
                     variant="ghost"
                     size="icon"
                     className={cn(
-                      "h-6 w-6 rounded-md",
+                      "h-6 w-6 rounded-lg",
                       isPinnedInCategory ? "text-amber-500 bg-amber-500/10" : "text-muted-foreground hover:text-amber-500"
                     )}
                     title={isPinnedInCategory ? "取消分类内置顶" : "置顶在当前分类首位"}
@@ -693,13 +693,13 @@ export const NavigationCard = memo(function NavigationCard({
                     <ArrowUpToLine className={cn("w-3 h-3", isPinnedInCategory && "fill-amber-500")} />
                   </Button>
                 )}
-                {detailAction('h-6 w-6 rounded-md')}
+                {detailAction('h-6 w-6 rounded-lg')}
                 <Button
                   tabIndex={-1}
                   data-card-action=""
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground"
+                  className="h-6 w-6 rounded-lg text-muted-foreground hover:text-foreground"
                   title="速览与行动"
                   aria-label={`速览与行动：${item.title}`}
                   onClick={(e) => {
@@ -715,7 +715,7 @@ export const NavigationCard = memo(function NavigationCard({
                   data-card-action=""
                   variant="ghost"
                   size="icon"
-                  className="hidden sm:inline-flex h-6 w-6 rounded-md text-muted-foreground hover:text-emerald-500"
+                  className="hidden sm:inline-flex h-6 w-6 rounded-lg text-muted-foreground hover:text-emerald-500"
                   title="📌 固定到工作台"
                   aria-label={`固定到工作台：${item.title}`}
                   onClick={handleWorkbenchPin}
@@ -727,7 +727,7 @@ export const NavigationCard = memo(function NavigationCard({
                   data-card-action=""
                   variant="ghost"
                   size="icon"
-                  className="hidden sm:inline-flex h-6 w-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  className="hidden sm:inline-flex h-6 w-6 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                   title="复制网址链接"
                   aria-label={`复制链接：${item.title}`}
                   onClick={handleCopyLink}
@@ -766,7 +766,7 @@ export const NavigationCard = memo(function NavigationCard({
               data-navhub-site-id={item.id}
               data-navhub-selected={selected ? 'true' : undefined}
               className={cn(
-                "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-lg dark:hover:shadow-primary/10 nav-card-glow transition-all duration-200 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
+                "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
                 selectionClass
               )}
@@ -940,7 +940,7 @@ export const NavigationCard = memo(function NavigationCard({
                   className={cn(
                     "h-11 min-w-11 flex-1 rounded-lg transition-colors",
                     isEditingLayout
-                      ? "text-rose-700 hover:text-rose-700 hover:bg-rose-500/15 dark:text-rose-400 dark:hover:text-rose-400"
+                      ? "text-destructive-text hover:text-destructive-text hover:bg-destructive/15"
                       : "hidden sm:inline-flex text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
                   )}
                   title="🙈 隐藏此站点（移入回收站，可按 Ctrl+Z 撤销或随时还原）"
@@ -1146,7 +1146,7 @@ export const NavigationCard = memo(function NavigationCard({
                 </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <CardTitle className="text-sm font-semibold tracking-tight text-foreground group-hover/card:text-primary transition-colors min-w-0 flex-1">
+                  <CardTitle className="text-sm sm:text-base font-semibold tracking-tight text-foreground group-hover/card:text-primary transition-colors min-w-0 flex-1">
                     {hasSiteDetail ? (
                       <Link
                         href={siteDetailHref}
@@ -1248,7 +1248,7 @@ export const NavigationCard = memo(function NavigationCard({
                 className={cn(
                   "h-11 min-w-11 flex-1 rounded-lg transition-colors",
                   isEditingLayout
-                    ? "text-rose-700 hover:text-rose-700 hover:bg-rose-500/15 dark:text-rose-400 dark:hover:text-rose-400"
+                    ? "text-destructive-text hover:text-destructive-text hover:bg-destructive/15"
                     : "hidden sm:inline-flex text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10"
                 )}
                 title="🙈 隐藏此站点（移入回收站，可按 Ctrl+Z 撤销或随时还原）"

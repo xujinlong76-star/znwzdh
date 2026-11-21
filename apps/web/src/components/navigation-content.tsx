@@ -1291,7 +1291,7 @@ export function NavigationContent({
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-1">
                 <div>
-                  <h2 className="text-base sm:text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
+                  <h2 className="text-base sm:text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
                     <span className="w-1.5 h-4.5 rounded-full bg-emerald-500" />
                     <span>模块化工作台主页</span>
                   </h2>
@@ -1450,7 +1450,7 @@ export function NavigationContent({
                     description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
                   })
                 }}
-                className="mb-1.5 ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+                className="mb-1.5 ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-destructive-text bg-destructive/15 hover:bg-destructive/20 border border-destructive/30 transition-colors cursor-pointer"
               >
                 <EyeOff className="w-3 h-3" />
                 <span>－ 移除站内目录</span>
@@ -1520,7 +1520,7 @@ export function NavigationContent({
                       description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
                     })
                   }}
-                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium text-destructive-text bg-destructive/15 hover:bg-destructive/20 border border-destructive/30 transition-colors cursor-pointer"
                 >
                   <EyeOff className="w-3 h-3" />
                   <span>－ 移除页脚与生态入口</span>

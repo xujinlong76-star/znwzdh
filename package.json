@@ -91,7 +91,8 @@
     "verify:guards": "node scripts/verify-guard.mjs --all",
     "verify:ui": "node scripts/verify-ui-acceptance.cjs",
     "video:catalog:reconcile": "node apps/api/src/video-catalog-main.ts --check --json",
-    "mirror:web": "node scripts/generate-web-mirror.mjs"
+    "mirror:web": "node scripts/generate-web-mirror.mjs",
+    "test:responsive": "playwright test e2e/responsive-matrix.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",

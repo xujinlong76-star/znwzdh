@@ -11,6 +11,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { NavigationCard } from '@/components/navigation-card'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
+import { HorizontalScrollFade } from '@/components/horizontal-scroll-fade'
 /**
  * 模块缩放手柄（Bundle 瘦身第三刀 a）：手柄本体约 20KB 代码，只在排版编辑态
  * 才渲染（非编辑态返回 null），平时不进 `/` 初始 chunk。`next/dynamic`
@@ -753,15 +754,18 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                         </div>
                       )}
 
-                      <div className="space-y-4">
+                      {/* 2026-11-21 首屏压缩：块内 spacing 4→2、标题行 pb-3 → pb-1.5、
+                          标题字号 xl → lg、折叠按钮 44 → 28px（触摸热区靠 ::before 保住）。 */}
+                      <div className="space-y-2">
                         {/* 一级分类标题头 */}
-                        <div className="flex items-center justify-between pb-3 border-b border-border/50">
+                        <div className="flex items-center justify-between pb-1.5 border-b border-border/50">
                           <div className="flex items-center gap-2 flex-wrap">
                             {/* 手风琴折叠展开按钮 */}
                             <button
                               type="button"
                               onClick={() => toggleCollapseCategory(category.id)}
-                              className="min-h-11 min-w-11 p-1 -ml-1 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-muted/80 transition-all flex items-center justify-center cursor-pointer"
+                              /* 视觉 28px，::before 扩 44px 触摸热区——视觉变小不拿可用性换。 */
+                              className="relative -ml-1 flex h-7 w-7 items-center justify-center rounded-md p-0 text-muted-foreground/70 transition-all before:absolute before:-inset-2 before:content-[''] hover:bg-muted/80 hover:text-foreground cursor-pointer"
                               title={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
                               aria-label={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
                               aria-expanded={!isCollapsed}
@@ -775,7 +779,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                               isCustom ? "bg-emerald-500" : isPinned ? "bg-amber-500" : "bg-primary"
                             )} />
                             <h2
-                              className="text-base sm:text-xl font-bold tracking-tight text-foreground flex flex-wrap items-center gap-1.5 sm:gap-2 select-none"
+                              className="text-base sm:text-lg font-bold tracking-tight text-foreground flex flex-wrap items-center gap-1.5 select-none"
                             >
                               {canVisitCategoryPage ? (
                                 <Link
@@ -981,13 +985,24 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                           <div
                             id={categoryContentId}
                             className={cn(
-                              "space-y-4",
+                              "space-y-2.5",
                               moduleHeightPx && "overflow-y-auto pr-1.5 custom-scrollbar"
                             )}
                             style={moduleHeightPx ? { maxHeight: `${moduleHeightPx}px` } : undefined}
                           >
-                            {/* 二级分类快速切换导航轨（仅在拥有多个子分类且未折叠时渲染） */}
+                            {/* 二级分类快速切换导航轨（仅在拥有多个子分类且未折叠时渲染）
+                                2026-11-21：外包 HorizontalScrollFade。此前是裸 overflow-x-auto，
+                                768px 下整条 rail 把文档撑出横向滚动、溢出的子分类被生硬裁断。
+                                现在：滚动收进容器内、可滚侧出渐变遮罩、两侧给箭头；
+                                键盘仍走下面的 roving tab 逻辑。 */}
                             {!isEditingLayout && subCats.length > 1 && (
+                              <HorizontalScrollFade
+                                ariaLabel={`${category.title} 子分类快速切换`}
+                                scrollClassName="flex items-center gap-1.5 pb-0.5 pt-0"
+                                showArrows
+                                prevAriaLabel={`向左滚动查看${category.title}更多子分类`}
+                                nextAriaLabel={`向右滚动查看${category.title}更多子分类`}
+                              >
                               <div
                                 role="tablist"
                                 aria-label={`${category.title} 子分类快速切换`}
@@ -1004,7 +1019,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                   tabs[nextIndex]?.focus()
                                   tabs[nextIndex]?.click()
                                 }}
-                                className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 scrollbar-none text-xs"
+                                className="flex items-center gap-1.5 text-xs"
                               >
                                 <button
                                   type="button"
@@ -1013,7 +1028,9 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                   tabIndex={selectedSubCatId === null ? 0 : -1}
                                   onClick={() => setSelectedSubCatId(null)}
                                   className={cn(
-                                    "min-h-11 px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
+                                    /* 子分类 chip：min-h-11(44px) → h-7(28px)。这是「切换查看哪一组」的快筛，
+                                           不是主操作；横向滚动 + 渐隐箭头保证可达性。 */
+                                        "h-7 px-2.5 rounded-full text-[11px] font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
                                     selectedSubCatId === null
                                       ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
                                       : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
@@ -1030,7 +1047,9 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                     tabIndex={selectedSubCatId === '__direct__' ? 0 : -1}
                                     onClick={() => setSelectedSubCatId(selectedSubCatId === '__direct__' ? null : '__direct__')}
                                     className={cn(
-                                      "min-h-11 px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
+                                      /* 子分类 chip：min-h-11(44px) → h-7(28px)。这是「切换查看哪一组」的快筛，
+                                           不是主操作；横向滚动 + 渐隐箭头保证可达性。 */
+                                        "h-7 px-2.5 rounded-full text-[11px] font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
                                       selectedSubCatId === '__direct__'
                                         ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
                                         : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
@@ -1052,7 +1071,9 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                       tabIndex={isCurrent ? 0 : -1}
                                       onClick={() => setSelectedSubCatId(isCurrent ? null : sub.id)}
                                       className={cn(
-                                        "min-h-11 px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
+                                        /* 子分类 chip：min-h-11(44px) → h-7(28px)。这是「切换查看哪一组」的快筛，
+                                           不是主操作；横向滚动 + 渐隐箭头保证可达性。 */
+                                        "h-7 px-2.5 rounded-full text-[11px] font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
                                         isCurrent
                                           ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
                                           : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
@@ -1064,6 +1085,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                   )
                                 })}
                               </div>
+                              </HorizontalScrollFade>
                             )}
 
                             {/* 筛选零匹配友好空态 */}
@@ -1137,7 +1159,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                 const siblingIds = sortedSubCategories.map((s) => s.subCategory.id)
                                 const subIndex = siblingIds.indexOf(subCategory.id)
                                 return (
-                                  <div key={subCategory.id} id={subCategory.id} className="mt-8 space-y-3 first:mt-2">
+                                  <div key={subCategory.id} id={subCategory.id} className="mt-4 space-y-3 first:mt-0">
                                     <div className="flex items-center justify-between pb-0.5 pt-1">
                                       <div className="flex items-center gap-2">
                                         <span className="w-[3px] h-3.5 rounded-full bg-gradient-to-b from-primary to-primary/50 shadow-2xs" />

@@ -133,7 +133,9 @@ export function HomeQuickDock({
         id="quick-access-tray"
         data-speed-dial="true"
         aria-label="高频直达与常用访问"
-        className="mb-3 flex h-12 items-center gap-2 rounded-xl border border-border/60 bg-card/75 px-3 backdrop-blur-xs"
+        /* 2026-11-21 首屏压缩：h-12(48px) → h-[42px]，圆角 xl → lg，
+           padding px-3 → px-2.5。要求给的 40–44px 区间取中值。 */
+        className="mb-2 flex h-[42px] items-center gap-2 rounded-lg border border-border/60 bg-card/75 px-2.5 backdrop-blur-xs"
       >
         {/* 首屏瘦身：单行 48px（h-12）——左紧凑 tab + 中间横向滚动胶囊区 +
             右「展开全部」。胶囊区已接入 HorizontalScrollFade 横向滚动渐隐
@@ -144,7 +146,7 @@ export function HomeQuickDock({
               role="tab"
               aria-selected={activeTab === 'speed'}
               onClick={() => setActiveTab('speed')}
-              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer ${
+              className={`inline-flex h-[26px] items-center gap-1 rounded-full px-2 text-[11px] font-medium transition-colors cursor-pointer ${
                 activeTab === 'speed'
                   ? 'bg-primary/12 text-primary'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -159,7 +161,7 @@ export function HomeQuickDock({
               aria-selected={activeTab === 'frequent'}
               disabled={!mounted || frequentVisits.length === 0}
               onClick={() => setActiveTab('frequent')}
-              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
+              className={`inline-flex h-[26px] items-center gap-1 rounded-full px-2 text-[11px] font-medium transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
                 activeTab === 'frequent'
                   ? 'bg-primary/12 text-primary'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -174,7 +176,7 @@ export function HomeQuickDock({
               aria-selected={activeTab === 'recent'}
               disabled={!mounted || recentVisits.length === 0}
               onClick={() => setActiveTab('recent')}
-              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
+              className={`inline-flex h-[26px] items-center gap-1 rounded-full px-2 text-[11px] font-medium transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
                 activeTab === 'recent'
                   ? 'bg-primary/12 text-primary'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -206,7 +208,8 @@ export function HomeQuickDock({
                   icon: item.icon,
                 })
               }
-              className="group relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border/50 bg-background/80 px-2.5 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent/50"
+              /* 胶囊更紧凑：h-9(36px) → h-8(32px)、px-2.5 → px-2、标题上限 96 → 84px */
+              className="group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/50 bg-background/80 px-2 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent/50"
             >
               <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
                 <SiteFavicon
@@ -217,7 +220,7 @@ export function HomeQuickDock({
                 />
                 <NumberDialBadge digit={item.digit} className="-bottom-1 -right-1" />
               </span>
-              <span className="max-w-[96px] truncate">{item.title}</span>
+              <span className="max-w-[84px] truncate">{item.title}</span>
               {item.meta ? (
                 <span className="text-[10px] text-muted-foreground">{item.meta}</span>
               ) : null}
@@ -228,7 +231,7 @@ export function HomeQuickDock({
         <button
           type="button"
           onClick={() => setAllDialogOpen(true)}
-          className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+          className="inline-flex h-[26px] shrink-0 items-center gap-0.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
         >
           <span>展开全部</span>
           <ChevronRight className="h-3.5 w-3.5" />

@@ -352,6 +352,26 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const searchRef = useRef<HTMLDivElement>(null)
   const resultsPanelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  /**
+   * 外部请求聚焦（2026-11-21）：裸 / 快捷键与 ?scene= 深链都走这个事件，
+   * 而不是各自去摸 DOM 找 input——本组件是 dynamic({ ssr:false }) 挂载的，
+   * 外部调用的那一帧 ref 还不存在。detail.ai 时顺带切到 AI 模式。
+   *
+   * 必须放在 inputRef 声明之后：effect 里引用的 ref 若声明在下方，
+   * 闭包捕获时是 TDZ 未初始化，按键即抛 ReferenceError。
+   */
+  useEffect(() => {
+    const onFocusSearch = (e: Event) => {
+      const detail = (e as CustomEvent<{ ai?: boolean }>).detail
+      if (detail?.ai) {
+        setAiMode(true)
+        writeSearchAiMode(true)
+      }
+      inputRef.current?.focus()
+    }
+    window.addEventListener('navhub:focus-search', onFocusSearch as EventListener)
+    return () => window.removeEventListener('navhub:focus-search', onFocusSearch as EventListener)
+  }, [])
   const abortRef = useRef<AbortController | null>(null)
   /** 当前查询的权威值：用来丢弃「已经过期的追加页」响应 */
   const activeQueryRef = useRef('')

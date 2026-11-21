@@ -1,7 +1,8 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Sparkles, Code2, Palette, Bot, Compass, Coffee, ArrowRight } from 'lucide-react'
+import { Sparkles, Code2, Palette, Bot, Compass, Coffee, ArrowRight, LayoutGrid } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DAYPART_PLACEHOLDER,
   daypartText,
@@ -69,7 +70,7 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
   }
 
   return (
-    <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-2.5 py-2 border-b border-border/40 overflow-hidden">
+    <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-2 border-b border-border/30 overflow-hidden">
       <div
         role="tablist"
         aria-label="工作区视图切换"
@@ -87,7 +88,9 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
               aria-selected={isActive}
               tabIndex={isActive ? 0 : -1}
               onClick={() => onChange(ws.id)}
-              className={`flex min-h-11 items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all shrink-0 whitespace-nowrap cursor-pointer ${
+              /* 2026-11-21：min-h-11(44px) → h-8(32px)。工作区切换是「看一眼就知道
+                 在哪」的状态条，不是需要 44px 触摸目标的主操作按钮。 */
+              className={`relative flex h-8 items-center gap-1.5 px-2.5 rounded-full text-xs font-medium transition-all shrink-0 whitespace-nowrap cursor-pointer ${
                 isActive
                   ? 'bg-primary text-primary-foreground shadow-xs font-semibold'
                   : 'bg-muted/40 hover:bg-muted/80 text-muted-foreground hover:text-foreground border border-border/50 hover:border-border'
@@ -137,7 +140,23 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
             <span className="text-xs whitespace-nowrap">时段场景推荐已关闭</span>
           </div>
         )}
-        <span className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">自适应工作区</span>
+        {/* 2026-11-21 修复遮挡 Bug：这段原本是裸露文字，挂在 sticky 顶栏最右端。
+            小猫猫挂件一旦停在右上角就整块盖住这几个字，且滚动不会让它让开。
+            改为「图标 + Tooltip」：视觉上不可遮挡，语义完整保留（读屏读 aria-label）。 */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className="inline-flex h-6 w-6 shrink-0 cursor-help items-center justify-center rounded-full text-muted-foreground/60 hover:text-muted-foreground"
+              aria-label="自适应工作区：分类与卡片密度会随可用宽度自动调整"
+              tabIndex={0}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={6}>
+            自适应工作区：分类与卡片密度随可用宽度自动调整
+          </TooltipContent>
+        </Tooltip>
       </div>
     </div>
   )

@@ -132,6 +132,26 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
         return
       }
 
+      /**
+       * 裸 / 聚焦顶栏搜索框（2026-11-21）。
+       *
+       * 为什么补：搜索框占位符、空态文案、快捷键指南都在承诺「按 / 快速搜索」，
+       * 但代码里 / 只出现在上面「Shift+/ 呼出帮助」那一支——裸 / 从来没被接管过。
+       * 文案与行为对不上，属于最伤信任的那类缺陷（用户按了没反应，只会以为站点卡）。
+       *
+       * 实现走 navhub:focus-search 事件而不是在这里摸 DOM：搜索框是
+       * dynamic({ ssr:false }) 挂载的，本组件拿不到它的 ref；该事件由
+       * SearchPalette 自己监听并 focus。
+       *
+       * 只在裸按（无 ctrl/meta/alt）时生效：Shift+/ 已被上面「?」分支吃掉，
+       * 不会与帮助面板冲突；带修饰键的组合照旧放行给浏览器（WCAG 2.1.4）。
+       */
+      if (e.key === '/' && bare) {
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent('navhub:focus-search', { detail: { ai: false } }))
+        return
+      }
+
       // 按 Alt + 1 / 2 / 3 切换视图。裸 1/2/3 已让给数字直达（开站），
       // 这里只认 Alt 修饰；解析用 e.code 不用 e.key——Alt+1 在 macOS 上
       // 的 e.key 是 '¡'，按 key 永远匹配不上。

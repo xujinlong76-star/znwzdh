@@ -83,11 +83,16 @@ export function HomeSubtitleHint({ tagline }: { tagline?: string }) {
   if (!mounted || dismissed) return null
   if (!isFirstVisit && !searchFocused) return null
 
+  /* 2026-11-21 首屏优化：原样式是「带边框 + 底色 + px-2.5 py-1.5」的卡片
+     （实测占 28–32px，视觉上像一个可交互区块）。但内容只有一句话，且恰好出现在
+     **最该看清站点卡片的两个时刻**（首次访问、搜索聚焦）。
+     改为无边框无底色的纯文本行，高度压到约 20px，关闭按钮悬停才显形：
+     平时它只是一行浅灰说明，不再和真正的卡片抢视觉重量。 */
   return (
     <div
       role="note"
       aria-label="副标题提示"
-      className="mb-2 flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground"
+      className="group/hint mb-1.5 flex items-center gap-2 px-0.5 text-xs leading-5 text-muted-foreground/80"
     >
       <span className="min-w-0 flex-1 truncate">
         {searchFocused
@@ -98,9 +103,9 @@ export function HomeSubtitleHint({ tagline }: { tagline?: string }) {
         type="button"
         onClick={dismiss}
         aria-label="关闭副标题提示"
-        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+        className="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 group-hover/hint:opacity-100"
       >
-        <X className="h-3.5 w-3.5" />
+        <X className="h-3 w-3" />
       </button>
     </div>
   )

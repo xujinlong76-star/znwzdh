@@ -75,6 +75,7 @@ const SearchPalette = dynamic(
 export interface NavigationToolbarProps {
   siteConfig: SiteConfig
   onToggleSidebar: () => void
+  isSidebarOpen: boolean
   onOpenTools: () => void
   onOpenShortcuts: () => void
   selectionMode: boolean
@@ -98,6 +99,7 @@ export interface NavigationToolbarProps {
 export const NavigationToolbar = memo(function NavigationToolbar({
   siteConfig,
   onToggleSidebar,
+  isSidebarOpen,
   onOpenTools,
   onOpenShortcuts,
   selectionMode,
@@ -515,6 +517,8 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                 onClick={() => onToggleSidebar()}
                 title="打开菜单"
                 aria-label="打开菜单"
+                aria-expanded={isSidebarOpen}
+                aria-controls="mobile-nav-drawer"
               >
                 <Menu className="h-4 w-4" />
               </Button>

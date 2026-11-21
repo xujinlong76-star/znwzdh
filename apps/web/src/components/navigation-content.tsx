@@ -1078,9 +1078,10 @@ export function NavigationContent({
         />
         <div
           {...containerProps}
+          id="mobile-nav-drawer"
           aria-label="站点导航"
           className={cn(
-            "fixed inset-y-0 left-0 w-3/4 max-w-xs bg-background shadow-lg transform transition-transform duration-200 ease-in-out outline-none",
+            "fixed inset-y-0 left-0 w-3/4 max-w-xs bg-background shadow-lg transform transition-transform duration-200 ease-in-out outline-none focus-visible:ring-2 focus-visible:ring-ring",
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
@@ -1122,6 +1123,7 @@ export function NavigationContent({
 
         <NavigationToolbar
           siteConfig={siteData}
+          isSidebarOpen={isSidebarOpen}
           onToggleSidebar={handleToggleSidebar}
           onOpenTools={handleOpenTools}
           onOpenShortcuts={handleOpenShortcuts}

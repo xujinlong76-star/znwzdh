@@ -406,6 +406,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                     onClick={() => toggleCategory(category.id)}
                     aria-label={expandedCategories[category.id] ? `折叠分类：${category.title}` : `展开分类：${category.title}`}
                     aria-expanded={Boolean(expandedCategories[category.id])}
+                    aria-controls={`subcategory-${category.id}`}
                   >
                     {expandedCategories[category.id] ? (
                       <ChevronDown className="h-3.5 w-3.5" />
@@ -418,6 +419,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
 
               {visibleSubCategories.length > 0 && (
                 <div
+                  id={`subcategory-${category.id}`}
                   className={cn(
                     "grid transition-all duration-200 ease-in-out",
                     expandedCategories[category.id] ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"

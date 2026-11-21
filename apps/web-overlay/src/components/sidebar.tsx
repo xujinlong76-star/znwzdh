@@ -10,7 +10,16 @@ import { Button } from '@/registry/new-york/ui/button'
 import { ScrollArea } from '@/registry/new-york/ui/scroll-area'
 import type { NavigationData } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
-import { ChevronDown, ChevronRight, Compass, Bell, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Compass, X, Clapperboard, Store, Flame, Layers, Network, Tags } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/registry/new-york/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { NavIcon } from '@/components/nav-icon'
 import { NAV_ICON_FALLBACK, isIconUrl, resolveNavIcon } from '@/lib/nav-icons'
 import { WorkspaceSwitcher } from '@/components/workspace/workspace-switcher'
@@ -60,9 +69,6 @@ function CrdtSyncStatusPillPlaceholder() {
     </button>
   )
 }
-import { useIdentityReady } from '@/hooks/useIdentityReady'
-import { useUnreadNotifications } from '@/hooks/useUnreadNotifications'
-import { unreadBadgeText } from '@/lib/notification-badge'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 
@@ -76,10 +82,33 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 // P0-2：包 memo——navigationData 已 memo 化、onClose 已 useCallback 化。
+/**
+ * 侧栏品牌短名（2026-11-21）。
+ *
+ * 210px 侧栏里放不下「山羊胡网址导航大全」这类长全称（实测 truncate 成
+ * 「山羊胡网址导航...」）。这里把可识别的长尾后缀（网址导航大全 / 导航大全 /
+ * 网址导航 / 大全）去掉，得到「山羊胡导航」这样的干练主标；全称仍通过
+ * Link 的 title / aria-label 完整保留，悬停与读屏都能拿到。
+ *
+ * 只在「确实过长」时才裁剪（> 6 个字符），短品牌名原样返回，避免把
+ * 用户自定义的短站名也削掉。
+ */
+function shortBrandName(full: string): string {
+  const name = (full || '').trim()
+  if (name.length <= 6) return name
+  // 只削「网址」「大全」这类冗余修饰，**保留「导航」**——
+  // 上一版正则 /(网址)?导航(大全)?$/ 会把「导航」一起吃掉，
+  // 结果「山羊胡网址导航大全」变成光秃秃的「山羊胡」（实测宽度只剩 41px）。
+  const trimmed = name.replace(/网址/g, '').replace(/大全/g, '').trim()
+  if (!trimmed) return name
+  // 仍超过 6 字时按字面截断，保证在 210px 侧栏内不出现省略号
+  return trimmed.length > 6 ? trimmed.slice(0, 6) : trimmed
+}
+
 export const Sidebar = memo(function Sidebar({ className, navigationData, siteInfo, onClose, brandAsHeading = true }: SidebarProps) {
-  const identityState = useIdentityReady()
-  const unread = useUnreadNotifications(identityState)
-  const unreadText = unreadBadgeText(unread)
+  /* 侧栏不再渲染通知铃铛：订阅源只保留顶栏一处（见页脚注释）。 */
+  /* 2026-11-21：侧栏铃铛已移除，未读订阅与角标文案随之删掉——
+     同一个订阅源现在只服务顶栏铃铛一处，避免两处红点不同步。 */
   const { collapsedCategoryIds, hiddenCategoryIds, expandCategory } = useHomeDIY()
   const { isModuleHidden, isCategoryHidden, isSubcategoryHidden, bypassMaskTemporarily } = useFeatureMask()
 
@@ -352,31 +381,44 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
         </button>
       )}
       <div className="flex min-h-[3.5rem] items-center justify-between px-3.5 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 gap-2">
-        <Link href="/" className="flex items-center gap-2 font-bold text-sm tracking-tight hover:opacity-90 transition-opacity min-w-0">
+        {/* 2026-11-21 修品牌名截断（「山羊胡网址导航...」）：
+            210px 侧栏里 图标 24px + gap 6px + 28px 边距 = 58px，剩约 150px。
+            「山羊胡网址导航大全」9 个汉字按 14px 需 ~126px，但字重 700 + 字间距
+            实际溢出，于是 truncate 成省略号。
+            解法（采用需求给的第二方案）：主标收成短名「山羊胡导航」，副标
+            保留 AI-Native Hub；全称挂 title + aria-label，悬停即可看到。 */}
+        <Link
+          href="/"
+          title={siteInfo.basic.title}
+          aria-label={siteInfo.basic.title}
+          className="flex min-w-0 items-center gap-1.5 font-bold text-sm tracking-tight transition-opacity hover:opacity-90"
+        >
           {siteInfo.appearance.logo ? (
             <Image
               src={siteInfo.appearance.logo}
               alt={siteInfo.basic.title}
-              width={26}
-              height={26}
-              className="h-6.5 w-6.5 rounded-md object-contain shrink-0"
+              width={24}
+              height={24}
+              className="h-6 w-6 rounded-md object-contain shrink-0"
             />
           ) : (
-            <div className="w-7 h-7 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs shrink-0">
-              <Compass className="h-4 w-4 text-primary" />
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary shadow-2xs">
+              <Compass className="h-3.5 w-3.5 text-primary" />
             </div>
           )}
-          <div className="flex flex-col min-w-0">
-            {/* 首屏瘦身：侧边栏品牌为页面唯一 h1（主内容区大号 H1 已移除；
-                不走 sr-only 隐藏术）。侧边栏在桌面与移动抽屉各渲染一次，
-                移动抽屉传 brandAsHeading={false} 渲染为 span，保证 DOM 内
-                恰好一个 h1（复核 2026-11-20 首屏瘦身第 1 项）。 */}
+          <div className="flex min-w-0 flex-col">
+            {/* 侧边栏品牌为页面唯一 h1（主内容区大号 H1 已移除；不走 sr-only）。
+                移动抽屉传 brandAsHeading={false} 渲染为 span，保证 DOM 内恰好一个 h1。 */}
             {brandAsHeading ? (
-              <h1 className="leading-tight font-bold text-foreground text-sm tracking-tight truncate">{siteInfo.basic.title}</h1>
+              <h1 className="truncate text-sm font-bold leading-tight tracking-tight text-foreground">
+                {shortBrandName(siteInfo.basic.title)}
+              </h1>
             ) : (
-              <span className="leading-tight font-bold text-foreground text-sm tracking-tight truncate">{siteInfo.basic.title}</span>
+              <span className="truncate text-sm font-bold leading-tight tracking-tight text-foreground">
+                {shortBrandName(siteInfo.basic.title)}
+              </span>
             )}
-            <span className="text-[11px] text-muted-foreground font-mono font-normal">AI-Native Hub</span>
+            <span className="truncate font-mono text-[10px] font-normal text-muted-foreground">AI-Native Hub</span>
           </div>
         </Link>
 
@@ -490,24 +532,75 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
         ) : (
           <span />
         )}
-        {/* 首屏瘦身：小猫猫挂件默认收起，本开关是常驻开启入口（与通知铃并列） */}
+        {/* 2026-11-21 清理重复入口：**移除侧栏这枚铃铛**。
+            全站通知入口统一收口到右上角顶栏铃铛（它自带未读红点）。
+            两处铃铛曾是同一订阅源的两个消费者，视觉重复且角标可能不同步；
+            现在只保留顶栏一处。这里只留下小猫猫开关。 */}
         <div className="flex items-center gap-1">
+          {/* 「探索与专题」（2026-11-21 P0-3）：承接从第二行胶囊栏移出的运营入口。
+              短剧热榜原先混在「角色视角切换」行里，既让该行语义变浑、又逼出横向滚动；
+              收进这里后第二行回归纯粹的角色切换，而短剧/插件/热度等入口一个都没丢。 */}
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="探索与专题"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Compass className="h-4 w-4" aria-hidden />
+                  </button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={6}>
+                探索与专题
+              </TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent side="top" align="start" className="w-56 p-1.5">
+              <DropdownMenuLabel className="px-2 py-1 text-xs font-semibold text-muted-foreground">
+                探索与专题
+              </DropdownMenuLabel>
+              <DropdownMenuItem asChild className="min-h-9">
+                <Link href="/drama" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                  <Clapperboard className="h-4 w-4 shrink-0 text-rose-500" />
+                  <span className="font-medium text-foreground">短剧热榜</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild className="min-h-9">
+                <Link href="/marketplace" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                  <Store className="h-4 w-4 shrink-0 text-emerald-500" />
+                  <span className="font-medium text-foreground">插件精选</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild className="min-h-9">
+                <Link href="/hot" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                  <Flame className="h-4 w-4 shrink-0 text-amber-500" />
+                  <span className="font-medium text-foreground">热度趋势榜</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild className="min-h-9">
+                <Link href="/collections" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                  <Layers className="h-4 w-4 shrink-0 text-violet-500" />
+                  <span className="font-medium text-foreground">精选专题合集</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="my-1" />
+              <DropdownMenuItem asChild className="min-h-9">
+                <Link href="/graph" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                  <Network className="h-4 w-4 shrink-0 text-pink-500" />
+                  <span className="font-medium text-foreground">技术生态图谱</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild className="min-h-9">
+                <Link href="/tags" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
+                  <Tags className="h-4 w-4 shrink-0 text-indigo-500" />
+                  <span className="font-medium text-foreground">全景标签云</span>
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <XiaomaomaoToggle />
-          <Link
-            href="/me/notifications"
-            aria-label={unread > 0 ? `通知，${unread} 条未读` : '通知'}
-            className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Bell className="h-4 w-4" aria-hidden />
-            {unreadText && (
-              <span
-                aria-hidden
-                className="absolute -right-0.5 -top-0.5 min-w-[15px] rounded-full bg-primary px-1 text-center text-[10px] font-semibold leading-[15px] text-primary-foreground tabular-nums"
-              >
-                {unreadText}
-              </span>
-            )}
-          </Link>
         </div>
       </div>
     </div>

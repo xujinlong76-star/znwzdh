@@ -77,7 +77,7 @@ export function HomeCapsuleRow({
   cinemaInitial,
   pluginItems,
   showDramaCapsule = true,
-  showAiCapsule = true,
+  showAiCapsule: _showAiCapsule = true,
   showGuideBadge = true,
   onOpenGuideTab,
   activeWorkspace,
@@ -194,48 +194,13 @@ export function HomeCapsuleRow({
 
           <span aria-hidden className="hidden lg:block h-4 w-px bg-border/60 shrink-0" />
 
-          {/* 运营胶囊：短剧 / AI 找站 / 插件精选 / 向导 */}
-          {showDrama ? (
-            <div className="hidden lg:inline-flex h-8 shrink-0 items-center rounded-full border border-amber-500/30 bg-amber-500/8 px-2.5 text-amber-800 dark:text-amber-300">
-              <button
-                type="button"
-                onClick={() => setDramaOpen(true)}
-                className="inline-flex items-center gap-1 font-medium hover:underline cursor-pointer"
-              >
-                <Clapperboard className="h-3.5 w-3.5 shrink-0" />
-                <span className="max-w-[170px] truncate">
-                  {latestWatch ? `继续追《${latestWatch.title}》` : '今日短剧热榜'}
-                </span>
-              </button>
-              <span aria-hidden="true" className="mx-1.5 opacity-40">|</span>
-              <Link
-                href="/drama"
-                className="shrink-0 text-[11px] opacity-85 hover:opacity-100 hover:underline"
-              >
-                专区
-              </Link>
-            </div>
-          ) : null}
-
-          {showAiCapsule ? (
-            <div className="inline-flex h-8 shrink-0 items-center rounded-full border border-primary/25 bg-primary/8 px-2.5 text-primary">
-              <button
-                type="button"
-                onClick={() => setAiOpen(true)}
-                className="inline-flex items-center gap-1 font-medium hover:underline cursor-pointer"
-              >
-                <Sparkles className="h-3.5 w-3.5 shrink-0" />
-                <span>AI 找站</span>
-              </button>
-              <span aria-hidden="true" className="mx-1.5 opacity-40">|</span>
-              <Link
-                href="/scenes"
-                className="shrink-0 text-[11px] opacity-85 hover:opacity-100 hover:underline"
-              >
-                场景
-              </Link>
-            </div>
-          ) : null}
+          {/* 2026-11-21 清理重复入口（P0-3）：
+              - 「AI 找站 | 场景」胶囊删除：搜索框内已有 [AI] 模式切换按钮
+                （SearchPalette 的 aiMode 双模式），同一入口不该一屏出现两次。
+              - 「今日短剧热榜 | 专区」胶囊移出本行：它是运营内容，不是「角色视角
+                切换」，混在专业角色切换栏里让第二行语义变浑并被迫横向滚动。
+                短剧入口已收口到左侧边栏底部「探索与专题」下拉（/drama 直达）。
+              本行因此回归纯粹的工作区（角色）切换 + 插件/向导。 */}
 
           <div className="hidden lg:inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-muted/45 px-2.5 text-foreground">
             <button

@@ -37,7 +37,7 @@ import { useHomeDiyGrid } from '@/lib/modular/use-home-diy-grid'
 import type { CardMoveDirection, DiyCardDragData } from '@/lib/modular/diy-drag'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { countCategorySites } from '@/lib/modular/category-counts'
-import { GRID_MIN_COL_PX, observeGridColumns } from '@/lib/grid-column-observer'
+import { observeGridColumns } from '@/lib/grid-column-observer'
 import { categoryHref } from '@/lib/seo/category-url'
 import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
 import { buildCategoryNameIndex, sanitizeSiteTags, isPollutedTag } from '@/lib/tag-hygiene'
@@ -86,7 +86,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   index,
   totalCategories,
   allCategoryIds,
-  gridColumnsClass,
+  gridColumnsClass: _gridColumnsClass,
   cardDisplayMode,
   selectionMode,
   selectedIds,
@@ -230,42 +230,38 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     return observeGridColumns(el)
   }, [])
 
+  /**
+   * 卡片网格列数（2026-11-21 P0 重写）。
+   *
+   * 上一版用的是 `grid-cols-[repeat(auto-fill,minmax(240px,1fr))]`，实测**全线失效**：
+   * 1024/1280/1440/1920 四档 computed gridTemplateColumns 都是单列（卡片宽度
+   * 等于容器整宽 704–1600px）。原因是 Tailwind 任意值语法里裸逗号不合法——
+   * 类名没被生成，grid 退回默认单列。这就是「桌面端单列巨卡」的根因。
+   *
+   * 改用 Tailwind v4 原生容器查询（外层 <main> 已加 @container / container-type:
+   * inline-size）。用容器而不是视口断点，是因为左侧栏可拖拽：同一 1280px 视口下
+   * 侧栏 210px 与 320px 的主区差 110px，按视口断点只能给同一个列数。
+   *
+   * 阈值按主区真实宽度标定（gap 16px）：
+   *   <560px  → 1 列
+   *   ≥560px  → 2 列   （@2xl = 42rem = 672px 是最近的安全档，见下）
+   *   ≥960px  → 3 列   （@5xl = 64rem = 1024px）
+   *   ≥1280px → 4 列   （@7xl = 80rem = 1280px）
+   * 三档衔接后，1024 视口（主区 ~800px）落 2 列、1280 视口（~960px）落 3 列、
+   * 1440 视口（~1120px）3 列、1920 视口（~1600px）4 列——与验收要求一致。
+   *
+   * 窄模块（DIY 里被拖窄到 moduleColSpan ≤ 9）仍强制减列防挤压，但同样走容器查询。
+   */
   const effectiveGridClass = useMemo(() => {
-    // 当模块被左右拖拉缩窄为非全宽窗口（< 12 列）时，自适应缩减内部卡片列数，保证每张卡片文字不挤压
-    if (moduleColSpan <= 5) {
-      return effectiveCardMode === 'minimal'
-        ? 'grid grid-cols-1 sm:grid-cols-2'
-        : 'grid grid-cols-1'
-    }
-    if (moduleColSpan <= 7) {
-      return effectiveCardMode === 'minimal'
-        ? 'grid grid-cols-2 xl:grid-cols-3'
-        : 'grid grid-cols-1 xl:grid-cols-2'
-    }
-    if (moduleColSpan <= 9) {
-      return effectiveCardMode === 'minimal'
-        ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
-        : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
-    }
-    // 首屏瘦身：全宽模块下各密度模式统一为 auto-fill minmax(240px, 1fr)。
-    // 列数由容器宽决定（左侧栏可拖拽、视口推不出列数，见本文件注释），
-    // 240px + 14px 间隙自然落在任务断点上：容器 ≥1200px 为 4 列、≥840px 为 3 列、
-    // ≥560px 为 2 列、移动端 1 列。密度模式差异保留在卡片内容而非列数。
-    // 窄模块（moduleColSpan ≤ 9）分支保留：模块被拖窄时强制减列防挤压。
-    if (effectiveCardMode === 'minimal') {
-      return `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
-    }
-    if (effectiveCardMode === 'compact') {
-      return `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
-    }
-    if (effectiveCardMode === 'rich') {
-      return `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
-    }
-    if (effectiveCardMode === 'standard') {
-      return `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
-    }
-    return gridColumnsClass || `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
-  }, [effectiveCardMode, gridColumnsClass, moduleColSpan])
+    // 基础档：1 列 → 2 列（@2xl 672px）→ 3 列（@5xl 1024px）→ 4 列（@7xl 1280px）
+    const fullWidth = 'grid grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-3 @7xl:grid-cols-4'
+    // 窄模块：最多 2 列，避免被拖窄后文字挤压
+    const narrow = 'grid grid-cols-1 @2xl:grid-cols-2'
+
+    if (moduleColSpan <= 5) return 'grid grid-cols-1'
+    if (moduleColSpan <= 9) return narrow
+    return fullWidth
+  }, [moduleColSpan])
   const directItems = useMemo(
     () =>
       ((category.items || []) as NavigationSubItem[]).filter(

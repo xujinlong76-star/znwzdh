@@ -1111,7 +1111,12 @@ export function NavigationContent({
 
       <main
         id="main-content"
-        className={cn("flex-1 min-h-screen flex flex-col min-w-0 transition-colors duration-[--duration-slow]", canvasBgClass)}
+        /* @container：卡片网格改用容器查询（2026-11-21）。
+           为什么必须用容器而不是视口：左侧栏可拖拽、宽度可变，视口宽推不出
+           主区宽。同一 1280px 视口下，侧栏 210px 与 320px 时主区差 110px，
+           按视口断点会给出同一个列数，要么挤要么空。
+           container-type: inline-size 让内部 @2xl/@5xl 断点按主区真实宽度求值。 */
+        className={cn("flex-1 min-h-screen flex flex-col min-w-0 @container transition-colors duration-[--duration-slow]", canvasBgClass)}
         // 水合安全：壁纸来自 localStorage（仅客户端），首帧与 SSR 保持一致（undefined），
         // 挂载后再上壁纸，避免 style 分叉触发 hydration mismatch；URL 白名单防 CSS url() 注入
         style={{

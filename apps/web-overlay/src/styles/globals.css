@@ -368,12 +368,15 @@
     --ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* 标准缓出 */
     --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* 轻微回弹 */
 
-    /* 三档内容密度矩阵：默认 Comfortable (舒适平衡) */
+    /* 三档内容密度矩阵：默认 Comfortable (舒适平衡)。
+       2026-11-21 首屏密度微调：卡片内边距 14 → 12px、栅格间距 16 → 14px。
+       卡片网格改容器查询后列数翻倍（1→2/3/4），每张卡变窄，原 14px 内边距
+       在 300px 宽卡里显得空；降到 12px 后内容占比回升，纵向也省 4px/卡。 */
     --density-factor: 1;
-    --density-card-padding: 0.875rem;
-    --density-grid-gap: 1rem;
+    --density-card-padding: 0.75rem;
+    --density-grid-gap: 0.875rem;
     --density-icon-size: 2.5rem;
-    --density-item-gap: 0.75rem;
+    --density-item-gap: 0.625rem;
   }
 
   .dark {

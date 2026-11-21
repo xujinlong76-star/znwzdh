@@ -848,7 +848,8 @@ export const NavigationCard = memo(function NavigationCard({
                       thumbnail={thumbnail}
                       title={item.title}
                       boxClassName="h-28 w-full shrink-0"
-                      imgClassName="h-14 w-14 object-contain drop-shadow-sm"
+                      /* 2026-11-21：横幅卡内图 56 → 44px（要求 40–44 区间）。 */
+                      imgClassName="h-11 w-11 object-contain drop-shadow-sm"
                       monogramClassName="text-3xl"
                       imgWidth={56}
                       imgHeight={56}
@@ -867,8 +868,9 @@ export const NavigationCard = memo(function NavigationCard({
                   )}
                 >
                   <div className="flex items-start gap-3.5">
+                    {/* 2026-11-21：紧凑卡图标 44 → 40px，与标准卡统一到 40px 档。 */}
                     {!thumbnail && (
-                    <div className="relative flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-[--duration-base] group-hover/card:scale-105 shadow-xs">
+                    <div className="relative flex-shrink-0 w-10 h-10 rounded-lg p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-[--duration-base] group-hover/card:scale-105 shadow-xs">
                       <SiteFavicon
                         title={item.title}
                         url={item.href}
@@ -1176,16 +1178,19 @@ export const NavigationCard = memo(function NavigationCard({
                 {/* 视觉大图标（P1 #9）：有真实缩略图时把 28px 小图标换成 48px
                     视觉 tile；无缩略图时保持现有渲染不变。盒子尺寸固定，
                     图片懒加载、失败回落首字母徽标，不产生布局偏移。 */}
+                {/* 2026-11-21：图标 48 → 40px、内图 36 → 32px。桌面 2–4 列时
+                    48px 在 300–390px 宽的卡里占比过大，纵向也白占 8px；
+                    40px 仍能清晰辨认 favicon，且让首屏多容纳半行卡片。 */}
                 {thumbnail ? (
                   <div className="relative flex-shrink-0">
                     <CardThumbnailVisual
                       thumbnail={thumbnail}
                       title={item.title}
-                      boxClassName="flex-shrink-0 w-12 h-12 rounded-xl shadow-xs transition-transform duration-[--duration-base] group-hover/card:scale-105"
-                      imgClassName="h-9 w-9 object-contain"
-                      monogramClassName="text-lg"
-                      imgWidth={36}
-                      imgHeight={36}
+                      boxClassName="flex-shrink-0 w-10 h-10 rounded-lg shadow-xs transition-transform duration-[--duration-base] group-hover/card:scale-105"
+                      imgClassName="h-8 w-8 object-contain"
+                      monogramClassName="text-base"
+                      imgWidth={32}
+                      imgHeight={32}
                     />
                   </div>
                 ) : (

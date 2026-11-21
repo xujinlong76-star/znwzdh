@@ -147,6 +147,8 @@ import { useNumberDial } from '@/hooks/use-number-dial'
 import { useBatchKeyboard } from '@/hooks/use-batch-keyboard'
 import { createCustomSiteId, normalizeCustomSiteHref } from '@/lib/modular/custom-site-input'
 import { useToast } from '@/components/ui/use-toast'
+import { useUnreadNotifications } from '@/hooks/useUnreadNotifications'
+import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 import { pushGlobalUndo } from '@/lib/undo-stack'
 import {
@@ -266,6 +268,10 @@ export function NavigationContent({
   const [appearanceOpen, setAppearanceOpen] = useState(false)
   const [appearanceTab, setAppearanceTab] = useState<'appearance' | 'guide'>('appearance')
   const [toolbarAiOpen, setToolbarAiOpen] = useState(false)
+  /* 顶栏铃铛红点（2026-11-21 顶栏收敛）：与侧栏通知铃共用同一个订阅源，
+     没有第二份轮询。eligibility 交给 useIdentityReady，匿名/未登录时不请求。 */
+  const identityState = useIdentityReady()
+  const unreadNotifications = useUnreadNotifications(identityState)
   const [sceneParam, setSceneParam] = useState<string | null>(null)
   const { mounted: pinnedMounted, pinned: pinnedCornerWidgets } = usePinnedCornerWidgets()
 
@@ -1105,7 +1111,12 @@ export function NavigationContent({
 
       <main
         id="main-content"
-        className={cn("flex-1 min-h-screen flex flex-col min-w-0 transition-colors duration-[--duration-slow]", canvasBgClass)}
+        /* @container：卡片网格改用容器查询（2026-11-21）。
+           为什么必须用容器而不是视口：左侧栏可拖拽、宽度可变，视口宽推不出
+           主区宽。同一 1280px 视口下，侧栏 210px 与 320px 时主区差 110px，
+           按视口断点会给出同一个列数，要么挤要么空。
+           container-type: inline-size 让内部 @2xl/@5xl 断点按主区真实宽度求值。 */
+        className={cn("flex-1 min-h-screen flex flex-col min-w-0 @container transition-colors duration-[--duration-slow]", canvasBgClass)}
         // 水合安全：壁纸来自 localStorage（仅客户端），首帧与 SSR 保持一致（undefined），
         // 挂载后再上壁纸，避免 style 分叉触发 hydration mismatch；URL 白名单防 CSS url() 注入
         style={{
@@ -1141,10 +1152,13 @@ export function NavigationContent({
           onSelectAllVisible={selectAllVisible}
           todayBadge={todayBadge}
           pinnedWidgetCount={pinnedMounted ? pinnedCornerWidgets.length : 0}
+          /* 接受上游把内联箭头抽成 handleXxx 回调（更利于 memo 稳定）；
+             本分支新增的 unreadNotifications（铃铛红点）追加在末尾。 */
           onOpenTodayCenter={handleOpenTodayCenter}
           onOpenWidgetBox={handleOpenWidgetBox}
           onOpenAppearanceGuide={handleOpenAppearanceGuide}
           onOpenAiFinder={handleOpenAiFinder}
+          unreadNotifications={unreadNotifications}
         />
 
         {/* 半屏下沉栏（Batch 3 第 12 项）：挂在这里而非工具栏内——工具栏没有

@@ -37,6 +37,7 @@ import { useHomeDiyGrid } from '@/lib/modular/use-home-diy-grid'
 import type { CardMoveDirection, DiyCardDragData } from '@/lib/modular/diy-drag'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { countCategorySites } from '@/lib/modular/category-counts'
+import { GRID_MIN_COL_PX, observeGridColumns } from '@/lib/grid-column-observer'
 import { categoryHref } from '@/lib/seo/category-url'
 import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
 import { buildCategoryNameIndex, sanitizeSiteTags, isPollutedTag } from '@/lib/tag-hygiene'
@@ -216,22 +217,17 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   /**
    * 把网格的**真实列数**写成 data-grid-cols，供 CSS 隐藏 3 列折叠态的孤儿卡片。
    *
-   * 为什么不在 CSS 里按视口断点猜：网格用的是 repeat(auto-fill, minmax(250px,1fr))，
+   * 为什么不在 CSS 里按视口断点猜：网格用的是 repeat(auto-fill, minmax(240px,1fr))，
    * 列数取决于网格容器宽度，而左侧栏宽度可拖拽，视口宽度推不出列数。
-   * React 19 的 ref callback 支持返回 cleanup，这里每个网格自管一个 observer，
-   * 不需要全局单例，也不会在 HMR 时泄漏。
+   *
+   * P2-13：改走共享 observer（src/lib/grid-column-observer.ts）——全站一个
+   * ResizeObserver 单例；auto-fill 列数由容器宽直接算出，resize 时不再调
+   * getComputedStyle（间隙只在挂载时读一次，密度切换时失效重读；窄模块固定
+   * 列数网格回退到读实际模板）。React 19 ref callback 返回的 cleanup 即取消观测。
    */
   const gridColumnRef = useCallback((el: HTMLDivElement | null) => {
     if (!el) return
-    const sync = () => {
-      const cols = getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length
-      if (cols > 0) el.dataset.gridCols = String(cols)
-    }
-    sync()
-    if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(sync)
-    observer.observe(el)
-    return () => observer.disconnect()
+    return observeGridColumns(el)
   }, [])
 
   const effectiveGridClass = useMemo(() => {
@@ -257,18 +253,18 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     // ≥560px 为 2 列、移动端 1 列。密度模式差异保留在卡片内容而非列数。
     // 窄模块（moduleColSpan ≤ 9）分支保留：模块被拖窄时强制减列防挤压。
     if (effectiveCardMode === 'minimal') {
-      return 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
+      return `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
     }
     if (effectiveCardMode === 'compact') {
-      return 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
+      return `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
     }
     if (effectiveCardMode === 'rich') {
-      return 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
+      return `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
     }
     if (effectiveCardMode === 'standard') {
-      return 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
+      return `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
     }
-    return gridColumnsClass || 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
+    return gridColumnsClass || `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
   }, [effectiveCardMode, gridColumnsClass, moduleColSpan])
   const directItems = useMemo(
     () =>

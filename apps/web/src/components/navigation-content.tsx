@@ -52,21 +52,27 @@ const AiFinderDialog = dynamic(
   { ssr: false, loading: () => null },
 )
 // 拖拽 provider 边界（DRAG-2 接线）：dnd-kit 约 133KB，绝不能静态进首屏。
-// kit 在挂载后后台 import，到达前直接渲染 children；到达后包上
-// DiyDragProvider。注意：切换瞬间 grid 子树会 remount 一次——只发生
-// 在 chunk 到达后、用户操作前（与 section 里的后台 import 同一时机），
-// 之后进出编辑态不再动 provider（卡片手柄的挂载/卸载是既有设计）。
-// 若 Ryan 实测到加载闪烁，备选是静态 import provider（以首屏包体积换零闪烁）。
+// kit 在挂载后后台 import。P1-6：provider 只在编辑态挂载——
+// 旧写法是 kit 一到就包上 provider，首屏水合后不久整片网格子树会被卸载重建一次
+// （白白付一份完整渲染，还可能闪一下），而拖拽手柄只在编辑态才出现，
+// 非编辑态包 provider 纯属浪费。改后：后台 chunk 到达时（非编辑态）
+// 边界仍直接渲染 children，元素类型不变、零 remount；进入编辑态时才包 provider，
+// 该 remount 并入编辑态切换（本来就要重渲染出拖拽手柄），不再是无意义的额外一次。
+// 极少数情况（1 秒内就进编辑态、kit 尚在路上）：provider 在编辑中途到达时
+// 仍会 remount 一次，属可接受的边界情形。
 function DiyGridDragBoundary({
   kit,
+  enabled,
   onDragEnd,
   children,
 }: {
   kit: typeof import('@/components/diy/diy-drag-kit') | null
+  /** 拖拽是否激活（编辑态）。非编辑态不包 provider，避免后台 chunk 到达时整树 remount。 */
+  enabled: boolean
   onDragEnd: (event: DragEndEvent) => void
   children: ReactNode
 }) {
-  if (!kit) return <>{children}</>
+  if (!enabled || !kit) return <>{children}</>
   const { DiyDragProvider } = kit
   return <DiyDragProvider onDragEnd={onDragEnd}>{children}</DiyDragProvider>
 }
@@ -1319,7 +1325,7 @@ export function NavigationContent({
             </div>
           ) : (
             <>
-              <DiyGridDragBoundary kit={dragKit} onDragEnd={handleCategoryDragEnd}>
+              <DiyGridDragBoundary kit={dragKit} enabled={isEditingLayout} onDragEnd={handleCategoryDragEnd}>
               <div className="grid grid-cols-12 gap-6 sm:gap-8 items-start">
                 {renderedCategories.map((category, index) => {
                   const section = (
@@ -1362,7 +1368,13 @@ export function NavigationContent({
                    * 用户看不到自己刚建的东西，等于功能失效。
                    */
                   const isFreshCustom = Boolean((category as { isCustom?: boolean }).isCustom)
-                  const mustMountAll = selectionMode || isFreshCustom
+                  // P1-4：多选态不再强制全量挂载（旧逻辑 selectionMode 即挂 873 卡 /
+                  // 42,803 节点，低端机数秒卡死）。选中态是数据驱动
+                  //（useSiteSelection 的 visibleSites 来自数据、与 DOM 无关），
+                  // 全选仍覆盖全部站点；用户滚到某分类时它再懒挂载，挂载后
+                  // forceFull 展开全部卡片供点选。新建自定义分类仍须立即挂载
+                  //（用户刚创建，要当场看到并编排）。
+                  const mustMountAll = isFreshCustom
                   if (mustMountAll || index < EAGER_CATEGORY_COUNT) return section
                   return (
                     <LazyMountSection

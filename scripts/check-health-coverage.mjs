@@ -157,8 +157,10 @@ const categoriesOverSlo = bigCategories.filter((c) => c.uncheckedPct > SLO.categ
  *
  * 为什么这条等价于验收标准 ③：`updateSiteHealth` 只有在 `markBroken !== false`
  * 时才把 status 写成 broken，而 markBroken 来自 `shouldMarkBroken(false, 连续失败数, 阈值)`。
- * 所以经巡检降级的站点，最近 3 次巡检必须全是失败；否则说明降级绕过了阈值判定
- * （历史数据迁移、手工改库、或阈值逻辑回归）。
+ * 所以经巡检降级的站点，最近 2 次巡检必须全是失败；否则说明降级绕过了阈值判定
+ * （历史数据迁移、手工改库、或阈值逻辑回归）。阈值 2 与运行时一致
+ * （03 §3.3 裁决，packages/core/src/health-sentinel.ts
+ * CONSECUTIVE_FAILURES_THRESHOLD = 2）。
  *
  * 两个必须排除的合法情形，否则这条会变成误报机器：
  *   1. **手工降级**：`PATCH /api/sites/:id` 的 `setStatus` 允许直接把 status 改成
@@ -170,8 +172,9 @@ const categoriesOverSlo = bigCategories.filter((c) => c.uncheckedPct > SLO.categ
  */
 const RETENTION_DAYS = 180; // 同源：packages/store/src/retention.ts:247 { table: "health_checks", keepDays: 180 }
 const failThreshold = (() => {
-  const raw = Number(process.env.NAVHUB_HEALTH_FAIL_THRESHOLD ?? 3);
-  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 3;
+  // 默认值与运行时一致（03 §3.3 裁决阈值 2）；环境变量仍可临时覆盖回 3。
+  const raw = Number(process.env.NAVHUB_HEALTH_FAIL_THRESHOLD ?? 2);
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 2;
 })();
 const retentionCutoff = Date.now() - RETENTION_DAYS * 86_400_000;
 const demotionViolations = [];

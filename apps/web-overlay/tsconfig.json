@@ -36,6 +36,20 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      // 2026-11-21：补 @navhub/* 源码映射。
+      // 为什么需要：apps/web-overlay 被 pnpm-workspace.yaml 显式排除
+      // （'!apps/web-overlay'，避免 pnpm --filter navsphere 同时命中两个目录），
+      // 因此它**无法**用 "workspace:*" 声明 @navhub/core 依赖，
+      // node_modules 里也不会有该软链。vitest 靠 vitest.config.ts 的 alias
+      // 能解析，但 tsc 只认 tsconfig，于是
+      // test/health-state-parity.test.ts:14 报 TS2307。
+      // 直接把 @navhub/* 指向 packages/*/src 源码，与 vitest alias 同口径。
+      "@navhub/core": [
+        "../../packages/core/src/index.ts"
+      ],
+      "@navhub/core/*": [
+        "../../packages/core/src/*"
       ]
     }
   },

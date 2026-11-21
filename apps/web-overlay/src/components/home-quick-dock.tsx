@@ -7,15 +7,14 @@
  * 并支持右侧「全部 ▾」按需打开完整清单小窗口。
  * 保持 `id="quick-access-tray"` 与 `data-speed-dial="true"` 兼容 DIY 与直达规范。
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, memo } from 'react'
 import dynamic from 'next/dynamic'
 import { ChevronRight, History, Star, Zap } from 'lucide-react'
 import { SiteFavicon } from '@/components/site-favicon'
 import { HorizontalScrollFade } from '@/components/horizontal-scroll-fade'
 import { NumberDialBadge } from '@/components/number-dial-badge'
 import { safeHref } from '@/lib/safe-url'
-import { computeSpeedDialSites } from '@/lib/speed-dial-order'
-import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import type { SpeedDialSite } from '@/lib/speed-dial-order'
 import {
   OFFLINE_RECENT_LIMIT,
   readOfflineVisits,
@@ -38,17 +37,24 @@ export interface HomeQuickDockProps {
   allSites: DialSite[]
   activeWorkspace: WorkspaceId
   dialDigitById?: ReadonlyMap<string, number | string>
+  /**
+   * P2-14：速拨顺序（Top 9）由父级 navigation-content 的 dialSites 一次算好透传，
+   * 坞不再自己调 computeSpeedDialSites 重算（同一输入、同一纯函数算两遍）。
+   * 父级在窗口获焦时重读最近访问，dialSites 随之刷新，坞的速拨页签同步更新。
+   */
+  speedSites: SpeedDialSite[]
   /** 首行默认最多展示数量，避免折叠换行推高首屏 */
   maxInlineItems?: number
 }
 
-export function HomeQuickDock({
+// P0-2：包 memo——父组件传的 allSites/activeWorkspace/dialDigitById/speedSites 均已稳定。
+export const HomeQuickDock = memo(function HomeQuickDock({
   allSites,
   activeWorkspace,
   dialDigitById,
+  speedSites,
   maxInlineItems = 7,
 }: HomeQuickDockProps) {
-  const { speedDialPinnedIds } = useHomeDIY()
   const externalTarget = useExternalLinkTarget()
   const [mounted, setMounted] = useState(false)
   const [activeTab, setActiveTab] = useState<DockTab>('speed')
@@ -75,17 +81,8 @@ export function HomeQuickDock({
     }
   }, [])
 
-  const speedSites = useMemo(
-    () =>
-      computeSpeedDialSites({
-        allSites,
-        speedDialPinnedIds,
-        recentVisits: mounted ? recentVisits : [],
-        activeWorkspace,
-      }),
-    [allSites, speedDialPinnedIds, mounted, recentVisits, activeWorkspace],
-  )
-
+  // P2-14：速拨顺序由父级透传 speedSites（见 props 注释），此处不再重算。
+  // recentVisits 仍由坞自己维护，供「常用/最近」两个页签用。
   const frequentVisits = useMemo(
     () => (mounted ? topFrequentVisits(recentVisits, 12) : []),
     [mounted, recentVisits],
@@ -251,4 +248,4 @@ export function HomeQuickDock({
       ) : null}
     </>
   )
-}
+})

@@ -24,3 +24,32 @@ export function countCategorySites(category: CountableCategory | undefined): num
   for (const sub of category.subCategories ?? []) nested += sub.items?.length ?? 0;
   return direct + nested;
 }
+
+/**
+ * 截断态分区高度估算（P1-7）：懒挂载占位块应与真实截断渲染等高，否则滚动/锚点跳动。
+ *
+ * 旧公式按 min(count, 6) 封顶（最多 2 行、288px），与真实截断高度（每组 4 张卡、
+ * 多子组可达数千 px）脱节。本函数按真实截断态算：每组只取 min(组内条目, limit) 张卡，
+ * 3 列排布，行高 120px，另计分区头 48px 与每组头 36px；上限 3200px、下限 140px。
+ * limit <= 0 表示不限制（全量渲染），此时仍按全量计但受上限钳制。
+ */
+export function estimateTruncatedSectionHeight(
+  category: CountableCategory | undefined,
+  limit: number,
+): number {
+  if (!category) return 140;
+  const cap = Number.isFinite(limit) && limit > 0 ? limit : Number.POSITIVE_INFINITY;
+  const groups: number[] = [];
+  const direct = category.items?.length ?? 0;
+  if (direct > 0) groups.push(direct);
+  for (const sub of category.subCategories ?? []) {
+    const n = sub.items?.length ?? 0;
+    if (n > 0) groups.push(n);
+  }
+  if (groups.length === 0) return 140;
+  let truncatedCards = 0;
+  for (const n of groups) truncatedCards += Math.min(n, cap);
+  const rows = Math.max(1, Math.ceil(truncatedCards / 3));
+  const height = 48 + rows * 120 + groups.length * 36;
+  return Math.min(3200, Math.max(140, height));
+}

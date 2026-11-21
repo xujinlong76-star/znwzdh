@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { countCategorySites } from "../src/lib/modular/category-counts";
+import { countCategorySites, estimateTruncatedSectionHeight } from "../src/lib/modular/category-counts";
 import { filterNavigationData, processNavigationData } from "../src/lib/data-loader";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -77,6 +77,41 @@ describe("countCategorySites：唯一的分类站点数算式", () => {
       (visible.navigationItems[0].items?.length || 0) +
         (visible.navigationItems[0].subCategories?.reduce((acc, s) => acc + (s.items?.length || 0), 0) || 0),
     );
+  });
+});
+
+describe("estimateTruncatedSectionHeight：截断态占位高（P1-7）", () => {
+  // 公式：48（分区头）+ ceil(截断卡数/3)×120（卡行）+ 组数×36（组头），钳制 [140, 3200]。
+  // 截断卡数 = 每组 min(组内条目, limit) 之和。
+  const cases: Array<[string, unknown, number, number]> = [
+    // mixed：直接 2 + 子一 3 + 子二 1，全 ≤ limit 4 → 6 卡、2 行、3 组 → 48+240+108=396
+    ["混合分类 limit 4", mixed, 4, 396],
+    // limit 0（不限）：同上（各组均 ≤ 4，本就全显）
+    ["混合分类 limit 0（不限）", mixed, 0, 396],
+    // 单子组 100 条，limit 4 → 只取 4 卡、2 行、1 组 → 48+240+36=324
+    // （旧公式 min(count,6) 对此例也给 288px，但多子组时旧公式恒 288px，本函数随组数长）
+    ["单子组 100 条 limit 4", { id: "x", subCategories: [{ items: Array.from({ length: 100 }, (_, i) => item("s" + i)) }] }, 4, 324],
+    // 10 子组 × 10 条，limit 4 → 每组 4 卡、共 40 卡、14 行、10 组 → 48+1680+360=2088
+    ["10 子组各 10 条 limit 4", { id: "x", subCategories: Array.from({ length: 10 }, (_, g) => ({ items: Array.from({ length: 10 }, (_, i) => item(`g${g}i${i}`)) })) }, 4, 2088],
+    ["空分类", { id: "x" }, 4, 140],
+    ["undefined 分类", undefined, 4, 140],
+    // 极端大分类钳制到 3200
+    ["100 子组各 100 条（钳制 3200）", { id: "x", subCategories: Array.from({ length: 100 }, (_, g) => ({ items: Array.from({ length: 100 }, (_, i) => item(`g${g}i${i}`)) })) }, 0, 3200],
+  ];
+
+  it.each(cases)("%s", (_name, category, limit, expected) => {
+    expect(estimateTruncatedSectionHeight(category as never, limit)).toBe(expected);
+  });
+
+  it("多子组时显著高于旧公式的 288px 封顶（P1-7 根因）", () => {
+    const cat = {
+      id: "x",
+      subCategories: Array.from({ length: 10 }, (_, g) => ({
+        items: Array.from({ length: 10 }, (_, i) => item(`g${g}i${i}`)),
+      })),
+    };
+    // 旧公式：min(100,6)=6 → 2 行 → 288px；新公式：2088px
+    expect(estimateTruncatedSectionHeight(cat as never, 4)).toBeGreaterThan(600);
   });
 });
 

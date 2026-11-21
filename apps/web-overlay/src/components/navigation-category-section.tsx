@@ -34,9 +34,10 @@ import {
 } from '@/lib/modular/diy-presets'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { useHomeDiyGrid } from '@/lib/modular/use-home-diy-grid'
-import type { DiyCardDragData } from '@/lib/modular/diy-drag'
+import type { CardMoveDirection, DiyCardDragData } from '@/lib/modular/diy-drag'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { countCategorySites } from '@/lib/modular/category-counts'
+import { GRID_MIN_COL_PX, observeGridColumns } from '@/lib/grid-column-observer'
 import { categoryHref } from '@/lib/seo/category-url'
 import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
 import { buildCategoryNameIndex, sanitizeSiteTags, isPollutedTag } from '@/lib/tag-hygiene'
@@ -216,22 +217,17 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   /**
    * 把网格的**真实列数**写成 data-grid-cols，供 CSS 隐藏 3 列折叠态的孤儿卡片。
    *
-   * 为什么不在 CSS 里按视口断点猜：网格用的是 repeat(auto-fill, minmax(250px,1fr))，
+   * 为什么不在 CSS 里按视口断点猜：网格用的是 repeat(auto-fill, minmax(240px,1fr))，
    * 列数取决于网格容器宽度，而左侧栏宽度可拖拽，视口宽度推不出列数。
-   * React 19 的 ref callback 支持返回 cleanup，这里每个网格自管一个 observer，
-   * 不需要全局单例，也不会在 HMR 时泄漏。
+   *
+   * P2-13：改走共享 observer（src/lib/grid-column-observer.ts）——全站一个
+   * ResizeObserver 单例；auto-fill 列数由容器宽直接算出，resize 时不再调
+   * getComputedStyle（间隙只在挂载时读一次，密度切换时失效重读；窄模块固定
+   * 列数网格回退到读实际模板）。React 19 ref callback 返回的 cleanup 即取消观测。
    */
   const gridColumnRef = useCallback((el: HTMLDivElement | null) => {
     if (!el) return
-    const sync = () => {
-      const cols = getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length
-      if (cols > 0) el.dataset.gridCols = String(cols)
-    }
-    sync()
-    if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(sync)
-    observer.observe(el)
-    return () => observer.disconnect()
+    return observeGridColumns(el)
   }, [])
 
   const effectiveGridClass = useMemo(() => {
@@ -257,18 +253,18 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     // ≥560px 为 2 列、移动端 1 列。密度模式差异保留在卡片内容而非列数。
     // 窄模块（moduleColSpan ≤ 9）分支保留：模块被拖窄时强制减列防挤压。
     if (effectiveCardMode === 'minimal') {
-      return 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
+      return `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
     }
     if (effectiveCardMode === 'compact') {
-      return 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
+      return `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
     }
     if (effectiveCardMode === 'rich') {
-      return 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
+      return `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
     }
     if (effectiveCardMode === 'standard') {
-      return 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
+      return `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
     }
-    return gridColumnsClass || 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'
+    return gridColumnsClass || `grid grid-cols-[repeat(auto-fill,minmax(${GRID_MIN_COL_PX}px,1fr))]`
   }, [effectiveCardMode, gridColumnsClass, moduleColSpan])
   const directItems = useMemo(
     () =>
@@ -495,15 +491,26 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
          */
         const expanded = forceFull || isFilterActive || selectedSubCatId !== null || Boolean(expandedGroups[entry.subCategory.id])
         const items = expanded || all.length <= limit ? all : all.slice(0, limit)
+        /** 该子分类组当前显示的卡片 id（⋯ 菜单移动的基准列表） */
+        const displayedIds = items.map((item) => item.id)
         return {
           ...entry,
           items,
-          /** 该子分类组当前显示的卡片 id（⋯ 菜单移动的基准列表） */
-          displayedIds: items.map((item) => item.id),
+          displayedIds,
+          /**
+           * P0-2：每组三个稳定回调——与直属组的 handle*Direct 对等。
+           * 原先调用点用内联闭包（(siteId) => togglePinSiteInCategory(subId, siteId)），
+           * 每轮新建身份击穿 memo 卡片。放进 memo 后，回调身份只随组数据变而变；
+           * moveCard / togglePinSiteInCategory / setPeekItem 均为稳定引用（见依赖）。
+           */
+          onTogglePin: (siteId: string) => togglePinSiteInCategory(entry.subCategory.id, siteId),
+          onPeek: (peekItem: NavigationSubItem) => setPeekItem(peekItem, entry.subCategory.id),
+          onMoveCard: (cardId: string, direction: CardMoveDirection) =>
+            moveCard(entry.subCategory.id, displayedIds, cardId, direction),
         }
       })
     },
-    [filteredSubCategories, selectedSubCatId, forceFull, isFilterActive, expandedGroups, limit]
+    [filteredSubCategories, selectedSubCatId, forceFull, isFilterActive, expandedGroups, limit, moveCard, togglePinSiteInCategory, setPeekItem]
   )
 
   const totalMatchedCount = useMemo(() => {
@@ -578,6 +585,15 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     (siteId: string) => togglePinSiteInCategory(category.id, siteId),
     [togglePinSiteInCategory, category.id]
   )
+  /**
+   * P0-2：直属组的稳定移动回调——卡片把自己的 id 带上（onMoveCard(cardId, direction)），
+   * 这里只依赖 memo 化的 directDisplayedIds 与稳定的 moveCard，不再每轮新建闭包。
+   */
+  const handleMoveCardDirect = useCallback(
+    (cardId: string, direction: CardMoveDirection) =>
+      moveCard(category.id, directDisplayedIds, cardId, direction),
+    [moveCard, category.id, directDisplayedIds]
+  )
 
   /**
    * 卡片渲染（含编辑态的 dnd-kit 可拖拽包装）。
@@ -597,6 +613,8 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
       onPeek: (item: NavigationSubItem) => void
       displayedIds: string[]
       index: number
+      /** P0-2：每组稳定移动回调（直属组 handleMoveCardDirect / 子组 memo 内 onMoveCard），卡片自带 id 调用 */
+      onMoveCard: (cardId: string, direction: CardMoveDirection) => void
     },
   ) => {
     const node = (
@@ -619,9 +637,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
         onToggleSpeedDialPin={handleToggleSpeedDialPin}
         linkTarget={linkTarget}
         externalRel={externalRel}
-        onMoveCard={(direction) => {
-          moveCard(opts.sourceCategoryId, opts.displayedIds, item.id, direction)
-        }}
+        onMoveCard={opts.onMoveCard}
         cardIndex={opts.index}
         cardTotal={opts.displayedIds.length}
         dialDigit={dialDigitById?.get(item.id)}
@@ -758,7 +774,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                           标题字号 xl → lg、折叠按钮 44 → 28px（触摸热区靠 ::before 保住）。 */}
                       <div className="space-y-2">
                         {/* 一级分类标题头 */}
-                        <div className="flex items-center justify-between pb-1.5 border-b border-border/50">
+                        <div className="flex items-center justify-between pb-1 border-b border-border/50">
                           <div className="flex items-center gap-2 flex-wrap">
                             {/* 手风琴折叠展开按钮 */}
                             <button
@@ -985,27 +1001,23 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                           <div
                             id={categoryContentId}
                             className={cn(
-                              "space-y-2.5",
+                              // 首屏露出冲 40%（2026-11-21）：组间距 space-y-4 -> space-y-2。
+                              // 组 mt-2（8px）与 space-y 取大者折叠，16px 的 space-y
+                              // 是行距下限；压到 8px 后行距 206 -> 198px，首访态
+                              // 第 4 行也开始露头（此前首访 39.8% 仅差 0.2pp）。
+                              "space-y-2",
                               moduleHeightPx && "overflow-y-auto pr-1.5 custom-scrollbar"
                             )}
                             style={moduleHeightPx ? { maxHeight: `${moduleHeightPx}px` } : undefined}
                           >
                             {/* 二级分类快速切换导航轨（仅在拥有多个子分类且未折叠时渲染）
-                                2026-11-21：外包 HorizontalScrollFade。此前是裸 overflow-x-auto，
-                                768px 下整条 rail 把文档撑出横向滚动、溢出的子分类被生硬裁断。
-                                现在：滚动收进容器内、可滚侧出渐变遮罩、两侧给箭头；
-                                键盘仍走下面的 roving tab 逻辑。 */}
+                                首屏瘦身：接入 HorizontalScrollFade（滚轮横滚、mask 渐隐、
+                                左右箭头），替代手写 overflow-x-auto + 生硬裁剪；tablist
+                                语义与 ←/→ 漫游经 role/onKeyDown 透传到滚动容器。 */}
                             {!isEditingLayout && subCats.length > 1 && (
                               <HorizontalScrollFade
-                                ariaLabel={`${category.title} 子分类快速切换`}
-                                scrollClassName="flex items-center gap-1.5 pb-0.5 pt-0"
-                                showArrows
-                                prevAriaLabel={`向左滚动查看${category.title}更多子分类`}
-                                nextAriaLabel={`向右滚动查看${category.title}更多子分类`}
-                              >
-                              <div
                                 role="tablist"
-                                aria-label={`${category.title} 子分类快速切换`}
+                                ariaLabel={`${category.title} 子分类快速切换`}
                                 onKeyDown={(e) => {
                                   if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
                                   const tabs = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
@@ -1019,7 +1031,10 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                   tabs[nextIndex]?.focus()
                                   tabs[nextIndex]?.click()
                                 }}
-                                className="flex items-center gap-1.5 text-xs"
+                                scrollClassName="flex items-center gap-1.5 pb-0.5 pt-0 text-xs"
+                                showArrows
+                                prevAriaLabel={`向左滚动${category.title}子分类`}
+                                nextAriaLabel={`向右滚动${category.title}子分类`}
                               >
                                 <button
                                   type="button"
@@ -1084,7 +1099,24 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                     </button>
                                   )
                                 })}
-                              </div>
+                                {/* 条尾「全部」收起：长条滚到最右时无需滚回开头即可复位 */}
+                                <button
+                                  type="button"
+                                  role="tab"
+                                  aria-selected={selectedSubCatId === null}
+                                  aria-label="显示全部子分类"
+                                  tabIndex={selectedSubCatId === null ? 0 : -1}
+                                  onClick={() => setSelectedSubCatId(null)}
+                                  className={cn(
+                                    "h-7 px-2.5 rounded-full text-[11px] font-medium shrink-0 transition-all cursor-pointer flex items-center gap-1",
+                                    selectedSubCatId === null
+                                      ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
+                                      : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
+                                  )}
+                                >
+                                  <span>全部</span>
+                                  <span className={cn("text-[10px] font-mono", selectedSubCatId === null ? "text-primary-foreground/80" : "text-muted-foreground/60")}>{`(${totalCount})`}</span>
+                                </button>
                               </HorizontalScrollFade>
                             )}
 
@@ -1124,6 +1156,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                     onPeek: handlePeekDirect,
                                     displayedIds: directDisplayedIds,
                                     index,
+                                    onMoveCard: handleMoveCardDirect,
                                   }),
                                 )}
 
@@ -1149,7 +1182,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
 
                             {/* 二级分类及其站点 */}
                             {subGroups.length > 0 &&
-                              subGroups.map(({ subCategory, subPinnedItemIds, sortedSubItems, items, displayedIds }) => {
+                              subGroups.map(({ subCategory, subPinnedItemIds, sortedSubItems, items, displayedIds, onTogglePin, onPeek, onMoveCard }) => {
                                 const hasSubCatRail = !isEditingLayout && subCats.length > 1
                                 const isSubExpanded = Boolean(expandedGroups[subCategory.id])
                                 const canExpandSub = !forceFull && Number.isFinite(limit) && sortedSubItems.length > limit
@@ -1158,8 +1191,12 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                 // 一组，拿它当同级会把 ↑/↓ 全禁掉。
                                 const siblingIds = sortedSubCategories.map((s) => s.subCategory.id)
                                 const subIndex = siblingIds.indexOf(subCategory.id)
+                                // 首屏露出冲 40%（2026-11-21）：组间距 mt-8 -> mt-2、组内
+                                // space-y-3 -> space-y-2。默认 6 张/组 = 满一行，32px 组
+                                // 间距过大；8px + 组头 28px + 8px 仍可清晰分区。行距
+                                // 实测 222 -> 198px，1920x911 下第 4 行开始露头。
                                 return (
-                                  <div key={subCategory.id} id={subCategory.id} className="mt-4 space-y-3 first:mt-0">
+                                  <div key={subCategory.id} id={subCategory.id} className="mt-2 space-y-2">
                                     <div className="flex items-center justify-between pb-0.5 pt-1">
                                       <div className="flex items-center gap-2">
                                         <span className="w-[3px] h-3.5 rounded-full bg-gradient-to-b from-primary to-primary/50 shadow-2xs" />
@@ -1242,10 +1279,11 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                         renderSiteCard(item, {
                                           sourceCategoryId: subCategory.id,
                                           pinnedIds: subPinnedItemIds,
-                                          onTogglePin: (siteId) => togglePinSiteInCategory(subCategory.id, siteId),
-                                          onPeek: (peekItem) => setPeekItem(peekItem, subCategory.id),
+                                          onTogglePin,
+                                          onPeek,
                                           displayedIds,
                                           index,
+                                          onMoveCard,
                                         }),
                                       )}
                                     </div>

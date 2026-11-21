@@ -7,7 +7,7 @@
  * 多选开关 → 单选切换 → 全选」五段逻辑混在 1225 行的组件里，
  * 组件只负责把 hook 返回值接到卡片与操作坞上。
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   clearSelected,
   pickSelectedSites,
@@ -81,23 +81,30 @@ export function useSiteSelection(
     })
   }, [visibleSites])
 
-  /** 清空选中（退出多选 / 批量完成后由组件调用——组件不再需要接触原始 setter） */
-  const clearSelection = () => {
+  /**
+   * 清空选中（退出多选 / 批量完成后由组件调用——组件不再需要接触原始 setter）。
+   *
+   * P0-2：四回调全部 useCallback 化——它们经 navigation-content 透传到
+   * memo 的 NavigationCard（onToggleSelect）与 NavigationToolbar，普通
+   * 函数每轮新建身份会让浅比较恒失败、memo 等于不存在。
+   * setSelectedIds 是 React 稳定 setter，空依赖即可。
+   */
+  const clearSelection = useCallback(() => {
     setSelectedIds(clearSelected())
-  }
+  }, [])
 
-  const toggleSelectMode = () => {
+  const toggleSelectMode = useCallback(() => {
     if (selectionMode) clearSelection()
     setSelectionMode(!selectionMode)
-  }
+  }, [selectionMode, clearSelection])
 
-  const toggleSelectOne = (siteId: string) => {
+  const toggleSelectOne = useCallback((siteId: string) => {
     setSelectedIds((prev) => toggleSelected(prev, siteId))
-  }
+  }, [])
 
-  const selectAllVisible = () => {
+  const selectAllVisible = useCallback(() => {
     setSelectedIds(selectAllIds(visibleSites.map((s) => s.id)))
-  }
+  }, [visibleSites])
 
   return {
     selectionMode,

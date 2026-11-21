@@ -38,7 +38,7 @@ export function FavoriteButton({ site, className, tabIndex, cardAction }: Favori
             // 的跟进项已随本布局决策释放）。
             "relative inline-flex items-center justify-center h-6.5 w-6.5 rounded-full transition-colors hover:bg-accent after:absolute after:-inset-[9px] after:content-[''] "
           : // 独立使用（搜索结果、热榜、详情页、速览对话框）：行高足够，直接给足 44px。
-            'inline-flex min-h-11 min-w-11 items-center justify-center rounded-md p-1.5 transition-colors hover:bg-muted ') +
+            'inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg p-1.5 transition-colors hover:bg-muted ') +
         (className ?? '')
       }
       onClick={(e) => {

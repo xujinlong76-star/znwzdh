@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, memo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import dynamic from 'next/dynamic'
@@ -48,13 +48,13 @@ function CrdtSyncStatusPillPlaceholder() {
     <button
       type="button"
       aria-label="多端协同中… - 查看多端协同状态"
-      className="inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 dark:bg-emerald-500/15 px-2.5 py-1 text-xs text-emerald-800 dark:text-emerald-300 font-medium transition-all hover:bg-emerald-500/20 shadow-2xs"
+      className="inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 rounded-full border border-success/30 bg-success/10 dark:bg-success/15 px-2.5 py-1 text-xs text-success-foreground font-medium transition-all hover:bg-success/20 shadow-2xs"
     >
       <span
         aria-hidden
         className="h-3 w-3 animate-spin rounded-full border-2 border-emerald-600/30 border-t-emerald-600 dark:border-t-emerald-400"
       />
-      <span className="text-[11px] shrink-0 whitespace-nowrap font-semibold text-emerald-800 dark:text-emerald-300 inline">
+      <span className="text-[11px] shrink-0 whitespace-nowrap font-semibold text-success-foreground inline">
         多端协同中…
       </span>
     </button>
@@ -75,7 +75,8 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   brandAsHeading?: boolean
 }
 
-export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsHeading = true }: SidebarProps) {
+// P0-2：包 memo——navigationData 已 memo 化、onClose 已 useCallback 化。
+export const Sidebar = memo(function Sidebar({ className, navigationData, siteInfo, onClose, brandAsHeading = true }: SidebarProps) {
   const identityState = useIdentityReady()
   const unread = useUnreadNotifications(identityState)
   const unreadText = unreadBadgeText(unread)
@@ -133,7 +134,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
       return (
         <Image
           src={iconName}
-          alt="icon"
+          alt=""
           width={16}
           height={16}
           className="h-4 w-4"
@@ -165,14 +166,49 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
 
   const [sidebarWidth, setSidebarWidth] = useState<number | null>(null)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
+  // P1-1 残留（2026-11-21）：侧栏最大宽随视口钳制。工具栏最小需 ~704px
+  //（搜索 min 260 + 右侧工具组 ~430 + gap）+ 头部 padding 48px，主区至少留
+  // 780px；420px 侧栏在 1024px 档只剩 604px，工具栏溢出约 148px
+  //（header-layout-guard 锁 md:flex-nowrap，不能靠换行修）。故最大宽 =
+  // min(420, 视口宽 − 780)，下限仍为最小宽 180（窄视口下桌面侧栏本就贴边）。
+  const [viewportMaxWidth, setViewportMaxWidth] = useState(420)
+
+  useEffect(() => {
+    const applyViewportMax = () => {
+      const max =
+        typeof window === 'undefined'
+          ? 420
+          : Math.max(180, Math.min(420, window.innerWidth - 780))
+      setViewportMaxWidth(max)
+      setSidebarWidth((prev) => {
+        if (prev === null || prev <= max) return prev
+        try {
+          window.localStorage?.setItem('navhub_sidebar_width_px', String(max))
+        } catch {
+          // 忽略写入失败
+        }
+        return max
+      })
+    }
+    applyViewportMax()
+    window.addEventListener('resize', applyViewportMax)
+    return () => window.removeEventListener('resize', applyViewportMax)
+  }, [])
 
   useEffect(() => {
     try {
       const saved = window.localStorage?.getItem('navhub_sidebar_width_px')
       if (saved) {
         const parsed = parseInt(saved, 10)
-        if (Number.isFinite(parsed) && parsed >= 180 && parsed <= 420) {
+        // 存量宽度同样受视口钳制（1024px 档存 420 会读回 244）。
+        const max =
+          typeof window === 'undefined'
+            ? 420
+            : Math.max(180, Math.min(420, window.innerWidth - 780))
+        if (Number.isFinite(parsed) && parsed >= 180 && parsed <= max) {
           setSidebarWidth(parsed)
+        } else if (Number.isFinite(parsed) && parsed > max) {
+          setSidebarWidth(max)
         }
       }
     } catch {
@@ -181,7 +217,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
   }, [])
 
   const handleSidebarResizeStart = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
+    (e: React.PointerEvent<HTMLButtonElement>) => {
       e.preventDefault()
       e.stopPropagation()
       const startX = e.clientX
@@ -199,7 +235,8 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
         if (rafId !== null) return
         rafId = requestAnimationFrame(() => {
           rafId = null
-          const nextW = Math.max(180, Math.min(420, Math.round(startW + (ev.clientX - startX))))
+          // P1-1 残留：拖拽上界为视口钳制后的最大宽（窄视口下 < 420）。
+          const nextW = Math.max(180, Math.min(viewportMaxWidth, Math.round(startW + (ev.clientX - startX))))
           latestW = nextW
           setSidebarWidth(nextW)
         })
@@ -225,7 +262,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
       window.addEventListener('pointerup', onUp)
       window.addEventListener('pointercancel', onUp)
     },
-    [sidebarWidth]
+    [sidebarWidth, viewportMaxWidth]
   )
 
   const handleSidebarResetWidth = useCallback((e: React.MouseEvent) => {
@@ -239,6 +276,41 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
     }
   }, [])
 
+  // P1-18：侧边栏宽度手柄键盘可用。方向键 ±16px（180–视口钳制最大宽，与拖拽
+  // 边界一致）、Home/End 到两端、Enter 复位默认 256px（与双击同义）。
+  // 键盘改动与拖拽一样写 localStorage，下次打开保持同一宽度。
+  const handleSidebarResizeKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      const current = sidebarWidth ?? 256
+      const step = 16
+      let next: number | null = null
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = Math.max(180, current - step)
+      else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = Math.min(viewportMaxWidth, current + step)
+      else if (e.key === 'Home') next = 180
+      else if (e.key === 'End') next = viewportMaxWidth
+      else if (e.key === 'Enter') {
+        e.preventDefault()
+        e.stopPropagation()
+        setSidebarWidth(null)
+        try {
+          window.localStorage?.removeItem('navhub_sidebar_width_px')
+        } catch {
+          // 忽略删除失败
+        }
+        return
+      } else return
+      e.preventDefault()
+      e.stopPropagation()
+      setSidebarWidth(next)
+      try {
+        window.localStorage?.setItem('navhub_sidebar_width_px', String(next))
+      } catch {
+        // 忽略写入失败
+      }
+    },
+    [sidebarWidth, viewportMaxWidth]
+  )
+
   return (
     <div
       style={!onClose && sidebarWidth ? { width: `${sidebarWidth}px` } : undefined}
@@ -247,32 +319,40 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
         className
       )}
     >
-      {/* 桌面端侧边栏右边缘左右拖拉调整宽度手柄 */}
+      {/* 桌面端侧边栏右边缘左右拖拉调整宽度手柄（P1-18：可聚焦按钮 + role=slider，键盘可用） */}
       {!onClose && (
-        <div
-          aria-hidden="true"
+        <button
+          type="button"
+          role="slider"
+          aria-label="调整侧边导航栏宽度"
+          aria-valuenow={sidebarWidth ?? 256}
+          aria-valuemin={180}
+          aria-valuemax={viewportMaxWidth}
+          aria-orientation="horizontal"
+          aria-valuetext={`${sidebarWidth ?? 256} 像素`}
           data-sidebar-resizer=""
           onPointerDown={handleSidebarResizeStart}
           onDoubleClick={handleSidebarResetWidth}
+          onKeyDown={handleSidebarResizeKeyDown}
           style={{ touchAction: 'none' }}
-          title="左右拖拉调整侧边导航栏宽度（双击恢复默认 256px）"
+          title="左右拖拉调整侧边导航栏宽度（双击或回车恢复默认 256px；方向键 ±16px）"
           className={cn(
-            "hidden md:flex absolute inset-y-0 -right-1.5 w-3 z-30 cursor-col-resize items-center justify-center select-none transition-opacity",
+            "hidden md:flex absolute inset-y-0 -right-1.5 w-3 z-30 cursor-col-resize items-center justify-center select-none transition-opacity focus-visible:opacity-100",
             isResizingSidebar ? "opacity-100" : "opacity-0 group-hover/sidebar:opacity-100 hover:opacity-100"
           )}
         >
           <div
             className={cn(
-              "w-1 h-12 rounded-full transition-all duration-150",
+              "w-1 h-12 rounded-full transition-all duration-[--duration-fast]",
               isResizingSidebar
                 ? "bg-primary h-24 shadow-md shadow-primary/50"
                 : "bg-border/80 hover:bg-primary hover:h-16"
             )}
           />
-        </div>
+        </button>
       )}
       <div className="flex min-h-[3.5rem] items-center justify-between px-3.5 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 gap-2">
-        <Link href="/" className="flex items-center gap-2 font-bold text-sm tracking-tight hover:opacity-90 transition-opacity min-w-0 shrink-0">
+        <Link href="/" className="flex items-center gap-2 font-bold text-sm tracking-tight hover:opacity-90 transition-opacity min-w-0">
           {siteInfo.appearance.logo ? (
             <Image
               src={siteInfo.appearance.logo}
@@ -282,19 +362,19 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
               className="h-6.5 w-6.5 rounded-md object-contain shrink-0"
             />
           ) : (
-            <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs shrink-0">
+            <div className="w-7 h-7 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs shrink-0">
               <Compass className="h-4 w-4 text-primary" />
             </div>
           )}
-          <div className="flex flex-col min-w-0 shrink-0">
+          <div className="flex flex-col min-w-0">
             {/* 首屏瘦身：侧边栏品牌为页面唯一 h1（主内容区大号 H1 已移除；
                 不走 sr-only 隐藏术）。侧边栏在桌面与移动抽屉各渲染一次，
                 移动抽屉传 brandAsHeading={false} 渲染为 span，保证 DOM 内
                 恰好一个 h1（复核 2026-11-20 首屏瘦身第 1 项）。 */}
             {brandAsHeading ? (
-              <h1 className="leading-tight font-bold text-foreground text-[14px] tracking-tight whitespace-nowrap">{siteInfo.basic.title}</h1>
+              <h1 className="leading-tight font-bold text-foreground text-sm tracking-tight truncate">{siteInfo.basic.title}</h1>
             ) : (
-              <span className="leading-tight font-bold text-foreground text-[14px] tracking-tight whitespace-nowrap">{siteInfo.basic.title}</span>
+              <span className="leading-tight font-bold text-foreground text-sm tracking-tight truncate">{siteInfo.basic.title}</span>
             )}
             <span className="text-[11px] text-muted-foreground font-mono font-normal">AI-Native Hub</span>
           </div>
@@ -351,7 +431,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
                   <span className="text-muted-foreground group-hover:text-primary transition-colors">
                     {renderIcon(category.icon)}
                   </span>
-                  <span className="truncate">{category.title}</span>
+                  <span className="truncate min-w-0">{category.title}</span>
                 </Button>
 
                 {visibleSubCategories.length > 0 && (
@@ -362,6 +442,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
                     onClick={() => toggleCategory(category.id)}
                     aria-label={expandedCategories[category.id] ? `折叠分类：${category.title}` : `展开分类：${category.title}`}
                     aria-expanded={Boolean(expandedCategories[category.id])}
+                    aria-controls={`subcategory-${category.id}`}
                   >
                     {expandedCategories[category.id] ? (
                       <ChevronDown className="h-3.5 w-3.5" />
@@ -374,8 +455,9 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
 
               {visibleSubCategories.length > 0 && (
                 <div
+                  id={`subcategory-${category.id}`}
                   className={cn(
-                    "grid transition-all duration-200 ease-in-out",
+                    "grid transition-all duration-[--duration-base] ease-in-out",
                     expandedCategories[category.id] ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
                   )}
                 >
@@ -384,12 +466,12 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
                       <Button
                         key={subCategory.id}
                         variant="ghost"
-                        className="w-full justify-start h-7.5 px-2 text-xs rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer"
+                        className="w-full justify-start h-7.5 px-2 text-xs rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer"
                         onClick={() => {
                           scrollToSection(subCategory.id, category.id)
                         }}
                       >
-                        <span className="truncate">{subCategory.title}</span>
+                        <span className="truncate min-w-0">{subCategory.title}</span>
                       </Button>
                     ))}
                   </div>
@@ -420,7 +502,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
             {unreadText && (
               <span
                 aria-hidden
-                className="absolute -right-0.5 -top-0.5 min-w-[15px] rounded-full bg-primary px-1 text-center text-[9px] font-semibold leading-[15px] text-primary-foreground tabular-nums"
+                className="absolute -right-0.5 -top-0.5 min-w-[15px] rounded-full bg-primary px-1 text-center text-[10px] font-semibold leading-[15px] text-primary-foreground tabular-nums"
               >
                 {unreadText}
               </span>
@@ -430,5 +512,5 @@ export function Sidebar({ className, navigationData, siteInfo, onClose, brandAsH
       </div>
     </div>
   )
-}
+})
 

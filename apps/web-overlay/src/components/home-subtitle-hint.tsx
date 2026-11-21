@@ -12,6 +12,9 @@ import { X } from 'lucide-react'
  * 关闭后写入本机，不再出现（首次访问与搜索聚焦均不再触发）。
  * 搜索聚焦通过 document focusin/focusout 监听识别：聚焦元素为 placeholder
  * 或 aria-label 含「搜索」的输入框时即视为搜索聚焦（不改顶栏搜索组件）。
+ * 首访再削（2026-11-21）：提示条退为无边框纯文本行（占位 24px，旧 42px），
+ * 且首次访问展示 6 秒后自动平滑收起到 0 高（稳态与回访同高）；收起不写
+ * dismissed 键，搜索聚焦的提示功能不受影响。
  */
 const DISMISSED_KEY = 'navhub:subtitle-hint-dismissed'
 const VISITED_KEY = 'navhub:visited'
@@ -41,6 +44,12 @@ export function HomeSubtitleHint({ tagline }: { tagline?: string }) {
     }
   })
   const [searchFocused, setSearchFocused] = useState(false)
+  // 首次访问提示 6 秒后自动收起（平滑过渡到 0 高，不再占首屏高度）：
+  // 新用户有 6 秒读完这句短提示（默认标语约 18 字、分类描述约 50 字均够读）；
+  // 收起只针对首次访问展示，搜索聚焦时不收（渲染条件里 searchFocused 会覆盖），
+  // 且不写 dismissed 键——下次访问靠 visited 键本来就不再展示，搜索聚焦的
+  // 提示功能也得以保留。X 按钮仍是永久关闭（写 dismissed 键）。
+  const [autoHidden, setAutoHidden] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -65,7 +74,9 @@ export function HomeSubtitleHint({ tagline }: { tagline?: string }) {
     document.addEventListener('focusout', onFocusOut)
     // 若挂载时搜索框已聚焦（如 / 快捷键刚呼出），补一次初始判定
     setSearchFocused(isSearchInput(document.activeElement))
+    const autoHideTimer = window.setTimeout(() => setAutoHidden(true), 6000)
     return () => {
+      window.clearTimeout(autoHideTimer)
       document.removeEventListener('focusin', onFocusIn)
       document.removeEventListener('focusout', onFocusOut)
     }
@@ -82,31 +93,38 @@ export function HomeSubtitleHint({ tagline }: { tagline?: string }) {
 
   if (!mounted || dismissed) return null
   if (!isFirstVisit && !searchFocused) return null
+  // 自动收起只压首次访问展示；搜索聚焦时照常出现（不受 autoHidden 影响）
+  const collapsed = autoHidden && !searchFocused
 
-  /* 2026-11-21 首屏优化：原样式是「带边框 + 底色 + px-2.5 py-1.5」的卡片
-     （实测占 28–32px，视觉上像一个可交互区块）。但内容只有一句话，且恰好出现在
-     **最该看清站点卡片的两个时刻**（首次访问、搜索聚焦）。
-     改为无边框无底色的纯文本行，高度压到约 20px，关闭按钮悬停才显形：
-     平时它只是一行浅灰说明，不再和真正的卡片抢视觉重量。 */
+  // 提示条轻量化 + 6 秒自动收起（2026-11-21）：
+  // 本地：带边框卡片 → 无边框无底色纯文本行（约 20px，关闭钮悬停显形）；
+  // main：6 秒后自动收起（max-h/opacity/margin 平滑过渡 500ms 到 0 高），
+  // 稳态首访与回访同高，引导价值保留在前 6 秒与搜索聚焦时。
   return (
     <div
       role="note"
       aria-label="副标题提示"
-      className="group/hint mb-1.5 flex items-center gap-2 px-0.5 text-xs leading-5 text-muted-foreground/80"
+      aria-hidden={collapsed || undefined}
+      className={`group/hint overflow-hidden transition-all duration-500 ease-in-out ${
+        collapsed ? 'mb-0 max-h-0 opacity-0' : 'mb-1.5 max-h-8 opacity-100'
+      }`}
     >
-      <span className="min-w-0 flex-1 truncate">
-        {searchFocused
-          ? '输入关键词快速找站，支持拼音与语义；按 / 呼出超级搜索，按 Esc 收起。'
-          : (tagline || 'AI 原生智能网址导航与研发效率中枢')}
-      </span>
-      <button
-        type="button"
-        onClick={dismiss}
-        aria-label="关闭副标题提示"
-        className="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 group-hover/hint:opacity-100"
-      >
-        <X className="h-3 w-3" />
-      </button>
+      <div className="flex items-center gap-2 px-0.5 text-xs leading-5 text-muted-foreground/80">
+        <span className="min-w-0 flex-1 truncate">
+          {searchFocused
+            ? '输入关键词快速找站，支持拼音与语义；按 / 呼出超级搜索，按 Esc 收起。'
+            : (tagline || 'AI 原生智能网址导航与研发效率中枢')}
+        </span>
+        <button
+          type="button"
+          onClick={dismiss}
+          aria-label="关闭副标题提示"
+          tabIndex={collapsed ? -1 : undefined}
+          className="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 group-hover/hint:opacity-100"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
     </div>
   )
 }

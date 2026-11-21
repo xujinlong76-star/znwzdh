@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Sparkles, Code2, Palette, Bot, Compass, Coffee, ArrowRight, LayoutGrid } from 'lucide-react'
+import { ArrowRight, LayoutGrid, Sparkles } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DAYPART_PLACEHOLDER,
@@ -12,23 +12,12 @@ import {
   type DaypartWorkspaceId,
 } from '@/lib/daypart'
 import { useUserPreference } from '@/lib/user-preferences'
+import { WORKSPACES } from '@/lib/workspaces'
 
 export type WorkspaceId = DaypartWorkspaceId
-
-interface WorkspaceConfig {
-  id: WorkspaceId
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-  desc: string
-}
-
-export const WORKSPACES: WorkspaceConfig[] = [
-  { id: 'all', label: '全部探索', icon: Compass, desc: '全库漫游' },
-  { id: 'dev', label: '研发全栈', icon: Code2, desc: '开发/部署/代码/API' },
-  { id: 'design', label: 'UI & 设计', icon: Palette, desc: '素材/图标/画板/灵感' },
-  { id: 'ai', label: 'AI 实验室', icon: Bot, desc: '大模型/代码助手/绘画' },
-  { id: 'efficiency', label: '效率创作', icon: Coffee, desc: '知识库/协作/在线工具' },
-]
+// 工作区数据已抽到 @/lib/workspaces（U-358：首屏只用数据，不再为一份数据
+// 把整段死组件体拖进初始 chunk）；这里 re-export 保持旧导入方可用。
+export { WORKSPACES } from '@/lib/workspaces'
 
 interface WorkspaceFilterProps {
   active: WorkspaceId
@@ -75,7 +64,7 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
         role="tablist"
         aria-label="工作区视图切换"
         onKeyDown={handleTabKeyDown}
-        className="flex items-center gap-1.5 overflow-x-auto w-full lg:w-auto pb-0.5 scrollbar-none touch-pan-x overscroll-x-contain shrink-0"
+        className="flex items-center gap-1.5 overflow-x-auto w-full lg:w-auto pb-0.5 scrollbar-none touch-pan-x overscroll-x-contain min-w-0"
       >
         {WORKSPACES.map((ws) => {
           const Icon = ws.icon

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { fnv1aHash, getDeterministicGradient } from '../src/components/site-favicon'
 
 /**
@@ -36,9 +38,29 @@ describe('getDeterministicGradient', () => {
       const g = getDeterministicGradient(seed)
       expect(ANGLE_STEPS, seed).toContain(g.angle)
       expect(g.cssGradient, seed).not.toContain('undefined')
-      expect(g.from, seed).toMatch(/^#[0-9a-f]{6}$/i)
-      expect(g.to, seed).toMatch(/^#[0-9a-f]{6}$/i)
+      // P2-1（2026-11-21）：from/to 改为 CSS 变量引用（Token 化），hex 值收进
+      // globals.css 的 --gradient-brand-*-from/to；角度回归仍由本测试覆盖，
+      // 颜色值由下方「Token 定义」测试核查 globals.css。
+      expect(g.from, seed).toMatch(/^var\(--gradient-brand-\d{2}-from\)$/)
+      expect(g.to, seed).toMatch(/^var\(--gradient-brand-\d{2}-to\)$/)
+      expect(g.textColor, seed).toBe('var(--color-on-gradient)')
     }
+  })
+
+  it('Token 定义：globals.css 有 16 组渐变 from/to（hex）与 --color-on-gradient', () => {
+    const cssPath = fileURLToPath(new URL('../src/styles/globals.css', import.meta.url))
+    const css = readFileSync(cssPath, 'utf8')
+    for (let i = 1; i <= 16; i++) {
+      const n = String(i).padStart(2, '0')
+      expect(css, `缺 --gradient-brand-${n}-from`).toMatch(
+        new RegExp(`--gradient-brand-${n}-from:\\s*#[0-9a-f]{6}`, 'i'),
+      )
+      expect(css, `缺 --gradient-brand-${n}-to`).toMatch(
+        new RegExp(`--gradient-brand-${n}-to:\\s*#[0-9a-f]{6}`, 'i'),
+      )
+    }
+    expect(css).toContain('--color-on-gradient: hsl(var(--on-gradient))')
+    expect(css).toContain('--on-gradient: 0 0% 100%')
   })
 
   it('同一种子稳定复现（首帧 SSR 与客户端水合必须一致）', () => {

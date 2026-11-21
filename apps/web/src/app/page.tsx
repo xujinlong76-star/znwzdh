@@ -94,6 +94,14 @@ const DIRECTORY_CATEGORY_LINKS = 50;
  * 实测（2026-11-07，`node scripts/html-budget.mjs`）：4074KB / 预算 4096KB，
  * SSR 208 张卡。构成：RSC flight 1.87MB（46%，全量数据本就要下发）、class 属性
  * 1.14MB、内联 SVG 591KB。卡片级瘦身（5 个操作按钮复用 shadcn 基类，换成 @apply
+ *
+ * 2026-11-21 复测（审计 P0-1）：上述 1.87MB 已过期。导航现仅 388 站
+ *（minified 约 85KB），dev 实测 flight 234KB、HTML 总量 1,291KB，均远低于
+ * P0-1 目标（flight < 500KB）与 4,096KB 预算；全量 388 站 href 均在 flight 内。
+ * 因此「首屏只下发已渲染分类、展开全部改按需 fetch」的大改造暂不做——
+ * 它要新写按分类分页 API 并重构工作区筛选/场景索引/全站搜索（均依赖整树在手），
+ * 还会把「展开全部」从即时揭示降级为带延迟请求。若将来站数膨胀致 flight
+ * 接近 500KB，再重提。证据见工作区 p0-1-flight-measurement-2026-11-21.md。
  * 短类名约省 0.4MB 未压缩）在 br/gzip 后几乎为零——重复串本来就会被压缩掉，不值得
  * 为此重写卡片交互区。预算仍通过；只剩「减少首屏卡数」这个杠杆，而它会减少内链，
  * 非超预算不动。其余卡片点「展开全部」在客户端即时揭示（数据本来就在 props 里，
@@ -110,9 +118,18 @@ const DIRECTORY_CATEGORY_LINKS = 50;
  * 列数由 navigation-category-section.tsx 的 ResizeObserver 读 grid-template-columns
  * 得出，不靠视口断点猜（左侧栏宽度可拖拽，视口宽度推不出列数）。
  *
+ * 2026-11-21 首屏露出冲 40%：默认改 6。1920px 下网格实为 6 列（容器 1600px，
+ * minmax(240px,1fr)），每组 4 张只占 4/6 行宽，首屏 3 组仅 12 张完整卡、
+ * 露出约 26%；改 6 后每组占满一行，首屏 3 组 18 张完整卡、露出约 40%。
+ * 孤儿收敛随之改写（见 globals.css）：3 列 6 张恰好两行不再藏卡；4 列藏
+ * 第 5、6 张（露 4 张一行）；5 列藏第 6 张（露 5 张一行）；6/2/1 列整行
+ * 不藏。SSR 卡数 208 -> 约 312 张，HTML 约 +100KB（RSC 数据本已全量下发，
+ * 只增卡片 markup），4MB 预算哨兵由 seo-audit-prod 在线上复核，不进 CI
+ * test-web 的产物模式（`/` 为动态渲染，不在预渲染产物里）。
+ *
  * `NAVHUB_HOME_CARDS_PER_GROUP` 可覆盖；传 0 即恢复全量 SSR 的旧行为。
  */
-const HOME_CARDS_PER_GROUP_DEFAULT = 4;
+const HOME_CARDS_PER_GROUP_DEFAULT = 6;
 
 function homeCardsPerGroup(): number {
   const raw = process.env.NAVHUB_HOME_CARDS_PER_GROUP?.trim();

@@ -91,7 +91,10 @@ describe("卡片 #tag 内链化（rich 模式）", () => {
   it("外链覆盖层绝对定位铺满且不带 h-full（不参与网格同行拉伸）", () => {
     const overlayAnchor = richSrc.indexOf("href={safeHref(item.href)}");
     const anchorTag = richSrc.slice(richSrc.lastIndexOf("<a", overlayAnchor), richSrc.indexOf(">", overlayAnchor));
-    expect(anchorTag).toContain('className="absolute inset-0');
+    // P1-19（2026-11-21）：外链覆盖层加 peer 类（供键盘提示 peer-focus-visible 用），
+    // className 由 "absolute inset-0 ..." 变为 "peer absolute inset-0 ..."；
+    // 覆盖层仍是绝对定位铺满（absolute inset-0 未动），断言只查定位类本身，不再要求它排第一。
+    expect(anchorTag).toContain('absolute inset-0');
     expect(anchorTag).not.toContain("h-full");
   });
 

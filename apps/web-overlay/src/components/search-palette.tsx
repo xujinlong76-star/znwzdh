@@ -1754,7 +1754,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       className="min-w-0 flex-1 text-left px-3 py-1.5 text-xs rounded text-muted-foreground hover:text-foreground flex items-center justify-between gap-2"
                       onClick={() => setQuery(item.query)}
                     >
-                      <span className="truncate">{item.query}</span>
+                      <span className="truncate min-w-0">{item.query}</span>
                       <ArrowRight className="h-3 w-3 shrink-0 opacity-40" aria-hidden />
                     </button>
                     <button
@@ -1872,7 +1872,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-mono text-[10px] font-bold shrink-0">
                   !{quicklinkMatch.entry.quickPrefix}
                 </span>
-                <span className="truncate">
+                <span className="truncate min-w-0">
                   在 <strong className="font-semibold">{quicklinkMatch.entry.title}</strong> 搜索：
                   <strong className="font-semibold underline underline-offset-2">
                     {quicklinkMatch.arg ? `"${quicklinkMatch.arg}"` : '(全部)'}
@@ -1891,7 +1891,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 <span className="px-1.5 py-0.5 rounded bg-primary/20 font-mono text-[10px] uppercase font-bold shrink-0">
                   {omniCommand.engineName}
                 </span>
-                <span className="truncate">
+                <span className="truncate min-w-0">
                   按 Enter 直达外部搜索：<strong className="font-semibold underline underline-offset-2">{omniCommand.term}</strong>
                 </span>
               </div>

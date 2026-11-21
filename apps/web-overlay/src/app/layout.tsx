@@ -195,19 +195,31 @@ export default async function RootLayout({
                     }
                   }
                 } catch (e) {}
-
-                // 本地开发环境自动清理旧 SW 与 CacheStorage，杜绝历史缓存导致的水合与分包不一致
-                if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                  if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.getRegistrations().then(function(regs) {
-                      for (var i = 0; i < regs.length; i++) regs[i].unregister();
-                    }).catch(function() {});
-                  }
-                  if ('caches' in window) {
-                    caches.keys().then(function(keys) {
-                      for (var j = 0; j < keys.length; j++) caches.delete(keys[j]);
-                    }).catch(function() {});
-                  }
+              })();
+            `,
+          }}
+        />
+        {/* P2-12：本地开发环境旧 SW 与 CacheStorage 清理移出首屏阻塞脚本（原在隔离盾内，
+            801B、仅 localhost/127.0.0.1 生效、生产是死代码）。改走 afterInteractive，
+            水合后执行即可——清理针对的是历史缓存，不影响当前帧渲染。错误监听与
+            Anti-FOUC 读取仍留首屏同步脚本（必须在水合/插件注入前生效）。 */}
+        <Script
+          id="dev-sw-cache-cleanup"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                if (typeof window === 'undefined') return;
+                if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') return;
+                if ('serviceWorker' in navigator) {
+                  navigator.serviceWorker.getRegistrations().then(function(regs) {
+                    for (var i = 0; i < regs.length; i++) regs[i].unregister();
+                  }).catch(function() {});
+                }
+                if ('caches' in window) {
+                  caches.keys().then(function(keys) {
+                    for (var j = 0; j < keys.length; j++) caches.delete(keys[j]);
+                  }).catch(function() {});
                 }
               })();
             `,

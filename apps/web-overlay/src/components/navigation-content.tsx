@@ -13,7 +13,7 @@ import { HalfScreenDock } from '@/components/half-screen-dock'
 import { NavigationCategorySection } from '@/components/navigation-category-section'
 import { LazyMountSection } from '@/components/lazy-mount-section'
 import { HomeDIYTrigger } from '@/components/home-diy-trigger'
-import { HomeMicroStrip } from '@/components/home-micro-strip'
+import { HomeCapsuleRow } from '@/components/home-capsule-row'
 import { HomeSubtitleHint } from '@/components/home-subtitle-hint'
 import { HomeQuickDock } from '@/components/home-quick-dock'
 import type { HomeTodayBadgeSummary } from '@/lib/home-today-summary'
@@ -52,21 +52,27 @@ const AiFinderDialog = dynamic(
   { ssr: false, loading: () => null },
 )
 // 拖拽 provider 边界（DRAG-2 接线）：dnd-kit 约 133KB，绝不能静态进首屏。
-// kit 在挂载后后台 import，到达前直接渲染 children；到达后包上
-// DiyDragProvider。注意：切换瞬间 grid 子树会 remount 一次——只发生
-// 在 chunk 到达后、用户操作前（与 section 里的后台 import 同一时机），
-// 之后进出编辑态不再动 provider（卡片手柄的挂载/卸载是既有设计）。
-// 若 Ryan 实测到加载闪烁，备选是静态 import provider（以首屏包体积换零闪烁）。
+// kit 在挂载后后台 import。P1-6：provider 只在编辑态挂载——
+// 旧写法是 kit 一到就包上 provider，首屏水合后不久整片网格子树会被卸载重建一次
+// （白白付一份完整渲染，还可能闪一下），而拖拽手柄只在编辑态才出现，
+// 非编辑态包 provider 纯属浪费。改后：后台 chunk 到达时（非编辑态）
+// 边界仍直接渲染 children，元素类型不变、零 remount；进入编辑态时才包 provider，
+// 该 remount 并入编辑态切换（本来就要重渲染出拖拽手柄），不再是无意义的额外一次。
+// 极少数情况（1 秒内就进编辑态、kit 尚在路上）：provider 在编辑中途到达时
+// 仍会 remount 一次，属可接受的边界情形。
 function DiyGridDragBoundary({
   kit,
+  enabled,
   onDragEnd,
   children,
 }: {
   kit: typeof import('@/components/diy/diy-drag-kit') | null
+  /** 拖拽是否激活（编辑态）。非编辑态不包 provider，避免后台 chunk 到达时整树 remount。 */
+  enabled: boolean
   onDragEnd: (event: DragEndEvent) => void
   children: ReactNode
 }) {
-  if (!kit) return <>{children}</>
+  if (!enabled || !kit) return <>{children}</>
   const { DiyDragProvider } = kit
   return <DiyDragProvider onDragEnd={onDragEnd}>{children}</DiyDragProvider>
 }
@@ -125,7 +131,7 @@ import {
   isSafeSiteHref,
 } from '@/lib/modular/diy-presets'
 import { filterNavigationByWorkspace } from '@/lib/modular/workspace-matching'
-import { countCategorySites } from '@/lib/modular/category-counts'
+import { countCategorySites, estimateTruncatedSectionHeight } from '@/lib/modular/category-counts'
 import {
   combineAndSortCategories,
   customCategoriesToNavigation,
@@ -244,6 +250,19 @@ export function NavigationContent({
 }: NavigationContentProps) {
   const { toast } = useToast()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  // P1-5：移动抽屉闭合时不挂载 Sidebar（省一份完整分类树）。
+  // 抽屉容器本身常驻 DOM（useOverlayBehavior 需要稳定节点做焦点圈养），
+  // 但其内的 Sidebar 只在打开时挂载；关闭后延迟 200ms 卸载，
+  // 与面板的 translate-x-full 关闭动画（duration-[--duration-base]，即 200ms）对齐，避免空面板滑出。
+  const [drawerSidebarMounted, setDrawerSidebarMounted] = useState(false)
+  useEffect(() => {
+    if (isSidebarOpen) {
+      setDrawerSidebarMounted(true)
+      return
+    }
+    const t = setTimeout(() => setDrawerSidebarMounted(false), 200)
+    return () => clearTimeout(t)
+  }, [isSidebarOpen])
   const [todayOpen, setTodayOpen] = useState(false)
   const [widgetBoxOpen, setWidgetBoxOpen] = useState(false)
   const [appearanceOpen, setAppearanceOpen] = useState(false)
@@ -588,6 +607,33 @@ export function NavigationContent({
     }
   }, [expandAllCategories, setCollapsedCategoryIds, navigationData.navigationItems])
 
+  /**
+   * P0-2：工具栏 7 个打开/切换回调全部 useCallback 化——它们传给 memo 的
+   * NavigationToolbar（onOpenTools 与 HalfScreenDock 共用），内联写法每轮
+   * 新建身份会让工具栏 memo 恒失效。setX 均为 React 稳定 setter，空依赖即可。
+   * handleCloseSidebar 同理服务 memo 的 Sidebar（onClose）。
+   */
+  const handleToggleSidebar = useCallback(() => setIsSidebarOpen((open) => !open), [])
+  const handleCloseSidebar = useCallback(() => setIsSidebarOpen(false), [])
+  const handleOpenTools = useCallback(() => setIsToolsOpen(true), [])
+  const handleOpenShortcuts = useCallback(() => setIsShortcutsOpen(true), [])
+  const handleOpenTodayCenter = useCallback(() => setTodayOpen(true), [])
+  const handleOpenWidgetBox = useCallback(() => setWidgetBoxOpen(true), [])
+  const handleOpenAppearanceGuide = useCallback(() => {
+    setAppearanceTab('appearance')
+    setAppearanceOpen(true)
+  }, [])
+  const handleOpenAiFinder = useCallback(() => setToolbarAiOpen(true), [])
+
+  /**
+   * P0-2：Sidebar 的 navigationData 对象字面量每轮新建会击穿 memo，
+   * 在此 memo 化（sortedCategories 本身已是 useMemo，身份稳定）。
+   */
+  const sidebarNavigationData = useMemo(
+    () => ({ navigationItems: sortedCategories as unknown as NavigationItem[] }),
+    [sortedCategories]
+  )
+
   // 我的场景接线：① 把全站站点→分类索引登记到场景注册表（置顶派生用，
   //    用未经过滤的原始分类建，置顶站点所在分类被隐藏/折叠也要能解析）；
   //    ② 监听场景切换派发的 workspace 事件，走上面同一条 handleWorkspaceChange。
@@ -676,15 +722,22 @@ export function NavigationContent({
   const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
   useEffect(() => {
     let active = true
-    readOfflineVisits(20)
-      .then((rows) => {
-        if (active && Array.isArray(rows)) setRecentVisits(rows)
-      })
-      .catch(() => {
-        // 降级容错：离线最近访问读取失败时映射退回「钉选 + 工作区 + 全站顺序」
-      })
+    // P2-14：窗口获焦时重读最近访问（与坞旧有的 focus 同步一致），使 dialSites
+    // 随之刷新——坞不再自己重算速拨顺序，改由父级透传 dialSites，获焦刷新不能丢。
+    const sync = () => {
+      readOfflineVisits(20)
+        .then((rows) => {
+          if (active && Array.isArray(rows)) setRecentVisits(rows)
+        })
+        .catch(() => {
+          // 降级容错：离线最近访问读取失败时映射退回「钉选 + 工作区 + 全站顺序」
+        })
+    }
+    sync()
+    window.addEventListener('focus', sync)
     return () => {
       active = false
+      window.removeEventListener('focus', sync)
     }
   }, [])
 
@@ -1020,13 +1073,13 @@ export function NavigationContent({
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
-      <div className="hidden md:block">
+      <nav aria-label="站点分类导航" className="hidden md:block">
         <Sidebar
-          navigationData={{ navigationItems: sortedCategories as unknown as NavigationItem[] }}
+          navigationData={sidebarNavigationData}
           siteInfo={siteData}
           className="sticky top-0 h-screen"
         />
-      </div>
+      </nav>
 
       <div className={cn(
         "fixed inset-0 z-50 md:hidden",
@@ -1038,24 +1091,27 @@ export function NavigationContent({
         />
         <div
           {...containerProps}
+          id="mobile-nav-drawer"
           aria-label="站点导航"
           className={cn(
-            "fixed inset-y-0 left-0 w-3/4 max-w-xs bg-background shadow-lg transform transition-transform duration-200 ease-in-out outline-none",
+            "fixed inset-y-0 left-0 w-3/4 max-w-xs bg-background depth-modal transform transition-transform duration-[--duration-base] ease-in-out outline-none focus-visible:ring-2 focus-visible:ring-ring",
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
-          <Sidebar
-            navigationData={{ navigationItems: sortedCategories as unknown as NavigationItem[] }}
-            siteInfo={siteData}
-            brandAsHeading={false}
-            onClose={() => setIsSidebarOpen(false)}
-          />
+          {drawerSidebarMounted && (
+            <Sidebar
+              navigationData={sidebarNavigationData}
+              siteInfo={siteData}
+              brandAsHeading={false}
+              onClose={handleCloseSidebar}
+            />
+          )}
         </div>
       </div>
 
       <main
         id="main-content"
-        className={cn("flex-1 min-h-screen flex flex-col min-w-0 transition-colors duration-300", canvasBgClass)}
+        className={cn("flex-1 min-h-screen flex flex-col min-w-0 transition-colors duration-[--duration-slow]", canvasBgClass)}
         // 水合安全：壁纸来自 localStorage（仅客户端），首帧与 SSR 保持一致（undefined），
         // 挂载后再上壁纸，避免 style 分叉触发 hydration mismatch；URL 白名单防 CSS url() 注入
         style={{
@@ -1074,17 +1130,16 @@ export function NavigationContent({
         {/* 卡片键盘模型说明：所有卡片通过 aria-describedby 指向这一条 */}
         {!isFeatureHidden('feat:keyboard-hint') && (
           <p id="navhub-card-keyboard-hint" data-feature-id="feat:keyboard-hint" className="sr-only">
-            站点卡片：按空格打开速览与微动作；按右方向键进入卡片操作区，左右方向键切换，Esc 返回卡片。按数字键 1 到 9 直接打开速览坞对应站点；Shift+数字在新标签页打开；Ctrl+Shift+数字打开自定义快拨位。
+            站点卡片：按空格打开速览与微动作；按右方向键进入卡片操作区（标签、平替与底栏按钮都在内），左右方向键切换，Esc 返回卡片。按数字键 1 到 9 直接打开速览坞对应站点；Shift+数字在新标签页打开；Ctrl+Shift+数字打开自定义快拨位。
           </p>
         )}
 
         <NavigationToolbar
           siteConfig={siteData}
-          onToggleSidebar={() => setIsSidebarOpen((open) => !open)}
-          onOpenTools={() => setIsToolsOpen(true)}
-          onOpenShortcuts={() => setIsShortcutsOpen(true)}
-          activeWorkspace={activeWorkspace}
-          onWorkspaceChange={handleWorkspaceChange}
+          isSidebarOpen={isSidebarOpen}
+          onToggleSidebar={handleToggleSidebar}
+          onOpenTools={handleOpenTools}
+          onOpenShortcuts={handleOpenShortcuts}
           selectionMode={selectionMode}
           selectedIds={selectedIds}
           visibleSiteCount={visibleSites.length}
@@ -1092,13 +1147,12 @@ export function NavigationContent({
           onSelectAllVisible={selectAllVisible}
           todayBadge={todayBadge}
           pinnedWidgetCount={pinnedMounted ? pinnedCornerWidgets.length : 0}
-          onOpenTodayCenter={() => setTodayOpen(true)}
-          onOpenWidgetBox={() => setWidgetBoxOpen(true)}
-          onOpenAppearanceGuide={() => {
-            setAppearanceTab('appearance')
-            setAppearanceOpen(true)
-          }}
-          onOpenAiFinder={() => setToolbarAiOpen(true)}
+          /* 接受上游把内联箭头抽成 handleXxx 回调（更利于 memo 稳定）；
+             本分支新增的 unreadNotifications（铃铛红点）追加在末尾。 */
+          onOpenTodayCenter={handleOpenTodayCenter}
+          onOpenWidgetBox={handleOpenWidgetBox}
+          onOpenAppearanceGuide={handleOpenAppearanceGuide}
+          onOpenAiFinder={handleOpenAiFinder}
           unreadNotifications={unreadNotifications}
         />
 
@@ -1108,7 +1162,7 @@ export function NavigationContent({
             与 setIsToolsOpen，少一次 prop 透传。仅首页挂载，其它路由零变化。 */}
         <HalfScreenDock
           activeWorkspace={activeWorkspace}
-          onOpenTools={() => setIsToolsOpen(true)}
+          onOpenTools={handleOpenTools}
           isEditingLayout={isEditingLayout}
           selectionMode={selectionMode}
           selectedIds={selectedIds}
@@ -1137,7 +1191,7 @@ export function NavigationContent({
           </div>
         )}
 
-        <div className="px-3 sm:px-6 md:px-8 pt-4 sm:pt-8 pb-8 flex-1">
+        <div className="px-3 sm:px-6 md:px-8 pt-2 sm:pt-2 pb-8 flex-1">
           {/* 移动端品牌主标题（U-263）：桌面侧边栏品牌 h1 在移动端被 hidden，
               首页主内容区又无其它 h1，致移动端无可见主标题（mobile-layout
               冒烟红）。此处补一个移动端专用的紧凑标题（短标题「山羊胡导航」），
@@ -1199,7 +1253,7 @@ export function NavigationContent({
                   variant="outline"
                   size="sm"
                   onClick={handleOpenRecoveryCenter}
-                  className="h-7 px-2.5 text-xs rounded-lg gap-1 border-primary/40 text-primary hover:bg-primary/10"
+                  className="h-7 px-2.5 text-xs rounded-lg gap-1 border-border-strong text-primary hover:bg-primary/10"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>🗑️ 回收站与功能矩阵 ({trashBin.length})</span>
@@ -1234,29 +1288,50 @@ export function NavigationContent({
             tagline={homeControl.basic.tagline || siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
           />
 
-          {/* 首页功能微胶囊行（A1 + A4）：单行保留短剧 / AI 找站 / 插件精选 / 新手向导小窗入口 */}
+          {/* 首屏瘦身：工作区胶囊行与运营胶囊行合并为一行（HomeCapsuleRow，
+              2026-11-20）：原来上下两行（工作区 ~63px + 运营 ~46px）压成单行
+              约 44px；<1024px 只留「全部探索」＋「AI 找站」，其余进「更多」折叠菜单。
+              首屏露出冲 40%（2026-11-21）：1536px+ 胶囊行与高频直达坞并排一行，
+              省一整行约 40px；窄屏保持上下叠放不变。 */}
           {viewMode !== 'workbench' ? (
-            <HomeMicroStrip
-              cinemaInitial={cinemaInitial}
-              pluginItems={pluginItems}
-              showDramaCapsule={sectionOn('dramaCinema')}
-              showAiCapsule={sectionOn('aiFinder')}
-              showGuideBadge={!isModuleHidden('mod:onboarding-card')}
-              activeWorkspace={activeWorkspace}
-              initialSceneParam={sceneParam}
-              onOpenGuideTab={() => {
-                setAppearanceTab('guide')
-                setAppearanceOpen(true)
-              }}
-            />
+            <div className="min-[1536px]:flex min-[1536px]:items-center min-[1536px]:gap-3">
+              <div className="min-w-0 min-[1536px]:flex-[1.3]">
+                <HomeCapsuleRow
+                  cinemaInitial={cinemaInitial}
+                  pluginItems={pluginItems}
+                  showDramaCapsule={sectionOn('dramaCinema')}
+                  showAiCapsule={sectionOn('aiFinder')}
+                  showGuideBadge={!isModuleHidden('mod:onboarding-card')}
+                  activeWorkspace={activeWorkspace}
+                  onWorkspaceChange={handleWorkspaceChange}
+                  initialSceneParam={sceneParam}
+                  onOpenGuideTab={() => {
+                    setAppearanceTab('guide')
+                    setAppearanceOpen(true)
+                  }}
+                />
+              </div>
+              {/* 三合一单行高频直达坞（A4：合并 SpeedDialDock / 常用 / 最近访问） */}
+              {!isModuleHidden('mod:speed-dial') && (
+                <div data-feature-id="mod:speed-dial" className="relative min-w-0 min-[1536px]:flex-1">
+                  <HomeQuickDock
+                    allSites={visibleSites}
+                    activeWorkspace={activeWorkspace}
+                    dialDigitById={mounted ? dialMap.digitById : undefined}
+                    // P2-14：速拨顺序由父级 dialSites 一次算好透传，坞不再自己重算。
+                    speedSites={dialSites}
+                  />
+                </div>
+              )}
+            </div>
           ) : null}
 
           {viewMode === 'workbench' ? (
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-1">
                 <div>
-                  <h2 className="text-base sm:text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
-                    <span className="w-1.5 h-4.5 rounded-full bg-emerald-500" />
+                  <h2 className="text-base sm:text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                    <span className="w-1.5 h-4.5 rounded-full bg-success" />
                     <span>模块化工作台主页</span>
                   </h2>
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -1268,18 +1343,7 @@ export function NavigationContent({
             </div>
           ) : (
             <>
-              {/* 三合一单行高频直达坞（A4：合并 SpeedDialDock / 常用 / 最近访问） */}
-              {!isModuleHidden('mod:speed-dial') && (
-                <div data-feature-id="mod:speed-dial" className="relative">
-                  <HomeQuickDock
-                    allSites={visibleSites}
-                    activeWorkspace={activeWorkspace}
-                    dialDigitById={mounted ? dialMap.digitById : undefined}
-                  />
-                </div>
-              )}
-
-              <DiyGridDragBoundary kit={dragKit} onDragEnd={handleCategoryDragEnd}>
+              <DiyGridDragBoundary kit={dragKit} enabled={isEditingLayout} onDragEnd={handleCategoryDragEnd}>
               <div className="grid grid-cols-12 gap-6 sm:gap-8 items-start">
                 {renderedCategories.map((category, index) => {
                   const section = (
@@ -1322,7 +1386,13 @@ export function NavigationContent({
                    * 用户看不到自己刚建的东西，等于功能失效。
                    */
                   const isFreshCustom = Boolean((category as { isCustom?: boolean }).isCustom)
-                  const mustMountAll = selectionMode || isFreshCustom
+                  // P1-4：多选态不再强制全量挂载（旧逻辑 selectionMode 即挂 873 卡 /
+                  // 42,803 节点，低端机数秒卡死）。选中态是数据驱动
+                  //（useSiteSelection 的 visibleSites 来自数据、与 DOM 无关），
+                  // 全选仍覆盖全部站点；用户滚到某分类时它再懒挂载，挂载后
+                  // forceFull 展开全部卡片供点选。新建自定义分类仍须立即挂载
+                  //（用户刚创建，要当场看到并编排）。
+                  const mustMountAll = isFreshCustom
                   if (mustMountAll || index < EAGER_CATEGORY_COUNT) return section
                   return (
                     <LazyMountSection
@@ -1330,6 +1400,7 @@ export function NavigationContent({
                       sectionId={category.id}
                       title={category.title}
                       count={countCategorySites(category)}
+                      estimatedHeight={estimateTruncatedSectionHeight(category, cardsPerGroup)}
                       force={false}
                       placeholder={
                         isEditingLayout ? (
@@ -1340,7 +1411,7 @@ export function NavigationContent({
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div className="flex items-center gap-2 min-w-0">
                                 <span className="w-1.5 h-5 rounded-full bg-primary/60" />
-                                <h2 className="text-base sm:text-xl font-bold tracking-tight text-foreground truncate">
+                                <h2 className="text-base sm:text-xl font-bold tracking-tight text-foreground truncate min-w-0">
                                   {category.title}
                                 </h2>
                                 <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground border border-border/40 shrink-0">
@@ -1425,7 +1496,7 @@ export function NavigationContent({
                     description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
                   })
                 }}
-                className="mb-1.5 ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+                className="mb-1.5 ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-destructive-text bg-destructive/15 hover:bg-destructive/20 border border-destructive/30 transition-colors cursor-pointer"
               >
                 <EyeOff className="w-3 h-3" />
                 <span>－ 移除站内目录</span>
@@ -1435,13 +1506,13 @@ export function NavigationContent({
               <span id="home-directory-title" className="text-xs font-semibold text-foreground">
                 站内目录
               </span>
-              <Link href="/category" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-primary hover:bg-primary/5 hover:underline transition-colors">
+              <Link href="/category" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-link hover:bg-primary/5 hover:underline transition-colors">
                 全部分类
               </Link>
-              <Link href="/sites" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-primary hover:bg-primary/5 hover:underline transition-colors">
+              <Link href="/sites" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-link hover:bg-primary/5 hover:underline transition-colors">
                 全部站点
               </Link>
-              <Link href="/tags" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-primary hover:bg-primary/5 hover:underline transition-colors">
+              <Link href="/tags" className="inline-flex items-center min-h-6 py-0.5 px-1.5 rounded-md text-xs text-link hover:bg-primary/5 hover:underline transition-colors">
                 按标签浏览
               </Link>
               {directoryLinks.length > 0 && (
@@ -1495,7 +1566,7 @@ export function NavigationContent({
                       description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
                     })
                   }}
-                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium text-destructive-text bg-destructive/15 hover:bg-destructive/20 border border-destructive/30 transition-colors cursor-pointer"
                 >
                   <EyeOff className="w-3 h-3" />
                   <span>－ 移除页脚与生态入口</span>
@@ -1538,7 +1609,7 @@ export function NavigationContent({
           <KeyboardShortcutsDialog
             open={isShortcutsOpen}
             onOpenChange={setIsShortcutsOpen}
-            onOpenTools={() => setIsToolsOpen(true)}
+            onOpenTools={handleOpenTools}
           />
         )}
 

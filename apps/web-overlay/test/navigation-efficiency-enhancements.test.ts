@@ -297,7 +297,10 @@ describe('导航效率增强与用户体验治理', () => {
     const srcContent = loadSource('src/components/navigation-content.tsx')
     expect(srcContent).not.toContain('FloatingQuickNav')
     expect(srcContent).toContain('QuickToolsDrawer')
-    expect(srcContent).toContain('onOpenTools={() => setIsToolsOpen(true)}')
+    // P0-2（2026-11-21）：内联回调改为稳定引用 handleOpenTools（useCallback），
+    // 行为不变（仍是 setIsToolsOpen(true)），但不再每轮新建函数身份击穿 memo。
+    expect(srcContent).toContain('onOpenTools={handleOpenTools}')
+    expect(srcContent).toContain('const handleOpenTools = useCallback(() => setIsToolsOpen(true), [])')
 
     const srcShortcuts = loadSource('src/components/keyboard-shortcuts-dialog.tsx')
     // 平台键不许写死：macOS 是 ⌘K、Windows/Linux 是 Ctrl+K，还得跟随用户的呼出键偏好

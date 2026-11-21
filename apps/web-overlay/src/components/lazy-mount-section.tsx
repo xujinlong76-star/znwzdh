@@ -27,7 +27,9 @@ import { ChevronDown } from 'lucide-react'
  *
  * ## 边界
  *
- * - 编辑态 / 多选态必须全量可见（用户要对所有卡片动手），走 `force`。
+ * - 编辑态必须全量可见（用户要对所有卡片动手），走 `force`。
+ *   多选态不再强制全量（P1-4：旧逻辑挂 873 卡 / 42,803 节点会卡死低端机；
+ *   选中态是数据驱动，滚到某分类时它再懒挂载，挂载后 forceFull 展开供点选）。
  * - 不支持 `IntersectionObserver` 的环境直接挂载，不做功能阉割。
  * - 占位块保留分类标题、计数与锚点 id：站内目录带跳转、读屏顺序都不受影响。
  */
@@ -38,6 +40,8 @@ export interface LazyMountSectionProps {
   title: string
   /** 站点计数，用于占位块与高度估算 */
   count: number
+  /** 截断态真实高度（P1-7：调用方按分组结构算好传进来；不传则用 count 粗估） */
+  estimatedHeight?: number
   /** 是否强制挂载（编辑态、多选态、搜索/筛选激活时都应为 true） */
   force?: boolean
   /** 视口预距，默认提前 800px 挂载 */
@@ -55,6 +59,7 @@ export function LazyMountSection({
   sectionId,
   title,
   count,
+  estimatedHeight,
   force = false,
   rootMargin = '800px',
   placeholder,
@@ -109,7 +114,7 @@ export function LazyMountSection({
 
   return (
     <div ref={hostRef} id={sectionId} className="col-span-12" aria-label={`${title}（尚未展开）`}>
-      {placeholder ?? <LazySectionPlaceholder sectionId={sectionId} title={title} count={count} />}
+      {placeholder ?? <LazySectionPlaceholder sectionId={sectionId} title={title} count={count} estimatedHeight={estimatedHeight} />}
     </div>
   )
 }
@@ -124,14 +129,17 @@ export function LazySectionPlaceholder({
   sectionId,
   title,
   count,
+  estimatedHeight: estimatedHeightProp,
 }: {
   sectionId: string
   title: string
   count: number
+  estimatedHeight?: number
 }) {
-  // 根据站点数量与 3 列布局估算占位高度，利用 contain-intrinsic-size 杜绝长距离跳转时的滚动条抖动 (Jumpiness)
-  const estimatedRows = Math.max(1, Math.ceil(Math.min(count, 6) / 3))
-  const estimatedHeight = Math.min(600, Math.max(140, estimatedRows * 120 + 48))
+  // P1-7：调用方传了截断态真实高度就用它；否则按全量 count 粗估（上限放宽到 1200px，
+  // 旧公式 min(count, 6) 封顶 2 行 288px，与多子组真实高度脱节是滚动跳动的根因）。
+  const estimatedHeight =
+    estimatedHeightProp ?? Math.min(1200, Math.max(140, Math.ceil(count / 3) * 120 + 48))
 
   return (
     <section

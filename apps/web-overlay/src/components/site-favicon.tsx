@@ -17,23 +17,26 @@ export interface SiteFaviconProps {
   eager?: boolean
 }
 
+/* P2-1：渐变色板 Token 化——from/to 只引 globals.css 的 --gradient-brand-*-from/to，
+   textColor 只引 --color-on-gradient；hex 值只出现在 globals.css 的 Token 定义处，
+   本文件无裸 hex。深色模式沿用同值（白字在渐变上浅深对比度相同）。 */
 export const PRESET_GRADIENTS = [
-  { from: '#6366f1', to: '#a855f7', textColor: '#ffffff' }, // 蓝紫极光
-  { from: '#3b82f6', to: '#06b6d4', textColor: '#ffffff' }, // 蔚蓝海流
-  { from: '#10b981', to: '#14b8a6', textColor: '#ffffff' }, // 极光翡翠
-  { from: '#f59e0b', to: '#ef4444', textColor: '#ffffff' }, // 暖阳晚霞
-  { from: '#ec4899', to: '#8b5cf6', textColor: '#ffffff' }, // 霓虹浆果
-  { from: '#06b6d4', to: '#3b82f6', textColor: '#ffffff' }, // 赛博电光
-  { from: '#84cc16', to: '#10b981', textColor: '#ffffff' }, // 春晓青柠
-  { from: '#f43f5e', to: '#fb923c', textColor: '#ffffff' }, // 珊瑚朝霞
-  { from: '#8b5cf6', to: '#ec4899', textColor: '#ffffff' }, // 幻境晶体
-  { from: '#0ea5e9', to: '#6366f1', textColor: '#ffffff' }, // 深邃星空
-  { from: '#14b8a6', to: '#0ea5e9', textColor: '#ffffff' }, // 浅滩清波
-  { from: '#d946ef', to: '#8b5cf6', textColor: '#ffffff' }, // 幻彩紫晶
-  { from: '#f97316', to: '#e11d48', textColor: '#ffffff' }, // 熔岩烈焰
-  { from: '#059669', to: '#0284c7', textColor: '#ffffff' }, // 森林薄雾
-  { from: '#4f46e5', to: '#06b6d4', textColor: '#ffffff' }, // 钛金属辉光
-  { from: '#7c3aed', to: '#2563eb', textColor: '#ffffff' }, // 极夜苍穹
+  { from: 'var(--gradient-brand-01-from)', to: 'var(--gradient-brand-01-to)', textColor: 'var(--color-on-gradient)' }, // 蓝紫极光
+  { from: 'var(--gradient-brand-02-from)', to: 'var(--gradient-brand-02-to)', textColor: 'var(--color-on-gradient)' }, // 蔚蓝海流
+  { from: 'var(--gradient-brand-03-from)', to: 'var(--gradient-brand-03-to)', textColor: 'var(--color-on-gradient)' }, // 极光翡翠
+  { from: 'var(--gradient-brand-04-from)', to: 'var(--gradient-brand-04-to)', textColor: 'var(--color-on-gradient)' }, // 暖阳晚霞
+  { from: 'var(--gradient-brand-05-from)', to: 'var(--gradient-brand-05-to)', textColor: 'var(--color-on-gradient)' }, // 霓虹浆果
+  { from: 'var(--gradient-brand-06-from)', to: 'var(--gradient-brand-06-to)', textColor: 'var(--color-on-gradient)' }, // 赛博电光
+  { from: 'var(--gradient-brand-07-from)', to: 'var(--gradient-brand-07-to)', textColor: 'var(--color-on-gradient)' }, // 春晓青柠
+  { from: 'var(--gradient-brand-08-from)', to: 'var(--gradient-brand-08-to)', textColor: 'var(--color-on-gradient)' }, // 珊瑚朝霞
+  { from: 'var(--gradient-brand-09-from)', to: 'var(--gradient-brand-09-to)', textColor: 'var(--color-on-gradient)' }, // 幻境晶体
+  { from: 'var(--gradient-brand-10-from)', to: 'var(--gradient-brand-10-to)', textColor: 'var(--color-on-gradient)' }, // 深邃星空
+  { from: 'var(--gradient-brand-11-from)', to: 'var(--gradient-brand-11-to)', textColor: 'var(--color-on-gradient)' }, // 浅滩清波
+  { from: 'var(--gradient-brand-12-from)', to: 'var(--gradient-brand-12-to)', textColor: 'var(--color-on-gradient)' }, // 幻彩紫晶
+  { from: 'var(--gradient-brand-13-from)', to: 'var(--gradient-brand-13-to)', textColor: 'var(--color-on-gradient)' }, // 熔岩烈焰
+  { from: 'var(--gradient-brand-14-from)', to: 'var(--gradient-brand-14-to)', textColor: 'var(--color-on-gradient)' }, // 森林薄雾
+  { from: 'var(--gradient-brand-15-from)', to: 'var(--gradient-brand-15-to)', textColor: 'var(--color-on-gradient)' }, // 钛金属辉光
+  { from: 'var(--gradient-brand-16-from)', to: 'var(--gradient-brand-16-to)', textColor: 'var(--color-on-gradient)' }, // 极夜苍穹
 ] as const
 
 export function fnv1aHash(str: string): number {

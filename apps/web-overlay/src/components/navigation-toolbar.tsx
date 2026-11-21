@@ -3,18 +3,19 @@
 /**
  * 首页顶部工具栏（从 navigation-content.tsx 拆出，2026-10-19 P1-2）。
  *
- * 2026-11-21 顶栏收敛（原始需求第 1 条，前四次被并发覆盖，本轮随提交落地）：
+ * 只负责渲染搜索入口、探索矩阵、视图/密度/主题开关与多选入口。
+ * 工作区过滤已迁至 HomeCapsuleRow（本文件不再接收 activeWorkspace /
+ * onWorkspaceChange，2026-11-21 U-358 门禁修复：两者曾声明却从未使用）。
  *
- * 改造前右侧有 11 个纯图标按钮（今日/小组件盒/热度/探索矩阵/工具箱/用户/
- * 快捷键/多选/字号/主题/DIY/GitHub），其中大多数只有 title 没有可见标签，
- * 对新用户就是一排无字方块，认知成本极高。
+ * 2026-11-21 顶栏收敛（原始需求第 1 条）：改造前右侧有 11 个纯图标按钮
+ * （今日/小组件盒/热度/探索矩阵/工具箱/用户/快捷键/多选/字号/主题/DIY/GitHub），
+ * 多数只有 title 没有可见标签，对新用户就是一排无字方块。
  *
- * 改造后按「用得有多频繁」分三层：
- *  ① 主栏常驻 4 个：多选（批量唯一出口，不能埋）、DIY 排版（保留可见文字）、
+ * 按「用得有多频繁」重分三层，**一个功能都没丢**：
+ *  ① 主栏常驻：多选（批量唯一出口，不能埋）、DIY 排版（保留可见文字）、
  *     主题、通知+插件聚合；
- *  ② 聚合菜单：今日中心 / 通知中心 / 小组件盒 / 插件市场 → 一个带红点的铃铛；
- *  ③ 个人菜单：用户中心 / 字号 / 工具箱 / 快捷键 / 签到 / 偏好 / 工作台 /
- *     GitHub → 一个头像。低频项全部下沉，但**一个功能都没丢**。
+ *  ② 通知聚合：今日中心 / 通知中心 / 小组件盒 / 插件市场 → 带红点的铃铛；
+ *  ③ 个人菜单：用户中心 / 字号 / 工具箱 / 快捷键 / 签到 / 工作台 / GitHub。
  *
  * 所有纯图标入口一律补 Radix Tooltip（不是裸 title：title 有约 1s 系统延迟、
  * 键盘聚焦不显示，对可发现性帮助接近于零）。
@@ -22,8 +23,9 @@
  * 「AI 找站」独立按钮已删除：SearchPalette 内部本就有 aiMode 双模式
  * （lib/search-ai-mode.ts 持久化），同一入口不该在一屏出现两次。
  *
- * 保留不变：选中态与工作台过滤仍由 NavigationContent 持有，props 注入。
+ * 保留不变：选中态仍由 NavigationContent 持有，props 注入。
  */
+import { memo } from 'react'
 import Link from 'next/link'
 import { Button } from '@/registry/new-york/ui/button'
 import {
@@ -63,7 +65,6 @@ import dynamic from 'next/dynamic'
 import type { SiteConfig } from '@/types/site'
 import { ModeToggle } from '@/components/mode-toggle'
 import { FontSizeToggle } from '@/components/font-size-toggle'
-import { WorkspaceFilter, type WorkspaceId } from '@/components/workspace-filter'
 import { cn } from '@/lib/utils'
 import { trackDiyEvent } from '@/lib/navhub-api'
 import { summarizeSelection } from '@/lib/selection'
@@ -89,9 +90,8 @@ const SearchPalette = dynamic(
 
 export interface NavigationToolbarProps {
   siteConfig: SiteConfig
-  activeWorkspace: WorkspaceId
-  onWorkspaceChange: (workspace: WorkspaceId) => void
   onToggleSidebar: () => void
+  isSidebarOpen: boolean
   onOpenTools: () => void
   onOpenShortcuts: () => void
   selectionMode: boolean
@@ -138,11 +138,11 @@ function IconTip({
   )
 }
 
-export function NavigationToolbar({
+// P0-2：包 memo——父组件回调已全部 useCallback 化，浅比较才能生效。
+export const NavigationToolbar = memo(function NavigationToolbar({
   siteConfig,
-  activeWorkspace,
-  onWorkspaceChange,
   onToggleSidebar,
+  isSidebarOpen,
   onOpenTools,
   onOpenShortcuts,
   selectionMode,
@@ -159,7 +159,8 @@ export function NavigationToolbar({
 }: NavigationToolbarProps) {
   const hasTodayAlert = Boolean(todayBadge && (todayBadge.urgentCount > 0 || todayBadge.todayCount > 0))
   return (
-        <div className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 shadow-2xs">
+        {/* 采用上游把根节点从 <div> 改为语义化 <header>（可访问性改进）。 */}
+        <header className="sticky top-0 z-30 border-b border-border/40 bg-background/85 px-3 pt-[max(env(safe-area-inset-top,0px),0px)] shadow-2xs backdrop-blur-md dark:bg-background/80 sm:px-6">
           {/* 2026-11-21：md:flex-nowrap 在 768px 档会把「搜索 260px 最小宽 +
               右侧按钮簇 388px」硬塞进 768-48px 的可用宽里，整行顶出文档
               （实测 scrollWidth 940 > 768）。改为在 <1024px 允许换行：
@@ -210,7 +211,7 @@ export function NavigationToolbar({
                   title={summarizeSelection(selectedIds, visibleSiteCount) + '（点击全选当前可见站点）'}
                 >
                   <ListChecks className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">{summarizeSelection(selectedIds, visibleSiteCount)}</span>
+                  <span className="hidden xl:inline">{summarizeSelection(selectedIds, visibleSiteCount)}</span>
                 </Button>
               )}
 
@@ -502,16 +503,17 @@ export function NavigationToolbar({
                   className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground md:hidden"
                   onClick={onToggleSidebar}
                   aria-label="打开菜单"
+                  /* 上游（github/main）新增的门禁无障碍属性：让读屏知道抽屉
+                     当前开/关、控制的是哪一个区域。保留。 */
+                  aria-expanded={isSidebarOpen}
+                  aria-controls="mobile-nav-drawer"
                 >
                   <Menu className="h-4 w-4" />
                 </Button>
               </IconTip>
             </div>
           </div>
-
-          {/* 场景化工作台切换条 */}
-          <WorkspaceFilter active={activeWorkspace} onChange={onWorkspaceChange} />
-        </div>
+        </header>
 
   )
-}
+})

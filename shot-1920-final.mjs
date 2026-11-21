@@ -1,0 +1,11 @@
+import { chromium } from '@playwright/test'
+const b = await chromium.launch({ executablePath: '/home/hatch/.cache/ms-playwright/chromium_headless_shell-1255/chrome-headless-shell-linux64/chrome-headless-shell' })
+const ctx = await b.newContext({ viewport: { width: 1920, height: 911 } })
+await ctx.addInitScript(() => { localStorage.setItem('navhub:visited', '1'); localStorage.setItem('navhub:subtitle-hint-dismissed', '1') })
+const p = await ctx.newPage()
+await p.goto('http://127.0.0.1:3120', { waitUntil: 'commit', timeout: 60000 })
+await p.waitForSelector('main a[href]', { timeout: 60000 })
+await p.waitForTimeout(6000)
+await p.screenshot({ path: 'verify-evidence/v1920-final-returning.png' })
+await b.close()
+console.log('shot saved')

@@ -21,6 +21,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent,
   type MutableRefObject,
   type ReactNode,
 } from 'react'
@@ -64,6 +65,10 @@ export interface HorizontalScrollFadeProps {
   prevAriaLabel?: string
   /** 右箭头无障碍文案，默认「向右滚动」 */
   nextAriaLabel?: string
+  /** 内层滚动容器的 role（如 tablist），默认不设；由调用方按语义给 */
+  role?: string
+  /** 内层滚动容器的键盘处理（如 tablist 的 ←/→ 漫游），默认不设 */
+  onKeyDown?: (e: KeyboardEvent<HTMLDivElement>) => void
 }
 
 export const HorizontalScrollFade = forwardRef<HTMLDivElement, HorizontalScrollFadeProps>(
@@ -78,6 +83,8 @@ export const HorizontalScrollFade = forwardRef<HTMLDivElement, HorizontalScrollF
       scrollStep = 240,
       prevAriaLabel = '向左滚动',
       nextAriaLabel = '向右滚动',
+      role,
+      onKeyDown,
     },
     ref,
   ) {
@@ -176,8 +183,13 @@ export const HorizontalScrollFade = forwardRef<HTMLDivElement, HorizontalScrollF
 
         <div
           ref={setRefs}
-          /* pr-7 pl-0.5：两侧箭头绝对定位在容器边缘，给它们留出不吃内容的
-             呼吸位，避免箭头压住第一个/最后一个胶囊的文字。 */
+          /* 上游（github/main）新增：role/aria-label/onKeyDown 透传到内层滚动容器，
+             供 tablist 语义与 ←/→ 漫游使用；保留。
+             本分支新增：pl-0.5 pr-7 给两侧绝对定位的箭头留呼吸位，
+             避免箭头压住第一个/最后一个胶囊的文字。两者不冲突，共存。 */
+          role={role}
+          aria-label={role ? ariaLabel : undefined}
+          onKeyDown={onKeyDown}
           className={cn('overflow-x-auto no-scrollbar pl-0.5 pr-7', scrollClassName)}
           style={maskStyle}
         >

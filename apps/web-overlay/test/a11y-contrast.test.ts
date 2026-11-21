@@ -36,8 +36,10 @@ describe('浅色模式对比度', () => {
     const market = footer.split('\n').find((l) => l.includes('href="/marketplace"'))
     expect(custom).toContain('text-emerald-700')
     expect(custom).not.toContain('text-emerald-600')
-    // rose-600 实测 4.48:1，差 0.02 也是不达标
-    expect(market).toContain('text-rose-700')
+    // P1-15（2026-11-21）：插件市场链由 rose-700 改为 text-primary（页脚链接统一样式）。
+    // text-primary 浅色为近黑（hsl 240 5.9% 10%），白底对比度远超 AA 4.5:1；
+    // 旧 rose-600 实测 4.48:1（差 0.02 不达标）的教训仍适用——任何强调色不得低于 4.5:1。
+    expect(market).toContain('text-primary')
     expect(market).not.toContain('text-rose-600')
     // 版权行再叠 /80 透明度只有 3.63:1
     expect(footer).not.toContain('text-muted-foreground/80')
@@ -514,8 +516,11 @@ describe('rose/sky 第二档 21 处：管理后台/纯图标/大字 -600→-700 
   it('纯图标 7 处：R1/R2/R21/R22/R23/R29/S1，-700 配 dark:-400（图标 3:1 档）', () => {
     const iconBtns = watchlistPage2.split('\n').filter((l) => l.includes('h-7 w-7') && l.includes('hover:text-rose-700'))
     expect(iconBtns).toHaveLength(2)
-    expect(navCard).toContain('"text-rose-700 hover:text-rose-700 hover:bg-rose-500/15 dark:text-rose-400 dark:hover:text-rose-400"')
-    expect(navCard.split('\n').filter((l) => l.includes('text-rose-700 hover:text-rose-700'))).toHaveLength(3)
+    // P1-15（2026-11-21）：卡片删除钮由 rose-700 改为语义 token text-destructive-text。
+    // destructive-text 浅色 #BA1C1C（hsl 0 74% 42%）白底 6.42:1、深色 #F37272 深底 7.07:1，
+    // 均超 AA 4.5:1，与 rose-700（6.29:1）等效；dark: 变体由 token 自身处理，不再单写。
+    expect(navCard).toContain('"text-destructive-text hover:text-destructive-text hover:bg-destructive/15"')
+    expect(navCard.split('\n').filter((l) => l.includes('text-destructive-text hover:text-destructive-text'))).toHaveLength(3)
     expect(navCard).not.toContain('text-rose-600')
     expect(spotlight2).toContain('bg-rose-500/10 text-rose-700 dark:text-rose-400 flex items-center justify-center shrink-0')
     expect(pluginsPage).toContain("tone: 'text-sky-700 dark:text-sky-400'")

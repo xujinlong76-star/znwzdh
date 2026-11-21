@@ -269,7 +269,7 @@ describe("generate-gatus-config：产物不入库（§5）", () => {
 });
 
 describe("generate-gatus-config：真实导航 JSON（只读断言）", () => {
-  it("383 站全量生成通过，报告数字与实测一致", () => {
+  it("388 站全量生成通过，报告数字与实测一致", () => {
     const root = mkdtempSync(join(tmpdir(), "navhub-gatus-real-"));
     try {
       const output = join(root, "gatus-config.yaml");
@@ -282,12 +282,12 @@ describe("generate-gatus-config：真实导航 JSON（只读断言）", () => {
       ]);
       expect(code, out).toBe(0);
       const report = JSON.parse(out);
-      expect(report.total).toBe(383);
-      expect(report.https).toBe(380);
+      expect(report.total).toBe(388);
+      expect(report.https).toBe(385);
       expect(report.http).toBe(3);
       expect(report.groups).toBe(14);
-      expect(report.withCertificateCondition).toBe(380);
-      expect(report.withDomainCondition).toBe(383);
+      expect(report.withCertificateCondition).toBe(385);
+      expect(report.withDomainCondition).toBe(388);
       expect(report.loose).toBe(0);
       expect(report.slow).toBe(0);
       expect(report.suffixedNames).toBe(0);
@@ -315,9 +315,9 @@ describe("generate-gatus-config：真实导航 JSON（只读断言）", () => {
       ]);
       expect(code, out).toBe(0);
       const parsed = parseWithPyYaml(readFileSync(output, "utf8"));
-      expect(parsed.endpoints).toHaveLength(383);
+      expect(parsed.endpoints).toHaveLength(388);
       const names = new Set(parsed.endpoints.map((e: any) => `${e.group}\0${e.name}`));
-      expect(names.size).toBe(383);
+      expect(names.size).toBe(388);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

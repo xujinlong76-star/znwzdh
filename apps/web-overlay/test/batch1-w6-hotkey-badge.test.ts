@@ -148,12 +148,21 @@ describe('onSearchKeyDown 的 Alt+数字分支（D1/D2 接线守卫）', () => {
     expect(paletteSrc).toContain('altDigitFromKeyOrCode(e.key, e.code)')
   })
 
-  it('本分支不碰 IME：全文件无 isComposing / onComposition（那是 W7 的活，不冲突）', () => {
-    expect(paletteSrc).not.toContain('isComposing')
-    expect(paletteSrc).not.toContain('onComposition')
+  it('IME 三件套已落地（L6 整合轮：W7 的活已做，不再是“不碰”）', () => {
+    // 2026-11-21 L6：onSearchKeyDown 顶部加 isComposing 守卫、Input 加
+    // compositionstart/end、检索 effect 组词期不发请求——本用例原断言
+    // “全文件无 isComposing”是 W6 时 W7 未开工的前提，现已失效，翻转为
+    // 守卫在场断言（细则见 batch1-l6-bangs-pinyin-ime.test.ts）。
+    expect(paletteSrc).toContain('if (e.nativeEvent.isComposing || e.keyCode === 229) return')
+    expect(paletteSrc).toContain('onCompositionStart')
+    expect(paletteSrc).toContain('onCompositionEnd')
   })
 
   it('C3：服务端 hits 仍原样进导航列表（MRU 只加本地行分，不动 RRF 排名）', () => {
-    expect(paletteSrc).toContain('siteIds: hits.filter((h) => h.site).map((h) => `site-${h.siteId}`)')
+    // main a3c51bc8（W6 基线之后）：站点行改走客户端重排后的 displayHits
+    //（失效剔除、精确置顶、真空态），不再是 hits.filter 直出；MRU 仍只
+    // 进 matchPaletteFavorites 的 mruNormBySiteId，不碰服务端 hits 顺序。
+    expect(paletteSrc).toContain('siteIds: displayHits.map((h) => `site-${h.siteId}`)')
+    expect(paletteSrc).toContain('mruNormBySiteId,')
   })
 })

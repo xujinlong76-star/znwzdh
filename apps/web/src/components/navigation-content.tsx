@@ -1095,7 +1095,7 @@ export function NavigationContent({
         {/* 卡片键盘模型说明：所有卡片通过 aria-describedby 指向这一条 */}
         {!isFeatureHidden('feat:keyboard-hint') && (
           <p id="navhub-card-keyboard-hint" data-feature-id="feat:keyboard-hint" className="sr-only">
-            站点卡片：按空格打开速览与微动作；按右方向键进入卡片操作区，左右方向键切换，Esc 返回卡片。按数字键 1 到 9 直接打开速览坞对应站点；Shift+数字在新标签页打开；Ctrl+Shift+数字打开自定义快拨位。
+            站点卡片：按空格打开速览与微动作；按右方向键进入卡片操作区（标签、平替与底栏按钮都在内），左右方向键切换，Esc 返回卡片。按数字键 1 到 9 直接打开速览坞对应站点；Shift+数字在新标签页打开；Ctrl+Shift+数字打开自定义快拨位。
           </p>
         )}
 

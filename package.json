@@ -77,6 +77,8 @@
     "eval:search": "node scripts/search-eval.mts",
     "prepare": "node scripts/install-git-hooks.mjs",
     "check:tags": "node scripts/check-tag-data.mjs --strict",
+    "tags:normalize": "node scripts/normalize-tags.mjs --dry-run",
+    "tags:normalize:apply": "node scripts/normalize-tags.mjs --apply",
     "check:root-hygiene": "node scripts/check-root-hygiene.mjs --strict",
     "perf:first-screen": "node scripts/perf/first-screen.mjs",
     "verify": "node scripts/verify.mjs",

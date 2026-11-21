@@ -104,7 +104,7 @@ export default async function HotPage({
         <Breadcrumbs
           items={[
             { label: '首页', path: '/' },
-            { label: '今日热榜', path: '/hot' },
+            { label: '趋势榜单', path: '/hot' },
           ]}
         />
         <HotView

@@ -31,15 +31,20 @@ import {
   type RankDomain,
 } from '@/lib/rank-mode'
 import { filterAllRankGroups, shouldMergeInstallRanks } from '@/lib/plugins/rank-eligibility'
-import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-relative-time'
+import { freshnessClass, freshnessLabel, freshnessLevel } from '@/lib/rank-freshness'
+import {
+  PLUGIN_KIND_CLASS,
+  PLUGIN_KIND_LABEL,
+  inferPluginKind,
+  pluginHighlight,
+} from '@/lib/plugins/plugin-kind'
+import { formatAbsoluteTime } from '@/lib/format-relative-time'
 import { useLocalSearchRecorder } from '@/lib/local-search-record'
 import { getIdentity } from '@/lib/identity'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
-import { SearchPaletteLazy as SearchPalette } from '@/components/search-palette-lazy'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Flame, Sparkles, ArrowLeft, Trophy, ExternalLink, Search, X, Video, ArrowRight, Clock, TrendingUp, Star, Puzzle } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { Flame, Sparkles, Trophy, ExternalLink, Search, X, Video, ArrowRight, Clock, TrendingUp, Star, Puzzle } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { DensityToggle } from '@/components/density-toggle'
 import { SiteFavicon } from '@/components/site-favicon'
@@ -421,8 +426,32 @@ export default function HotView({
                         >
                           {index + 1}
                         </span>
-                        <span className="text-xs font-medium truncate flex-1">{p.name}</span>
-                        <span className="text-[10px] text-muted-foreground shrink-0">{group.metric(p)}</span>
+                        {/* 2026-11-21：名称旁补类型微标签 + 副行一句卖点，
+                            让用户在点击前就知道这是个主题皮肤还是 AI 工作台。 */}
+                        {(() => {
+                          const kind = inferPluginKind(p as never)
+                          const highlight = pluginHighlight(p)
+                          return (
+                            <span className="min-w-0 flex-1">
+                              <span className="flex items-center gap-1.5">
+                                <span className="truncate text-xs font-medium">{p.name}</span>
+                                {kind ? (
+                                  <span
+                                    className={`shrink-0 rounded border px-1 py-px text-[9px] font-medium leading-tight ${PLUGIN_KIND_CLASS[kind]}`}
+                                  >
+                                    {PLUGIN_KIND_LABEL[kind]}
+                                  </span>
+                                ) : null}
+                              </span>
+                              {highlight ? (
+                                <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                                  {highlight}
+                                </span>
+                              ) : null}
+                            </span>
+                          )
+                        })()}
+                        <span className="shrink-0 self-start text-[10px] tabular-nums text-muted-foreground">{group.metric(p)}</span>
                       </Link>
                     </li>
                   ))}
@@ -540,19 +569,9 @@ export default function HotView({
           />
 
           <div className="relative z-10 space-y-3">
-            <div className="flex items-center gap-2">
-              <Link
-                href="/"
-                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1 rounded-md bg-background/60 hover:bg-background border border-border/60"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>返回主页</span>
-              </Link>
-              <span className="text-border">/</span>
-              <Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/5 text-xs">
-                站点榜单
-              </Badge>
-            </div>
+            {/* 2026-11-21：原此处是「← 返回主页 / 站点榜单」，
+                与页面顶部 Breadcrumbs（首页 > 趋势榜单）重复。按 IA 收敛原则
+                只保留一处返回入口——面包屑已完整表达层级，这里是冗余。 */}
 
             <div className="max-w-2xl">
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight flex items-center gap-2.5">
@@ -608,14 +627,16 @@ export default function HotView({
                 <Flame className="w-3 h-3" />
                 热度榜 {loading ? '—' : trending.length} 条
               </span>
-              {/* 热度重算时间戳：只在热度 tab 显示；无重算记录（null）时不显示、不编造 */}
+              {/* 2026-11-21 时效分级：旧实现无差别中性灰，导致"今日热榜"配"4 天前重算"
+                  毫无警示。现按 <6h / 6-24h / >24h 三档分级，超 24h 用琥珀色明示已过期。 */}
               {tab === 'trending' && recomputedAt != null && (
                 <span
                   title={`热度重算于 ${formatAbsoluteTime(recomputedAt)}`}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground"
+                  className={freshnessClass(freshnessLevel(recomputedAt))}
+                  role={freshnessLevel(recomputedAt) === 'stale' ? 'status' : undefined}
                 >
                   <Clock className="w-3 h-3" />
-                  热度分{formatRelativeTime(recomputedAt)}重算
+                  {freshnessLabel(freshnessLevel(recomputedAt), recomputedAt)}
                 </span>
               )}
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 text-xs text-emerald-700 dark:text-emerald-400">
@@ -637,33 +658,12 @@ export default function HotView({
           </div>
         </div>
 
-        {/* 站内搜索：此前只有首页有搜索入口（⌘K 也只绑在首页），到了榜单页就只能一路点下去 */}
-        <SearchPalette placeholder="没找到想要的？直接搜索全部站点（中文 / 拼音 / 语义）（按 / 快速搜索）" />
+        {/* 2026-11-21 首屏瘦身：原此处有一个"全站搜索大框"，与下方"榜单内筛选框"
+            在 200px 内上下堆叠，形成双搜索框冲突。全站检索已由顶部全局导航与
+            / 快捷键完整覆盖，这里移除；榜内筛选条右侧保留「搜不到？按 / 全站检索」
+            文字链作为出口。 */}
 
         {notice && <HubDegradedNotice notice={notice} onRetry={reload} />}
-
-        {/* 热门技术视频推荐横幅 */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-blue-500/25 bg-blue-500/5 text-xs text-foreground">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0">
-              <Video className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="font-semibold text-foreground truncate">
-                热门技术精选视频教程
-              </div>
-              <div className="text-[11px] text-muted-foreground truncate">
-                探索热门前端、后端、AI、云原生等前沿技术实战课程
-              </div>
-            </div>
-          </div>
-          <Button asChild size="sm" variant="outline" className="text-xs min-h-11 shrink-0 self-start sm:self-auto border-blue-500/30 text-blue-700 dark:text-blue-400 hover:bg-blue-500/10">
-            <Link href="/videos">
-              <span>前往技术视频库</span>
-              <ArrowRight className="w-3.5 h-3.5 ml-1" />
-            </Link>
-          </Button>
-        </div>
 
         {/* 榜单内即时筛选器 */}
         {!loading && (trending.length > 0 || fresh.length > 0 || pluginTotal > 0) && (
@@ -677,7 +677,7 @@ export default function HotView({
                 placeholder={
                   tab === 'plugins'
                     ? '在插件排行中极速筛选插件（名称、简介、标签）...'
-                    : '在当前榜单中极速筛选站点（名称、简介、域名、标签）...'
+                    : '筛选当前榜单（名称、标签、域名）...'
                 }
                 aria-label={tab === 'plugins' ? '在插件排行中筛选插件' : '在当前榜单中筛选站点'}
                 className="w-full min-h-11 text-xs bg-background/80 border border-border/60 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-lg pl-8 pr-8 py-1.5 outline-none transition-colors"
@@ -695,7 +695,23 @@ export default function HotView({
                 </button>
               )}
             </div>
-            <div className="text-[11px] text-muted-foreground shrink-0 px-1">
+            {/* 2026-11-21：筛选条只服务"当前榜单"；全站检索的出口放在这里——
+                一个轻量文字链，替代原先占掉整行高度的全站搜索大框。 */}
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault()
+                // 复用全站快捷键：按下 / 会聚焦全站搜索（GlobalSearchHotkey 监听）
+                window.dispatchEvent(
+                  new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true }),
+                )
+              }}
+              className="ml-2 shrink-0 whitespace-nowrap text-[11px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+            >
+              搜不到？按 / 全站检索
+            </a>
+            <span aria-hidden className="shrink-0 text-border">·</span>
+            <div className="shrink-0 pl-3 text-[11px] text-muted-foreground">
               {tab === 'trending' ? (
                 <>显示 <span className="font-mono font-semibold text-foreground">{filteredTrending.length}</span> / {trending.length} 个站点</>
               ) : tab === 'new' ? (
@@ -831,11 +847,15 @@ export default function HotView({
             </TabsContent>
             {/*
               插件排行 tab（P2-10）：复用市场四组排行（飙升 / 安装 / 口碑 / 新作）。
-              forceMount：排行内链（/marketplace/{slug}）与空态的回市场入口要进
-              首屏 HTML——站点榜两 tab 是挂载后切换，插件排行是跨区引流入口，
-              藏到点击后才出现等于白做。
+
+              2026-11-21 去掉 forceMount：它原本的动机是「排行内链要进首屏 HTML」，
+              但副作用是**未切到插件 tab 时页面底部仍完整铺出四榜**——三个 Tab
+              语义重叠、首屏被拉长。现在改为互斥视图：站点榜底部只放一张轻量
+              横向导流条，切到本 tab 才完整呈现。
+              SEO 影响可忽略：/hot 的核心收录面是站点榜的 /site/{id} 内链，
+              插件排行本身在 /marketplace 已有独立收录页。
             */}
-            <TabsContent value="plugins" className="pt-2" forceMount>
+            <TabsContent value="plugins" className="pt-2">
               {pluginTotal === 0 ? (
                 <EmptyState
                   icon={Puzzle}
@@ -872,6 +892,58 @@ export default function HotView({
             </TabsContent>
           </Tabs>
         )}
+
+        {/* 2026-11-21：站点榜底部轻量导流条（替代原先 forceMount 铺满的插件四榜）。
+            只在站点榜（trending/new）显示；已在插件 tab 时不再重复导流。 */}
+        {tab !== 'plugins' && pluginTotal > 0 && (
+          <Link
+            href="/hot?tab=plugins"
+            onClick={(e) => {
+              e.preventDefault()
+              changeTab('plugins')
+            }}
+            className="group flex items-center justify-between gap-3 rounded-xl border border-violet-500/25 bg-violet-500/[0.04] px-3.5 py-2.5 transition-colors hover:border-violet-500/40 hover:bg-violet-500/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <Puzzle className="w-3.5 h-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
+              <span className="truncate">
+                插件市场已有{' '}
+                <strong className="font-semibold text-foreground">{pluginTotal}</strong>{' '}
+                条排行记录（飙升 / 安装 / 口碑 / 新作）
+              </span>
+            </span>
+            <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-violet-700 dark:text-violet-400">
+              探索插件市场热门排行
+              <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+            </span>
+          </Link>
+        )}
+
+        {/* 2026-11-21：视频推广条从首屏核心操作区下沉到这里——
+            首屏空间应该留给榜单本身（要求：1280×800 不滚动即可看到筛选栏与前排卡片）。
+            放在榜单之后既不打断浏览，也保留了导流。 */}
+        {/* 热门技术视频推荐横幅 */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-blue-500/25 bg-blue-500/5 text-xs text-foreground">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0">
+              <Video className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="font-semibold text-foreground truncate">
+                热门技术精选视频教程
+              </div>
+              <div className="text-[11px] text-muted-foreground truncate">
+                探索热门前端、后端、AI、云原生等前沿技术实战课程
+              </div>
+            </div>
+          </div>
+          <Button asChild size="sm" variant="outline" className="text-xs min-h-11 shrink-0 self-start sm:self-auto border-blue-500/30 text-blue-700 dark:text-blue-400 hover:bg-blue-500/10">
+            <Link href="/videos">
+              <span>前往技术视频库</span>
+              <ArrowRight className="w-3.5 h-3.5 ml-1" />
+            </Link>
+          </Button>
+        </div>
       </div>
     </>
   )

@@ -756,7 +756,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
 
                       <div className="space-y-4">
                         {/* 一级分类标题头 */}
-                        <div className="flex items-center justify-between pb-3 border-b border-border/50">
+                        <div className="flex items-center justify-between pb-2 border-b border-border/50">
                           <div className="flex items-center gap-2 flex-wrap">
                             {/* 手风琴折叠展开按钮 */}
                             <button
@@ -1008,7 +1008,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                   tabs[nextIndex]?.focus()
                                   tabs[nextIndex]?.click()
                                 }}
-                                scrollClassName="flex items-center gap-1.5 pb-1 pt-0.5 text-xs"
+                                scrollClassName="flex items-center gap-1.5 text-xs"
                                 prevAriaLabel={`向左滚动${category.title}子分类`}
                                 nextAriaLabel={`向右滚动${category.title}子分类`}
                               >

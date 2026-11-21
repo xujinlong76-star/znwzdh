@@ -1130,7 +1130,7 @@ export function NavigationContent({
           </div>
         )}
 
-        <div className="px-3 sm:px-6 md:px-8 pt-4 sm:pt-4 pb-8 flex-1">
+        <div className="px-3 sm:px-6 md:px-8 pt-2 sm:pt-2 pb-8 flex-1">
           {/* 移动端品牌主标题（U-263）：桌面侧边栏品牌 h1 在移动端被 hidden，
               首页主内容区又无其它 h1，致移动端无可见主标题（mobile-layout
               冒烟红）。此处补一个移动端专用的紧凑标题（短标题「山羊胡导航」），

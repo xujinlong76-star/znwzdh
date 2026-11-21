@@ -10,32 +10,50 @@
  *
  * 本地读写的损坏纪律与追剧清单完全一致：读不出来（JSON 损坏、存储被禁）
  * 时拒绝覆盖并把原因交回界面（storageBlocked），绝不把坏数据伪装成空
- * 清单后照写；重置前先备份原值。只保存在本机，不上传、不跨设备同步。
+ * 清单后照写；重置前先备份原值。
+ *
+ * 云端同步（U-379）：登录后关注与勾选走 POST /api/me/exams/sync（与追剧
+ * 同一套批量 ops + 版本游标 + 墓碑协议）。未登录不调同步、不逼登录；
+ * 挂载后拉一次云端（同一身份同一会话只拉一次）、关注/勾选后延迟推一次、
+ * 登录与合并事件触发再拉一次。同步失败保留脏标记、下次重试，本机仍可用。
  *
  * 脏标记（navhub.my-exams.dirty.v1）：每次本地写操作把 examId 标脏，
- * 为后续多设备同步预留——同步波次落地时按「只推脏考试 + since 增量 +
- * 墓碑」消费它；首次同步须先把全部已关注 examId 标脏全量推一次，否则
- * 全量合并会把本地关注删光（追剧清单同款一次性迁移陷阱）。
+ * 同步时按「只推脏考试 + since 增量 + 墓碑」消费它；首次同步须先把全部
+ * 已关注 examId 标脏全量推一次，否则全量合并会把本地关注删光（追剧清单
+ * 同款一次性迁移陷阱）。每场考试的最后改动时间另记在
+ * navhub.my-exams.updated.v1（LWW 的 at 来源；老用户首次同步时缺失，
+ * 以同步时刻为准）。
  */
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { type ExamInfo, type ExamNode } from '@/lib/exam-calendar'
+import { describeDegrade } from '@/lib/degrade'
 import { corruptKeyFor } from '@/lib/favorites-storage'
+import { getIdentity } from '@/lib/identity'
+import {
+  syncMyExamsBatch,
+  type HubMyExamsSyncPayload,
+  type MyExamSyncOp,
+} from '@/lib/navhub-api'
 import {
   EMPTY_MY_EXAMS,
   MY_EXAMS_STORAGE_KEY,
+  applyMyExamsDelta,
   checkedCount as checkedCountPure,
   isFollowed as isFollowedPure,
+  mergeCloudMyExams,
   nearestFollowedExam,
   nextTodoNode,
   parseMyExams,
   toggleFollow as toggleFollowPure,
   toggleNodeCheck as toggleNodeCheckPure,
+  type HubExamFollow,
   type MyExamsState,
 } from '@/lib/my-exams'
 
 const KEY = MY_EXAMS_STORAGE_KEY
 const DIRTY_KEY = 'navhub.my-exams.dirty.v1'
+const UPDATED_KEY = 'navhub.my-exams.updated.v1'
 
 export interface MyExamsApi {
   /** null = 还没读过本机存储（挂载前哨兵，与服务端渲染一致的未关注视图） */
@@ -175,6 +193,65 @@ export function readMyExamsDirtyKeys(): string[] {
   return [...readDirty()]
 }
 
+/** 只清已确认推上云端的脏 examId（同步中途又被改过的保留，等下次重推） */
+function removeDirty(examIds: string[]): void {
+  if (examIds.length === 0) return
+  const next = readDirty()
+  let changed = false
+  for (const examId of examIds) {
+    if (next.delete(examId)) changed = true
+  }
+  if (changed) writeDirty(next)
+}
+
+/* ------------------------- 每场最后改动时间 ------------------------- */
+
+/** 每场考试最后改动时间（LWW 的 at 来源；与脏标记同一条纪律） */
+let memoryUpdated: Record<string, number> | null = null
+
+function readUpdated(): Record<string, number> {
+  if (memoryUpdated) return memoryUpdated
+  const map: Record<string, number> = {}
+  try {
+    const raw = window.localStorage.getItem(UPDATED_KEY)
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') {
+        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+          if (typeof v === 'number' && Number.isFinite(v) && v > 0) map[k] = Math.trunc(v)
+        }
+      }
+    }
+  } catch {
+    // 读不到就按无记录处理：同步时以同步时刻为准，不阻塞关注本身
+  }
+  memoryUpdated = map
+  return memoryUpdated
+}
+
+function writeUpdated(map: Record<string, number>): void {
+  memoryUpdated = { ...map }
+  try {
+    window.localStorage.setItem(UPDATED_KEY, JSON.stringify(memoryUpdated))
+  } catch {
+    // 配额满 / 隐私模式：内存态仍然生效，刷新后时间戳丢失——代价是下次
+    // 同步用同步时刻当 at，LWW 仍以服务端 updated_at 为准，不会推错
+  }
+}
+
+/** 记一笔改动时间并返回它（调用方把它当本次同步 op 的 at） */
+function touchUpdated(examId: string, at: number = Date.now()): number {
+  const next = readUpdated()
+  next[examId] = at
+  writeUpdated(next)
+  return at
+}
+
+/** 供测试读取：当前每场最后改动时间（返回副本） */
+export function readMyExamsUpdatedAt(): Record<string, number> {
+  return { ...readUpdated() }
+}
+
 /* ---------------------------- 共享写操作 ---------------------------- */
 
 function persist(next: MyExamsState): boolean {
@@ -194,7 +271,9 @@ export function toggleMyExamsFollow(examId: string): boolean {
   const next = toggleFollowPure(current, examId)
   if (next === current) return false
   if (!persist(next)) return false
+  touchUpdated(examId)
   markDirty([examId])
+  scheduleMyExamsCloudSync()
   return true
 }
 
@@ -205,7 +284,9 @@ export function toggleMyExamsNodeCheck(examId: string, nodeLabel: string): boole
   const next = toggleNodeCheckPure(current, examId, nodeLabel)
   if (next === current) return false
   if (!persist(next)) return false
+  touchUpdated(examId)
   markDirty([examId])
+  scheduleMyExamsCloudSync()
   return true
 }
 
@@ -237,6 +318,13 @@ export function resetMyExamsLocal(): { backedUp: boolean } {
   return { backedUp }
 }
 
+/* --------------------------- 自动同步触发（状态） --------------------------- */
+
+let myExamsSyncInFlight: Promise<MyExamsCloudSyncResult | null> | null = null
+let myExamsSyncQueued = false
+let myExamsCloudSyncedIdentity: string | null = null
+let myExamsSyncTimer: ReturnType<typeof setTimeout> | null = null
+
 export function useMyExams(): MyExamsApi {
   const snap = useSyncExternalStore(subscribeMyExams, getMyExamsSnapshot, getMyExamsSnapshot)
   const { state, blocked: storageBlocked } = snap
@@ -248,12 +336,32 @@ export function useMyExams(): MyExamsApi {
       applyMyExams(loadMyExamsLocal())
     }
     setReady(true)
+    // 登录后拉一次云端：同一身份同一会话只拉一次（十一张卡片各挂一个 hook
+    // 实例，不加守卫会连发十一次）；登录/合并事件会重置守卫再拉一次。
+    // 拉取失败不锁守卫（trigger 内失败即清守卫），下次挂载再试。
+    const maybeSyncOnMount = () => {
+      const identity = getIdentity()
+      if (!identity || identity.startsWith('anon-')) return
+      if (myExamsCloudSyncedIdentity === identity) return
+      void triggerMyExamsCloudSync().then((result) => {
+        if (result?.ok) myExamsCloudSyncedIdentity = identity
+      })
+    }
+    maybeSyncOnMount()
+    const onIdentity = () => {
+      myExamsCloudSyncedIdentity = null
+      maybeSyncOnMount()
+    }
     const refresh = () => refreshMyExamsFromStorage()
     window.addEventListener('navhub_workbench_updated', refresh)
     window.addEventListener('storage', refresh)
+    window.addEventListener('navhub_identity_changed', onIdentity)
+    window.addEventListener('navhub_identity_merged', onIdentity)
     return () => {
       window.removeEventListener('navhub_workbench_updated', refresh)
       window.removeEventListener('storage', refresh)
+      window.removeEventListener('navhub_identity_changed', onIdentity)
+      window.removeEventListener('navhub_identity_merged', onIdentity)
     }
   }, [])
 
@@ -301,4 +409,273 @@ export function useMyExams(): MyExamsApi {
     replaceAll,
     resetLocal,
   }
+}
+
+/* ------------------------------ 云端同步 ------------------------------ */
+
+const SYNC_CURSOR_PREFIX = 'navhub.my-exams.sync.v1.'
+const SYNC_STATUS_KEY = 'navhub.my-exams.sync.last'
+
+export interface MyExamsSyncStatus {
+  at: number
+  ok: boolean
+  pushed: number
+  remoteRemoved: number
+  error?: string
+}
+
+function writeSyncStatus(status: MyExamsSyncStatus): void {
+  try {
+    window.localStorage.setItem(SYNC_STATUS_KEY, JSON.stringify(status))
+  } catch {
+    // 写不进状态只是少一行提示，不影响同步本身
+  }
+}
+
+export function readMyExamsSyncStatus(): MyExamsSyncStatus | null {
+  try {
+    const raw = window.localStorage.getItem(SYNC_STATUS_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<MyExamsSyncStatus>
+    return {
+      at: Number(parsed.at) || 0,
+      ok: Boolean(parsed.ok),
+      pushed: Number(parsed.pushed) || 0,
+      remoteRemoved: Number(parsed.remoteRemoved) || 0,
+      error: typeof parsed.error === 'string' ? parsed.error : undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
+function dirtyKeyEverWritten(): boolean {
+  try {
+    return window.localStorage.getItem(DIRTY_KEY) !== null
+  } catch {
+    return true
+  }
+}
+
+function readSyncCursor(identity: string): number {
+  try {
+    const n = Number(window.localStorage.getItem(SYNC_CURSOR_PREFIX + identity))
+    return Number.isFinite(n) && n > 0 ? n : 0
+  } catch {
+    return 0
+  }
+}
+
+function writeSyncCursor(identity: string, version: number): void {
+  if (!(version > 0)) return
+  try {
+    window.localStorage.setItem(SYNC_CURSOR_PREFIX + identity, String(version))
+  } catch {
+    // 写不进游标不影响本次结果，只是下次仍走全量（全量是幂等的）
+  }
+}
+
+async function syncBatchWithRetry(
+  ops: MyExamSyncOp[],
+  since: number,
+  onFail: (error: unknown) => void,
+): Promise<HubMyExamsSyncPayload | null> {
+  let retryable = false
+  const mark = (error: unknown) => {
+    onFail(error)
+    retryable = describeDegrade(error, '云端考试关注').retryable
+  }
+  const first = await syncMyExamsBatch(ops, since, mark)
+  if (first) return first
+  for (const delay of [300, 900]) {
+    if (!retryable) return null
+    await new Promise((resolve) => setTimeout(resolve, delay))
+    const retried = await syncMyExamsBatch(ops, since, mark)
+    if (retried) return retried
+  }
+  return null
+}
+
+export interface MyExamsCloudSyncResult {
+  ok: boolean
+  localCount: number
+  pushed: number
+  /** 已算好的「本地应变成什么」，同步成功时已落盘并翻进共享快照；失败时为 null */
+  nextState: MyExamsState | null
+  remoteRemoved: number
+  error?: string
+  retryable: boolean
+}
+
+/**
+ * 登录后调用一次：只推脏考试，再拉回云端增量/全集，成员集合最终以云端为准
+ * （与 syncWatchlistToCloud 同构）。匿名身份直接返回未登录结果——本机就是事实源。
+ *
+ * 与追剧不同的一点：本函数成功时直接把合并结果落盘并翻进共享快照（调用方
+ * 不要再调 replaceAll——它会清掉全部脏标记，含同步中途刚标脏的改动）。
+ * 同步中途本地又改了：那几场以当前本机为准叠加上去、不被本次同步的旧快照
+ * 覆盖；脏标记只清「已推且中途没再改过」的场，其余留待下次重推。
+ */
+export async function syncMyExamsToCloud(): Promise<MyExamsCloudSyncResult> {
+  const { state: local, blocked } = loadMyExamsLocal()
+  const identity = getIdentity()
+  if (blocked) {
+    return { ok: false, localCount: 0, pushed: 0, nextState: null, remoteRemoved: 0, error: blocked, retryable: false }
+  }
+  if (!identity || identity.startsWith('anon-')) {
+    return {
+      ok: false,
+      localCount: local.followed.length,
+      pushed: 0,
+      nextState: null,
+      remoteRemoved: 0,
+      error: '未登录：考试关注只保存在本机浏览器',
+      retryable: false,
+    }
+  }
+
+  const failure: { message?: string; retryable: boolean } = { retryable: true }
+  const onFail = (error: unknown) => {
+    const notice = describeDegrade(error, '云端考试关注')
+    failure.message = notice.message
+    failure.retryable = notice.retryable
+    if ((error as { status?: number } | null)?.status === 401) {
+      failure.message = '登录已过期，请重新登录后同步考试关注'
+      failure.retryable = true
+    }
+  }
+
+  const since = readSyncCursor(identity)
+  // 一次性迁移（与追剧同理）：脏键从未写过且本地非空 → 本次按全量推一次，
+  // 否则 since=0 的云端覆盖会把「云端没有的本地关注」从本地删掉且永远推不上去
+  if (local.followed.length > 0 && !dirtyKeyEverWritten()) {
+    markDirty(local.followed)
+  }
+  const dirty = readDirty()
+  const updated = readUpdated()
+  const ops: MyExamSyncOp[] = []
+  const pushedAt = new Map<string, number>()
+  for (const examId of local.followed) {
+    if (!dirty.has(examId)) continue
+    const at = updated[examId] ?? Date.now()
+    ops.push({
+      op: 'follow',
+      examId,
+      checked: local.checked[examId] ?? [],
+      createdAt: at,
+      at,
+    })
+    pushedAt.set(examId, at)
+  }
+  for (const examId of dirty) {
+    if (local.followed.includes(examId)) continue
+    const at = updated[examId] ?? Date.now()
+    ops.push({ op: 'unfollow', examId, at })
+    pushedAt.set(examId, at)
+  }
+
+  const OP_BATCH = 500
+  const chunks: MyExamSyncOp[][] = []
+  for (let i = 0; i < ops.length; i += OP_BATCH) chunks.push(ops.slice(i, i + OP_BATCH))
+
+  let version = since
+  let aggregated: HubExamFollow[] = []
+  for (const chunk of chunks) {
+    const result = await syncBatchWithRetry(chunk, since, onFail)
+    if (!result) {
+      writeSyncStatus({ at: Date.now(), ok: false, pushed: 0, remoteRemoved: 0, error: failure.message })
+      return { ok: false, localCount: local.followed.length, pushed: 0, nextState: null, remoteRemoved: 0, error: failure.message, retryable: failure.retryable }
+    }
+    version = Math.max(version, result.version)
+    aggregated.push(...result.items)
+  }
+  if (chunks.length === 0) {
+    const pulled = await syncBatchWithRetry([], since, onFail)
+    if (!pulled) {
+      writeSyncStatus({ at: Date.now(), ok: false, pushed: 0, remoteRemoved: 0, error: failure.message })
+      return { ok: false, localCount: local.followed.length, pushed: 0, nextState: null, remoteRemoved: 0, error: failure.message, retryable: failure.retryable }
+    }
+    aggregated = pulled.items
+    version = pulled.version
+  }
+
+  const alive = aggregated.filter((item) => item.deletedAt == null)
+  const remoteRemoved = aggregated.length - alive.length
+  let nextState = since === 0 ? mergeCloudMyExams(local, alive) : applyMyExamsDelta(local, aggregated)
+  // 同步中途本地又改了：本次没推过、或推完又改过的脏考试，以当前本机为准叠加，
+  // 不许被本次同步的旧快照覆盖（否则交错点的一次勾选会在本地凭空消失）
+  const currentLocal = loadMyExamsLocal().state
+  const currentDirty = readDirty()
+  const currentUpdated = readUpdated()
+  const overlayIds = [...currentDirty].filter(
+    (examId) => !pushedAt.has(examId) || (currentUpdated[examId] ?? 0) > (pushedAt.get(examId) ?? 0),
+  )
+  if (overlayIds.length > 0) {
+    const followed = [...nextState.followed]
+    const checked: Record<string, string[]> = { ...nextState.checked }
+    for (const examId of overlayIds) {
+      if (currentLocal.followed.includes(examId)) {
+        if (!followed.includes(examId)) followed.push(examId)
+        if ((currentLocal.checked[examId] ?? []).length > 0) checked[examId] = [...currentLocal.checked[examId]!]
+        else delete checked[examId]
+      } else {
+        const idx = followed.indexOf(examId)
+        if (idx >= 0) followed.splice(idx, 1)
+        delete checked[examId]
+      }
+    }
+    nextState = parseMyExams({ followed, checked })
+  }
+  if (!persist(nextState)) {
+    writeSyncStatus({ at: Date.now(), ok: false, pushed: 0, remoteRemoved: 0, error: '本地存储不可用，同步结果未落盘' })
+    return { ok: false, localCount: local.followed.length, pushed: 0, nextState: null, remoteRemoved: 0, error: '本地存储不可用，同步结果未落盘', retryable: false }
+  }
+  writeSyncCursor(identity, version)
+  // 只清「已推且中途没再改过」的脏标记：中途改过的场仍脏，下次重推
+  removeDirty(
+    [...pushedAt.entries()]
+      .filter(([examId, at]) => (currentUpdated[examId] ?? 0) <= at)
+      .map(([examId]) => examId),
+  )
+  writeSyncStatus({ at: Date.now(), ok: true, pushed: ops.length, remoteRemoved })
+  return { ok: true, localCount: local.followed.length, pushed: ops.length, nextState, remoteRemoved, retryable: false }
+}
+
+/* --------------------------- 自动同步触发 --------------------------- */
+
+/**
+ * 立即同步一次（挂载与登录/合并事件用）：在途时只排队一次，结束后重跑，
+ * 不让两次同步互相覆盖。失败返回 null，不抛——同步失败不许阻断页面。
+ */
+export async function triggerMyExamsCloudSync(): Promise<MyExamsCloudSyncResult | null> {
+  if (myExamsSyncInFlight) {
+    myExamsSyncQueued = true
+    return myExamsSyncInFlight
+  }
+  const run = (async (): Promise<MyExamsCloudSyncResult | null> => {
+    try {
+      return await syncMyExamsToCloud()
+    } catch {
+      return null
+    } finally {
+      myExamsSyncInFlight = null
+      if (myExamsSyncQueued) {
+        myExamsSyncQueued = false
+        void triggerMyExamsCloudSync()
+      }
+    }
+  })()
+  myExamsSyncInFlight = run
+  return run
+}
+
+/** 关注/勾选后延迟推云端：连续点按合并成一次同步；挂载与登录走立即触发。 */
+export function scheduleMyExamsCloudSync(): void {
+  if (myExamsSyncTimer) clearTimeout(myExamsSyncTimer)
+  myExamsSyncTimer = setTimeout(() => {
+    myExamsSyncTimer = null
+    void triggerMyExamsCloudSync()
+  }, 800)
+  // 测试/后台进程不被这支延迟定时器拖住：Node 下 detach，浏览器下是 no-op
+  ;(myExamsSyncTimer as unknown as { unref?: () => void }).unref?.()
 }

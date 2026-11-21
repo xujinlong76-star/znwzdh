@@ -4,6 +4,7 @@ import {
   pinyinTraits,
   type Category,
   type Collection,
+  type ExamFollowRecord,
   type Site,
   type SiteRelation,
   type SiteRelationType,
@@ -257,6 +258,43 @@ export function parseWatchCadence(raw: unknown): WatchCadence {
 /** 节奏落库前的归一（写入侧，与 parseWatchCadence 同口径，非法形状收敛成 unknown） */
 export function serializeWatchCadence(cadence: unknown): string {
   return JSON.stringify(parseWatchCadence(cadence));
+}
+
+/** checked_json 落库前的归一：只留字符串 label，去重保序，上限由调用方 zod 把关 */
+export function serializeExamChecked(checked: unknown): string {
+  if (!Array.isArray(checked)) return "[]";
+  const kept: string[] = [];
+  for (const label of checked) {
+    if (typeof label === "string" && label && !kept.includes(label)) kept.push(label);
+  }
+  return JSON.stringify(kept);
+}
+
+/** checked_json 读库后的归一：坏 JSON / 非数组一律收敛成 []，不抛、不拖垮整行 */
+export function parseExamChecked(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.filter((l): l is string => typeof l === "string" && l.length > 0);
+  }
+  if (typeof raw !== "string") return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((l): l is string => typeof l === "string" && l.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+export function rowToExamFollow(row: Record<string, any>): ExamFollowRecord {
+  return {
+    id: String(row.id),
+    userId: String(row.user_id),
+    examId: String(row.exam_id),
+    checked: parseExamChecked(row.checked_json),
+    createdAt: Number(row.created_at ?? 0),
+    updatedAt: Number(row.updated_at ?? 0),
+    deletedAt: row.deleted_at == null ? null : Number(row.deleted_at),
+  };
 }
 
 export function rowToWatchEntry(row: Record<string, any>): WatchEntryRecord {

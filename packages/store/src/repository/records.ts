@@ -186,7 +186,20 @@ export type WatchCadence =
   | { kind: "finished" }
   | { kind: "unknown" };
 
-/** 追剧清单条目（在追的剧 = 用户自记的剧名 + 所在平台站快照 + 进度） */
+/** 考试关注（U-379）：一场考试一行，勾选节点以 JSON 数组存在 checked_json 里 */
+export interface ExamFollowRecord {
+  id: string;
+  userId: string;
+  /** 考试 id（事实源 exam-calendar.ts 的 EXAMS 子集；服务端只校验形状，不硬编码名单） */
+  examId: string;
+  /** 已勾选的节点 label（只记已关注考试的；行级 LWW 覆盖整组勾选） */
+  checked: string[];
+  createdAt: number;
+  updatedAt: number;
+  /** 软删墓碑时间戳；非空即「已取消关注」。增量同步靠它把取消关注传播给客户端。 */
+  deletedAt?: number | null;
+}
+
 export interface WatchEntryRecord {
   id: string;
   userId: string;

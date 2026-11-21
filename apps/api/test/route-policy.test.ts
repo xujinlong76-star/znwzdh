@@ -167,6 +167,10 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   // 追剧清单同步：写的是调用者自己的数据，处理器有 identityTrusted 签名校验
   // 与 userDomainWriteAllowed 域闸（favorites 档令牌不可写，走 write 域），与收藏同步同级。
   "POST /api/me/watchlist/sync",
+  // 考试关注同步（U-379）：与追剧清单同步同口径的用户域写面——只写调用者
+  // 自己的关注与勾选，处理器有 identityTrusted 签名校验与同一域闸；
+  // 公开级只表示「登录前可见入口」，真正的闸在处理器，匿名请求 401。
+  "POST /api/me/exams/sync",
   // 用户自定义站点：同为用户域写面（处理器内签名身份 + 同一域闸），公开级
   // 只表示「登录前可见入口」，真正的闸在处理器，匿名请求 401。
   "DELETE /api/me/custom-sites/:id",

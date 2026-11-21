@@ -256,6 +256,8 @@ export interface UserDataDeletionCounts {
   favorites: number;
   favoriteFolders: number;
   watchEntries: number;
+  /** 考试关注行数（U-379） */
+  examFollows: number;
   searchHistory: number;
   events: number;
   profile: number;
@@ -302,6 +304,7 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
       favorites: await count("SELECT COUNT(*) AS c FROM favorites WHERE user_id = ?", [identity]),
       favoriteFolders: await count("SELECT COUNT(*) AS c FROM favorite_folders WHERE user_id = ?", [identity]),
       watchEntries: await count("SELECT COUNT(*) AS c FROM watch_entries WHERE user_id = ?", [identity]),
+      examFollows: await count("SELECT COUNT(*) AS c FROM exam_follows WHERE user_id = ?", [identity]),
       searchHistory: await count("SELECT COUNT(*) AS c FROM search_history WHERE user_id = ?", [identity]),
       events: await count("SELECT COUNT(*) AS c FROM events WHERE identity = ?", [identity]),
       profile: await count("SELECT COUNT(*) AS c FROM user_profiles WHERE user_id = ?", [identity]),

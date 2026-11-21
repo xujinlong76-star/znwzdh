@@ -151,6 +151,7 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "POST", path: "/api/me/custom-sites/reorder", scope: "public" },
   { method: "POST", path: "/api/me/diagnostics", scope: "public" },
   { method: "GET", path: "/api/me/drama-check-states", scope: "public" },
+  { method: "POST", path: "/api/me/exams/sync", scope: "public" },
   { method: "GET", path: "/api/me/export", scope: "public" },
   { method: "GET", path: "/api/me/export/bookmarks.html", scope: "public" },
   { method: "POST", path: "/api/me/favorites/sync", scope: "public" },

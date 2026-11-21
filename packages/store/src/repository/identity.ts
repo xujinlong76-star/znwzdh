@@ -22,6 +22,8 @@ function escapeLikePrefix(value: string): string {
 export interface IdentityMergeStats {
   favoritesMoved: number;
   favoritesSkipped: number;
+  /** 考试关注搬迁行数（U-379）：源身份的活关注行并入目标身份的行数 */
+  examFollowsMoved: number;
   foldersMoved: number;
   searchesMoved: number;
   eventsMoved: number;
@@ -79,6 +81,7 @@ function parseStats(raw: unknown): IdentityMergeStats | null {
     return {
       favoritesMoved: Number(parsed.favoritesMoved ?? 0),
       favoritesSkipped: Number(parsed.favoritesSkipped ?? 0),
+      examFollowsMoved: Number(parsed.examFollowsMoved ?? 0),
       foldersMoved: Number(parsed.foldersMoved ?? 0),
       searchesMoved: Number(parsed.searchesMoved ?? 0),
       eventsMoved: Number(parsed.eventsMoved ?? 0),
@@ -129,6 +132,7 @@ export async function mergeIdentity(
     const stats: IdentityMergeStats = {
       favoritesMoved: 0,
       favoritesSkipped: 0,
+      examFollowsMoved: 0,
       foldersMoved: 0,
       searchesMoved: 0,
       eventsMoved: 0,
@@ -164,6 +168,53 @@ export async function mergeIdentity(
       else stats.favoritesSkipped++;
     }
     await repo.run("DELETE FROM favorites WHERE user_id = ?", [source]);
+
+    // 1.5) 考试关注（U-379）：按 (user_id, exam_id) 去重；目标已有则以 updated_at
+    //      决胜负（源行更新则覆盖目标行，否则丢弃源行），墓碑不搬迁（与收藏同口径：
+    //      搬过去会被当成一条新增的活关注，等于把用户取消的关注复活）。
+    //      源行最后统一删除，不留孤儿行（插件市场 B 批同构问题在考试域的解法）。
+    const examRows = await repo.raw(
+      "SELECT * FROM exam_follows WHERE user_id = ? AND deleted_at IS NULL",
+      [source],
+    );
+    for (const row of examRows) {
+      const targetRow = (
+        await repo.raw(
+          "SELECT updated_at FROM exam_follows WHERE user_id = ? AND exam_id = ? LIMIT 1",
+          [target, String(row.exam_id)],
+        )
+      )[0];
+      if (!targetRow) {
+        const inserted = await repo.runCount(
+          `INSERT INTO exam_follows (id, user_id, exam_id, checked_json, created_at, updated_at, deleted_at)
+           VALUES (?,?,?,?,?,?,NULL)
+           ON CONFLICT (user_id, exam_id) DO NOTHING`,
+          [
+            randomUUID(),
+            target,
+            String(row.exam_id),
+            String(row.checked_json ?? "[]"),
+            Number(row.created_at ?? Date.now()),
+            Number(row.updated_at ?? row.created_at ?? Date.now()),
+          ],
+        );
+        if (inserted > 0) stats.examFollowsMoved++;
+      } else if (Number(row.updated_at ?? 0) > Number(targetRow.updated_at ?? 0)) {
+        await repo.run(
+          "UPDATE exam_follows SET checked_json = ?, created_at = ?, updated_at = ?, deleted_at = NULL WHERE user_id = ? AND exam_id = ?",
+          [
+            String(row.checked_json ?? "[]"),
+            Number(row.created_at ?? Date.now()),
+            Number(row.updated_at ?? Date.now()),
+            target,
+            String(row.exam_id),
+          ],
+        );
+        stats.examFollowsMoved++;
+      }
+      // 目标行更新时：源行丢弃，不计数（目标的关注本来就在，不算「搬过来」）
+    }
+    await repo.run("DELETE FROM exam_follows WHERE user_id = ?", [source]);
 
     // 2) 文件夹：id 全局唯一，直接改归属；收藏里的 folder_id 引用仍然有效
     stats.foldersMoved = await repo.runCount(

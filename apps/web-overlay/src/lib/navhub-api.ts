@@ -1125,6 +1125,63 @@ export async function syncWatchlistBatch(
   )
 }
 
+/* ------------------------------ 考试关注同步 ------------------------------ */
+
+export interface MyExamSyncOp {
+  op: 'follow' | 'check' | 'unfollow'
+  examId: string
+  /** follow/check 时的全量勾选组（调用方发本地整组，不发增量差分） */
+  checked?: string[]
+  createdAt?: number
+  /** 客户端发生时间；省略则由服务端取当前时间（LWW 依据） */
+  at?: number
+}
+
+export interface HubExamFollowItem {
+  examId: string
+  checked: string[]
+  createdAt: number
+  updatedAt: number
+  deletedAt?: number | null
+}
+
+export interface HubMyExamsSyncPayload {
+  ok: boolean
+  applied: number
+  version: number
+  items: HubExamFollowItem[]
+}
+
+/**
+ * 考试关注批量同步（U-379）：与追剧清单同步同一套协议（ops + since 增量 + 墓碑），
+ * 走 BFF `/api/me/exams/sync`（会话派生身份）——匿名身份不适用，
+ * 未登录时关注只存本机（见 useMyExams 的 syncMyExamsToCloud）。
+ */
+export async function syncMyExamsBatch(
+  ops: MyExamSyncOp[],
+  since: number,
+  onDegraded?: DegradedHandler,
+): Promise<HubMyExamsSyncPayload | null> {
+  return degrade<HubMyExamsSyncPayload | null>(
+    null,
+    async () => {
+      const res = await fetch('/api/me/exams/sync', {
+        method: 'POST',
+        signal: readSignal(undefined),
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ops, since }),
+      })
+      if (!res.ok) {
+        const detail = await hubServerMessage(res)
+        throw hubError(res.status, detail.message, detail.payload)
+      }
+      const text = await res.text()
+      return (text ? JSON.parse(text) : {}) as HubMyExamsSyncPayload
+    },
+    onDegraded,
+  )
+}
+
 export async function addFavorite(identity: string, siteId: string, onDegraded?: DegradedHandler): Promise<boolean> {
   return degrade(
     false,

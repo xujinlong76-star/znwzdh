@@ -23,7 +23,7 @@ function overlaySource(rel: string): string {
 describe('Quicklinks 接线：三处缺一不可', () => {
   it('search-palette：回车时 quicklink 检查排在 parseOmniCommand 之前', () => {
     const src = overlaySource('src/components/search-palette.tsx')
-    const quicklinkAt = src.indexOf('if (quicklinkMatch) {')
+    const quicklinkAt = src.indexOf("if (quicklinkMatch.kind === 'hit') {")
     const omniAt = src.indexOf('const omni = parseOmniCommand(query)', quicklinkAt)
     expect(quicklinkAt).toBeGreaterThan(-1)
     expect(omniAt).toBeGreaterThan(quicklinkAt)
@@ -34,7 +34,7 @@ describe('Quicklinks 接线：三处缺一不可', () => {
 
   it('search-palette：命令命中时同一 siteId 不进收藏分组（去重）', () => {
     const src = overlaySource('src/components/search-palette.tsx')
-    expect(src).toContain('...(quicklinkMatch ? [quicklinkMatch.entry.siteId] : [])')
+    expect(src).toContain("...(quicklinkMatch.kind === 'hit' ? [quicklinkMatch.entry.siteId] : [])")
   })
 
   it('search-palette 空面板：quicklink 收藏行尾有前缀 chip + 直达 hint', () => {
@@ -45,7 +45,7 @@ describe('Quicklinks 接线：三处缺一不可', () => {
 
   it('spotlight-modal：quicklink 行占导航位 0，站点/视频/插件整体后移', () => {
     const src = overlaySource('src/components/search/spotlight-modal.tsx')
-    expect(src).toContain('const quicklinkOffset = quicklinkActive && quicklinkMatch?.url ? 1 : 0')
+    expect(src).toContain("const quicklinkOffset = quicklinkActive && quicklinkMatch.kind === 'hit' && quicklinkMatch.url ? 1 : 0")
     // 2026-11-20 搜索修复：导航计数口径改为展示列表 displayHits（重排后，
     // 失效站点已剔除、弱语义填充不再占位）；quicklink 仍占导航位 0，其余整体后移
     expect(src).toContain('return quicklinkOffset + displayHits.length + videoHits.length')
@@ -64,12 +64,12 @@ describe('Quicklinks 接线：三处缺一不可', () => {
 
   it('search-bar B1：前缀命中但代入失败时不回落到合并引擎，回车 toast、不走正常搜索', () => {
     const src = overlaySource('src/components/search-bar.tsx')
-    // displayShortcut 只在 quicklinkMatch 为 null 时才回落到 matchedShortcut：
-    // '!gh' + 501 字符时 quicklinkMatch 非空、url 为 null → displayShortcut 为 null，
+    // displayShortcut 只在 quicklinkMatch 的 kind 不是 hit 时才回落到 matchedShortcut：
+    // '!gh' + 501 字符时 kind 为 hit、url 为 null → displayShortcut 为 null，
     // matchSearchShortcut 对同一模板的无上限代入再也够不着回车 / 横幅。
-    expect(src).toContain('quicklinkMatch != null\n      ? quicklinkBanner')
+    expect(src).toContain("quicklinkMatch.kind === 'hit'\n      ? quicklinkBanner")
     expect(src).not.toContain('quicklinkBanner ??')
-    expect(src).toContain('const quicklinkBlocked = quicklinkMatch != null && quicklinkMatch.url == null')
+    expect(src).toContain("const quicklinkBlocked = quicklinkMatch.kind === 'hit' && quicklinkMatch.url == null")
     // 拦截态：回车先判 quicklinkBlocked，toast 后 return，且排在 displayShortcut 分支之前
     //（裸 `gh` + 501 字符时 displayShortcut 本就是 null，没有这一支回车会静默落回正常搜索）
     const blockedAt = src.indexOf("if (e.key === 'Enter' && quicklinkBlocked)")

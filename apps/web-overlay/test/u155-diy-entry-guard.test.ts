@@ -4,9 +4,13 @@
  * 锁三件事（源码级守卫，风格照抄 touch-target-baseline.test.ts）：
  *   1. 外观按钮是图标 + 可见文字标签「DIY 排版」，全宽度可见——桌面与
  *      390px 首屏都能认出 DIY 入口；<390px 手机不再零入口；
- *   2. 360px 不溢出：小组件盒按钮 <390px 收进探索菜单，行内只剩 7 个
- *      44px 按钮，7×44px + 6×2px 间隙 = 320px ≤ 360−24px 可用宽；
- *      390px 时 8×44px + 7×2px = 366px 恰好占满 390−24px；
+ *   2. 360px 不溢出：小组件盒按钮 <390px 收进探索菜单，多选按钮
+ *      <640px 收进探索菜单（C-W7-5，2026-11-21），行内只剩 6 个
+ *      44px 按钮，6×44px + 5×6px 间隙 = 294px ≤ 360−24px 可用宽；
+ *      390px 时 7×44px + 6×6px = 344px ≤ 390−24px；
+ *      （旧账「7×44 + 6×2 = 320」「8×44 + 7×2 = 366 恰好占满」与代码不符：
+ *      右组 gap-1.5 = 6px，不是 2px；修正前 360px 行实为 344px 超 8px、
+ *      390px 行实为 394px 超 28px。）
  *   3. 点击路径不动：按钮仍调 onOpenAppearanceGuide（外观向导小窗，
  *      默认 appearance 页签，底部「开启 DIY」进编排态）。
  *
@@ -78,10 +82,11 @@ describe("U-155：外观按钮是图标 + 可见文字「DIY 排版」", () => {
   });
 });
 
-describe("U-155：360px 宽度账（小组件盒 <390px 收进菜单）", () => {
-  it("360px 行内 7 个 44px 按钮：7×44 + 6×2 间隙 = 320 ≤ 336 可用宽", () => {
+describe("U-155：360px 宽度账（小组件盒 <390px 收进菜单；C-W7-5：多选 <640px 收进菜单）", () => {
+  it("360px 行内 6 个 44px 按钮：6×44 + 5×6 间隙 = 294 ≤ 336 可用宽", () => {
     const src = overlayFile("src/components/navigation-toolbar.tsx");
-    // 7 个常驻按钮都在：今日、探索矩阵、多选、字号、主题、菜单 + 外观/DIY
+    // 7 个按钮源码仍在（今日、探索矩阵、多选、字号、主题、菜单 + 外观/DIY），
+    // 但多选按钮 <640px 已隐藏，360px 行内可见只剩 6 个
     for (const marker of [
       'aria-label="打开今日中心小窗"',
       'aria-label="探索矩阵与导航工具箱"',
@@ -93,18 +98,22 @@ describe("U-155：360px 宽度账（小组件盒 <390px 收进菜单）", () => 
     ]) {
       expect(src, `360px 行内应有 ${marker}`).toContain(marker);
     }
+    // C-W7-5：多选按钮 <640px 隐藏（hidden sm:inline-flex），入口在探索菜单内
+    const multi = buttonBlock(src, "多选模式");
+    expect(multi, "多选按钮 <640px 应隐藏").toContain("hidden");
+    expect(multi, "多选按钮 ≥640px 应恢复显示").toContain("sm:inline-flex");
     // 第 8 个（小组件盒）<390px 不在行内：按钮本身带 min-[390px]:inline-flex
     const widget = buttonBlock(src, "打开桌面小组件盒");
     expect(widget, "小组件盒按钮 <390px 应隐藏").toContain("hidden");
     expect(widget, "小组件盒按钮 ≥390px 应恢复显示").toContain("min-[390px]:inline-flex");
-    // 整数算术：容器 px-3 两侧共 24px，行内间隙 gap-0.5 = 2px
-    expect(7 * 44 + 6 * 2).toBe(320);
-    expect(320).toBeLessThanOrEqual(360 - 24);
+    // 整数算术：容器 px-3 两侧共 24px，行内间隙 gap-1.5 = 6px
+    expect(6 * 44 + 5 * 6).toBe(294);
+    expect(294).toBeLessThanOrEqual(360 - 24);
   });
 
-  it("390px 行内 8 个 44px 按钮：8×44 + 7×2 间隙 = 366 恰好占满可用宽", () => {
-    expect(8 * 44 + 7 * 2).toBe(366);
-    expect(366).toBeLessThanOrEqual(390 - 24);
+  it("390px 行内 7 个 44px 按钮：7×44 + 6×6 间隙 = 344 ≤ 366 可用宽", () => {
+    expect(7 * 44 + 6 * 6).toBe(344);
+    expect(344).toBeLessThanOrEqual(390 - 24);
   });
 
   it("小组件盒 <390px 有菜单内替代入口（≥390px 条目隐藏），受 onOpenWidgetBox 守卫", () => {

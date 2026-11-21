@@ -1827,8 +1827,8 @@ export default function FavoritesPage() {
 
         {/* 本地筛选条：只在确实有收藏时出现（没有收藏时不需要筛选控件）。
             右侧留白：悬浮小猫（#xiaomaomao）固定在视口右下角；工作区的筛选条、批量栏、
-            列表卡片都会撑满容器宽，右端内容会压到小猫下面。64px 右留白只在
-            工作区生效（列表卡片撑满列宽，xl 下也不能松——与星标分区同理但更严）。 */}
+            列表卡片都会撑满容器宽，右端内容会压到小猫下面。右留白由外层容器的无条件
+            mr-16 统一提供（边框盒整体避开小猫区）；内层各区不再单独加 pr-16。 */}
         {favorites.ready && favorites.items.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 mb-4">
             {/* 搜索方式切换：关键词是本地全文筛选；按意思搜复用中枢语义通道， */}

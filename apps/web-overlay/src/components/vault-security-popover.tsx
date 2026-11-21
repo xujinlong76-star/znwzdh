@@ -18,7 +18,7 @@ export function VaultSecurityPopoverContent() {
     <div className="space-y-3">
       <div>
         <p className="flex items-center gap-1.5 text-sm font-semibold">
-          <ShieldCheck className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
+          <ShieldCheck className="size-4 text-emerald-700 dark:text-emerald-400" aria-hidden />
           零知识金库 · 安全白皮书
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">三句话讲清你的收藏如何被保护</p>
@@ -41,7 +41,7 @@ export function VaultSecurityPopoverContent() {
           </span>
         </li>
         <li className="flex items-start gap-2 text-xs leading-relaxed">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
           <span>
             <span className="font-medium">忘记加密密码将无法找回，请妥善保管</span>
             <span className="text-muted-foreground">——零知识意味着连我们也帮你解不开。</span>

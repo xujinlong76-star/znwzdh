@@ -72,7 +72,7 @@ export function PublicNavPreviewCard({
       {/* 成片头图：标题 + 站数 */}
       <div className="bg-gradient-to-br from-emerald-500/15 via-card to-sky-500/10 px-3.5 py-3">
         <p className="flex items-center gap-1.5 text-sm font-semibold leading-snug">
-          <Globe className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+          <Globe className="size-4 shrink-0 text-emerald-700 dark:text-emerald-400" aria-hidden />
           <span className="truncate">{title}</span>
         </p>
         <p className="mt-0.5 pl-[22px] text-[11px] text-muted-foreground">

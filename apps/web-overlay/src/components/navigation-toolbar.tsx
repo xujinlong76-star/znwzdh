@@ -158,8 +158,8 @@ export const NavigationToolbar = memo(function NavigationToolbar({
   unreadNotifications = 0,
 }: NavigationToolbarProps) {
   const hasTodayAlert = Boolean(todayBadge && (todayBadge.urgentCount > 0 || todayBadge.todayCount > 0))
+  // 采用上游把根节点从 <div> 改为语义化 <header>（可访问性改进）。
   return (
-        {/* 采用上游把根节点从 <div> 改为语义化 <header>（可访问性改进）。 */}
         <header className="sticky top-0 z-30 border-b border-border/40 bg-background/85 px-3 pt-[max(env(safe-area-inset-top,0px),0px)] shadow-2xs backdrop-blur-md dark:bg-background/80 sm:px-6">
           {/* 2026-11-21：md:flex-nowrap 在 768px 档会把「搜索 260px 最小宽 +
               右侧按钮簇 388px」硬塞进 768-48px 的可用宽里，整行顶出文档

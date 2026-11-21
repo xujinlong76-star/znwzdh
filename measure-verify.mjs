@@ -16,6 +16,17 @@ const browser = await chromium.launch({
 
 async function measure(viewport, label) {
   const ctx = await browser.newContext({ viewport })
+  // 回访用户态：副标题提示只在首次访问/搜索聚焦时出现（见 home-subtitle-hint.tsx，
+  // 键为 navhub:visited / navhub:subtitle-hint-dismissed）。此前探针用的旧键
+  // 'visited' / 'subtitle-hint-dismissed' 从未生效，量到的是首访态（+42px），
+  // 与本线基线系列（365 -> 343 -> 303，均为回访态）不可比。现用正确键模拟回访用户。
+  // FIRSTVISIT=1 时不设任何键，量首访态（副标题提示出现，+42px chrome）。
+  if (!process.env.FIRSTVISIT) {
+    await ctx.addInitScript(() => {
+      localStorage.setItem('navhub:visited', '1')
+      localStorage.setItem('navhub:subtitle-hint-dismissed', '1')
+    })
+  }
   const page = await ctx.newPage()
   await page.goto(BASE + '/', { waitUntil: 'commit', timeout: 180000 })
   try {

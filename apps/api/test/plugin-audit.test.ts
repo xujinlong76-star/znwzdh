@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   auditPluginUrls,
   isBlockedByBotStatus,
+  isCrossDomainRedirect,
   normalizeAuditUrl,
   PLUGIN_AUDIT_DEFAULTS,
   PLUGIN_AUDIT_LIMITS,
@@ -142,6 +143,78 @@ describe("存活但拒绝爬虫（401/403/405/412/429）不计入不可达", () 
     expect(s.suspiciousItems[0].title).toBe("Domain For Sale");
     expect(s.suspiciousItems[0].matchedKeywords).toEqual(["domain for sale"]);
   })
+})
+
+describe("302 规则：跳到不同终域的链接标记为待改为终域（U-387(b)）", () => {
+  /**
+   * 真实旧错（R7 证伪 fixture）：WPS 灵犀的导航 href 曾是 lingxi.wps.cn，
+   * 实测 302 → https://lingxi.kdocs.cn/（2026-11-21 curl -I：302 Found + location）。
+   * 旧规则下它只计入 redirected、仍算 ok，静默通过，无人知道 href 该改；
+   * 直到 U-387(a) 才人工改成终域。本规则要求此类链接必须显式列入
+   * finalDomainItems（待改为终域），不能再静默通过。
+   */
+  const lingxiProbe: UrlProbeResult = {
+    url: "https://lingxi.wps.cn/",
+    ok: true,
+    status: 200,
+    finalUrl: "https://lingxi.kdocs.cn/",
+  };
+
+  it("真实案例 lingxi.wps.cn → lingxi.kdocs.cn：命中待改终域，且仍计 ok（不是死链）", () => {
+    const s = summarizeProbes([
+      { url: "https://a.example/", ok: true, status: 200 },
+      lingxiProbe,
+    ]);
+    expect(s.ok).toBe(2);
+    expect(s.broken).toBe(0);
+    expect(s.redirected).toBe(1);
+    expect(s.needsFinalDomain).toBe(1);
+    expect(s.finalDomainItems).toEqual([
+      { url: "https://lingxi.wps.cn/", finalUrl: "https://lingxi.kdocs.cn/", status: 200 },
+    ]);
+    // 可达率不受影响：待改终域不是不可达
+    expect(s.reachability).toBe(1);
+  });
+
+  it("非跳转链接与同域跳转不受影响：无 finalUrl、同 host、www↔apex 均不标记", () => {
+    const s = summarizeProbes([
+      { url: "https://a.example/", ok: true, status: 200 },
+      // 同域：仅路径跳转
+      { url: "https://b.example/old", ok: true, status: 301, finalUrl: "https://b.example/new" },
+      // 同域：http→https
+      { url: "http://c.example/", ok: true, status: 301, finalUrl: "https://c.example/" },
+      // 同域：apex↔www 只是同一域名的不同写法，不算「不同终域」
+      { url: "https://d.example/", ok: true, status: 301, finalUrl: "https://www.d.example/" },
+    ]);
+    expect(s.redirected).toBe(3);
+    expect(s.needsFinalDomain).toBe(0);
+    expect(s.finalDomainItems).toEqual([]);
+  });
+
+  it("不同子域也算不同终域（终域主机变了，href 就该跟过去）", () => {
+    const s = summarizeProbes([
+      { url: "https://e.example/", ok: true, status: 302, finalUrl: "https://app.e.example/" },
+    ]);
+    expect(s.needsFinalDomain).toBe(1);
+    expect(s.finalDomainItems[0].finalUrl).toBe("https://app.e.example/");
+  });
+
+  it("真不可达的链接不进待改终域（终域本身也死了，处置是「死链」不是「改域」）", () => {
+    const s = summarizeProbes([
+      { url: "https://f.example/", ok: false, status: 404, finalUrl: "https://g.example/" },
+    ]);
+    expect(s.broken).toBe(1);
+    expect(s.needsFinalDomain).toBe(0);
+    expect(s.finalDomainItems).toEqual([]);
+  });
+
+  it("isCrossDomainRedirect：finalUrl 缺失/不可解析时不误判", () => {
+    expect(isCrossDomainRedirect("https://a.example/", undefined)).toBe(false);
+    expect(isCrossDomainRedirect("https://a.example/", "not-a-url")).toBe(false);
+    expect(isCrossDomainRedirect("not-a-url", "https://b.example/")).toBe(false);
+    expect(isCrossDomainRedirect("https://lingxi.wps.cn/", "https://lingxi.kdocs.cn/")).toBe(true);
+    expect(isCrossDomainRedirect("https://d.example/", "https://www.d.example/")).toBe(false);
+  });
 })
 
 describe("失败原因归类：区分「我们的探针限制」与「站点真挂」", () => {

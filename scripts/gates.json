@@ -305,6 +305,14 @@
    "why": "Playwright 端到端；本地默认不跑（NAVHUB_PRECOMMIT_E2E=1 才跑暂存 spec）"
   },
   {
+   "name": "test-responsive-pr",
+   "when": "ci",
+   "job": "test-responsive-pr",
+   "blocks": true,
+   "test": "e2e/responsive-matrix.spec.ts",
+   "why": "响应式布局 PR 门禁：390 + 1366 两档（6 视口全量在 nightly），防「修好大屏压坏小屏」回归"
+   },
+  {
    "name": "docker-smoke",
    "when": "ci",
    "job": "docker-smoke",

@@ -157,7 +157,12 @@ describe("门禁清单：现状与双向对照", () => {
   });
 
   it("登记为阻塞的 CI 作业不在 ci-passed.needs 里 ⇒ 红", () => {
-    const ci = derive("ci-needs-without-e2e.yml", REAL_CI, "test-e2e, docker-smoke", "docker-smoke");
+    const ci = derive(
+      "ci-needs-without-e2e.yml",
+      REAL_CI,
+      "test-e2e, test-responsive-pr, docker-smoke",
+      "test-responsive-pr, docker-smoke",
+    );
     const res = run({ ci });
     expect(res.status, res.out).toBe(1);
     expect(res.out).toContain("test-e2e");

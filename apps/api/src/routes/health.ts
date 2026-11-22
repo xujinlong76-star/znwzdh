@@ -26,6 +26,12 @@ export const healthRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     } catch {
       dbOk = false;
     }
+    // 空库必须在探针里可见：ok 保持 true（存活语义不动），但 warnings 要说实话——
+    // 否则 sites=0 的站会在监控里看起来完全健康（2026-11-22 :8787 空库 4 天无告警）。
+    const warnings: string[] = [];
+    if (stats?.sites === 0) {
+      warnings.push("sites=0：库为空，/hot 与搜索将无结果（需跑种子）");
+    }
     /**
      * 快照一致性判据（升级改造方案 P1-1）。
      *
@@ -53,6 +59,7 @@ export const healthRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       capabilities: { ...ctx.capabilities, semantic: Boolean(ctx.embedding && ctx.vectors && ctx.embedding.ready()) },
       db: { ok: dbOk },
       stats,
+      warnings,
       navSnapshot,
       embedding: ctx.embedding?.stats ? { cache: ctx.embedding.stats() } : undefined,
     };

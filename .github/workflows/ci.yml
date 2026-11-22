@@ -78,7 +78,10 @@ jobs:
       matrix:
         shard: [1, 2, 3]
     steps:
+      # U-385: scripts/count-precommit-bypasses.test.ts 要读 06429843 起的 git 历史(--to 锚点)，depth-1 下锚点对象不存在、12 例全灭；有界 depth 会随 HEAD 前进而过期，故用 0。
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
@@ -1039,7 +1042,10 @@ jobs:
     name: 覆盖率门禁（W1 ratchet · coverage-thresholds.json）
     runs-on: ubuntu-latest
     steps:
+      # U-385: scripts/count-precommit-bypasses.test.ts 要读 06429843 起的 git 历史(--to 锚点)，depth-1 下锚点对象不存在、12 例全灭；有界 depth 会随 HEAD 前进而过期，故用 0。
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:

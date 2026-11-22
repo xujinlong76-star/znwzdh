@@ -120,7 +120,7 @@ describe("collectSearchPackUrls", () => {
       "code-and-package-search-pack",
       "dev-search-arsenal",
     ]);
-    // 5 个包共约 191 条（含跨包重复）；只钉下限，种子增补不应打碎本测试。
+    // 5 个包共约 189 条（含跨包重复；U-470 下架 !pwc 与 !phind 后由 191 减至 189）；只钉下限，种子增补不应打碎本测试。
     expect(targets.length).toBeGreaterThan(100);
     const urls = targets.map((t) => t.url);
     expect(new Set(urls).size).toBe(urls.length);

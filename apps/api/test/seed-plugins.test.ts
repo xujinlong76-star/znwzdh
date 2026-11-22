@@ -533,6 +533,18 @@ describe("搜索引擎收录 URL：死链不得回流（2026-11-16 Q-16～Q-19�
   //   跳转链不收敛；新址 https://www.qianwen.com/qianwen/?q={q}：curl 200（39KB，
   //   标题「千问-阿里 AI 助手」），2026-11-17 真机验证已证实生效（q 被接受并自动发出，
   //   AI 回复了）。旧址进 RETIRED 清单防回流。
+  // - U-470（2026-11-22，!pwc / !phind 只删不换）：
+  //   !pwc 旧 https://paperswithcode.com/search?q_meta=&q_type=&q={q}：curl（含完整
+  //   Chrome UA）301 到 huggingface.co/papers/trending 且查询词被丢弃；盘点建议的
+  //   候选 https://huggingface.co/papers?search={q} 经实测亦无效——服务端 302 到
+  //   /papers/date/<当日> 且 search 参数被丢弃（无意义词 zxqvkjw 在返回体出现 0 次，
+  //   与当日榜单体相同）；/papers/search?q= 回 401；HF 全文搜索
+  //   /search/full-text?q= 虽带词可用，但 SSR 结果只含 model/dataset/space、无
+  //   papers，不能等价替代「论文+代码+榜单」功能，故按红线只删不换。
+  //   !phind 旧 https://www.phind.com/search?q={q}：curl 裸 403、Chrome UA 000、
+  //   首页亦 403 且浏览器取回 404；三家独立 2026 年信源一致：搜索服务已于
+  //   2026-01-16 关停、YC 标 inactive、用户数据 2026-01-30 删除，产品已死。
+  //   两旧 URL 均进 RETIRED 清单防回流；包内引擎 38→36。
   // - P3-1（2026-11-18）：3 条 301 旧址已迁规范地址（curl 核实 200 且 0 跳转）：
   //   SciSpace typeset.io/search → scispace.com/search；CVE cve.mitre.org/cgi-bin/cvekey.cgi
   //   （参数 keyword）→ www.cve.org/CVERecord/SearchResults（参数 query，裸域 cve.org 仍 301 到 www）；
@@ -547,6 +559,8 @@ describe("搜索引擎收录 URL：死链不得回流（2026-11-16 Q-16～Q-19�
     "https://you.ctrip.com/searchsite/all?keyword={q}",
     "https://tongyi.aliyun.com/qianwen/?q={q}",
     "https://openbase.com/search?q={q}",
+    "https://paperswithcode.com/search?q_meta=&q_type=&q={q}",
+    "https://www.phind.com/search?q={q}",
   ]
   const REPLACEMENT_SEARCH_URLS = [
     "https://scispace.com/search?q={q}",

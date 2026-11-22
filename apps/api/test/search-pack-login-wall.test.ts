@@ -31,25 +31,34 @@
  * 最终 URL 仍在搜索站内，不是登录页；百度/OpenAlex/bioRxiv 搜索路径 000 但首页 200，
  * 系出口路径级抖动，非死链。
  *
+ * U-470（2026-11-22，只删不换）：!pwc（Papers with Code 301 到 HF trending 且查
+ * 询词被丢弃；候选 HF Papers 搜索亦经实测无效）与 !phind（搜索服务 2026-01-16 已关
+ * 停，YC 标 inactive）两引擎已下掉，总量 190→188，旧 URL/前缀/主机进退役清单防回流。
+ * !jd（京东搜索）同批核实：Chrome UA 下 curl 落 cfe.m.jd.com 风控页（标题「京东验证」），
+ * 系数据中心出口反爬、未证实真实用户浏览器同样受阻，故只记录、不改。
+ *
  * 本测试只做静态断言（不联网）：登录墙标记、退役 URL/主机、替换 URL 收录、引擎数。
  */
 import { describe, expect, it } from "vitest";
 import { seedPluginDefs } from "../src/seed-plugins.ts";
 import type { SearchPackPayload } from "@navhub/core";
 
-/** 2026-11-17 P1-4 证实登录墙化、已下架或替换的旧检索 URL。 */
+/** 2026-11-17 P1-4 证实登录墙化、已下架或替换的旧检索 URL。U-470（2026-11-22）追加
+ *  两条已证实死亡的旧检索 URL（!pwc 301 丢查询词、!phind 服务已关停）。 */
 const RETIRED_LOGIN_WALL_URLS = [
   "https://libraries.io/search?q={q}",
   "https://you.com/search?q={q}",
   "https://www.dianping.com/search/keyword/1/0_{q}",
   "https://kns.cnki.net/kns8s/defaultresult/index?kw={q}",
   "https://gemini.google.com/app?q={q}",
+  "https://paperswithcode.com/search?q_meta=&q_type=&q={q}",
+  "https://www.phind.com/search?q={q}",
 ] as const;
 
-/** 随旧 URL 一并退役的前缀（替换后前缀随服务改名，旧前缀不得再出现）。 */
-const RETIRED_PREFIXES = ["!dianping", "!librariesio", "!you", "!gemini"] as const;
+/** 随旧 URL 一并退役的前缀（替换后前缀随服务改名，旧前缀不得再出现）。U-470 追加 !pwc / !phind。 */
+const RETIRED_PREFIXES = ["!dianping", "!librariesio", "!you", "!gemini", "!pwc", "!phind"] as const;
 
-/** 旧 URL 所在主机：同一主机的任何检索 URL 均视为登录墙回流。 */
+/** 旧 URL 所在主机：同一主机的任何检索 URL 均视为登录墙回流。U-470 追加两已死服务主机。 */
 const RETIRED_HOSTS = [
   "libraries.io",
   "you.com",
@@ -57,6 +66,8 @@ const RETIRED_HOSTS = [
   "m.dianping.com",
   "kns.cnki.net",
   "gemini.google.com",
+  "paperswithcode.com",
+  "www.phind.com",
 ] as const;
 
 /** P1-4 替换后收录的新检索 URL（curl 已验证 200 且非登录页）。 */
@@ -121,10 +132,10 @@ describe("搜索引擎前缀直达：登录墙化 URL 不得回流（2026-11-17 
     }
   });
 
-  it("中文生活包 36 个引擎、总量 190 个（大众点评已下架，非 191）", () => {
+  it("中文生活包 36 个引擎、总量 188 个（大众点评已下架，非 191；U-470 下架 !pwc 与 !phind，非 190）", () => {
     const engines = collectSearchEngines();
     const cn = engines.filter((e) => e.slug === "cn-search-arsenal");
     expect(cn.length, "中文生活包引擎数应为 36（大众点评下架后 37→36）").toBe(36);
-    expect(engines.length, "搜索引擎总量应为 190（191 下架 1 个）").toBe(190);
+    expect(engines.length, "搜索引擎总量应为 188（191 下架 1 个大众点评、U-470 下架 !pwc 与 !phind 各 1 个）").toBe(188);
   });
 });

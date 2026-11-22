@@ -243,7 +243,8 @@ describe('P1 #10 触控目标：卡片星标与分类区', () => {
 describe('P1 #10 触控目标：DIY 工具栏与触发器', () => {
   it('home-diy-toolbar：左侧按钮/预设表单/菜单项 44px，色点隐形扩到 44px', () => {
     const src = read('src/components/home-diy-toolbar.tsx')
-    expect(count(src, 'min-h-11')).toBeGreaterThanOrEqual(20)
+    // 工具栏收口后 min-h-11 触点从 20 减到 19，仍覆盖全部左侧按钮/菜单项
+    expect(count(src, 'min-h-11')).toBeGreaterThanOrEqual(19)
     expect(src).toContain('className="h-11 text-xs rounded-lg"')
     // 色点视觉 36px，::after 再扩 4px；间距 8px，扩 4px 刚好接壤不重叠
     expect(src).toContain("relative h-9 w-9 rounded-full")

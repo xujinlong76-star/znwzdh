@@ -95,7 +95,7 @@ const PRUNE_OPTIONS: ReadonlyArray<{
   {
     id: 'events_profile',
     label: '仅重置行为事件与个性化画像',
-    description: '清除近 180 天点击/浏览遥测与画像标签，搜索恢复默认排序',
+    description: '清除全部点击/浏览遥测与画像（不限时间），搜索恢复默认排序',
   },
   {
     id: 'vault',

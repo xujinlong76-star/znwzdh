@@ -262,6 +262,40 @@ describe("设置与画像信号", () => {
     expect(await ctx.repo.listFavorites(USER)).toHaveLength(1);
   });
 
+  it("U-401：POST /api/me/prune 的 events_profile 全删——200 天前的旧事件与画像行一并清除", async () => {
+    // 文案曾称只清「近 180 天」，服务端实际是无日期过滤的全删（DELETE FROM events
+    // WHERE identity = ? + DELETE FROM user_profiles WHERE user_id = ?）。
+    // 本用例用 200 天前的旧事件钉住「全删」语义：若服务端改成只删 180 天内，
+    // 旧事件残留，本用例变红；文案与实现脱节时，前端守卫
+    // me-data-prune-events-profile-copy.test.ts 同步变红。
+    const pruneUser = "github:u-prune-180";
+    const now = Date.now();
+    const oldTs = now - 200 * 24 * 60 * 60 * 1000;
+    await ctx.repo.run(
+      "INSERT INTO events (kind, site_id, query, category_id, meta, identity, created_at) VALUES (?,?,?,?,?,?,?)",
+      ["click", siteId, null, null, null, pruneUser, now],
+    );
+    await ctx.repo.run(
+      "INSERT INTO events (kind, site_id, query, category_id, meta, identity, created_at) VALUES (?,?,?,?,?,?,?)",
+      ["click", siteId, null, null, null, pruneUser, oldTs],
+    );
+    await ctx.repo.run("INSERT INTO user_profiles (user_id, updated_at) VALUES (?, ?)", [pruneUser, now]);
+    const prune = await data(
+      "POST",
+      "/api/me/prune",
+      { domains: ["events_profile"] },
+      signedHeaders(pruneUser),
+    );
+    expect(prune.statusCode).toBe(200);
+    expect(prune.json().ok).toBe(true);
+    // 2 条事件（1 新 1 旧）+ 1 行画像 = 3；若只删 180 天内，计数为 2 且旧事件残留。
+    expect(prune.json().pruned.events_profile).toBe(3);
+    const remaining = await ctx.repo.raw("SELECT COUNT(*) AS c FROM events WHERE identity = ?", [pruneUser]);
+    expect(Number(remaining[0]?.c ?? 0)).toBe(0);
+    const profiles = await ctx.repo.raw("SELECT COUNT(*) AS c FROM user_profiles WHERE user_id = ?", [pruneUser]);
+    expect(Number(profiles[0]?.c ?? 0)).toBe(0);
+  });
+
   it("DELETE /api/profile/signals/click 清空点击事件", async () => {
     await ctx.repo.recordEvent("click", { siteId, identity: USER });
     const res = await data("DELETE", "/api/profile/signals/click");

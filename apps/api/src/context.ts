@@ -114,6 +114,9 @@ const vectorFilter = { model: config.embedding.model, dim: config.embedding.dim 
       // 仅当 sites 表非空而 sites_fts 为空（例如首次升级）时才触发全量 rebuild。
       store.init(false);
       const siteCount = (db.sqlite!.prepare("SELECT COUNT(*) AS n FROM sites WHERE deleted_at IS NULL").get() as { n: number })?.n ?? 0;
+      if (siteCount === 0) {
+        console.error("[context] 警告：库里没有站点（sites=0），/hot、搜索、新品榜将全空；请跑 pnpm seed（见 baseline.ts）");
+      }
       if (siteCount > 0) {
         // external-content FTS5 的 `SELECT COUNT(*) FROM sites_fts` 读的是 content 表
         // (sites) 的行数：索引为空时它仍返回站点数，guard 会误判「已就绪」→ 全文通道

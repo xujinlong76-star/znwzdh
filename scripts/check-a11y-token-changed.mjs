@@ -108,7 +108,8 @@ export function patternHits(src) {
  * 找不到清单定义时抛错——解析不到 ≠ 没有豁免，静默当成「无豁免」会误拦。
  */
 export function parseExempt(guardSource) {
-  const m = String(guardSource ?? "").match(/const WIP_HOT_EXEMPT: string\[\] = \[([\s\S]*?)\n\];/);
+  // 兼容零豁免单行形态 const WIP_HOT_EXEMPT: string[] = [];
+  const m = String(guardSource ?? "").match(/const WIP_HOT_EXEMPT: string\[\] = \[([\s\S]*?)\]\s*;/);
   if (!m) throw new Error("守卫文件里找不到 WIP_HOT_EXEMPT 清单定义");
   return new Set([...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]));
 }

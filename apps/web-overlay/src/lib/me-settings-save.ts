@@ -86,7 +86,8 @@ export async function saveSettingsPatchToCloud(patch: UserSettingsPatch): Promis
     body: JSON.stringify(patch),
     cache: 'no-store',
   })
-  if (!res.ok) { void res.body?.cancel().catch(() => {}); throw new Error('设置保存失败') }
+  if (!res.ok) { /* 响应体无需读取：释放 keep-alive 连接，避免 networkidle 卡死；取消失败说明连接已断开，可忽略 */
+          void res.body?.cancel().catch(() => { /* 连接已断开，无需处理 */ }); throw new Error('设置保存失败') }
   const data = (await res.json()) as { settings?: unknown }
   const cloudSettings = (data.settings ?? {}) as Partial<UserSettingsModel>
   const localWritten = writeLocalUserSettings(normalizeUserSettings(cloudSettings))

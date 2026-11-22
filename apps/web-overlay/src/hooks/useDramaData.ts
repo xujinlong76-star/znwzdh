@@ -24,7 +24,8 @@ function fetchJsonOnce<T>(url: string): Promise<T> {
   if (hit) return hit;
   const promise = fetch(url, { headers: { Accept: "application/json" } }).then(
     async (res) => {
-      if (!res.ok) { void res.body?.cancel().catch(() => {}); throw new Error(`HTTP ${res.status}`); }
+      if (!res.ok) { /* 响应体无需读取：释放 keep-alive 连接，避免 networkidle 卡死；取消失败说明连接已断开，可忽略 */
+          void res.body?.cancel().catch(() => { /* 连接已断开，无需处理 */ }); throw new Error(`HTTP ${res.status}`); }
       return (await res.json()) as T;
     },
   );

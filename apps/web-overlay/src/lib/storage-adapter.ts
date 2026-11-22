@@ -424,7 +424,8 @@ export function createGithubAdapter(opts: GithubAdapterOptions): StorageAdapter 
       if (res.status === 404) {
         return path.includes("navigation.json") ? { navigationItems: [] } : {};
       }
-      if (!res.ok) { void res.body?.cancel().catch(() => {}); throw new StorageError("GitHub 读取失败 " + res.status + "：" + path, res.status); }
+      if (!res.ok) { /* 响应体无需读取：释放 keep-alive 连接，避免 networkidle 卡死；取消失败说明连接已断开，可忽略 */
+          void res.body?.cancel().catch(() => { /* 连接已断开，无需处理 */ }); throw new StorageError("GitHub 读取失败 " + res.status + "：" + path, res.status); }
       return res.json();
     },
     async write(path: string, content: string, message: string) {

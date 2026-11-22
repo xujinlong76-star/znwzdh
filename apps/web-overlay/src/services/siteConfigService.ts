@@ -34,7 +34,8 @@ export class SiteSettingsError extends Error {
  */
 
 async function readResponse(res: Response): Promise<SiteSettingsLoad> {
-  if (!res.ok) { void res.body?.cancel().catch(() => {}); throw new SiteSettingsError(`读取站点配置失败 (HTTP ${res.status})`) }
+  if (!res.ok) { /* 响应体无需读取：释放 keep-alive 连接，避免 networkidle 卡死；取消失败说明连接已断开，可忽略 */
+          void res.body?.cancel().catch(() => { /* 连接已断开，无需处理 */ }); throw new SiteSettingsError(`读取站点配置失败 (HTTP ${res.status})`) }
   const body = (await res.json()) as { settings?: unknown; degraded?: boolean; missing?: boolean; message?: string }
   return {
     settings: normalizeSettings(body?.settings),
@@ -92,7 +93,8 @@ export interface SiteAsset {
 
 export async function listSiteAssets(signal?: AbortSignal): Promise<SiteAsset[]> {
   const res = await fetch('/api/hub/storage/list?limit=500', { cache: 'no-store', signal })
-  if (!res.ok) { void res.body?.cancel().catch(() => {}); throw new SiteSettingsError(`读取资产清单失败 (HTTP ${res.status})`) }
+  if (!res.ok) { /* 响应体无需读取：释放 keep-alive 连接，避免 networkidle 卡死；取消失败说明连接已断开，可忽略 */
+          void res.body?.cancel().catch(() => { /* 连接已断开，无需处理 */ }); throw new SiteSettingsError(`读取资产清单失败 (HTTP ${res.status})`) }
   const body = (await res.json()) as { assets?: SiteAsset[] }
   if (!Array.isArray(body.assets) || body.assets.some((asset) =>
     typeof asset?.path !== 'string' || typeof asset?.name !== 'string' ||

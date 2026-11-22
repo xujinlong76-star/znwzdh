@@ -58,17 +58,19 @@ describe("元测试：5 条禁令的正则与守卫原文逐字一致", () => {
 });
 
 describe("元测试：豁免清单与守卫同一份来源", () => {
-  it("解析出非空清单，且已知热区条目在列", () => {
+  it("解析出豁免清单（当前已收敛到零豁免）", () => {
     const exempt = parseExempt(guardSource);
-    expect(exempt.size).toBeGreaterThan(0);
-    expect(exempt.has("app/search/page.tsx")).toBe(true);
-    expect(exempt.has("components/video-card.tsx")).toBe(true);
+    // 2026-11-22：全部 token 违规已修复，守卫进入零豁免 WCAG AA 强制门禁。
+    // 这里钉「清单能被解析」而非写死历史条目，避免清清单后测试假红。
+    expect(exempt).toBeInstanceOf(Set);
+    expect(exempt.size).toBe(0);
   });
 
-  it("非清单文件不在豁免里（批 C 的文件必须被扫到）", () => {
+  it("零豁免时所有文件都被扫到（没有隐蔽白名单）", () => {
     const exempt = parseExempt(guardSource);
     expect(exempt.has("components/plugins/plugin-taps-modal.tsx")).toBe(false);
     expect(exempt.has("components/plugins/plugin-url-health-panel.tsx")).toBe(false);
+    expect([...exempt].every((x) => typeof x === "string" && x.length > 0)).toBe(true);
   });
 
   it("守卫里没有清单定义时抛错，不静默当成「无豁免」", () => {

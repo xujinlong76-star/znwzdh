@@ -1,3 +1,5 @@
+import { formatFreshness } from './relative-time'
+
 /**
  * 空态文案与判定（研究 P0 #5：空态 + 首次引导）。
  *
@@ -137,4 +139,18 @@ export function hotlistSourceEmptyCopy(source: {
 export function hotlistSourceStatusLabel(status: 'ok' | 'stale' | 'empty'): string {
   if (status === 'stale') return '抓取失败'
   return '暂无数据'
+}
+
+/**
+ * 全 stale 页级过期横幅文案（W4 第一步）：整榜在显示旧缓存时，写明最近一次
+ * 成功抓取的相对时间（generatedAt 经 formatFreshness 算出，与各列副行同口径），
+ * 不谎称实时。generatedAt 为 null 时不编造时间，明说时间未知。
+ */
+export function hotlistAllStaleBannerCopy(
+  generatedAt: number | null,
+  now: number = Date.now(),
+): string {
+  const fresh = formatFreshness(generatedAt, now)
+  const when = fresh === null ? '上次成功抓取时间未知' : `最近一次成功抓取是 ${fresh}`
+  return `全网热榜正在显示旧缓存：${when}，此后各平台抓取均失败。下面的榜单是旧内容，请以各源官方榜单或站内热度榜为准。`
 }

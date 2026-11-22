@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { ArrowRight, ExternalLink, Flame, MessageCircleQuestion, Newspaper, Search, Sparkles } from 'lucide-react'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
+import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { safeHref } from '@/lib/safe-url'
 import { pageShareMetadata } from '@/lib/seo/metadata'
@@ -10,6 +11,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/registry/new-york/ui/button'
 import {
   hotlistAllEmptyCopy,
+  hotlistAllStaleBannerCopy,
   hotlistEmptyVariant,
   hotlistSourceEmptyCopy,
   hotlistSourceStatusLabel,
@@ -22,7 +24,7 @@ import {
   type HubHotlistSource,
 } from '@/lib/server/brief'
 import { formatHotValue } from '@/lib/format-hot-value'
-import { formatFreshness, formatFullTimestamp, formatHotlistSubline } from '@/lib/relative-time'
+import { formatFreshness, formatFullTimestamp, formatHotlistSubline, STALE_ESCALATION_MS } from '@/lib/relative-time'
 import BriefWatch from './brief-watch'
 import BriefResurface from './brief-resurface'
 import HotlistFreshness from './hotlist-freshness'
@@ -151,6 +153,23 @@ export default async function BriefPage() {
   // 任一源有条目也不是空态。只有全空时才用解释 + 去 /hot 的出口代替一排死盒子。
   const hotlistVariant = hotlistEmptyVariant(hotlist)
   const hotlistCopy = hotlistVariant ? hotlistAllEmptyCopy(hotlistVariant) : null
+  // 全 stale 页级过期横幅（W4 第一步）：全部源 status === 'stale' 且最旧缓存
+  // 超过 2h。最旧缓存 = 六源 fetchedAt 的最小值（最早成功的那一次）；阈值
+  // 复用各列副行升级口径 STALE_ESCALATION_MS，不另立标准。任一 fetchedAt
+  // 为 null 时年龄未知，不臆断过期、不出横幅。
+  const oldestHotlistFetchedAt =
+    hotlist === null
+      ? null
+      : hotlist.sources.reduce<number | null>((min, s) => {
+          if (s.fetchedAt === null) return min
+          return min === null ? s.fetchedAt : Math.min(min, s.fetchedAt)
+        }, null)
+  const showHotlistStaleBanner =
+    hotlist !== null &&
+    hotlist.sources.length > 0 &&
+    hotlist.sources.every((s) => s.status === 'stale') &&
+    oldestHotlistFetchedAt !== null &&
+    Date.now() - oldestHotlistFetchedAt >= STALE_ESCALATION_MS
 
   return (
     <Container as="main" id="main-content">
@@ -327,11 +346,20 @@ export default async function BriefPage() {
                     </div>
                   </>
                 ) : (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {hotlist.sources.map((source) => (
-                      <SourceColumn key={source.id} source={source} />
-                    ))}
-                  </div>
+                  <>
+                    {showHotlistStaleBanner ? (
+                      <HubDegradedNotice
+                        notice={{ message: hotlistAllStaleBannerCopy(hotlist.generatedAt), retryable: false }}
+                        incompleteHint={false}
+                        className="mb-3"
+                      />
+                    ) : null}
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {hotlist.sources.map((source) => (
+                        <SourceColumn key={source.id} source={source} />
+                      ))}
+                    </div>
+                  </>
                 )}
                 {hotlist.uncovered.length > 0 ? (
                   <div className="mt-4 rounded-xl border border-dashed p-4 text-xs leading-relaxed text-muted-foreground">

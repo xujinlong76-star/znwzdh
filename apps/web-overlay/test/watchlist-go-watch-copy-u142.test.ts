@@ -99,7 +99,10 @@ describe('T3：链目标不变（只改文案，不改链）', () => {
       expect(a).toContain('rel="noopener noreferrer"')
     }
     // 链目标事实源：useWatchlist 仍写死平台首页，不偷改成假直达页。
-    expect(hook().match(/playUrl: platform\.href/g)?.length).toBe(1)
+    // U-427（R7）：计数 1→2 是 U-377 e341d37a 的预期新行为——预约条目
+    // 就地升级路径（reserved:: 键升级为平台键）须补 playUrl: platform.href，
+    // 与新建条目路径同值；两处均为平台首页，不变量未破。
+    expect(hook().match(/playUrl: platform\.href/g)?.length).toBe(2)
   })
 })
 

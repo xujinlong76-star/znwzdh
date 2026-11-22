@@ -108,7 +108,10 @@ export async function watchSectionForUser(ctx: AppContext, userId: string, now: 
   // 跨设备也以快照为准重算）；读不到按空处理，不阻断 due/check。
   const snapshot = await ctx.repo
     .getSystemState<DramaCalendarSnapshot>(DRAMA_CALENDAR_SNAPSHOT_KEY)
-    .catch(() => null);
+    .catch(() => {
+      // 可选读取：读不到按缺省值处理，调用方已处理空值。
+      return null;
+    });
   const premiereByKey = new Map<string, string>();
   for (const e of snapshot?.entries ?? []) {
     if (e.premiereDate) premiereByKey.set(e.key, e.premiereDate);

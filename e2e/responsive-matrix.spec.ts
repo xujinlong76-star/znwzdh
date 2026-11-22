@@ -125,9 +125,14 @@ async function measureHomeGrid(page: Page): Promise<HomeGridMetrics | null> {
   return page.evaluate(() => {
     // 2026-11-21：优先用 data-nav-grid 定位——data-grid-cols 也可能挂在
     // 12 列的 DIY 模块网格上，按属性盲选会读到 12 列（实测踩过）。
-    const flagged = document.querySelector('[data-nav-grid]')
+    /*
+     * 必须选「含站点链接」的导航网格：首页有 30 个 [data-nav-grid]，
+     * 第一个可能是折叠/空分组，盲选会在 390px 下取到空网格（实测踩过）。
+     */
     const grid =
-      flagged ??
+      Array.from(document.querySelectorAll('[data-nav-grid]')).find(
+        (el) => el.querySelector('a[href^="/site/"]'),
+      ) ??
       Array.from(document.querySelectorAll('div')).find(
         (el) => el.querySelector('a[href^="/site/"]') && getComputedStyle(el).display === 'grid',
       )

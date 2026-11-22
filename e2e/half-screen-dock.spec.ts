@@ -20,7 +20,7 @@ import { test, expect, type Page } from '@playwright/test';
  *
  * 猫底距现行值（xiaomaomao.js，与四边界期望逐字对齐；K1 2026-11-17 修正，
  * f0283bb8：猫底边 96px→112px，640–1023px 档与桌面同值；旧值 640/1023→90px、
- * 1024→96px 是 K1 前的过期期望）：<640px 为 68px
+ * 1024→96px 是 K1 前的过期期望）：<640px 为 88px（2026-11-22 抬升避开底部导航）
  *（@media max-width:640px；640px 整点以 640–1023px 规则为准）；
  * 640–1023px 为 112px；≥1024px 为桌面默认 112px。改挂件 CSS 时须同步改本文件期望值。
  *
@@ -40,6 +40,25 @@ async function gotoHome(page: Page, width: number, height = 900): Promise<void> 
   // 首访冷编译预热：宽预算、失败不致命（可能已编译过）
   await page.waitForLoadState('load', { timeout: 120_000 }).catch(() => {});
   await expect(page.locator(CAT)).toBeAttached({ timeout: 60_000 });
+}
+
+/**
+ * 2026-11-20 起挂件默认收起（closed: true），.xm-stage 隐藏、只有 .xm-tab 可见。
+ * 需要拖舞台或开面板的测试必须先点圆标展开，否则 stage 是 0×0。
+ */
+async function expandCat(page: Page): Promise<void> {
+  const isClosed = await page.evaluate(
+    () => document.querySelector('#xiaomaomao')?.classList.contains('xm-closed') ?? false,
+  )
+  if (isClosed) {
+    await page.locator(`${CAT} .xm-tab`).click({ timeout: 10_000 })
+    await page.waitForFunction(
+      () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-closed'),
+      undefined,
+      { timeout: 10_000 },
+    )
+    await page.waitForTimeout(600) // 入场动画 xm-enter .32s 落定
+  }
 }
 
 async function expectDockVisible(page: Page): Promise<void> {
@@ -100,7 +119,9 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
 
   test('四边界：639/640/1023/1024 栏显隐符合 [640,1024)，猫底距同步切换', async ({ page }) => {
     const cases: Array<{ width: number; dockVisible: boolean; catBottom: string }> = [
-      { width: 639, dockVisible: false, catBottom: '68px' },
+      // 2026-11-22：移动端猫抬到 3.5rem(56)+32=88px，避开底部导航与整行宽按钮；
+      // 640px 起半屏下沉栏出现，再抬到 112px。
+      { width: 639, dockVisible: false, catBottom: '88px' },
       { width: 640, dockVisible: true, catBottom: '112px' },
       { width: 1023, dockVisible: true, catBottom: '112px' },
       { width: 1024, dockVisible: false, catBottom: '112px' },
@@ -121,6 +142,7 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
   test('猫可拖动且位置持久化（拖过的猫以用户自选位置为准）', async ({ page }) => {
     await gotoHome(page, 700);
     await expectDockVisible(page);
+    await expandCat(page); // 默认收起态需先展开
     const cat = page.locator(`${CAT} .xm-stage`);
     const before = await page.locator(CAT).boundingBox();
     expect(before).not.toBeNull();
@@ -155,13 +177,17 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
   test('猫面板展开后仍在视口内（抬高后面板随猫上移、不出视口）', async ({ page }) => {
     await gotoHome(page, 700);
     await expectDockVisible(page);
+    await expandCat(page); // 默认收起态需先展开
     // 桌面悬停唤出悬浮坞，再点聊天钮开面板。注意不用 page.hover('.xm-stage')：
     // .xm-stage 带无限 xmFloat 浮动动画，Playwright 的 hover 要等元素 stable，
     // 永远等不到而超时；mouse.move 不做 stable 检查，同样能触发 root 的 pointerenter。
     const stageBox = await page.locator(`${CAT} .xm-stage`).boundingBox();
     expect(stageBox).not.toBeNull();
     await page.mouse.move(stageBox!.x + stageBox!.width / 2, stageBox!.y + stageBox!.height / 2);
-    await page.locator(`${CAT} .xm-chat-btn`).click({ timeout: 10_000 });
+    // 坞由 root pointerenter 唤出；它由 CSS opacity/visibility 过渡控制，
+    // Playwright 的 visible 检查会在过渡首帧判失败。这里用 force 绕过可见性
+    // 检查，面板是否真的打开由下面的 .xm-panel 可见断言保证。
+    await page.locator(`${CAT} .xm-chat-btn`).click({ timeout: 10_000, force: true });
     const panel = page.locator(`${CAT} .xm-panel`);
     await expect(panel).toBeVisible({ timeout: 10_000 });
     await page.waitForTimeout(400); // xmPanelIn .24s 入场动画落定后再量几何

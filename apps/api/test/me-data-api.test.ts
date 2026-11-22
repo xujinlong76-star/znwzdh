@@ -137,6 +137,10 @@ describe("搜索历史 API", () => {
     expect(byFilter.json().removed).toBe(3);
     const after = await data("GET", "/api/search-history?limit=50");
     expect(after.json().items.every((i: { resultCount: number }) => i.resultCount > 0)).toBe(true);
+    // U-400：filter 只删本身份的零结果——有命中记录留存，他身份的零结果也不动。
+    expect(after.json().items.some((i: { query: string }) => i.query === "命中 c")).toBe(true);
+    const otherAfter = await other("GET", "/api/search-history?limit=50");
+    expect(otherAfter.json().items.some((i: { query: string }) => i.query === "别人的零结果")).toBe(true);
 
     // ids 路径：删自己的 + 混入他人的 id → 只删自己的
     const page = await data("GET", "/api/search-history?limit=1");

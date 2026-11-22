@@ -93,6 +93,8 @@ export default function SearchHistoryPage() {
   const [keyword, setKeyword] = useState('')
   const [filterMode, setFilterMode] = useState<ResultFilterMode>('all')
   const [cleaningZero, setCleaningZero] = useState(false)
+  /** U-400：当前处于「已武装、待第二击确认」的零结果批量清理；false = 无武装 */
+  const [confirmCleanZero, setConfirmCleanZero] = useState(false)
 
   /* ---------------- 访问历史 tab（T23） ---------------- */
   const [tab, setTab] = useState<'searches' | 'visits'>('searches')
@@ -256,6 +258,15 @@ export default function SearchHistoryPage() {
 
   const handleCleanZeroResults = useCallback(async () => {
     if (!identity || zeroResultItems.length === 0 || cleaningZero) return
+    // U-400：第一击只武装、不调接口；第二击才执行删除（与「清空全部」
+    // confirmClear 同款两步确认）。服务端 batch-delete 的 filter 语义是删
+    // 该账号全部零结果记录（不限已加载页），武装态文案与 title 必须写明这
+    // 一点，否则用户会以为只清按钮上标的 N 条；服务端不加 LIMIT——全量
+    // 清理正是该功能的既定语义，加 LIMIT 会静默留存、让 toast 反向撒谎。
+    if (!confirmCleanZero) {
+      setConfirmCleanZero(true)
+      return
+    }
     setCleaningZero(true)
     try {
       // T4：服务端一次往返完成筛选删除（此前是逐条 DELETE 串行循环）
@@ -275,9 +286,12 @@ export default function SearchHistoryPage() {
         description: '保留了全部有效命中的搜索历史。',
       })
     } finally {
+      // 成功与失败两路都清零：失败后用户可重新两击重试；不清零则武装残留，
+      // 下一次点击会直接删除、两步确认被绕过（与 removeItem 同款）。
       setCleaningZero(false)
+      setConfirmCleanZero(false)
     }
-  }, [cleaningZero, identity, toast, zeroResultItems.length])
+  }, [cleaningZero, confirmCleanZero, identity, toast, zeroResultItems.length])
 
   const loadVisits = useCallback(async (offset: number) => {
     // U-239：匿名态必须带 identity 取数（fetchVisitsPage 自报 anon 头），
@@ -383,10 +397,16 @@ export default function SearchHistoryPage() {
             <div className="flex flex-wrap items-center gap-2">
               {zeroResultItems.length > 0 && (
                 <Button
-                  variant="outline"
+                  variant={confirmCleanZero ? 'destructive' : 'outline'}
                   size="sm"
                   className="w-full text-xs sm:w-auto"
                   disabled={cleaningZero}
+                  aria-pressed={confirmCleanZero}
+                  title={
+                    confirmCleanZero
+                      ? '将删除该账号全部零结果记录（不限于已加载的条数），此操作不可撤销'
+                      : '将删除该账号全部零结果记录（不限于已加载的条数），需再次点击确认'
+                  }
                   onClick={() => void handleCleanZeroResults()}
                 >
                   {cleaningZero ? (
@@ -394,7 +414,9 @@ export default function SearchHistoryPage() {
                   ) : (
                     <Sparkles className="mr-1.5 h-3.5 w-3.5 text-amber-500" />
                   )}
-                  清理零结果记录 ({zeroResultItems.length})
+                  {confirmCleanZero
+                    ? '确认清理全部零结果记录'
+                    : `清理零结果记录（已加载 ${zeroResultItems.length} 条）`}
                 </Button>
               )}
               <Button
@@ -433,6 +455,8 @@ export default function SearchHistoryPage() {
               // A2：同款清「清空全部」武装——页头操作栏是搜索历史专属，
               // 武装态若跨 tab 残留，在访问 tab 点「确认清空全部」会删搜索历史。
               setConfirmClear(false)
+              // U-400：同款清零结果清理武装，避免武装态跨 tab 残留。
+              setConfirmCleanZero(false)
               // 访问侧同款：切 tab 清「清空访问记录」武装，避免武装态跨 tab 残留。
               setConfirmClearVisits(false)
               setTab(key)

@@ -134,3 +134,29 @@ describe("P2-10：trending 指标口径（marketplace-rankings）", () => {
     expect(rankingMetric("trending", fakePlugin({ installCount: 3 }))).toBe("3 次安装");
   });
 });
+
+describe("P1-3：新作榜发布日期固定 Asia/Shanghai（marketplace-rankings）", () => {
+  // 临界值：2026-11-21 16:30 UTC = 2026-11-22 00:30 CST。
+  // 未修复时 toLocaleDateString('zh-CN') 跟进程本地时区：UTC 部署上
+  // 该时刻渲染为 2026/11/21，北京时间部署上为 2026/11/22，同一插件
+  // 在不同部署上差一天（U-285 漏了这一处）。修复后无论进程 TZ 是
+  // 什么，一律按北京时间出日期。
+  const CRITICAL = Date.UTC(2026, 10, 21, 16, 30, 0);
+
+  it("fresh 行指标按北京时间出日期：UTC 午夜前后临界值仍为 2026/11/22", () => {
+    expect(rankingMetric("fresh", fakePlugin({ publishedAt: CRITICAL }))).toBe("2026/11/22");
+  });
+
+  it("临界值另一侧：2026-11-21 15:30 UTC（23:30 CST）仍为 2026/11/21", () => {
+    expect(rankingMetric("fresh", fakePlugin({ publishedAt: Date.UTC(2026, 10, 21, 15, 30, 0) }))).toBe("2026/11/21");
+  });
+
+  it("无 publishedAt 时仍为“刚刚上架”", () => {
+    expect(rankingMetric("fresh", fakePlugin({ publishedAt: null }))).toBe("刚刚上架");
+  });
+
+  it("源码锁死 timeZone: 'Asia/Shanghai'（与 U-285 口径一致）", () => {
+    const src = overlaySource("src/lib/plugins/marketplace-rankings.ts");
+    expect(src).toContain("timeZone: 'Asia/Shanghai'");
+  });
+});

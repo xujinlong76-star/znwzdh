@@ -104,7 +104,7 @@ export function hotlistAllEmptyCopy(variant: HotlistEmptyVariant): EmptyStateCop
   }
   return {
     title: '全网热榜还在等第一次抓取',
-    why: '热榜每小时从各平台抓一次；这台站刚部署，第一轮抓取还没跑过，所以这里暂时是空的——不是坏了，也不是你操作错了。',
+    why: '热榜每小时从各平台抓一次；到现在还没成功抓到过一次，第一轮抓取还没完成，所以这里暂时是空的——不是坏了，也不是你操作错了。',
     next: '站内热度榜一直有内容，先去那里看看；过一会儿再回来，全网热榜就有了。',
     actionLabel: '先看站内热度榜',
     actionHref: '/hot',

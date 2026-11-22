@@ -115,6 +115,14 @@ describe('空态文案：What/Why/Next 齐全、有且只有一个主行动', ()
     expect(copy.why).toContain('不是坏了')
   })
 
+  // W4b 返工（进化轮 2026-11-23 02:22）：never-fetched 只知道「全源 empty」，
+  // 不知道是否刚部署；定时 hotlist_refresh 长期失败且从未成功过时状态完全
+  // 相同，「刚部署」是无依据断言。why 不得再写「刚部署」。
+  it('热榜首访文案不预设部署原因：why 不含「刚部署」', () => {
+    const copy = hotlistAllEmptyCopy('never-fetched')
+    expect(copy.why).not.toContain('刚部署')
+  })
+
   it('热榜抓取失败文案不把失败说成「没数据」', () => {
     const copy = hotlistAllEmptyCopy('fetch-failed')
     expect(copy.why).toContain('失败')

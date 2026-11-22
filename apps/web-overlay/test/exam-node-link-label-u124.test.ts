@@ -42,6 +42,7 @@ import {
   GUANGDONG_SHENGKAO_ADMISSION_URL,
   GUANGDONG_ZIKAO_SCORE_URL,
   GUOKAO_ADMISSION_URL,
+  GUOKAO_PORTAL_URL,
   JIANGSU_SHENGKAO_ADMISSION_URL,
   JIANGXI_CHENGKAO_REVIEW_URL,
   JIAOSHI_MIANSHI_URL,
@@ -226,7 +227,7 @@ describe('T5：全量计数（防漏网/防多改）', () => {
 })
 
 describe('T6：无数据改动（数据层守卫）', () => {
-  it('十一场 id、节点总数 46、18 个 url 逐字一致，无新增 url，ExamNode 无新增字段', () => {
+  it('十一场 id、节点总数 46、18 个 url 逐字一致，无新增 url；ExamNode 只新增 portalUrl（门户备用链）', () => {
     expect(EXAMS.map((e) => e.id)).toEqual([
       'guokao',
       'cet',
@@ -257,6 +258,11 @@ describe('T6：无数据改动（数据层守卫）', () => {
     // U-252：云南成绩查询不挂 url（转载级，未见官方原文），url 总数仍 17，节点总数 43→44。
     // U-279：天津成绩复核结果查询不挂 url（转载级，未见官方原文），url 总数仍 17，节点总数 44→45。
     // U-395：京考缴费挂报名平台直链（公告原文逐字核实，2026-11-22），节点总数 45→46，url 总数 17→18。
+    // 门户备用链：只有国考准考证节点挂 portalUrl（专题网站门户 GUOKAO_PORTAL_URL），
+    // 其余节点不挂；portalUrl 不作主链，url 计数不受影响。
+    expect(EXAMS.flatMap((e) => e.nodes).filter((n) => n.portalUrl)).toHaveLength(1)
+    expect(byKey.get('guokao:准考证打印')?.portalUrl).toBe(GUOKAO_PORTAL_URL)
+    expect(byKey.get('guokao:准考证打印')?.portalUrl).toBe('http://bm.scs.gov.cn/kl2027')
     expect(byKey.get('chengkao:天津成绩复核')?.url).toBeUndefined()
     expect(byKey.get('chengkao:天津成绩复核结果查询')?.url).toBeUndefined()
     expect(byKey.get('jiangsu-zikao:成绩查询')?.url).toBeUndefined()
@@ -268,7 +274,7 @@ describe('T6：无数据改动（数据层守卫）', () => {
     expect(byKey.get('chengkao:云南成绩查询')?.url).toBeUndefined()
     for (const node of EXAMS.flatMap((e) => e.nodes)) {
       for (const key of Object.keys(node)) {
-        expect(['label', 'detail', 'url', 'startISO', 'endISO', 'estimated']).toContain(key)
+        expect(['label', 'detail', 'url', 'portalUrl', 'startISO', 'endISO', 'estimated']).toContain(key)
       }
       expect(node.label).toBeTruthy()
       expect(node.detail).toBeTruthy()
@@ -318,5 +324,66 @@ describe('T8：源码硬编码不回潮', () => {
     expect(island).not.toContain('beijing.gov.cn')
     expect(island).not.toContain('jdyw.jxeea.cn')
     expect(island).not.toContain('eeagd.edu.cn')
+    // 门户备用链：渲染层不许写死门户域名（只读 node.portalUrl）。
+    expect(island).not.toContain('scs.gov.cn')
+    expect(island).not.toContain('kl2027')
+  })
+})
+
+describe('T9：国考准考证节点行双链接（门户备用链）', () => {
+  /** 取某行全部 <a>（主链 + 门户备用链）：linksOf 只取每行第一个 <a>。 */
+  function rowLinks(exam: ExamInfo, label: string): RenderedLink[] {
+    const html = renderToString(createElement(MyExamTracker, { exam }))
+    const liRe = /<li[^>]*>([\s\S]*?)<\/li>/g
+    let m: RegExpExecArray | null
+    while ((m = liRe.exec(html)) !== null) {
+      const chunk = m[1]
+      if (!chunk.includes(`>${label}<`)) continue
+      const out: RenderedLink[] = []
+      const aRe = /<a ([^>]*)>([^<]*)/g
+      let a: RegExpExecArray | null
+      while ((a = aRe.exec(chunk)) !== null) {
+        const attrs = a[1]
+        out.push({
+          examId: exam.id,
+          label,
+          href: unesc(attrs.match(/href="([^"]*)"/)?.[1] ?? ''),
+          ariaLabel: unesc(attrs.match(/aria-label="([^"]*)"/)?.[1] ?? ''),
+          text: a[2].trim(),
+          target: attrs.match(/target="([^"]*)"/)?.[1] ?? '',
+          rel: attrs.match(/rel="([^"]*)"/)?.[1] ?? '',
+        })
+      }
+      return out
+    }
+    return []
+  }
+
+  it('国考准考证行同时出现两个链接：主链去官网打印准考证 + 门户链专题网站门户', () => {
+    const links = rowLinks(examById('guokao'), '准考证打印')
+    expect(links).toHaveLength(2)
+    expect(links[0].text).toBe('去官网打印准考证')
+    expect(links[0].href).toBe(safeHref(GUOKAO_ADMISSION_URL))
+    expect(links[0].ariaLabel).toBe('准考证打印官方打印入口（新窗口打开）')
+    expect(links[1].text).toBe('专题网站门户')
+    expect(links[1].href).toBe(safeHref(GUOKAO_PORTAL_URL))
+    expect(links[1].ariaLabel).toBe('准考证打印专题网站门户入口（新窗口打开）')
+    expect(links[1].target).toBe('_blank')
+    expect(links[1].rel).toBe('noopener noreferrer')
+  })
+
+  it('其余带 url 节点行仍只渲染一个链接（无 url 的行 0 个）', () => {
+    for (const exam of EXAMS) {
+      const html = renderToString(createElement(MyExamTracker, { exam }))
+      const liRe = /<li[^>]*>([\s\S]*?)<\/li>/g
+      let m: RegExpExecArray | null
+      while ((m = liRe.exec(html)) !== null) {
+        const chunk = m[1]
+        const count = chunk.match(/<a /g)?.length ?? 0
+        const isGuokaoAdmission = exam.id === 'guokao' && chunk.includes('>准考证打印<')
+        if (isGuokaoAdmission) expect(count).toBe(2)
+        else expect(count).toBeLessThanOrEqual(1)
+      }
+    }
   })
 })

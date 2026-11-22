@@ -125,7 +125,10 @@ export function corporateTerminalHostname(originalUrl: string, finalUrl: string)
 
 /**
  * 301/302 终点为 corporate/企业站域名 → 未证实（未证实 ≠ 存活，需浏览器层复核）。
- * 1xx–3xx 与无重定向时返回 null，交回调用方继续做内容判定。
+ * 只看终点域名、不看状态码：终点 200 正是最常见的触发情形（301/302 只是典型
+ * 成因，函数本身不校验原始状态码是否为 301/302，也不校验终点状态码）。
+ * 终点不是 corporate 域名（同域、其他异域、URL 无法解析）时返回 null，交回
+ * 调用方继续做内容判定；状态码仅原样带入结论，不作判定依据。
  */
 export function classifyCorporateTerminalRedirect(
   originalUrl: string,

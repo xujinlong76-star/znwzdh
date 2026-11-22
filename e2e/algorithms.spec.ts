@@ -18,12 +18,12 @@ const SECTIONS: Array<{ tab: string; anchor: string }> = [
   { tab: '差分隐私', anchor: '本地差分隐私 (LDP Laplace) 协同推荐引擎' },
   { tab: '推测预渲染', anchor: 'W3C Speculation Rules 自适应推测预渲染编译器' },
   { tab: '工具合成', anchor: '动态 WebMCP 工具合成器与严苛 SSRF 纵深防护沙箱' },
-  { tab: 'P2P共识', anchor: 'P2P Mesh 去中心化 CRDT 状态向量共识测试台' },
+  { tab: 'P2P 共识', anchor: 'P2P Mesh 去中心化 CRDT 状态向量共识测试台' },
 ];
 
 test('算法实验室：12 个实验区逐区渲染各自标志内容', async ({ page }) => {
   await page.goto('/algorithms', { waitUntil: 'domcontentloaded' });
-  await awaitContentReady(page, page.getByText('前沿自适应算法与认知引擎全景测试台'));
+  await awaitContentReady(page, page.getByText('山羊胡 5.0+ 算法实验室'));
 
   // 首个 tab（LinUCB）默认渲染
   await expect(page.getByText(SECTIONS[0]!.anchor)).toBeVisible({ timeout: 30_000 });

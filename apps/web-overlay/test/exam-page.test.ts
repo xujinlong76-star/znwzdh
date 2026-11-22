@@ -365,20 +365,21 @@ describe('广东自考节点（U-144）', () => {
 describe('京考节点（U-76）', () => {
   const jingkao = EXAMS.find((e) => e.id === 'jingkao')!
 
-  it('只列已核实的四节点：报名、准考证打印、公安专业科目、公共科目；成绩与缴费节点不收', () => {
+  it('只列已核实的五节点：报名、缴费、准考证打印、公安专业科目、公共科目；成绩节点不收', () => {
     expect(jingkao.name).toBe('2027 年度北京市公务员考试')
     expect(jingkao.shortName).toBe('京考')
     expect(jingkao.tagline).toBe('公安专业科目 12 月 5 日 · 公共科目 12 月 6 日')
     expect(jingkao.examDateLabel).toBe('12 月 5–6 日')
     expect(jingkao.firstExamDayISO).toBe('2026-12-05')
-    expect(jingkao.nodes.map((n) => n.label)).toEqual(['报名', '准考证打印', '公安专业科目笔试', '公共科目笔试'])
+    expect(jingkao.nodes.map((n) => n.label)).toEqual(['报名', '缴费', '准考证打印', '公安专业科目笔试', '公共科目笔试'])
     expect(jingkao.nodes.map((n) => [n.label, n.startISO, n.endISO])).toEqual([
       ['报名', '2026-11-12', '2026-11-18'],
+      ['缴费', '2026-11-21', '2026-11-23'],
       ['准考证打印', '2026-12-01', '2026-12-06'],
       ['公安专业科目笔试', '2026-12-05', '2026-12-05'],
       ['公共科目笔试', '2026-12-06', '2026-12-06'],
     ])
-    // 报名与准考证打印挂北京市人事考试通用平台（公告原文内嵌 URL，http 原文）；
+    // 报名、缴费与准考证打印挂北京市人事考试通用平台（公告原文内嵌 URL，http 原文）；
     // 公共科目挂首都之窗官方公告；公安专业科目无入口不挂。
     expect(JINGKAO_APPLY_URL).toBe('http://rsj.beijing.gov.cn/bm/ztzl/gwy/')
     expect(JINGKAO_NOTICE_URL).toBe(
@@ -386,13 +387,13 @@ describe('京考节点（U-76）', () => {
     )
     const byLabel = new Map(jingkao.nodes.map((n) => [n.label, n]))
     expect(byLabel.get('报名')?.url).toBe(JINGKAO_APPLY_URL)
+    expect(byLabel.get('缴费')?.url).toBe(JINGKAO_APPLY_URL)
     expect(byLabel.get('准考证打印')?.url).toBe(JINGKAO_APPLY_URL)
     expect(byLabel.get('公安专业科目笔试')?.url).toBeUndefined()
     expect(byLabel.get('公共科目笔试')?.url).toBe(JINGKAO_NOTICE_URL)
-    // 成绩节点不收（官方只写「2027 年 1 月」，无确切日）；缴费节点不收
-    // （文件无缴费类节点先例）。label 里出现即红。
+    // 成绩节点不收（官方只写「2027 年 1 月」，无确切日）。缴费节点已收
+    // （U-395，公告原文逐字核实；军队文职已有缴费节点先例）。label 里出现即红（仅成绩）。
     expect(jingkao.nodes.map((n) => n.label).join('')).not.toContain('成绩')
-    expect(jingkao.nodes.map((n) => n.label).join('')).not.toContain('缴费')
   })
 
   it('节点状态按日期翻转：报名窗口内进行中、11-19 已结束；准考证窗口内进行中、12-07 已结束；两科笔试当天为今天、次日已结束', () => {

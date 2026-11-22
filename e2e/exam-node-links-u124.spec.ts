@@ -14,15 +14,16 @@ import { EXAMS } from '../apps/web-overlay/src/lib/exam-calendar'
  * 带 aria-label「…（新窗口打开）」的跟踪岛链接，不数全页外链。
  *
  * U-154：E3 的期望不再写死数字，从 EXAMS 数据派生——总数 = 全部带 url
- * 的节点数，「去官网打印准考证」数 = 总数 − 4 个例外 label（与
+ * 的节点数，「去官网打印准考证」数 = 总数 − 5 个例外 label（与
  * my-exam-tracker.tsx 的 nodeLinkCopy 映射一一对应）。写死 16 曾在
  * U-144 G5（c06c567d，广东自考「成绩查询」挂直链成第 17 个带 url 节点）
  * 后滞后致 E3 红（实测 17，期望 16）；派生后数据增长不再打断断言。
  * exam-calendar.ts 零 import，spec 可直接引用；/exam 页全量渲染 EXAMS，
  * 页内只有 tracker 渲染「（新窗口打开）」aria-label，派生口径与断言口径一致。
  */
-// nodeLinkCopy 的 4 个例外 label（其余带 url 节点文案均为「去官网打印准考证」）。
-const NON_PRINT_LABELS = ['报名', '公共科目笔试', '江西成绩复核', '成绩查询']
+// nodeLinkCopy 的 5 个例外 label（其余带 url 节点文案均为「去官网打印准考证」）。
+// U-395：京考「缴费」是第 5 个例外（去官网缴费），军队文职缴费节点无 url 不渲染。
+const NON_PRINT_LABELS = ['报名', '缴费', '公共科目笔试', '江西成绩复核', '成绩查询']
 const JINGKAO_APPLY_URL = 'http://rsj.beijing.gov.cn/bm/ztzl/gwy/'
 const JINGKAO_NOTICE_URL =
   'https://www.beijing.gov.cn/gongkai/rsxx/gwyzk/202611/t20261109_4938196.html'

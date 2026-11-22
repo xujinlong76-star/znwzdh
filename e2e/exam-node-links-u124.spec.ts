@@ -1,11 +1,12 @@
 import { test, expect } from '@playwright/test'
-import { EXAMS } from '../apps/web-overlay/src/lib/exam-calendar'
+import { EXAMS, GUOKAO_PORTAL_URL } from '../apps/web-overlay/src/lib/exam-calendar'
 
 /**
  * U-124 /exam 节点外链文案按节点类型映射：点按回归（E1–E3）。
  *
- * 只改文案映射，不改 URL、不新增外链：三处修正链接点按后仍到达原 URL，
- * 其余 13 处准考证类链接 href 不变，跟踪岛外链总数不变。
+ * 只改文案映射，不改 URL：三处修正链接点按后仍到达原 URL，
+ * 其余 13 处准考证类链接 href 不变。U-426：c7f84da9 门户备用链在国考
+ * 准考证行多渲染一条「专题网站门户」外链，跟踪岛外链总数 18→19。
  * 不真的完成站外跳转后的表单操作，只验到达目标 URL。
  *
  * 注意：'准考证打印官方打印入口' 这一 aria-label 在四场卡片上完全相同
@@ -14,12 +15,16 @@ import { EXAMS } from '../apps/web-overlay/src/lib/exam-calendar'
  * 带 aria-label「…（新窗口打开）」的跟踪岛链接，不数全页外链。
  *
  * U-154：E3 的期望不再写死数字，从 EXAMS 数据派生——总数 = 全部带 url
- * 的节点数，「去官网打印准考证」数 = 总数 − 5 个例外 label（与
- * my-exam-tracker.tsx 的 nodeLinkCopy 映射一一对应）。写死 16 曾在
- * U-144 G5（c06c567d，广东自考「成绩查询」挂直链成第 17 个带 url 节点）
- * 后滞后致 E3 红（实测 17，期望 16）；派生后数据增长不再打断断言。
+ * 的节点数 + 全部带 portalUrl 的节点数，「去官网打印准考证」数 = 带 url
+ * 节点数 − 5 个例外 label（与 my-exam-tracker.tsx 的 nodeLinkCopy 映射
+ * 一一对应）。写死 16 曾在 U-144 G5（c06c567d，广东自考「成绩查询」挂直链
+ * 成第 17 个带 url 节点）后滞后致 E3 红（实测 17，期望 16）；派生后数据
+ * 增长不再打断断言。U-426：门户备用链（c7f84da9）只在国考准考证行多渲染
+ * 一条「专题网站门户」链接，旧口径（只数带 url 节点）期望 18、实测 19
+ * 致 E3 红；门户链文案非「去官网打印准考证」，打印数口径不变。
  * exam-calendar.ts 零 import，spec 可直接引用；/exam 页全量渲染 EXAMS，
- * 页内只有 tracker 渲染「（新窗口打开）」aria-label，派生口径与断言口径一致。
+ * 页内只有 tracker 渲染「（新窗口打开）」aria-label（提醒卡不渲染），
+ * 派生口径与断言口径一致。
  */
 // nodeLinkCopy 的 5 个例外 label（其余带 url 节点文案均为「去官网打印准考证」）。
 // U-395：京考「缴费」是第 5 个例外（去官网缴费），军队文职缴费节点无 url 不渲染。
@@ -112,11 +117,16 @@ test.describe('U-124 /exam 节点外链点按回归', () => {
     )
   })
 
-  test('E3：跟踪岛外链总数不变（带「…（新窗口打开）」aria-label 的链接数 = EXAMS 带 url 节点数）', async ({
+  test('E3：跟踪岛外链总数不变（带「…（新窗口打开）」aria-label 的链接数 = EXAMS 带 url 节点数 + 带 portalUrl 节点数）', async ({
     page,
   }) => {
     const linkedNodes = EXAMS.flatMap((exam) => exam.nodes).filter((node) => node.url)
-    const expectedTotal = linkedNodes.length
+    // U-426：门户备用链只在带 portalUrl 的节点行多渲染一条链接（当前仅
+    // 国考准考证节点），旧口径漏数这一条致期望 18、实测 19。
+    const portalNodes = EXAMS.flatMap((exam) => exam.nodes).filter(
+      (node) => node.portalUrl,
+    )
+    const expectedTotal = linkedNodes.length + portalNodes.length
     const expectedPrint = linkedNodes.filter(
       (node) => !NON_PRINT_LABELS.includes(node.label),
     ).length
@@ -129,5 +139,12 @@ test.describe('U-124 /exam 节点外链点按回归', () => {
       els.map((el) => el.textContent?.trim() ?? ''),
     )
     expect(texts.filter((t) => t === '去官网打印准考证')).toHaveLength(expectedPrint)
+    // U-426：多出的 1 条须确为国考准考证行的门户备用链（补丁 T9 的 E2E 版）。
+    const portalLink = page.getByRole('link', {
+      name: '准考证打印专题网站门户入口（新窗口打开）',
+      exact: true,
+    })
+    await expect(portalLink).toHaveAttribute('href', GUOKAO_PORTAL_URL)
+    await expect(portalLink).toHaveText('专题网站门户')
   })
 })

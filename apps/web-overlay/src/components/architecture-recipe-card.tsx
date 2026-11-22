@@ -238,9 +238,9 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
         {recipe.layers.map((layer, idx) => (
           <div
             key={idx}
-            className="p-2 rounded-lg border bg-background/80 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2"
+            className="p-2 rounded-lg border bg-background/80 text-xs flex flex-col items-start justify-between gap-2"
           >
-            <div className="space-y-0.5">
+            <div className="min-w-0 flex-1 space-y-0.5">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-semibold text-muted-foreground">{layer.layerName}</span>
                 <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
@@ -265,7 +265,7 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
 
             {/* 可替代项 */}
             {layer.alternatives.length > 0 && (
-              <div className="flex items-center gap-1.5 flex-shrink-0 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-1.5 min-w-0 text-xs text-muted-foreground">
                 <span>平替:</span>
                 {layer.alternatives.map((alt) => (
                   <a

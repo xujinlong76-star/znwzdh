@@ -37,17 +37,21 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
 const SUFFIX = '（按 / 快速搜索）'
 
-/** 6 处显式 placeholder 挂载点：文案各异，但都必须带“按 /”后缀。 */
+/** 5 处显式 placeholder 挂载点（/hot 于 2026-11-21 移除全站搜索框，避免双搜索框冲突）。 */
 const EXPLICIT_PLACEHOLDER_PAGES = [
   'src/components/navigation-toolbar.tsx',
   'src/app/category/[slug]/category-board.tsx',
   'src/app/collections/[slug]/collection-detail-view.tsx',
-  'src/app/hot/hot-view.tsx',
   'src/components/tag-results-board.tsx',
   'src/app/not-found.tsx',
 ]
 
 describe('命令面板缺口 ①：placeholder 必须提示“按 / 快速搜索”', () => {
+it('/hot 已移除全站搜索框（2026-11-21），改由 / 快捷键 + 文字链提供出口', () => {
+  const src = read('src/app/hot/hot-view.tsx')
+  expect(src).not.toContain('<SearchPalette')
+  expect(src).toContain('搜不到？按 / 全站检索')
+});
   it('SearchPalette 默认 placeholder 带后缀', () => {
     const src = read('src/components/search-palette.tsx')
     expect(src).toContain(`placeholder = '搜索导航…（中文 / 拼音 / 语义）${SUFFIX}'`)

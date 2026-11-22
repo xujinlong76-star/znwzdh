@@ -80,7 +80,8 @@ describe('卡片三形态 + 坞芯片渲染点', () => {
   it('角标父级是 relative 的图标盒，不碰右上操作药丸（z-20）与左上置顶徽标', () => {
     expect(card).toContain('relative flex-shrink-0 w-6 h-6')
     expect(card).toContain('relative flex-shrink-0 w-7 h-7')
-    expect(card).toContain('relative flex-shrink-0 w-11 h-11')
+    // 图标盒 44→40px（w-10），点击区由 ::after 扩到 44×44
+    expect(card).toContain('relative flex-shrink-0 w-10 h-10')
   })
 
   it('主锚点 aria-keyshortcuts 按有无快拨位动态拼接', () => {

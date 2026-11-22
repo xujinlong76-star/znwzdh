@@ -28,9 +28,11 @@ import {
   graphContentBox,
   nodeRadiusForDegree,
   truncateGraphLabel,
+  resolveIsOpenSource,
 } from '@/lib/graph-polish'
 import { extractFaviconMonogram, resolveSiteIcon } from '@/components/site-favicon'
 import {
+  buildGraphEdges,
   sampleClusterFirst,
   searchGraphSites,
   egoSubgraph,
@@ -122,7 +124,8 @@ const DEFAULT_EDGES: GraphEdge[] = [
 const CATEGORY_COLORS = {
   dev: { fill: '#3b82f6', text: '#bfdbfe', bg: 'rgba(59, 130, 246, 0.15)', name: '研发全栈' },
   design: { fill: '#ec4899', text: '#fbcfe8', bg: 'rgba(236, 72, 153, 0.15)', name: 'UI & 设计' },
-  ai: { fill: '#10b981', text: '#a7f3d0', bg: 'rgba(16, 185, 129, 0.15)', name: 'AI 实验室' },
+  // 2026-11-22：AI 分类改用紫色，翠绿让位给「开源」形状通道（外环 + OS 徽标）
+  ai: { fill: '#8b5cf6', text: '#ddd6fe', bg: 'rgba(139, 92, 246, 0.15)', name: 'AI 实验室' },
   efficiency: { fill: '#f59e0b', text: '#fde68a', bg: 'rgba(245, 158, 11, 0.15)', name: '效率创作' },
 }
 
@@ -418,6 +421,21 @@ export function EcosystemGraph() {
       derivedEdges = sample.edges
       clusterList = sample.clusters
     }
+
+    /*
+     * 2026-11-22 图谱视觉解耦：边由同一份站点输入经 buildGraphEdges 生成，
+     * 与节点数据同源，避免「抽样返回的边」与「当前节点集合」漂移。
+     * topologyInputs 只含边计算需要的字段（id / href / description / tags / categoryId）。
+     */
+    const topologyInputs = sampledSites.map((s) => ({
+      id: s.id,
+      href: s.href,
+      title: s.title,
+      description: s.description,
+      tags: s.tags,
+      categoryId: s.categoryId,
+    }))
+    derivedEdges = buildGraphEdges(topologyInputs)
 
     // live 口径：只按真实站点自身去重，不再拿预设集顶替同 URL 的真实站；
     // 开源标记从标签推导（标签含「开源」即开源，图例「只看开源」才有得筛）。
@@ -1173,6 +1191,9 @@ export function EcosystemGraph() {
             {displayNodes.map((n) => {
               const isSelected = selectedNode?.id === n.id
               const catColor = CATEGORY_COLORS[n.category]
+              // 2026-11-22 开源改用形状通道：翠绿外环 + OS 徽标，
+              // 与分类色（含新的 AI 紫）完全解耦。
+              const isOpen = resolveIsOpenSource(n)
               const nodeR = nodeRadiusForDegree(degreeMap.get(n.id) ?? 0, isSelected)
               const iconSrc = resolveSiteIcon(n.url, n.title)
               const hasIcon = Boolean(iconSrc) && !failedIcons.has(iconSrc)
@@ -1203,6 +1224,17 @@ export function EcosystemGraph() {
                 >
                   {/* 完整名称：hover 原生 tooltip 与详情抽屉展示，标签只显示截断版 */}
                   <title>{n.title}</title>
+                  {/* 开源外环：翠绿细环套在节点外圈，与分类填充色无关（色盲友好） */}
+                  {isOpen && (
+                    <circle
+                      r={nodeR + 3}
+                      fill="none"
+                      stroke="#10b981"
+                      strokeWidth={1.6}
+                      className="pointer-events-none"
+                      aria-label="开源外环"
+                    />
+                  )}
                   {/* 键盘焦点环：只有真正聚焦（Tab / 方向键）时才出现 */}
                   <circle
                     r={nodeR + 8}
@@ -1245,6 +1277,18 @@ export function EcosystemGraph() {
                     >
                       {extractFaviconMonogram(n.title)}
                     </text>
+                  )}
+                  {/* OS 徽标：开源节点右下角小标记，形状通道再加固一层 */}
+                  {isOpen && (
+                    <text
+                      x={nodeR * 0.85}
+                      y={-nodeR * 0.85}
+                      textAnchor="middle"
+                      fontSize="8"
+                      fontWeight="700"
+                      fill="#10b981"
+                      className="pointer-events-none select-none"
+                    >OS</text>
                   )}
                   <text
                     y={nodeR + 12}

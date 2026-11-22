@@ -33,7 +33,8 @@ describe("A13 移动端字号入口", () => {
   it("工具栏字号按钮不再被 hidden lg: 藏起来", () => {
     const toolbar = read("src/components/navigation-toolbar.tsx");
     expect(toolbar).not.toContain('<div className="hidden lg:inline-flex"><FontSizeToggle /></div>');
-    expect(toolbar).toContain('<div className="inline-flex"><FontSizeToggle /></div>');
+    // 2026-11-21 顶栏收口：字号开关并入聚合菜单，直接裸挂 FontSizeToggle
+    expect(toolbar).toContain('<FontSizeToggle />');
   });
 
   it("设置页有带标签的「字号大小」入口且共用同一份本机存储", () => {

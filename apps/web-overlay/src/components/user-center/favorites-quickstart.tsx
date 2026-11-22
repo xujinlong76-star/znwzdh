@@ -325,7 +325,7 @@ export function FavoritesQuickStartEmpty({
           data-testid="quickstart-explore"
           className="group flex flex-col items-start gap-2 rounded-xl border border-border/70 bg-card/50 p-4 text-left transition-colors hover:border-border hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-500/10 text-sky-700 dark:text-sky-400">
             <Compass className="h-4 w-4" aria-hidden />
           </span>
           <span className="text-sm font-semibold text-foreground">探索发现</span>
@@ -351,7 +351,7 @@ export function FavoritesQuickStartEmpty({
           data-testid="quickstart-manual"
           className="group flex flex-col items-start gap-2 rounded-xl border border-border/70 bg-card/50 p-4 text-left transition-colors hover:border-border hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
             <FolderPlus className="h-4 w-4" aria-hidden />
           </span>
           <span className="text-sm font-semibold text-foreground">手动新建</span>

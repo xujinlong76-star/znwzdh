@@ -232,13 +232,15 @@ describe('挂载点：navigation-content.tsx（选项 b）', () => {
 })
 
 describe('底部契约：三段断点表逐字锁定', () => {
-  it('footer：<640 留 5.5rem，640–1024 留 4.5rem，≥1024 只留 pb-8', () => {
+  it('footer：为右下浮坞抬到 <640 留 7rem、640–1024/≥1024 留 6rem（2026-11-22）', () => {
     const footer = read(FOOTER)
-    expect(footer).toContain('pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]')
+    // 原 5.5/4.5rem + lg:pb-8(2rem) 不够：右下浮坞（猫+回顶钮≈116px）
+    // 在 390x844 与 1366x768 下都压住了页脚链接，实测复现后抬升。
+    expect(footer).toContain('pb-[calc(7rem+env(safe-area-inset-bottom,0px))]')
     expect(footer).toContain(
-      'min-[640px]:max-[1024px]:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]',
+      'min-[640px]:max-[1024px]:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]',
     )
-    expect(footer).toContain('lg:pb-8')
+    expect(footer).toContain('lg:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]')
     expect(footer).not.toContain('sm:pb-8')
   })
 

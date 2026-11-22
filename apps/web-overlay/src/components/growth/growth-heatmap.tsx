@@ -139,7 +139,7 @@ export function GrowthHeatmap({ profile }: { profile: GrowthProfile }) {
                   className={cn(
                     'flex h-7 w-full items-center justify-center rounded-md text-[10px] font-medium tabular-nums transition-colors',
                     cellClass(c.xp, c.state),
-                    isLit ? 'text-amber-950 dark:text-zinc-950 font-semibold' : 'text-muted-foreground/70',
+                    isLit ? 'text-amber-950 dark:text-zinc-950 font-semibold' : 'text-muted-foreground',
                     c.milestone && 'ring-1.5 ring-amber-500 dark:ring-amber-300',
                   )}
                 >

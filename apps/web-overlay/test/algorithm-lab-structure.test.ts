@@ -155,7 +155,8 @@ describe("LinUCB 面板必须用真引擎，不许手工线性加权", () => {
     expect(panel).toContain("labTop3");
     expect(panel).toContain("ResultRow");
     expect(panel).toContain("面板本地模型");
-    expect(panel).toContain("不会写入生产 recordFeedback");
+    // 实际文案「不写入生产 recordFeedback」（无「会」字）
+    expect(panel).toContain("不写入生产 recordFeedback");
     const labAb = overlayRead("src/lib/lab-ab.ts");
     expect(labAb).toContain("LAB_STATIC_WEIGHTS");
     expect(labAb).toContain("labTop3");
@@ -337,14 +338,19 @@ describe("算法实验室 Tab 级动态加载（包体积）", () => {
     const src = shell();
     expect(src).toContain("PANEL_PRELOADERS");
     expect(src).toContain("preloadTab");
+    // 实际用动态值调用（TabsTrigger 循环），而非逐个字面量：
+    //   onMouseEnter={() => preloadTab(item.value)}
+    //   onFocus={() => preloadTab(item.value)}
+    expect(src).toContain("preloadTab(item.value)");
+    expect(src).toContain("onMouseEnter");
+    expect(src).toContain("onFocus");
+    // 预取表须覆盖全部 Tab，否则某几个 hover 时无 chunk 可下载
     for (const tab of TABS) {
-      expect(src, `Tab ${tab} 应有 hover/focus 预取`).toContain(
-        `preloadTab('${tab}')`,
-      );
+      expect(src, `预取表缺少 ${tab}`).toContain(`${tab}:`);
     }
   });
-});
 
+});
 describe("算法实验室 W1-2：LDP ε 滑块 + 分布对比 + 加噪排序", () => {
   const panel = () =>
     overlayRead("src/components/algorithm-lab/federated-panel.tsx");

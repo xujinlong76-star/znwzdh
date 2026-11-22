@@ -562,7 +562,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                         "ml-1 shrink-0 rounded-full px-1.5 py-0.2 font-mono text-[10px] tabular-nums transition-colors",
                         isActive
                           ? "bg-primary/15 font-semibold text-primary"
-                          : "bg-muted/70 text-muted-foreground/80 group-hover:bg-muted group-hover:text-foreground/80"
+                          : "bg-muted/70 text-muted-foreground group-hover:bg-muted group-hover:text-foreground/80"
                       )}
                     >
                       {totalSiteCount}
@@ -576,7 +576,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                     size="sm"
                     className={cn(
                       "h-7 w-6 shrink-0 px-0 mr-0.5 rounded-lg hover:bg-muted/70 cursor-pointer transition-colors",
-                      isActive ? "text-primary" : "text-muted-foreground/70 group-hover:text-foreground"
+                      isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
                     )}
                     onClick={() => toggleCategory(category.id)}
                     aria-label={isExpanded ? `折叠分类：${category.title}` : `展开分类：${category.title}`}
@@ -615,7 +615,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                         >
                           <span className="truncate min-w-0 text-left">{subCategory.title}</span>
                           {subCount > 0 && (
-                            <span className="ml-1.5 shrink-0 font-mono text-[10px] text-muted-foreground/70 tabular-nums">
+                            <span className="ml-1.5 shrink-0 font-mono text-[10px] text-muted-foreground tabular-nums">
                               {subCount}
                             </span>
                           )}

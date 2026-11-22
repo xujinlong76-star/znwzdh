@@ -59,7 +59,9 @@ describe('P2-13：分区不再各建 observer', () => {
   it('分区文件不再 new ResizeObserver，改调共享 observeGridColumns', () => {
     expect(sectionSrc).not.toContain('new ResizeObserver')
     expect(sectionSrc).toContain('observeGridColumns')
-    expect(sectionSrc).toContain('GRID_MIN_COL_PX')
+    // 2026-11-21 起列数由 @container token（CARD_GRID）决定，
+    // GRID_MIN_COL_PX 已随 auto-fill 方案一并移除。
+    expect(sectionSrc).toContain('CARD_GRID')
   })
 
   it('共享模块全站只有一个 ResizeObserver 实例', () => {
@@ -74,9 +76,15 @@ describe('P2-13：分区不再各建 observer', () => {
     expect(callbackBody).toContain('syncOne')
   })
 
-  it('class 字符串用 GRID_MIN_COL_PX 拼，不再写死 240px（防公式与模板漂移）', () => {
-    // 注释里仍可提 240px（说明数值），但 class 字符串须走常量。
+  it('网格 class 走统一 CARD_GRID token，不再手写 auto-fill/minmax 模板', () => {
+    /*
+     * 2026-11-21 起用 Tailwind v4 @container 断点替代 auto-fill：
+     * CARD_GRID = '@xl:grid-cols-2 @4xl:grid-cols-3 @6xl:grid-cols-4'。
+     * 好处是列数由卡片区真实宽度决定（侧栏折叠不抖动），
+     * 且全站共用同一组 token，不再有公式与模板漂移问题。
+     */
     expect(sectionSrc).not.toContain("'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))]'")
-    expect(sectionSrc).toContain('minmax(${GRID_MIN_COL_PX}px,1fr)')
+    expect(sectionSrc).not.toContain('minmax(${GRID_MIN_COL_PX}px,1fr)')
+    expect(sectionSrc).toContain('CARD_GRID')
   })
 })

@@ -63,7 +63,7 @@ export default function GraphPage() {
               </dd>
             </div>
             <div>
-              <dt className="font-medium">绿色圆点：开源项目</dt>
+              <dt className="font-medium">翠绿外环与 OS 徽标：开源项目</dt>
               <dd className="mt-1 leading-relaxed text-muted-foreground">
                 标记源码开放或可自托管的选择，便于优先评估开源方案。
               </dd>

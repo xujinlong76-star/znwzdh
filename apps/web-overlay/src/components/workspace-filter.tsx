@@ -135,7 +135,7 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
         <Tooltip>
           <TooltipTrigger asChild>
             <span
-              className="inline-flex h-6 w-6 shrink-0 cursor-help items-center justify-center rounded-full text-muted-foreground/60 hover:text-muted-foreground"
+              className="inline-flex h-6 w-6 shrink-0 cursor-help items-center justify-center rounded-full text-muted-foreground hover:text-muted-foreground"
               aria-label="自适应工作区：分类与卡片密度会随可用宽度自动调整"
               tabIndex={0}
             >

@@ -21,7 +21,7 @@ export const LAB_GROUPS = [
     items: [
       { value: 'linucb', label: 'LinUCB', icon: Layers, tone: 'text-primary' },
       { value: 'intent', label: '0-RTT 推测', icon: Zap, tone: 'text-amber-500' },
-      { value: 'health', label: '文本熵巡检', icon: Activity, tone: 'text-emerald-600' },
+      { value: 'health', label: '文本熵巡检', icon: Activity, tone: 'text-emerald-700 dark:text-emerald-400' },
     ],
   },
   {

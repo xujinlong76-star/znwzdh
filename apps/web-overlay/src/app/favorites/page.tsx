@@ -1521,7 +1521,7 @@ export default function FavoritesPage() {
                       setShowUniversalImport(false)
                     }}
                   >
-                    <Shield className="w-3.5 h-3.5 mr-2 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                    <Shield className="w-3.5 h-3.5 mr-2 text-emerald-700 dark:text-emerald-400" aria-hidden />
                     <span className="flex-1">导出加密金库 (.navhub.vault)</span>
                     <span className="ml-2 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
                       推荐

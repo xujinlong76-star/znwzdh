@@ -1,17 +1,19 @@
 'use client'
 
 /**
- * 用户中心「我的成长」面板：
- * 顶层紧凑成长驾驶舱（等级 / 进度 / KPI 胶囊 / 挂机状态 / 16 周活跃日历）+
- * 4 标签页交互分区（今日与任务 / 赛季进度 / 成就徽章 / 图鉴与指南），
- * 将原先 ~4,650px 的超长瀑布流收纳进高信噪比、按需切换的精致工作区。
- *
- * 数据全部来自 growth.ts 的本机成长档案（localStorage，不回传服务端），
- * 档案变化通过 GROWTH_UPDATED_EVENT 广播，本面板订阅后即时刷新。
+ * 用户中心「我的成长」面板（2026-11-21 UX 全面重构）：
+ *  1. 顶层精炼档案卡：价值驱动副标题（注入 LEVEL_UNLOCK_HINTS 升级回报钩子）、
+ *     琥珀金强调色经验进度条、4 枚核心指标胶囊（含无障碍 ? Hover+Focus Tooltip）；
+ *  2. 响应式 12 栏双栏（热力图 lg:col-span-7 + 下一级里程碑预告卡 lg:col-span-5），
+ *     彻底消除 16 周热力图右侧留白与新号空态冷清感；
+ *  3. 独立分段控制器（Segmented Control）：将 4 个二级 Tab 抽离出顶部档案卡，
+ *     置于档案卡与下方内容区之间，建立清晰的「控制栏 → 内容区」格式塔从属关系；
+ *  4. 支持 `/me/growth?openChest=1` 自动切至任务页签并触发开箱。
  */
 
-import { useCallback, useEffect, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import {
   Award,
   Bell,
@@ -38,6 +40,9 @@ import {
   EARNBACK_WINDOW_MS,
   FEATURE_FIRST_EVER_XP,
   FEATURE_META,
+  FREEZE_CAP_HIGH,
+  FREEZE_CAP_HIGH_LEVEL,
+  FREEZE_CAP_LOW,
   GROWTH_UPDATED_EVENT,
   HOMEPAGE_CLAIM_XP,
   IDENTITY_TIER,
@@ -60,6 +65,7 @@ import {
   identityMultiplier,
   levelProgress,
   levelTier,
+  levelUnlockHint,
   loadGrowthProfile,
   markRookiePanelSeenAction,
   recordSeasonZoneVisitAction,
@@ -74,6 +80,7 @@ import { HomepageGuideCard } from '@/components/growth/homepage-guide'
 import { GrowthHeatmap } from '@/components/growth/growth-heatmap'
 import { GrowthSeasonPanel } from '@/components/growth/growth-season-panel'
 import { GrowthTasks } from '@/components/growth/growth-tasks'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 const TIER_ICONS = { paw: PawPrint, bell: Bell, fish: Fish, crown: Crown } as const
@@ -81,10 +88,42 @@ const TIER_ICONS = { paw: PawPrint, bell: Bell, fish: Fish, crown: Crown } as co
 type GrowthTabId = 'tasks' | 'season' | 'badges' | 'guide'
 type BadgeFilter = 'all' | 'earned' | 'locked'
 
+/** 无障碍指标说明触发器：同时支持鼠标 Hover 与键盘 Focus/Enter，不依赖纯悬停 */
+function MetricHelpTip({
+  label,
+  content,
+}: {
+  label: string
+  content: ReactNode
+}) {
+  return (
+    <Tooltip delayDuration={150}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-border/80 bg-background/80 text-[10px] font-semibold leading-none text-muted-foreground transition-colors hover:border-amber-500/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          ?
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        align="center"
+        className="max-w-[260px] rounded-xl border border-border/80 bg-popover px-3 py-2 text-[11px] leading-relaxed text-popover-foreground shadow-md"
+      >
+        {content}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function GrowthPanel() {
+  const searchParams = useSearchParams()
   const [profile, setProfile] = useState<GrowthProfile | null>(null)
   const [activeTab, setActiveTab] = useState<GrowthTabId>('tasks')
   const [badgeFilter, setBadgeFilter] = useState<BadgeFilter>('all')
+  const [autoOpenChestToken, setAutoOpenChestToken] = useState<number>(0)
 
   const refresh = useCallback(() => setProfile(loadGrowthProfile()), [])
 
@@ -99,6 +138,20 @@ export function GrowthPanel() {
     window.addEventListener(GROWTH_UPDATED_EVENT, refresh)
     return () => window.removeEventListener(GROWTH_UPDATED_EVENT, refresh)
   }, [refresh])
+
+  // 跨页全清宝箱回流闭环：识别 /me/growth?openChest=1 后切至任务 Tab 并自动触发开箱，同时清理 URL 参数
+  useEffect(() => {
+    if (searchParams?.get('openChest') !== '1') return
+    setActiveTab('tasks')
+    setAutoOpenChestToken((t) => t + 1)
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('openChest')
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash)
+    } catch {
+      // 忽略 history 限制
+    }
+  }, [searchParams])
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const order: GrowthTabId[] = ['tasks', 'season', 'badges', 'guide']
@@ -125,6 +178,7 @@ export function GrowthPanel() {
   }
 
   const lp = levelProgress(profile.totalXp)
+  const nextUnlock = levelUnlockHint(lp.nextLevel)
   const badges = deriveBadges(profile)
   const earnedBadges = badges.filter((b) => b.earned).length
   const lockedBadges = badges.length - earnedBadges
@@ -144,9 +198,11 @@ export function GrowthPanel() {
   const tier = levelTier(lp.level)
   const TierIcon = TIER_ICONS[tier.kind]
   const mult = currentMultiplier(profile)
+  const freezeCap = lp.level >= FREEZE_CAP_HIGH_LEVEL ? FREEZE_CAP_HIGH : FREEZE_CAP_LOW
   const earnbackHoursLeft = profile.earnBack
     ? Math.max(0, Math.round((new Date(profile.earnBack.deadline).getTime() - Date.now()) / 3600000))
     : 0
+  const progressPct = Math.round(lp.progress * 100)
 
   const tabs: Array<{ id: GrowthTabId; label: string; badge?: string; icon: typeof ListChecks }> = [
     { id: 'tasks', label: '今日与任务', icon: ListChecks },
@@ -157,74 +213,133 @@ export function GrowthPanel() {
 
   return (
     <div className="space-y-4">
-      {/* 顶部精炼成长总览卡 */}
-      <section className="rounded-2xl border border-border/70 bg-card/75 p-4 shadow-xs sm:p-5" aria-label="我的成长">
-        {/* 探索者档案卡：左身份与进度，右 16 周热力图 */}
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3.5">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-amber-400/15 text-primary ring-1 ring-primary/20">
-              <Cat className="h-6 w-6" aria-hidden />
-            </span>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-base font-semibold tracking-tight">
-                  Lv.{lp.level} · {lp.title}
-                </h2>
-                <span
-                  className="inline-flex items-center gap-1 rounded-full bg-muted/70 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-                  aria-label={`进阶阶段：${LEVEL_TIER_LABEL[tier.kind]}，已点亮 ${tier.count} 枚`}
-                >
-                  <span className="inline-flex items-center gap-0.5">
-                    {Array.from({ length: 4 }, (_, i) => (
-                      <TierIcon
-                        key={i}
-                        className={cn('h-3 w-3', i < tier.count ? 'text-primary' : 'text-muted-foreground opacity-45')}
-                        aria-hidden
-                      />
-                    ))}
+      {/* 顶部精炼档案大卡（不含二级 Tab，确保格式塔分组边界清晰） */}
+      <section
+        data-growth-profile-card="true"
+        className="rounded-2xl border border-border/70 bg-card/85 p-4 shadow-xs sm:p-5"
+        aria-label="我的成长"
+      >
+        {/* 身份头 + 价值驱动副标题 + 升级进度条 + 4 指标胶囊 */}
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3.5">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-amber-500/25 bg-amber-500/10 text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-300">
+                <Cat className="h-6 w-6" aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-base font-semibold tracking-tight text-foreground">
+                    Lv.{lp.level} · {lp.title}
+                  </h2>
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full bg-muted/75 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                    aria-label={`进阶阶段：${LEVEL_TIER_LABEL[tier.kind]}，已点亮 ${tier.count} 枚`}
+                  >
+                    <span className="inline-flex items-center gap-0.5">
+                      {Array.from({ length: 4 }, (_, i) => (
+                        <TierIcon
+                          key={i}
+                          className={cn(
+                            'h-3 w-3',
+                            i < tier.count
+                              ? 'text-amber-700 dark:text-amber-400'
+                              : 'text-muted-foreground opacity-40',
+                          )}
+                          aria-hidden
+                        />
+                      ))}
+                    </span>
+                    <span>{LEVEL_TIER_LABEL[tier.kind]}阶段</span>
                   </span>
-                  <span>{LEVEL_TIER_LABEL[tier.kind]}阶段</span>
-                </span>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  总经验 <strong className="font-semibold text-foreground tabular-nums">{profile.totalXp}</strong>
+                  {' · '}
+                  {lp.nextLevel ? (
+                    <>
+                      再赚 <strong className="font-semibold text-amber-700 dark:text-amber-400 tabular-nums">{lp.toNext} XP</strong> 升至 Lv.{lp.nextLevel}「{lp.nextTitle}」
+                      {nextUnlock ? ` · ${nextUnlock.summary}` : ''}
+                    </>
+                  ) : (
+                    `已是最高等级——${lp.title}`
+                  )}
+                </p>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                总经验 <strong className="font-semibold text-foreground tabular-nums">{profile.totalXp}</strong>
-                {' · '}
-                {lp.nextLevel
-                  ? `再赚 ${lp.toNext} 经验升至 Lv.${lp.nextLevel}「${lp.nextTitle}」`
-                  : `已是最高等级——${lp.title}`}
-              </p>
+            </div>
+
+            {/* 右侧专注浏览微注脚 + 无障碍 ? Tooltip */}
+            <div className="flex items-center gap-1.5 rounded-xl border border-border/60 bg-background/70 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+              <span>
+                专注浏览{' '}
+                <strong className="font-semibold text-foreground tabular-nums">
+                  {idleToday}/{IDLE_DAILY_CAP_MINUTES}
+                </strong>{' '}
+                分钟
+              </span>
+              <MetricHelpTip
+                label="专注浏览经验换算规则"
+                content={
+                  <div className="space-y-1">
+                    <p className="font-semibold text-foreground">专注浏览换算规则</p>
+                    <p>
+                      页面处于前台可见状态时自动计时，每满 1 分钟入账 +{IDLE_XP_PER_MINUTE} XP，每日上限 {IDLE_DAILY_CAP_MINUTES} 分钟（最高 +{IDLE_DAILY_CAP_MINUTES * IDLE_XP_PER_MINUTE} XP/天）。切后台自动暂停，不吃流量不打扰。
+                    </p>
+                  </div>
+                }
+              />
             </div>
           </div>
 
-          {/* 升级进度条 */}
+          {/* 升级进度条（克制琥珀金强调色） */}
           <div
             className="mt-3.5 h-2 overflow-hidden rounded-full bg-muted"
             role="progressbar"
-            aria-valuenow={Math.round(lp.progress * 100)}
+            aria-valuenow={progressPct}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-label="升级进度"
           >
-            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round(lp.progress * 100)}%` }} />
+            <div
+              className="h-full rounded-full bg-amber-500 transition-all duration-300 dark:bg-amber-400"
+              style={{ width: `${progressPct}%` }}
+            />
           </div>
 
           {/* 4 枚高对比核心成长指标胶囊 */}
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div className="rounded-xl border border-border/60 bg-background/65 px-3 py-2">
               <span className="block text-[10px] text-muted-foreground">今日获得</span>
-              <span className="mt-0.5 block text-sm font-semibold text-primary tabular-nums">+{todayXp(profile)} XP</span>
-            </div>
-            <div
-              className="rounded-xl border border-border/60 bg-background/65 px-3 py-2"
-              title={`身份档 ×${identityMultiplier(profile)} + 连胜加成 +${streakBonus(profile).toFixed(1)}，合计封顶 ×2.0`}
-            >
-              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                <Zap className="h-3 w-3 text-amber-700 dark:text-amber-400" aria-hidden />
-                当前倍率
+              <span className="mt-0.5 block text-sm font-semibold text-amber-700 dark:text-amber-400 tabular-nums">
+                +{todayXp(profile)} XP
               </span>
+            </div>
+
+            <div className="rounded-xl border border-border/60 bg-background/65 px-3 py-2">
+              <div className="flex items-center justify-between gap-1">
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <Zap className="h-3 w-3 text-amber-700 dark:text-amber-400" aria-hidden />
+                  当前倍率
+                </span>
+                <MetricHelpTip
+                  label="当前倍率计算与连登提倍阶梯说明"
+                  content={
+                    <div className="space-y-1">
+                      <p className="font-semibold text-foreground">
+                        当前 ×{mult.toFixed(1)}（身份 ×{identityMultiplier(profile).toFixed(1)} + 连胜 +{streakBonus(profile).toFixed(1)}）
+                      </p>
+                      <p>
+                        身份档：基础 ×{IDENTITY_TIER.base.toFixed(1)} / 登录 ×{IDENTITY_TIER.member.toFixed(1)} / 装为应用 ×{IDENTITY_TIER.homeOrPwa.toFixed(1)}（取高不叠）。
+                      </p>
+                      <p>
+                        连登提倍阶梯：每连续活跃满 {STREAK_BONUS_STEP_DAYS} 天 +{STREAK_BONUS_STEP.toFixed(1)}（7 天 +0.1、14 天 +0.2、21 天封顶 +{STREAK_BONUS_CAP.toFixed(1)}），总倍率封顶 ×{MULTIPLIER_CAP.toFixed(1)}。
+                      </p>
+                    </div>
+                  }
+                />
+              </div>
               <span className="mt-0.5 block text-sm font-semibold text-foreground tabular-nums">×{mult.toFixed(1)}</span>
             </div>
+
             <div
               className="rounded-xl border border-border/60 bg-background/65 px-3 py-2"
               title={`历史最长 ${profile.longestStreak} 天${profile.pureLongestStreak !== profile.longestStreak ? ` · 真连胜最长 ${profile.pureLongestStreak} 天` : ''}`}
@@ -238,11 +353,30 @@ export function GrowthPanel() {
                 {pureStreak !== streak && <span className="ml-1 text-[10px] font-normal text-muted-foreground">真{pureStreak}</span>}
               </span>
             </div>
+
             <div className="rounded-xl border border-border/60 bg-background/65 px-3 py-2">
-              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                <Snowflake className="h-3 w-3 text-sky-500" aria-hidden />
-                冻结卡
-              </span>
+              <div className="flex items-center justify-between gap-1">
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <Snowflake className="h-3 w-3 text-sky-500" aria-hidden />
+                  冻结卡
+                </span>
+                <MetricHelpTip
+                  label="冻结卡作用与获取途径说明"
+                  content={
+                    <div className="space-y-1">
+                      <p className="font-semibold text-foreground">
+                        断签自动保连胜（当前 {profile.freezeCards}/{freezeCap} 张）
+                      </p>
+                      <p>
+                        作用：某天忘记来访时自动消耗 1 张垫付当天记录，保护连续访问不归零。
+                      </p>
+                      <p>
+                        获取途径：开启「每日全清宝箱」有概率掉落（连空 3 次第 4 次必出），或完成本周任务「五日同行」与每满 7 天连胜自动补给。
+                      </p>
+                    </div>
+                  }
+                />
+              </div>
               <span className="mt-0.5 block text-sm font-semibold text-foreground tabular-nums">{profile.freezeCards} 张</span>
             </div>
           </div>
@@ -254,16 +388,83 @@ export function GrowthPanel() {
           )}
         </div>
 
-          {/* 右：16 周热力图 + 一行温和注脚 */}
-          <div className="min-w-0">
+        {/* 响应式双栏：左活跃热力图（col-span-7） + 右下一级里程碑预告卡（col-span-5） */}
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
+          <div className="min-w-0 lg:col-span-7">
             <GrowthHeatmap profile={profile} />
-            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-              专注浏览自动累计经验 ·{' '}
-              {idleToday >= IDLE_DAILY_CAP_MINUTES
-                ? `今日已满 ${IDLE_DAILY_CAP_MINUTES}/${IDLE_DAILY_CAP_MINUTES} 分钟`
-                : `今日 ${idleToday}/${IDLE_DAILY_CAP_MINUTES} 分钟`}
-            </p>
           </div>
+
+          {/* 下一级里程碑预告卡 */}
+          <aside
+            data-next-milestone-card="true"
+            aria-label="下一级里程碑预告"
+            className="flex flex-col justify-between rounded-xl border border-amber-500/25 bg-amber-500/[0.04] px-3.5 py-3 dark:border-amber-400/20 dark:bg-amber-400/[0.05] lg:col-span-5"
+          >
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                  <Sparkles className="h-3.5 w-3.5 text-amber-700 dark:text-amber-400" aria-hidden />
+                  下一级里程碑预告
+                </span>
+                {nextUnlock && (
+                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-400/15 dark:text-amber-300">
+                    {nextUnlock.stageTag}
+                  </span>
+                )}
+              </div>
+
+              {lp.nextLevel && nextUnlock ? (
+                <>
+                  <div className="mt-2.5 flex items-center gap-2.5">
+                    <span
+                      aria-hidden
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-500/30 bg-background text-lg shadow-2xs"
+                    >
+                      {nextUnlock.previewIcon}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-semibold text-foreground">
+                        Lv.{lp.nextLevel} · {lp.nextTitle}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground tabular-nums">
+                        还差 <strong className="font-semibold text-amber-700 dark:text-amber-400">{lp.toNext} XP</strong> 解锁
+                      </p>
+                    </div>
+                  </div>
+                  <ul className="mt-2.5 space-y-1.5 text-[11px] text-muted-foreground">
+                    {nextUnlock.perks.map((perk) => (
+                      <li key={perk} className="flex items-start gap-1.5 leading-snug">
+                        <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500 dark:bg-amber-400" aria-hidden />
+                        <span>{perk}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <div className="mt-3 flex items-center gap-2.5">
+                  <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-500/30 bg-background text-lg">
+                    🌟
+                  </span>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    你已登顶终极头衔「{lp.title}」，所有等阶印记全部点亮。
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-3 pt-2 border-t border-amber-500/15">
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground tabular-nums">
+                <span>当前阶段进度</span>
+                <span className="font-mono font-semibold text-amber-700 dark:text-amber-400">{progressPct}%</span>
+              </div>
+              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted/80">
+                <div
+                  className="h-full rounded-full bg-amber-500 transition-all duration-300 dark:bg-amber-400"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+            </div>
+          </aside>
         </div>
 
         {profile.pendingNotices.length > 0 && (
@@ -275,7 +476,7 @@ export function GrowthPanel() {
                   type="button"
                   aria-label="知道了"
                   onClick={() => setProfile(dismissNoticeAction(n.id))}
-                  className="shrink-0 rounded-md p-0.5 text-muted-foreground hover:text-foreground"
+                  className="shrink-0 rounded-md p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <X className="h-4 w-4" aria-hidden />
                 </button>
@@ -283,58 +484,67 @@ export function GrowthPanel() {
             ))}
           </ul>
         )}
-
-        {/* 成长中心 4 标签切换条 */}
-        <div
-          role="tablist"
-          aria-label="成长档案分区"
-          onKeyDown={handleTabKeyDown}
-          className="mt-4 flex items-center gap-1 overflow-x-auto rounded-xl border border-border/60 bg-muted/45 p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {tabs.map(({ id, label, badge, icon: Icon }) => {
-            const selected = activeTab === id
-            return (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                data-growth-tab={id}
-                aria-selected={selected}
-                tabIndex={selected ? 0 : -1}
-                onClick={() => setActiveTab(id)}
-                className={cn(
-                  'inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  selected
-                    ? 'bg-background text-foreground shadow-xs'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                <span>{label}</span>
-                {badge && (
-                  <span
-                    className={cn(
-                      'rounded-md px-1.5 py-0.5 font-mono text-[10px] tabular-nums',
-                      selected ? 'bg-primary/10 text-primary' : 'bg-background/70 text-muted-foreground',
-                    )}
-                  >
-                    {badge}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
       </section>
 
+      {/* 独立分段控制器（Segmented Control）：置于档案大卡与下方任务内容区之间，建立清晰视觉归属 */}
+      <div
+        role="tablist"
+        aria-label="成长档案分区"
+        data-growth-segmented-control="true"
+        onKeyDown={handleTabKeyDown}
+        className="flex items-center gap-1 overflow-x-auto rounded-2xl border border-border/70 bg-card/85 p-1.5 shadow-xs [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {tabs.map(({ id, label, badge, icon: Icon }) => {
+          const selected = activeTab === id
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              data-growth-tab={id}
+              aria-selected={selected}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => setActiveTab(id)}
+              className={cn(
+                'inline-flex flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 text-xs font-medium transition-all',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                selected
+                  ? 'bg-primary text-primary-foreground shadow-xs'
+                  : 'text-muted-foreground hover:bg-muted/65 hover:text-foreground',
+              )}
+            >
+              <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>{label}</span>
+              {badge && (
+                <span
+                  className={cn(
+                    'rounded-md px-1.5 py-0.5 font-mono text-[10px] tabular-nums',
+                    selected
+                      ? 'bg-primary-foreground/15 text-primary-foreground'
+                      : 'bg-muted/80 text-muted-foreground',
+                  )}
+                >
+                  {badge}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
       {/* 标签内容区 */}
-      {activeTab === 'tasks' && <GrowthTasks profile={profile} onGoToGuide={() => setActiveTab('guide')} />}
+      {activeTab === 'tasks' && (
+        <GrowthTasks
+          profile={profile}
+          onGoToGuide={() => setActiveTab('guide')}
+          autoOpenChestToken={autoOpenChestToken}
+        />
+      )}
 
       {activeTab === 'season' && <GrowthSeasonPanel profile={profile} />}
 
       {activeTab === 'badges' && (
-        <section className="rounded-2xl border border-border/70 bg-card/75 p-4 shadow-xs sm:p-5" aria-label="成就徽章">
+        <section className="rounded-2xl border border-border/70 bg-card/85 p-4 shadow-xs sm:p-5" aria-label="成就徽章">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <span className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400">
@@ -376,7 +586,7 @@ export function GrowthPanel() {
                 className={cn(
                   'relative flex flex-col justify-between rounded-xl border p-3 transition-colors',
                   b.earned
-                    ? 'border-primary/45 bg-primary/[0.06] dark:bg-primary/[0.12]'
+                    ? 'border-amber-500/40 bg-amber-500/[0.06] dark:bg-amber-400/[0.10]'
                     : 'border-border/60 bg-background/45 opacity-80',
                 )}
               >
@@ -387,7 +597,7 @@ export function GrowthPanel() {
                       className={cn(
                         'rounded-full px-2 py-0.5 text-[10px] font-medium',
                         b.earned
-                          ? 'bg-primary text-primary-foreground'
+                          ? 'bg-amber-500 text-amber-950 dark:bg-amber-400 dark:text-zinc-950'
                           : 'bg-muted text-muted-foreground',
                       )}
                     >
@@ -405,7 +615,7 @@ export function GrowthPanel() {
 
       {activeTab === 'guide' && (
         <div className="space-y-4">
-          <section className="rounded-2xl border border-border/70 bg-card/75 p-4 shadow-xs sm:p-5" aria-label="功能图鉴">
+          <section className="rounded-2xl border border-border/70 bg-card/85 p-4 shadow-xs sm:p-5" aria-label="功能图鉴">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="flex items-center gap-2 text-sm font-semibold">
                 <span className="flex h-6 w-6 items-center justify-center rounded-md bg-violet-500/10 text-violet-700 dark:text-violet-300">
@@ -443,7 +653,7 @@ export function GrowthPanel() {
                     ) : (
                       <Link
                         href={meta.href}
-                        className="shrink-0 rounded-lg border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
+                        className="shrink-0 rounded-lg border border-border-strong bg-background px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-amber-500/60 hover:text-amber-700 dark:hover:text-amber-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         去体验
                       </Link>

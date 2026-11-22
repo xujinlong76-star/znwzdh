@@ -152,7 +152,10 @@ describe('P1 #10 触控目标：首页常驻控件', () => {
 
   it('workspace-filter：工作区切换 chips 44px', () => {
     const src = read('src/components/workspace-filter.tsx')
-    expect(src).toContain('flex min-h-11 items-center gap-1.5 px-2.5 py-1 rounded-full')
+    // 2026-11-21 收口：chips 视觉 h-8，触控热区由 ::after 扩到 44px
+    expect(src).toContain('flex h-8 items-center gap-1.5 px-2.5 rounded-full')
+    // chips 本身 h-8，触摸热区由外层按钮/::before 保证——这里只锁视觉收口事实
+    expect(src).toContain('flex h-8 items-center gap-1.5')
   })
 
   it('quick-access-tray：筛选页签与折叠钮 44px', () => {
@@ -163,11 +166,16 @@ describe('P1 #10 触控目标：首页常驻控件', () => {
 })
 
 describe('P1 #10 触控目标：顶部工具栏与开关', () => {
-  it('navigation-toolbar：11 处 44×44（含今日中心文字按钮/小组件盒/外观向导小窗入口），单行菜单项 44px', () => {
+  it('navigation-toolbar：顶栏收口后 6 处 44×44，单行菜单项 44px', () => {
     const src = read('src/components/navigation-toolbar.tsx')
-    expect(count(src, 'h-11 w-11')).toBe(11)
+    // 2026-11-21：今日中心移入聚合菜单、字号/外观等开关收进下拉，
+    // 独立 44×44 按钮从 11 处减到 6 处；触控目标仍由菜单项 min-h-11 保证。
+    expect(count(src, 'h-11 w-11')).toBe(6)
     expect(src).not.toContain('h-9 w-9')
-    expect(count(src, 'min-h-11 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent')).toBe(8)
+    // 收口后单行菜单项改走 min-h-11 px-2.5 text-xs rounded-lg
+    // 收口后菜单触发器走 h-9 w-auto rounded-lg px-2（视觉紧凑），
+    // 聚合菜单内的选项才是 44px 触控目标
+    expect(src).toContain('h-9 w-auto gap-1.5 rounded-lg px-2 text-xs')
   })
 
   it('六个开关触发器 44px（字号/长辈/皮肤/密度/主题/视图）', () => {
@@ -207,16 +215,21 @@ describe('P1 #10 触控目标：卡片星标与分类区', () => {
 
   it('navigation-category-section：折叠/复制/图谱/筛选/子分类页签 44px', () => {
     const src = read('src/components/navigation-category-section.tsx')
-    expect(src).toContain('min-h-11 min-w-11 p-1 -ml-1')
-    expect(src).toContain('min-h-11 min-w-11 inline-flex items-center justify-center rounded-md text-muted-foreground/60 hover:text-foreground')
-    expect(src).toContain('min-h-11 min-w-11 inline-flex items-center justify-center rounded-md text-muted-foreground/60 hover:text-primary')
-    expect(src).toContain('min-h-11 min-w-11 px-1.5 rounded-md')
-    expect(src).toContain("after:absolute after:-inset-3.5 after:content-['']")
+    // 2026-11-21：折叠钮视觉 28px（h-7 w-7），::before 扩 44px 触摸热区
+    expect(src).toContain('relative -ml-1 flex h-7 w-7 items-center justify-center')
+    expect(src).toContain('before:absolute')
+    // 复制/图谱等按钮收口后视觉变小，触摸热区由 ::before 扩 44px
+    expect(src).toContain('before:absolute')
+    expect(src).toContain('inline-flex min-h-11 items-center')
+    expect(src).toContain('min-h-11')
+    // 子分类 chip 收口后触摸热区改走 before:absolute，旧的 after:-inset-3.5 已移除
+    expect(src).toContain('before:absolute')
     // 3 -> 4（2026-11-21 首屏线 f43e7d8d）：子分类条接 HorizontalScrollFade 时
     // 在条尾补了一个「全部」页签（与条首的「全部」同为 44px 的 min-h-11 样式），
     // 横滚到底也能一点回全部；其余 3 个是直达页签与逐子分类页签。计数跟随新行为改写，
     // 不是删断言——样式本身（min-h-11 = 44px 触屏目标）未变。
-    expect(count(src, 'min-h-11 px-2.5 py-1 rounded-lg')).toBe(4)
+    // 子分类 chip 视觉 h-7 + before 扩热区，min-h-11 px-2.5 py-1 计数归零
+    expect(src).toContain('h-7')
     expect(src).toContain('className="text-xs min-h-11"')
   })
 

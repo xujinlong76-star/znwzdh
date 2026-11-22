@@ -235,3 +235,37 @@ export function capsuleTextWidth(text: string, fontSize = 10): number {
   }
   return Math.ceil(w) + 16
 }
+
+/**
+ * 开源判定（2026-11-22 图谱视觉解耦）。
+ *
+ * 图谱里「AI 实验室」原来占用开源翠绿 #10b981，导致「这个节点是 AI 类」
+ * 与「这个节点开源」两种语义抢同一个颜色。现在分类色统一改用紫色系，
+ * 开源状态改用**形状通道**表达：翠绿外环 + OS 徽标（色盲友好，
+ * 不依赖颜色区分）。
+ *
+ * 判定口径：URL 命中 GitHub/GitLab/Codeberg 等代码托管域名即视为开源；
+ * 站点自带 openSource 标记优先（显式数据胜过启发式）。
+ */
+export function resolveIsOpenSource(input: {
+  url?: string
+  openSource?: boolean
+}): boolean {
+  if (typeof input.openSource === 'boolean') return input.openSource
+  const raw = String(input.url || '').trim().toLowerCase()
+  if (!raw) return false
+  try {
+    const u = new URL(raw)
+    const host = u.hostname.replace(/^www\./, '')
+    return (
+      host === 'github.com' ||
+      host === 'gitlab.com' ||
+      host === 'codeberg.org' ||
+      host === 'bitbucket.org' ||
+      host.startsWith('github.') ||
+      host.startsWith('gitlab.')
+    )
+  } catch {
+    return false
+  }
+}

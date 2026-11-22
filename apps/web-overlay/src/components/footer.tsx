@@ -79,7 +79,7 @@ export function Footer({ siteInfo }: FooterProps) {
           <p className="whitespace-nowrap text-center text-xs text-muted-foreground md:text-right">
             &copy; <span suppressHydrationWarning>{currentYear}</span> {title}
           </p>
-          <p className="whitespace-nowrap text-center font-mono text-[11px] text-muted-foreground/70 md:text-right">
+          <p className="whitespace-nowrap text-center font-mono text-[11px] text-muted-foreground md:text-right">
             AI-Native Cognitive Navigation
           </p>
           {/* 后台「页脚文案」：纯文本渲染，绝不 dangerouslySetInnerHTML */}

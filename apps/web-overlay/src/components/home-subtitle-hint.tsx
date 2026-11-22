@@ -109,7 +109,7 @@ export function HomeSubtitleHint({ tagline }: { tagline?: string }) {
         collapsed ? 'mb-0 max-h-0 opacity-0' : 'mb-1.5 max-h-8 opacity-100'
       }`}
     >
-      <div className="flex items-center gap-2 px-0.5 text-xs leading-5 text-muted-foreground/80">
+      <div className="flex items-center gap-2 px-0.5 text-xs leading-5 text-muted-foreground">
         <span className="min-w-0 flex-1 truncate">
           {searchFocused
             ? '输入关键词快速找站，支持拼音与语义；按 / 呼出超级搜索，按 Esc 收起。'
@@ -120,7 +120,7 @@ export function HomeSubtitleHint({ tagline }: { tagline?: string }) {
           onClick={dismiss}
           aria-label="关闭副标题提示"
           tabIndex={collapsed ? -1 : undefined}
-          className="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 group-hover/hint:opacity-100"
+          className="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 group-hover/hint:opacity-100"
         >
           <X className="h-3 w-3" />
         </button>

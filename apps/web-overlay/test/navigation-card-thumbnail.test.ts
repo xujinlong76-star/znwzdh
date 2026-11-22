@@ -256,7 +256,8 @@ describe('navigation-card.tsx：视觉槽接线守则', () => {
 
   it('rich 有横幅时不再重复放小图标，无缩略图时保持原有图标渲染', () => {
     expect(cardSrc).toContain('{!thumbnail && (')
-    expect(cardSrc).toContain('boxClassName="flex-shrink-0 w-12 h-12 rounded-xl')
+    // 2026-11-21 触控热区收口：图标盒 48→40px（w-10），::after 无形扩到 44px 点击区
+    expect(cardSrc).toContain('boxClassName="flex-shrink-0 w-10 h-10 rounded-lg')
   })
 
   it('缩略图是装饰性的，不进读屏、不抢点击（外链覆盖层仍是唯一入口）', () => {

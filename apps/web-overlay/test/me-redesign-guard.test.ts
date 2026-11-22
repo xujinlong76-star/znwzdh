@@ -55,9 +55,11 @@ describe('用户中心（/me）重新设计守卫', () => {
     expect(entries).toContain('grid gap-3 md:grid-cols-2')
   })
 
-  it('成长中心采用 4 标签页收纳、3 列 33 徽章零孤儿卡、筛选置顶与紧致 w-fit 16 周热力图', () => {
+  it('成长中心采用独立 4 标签分段控制器、3 列 33 徽章零孤儿卡、筛选置顶与自适应 4/16 周热力图', () => {
     const panel = read('src/components/user-center/growth-panel.tsx')
     expect(panel).toContain('role="tablist"')
+    expect(panel).toContain('data-growth-segmented-control="true"')
+    expect(panel).toContain('data-next-milestone-card="true"')
     expect(panel).toContain("activeTab === 'tasks'")
     expect(panel).toContain("activeTab === 'season'")
     expect(panel).toContain("activeTab === 'badges'")
@@ -66,6 +68,10 @@ describe('用户中心（/me）重新设计守卫', () => {
     expect(panel).toContain('筛选徽章状态')
 
     const heatmap = read('src/components/growth/growth-heatmap.tsx')
-    expect(heatmap).toContain('grid w-fit grid-flow-col grid-rows-7 gap-1')
+    // 2026-11-21 移动端横滚：16 周格子需保可点尺寸，窄屏不再 w-full 压缩
+    expect(heatmap).toContain('grid-flow-col grid-rows-7 gap-1')
+    expect(heatmap).toContain('max-sm:min-w-[340px]')
+    expect(heatmap).toContain('近 4 周活跃日历')
+    expect(heatmap).toContain('展开近 16 周')
   })
 })

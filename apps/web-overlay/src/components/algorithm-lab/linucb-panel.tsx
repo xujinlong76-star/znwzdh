@@ -385,7 +385,7 @@ runAbCompareRef.current = runAbCompare
                         {typeof delta === 'number' && Math.abs(delta) >= 0.005 ? (
                           <span
                             aria-live="polite"
-                            className={`absolute right-0 top-0 font-mono text-[11px] font-semibold tabular-nums ${delta > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}
+                            className={`absolute right-0 top-0 font-mono text-[11px] font-semibold tabular-nums ${delta > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}
                           >
                             {delta > 0 ? '+' : ''}{delta.toFixed(2)}
                           </span>

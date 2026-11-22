@@ -38,7 +38,8 @@ describe("枢纽面包屑与合集详情元数据", () => {
     const src = overlayFile("src/app/hot/page.tsx");
     expect(src).toContain("import { Breadcrumbs } from '@/components/breadcrumbs'");
     expect(src).toContain("<Breadcrumbs");
-    expect(src).toContain("label: '今日热榜'");
+    // 面包屑末级与页面标题同源：现用「趋势榜单」（旧「今日热榜」已废弃）
+    expect(src).toContain("label: '趋势榜单'");
   });
 
   it("/collections 索引页：服务端 Breadcrumbs + CollectionBoard 岛挂载", () => {

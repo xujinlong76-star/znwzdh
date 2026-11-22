@@ -81,13 +81,13 @@ describe('format-relative-time', () => {
   it('超 1 年回落绝对时间；非法时间戳返回“—”；未来时间戳按“刚刚”', () => {
     const now = Date.now()
     const old = now - 400 * DAY
-    expect(formatRelativeTime(old, now)).toBe(new Date(old).toLocaleString('zh-CN', { hour12: false }))
+    expect(formatRelativeTime(old, now)).toBe(new Date(old).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' }))
     expect(formatRelativeTime(null, now)).toBe('—')
     expect(formatRelativeTime(undefined, now)).toBe('—')
     expect(formatRelativeTime(Number.NaN, now)).toBe('—')
     expect(formatRelativeTime(now + 60_000, now)).toBe('刚刚')
     expect(formatAbsoluteTime(null)).toBe('—')
-    expect(formatAbsoluteTime(now)).toBe(new Date(now).toLocaleString('zh-CN', { hour12: false }))
+    expect(formatAbsoluteTime(now)).toBe(new Date(now).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' }))
   })
 })
 
@@ -141,7 +141,7 @@ describe('DataSafetyCard 四态渲染', () => {
     expect(html).not.toContain('role="alert"')
     expect(html).toContain('3天前')
     // 期望的绝对时间必须取 fixture 自身的 at：渲染后重算 Date.now() 会在跨秒时差 1 秒抖动
-    expect(html).toContain(new Date(fixture.lastExport?.at ?? 0).toLocaleString('zh-CN', { hour12: false }))
+    expect(html).toContain(new Date(fixture.lastExport?.at ?? 0).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' }))
     expect(html).toContain('该次导出完整')
   })
 

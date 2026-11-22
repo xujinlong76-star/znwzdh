@@ -41,8 +41,8 @@ const NODE_DOT_CLASS: Record<string, string> = {
 /**
  * U-124：带 url 节点的链接文案按节点类型映射（只改文案，不改数据/URL）。
  *
- * 默认是准考证打印类（13 处）；4 处例外按 node.label 映射：京考「报名」
- * 是报名系统入口、京考「公共科目笔试」挂的是首都之窗公告页（非办事入口）、
+ * 默认是准考证打印类（13 处）；5 处例外按 node.label 映射：京考「报名」
+ * 是报名系统入口、京考「缴费」是缴费入口（U-395）、京考「公共科目笔试」挂的是首都之窗公告页（非办事入口）、
  * 「江西成绩复核」走报名系统申请、「成绩查询」走广东自考成绩查询系统
  *（江苏自考同名节点无 url、不渲染链接，误伤不到）。ExamNode 无类型字段，映射键只能是 label；
  * 映射只在 node.url 分支内调用，国考/省考同名「公共科目笔试」节点无 url、
@@ -53,6 +53,7 @@ function nodeLinkCopy(label: string): { text: string; ariaAction: string } {
   if (label === '公共科目笔试') return { text: '查看官方公告', ariaAction: '官方公告' }
   if (label === '江西成绩复核') return { text: '去报名系统申请复核', ariaAction: '报名系统申请复核' }
   if (label === '成绩查询') return { text: '去系统查成绩', ariaAction: '系统查询成绩' }
+  if (label === '缴费') return { text: '去官网缴费', ariaAction: '官方缴费' }
   return { text: '去官网打印准考证', ariaAction: '官方打印' }
 }
 

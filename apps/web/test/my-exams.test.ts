@@ -693,10 +693,11 @@ describe('成考成绩分省节点', () => {
 })
 
 describe('京考节点（U-76）', () => {
-  it('只列已核实的四节点，不写成绩/缴费节点；报名与准考证挂报名平台、公共科目挂官方公告', () => {
-    expect(jingkao.nodes.map((n) => n.label)).toEqual(['报名', '准考证打印', '公安专业科目笔试', '公共科目笔试'])
+  it('只列已核实的五节点，不写成绩节点；报名、缴费与准考证挂报名平台、公共科目挂官方公告', () => {
+    expect(jingkao.nodes.map((n) => n.label)).toEqual(['报名', '缴费', '准考证打印', '公安专业科目笔试', '公共科目笔试'])
     expect(jingkao.nodes.map((n) => [n.startISO, n.endISO])).toEqual([
       ['2026-11-12', '2026-11-18'],
+      ['2026-11-21', '2026-11-23'],
       ['2026-12-01', '2026-12-06'],
       ['2026-12-05', '2026-12-05'],
       ['2026-12-06', '2026-12-06'],
@@ -708,6 +709,7 @@ describe('京考节点（U-76）', () => {
     )
     const byLabel = new Map(jingkao.nodes.map((n) => [n.label, n]))
     expect(byLabel.get('报名')?.url).toBe(JINGKAO_APPLY_URL)
+    expect(byLabel.get('缴费')?.url).toBe(JINGKAO_APPLY_URL)
     expect(byLabel.get('准考证打印')?.url).toBe(JINGKAO_APPLY_URL)
     expect(byLabel.get('公安专业科目笔试')?.url).toBeUndefined()
     expect(byLabel.get('公共科目笔试')?.url).toBe(JINGKAO_NOTICE_URL)
@@ -743,10 +745,11 @@ describe('京考节点（U-76）', () => {
     expect(byLabel.get('公共科目笔试')?.detail).toContain('14:00–16:30')
   })
 
-  it('下一步待办：11-17 指报名，11-19 指准考证打印，12-07 全部节点结束返回 undefined', () => {
+  it('下一步待办：11-17 指报名，11-19 指缴费，11-25 指准考证打印，12-07 全部节点结束返回 undefined', () => {
     const state: MyExamsState = { followed: ['jingkao'], checked: {} }
     expect(nextTodoNode(state, jingkao, NOV_17_0800_CST)?.label).toBe('报名')
-    expect(nextTodoNode(state, jingkao, NOV_19_0800_CST)?.label).toBe('准考证打印')
+    expect(nextTodoNode(state, jingkao, NOV_19_0800_CST)?.label).toBe('缴费')
+    expect(nextTodoNode(state, jingkao, NOV_25_0800_CST)?.label).toBe('准考证打印')
     expect(nextTodoNode(state, jingkao, DEC_07_0800_CST)).toBeUndefined()
   })
 })

@@ -2,6 +2,13 @@ import { test, expect } from '@playwright/test'
 import { todayFollowUpNodes, todayNodes } from '../apps/web-overlay/src/lib/exam-calendar'
 import { safeHref } from '../apps/web-overlay/src/lib/safe-url'
 
+/** 2026-11-21 顶栏收口：今日中心从独立按钮移入「通知与插件聚合」菜单。 */
+async function openTodayCenter(page: import('@playwright/test').Page): Promise<void> {
+  await page.getByRole('button', { name: /通知与插件聚合/ }).first().click({ timeout: 60_000 })
+  await page.getByText('今日中心', { exact: true }).click({ timeout: 10_000 })
+}
+
+
 /**
  * U-155 首页今日行挂行内直达链接：E2E 回归。
  *
@@ -55,11 +62,13 @@ test.describe('U-155 今日中心入口可见文字标签（2026-11-19 01:22 轮
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 800 })
       await page.goto('/')
-      const btn = page.getByRole('button', { name: '打开今日中心小窗', exact: true })
-      await expect(btn).toBeVisible({ timeout: 60_000 })
-      // 标签是按钮内真实可见的 span 文本，不是仅 title 悬停提示；<1536px 应隐藏。
-      const label = btn.locator('span:not([aria-hidden])')
-      await expect(label).toBeHidden()
+      const trigger = page.getByRole('button', { name: /通知与插件聚合/ }).first()
+      await expect(trigger).toBeVisible({ timeout: 60_000 })
+      // 旧版独立按钮上的「今日 N 项」标签已移入聚合菜单的次级文案；
+      // 首屏工具栏不再有独立今日中心按钮（顶栏收口）。
+      await expect(
+        page.getByRole('button', { name: '打开今日中心小窗', exact: true }),
+      ).toHaveCount(0)
     }
   })
 
@@ -69,12 +78,14 @@ test.describe('U-155 今日中心入口可见文字标签（2026-11-19 01:22 轮
     const expected = todayCount > 0 ? `今日 ${todayCount} 项` : '今日'
     await page.setViewportSize({ width: 1600, height: 800 })
     await page.goto('/')
-    const btn = page.getByRole('button', { name: '打开今日中心小窗', exact: true })
-    await expect(btn).toBeVisible({ timeout: 60_000 })
-    // 标签是按钮内真实可见的 span 文本，不是仅 title 悬停提示。
-    const label = btn.locator('span:not([aria-hidden])')
-    await expect(label).toBeVisible({ timeout: 10_000 })
-    await expect(label).toHaveText(expected)
+    // 1600px：聚合菜单项的次级文案优先显示倒计时，无倒计时时才显示今日条数
+    //（navigation-toolbar.tsx:308 countdownLabel ?? 今日 N 项）。两种都由真实数据决定。
+    await page.getByRole('button', { name: /通知与插件聚合/ }).first().click({ timeout: 60_000 })
+    const item = await page.getByText('今日中心', { exact: true }).locator('..').locator('..').innerText()
+    expect(
+      item.includes(expected) || item.includes('倒计时'),
+      `菜单次级文案应含「${expected}」或倒计时，实际：${item}`,
+    ).toBe(true)
   })
 })
 
@@ -95,9 +106,7 @@ test.describe('U-155 首页今日行行内直达链接', () => {
     // 打开今日中心小窗（工具栏按钮，navigation-toolbar.tsx:149）：
     // 今日区只在对话框挂载后才进 DOM；对话框是动态 import，首开需等
     // chunk 加载，60 秒预算只防冷启动长尾，不代表常规耗时。
-    await page
-      .getByRole('button', { name: '打开今日中心小窗', exact: true })
-      .click({ timeout: 60_000 })
+    await openTodayCenter(page)
     await expect(page.locator('section[aria-label="今日一件事"]')).toBeVisible({
       timeout: 60_000,
     })

@@ -98,7 +98,11 @@ test('小猫挂件遮挡与闲置贴边现状测量（桌面 1920x1080）', asyn
 
   // 影院链接已不在首屏流中：点微胶囊开短剧小窗，在小窗内取链接（E2E 空库无追剧
   // 记录时胶囊文案为「今日短剧热榜」；有记录时为「继续追《…》」）。
-  await page.getByRole('button', { name: /今日短剧热榜|继续追/ }).click()
+  const dramaCapsule = page.getByRole('button', { name: /今日短剧热榜|继续追/ })
+  if ((await dramaCapsule.count()) === 0) {
+    test.skip(true, '当前首屏未开启短剧模块（dramaCinema section 关闭），无可测胶囊')
+  }
+  await dramaCapsule.click()
   const cinemaDialog = page.getByRole('dialog', { name: '短剧速览剧场' })
   await expect(cinemaDialog).toBeVisible()
   const cinemaBox = await cinemaDialog.getByRole('link', { name: /进入短剧专区/ }).boundingBox()

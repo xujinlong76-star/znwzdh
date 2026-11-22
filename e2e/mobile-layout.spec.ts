@@ -34,7 +34,7 @@ const MOBILE_ROUTES: Array<{ path: string; heading: RegExp }> = [
   { path: '/', heading: /山羊胡/ },
   { path: '/category', heading: /分类总览/ },
   { path: '/sites', heading: /全部站点目录/ },
-  { path: '/hot', heading: /技术风向标|热度榜/ },
+  { path: '/hot', heading: /精选风向标|趋势榜/ },
   { path: '/tags', heading: /技术标签/ },
   { path: '/marketplace', heading: /插件市场/ },
   { path: '/me', heading: /用户中心/ },

@@ -34,6 +34,12 @@ import {
 } from '@/registry/new-york/ui/dropdown-menu'
 import { WORKSPACES, type WorkspaceId } from '@/lib/workspaces'
 import {
+  collectDramaContextSectionIds,
+  dramaExposureAllowed,
+  isDramaContextCategory,
+} from '@/lib/modular/workspace-presets'
+import { useDramaHotlistOptIn } from '@/hooks/useDramaHotlistOptIn'
+import {
   DAYPART_PLACEHOLDER,
   daypartText,
   describeDaypart,
@@ -122,8 +128,18 @@ export function HomeCapsuleRow({
 
   const latestWatch = watchlistReady && watchlistEntries.length > 0 ? watchlistEntries[0] : null
   const topPlugins = pluginItems?.slice(0, 2) ?? []
-  const hideDramaForWorkspace = activeWorkspace === 'dev' || activeWorkspace === 'ai'
-  const showDrama = showDramaCapsule && !hideDramaForWorkspace
+  /*
+   * 短剧热榜默认移出全局首屏（2026-11-22）：
+   * 只有影音/短剧分类上下文或 DIY 显式开启才放行。
+   */
+  const diyOptIn = useDramaHotlistOptIn()
+  const dramaContextIds = collectDramaContextSectionIds([])
+  const inDramaCategoryContext =
+    dramaContextIds.size > 0 ||
+    isDramaContextCategory(String(activeWorkspace ?? '')) ||
+    activeWorkspace === 'short-drama'
+  const showDrama =
+    showDramaCapsule && dramaExposureAllowed({ inDramaCategoryContext, diyOptIn })
 
   // 工作区 Tab 键盘漫游（roving tabindex，←/→ 切换）——与 WorkspaceFilter 同款。
   const handleTabKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {

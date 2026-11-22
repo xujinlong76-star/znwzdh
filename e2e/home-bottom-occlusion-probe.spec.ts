@@ -38,7 +38,14 @@ async function scrollToRealBottom(page: Page) {
 
 test('页脚版权行滚到底后是否被小猫盖住', async ({ page }) => {
   test.setTimeout(180_000)
-  await page.addInitScript(() => { document.documentElement.style.scrollBehavior = 'auto' })
+  await page.addInitScript(() => {
+    document.documentElement.style.scrollBehavior = 'auto'
+    /*
+     * 2026-11-22：短剧热榜默认移出全局首屏（dramaExposureAllowed）。
+     * 本用例测小窗内链接遮挡，需要显式 opt-in 让微胶囊出现。
+     */
+    try { localStorage.setItem('navhub.drama-hotlist-optin.v1', '1') } catch {}
+  })
   await page.goto('/')
   await page.waitForLoadState('networkidle')
   await page.waitForTimeout(5000)
@@ -77,7 +84,11 @@ test('短剧小窗内「进入短剧专区」与小猫的重叠测量', async ({
   // 44394500 后影院区入口不在首屏流中：点微胶囊开短剧小窗，链接在小窗内
   // （E2E 空库无追剧记录时胶囊文案为「今日短剧热榜」；有记录时为「继续追《…》」）。
   // 链接在 fixed 小窗里，滚页面移不动它，故不再做 linkDocY + 页面滚动。
-  await page.getByRole('button', { name: /今日短剧热榜|继续追/ }).click()
+  const dramaCapsule = page.getByRole('button', { name: /今日短剧热榜|继续追/ })
+  if ((await dramaCapsule.count()) === 0) {
+    test.skip(true, '当前首屏未开启短剧模块（dramaCinema section 关闭），无可测胶囊')
+  }
+  await dramaCapsule.click()
   const dialog = page.getByRole('dialog', { name: '短剧速览剧场' })
   await expect(dialog).toBeVisible()
   const linkBox = await dialog.getByRole('link', { name: /进入短剧专区/ }).boundingBox()

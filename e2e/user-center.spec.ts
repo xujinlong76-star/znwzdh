@@ -167,13 +167,13 @@ test.describe('用户中心：三态', () => {
     await expect(nameInput).toBeVisible()
     await nameInput.fill('本地分组')
     await page.getByRole('button', { name: '创建' }).click()
-    await expect(page.getByRole('button', { name: /本地分组/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /本地分组/ }).first()).toBeVisible()
     // 能力边界要说清楚：本地夹子仅存本机
     await expect(page.getByText('本地收藏夹仅存本机；登录后按名称合并到云端')).toBeVisible()
 
     // 持久化：刷新后分组仍在（独立键，不与收藏本体混存）
     await page.reload()
-    await expect(page.getByRole('button', { name: /本地分组/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /本地分组/ }).first()).toBeVisible()
   })
 
   test('/favorites 筛选：无命中时说明收藏还在，清空后恢复', async ({ page }) => {

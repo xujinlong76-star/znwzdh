@@ -259,9 +259,10 @@ describe('准考证提醒源码守卫', () => {
     // 不许出现任何完整 URL 字面量：完整 URL 的 // 后必跟字母数字
     expect(reminder).not.toMatch(/https?:\/\/[a-zA-Z0-9]/)
     expect(reminder).not.toContain('gwy.cpta.com.cn')
-    // href 只走 safeHref(reminder.url / reminder.portalUrl)：strip 与 card
-    // 各一处主链 + 一处门户链，共 4 处。
-    expect(reminder.match(/safeHref\(reminder\.(url|portalUrl)\)/g)).toHaveLength(4)
+    // href 只走 safeHref(reminder.url / reminder.portalUrl)：strip 主链 +
+    // 门户链 2 处、开放期瘦身行主链 1 处（U-421）、全句卡片主链 + 门户链
+    // 2 处，共 5 处。
+    expect(reminder.match(/safeHref\(reminder\.(url|portalUrl)\)/g)).toHaveLength(5)
   })
 
   it('提醒组件：挂载前渲染 null（防 SSR/水合午夜边界错位），窗口外渲染 nothing', () => {

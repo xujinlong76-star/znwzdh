@@ -4,7 +4,8 @@
  * 双源设计，测试也按源分开断言：
  *
  * 1. 同步入口 `formatLunarDate` 只走 Intl（`zh-CN-u-ca-chinese`），
- *    时区无关，在任何 TZ 下结果相同——本文件默认档（UTC）测的就是它。
+ *    固定 Asia/Shanghai 渲染（U-424 P0），锚点按北京中午构造，在任何
+ *    TZ 下结果相同——本文件默认档（UTC）测的就是它。
  * 2. 精确入口 `formatLunarDateExact` 在东八区走 lunar-javascript
  *    （官方口径），其余时区回落 Intl。东八区断言只在
  *    `getTimezoneOffset() === -480` 时跑：`TZ=Asia/Shanghai pnpm vitest run test/lunar-date.test.ts`。
@@ -29,9 +30,14 @@ import {
 
 const IN_PLUS_8 = new Date().getTimezoneOffset() === -480
 
-/** 中午构造，避开午夜边界与夏令时切换日。 */
+/**
+ * 北京中午构造（UTC 04:00 = CST 12:00），避开午夜边界与夏令时切换日。
+ * U-424 P0：Intl 源已固定 Asia/Shanghai，锚点必须按北京时间取中午；
+ * 本地中午（new Date(y, m-1, d, 12)）在非东八区会落到北京次日凌晨，
+ * 农历日期会差一天。UTC 04:00 在任何 TZ 下都是同一时刻。
+ */
 function noon(y: number, m: number, d: number): Date {
-  return new Date(y, m - 1, d, 12, 0, 0)
+  return new Date(Date.UTC(y, m - 1, d, 4, 0, 0))
 }
 
 describe('formatLunarDate（Intl 同步源，时区无关）', () => {

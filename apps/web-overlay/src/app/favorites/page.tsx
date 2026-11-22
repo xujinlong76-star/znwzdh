@@ -1522,7 +1522,7 @@ export default function FavoritesPage() {
         {syncLast && (
           <p className="mb-4 text-xs text-muted-foreground" data-testid="sync-last">
             上次同步：
-            {syncLast.at > 0 ? new Date(syncLast.at).toLocaleTimeString('zh-CN', { hour12: false }) : '—'}
+            {syncLast.at > 0 ? new Date(syncLast.at).toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' }) : '—'}
             {' · '}
             {syncLast.ok ? `成功（${syncLast.pushed} 条）` : `失败（${syncLast.error ?? '原因未知'}）`}
             {syncLast.remoteRemoved > 0 ? ` · 另一设备删除 ${syncLast.remoteRemoved} 条` : ''}
@@ -2307,7 +2307,7 @@ export default function FavoritesPage() {
                         </div>
                       )}
                       <div className="text-xs text-muted-foreground font-mono mt-2">
-                        {new Date(f.createdAt).toLocaleDateString('zh-CN')}
+                        {new Date(f.createdAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}
                         {(() => {
                           const stale = staleById.get(f.siteId)
                           if (!stale) return null

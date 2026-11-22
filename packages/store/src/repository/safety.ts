@@ -324,7 +324,7 @@ export function buildSafetyChecks(safety: DataSafety): SafetyCheck[] {
   const vaultOk = safety.sync.vault.exists || safety.sync.crdt.exists;
 
   const exportDetail = safety.lastExport?.at
-    ? `上次导出在 ${new Date(safety.lastExport.at).toLocaleString("zh-CN", { hour12: false })}` +
+    ? `上次导出在 ${new Date(safety.lastExport.at).toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })}` +
       (safety.lastExport.truncated === true
         ? "，且该次导出被截断过（不完整）"
         : safety.lastExport.truncated === false

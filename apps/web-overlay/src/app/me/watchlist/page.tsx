@@ -540,7 +540,7 @@ export default function WatchlistPage() {
         )}
         {!isAnonymous && bannerView.tone === 'hidden' && lastSync?.ok && (
           <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-            上次同步：{new Date(lastSync.at).toLocaleString()}
+            上次同步：{new Date(lastSync.at).toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })}
             <button type="button" onClick={() => void runSync()} className="ml-2 underline underline-offset-2">
               重新同步
             </button>

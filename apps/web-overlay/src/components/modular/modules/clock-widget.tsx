@@ -141,7 +141,7 @@ export function ClockWidget({ config: _config }: { config?: Record<string, any> 
               <span className="text-lg text-primary font-normal">:{seconds}</span>
             </div>
             <div className="text-xs text-muted-foreground font-mono">
-              {time.toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              {time.toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Shanghai' })}
               {lunarLabel ? ` · ${lunarLabel}` : ''}
             </div>
             {countdown && (

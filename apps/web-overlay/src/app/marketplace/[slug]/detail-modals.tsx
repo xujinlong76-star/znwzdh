@@ -365,7 +365,7 @@ export function DetailModals(props: DetailModalsProps) {
                 </div>
 
                 <div className="text-[10px] text-muted-foreground text-center pt-1">
-                  体检时间：{new Date(auditReport.auditedAt).toLocaleString()} · SHA-256 签名无害化校验
+                  体检时间：{new Date(auditReport.auditedAt).toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })} · SHA-256 签名无害化校验
                 </div>
               </div>
             ) : (

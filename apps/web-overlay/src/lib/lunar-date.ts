@@ -3,7 +3,7 @@
  *
  * 双源换算（2026–2028 全量 1096 天逐日比对过）：
  *
- * 1. `Intl.DateTimeFormat('zh-CN-u-ca-chinese')`：时区无关、零依赖，
+ * 1. `Intl.DateTimeFormat('zh-CN-u-ca-chinese')`：固定 Asia/Shanghai、零依赖，
  *    是首屏同步渲染与非东八区用户的默认源。只有一个已知偏差：
  *    2027 年正月——朔在 2027-02-06 23:56 北京时，擦着午夜，
  *    ICU 把正月初一算成 2 月 7 日，官方农历（香港天文台、国务院
@@ -64,12 +64,13 @@ function parseMonthName(name: string): { month: number; leap: boolean } | null {
   return month === undefined ? null : { month, leap }
 }
 
-/** Intl 源：同步、时区无关。 */
+/** Intl 源：同步、固定 Asia/Shanghai。 */
 export function lunarPartsFromIntl(date: Date): LunarParts | null {
   try {
     const parts = new Intl.DateTimeFormat('zh-CN-u-ca-chinese', {
       month: 'long',
       day: 'numeric',
+      timeZone: 'Asia/Shanghai',
     }).formatToParts(date)
     const monthPart = parts.find((p) => p.type === 'month')?.value
     const dayPart = parts.find((p) => p.type === 'day')?.value

@@ -148,7 +148,7 @@ export default function ShelvedFavoritesPage() {
                         <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{item.description}</p>
                       ) : null}
                       <p className="mt-1 text-xs text-muted-foreground">
-                        移出于 {new Date(item.movedOutAt).toLocaleDateString('zh-CN')}
+                        移出于 {new Date(item.movedOutAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}
                         {' · '}
                         原状态：{item.originStatus === 'inbox' ? '待读箱' : '已读'}
                       </p>

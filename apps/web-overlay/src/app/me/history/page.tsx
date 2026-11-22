@@ -68,7 +68,7 @@ function readHistorySnapshot(): { at: number; items: HubSearchHistoryItem[] } | 
 function formatTime(ts: number): string {
   if (!ts) return ''
   try {
-    return new Date(ts).toLocaleString('zh-CN', { hour12: false })
+    return new Date(ts).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' })
   } catch {
     return ''
   }
@@ -454,7 +454,7 @@ export default function SearchHistoryPage() {
 
       {tab === 'searches' && offlineSnapshotAt && state === 'ready' && (
         <p role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2 text-[11px] leading-relaxed text-amber-800 dark:text-amber-200">
-          云端暂时取不到，正在展示本机离线快照（截至 {new Date(offlineSnapshotAt).toLocaleString('zh-CN', { hour12: false })}）。这不是实时数据，联网后重试可获取最新记录。
+          云端暂时取不到，正在展示本机离线快照（截至 {new Date(offlineSnapshotAt).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' })}）。这不是实时数据，联网后重试可获取最新记录。
         </p>
       )}
 

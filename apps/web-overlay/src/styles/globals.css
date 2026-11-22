@@ -550,7 +550,9 @@
 }
 
 [data-high-contrast="on"] .glass-surface {
-  background-color: hsl(var(--card));
+  /* / 1 显式不透明（与 hsl(var(--card)) 等价）：wallpaper-contrast-guard
+     解析 alpha 时只认 hsl(var(--card) / a) 写法，裸写会被判为缺失。 */
+  background-color: hsl(var(--card) / 1);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }

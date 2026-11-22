@@ -1,7 +1,7 @@
 /**
  * U-142 追剧清单 4 处「去看」文案谎报落点（测试先行，W4）。
  *
- * 根因：useWatchlist.ts:235 写死 `playUrl: platform.href`——playUrl 只是
+ * 根因：useWatchlist.ts:308/:329 写死 `playUrl: platform.href`——playUrl 只是
  * 平台首页，不是剧集直达页；但 page.tsx 4 处链接文案却写裸「去看」/
  * 「去看新一集」，谎报能直达正片。修法（既定）：文案先行，不改链目标——
  * 4 处一律改为「去{平台}首页搜」诚实表述；drama-content.tsx:273 的

@@ -15,12 +15,12 @@ import {
 } from '@/lib/empty-states'
 import {
   formatClock,
-  formatHotValue,
   loadBriefToday,
   loadHotlist,
   type HubBriefHotPick,
   type HubHotlistSource,
 } from '@/lib/server/brief'
+import { formatHotValue } from '@/lib/format-hot-value'
 import { formatHotlistSubline } from '@/lib/relative-time'
 import BriefWatch from './brief-watch'
 import BriefResurface from './brief-resurface'

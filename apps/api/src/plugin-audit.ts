@@ -73,6 +73,18 @@ export interface PluginAuditSummary {
   broken: number
   redirected: number
   /**
+   * 待改为终域（U-387(b) 302 规则）：302/301 跳到不同终域的链接数。
+   *
+   * 真实旧错：lingxi.wps.cn 302 → lingxi.kdocs.cn 时，旧规则只计 redirected、仍算 ok，
+   * 静默通过，无人知道 href 该改。改后此类链接必须显式进 finalDomainItems，
+   * 处置是「把声明地址改为终域」，不是「死链」——可达率不受影响。
+   * 边界：只对非 broken 的探活（ok / blocked / suspicious）判定；真不可达的链接
+   * 终域本身也死了，处置是 broken，不进本清单。
+   */
+  needsFinalDomain: number
+  /** 待改为终域的明细：url 为现存声明地址，finalUrl 为应改成的终域地址 */
+  finalDomainItems: Array<{ url: string; finalUrl: string; status?: number }>
+  /**
    * 可达率（0..1，保留 3 位小数）= (ok + blocked) / total。
    * 口径说明：blocked 只说明「拒绝爬虫」，站点本身可用，因此计入可达；
    * total 为 0 时返回 null，避免用 0 冒充「全挂」。
@@ -189,6 +201,37 @@ export function normalizeAuditUrl(url: string): string {
 }
 
 /**
+ * 终域主机（U-387(b) 302 规则的比较口径）：主机小写 + 去掉单个 `www.` 前缀。
+ *
+ * 为什么去 `www.`：apex 与 www 只是同一域名的两种写法（b.example ⇄ www.b.example），
+ * 跳过去不算「换了终域」，href 不必改；而不去的话每个 apex→www 的站点都会进
+ * 待改清单，噪音会把真正换域的（如 lingxi.wps.cn → lingxi.kdocs.cn）淹没。
+ * 其它子域差异（app.e.example vs e.example）仍算不同终域。解析失败返回 null，
+ * 调用方按「不跨域」处理，绝不误判。
+ */
+export function effectiveAuditHost(url: string): string | null {
+  try {
+    return new URL(url).host.toLowerCase().replace(/^www\./, '')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 跨域重定向判定（U-387(b) 302 规则）：
+ * 探活跟随跳转后的终域主机与声明地址主机不同 → 该链接应改为终域地址。
+ * 探活器只记录终态（finalUrl + 终态 status），301/302/307 在此都表现为
+ * 「终域不同」，故规则不区分跳转码、只认终域主机变化。
+ * 同域跳转（路径、http→https、apex↔www）与无 finalUrl 均返回 false。
+ */
+export function isCrossDomainRedirect(url: string, finalUrl: string | undefined): boolean {
+  if (!finalUrl) return false
+  const from = effectiveAuditHost(url)
+  const to = effectiveAuditHost(finalUrl)
+  return from !== null && to !== null && from !== to
+}
+
+/**
  * 均匀抽样：把整包按等距取点，保证样本覆盖包内各个分类，
  * 而不是只验前 N 条（后者会让「后面的分类全挂」这种问题漏检）。
  * 确定性：同一输入多次调用结果一致（报告可复现、可对比）。
@@ -221,9 +264,19 @@ export function summarizeProbes(probes: readonly UrlProbeResult[]): PluginAuditS
   let suspicious = 0
   let broken = 0
   let redirected = 0
+  let needsFinalDomain = 0
   const brokenItems: PluginAuditSummary['brokenItems'] = []
   const blockedItems: PluginAuditSummary['blockedItems'] = []
   const suspiciousItems: PluginAuditSummary['suspiciousItems'] = []
+  const finalDomainItems: PluginAuditSummary['finalDomainItems'] = []
+  // U-387(b)：每条非 broken 的探活都算一次跨域判定（ok / blocked / suspicious 共用），
+  // broken 的终域本身已死、不进待改清单。判定只认终域主机（见 isCrossDomainRedirect）。
+  const flagFinalDomain = (p: UrlProbeResult) => {
+    if (p.finalUrl && isCrossDomainRedirect(p.url, p.finalUrl)) {
+      needsFinalDomain++
+      finalDomainItems.push({ url: p.url, finalUrl: p.finalUrl, status: p.status })
+    }
+  }
   const brokenByReason: PluginAuditSummary['brokenByReason'] = {
     timeout: 0,
     'redirect-limit': 0,
@@ -245,17 +298,20 @@ export function summarizeProbes(probes: readonly UrlProbeResult[]): PluginAuditS
         matchedKeywords: p.matchedKeywords,
       })
       if (p.finalUrl && normalizeAuditUrl(p.finalUrl) !== normalizeAuditUrl(p.url)) redirected++
+      flagFinalDomain(p)
       continue
     }
     if (p.ok) {
       ok++
       if (p.finalUrl && normalizeAuditUrl(p.finalUrl) !== normalizeAuditUrl(p.url)) redirected++
+      flagFinalDomain(p)
       continue
     }
     // 存活但拒绝爬虫：单列一类，并计入可达 —— 否则会把「WAF 挡我」误判成「站点挂了」
     if (p.blocked ?? isBlockedByBotStatus(p.status)) {
       blocked++
       blockedItems.push({ url: p.url, status: p.status })
+      flagFinalDomain(p)
       continue
     }
     broken++
@@ -275,10 +331,12 @@ export function summarizeProbes(probes: readonly UrlProbeResult[]): PluginAuditS
     suspicious,
     broken,
     redirected,
+    needsFinalDomain,
     reachability: total === 0 ? null : Math.round((reachable / total) * 1000) / 1000,
     brokenItems,
     blockedItems,
     suspiciousItems,
+    finalDomainItems,
     brokenByReason,
   }
 }

@@ -217,8 +217,10 @@ export function DataSafetyCard({
       const result = await syncFavoritesToCloud()
       setSyncMessage(
         result.ok
-          ? `收藏已重新同步（本次提交 ${result.pushed} 条变更）。`
-          : `重新同步失败：${result.error ?? '原因未知'}。`,
+          ? result.skipped > 0
+            ? `收藏已重新同步（本次应用 ${result.applied} 条，另有 ${result.skipped} 条被另一台设备的更新版本覆盖，本机改动已保留）。`
+            : `收藏已重新同步（本次应用 ${result.applied} 条变更）。`
+          : `重新同步失败：${result.error ?? '原因未知'}。本次改动未同步到云端，请稍后重试。`,
       )
     } catch {
       setSyncMessage('重新同步失败：原因未知。')

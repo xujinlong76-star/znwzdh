@@ -468,6 +468,32 @@ const SANCTIONED: Array<{ file: string; kind: Hit["kind"]; expr: string; why: st
       "时提醒横幅不渲染，所以 link 位置不存在未过闸的外部数据。",
     evidence: ["const link = safeHref(updateReminder?.link ?? '', '')"],
   },
+  // ---- Batch 1（03 活链打通 A 段）：卡片健康徽标 —— 徽标 prop 与「看存档」锚点 ----
+  {
+    file: "src/components/navigation-card.tsx",
+    kind: "href",
+    expr: "buildDeadLinkWaybackUrl(href)",
+    why:
+      "「看存档」锚点的值只由 buildDeadLinkWaybackUrl 构造：它经 normalizeTargetUrl " +
+      "校验后拼成 `https://web.archive.org/web/<时间戳|*>/<目标 URL>`，非法输入返回 ''；" +
+      "输出恒以固定 https://web.archive.org/web/ 前缀开头，不可能拼出 javascript: 等伪协议，" +
+      "所以这个 href 位置不存在未过闸的外部数据。",
+    evidence: ["href={buildDeadLinkWaybackUrl(href)}", 'title="查看最近存档快照"'],
+  },
+  {
+    file: "src/components/navigation-card.tsx",
+    kind: "href",
+    expr: "item.href",
+    why:
+      "这三处不是 <a href>，是传给同文件 CardHealthBadge 组件的 prop：徽标本体是 " +
+      "pointer-events-none 的内容层，href 只在组件内 feed 给 buildDeadLinkWaybackUrl " +
+      "（见上一条）拼「看存档」链接，不直接进任何导航出口；卡片真正的站外跳转在同文件 " +
+      "三处 href={safeHref(item.href)}，已过闸。",
+    evidence: [
+      "<CardHealthBadge href={item.href} health={item.health} state={healthState} />",
+      "href={buildDeadLinkWaybackUrl(href)}",
+    ],
+  },
 ];
 
 describe("渲染期 URL 卫生：外部可控地址一律过安全闸", () => {

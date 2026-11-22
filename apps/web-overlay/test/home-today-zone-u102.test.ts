@@ -154,9 +154,15 @@ describe('A5 渲染：今日行展开区展示接续节点（文职 / 京考，�
     expect(html).toContain('12 月 1 日 9:00 至 12 月 6 日 16:30')
   })
 
-  it('「京考缴费 11-21–23」不出现', () => {
+  // U-395 按新行为改写（不是删除）：京考缴费节点已收，11-18 当天接续区即出现
+  // 「京考 · 缴费」行。注意旧断言写的是无分隔的「京考缴费」，而渲染层
+  // TodayNodeLabel 拼的是「京考 · 缴费」（带 · 分隔），旧「不出现」断言
+  // 即使节点存在也会通过，是空断言；改写后按真实渲染文案断言。
+  it('「京考缴费 11-21–23」出现（接续区）', () => {
     const html = unesc(renderZone(NOV_18_0800_CST))
-    expect(html).not.toContain('京考缴费')
+    expect(html).toContain('京考 · 缴费')
+    expect(html).toContain('11 月 23 日 24:00')
+    expect(html).toContain('逾期未完成缴费视为自动放弃报考资格')
   })
 })
 

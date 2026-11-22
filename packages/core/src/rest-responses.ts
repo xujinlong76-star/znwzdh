@@ -1006,6 +1006,11 @@ export const MeSafetyResponse = z.looseObject({
       lastFailureAt: z.number().nullable(),
       lastErrorCode: z.enum(["timeout", "network", "server_5xx", "validation_4xx", "unknown"]).nullable(),
     }),
+    exams: z.object({
+      lastSuccessAt: z.number().nullable(),
+      lastFailureAt: z.number().nullable(),
+      lastErrorCode: z.enum(["timeout", "network", "server_5xx", "validation_4xx", "unknown"]).nullable(),
+    }),
     vault: z.object({
       exists: z.boolean(),
       version: z.number().nullable(),
@@ -1055,6 +1060,7 @@ export const MeMergeResponse = z.looseObject({
   target: z.string(),
   favoritesMoved: z.number().int(),
   favoritesSkipped: z.number().int(),
+  examFollowsMoved: z.number().int(),
   foldersMoved: z.number().int(),
   searchesMoved: z.number().int(),
   eventsMoved: z.number().int(),
@@ -1131,6 +1137,18 @@ export const MeWatchlistSyncResponse = z.looseObject({
   applied: z.number().int(),
   version: z.number(),
   entries: z.array(z.unknown()),
+});
+
+/**
+ * POST /api/me/exams/sync（U-379）：与追剧同步同一信封口径（applied/version）；
+ * items 是一场考试一行的关注记录（examId/checked/createdAt/updatedAt/deletedAt），
+ * 条目形状由考试关注仓储定义。
+ */
+export const MeExamsSyncResponse = z.looseObject({
+  ok: z.literal(true),
+  applied: z.number().int(),
+  version: z.number(),
+  items: z.array(z.unknown()),
 });
 
 /**
@@ -2862,6 +2880,7 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   },
   "DELETE /api/me/favorites/trash": { schema: MeFavoriteTrashClearResponse, name: "MeFavoriteTrashClearResponse" },
   "POST /api/me/watchlist/sync": { schema: MeWatchlistSyncResponse, name: "MeWatchlistSyncResponse" },
+  "POST /api/me/exams/sync": { schema: MeExamsSyncResponse, name: "MeExamsSyncResponse" },
   "GET /api/me/custom-sites": { schema: MeCustomSitesListResponse, name: "MeCustomSitesListResponse" },
   "POST /api/me/custom-sites": { schema: MeCustomSiteItemResponse, name: "MeCustomSiteItemResponse" },
   "PATCH /api/me/custom-sites/{id}": { schema: MeCustomSiteItemResponse, name: "MeCustomSiteItemResponse" },

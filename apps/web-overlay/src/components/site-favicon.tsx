@@ -225,7 +225,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   // 改用同站验证过的 favicon.png（200 image/png 14725B）。
   'zhiwen.xfyun.cn=https://zhiwen.xfyun.cn/favicon.png',
   'cursor.com=cursorp',
-  'v0.dev=/assets/images/logos/vercel.webp',
+  'v0.dev=/brand-icons/vercel.png',
   'kimi.moonshot.cn=kimi-searchp',
   'doubao.com=doubaop',
   'www.doubao.com=doubaop',
@@ -246,53 +246,53 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   'chat.openai.com=chatgpts',
   'openai.com=openaip',
   'claude.ai=claudes',
-  'anthropic.com=/assets/images/logos/claude.webp',
+  'anthropic.com=/brand-icons/claude.svg',
   'cloudflare.com=cloudflarep',
   'figma.com=figmas',
   'tinypng.com=tinypngp',
   'unsplash.com=unsplashp',
   'vercel.com=vercelp',
   'fonts.google.com=google-fontss',
-  'material.io=/assets/images/logos/Materialicons.webp',
-  'colorhunt.co=/assets/images/logos/colorhunt.webp',
-  'flinto.com=/assets/images/logos/flinto.webp',
+  'material.io=/brand-icons/Materialicons.webp',
+  'colorhunt.co=/brand-icons/colorhunt.webp',
+  'flinto.com=/brand-icons/flinto.webp',
   'flaticon.com=flaticonp',
   'fontawesome.com=font-awesomes',
-  'framer.com=/assets/images/logos/framer.webp',
-  'freepik.com=/assets/images/logos/freepik.webp',
+  'framer.com=/brand-icons/framer.webp',
+  'freepik.com=/brand-icons/freepik.webp',
   'gemini.google.com=geminis',
-  'iconarchive.com=/assets/images/logos/iconarchive.webp',
-  'iconfinder.com=/assets/images/logos/Iconfinder.webp',
+  'iconarchive.com=/brand-icons/iconarchive.webp',
+  'iconfinder.com=/brand-icons/Iconfinder.webp',
   // 2026-11-20（U-08 补站 Iconfont）：原值 '/assets/images/logos/iconfont.webp'
   // 为上游底座 44×44 WebP（apps/web 镜像树资产）；改指站方 favicon 本体 SVG
   // （www.iconfont.cn/favicon.ico 302 至 img.alicdn.com 官方标，83×82，5,688 B，
   // md5 dcc980d06bc7209d1c9ec24870620f0d），与导航条目同源、矢量更清晰。
   // 全库 383 站核对：'iconfont.cn' 键只命中 Iconfont 一站，无后缀串站。
   'iconfont.cn=iconfonts',
-  'iconmonstr.com=/assets/images/logos/iconmonstr.webp',
-  'ionicons.com=/assets/images/logos/ionicons.webp',
+  'iconmonstr.com=/brand-icons/iconmonstr.webp',
+  'ionicons.com=/brand-icons/ionicons.webp',
   'leonardo.ai=leonardop',
-  'poe.com=/assets/images/logos/poe.svg',
-  'producthunt.com=/assets/images/logos/producthunt.webp',
-  'tensor.art=/assets/images/logos/tensorart.webp',
-  'icomoon.io=/assets/images/logos/IcoMoonApp.webp',
-  'findicons.com=/assets/images/logos/FindIcons.webp',
-  'principleformac.com=/assets/images/logos/principle.webp',
-  'worldvectorlogo.com=/assets/images/logos/worldvectorlogo.webp',
-  'shots.so=/assets/images/logos/shots.webp',
-  'simplelineicons.com=/assets/images/logos/simplelineicons.webp',
-  'sqlformat.org=/assets/images/logos/sqlformat.webp',
-  'tableconvert.com=/assets/images/logos/tableconvert.webp',
-  'json.cn=/assets/images/logos/json.webp',
-  'beautifier.io=/assets/images/logos/beautifier.webp',
-  'ui-cloud.com=/assets/images/logos/UICloud.webp',
-  'ads.google.com=/assets/images/logos/gads.webp',
-  'analytics.google.com=/assets/images/logos/analytics.webp',
-  'photoshop.com=/assets/images/logos/photoshop.webp',
-  'affinity.serif.com=/assets/images/logos/AffinityDesigner.webp',
-  'instantlogosearch.com=/assets/images/logos/InstantLogoSearch.webp',
-  'iconsfeed.com=/assets/images/logos/iconsfeed.webp',
-  'iosicongallery.com=/assets/images/logos/iosicongallery.webp',
+  'poe.com=/brand-icons/poe.svg',
+  'producthunt.com=/brand-icons/producthunt.webp',
+  'tensor.art=/brand-icons/tensorart.webp',
+  'icomoon.io=/brand-icons/IcoMoonApp.webp',
+  'findicons.com=/brand-icons/FindIcons.webp',
+  'principleformac.com=/brand-icons/principle.webp',
+  'worldvectorlogo.com=/brand-icons/worldvectorlogo.webp',
+  'shots.so=/brand-icons/shots.webp',
+  'simplelineicons.com=/brand-icons/simplelineicons.webp',
+  'sqlformat.org=/brand-icons/sqlformat.webp',
+  'tableconvert.com=/brand-icons/tableconvert.webp',
+  'json.cn=/brand-icons/json.webp',
+  'beautifier.io=/brand-icons/beautifier.webp',
+  'ui-cloud.com=/brand-icons/UICloud.webp',
+  'ads.google.com=/brand-icons/gads.webp',
+  'analytics.google.com=/brand-icons/analytics.webp',
+  'photoshop.com=/brand-icons/photoshop.webp',
+  'affinity.serif.com=/brand-icons/AffinityDesigner.webp',
+  'instantlogosearch.com=/brand-icons/InstantLogoSearch.webp',
+  'iconsfeed.com=/brand-icons/iconsfeed.webp',
+  'iosicongallery.com=/brand-icons/iosicongallery.webp',
   // 2026-11-17（图标 A 类第 1 批 a1a + a1b，独立复审 R1–R6 后合批）：
   // 本批 8 个键均为原地替换旧值（旧值指向不存在的 /assets/images/logos/*，
   // 不另起重复块）：chatgpt.com → chatgpt.svg；chat.openai.com → chatgpt.svg
@@ -1353,13 +1353,13 @@ export function resolveSiteIcon(
     if (lowerTitle.includes('runway')) return '/brand-icons/runway.png'
     if (lowerTitle.includes('deepseek')) return '/brand-icons/deepseek.png'
     if (lowerTitle.includes('gemini')) return '/brand-icons/gemini.svg'
-    if (lowerTitle.includes('chatgpt') || lowerTitle.includes('openai')) return '/assets/images/logos/chatgpt.webp'
-    if (lowerTitle.includes('claude')) return '/assets/images/logos/claude.webp'
-    if (lowerTitle.includes('cloudflare')) return '/assets/images/logos/cloudflar.webp'
-    if (lowerTitle.includes('figma')) return '/assets/images/logos/figma.webp'
-    if (lowerTitle.includes('tinypng')) return '/assets/images/logos/tinypng.webp'
-    if (lowerTitle.includes('unsplash')) return '/assets/images/logos/unsplash.webp'
-    if (lowerTitle.includes('vercel')) return '/assets/images/logos/vercel.webp'
+    if (lowerTitle.includes('chatgpt') || lowerTitle.includes('openai')) return '/brand-icons/chatgpt.svg'
+    if (lowerTitle.includes('claude')) return '/brand-icons/claude.svg'
+    if (lowerTitle.includes('cloudflare')) return '/brand-icons/cloudflare.png'
+    if (lowerTitle.includes('figma')) return '/brand-icons/figma.svg'
+    if (lowerTitle.includes('tinypng')) return '/brand-icons/tinypng.png'
+    if (lowerTitle.includes('unsplash')) return '/brand-icons/unsplash.png'
+    if (lowerTitle.includes('vercel')) return '/brand-icons/vercel.png'
 
     // 未命中内置 Logo 且无合法自定义图标时，不向浏览器返回远端裸 /favicon.ico，
     // 避免浏览器盲发跨域请求触发 CORP (NotSameOrigin) 阻断或 404/502 报错；

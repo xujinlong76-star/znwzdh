@@ -6,8 +6,10 @@
  *    勾选考前清单；不关注的考试只看时间轴，不开放勾选。
  *  - 清单的每一项就是事实源 exam-calendar.ts 里该考试的节点（准考证
  *    打印、笔试等），不另编任务、不编日期；勾选状态只由用户手动改。
- *  - 只保存在本机 localStorage（navhub.my-exams.v1），不登录、不上传、
- *    不跨设备同步；页面上写明这一点。云同步是后续工作，不在本轮承诺。
+ *  - 未登录只保存在本机 localStorage（navhub.my-exams.v1），不逼登录；
+ *    登录后走云端同步（POST /api/me/exams/sync，与追剧清单同一套
+ *    批量 ops + 版本游标 + 墓碑协议，见 useMyExams.syncMyExamsToCloud）。
+ *    同步失败时本地仍可用，本机就是离线事实源。
  */
 
 import {
@@ -133,6 +135,60 @@ export function nextUncheckedNode(state: MyExamsState, exam: ExamInfo): ExamNode
   return [...exam.nodes]
     .sort((a, b) => a.startISO.localeCompare(b.startISO))
     .find((n) => !done.has(n.label))
+}
+
+/* ------------------------------ 云端合并 ------------------------------ */
+
+/** 云端关注行形状：与服务端 ExamFollowRecord 的客户端视图（+ 墓碑） */
+export interface HubExamFollow {
+  examId: string
+  checked: string[]
+  createdAt: number
+  updatedAt: number
+  deletedAt?: number | null
+}
+
+/**
+ * 全量合并（since=0）：**以云端成员集合为准**，与 mergeCloudWatchlist 同口径。
+ * 本地独有的关注若没在本次同步里先推上去，就不该在合并后存活——否则另一台
+ * 设备取消的关注会被本机缓存复活。关注顺序：本地已有的按本地顺序，云端独
+ * 有的按 createdAt 追加；勾选组一律以云端为准。未知考试 id 与非法 label
+ * 由 parseMyExams 收敛掉，不进界面。
+ */
+export function mergeCloudMyExams(local: MyExamsState, cloud: HubExamFollow[]): MyExamsState {
+  const alive = cloud.filter((row) => row.deletedAt == null)
+  const cloudChecked: Record<string, string[]> = {}
+  for (const row of alive) {
+    if (row.checked.length > 0) cloudChecked[row.examId] = [...row.checked]
+  }
+  const cloudIds = new Set(alive.map((row) => row.examId))
+  const localOrder = local.followed.filter((id) => cloudIds.has(id))
+  const cloudOnly = alive
+    .filter((row) => !local.followed.includes(row.examId))
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .map((row) => row.examId)
+  return parseMyExams({ followed: [...localOrder, ...cloudOnly], checked: cloudChecked })
+}
+
+/**
+ * 增量应用（since>0）：只按 examId upsert / 删墓碑，绝不整体替换——
+ * 本地尚未推送的关注不在增量里，整体替换会把它们误删（与 applyWatchDelta 同理）。
+ */
+export function applyMyExamsDelta(local: MyExamsState, delta: HubExamFollow[]): MyExamsState {
+  const followed = [...local.followed]
+  const checked: Record<string, string[]> = { ...local.checked }
+  for (const row of delta) {
+    if (row.deletedAt != null) {
+      const idx = followed.indexOf(row.examId)
+      if (idx >= 0) followed.splice(idx, 1)
+      delete checked[row.examId]
+      continue
+    }
+    if (!followed.includes(row.examId)) followed.push(row.examId)
+    if (row.checked.length > 0) checked[row.examId] = [...row.checked]
+    else delete checked[row.examId]
+  }
+  return parseMyExams({ followed, checked })
 }
 
 /**

@@ -28,9 +28,7 @@ import {
   topFrequentVisits,
   type RecentVisit,
 } from '@/lib/offline-recent'
-import type { DialSite } from '@/lib/number-dial'
 import { useExternalLinkTarget } from '@/lib/user-preferences'
-import type { WorkspaceId } from '@/components/workspace-filter'
 
 const QuickDockAllDialog = dynamic(
   () => import('@/components/home-windows/quick-dock-all-dialog').then((m) => m.QuickDockAllDialog),
@@ -65,8 +63,6 @@ export function recentVisitMeta(v: RecentVisit): string | undefined {
 }
 
 export interface HomeQuickDockProps {
-  allSites: DialSite[]
-  activeWorkspace: WorkspaceId
   dialDigitById?: ReadonlyMap<string, number | string>
   /**
    * P2-14：速拨顺序（Top 9）由父级 navigation-content 的 dialSites 一次算好透传，
@@ -78,10 +74,9 @@ export interface HomeQuickDockProps {
   maxInlineItems?: number
 }
 
-// P0-2：包 memo——父组件传的 allSites/activeWorkspace/dialDigitById/speedSites 均已稳定。
+// P0-2：包 memo——父组件传的 dialDigitById/speedSites 均已稳定。
+// U-358：allSites/activeWorkspace 曾随速拨重构传入、坞内从未使用，已删（lint 2 警告随之消失）。
 export const HomeQuickDock = memo(function HomeQuickDock({
-  allSites,
-  activeWorkspace,
   dialDigitById,
   speedSites,
   maxInlineItems = 7,

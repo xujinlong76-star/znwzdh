@@ -21,6 +21,7 @@
  *  - GET    /api/me/drama-check-states   我的短剧新集检查状态（按 dramaKey 列全部；匿名返 []）
  *  - POST   /api/me/favorites/sync       收藏增量同步
  *  - POST   /api/me/watchlist/sync       追剧清单增量同步（与收藏同一套协议）
+ *  - POST   /api/me/exams/sync           考试关注增量同步（U-379，与追剧同一套协议）
  *  - POST   /api/me/merge                匿名数据合并到登录身份（幂等、事务、审计）
  *  - DELETE /api/me                      注销并清空云端个人数据
  */
@@ -630,6 +631,10 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
           ])
           .optional(),
         settings: z.record(z.string(), z.unknown()).optional(),
+        // 本机成长快照（U-372 诚实化小步）：导出时浏览器把本机档案打包进备份，
+        // 但成长档案只存本机 localStorage、服务端从不持有——这里只显式接住、
+        // 绝不回写，响应里 growthSnapshotIgnored 如实回传，别让用户以为它已恢复。
+        growthSnapshot: z.unknown().optional(),
         // 分批续导的窗口起点：界面用响应里的 nextHistoryOffset 回填，
         // 这样「再导一次」推进的是剩下的条目，而不是永远重复同一批。
         searchHistoryOffset: z.number().int().min(0).max(1_000_000).optional(),
@@ -756,6 +761,10 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       }
 
       // 5. 恢复插件星标与评价（T2 导入导出对称化）：导出了就必须能恢复。
+      // 唯独本机成长快照不在此列：它只存浏览器 localStorage，服务端没有
+      // 对应的写入口，收到也只忽略，响应里 growthSnapshotIgnored 如实回传。
+      const growthSnapshotIgnored =
+        parsed.data.growthSnapshot !== undefined && parsed.data.growthSnapshot !== null;
       // 重放语义与正常用户动作一致——star 走幂等插入并守恒 star_count，
       // 评价要求「已安装该插件」的既有门禁（未安装 = 如实跳过，不绕过门禁）。
       let starsImported = 0;
@@ -849,6 +858,8 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         reviewsSkippedInvalid,
         /** 导出端也带上收藏截断口径，界面提示「备份不止这些」 */
         favoritesExportLimit: EXPORT_FAVORITES_LIMIT,
+        /** 备份里带本机成长快照：只作存档，未写回服务端（U-372） */
+        growthSnapshotIgnored,
       };
     },
   );
@@ -1314,7 +1325,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         }
         return op;
       });
-      let applied: { applied: number; version: number };
+      let applied: { applied: number; version: number; skippedSiteIds: string[] };
       let slice: Awaited<ReturnType<typeof ctx.repo.listFavoritesSince>>;
       let folders: Awaited<ReturnType<typeof ctx.repo.listFavoriteFolders>>;
       let siteMap: Map<string, unknown>;
@@ -1364,6 +1375,11 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       return {
         ok: true,
         applied: applied.applied,
+        // U-371：LWW 跳过的 op 必须显式回传（计数 + 哪些 siteId），
+        // 客户端按它清脏、报数——只回 applied 时客户端只能拿「提交数」
+        // 冒充成功数，跳过的改动还会被静默清脏丢掉。
+        skipped: applied.skippedSiteIds.length,
+        skippedSiteIds: applied.skippedSiteIds,
         version: Math.max(applied.version, slice.version),
         items: slice.items.map((item) => ({ ...item, site: siteMap.get(item.siteId) ?? null })),
         folders,
@@ -1479,6 +1495,84 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         version: Math.max(applied.version, slice.version),
         items: slice.items,
         truncatedTitles,
+      };
+    },
+  );
+
+  /**
+   * 考试关注批量同步（U-379）：与追剧清单同步同一套协议（批量 ops + 版本游标 + 墓碑）。
+   *
+   * 一场考试一行：follow 写关注 + 全量勾选组，check 只改勾选组（未关注时跳过），
+   * unfollow 写墓碑。冲突按行级 LWW（op.at 不大于存量 updated_at 即跳过），
+   * 两端同时勾选同一场考试时以后到的编辑为准，另一端下次拉取即收敛。
+   * examId 只校验形状（小写字母/数字/连字符，≤64），不硬编码考试名单——
+   * 事实源在 web 侧 exam-calendar.ts，服务端不复制名单；未知考试 id 的行
+   * 客户端 parseMyExams 会丢弃，不进界面。勾选 label 是事实源节点名，
+   * 超长/超量整批 400（与 watchlist 的 key 上限口径一致，不逐条截断）。
+   */
+  app.post(
+    "/api/me/exams/sync",
+    // scope 显式声明（route-policy 闸门要求新写路由不许漏写）：public = 用户域写面，
+    // 与追剧同步同级——真正的闸门是处理器里的 identityTrusted 签名身份校验，
+    // 无可信身份一律 401，「匿名可写」只是网关等级口径，不是无鉴权。
+    { config: { scope: "public", rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+      const identity = requestIdentityOf(req as never);
+      if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+      const parsed = z.object({
+        ops: z.array(z.object({
+          op: z.enum(["follow", "check", "unfollow"]),
+          examId: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
+          // 全量勾选组：节点 label 来自事实源，每场节点数是个位数，32 是宽松上限
+          checked: z.array(z.string().min(1).max(64)).max(32).optional(),
+          createdAt: z.number().optional(),
+          at: z.number().optional(),
+        })).max(500),
+        since: z.number().optional(),
+      }).safeParse(req.body ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: "参数无效", detail: parsed.error.issues };
+      }
+      const canonical = await ctx.repo.resolveIdentity(identity);
+      // 与追剧同步同口径：审计 + 60 分钟去重通知 + 水位（domain "exams"）。
+      let applied: Awaited<ReturnType<typeof ctx.repo.applyExamFollowOps>>;
+      let slice: Awaited<ReturnType<typeof ctx.repo.listExamFollowsSince>>;
+      try {
+        applied = await ctx.repo.applyExamFollowOps(canonical, parsed.data.ops);
+        slice = await ctx.repo.listExamFollowsSince(canonical, parsed.data.since ?? 0);
+      } catch (err) {
+        await ctx.repo.audit({
+          ip: req.ip,
+          actor: canonical,
+          actorKind: "user",
+          action: "user.sync_failed",
+          target: canonical,
+          diff: { domain: "exams", ops: parsed.data.ops.length, error: String((err as Error)?.message ?? "unknown") },
+        }).catch(() => { /* 审计/遥测类写库是尽力而为：失败不阻断主操作，原始错误随后即 throw */ });
+        await ctx.repo.recordSyncFailure(canonical, "exams", mapSyncErrorCode(err)).catch(() => { /* 同步水位是尽力而为：原始错误随后即 throw，记水位失败不掩盖原错 */ });
+        try {
+          const recent = await ctx.repo.hasRecentNotification(canonical, "sync_failed", 60 * 60_000);
+          if (!recent) {
+            await ctx.repo.emitNotification({
+              identity: canonical,
+              idempotencyKey: `sync_failed:exams:${Math.floor(Date.now() / (60 * 60_000))}`,
+              kind: "sync_failed",
+              title: "考试关注同步失败",
+              body: "本机考试关注暂时没能同步到云端（网络或服务波动）。你的关注与勾选仍安全保存在本机，稍后会自动重试。",
+            });
+          }
+        } catch { /* 通知是增强信息，不改变失败语义 */ }
+        throw err;
+      }
+      // 同步水位（第 15 项）：成功时间落库，/api/me/safety 才能诚实地说“同步正常”。
+      await ctx.repo.recordSyncSuccess(canonical, "exams").catch(() => { /* 同步成功水位是尽力而为：同步已成功，记水位失败不改写响应 */ });
+      return {
+        ok: true,
+        applied: applied.applied,
+        version: Math.max(applied.version, slice.version),
+        items: slice.items,
       };
     },
   );
@@ -1676,6 +1770,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       diff: {
         favoritesMoved: result.favoritesMoved,
         favoritesSkipped: result.favoritesSkipped,
+        examFollowsMoved: result.examFollowsMoved,
         searchesMoved: result.searchesMoved,
         eventsMoved: result.eventsMoved,
         pluginsMoved: result.pluginsMoved,

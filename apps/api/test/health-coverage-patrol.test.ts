@@ -10,8 +10,11 @@
  *      缺失的 `lastCheckedAt` 算年龄，刚批量导入的批次因此被判成「年轻、存活概率高」
  *      排到更老的已探测站点之后 —— 未探测集合没有年龄可算。
  *   2. **从未探测过的站点不得被瞬时抖动打进 broken**。这是 4-2 验收标准第 3 条
- *      「status=active AND health_ok IS NULL 连续 3 次巡检后保持 active 的比例=100%」
- *      的失败侧边界：第 1、2 次失败必须保持 active，第 3 次才降级。
+ *      的失败侧边界：该条原文按阈值 3 写成「status=active AND health_ok IS NULL
+ *      连续 3 次巡检后保持 active 的比例=100%」；03 §3.3 于 2026-11-20 裁决阈值
+ *      统一为 2（Batch 1 W1 测量 batch1-w1-measure.md §3 与 72b01b38；本站巡检
+ *      周期天级，阈值 3 会让真实下线多等一个周期），此处按现行阈值 2 断言：
+ *      第 1 次失败保持 active，第 2 次降级。
  *
  * 独立库：候选池边界与库容量、sort 顺序直接相关，共享库的存量站点会污染断言。
  */
@@ -166,7 +169,7 @@ describe("4-2 未知状态不得被瞬时抖动降级（验收标准 3 的失败
     shouldStop: () => false,
   });
 
-  it("从未探测过的站点：首次失败保持 active，连续第 3 次才 broken", async () => {
+  it("从未探测过的站点：首次失败保持 active，连续第 2 次才 broken", async () => {
     ctx.db.sqlite!
       .prepare(
         `INSERT INTO sites (id, url, title, category_id, status, enabled, sort, created_at, updated_at)
@@ -192,10 +195,10 @@ describe("4-2 未知状态不得被瞬时抖动降级（验收标准 3 的失败
     expect(await statusOf()).toBe("active");
 
     await handleHealthCheck(ctx, { limit: 1 }, runHandle(), async () => selection());
-    expect(await statusOf()).toBe("active");
+    expect(await statusOf()).toBe("broken"); // 连续第 2 次即 broken（阈值 2，03 §3.3）
 
     await handleHealthCheck(ctx, { limit: 1 }, runHandle(), async () => selection());
-    expect(await statusOf()).toBe("broken");
+    expect(await statusOf()).toBe("broken"); // 保持 broken
 
     const history = await ctx.repo.recentHealthChecks("flaky-unchecked", 5);
     expect(history).toHaveLength(3);

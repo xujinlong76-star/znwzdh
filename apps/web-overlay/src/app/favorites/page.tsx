@@ -28,10 +28,12 @@ import {
 } from '@/hooks/useFavorites'
 import { useFavoritesFolderManager } from '@/hooks/use-favorites-folder-manager'
 import { SmartCollectionsPanel } from '@/components/smart-collections-panel'
+import { VaultSecurityPopover } from '@/components/vault-security-popover'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { LOCAL_FOLDERS_STORAGE_KEY, parseLocalFolders, serializeLocalFolders, type LocalFolder } from '@/lib/favorites-folders'
 import { buildFavoritesSearch, parseFavoritesFilters, type FavoritesSort } from '@/lib/favorites-url'
 import {
+  countVaultQuicklinks,
   favoritesToVaultItems,
   formatVaultRestoreNotice,
   vaultExportFilename,
@@ -495,6 +497,8 @@ export default function FavoritesPage() {
   // 零知识 E2EE 金库状态
   const [showVaultExport, setShowVaultExport] = useState(false)
   const [showVaultImport, setShowVaultImport] = useState(false)
+  // 「更多导出」折叠（默认收起）：导出格式按钮收进折叠，Hero 在 1024 档让出首屏给收藏列表
+  const [showMoreExport, setShowMoreExport] = useState(false)
   const [vaultPassword, setVaultPassword] = useState('')
   const [vaultPasswordConfirm, setVaultPasswordConfirm] = useState('')
   const [importPassphrase, setImportPassphrase] = useState('')
@@ -544,6 +548,11 @@ export default function FavoritesPage() {
       ? {
           ok: cloudResult.ok,
           pushed: cloudResult.pushed,
+          // U-371：banner 按 applied 说成功数、按 skipped 报被覆盖数，
+          // 再不许拿 pushed 冒充「已合并」。
+          applied: cloudResult.applied,
+          skipped: cloudResult.skipped,
+          truncatedNotes: cloudResult.truncatedNotes,
           cloudCount: cloudResult.cloud ? cloudResult.cloud.length : null,
           remoteRemoved: cloudResult.remoteRemoved,
           error: cloudResult.error,
@@ -667,7 +676,7 @@ export default function FavoritesPage() {
     const ok = await updateFavoriteMeta(cloudIdentity, siteId, { folderId })
     setManageBusy(false)
     if (!ok) {
-      setSyncNote('移动收藏失败：云端暂不可用，已在本机保留位置')
+      setSyncNote('移动收藏失败：云端暂不可用，本次移动未同步到云端，只保留在本机位置；请稍后在收藏页重试同步')
       setSyncStatus('error')
     }
   }, [cloudIdentity, favorites])
@@ -681,7 +690,7 @@ export default function FavoritesPage() {
     const ok = await updateFavoriteMeta(cloudIdentity, siteId, { note })
     setManageBusy(false)
     if (!ok) {
-      setSyncNote('保存备注失败：云端暂不可用，已保存在本机')
+      setSyncNote('保存备注失败：云端暂不可用，本次备注未同步到云端，只保存在本机；请稍后在收藏页重试同步')
       setSyncStatus('error')
     }
   }, [cloudIdentity, favorites, noteDraft])
@@ -702,7 +711,7 @@ export default function FavoritesPage() {
     const ok = await updateFavoriteMeta(cloudIdentity, siteId, { tags: deduped.length > 0 ? deduped : null })
     setManageBusy(false)
     if (!ok) {
-      setSyncNote('保存标签失败：云端暂不可用，已保存在本机')
+      setSyncNote('保存标签失败：云端暂不可用，本次标签未同步到云端，只保存在本机；请稍后在收藏页重试同步')
       setSyncStatus('error')
     }
   }, [cloudIdentity, favorites, tagDraft])
@@ -1176,10 +1185,14 @@ export default function FavoritesPage() {
 
   return (
     <Container as="main" id="main-content">
-      <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">
+      {/* 内容区右留 64px「小猫通道」：悬浮小猫固定在视口右下（宽 48px、距右 18px），
+          本容器是全部区段的唯一外层盒子，mr-16 让它的边框盒整体避开小猫区——
+          注意必须用 margin 而不是 padding：padding 不改变 getBoundingClientRect，
+          内层各区原先的 pr-16 挡不住盒子层面的重叠判定，已随本次一并移除。 */}
+      <div className="py-4 sm:py-6 space-y-4 sm:space-y-5 mr-16">
         <UserCenterNav />
         {/* 沉浸式 Hero 展板 */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-4 sm:p-8 shadow-xs">
+        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-4 sm:p-5 shadow-xs">
           <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl" />
           <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-48 h-48 bg-sky-400/10 rounded-full blur-3xl" />
           <Shield
@@ -1188,7 +1201,7 @@ export default function FavoritesPage() {
             className="pointer-events-none absolute right-5 top-5 hidden sm:block w-16 h-16 text-border/70"
           />
 
-          <div className="relative z-10 space-y-4">
+          <div className="relative z-10 space-y-3">
             <div className="flex items-center gap-2">
               <Link
                 href="/"
@@ -1246,6 +1259,10 @@ export default function FavoritesPage() {
                   <KeyRound className="w-3.5 h-3.5" /> 解密导入金库
                 </Button>
               </div>
+              {/* 更多导入导出：导入类操作常驻（空态提示直接点名「导入书签/MD」，必须一眼看得到）；
+                  导出格式（书签 HTML / Markdown / 明文 JSON / 导出为插件）收进「更多导出」折叠，
+                  默认收起——Hero 在 1024 档要让出首屏给收藏列表。空收藏时无可导出的内容，
+                  不渲染折叠开关；导出按钮本身仍按有收藏才渲染。 */}
               <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 border-t border-border/50 pt-3">
                 <span className="text-[11px] text-muted-foreground">更多导入导出</span>
                 <Button
@@ -1264,27 +1281,6 @@ export default function FavoritesPage() {
                   导入书签/MD
                 </Button>
                 <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleExportHtml}
-                  disabled={favorites.items.length === 0}
-                  className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
-                  title="导出为浏览器通用的 Netscape HTML 书签（包含文件夹结构）"
-                >
-                  <Download className="w-3.5 h-3.5 mr-1" />
-                  书签 HTML
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleExportMarkdown}
-                  disabled={favorites.items.length === 0}
-                  className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
-                  title="导出为分级结构化 Markdown 清单（适配 Notion/Obsidian）"
-                >
-                  Markdown
-                </Button>
-                <Button
                   asChild
                   variant="ghost"
                   size="sm"
@@ -1292,15 +1288,6 @@ export default function FavoritesPage() {
                   title="查看在收藏标题 / 简介上划过的线与批注，可搜索、可导出"
                 >
                   <Link href="/me/annotations">我的批注</Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleExportPlain}
-                  disabled={favorites.items.length === 0}
-                  className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
-                >
-                  明文 JSON
                 </Button>
                 <Button
                   variant="ghost"
@@ -1315,25 +1302,69 @@ export default function FavoritesPage() {
                 >
                   导入 JSON
                 </Button>
-                {/* 导出为插件属于「发布到市场」，不是数据管理动作：标注清楚去向 */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleExportAsPlugin}
-                  disabled={favorites.items.length === 0}
-                  className="text-xs text-sky-700 dark:text-sky-400 h-8 rounded-lg hover:bg-sky-500/10"
-                  title="把全部收藏打包成网址包插件（.json），可在插件市场发布"
-                >
-                  <Package className="w-3.5 h-3.5" /> 导出为插件
-                </Button>
+                {favorites.items.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowMoreExport(!showMoreExport)}
+                    aria-expanded={showMoreExport}
+                    className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
+                  >
+                    更多导出
+                    <ChevronDown className={`w-3.5 h-3.5 ml-1 transition-transform ${showMoreExport ? 'rotate-180' : ''}`} />
+                  </Button>
+                )}
               </div>
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                JSON 是唯一保真格式：快捷链接模板只随 JSON 导出 / 导入，HTML 与 Markdown 导出不含模板。
-              </p>
+              {showMoreExport && favorites.items.length > 0 && (
+                <>
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 pt-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleExportHtml}
+                      className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
+                      title="导出为浏览器通用的 Netscape HTML 书签（包含文件夹结构）"
+                    >
+                      <Download className="w-3.5 h-3.5 mr-1" />
+                      书签 HTML
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleExportMarkdown}
+                      className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
+                      title="导出为分级结构化 Markdown 清单（适配 Notion/Obsidian）"
+                    >
+                      Markdown
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleExportPlain}
+                      className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
+                    >
+                      明文 JSON
+                    </Button>
+                    {/* 导出为插件属于「发布到市场」，不是数据管理动作：标注清楚去向 */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleExportAsPlugin}
+                      className="text-xs text-sky-700 dark:text-sky-400 h-8 rounded-lg hover:bg-sky-500/10"
+                      title="把全部收藏打包成网址包插件（.json），可在插件市场发布"
+                    >
+                      <Package className="w-3.5 h-3.5" /> 导出为插件
+                    </Button>
+                  </div>
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    JSON 是唯一保真格式：快捷链接模板只随 JSON 导出 / 导入，HTML 与 Markdown 导出不含模板。
+                  </p>
+                </>
+              )}
               </div>
             </div>
 
-            <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2">
+            <div className="mt-4 pt-3 border-t border-border/50 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 text-xs text-emerald-700 dark:text-emerald-400">
                 <Shield className="w-3 h-3" />
                 本地收藏 {favorites.ready ? favorites.items.length : '—'} 条
@@ -1348,10 +1379,8 @@ export default function FavoritesPage() {
                   🗑 回收站 ({favorites.trashCount})
                 </Link>
               )}
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
-                <KeyRound className="w-3 h-3 text-border" />
-                AES-256-GCM 认证加密
-              </span>
+              {/* AES 徽标可点击：弹出零知识金库安全白皮书（人话版 3 条清单） */}
+              <VaultSecurityPopover />
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
                 <EyeOff className="w-3 h-3 text-border" />
                 零知识：密码不上云
@@ -1500,11 +1529,6 @@ export default function FavoritesPage() {
           </p>
         )}
 
-        {/* P1-6 星标 ≠ 收藏：星标插件不在收藏模型里，常驻分区直接列出来，
-            0 星标也不藏——空态本身就是「星标在哪」的解释；入口指向
-            /marketplace?starred=1（星标列表）与 /me/plugins（插件中心）。 */}
-        <StarredPluginsSection />
-
         {/* 好久没打开：超过 90 天没有记录到的打开的收藏，给一条回访入口，
             而不是让它们在列表里悄悄变旧（徽标在每张卡的日期旁）。 */}
         {staleById.size > 0 && (
@@ -1618,6 +1642,7 @@ export default function FavoritesPage() {
             setShowVaultImport(false)
           }}
           itemCount={favorites.items.length}
+          quicklinkCount={countVaultQuicklinks(favorites.items)}
           password={vaultPassword}
           onPasswordChange={setVaultPassword}
           confirmPassword={vaultPasswordConfirm}
@@ -1805,24 +1830,10 @@ export default function FavoritesPage() {
           </div>
         )}
 
-        {/* 智能整理（P1 #6）：只给建议，用户点「采用」后才建夹、才移动——绝不自动应用 */}
-        {favorites.items.length > 0 && (
-          <SmartCollectionsPanel
-            items={favorites.items}
-            onCreateFolder={createFolderDirectly}
-            onMoveToFolder={assignFolder}
-          />
-        )}
-
-        {/* 公开导航页（Batch 3 第 6 项）：把一个收藏夹发布成 /pub/ 只读页；未登录时区内置灰说明 */}
-        <PublicPageManager
-          cloudIdentity={cloudIdentity}
-          folders={visibleFolders}
-          activeFolder={activeFolder}
-          activeFolderCount={activeFolder === 'all' ? favorites.items.length : (folderCounts.get(activeFolder) ?? 0)}
-        />
-
-        {/* 本地筛选条：只在确实有收藏时出现（没有收藏时不需要筛选控件） */}
+        {/* 本地筛选条：只在确实有收藏时出现（没有收藏时不需要筛选控件）。
+            右侧留白：悬浮小猫（#xiaomaomao）固定在视口右下角；工作区的筛选条、批量栏、
+            列表卡片都会撑满容器宽，右端内容会压到小猫下面。右留白由外层容器的无条件
+            mr-16 统一提供（边框盒整体避开小猫区）；内层各区不再单独加 pr-16。 */}
         {favorites.ready && favorites.items.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 mb-4">
             {/* 搜索方式切换：关键词是本地全文筛选；按意思搜复用中枢语义通道， */}
@@ -2583,6 +2594,31 @@ export default function FavoritesPage() {
             ))}
           </div>
         )}
+
+        {/* 首屏重排（2026-11-21）：以下三区移到收藏列表之后——收藏工作区（筛选条 + 列表/空态）
+            必须在三档视口首屏直接可见；三区功能不变，只是位置在列表下方：
+            星标分区（P1-6）、智能整理（P1 #6）、公开导航页（含 /pub 预览卡，Batch 3 第 6 项）。 */}
+        {/* P1-6 星标 ≠ 收藏：星标插件不在收藏模型里，常驻分区直接列出来，
+            0 星标也不藏——空态本身就是「星标在哪」的解释；入口指向
+            /marketplace?starred=1（星标列表）与 /me/plugins（插件中心）。 */}
+        <StarredPluginsSection />
+
+        {/* 智能整理（P1 #6）：只给建议，用户点「采用」后才建夹、才移动——绝不自动应用 */}
+        {favorites.items.length > 0 && (
+          <SmartCollectionsPanel
+            items={favorites.items}
+            onCreateFolder={createFolderDirectly}
+            onMoveToFolder={assignFolder}
+          />
+        )}
+
+        {/* 公开导航页（Batch 3 第 6 项）：把一个收藏夹发布成 /pub/ 只读页；未登录时区内置灰说明 */}
+        <PublicPageManager
+          cloudIdentity={cloudIdentity}
+          folders={visibleFolders}
+          activeFolder={activeFolder}
+          activeFolderCount={activeFolder === 'all' ? favorites.items.length : (folderCounts.get(activeFolder) ?? 0)}
+        />
 
         {/* 冬眠收藏：只在默认浏览态分区。条目没有删、没有移出，只是沉到这里；点标题打开一次就能唤醒。 */}
         {hibernatingFavorites.length > 0 && (

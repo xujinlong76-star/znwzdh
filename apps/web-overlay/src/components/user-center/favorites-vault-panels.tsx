@@ -13,6 +13,7 @@
 import { Button } from '@/components/ui/button'
 import { Download, Eye, EyeOff, KeyRound, Shield } from 'lucide-react'
 import type { EncryptedVaultPayload } from '@/lib/vault'
+import { getVaultPasswordStrength } from '@/lib/favorites-vault'
 
 export interface FavoritesVaultPanelsProps {
   /** 当前展开哪个面板；null = 两个都收起 */
@@ -20,6 +21,8 @@ export interface FavoritesVaultPanelsProps {
   onClose: () => void
   /** 本地收藏条数（导出按钮上显示"生成并下载 (N 条)"） */
   itemCount: number
+  /** 带快捷模板的收藏条数（导出前提醒的 M，取真实数量） */
+  quicklinkCount: number
 
   // —— 导出 ——
   password: string
@@ -45,7 +48,7 @@ export interface FavoritesVaultPanelsProps {
 
 export function FavoritesVaultPanels(props: FavoritesVaultPanelsProps) {
   const {
-    mode, onClose, itemCount,
+    mode, onClose, itemCount, quicklinkCount,
     password, onPasswordChange, confirmPassword, onConfirmPasswordChange,
     showPassword, onToggleShowPassword, exporting, onExport,
     payload, onPayloadChange, passphrase, onPassphraseChange,
@@ -53,6 +56,10 @@ export function FavoritesVaultPanels(props: FavoritesVaultPanelsProps) {
   } = props
 
   if (mode === 'export') {
+    const strength = getVaultPasswordStrength(password)
+    const confirmMismatch = confirmPassword.length > 0 && confirmPassword !== password
+    const strengthBarClass =
+      strength.score <= 1 ? 'bg-destructive' : strength.score === 2 ? 'bg-amber-500' : strength.score === 3 ? 'bg-lime-500' : 'bg-emerald-500'
     return (
       <div className="mb-6 p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 space-y-4">
         <div className="flex items-start justify-between">
@@ -94,6 +101,31 @@ export function FavoritesVaultPanels(props: FavoritesVaultPanelsProps) {
                 {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
             </div>
+            {/* 密码强度条：只提示、不拦截（导出底线仍是 6 位校验） */}
+            {password.length > 0 && (
+              <div className="mt-1.5 space-y-1" aria-live="polite">
+                <div
+                  className="flex gap-1"
+                  role="meter"
+                  aria-valuenow={strength.score}
+                  aria-valuemin={0}
+                  aria-valuemax={4}
+                  aria-label={`密码强度：${strength.label}`}
+                >
+                  {[0, 1, 2, 3].map((i) => (
+                    <span
+                      key={i}
+                      aria-hidden
+                      className={`h-1.5 flex-1 rounded-full ${i < strength.score ? strengthBarClass : 'bg-muted'}`}
+                    />
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  密码强度：{strength.label}
+                  {strength.score < 3 ? '——建议 8 位以上，混合大小写、数字与符号' : ''}
+                </p>
+              </div>
+            )}
           </div>
           <div>
             <label htmlFor="vault-password-confirm" className="text-xs font-medium text-muted-foreground mb-1 block">
@@ -104,10 +136,22 @@ export function FavoritesVaultPanels(props: FavoritesVaultPanelsProps) {
               value={confirmPassword}
               onChange={(e) => onConfirmPasswordChange(e.target.value)}
               placeholder="再次输入相同密码..."
+              aria-invalid={confirmMismatch}
               className="w-full px-3 py-1.5 text-base sm:text-xs rounded-md border bg-background"
             />
+            {confirmMismatch && (
+              <p role="alert" className="mt-1 text-[11px] text-destructive-text">
+                两次输入的密码不一致
+              </p>
+            )}
           </div>
         </div>
+
+        {/* 导出前提醒：N、M 均取真实数量，不是写死数字 */}
+        <p className="text-xs text-muted-foreground">
+          导出将含 {itemCount} 条收藏与 {quicklinkCount} 条快捷模板
+          （快捷模板随金库一同加密；密码只在本地浏览器使用，服务器永不接触密码）。
+        </p>
 
         <div className="flex items-center gap-2 pt-1">
           <Button

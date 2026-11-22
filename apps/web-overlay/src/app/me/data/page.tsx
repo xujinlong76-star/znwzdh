@@ -165,6 +165,8 @@ export default function MeDataPage() {
     reviewsSkippedNotInstalled: number
     reviewsSkippedMissing: number
     reviewsSkippedInvalid: number
+    /** 备份里带本机成长快照：服务端已明确忽略、不回写 */
+    growthSnapshotIgnored: boolean
   } | null>(null)
   // 续导要把同一份备份再发一次，所以原文得留在内存里（不进 state 免得触发重渲染）。
   // T2 起同时落一份到 sessionStorage（会话级）：刷新页面不再丢续导进度，
@@ -255,7 +257,17 @@ export default function MeDataPage() {
         const data = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(data.error || '导出失败')
       }
-      const blob = await res.blob()
+      // 成长快照（U-372 诚实化小步）：服务端没有本机成长档案，growthSnapshot
+      // 恒为 null；下载前把本机档案读出来填进同一字段再落盘。读失败不阻断
+      // 导出——服务端那份原样下载，快照缺失时如实缺失，不伪造。
+      const payload = (await res.json()) as Record<string, unknown>
+      try {
+        const { buildGrowthExportSnapshot } = await import('@/lib/growth')
+        payload.growthSnapshot = buildGrowthExportSnapshot()
+      } catch {
+        /* 本机档案不可读：导出继续，不带快照 */
+      }
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json; charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -264,7 +276,12 @@ export default function MeDataPage() {
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
-      toast({ title: '导出已开始下载', description: 'JSON 内不含 LLM 明文密钥与金库密文。' })
+      toast({
+        title: '导出已开始下载',
+        description: payload.growthSnapshot
+          ? 'JSON 内不含 LLM 明文密钥与金库密文；已附上本机成长快照（只存这台设备）。'
+          : 'JSON 内不含 LLM 明文密钥与金库密文；本机成长档案不可读，未附快照。',
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : '导出失败')
     } finally {
@@ -306,6 +323,8 @@ export default function MeDataPage() {
           reviewsSkippedNotInstalled?: number
           reviewsSkippedMissing?: number
           reviewsSkippedInvalid?: number
+          /** 备份里带本机成长快照：只作存档，服务端不回写（U-372） */
+          growthSnapshotIgnored?: boolean
           error?: string
         }
         if (!res.ok || !data.ok) {
@@ -335,6 +354,7 @@ export default function MeDataPage() {
           reviewsSkippedNotInstalled: Number(data.reviewsSkippedNotInstalled ?? 0),
           reviewsSkippedMissing: Number(data.reviewsSkippedMissing ?? 0),
           reviewsSkippedInvalid: Number(data.reviewsSkippedInvalid ?? 0),
+          growthSnapshotIgnored: Boolean(data.growthSnapshotIgnored),
         }
         setImportResult(result)
         // 续导上下文按结果刷新：导完即清，没导完则更新剩余数与起点（sessionStorage 兜刷新）
@@ -525,7 +545,8 @@ export default function MeDataPage() {
             </div>
             <p className="mt-3 max-w-prose text-xs leading-relaxed text-muted-foreground">
               包含收藏与文件夹、搜索历史、画像、设置、插件安装记录、金库版本信息。LLM 配置只保留模型与地址，
-              不含密钥；金库只导出加密后的元信息。
+              不含密钥；金库只导出加密后的元信息。另含本机成长快照：成长档案只存在这台设备的浏览器里，
+              导出时从本机读取打包进文件，导入时只作存档、不会写回服务端。
             </p>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
               <Button size="sm" className="w-full text-xs sm:w-auto" disabled={exporting} onClick={() => void handleExport()}>
@@ -557,6 +578,7 @@ export default function MeDataPage() {
             <p className="mt-2 max-w-prose text-xs leading-relaxed text-muted-foreground">
               选择或粘贴通过上方「下载 JSON」导出的 <code className="font-mono">navhub-export-*.json</code> 文件，即可合并恢复收藏夹分组、收藏站点、搜索历史与个人偏好设置：已存在的内容不会被覆盖，
               搜索历史受中枢逐条写入限制，单次最多恢复一部分，剩余条数会在结果里说明并提供「继续导入剩余」按钮。
+              备份里的本机成长快照只作存档，不会恢复到服务端——成长档案只存在这台设备的浏览器里。
             </p>
 
             {importResult && (
@@ -598,6 +620,9 @@ export default function MeDataPage() {
                       : ''}
                   {importResult.backupHistoryTruncated
                     ? ` · 注意：这份备份导出时历史就已截断（上限 ${importResult.historyExportLimit} 条），更早的记录不在文件里`
+                    : ''}
+                  {importResult.growthSnapshotIgnored
+                    ? ' · 备份里的本机成长快照只作存档，未写回服务端（成长档案只存在这台设备的浏览器里）'
                     : ''}
                 </p>
                 {importResult.nextHistoryOffset !== null && (

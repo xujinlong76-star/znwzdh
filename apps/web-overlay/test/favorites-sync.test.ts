@@ -571,6 +571,207 @@ describe("M1 三期：只推脏条目", () => {
   });
 });
 
+describe("U-371：离线编辑不再静默丢失", () => {
+  /** 服务端回执构造器：applied / skipped / skippedSiteIds 显式可控 */
+  function u371Body(opts: {
+    applied: number
+    skipped: number
+    skippedSiteIds: string[]
+    items: Array<{ siteId: string; note?: string | null; updatedAt?: number }>
+    truncatedNotes?: number
+    version?: number
+  }): string {
+    return JSON.stringify({
+      ok: true,
+      applied: opts.applied,
+      skipped: opts.skipped,
+      skippedSiteIds: opts.skippedSiteIds,
+      truncatedNotes: opts.truncatedNotes ?? 0,
+      version: opts.version ?? 999,
+      items: opts.items.map((item) => ({
+        siteId: item.siteId,
+        folderId: null,
+        note: item.note ?? null,
+        createdAt: 1000,
+        updatedAt: item.updatedAt ?? 1700000060000,
+        deletedAt: null,
+        site: { url: "https://example.com/" + item.siteId, title: "站点 " + item.siteId },
+      })),
+      folders: [],
+    })
+  }
+
+  function localItemsU371(
+    entries: Array<{ siteId: string; note?: string; createdAt?: number; updatedAt?: number }>,
+  ): string {
+    return JSON.stringify(
+      entries.map((e) => ({
+        siteId: e.siteId,
+        title: "站点 " + e.siteId,
+        href: "https://example.com/" + e.siteId,
+        note: e.note,
+        createdAt: e.createdAt ?? 1000,
+        updatedAt: e.updatedAt,
+      })),
+    )
+  }
+
+  it("① op.at 取真正的 updatedAt，不再拿 createdAt 当 at", async () => {
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItemsU371([{ siteId: "a", note: "A版备注", createdAt: 1000, updatedAt: 5000 }]),
+      [DIRTY_KEY]: JSON.stringify(["a"]),
+    })
+    const { syncFavoritesToCloud: sync } = await mountedModule()
+    const calls = stubFetch([200], {
+      200: u371Body({ applied: 1, skipped: 0, skippedSiteIds: [], items: [{ siteId: "a", note: "A版备注" }] }),
+    })
+    const r = await sync()
+    const payload = JSON.parse(calls[0].body ?? "{}") as { ops: Array<{ at: number }> }
+    expect(payload.ops[0]!.at).toBe(5000)
+    expect(r.applied).toBe(1)
+    expect(r.skipped).toBe(0)
+    expect(lastStore[DIRTY_KEY]).toBe("[]")
+  })
+
+  it("② 老数据没有 updatedAt 时回退 createdAt（不破坏存量）", async () => {
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItemsU371([{ siteId: "a", note: "备注", createdAt: 1000 }]),
+      [DIRTY_KEY]: JSON.stringify(["a"]),
+    })
+    const { syncFavoritesToCloud: sync } = await mountedModule()
+    const calls = stubFetch([200], {
+      200: u371Body({ applied: 1, skipped: 0, skippedSiteIds: [], items: [{ siteId: "a", note: "备注" }] }),
+    })
+    await sync()
+    const payload = JSON.parse(calls[0].body ?? "{}") as { ops: Array<{ at: number }> }
+    expect(payload.ops[0]!.at).toBe(1000)
+  })
+
+  it("③ 全部跳过：ok 仍 true 但 skipped=1、applied=0；脏标记保留；本机 A 版不被云端 B 版覆盖", async () => {
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItemsU371([{ siteId: "a", note: "A版备注", createdAt: 1000, updatedAt: 5000 }]),
+      [DIRTY_KEY]: JSON.stringify(["a"]),
+    })
+    const { syncFavoritesToCloud: sync } = await mountedModule()
+    stubFetch([200], {
+      200: u371Body({ applied: 0, skipped: 1, skippedSiteIds: ["a"], items: [{ siteId: "a", note: "B版备注" }] }),
+    })
+    const r = await sync()
+    expect(r.ok).toBe(true)
+    expect(r.pushed).toBe(1)
+    expect(r.applied).toBe(0)
+    expect(r.skipped).toBe(1)
+    // 被跳过的 op 不清脏：落盘仍是 ["a"]，下次同步会重推（可重试）
+    expect(lastStore[DIRTY_KEY]).toBe(JSON.stringify(["a"]))
+    // 被跳过的本机改动不被云端增量覆盖：用户还能看到自己的 A 版
+    expect(r.nextItems?.[0]?.note).toBe("A版备注")
+    expect(r.nextItems?.[0]?.updatedAt).toBe(5000)
+  })
+
+  it("④ 部分跳过：只清已确认应用的 op，被跳过的保留脏标记", async () => {
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItemsU371([
+        { siteId: "a", note: "A新", createdAt: 1000, updatedAt: 5000 },
+        { siteId: "b", note: "B旧", createdAt: 1000, updatedAt: 4000 },
+      ]),
+      [DIRTY_KEY]: JSON.stringify(["a", "b"]),
+    })
+    const { syncFavoritesToCloud: sync } = await mountedModule()
+    stubFetch([200], {
+      200: u371Body({
+        applied: 1,
+        skipped: 1,
+        skippedSiteIds: ["b"],
+        items: [
+          { siteId: "a", note: "A新" },
+          { siteId: "b", note: "B云端版" },
+        ],
+      }),
+    })
+    const r = await sync()
+    expect(r.applied).toBe(1)
+    expect(r.skipped).toBe(1)
+    expect(lastStore[DIRTY_KEY]).toBe(JSON.stringify(["b"]))
+    // a 已确认：取云端值；b 被跳过：保留本机值
+    expect(r.nextItems?.find((i) => i.siteId === "a")?.note).toBe("A新")
+    expect(r.nextItems?.find((i) => i.siteId === "b")?.note).toBe("B旧")
+  })
+
+  it("⑤ 再改一次后重试能赢：updatedAt 刷新 → op.at 更新 → applied=1、清脏", async () => {
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItemsU371([{ siteId: "a", note: "A版备注", createdAt: 1000, updatedAt: 5000 }]),
+      [DIRTY_KEY]: JSON.stringify(["a"]),
+    })
+    const { syncFavoritesToCloud: sync } = await mountedModule()
+    stubFetch([200], {
+      200: u371Body({ applied: 0, skipped: 1, skippedSiteIds: ["a"], items: [{ siteId: "a", note: "B版备注" }] }),
+    })
+    const first = await sync()
+    expect(first.skipped).toBe(1)
+    expect(lastStore[DIRTY_KEY]).toBe(JSON.stringify(["a"]))
+
+    // 用户看到跳过提示后又改了一次备注：updatedAt 刷新到 9000
+    lastStore["navhub.favorites.v1"] = localItemsU371([
+      { siteId: "a", note: "A版备注再改", createdAt: 1000, updatedAt: 9000 },
+    ])
+    const calls = stubFetch([200], {
+      200: u371Body({ applied: 1, skipped: 0, skippedSiteIds: [], items: [{ siteId: "a", note: "A版备注再改" }] }),
+    })
+    const retried = await sync()
+    const payload = JSON.parse(calls[0].body ?? "{}") as { ops: Array<{ at: number; note: string }> }
+    expect(payload.ops[0]!.at).toBe(9000)
+    expect(payload.ops[0]!.note).toBe("A版备注再改")
+    expect(retried.applied).toBe(1)
+    expect(retried.skipped).toBe(0)
+    expect(lastStore[DIRTY_KEY]).toBe("[]")
+  })
+
+  it("⑥ truncatedNotes 透出给调用方（此前类型未声明，回了也被丢弃）", async () => {
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItemsU371([{ siteId: "a", note: "备注", createdAt: 1000, updatedAt: 5000 }]),
+      [DIRTY_KEY]: JSON.stringify(["a"]),
+    })
+    const { syncFavoritesToCloud: sync } = await mountedModule()
+    stubFetch([200], {
+      200: u371Body({ applied: 1, skipped: 0, skippedSiteIds: [], items: [{ siteId: "a", note: "备注" }], truncatedNotes: 1 }),
+    })
+    const r = await sync()
+    expect(r.truncatedNotes).toBe(1)
+  })
+
+  it("⑦ applyMetaUpdate 改备注/标签/夹子时记 updatedAt（同步 op 的 at 由此来）", async () => {
+    installStorage({ "navhub.userId": "user-1", "navhub.favorites.v1": localItemsU371([]) })
+    const mod = await mountedModule()
+    mod.__setSharedFavoritesForTests([
+      { siteId: "a", title: "站点 a", href: "https://example.com/a", note: "旧", createdAt: 1000, updatedAt: 1000 },
+    ])
+    const before = Date.now()
+    expect(mod.applyMetaUpdate("a", { note: "新备注" })).toBe(true)
+    const after = mod.__getSharedFavoritesForTests()[0]!
+    expect(after.note).toBe("新备注")
+    expect(after.createdAt).toBe(1000)
+    expect(after.updatedAt).toBeGreaterThanOrEqual(before)
+    // 备注没变只改 quicklink（本机私有、不推云端）时不记更新时刻
+    const stampBeforeQuicklink = after.updatedAt!
+    mod.applyMetaUpdate("a", { quickPrefix: "gh", templateUrl: "https://github.com/search?q={q}" })
+    expect(mod.__getSharedFavoritesForTests()[0]!.updatedAt).toBe(stampBeforeQuicklink)
+  })
+
+  it("⑧ 源码守卫：op.at 口径与按条清脏不许改回去", () => {
+    const hook = overlaySource("src/hooks/useFavorites.ts")
+    expect(hook).toContain("at: restoreAt[f.siteId] ?? f.updatedAt ?? f.createdAt")
+    expect(hook).toContain("clearDirty(appliedIds)")
+    expect(hook).toContain("skippedLocal")
+    expect(hook).toContain("updatedAt: remote.updatedAt ?? cached?.updatedAt")
+  })
+})
+
 describe("源码守卫：这套契约不许被改回去", () => {
   // P1-1 分层：同步行为（墓碑、游标、批量/逐条、重试）已在本文件上半部分用
   // 真实模块跑过；这里只锁「页面/钩子仍然接着这些能力」，不重复断言文案。

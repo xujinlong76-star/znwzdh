@@ -52,6 +52,7 @@ import * as healthRepo from "./repository/health.ts";
 import * as tagsRepo from "./repository/tags.ts";
 import * as favoritesRepo from "./repository/favorites.ts";
 import * as watchlistRepo from "./repository/watchlist.ts";
+import * as examFollowsRepo from "./repository/exam-follows.ts";
 import * as hotlistRepo from "./repository/hotlist.ts";
 import * as behaviorRepo from "./repository/behavior.ts";
 import * as profilesRepo from "./repository/profiles.ts";
@@ -1049,11 +1050,11 @@ async savedPluginEmbeddings(filter?: {
     return favoritesRepo.listFavoritesSince(this, userId, since);
   }
 
-  /** 批量应用客户端收藏 ops（LWW + 事务） */
+  /** 批量应用客户端收藏 ops（LWW + 事务；U-371：回传被跳过的 siteId） */
   async applyFavoriteOps(
     userId: string,
     ops: favoritesRepo.FavoriteOp[],
-  ): Promise<{ applied: number; version: number }> {
+  ): Promise<{ applied: number; version: number; skippedSiteIds: string[] }> {
     return favoritesRepo.applyFavoriteOps(this, userId, ops);
   }
 
@@ -1077,6 +1078,28 @@ async savedPluginEmbeddings(filter?: {
 
   async clearWatchEntries(userId: string): Promise<number> {
     return watchlistRepo.clearWatchEntries(this, userId);
+  }
+
+  /* ------------------------- 考试关注（U-379） ------------------------- */
+
+  async listExamFollows(userId: string) {
+    return examFollowsRepo.listExamFollows(this, userId);
+  }
+
+  async listExamFollowsSince(userId: string, since: number): Promise<examFollowsRepo.ExamFollowSyncSlice> {
+    return examFollowsRepo.listExamFollowsSince(this, userId, since);
+  }
+
+  /** 批量应用客户端考试关注 ops（与追剧同一套 LWW + 墓碑协议） */
+  async applyExamFollowOps(
+    userId: string,
+    ops: examFollowsRepo.ExamFollowOp[],
+  ): Promise<{ applied: number; version: number }> {
+    return examFollowsRepo.applyExamFollowOps(this, userId, ops);
+  }
+
+  async clearExamFollows(userId: string): Promise<number> {
+    return examFollowsRepo.clearExamFollows(this, userId);
   }
 
   /* ------------------------------ 短剧新集检查状态 ------------------------------ */

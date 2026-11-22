@@ -165,50 +165,55 @@ export function generateDeterministicSvgDataUrl(
 }
 
 /**
- * 本地静态品牌 Logo 映射表 (基于 /assets/images/logos/ 资源库)
+ * 本地静态品牌 Logo 映射表 (基于 /brand-icons/ 资源库；U-389 分层修法：
+ * P1 标题规则与 P2/P3 map 条目均已迁入 git 跟踪的 brand-icons/，缺的
+ * 文件已按上游 vendor 字节原样落盘（见 overlay 测试文件头）。旧值
+ * /assets/images/logos/* 指向仓库内无落盘的上游 vendor 目录；运行时由
+ * served 树 apps/web 的 vendor 物化提供，不 404——本项是资产归属问题，
+ * 不是线上故障。)
  */
 export const LOCAL_LOGO_MAP: Record<string, string> = {
-  'chatgpt.com': '/assets/images/logos/chatgpt.webp',
-  'chat.openai.com': '/assets/images/logos/chatgpt.webp',
-  'openai.com': '/assets/images/logos/chatgpt.webp',
-  'claude.ai': '/assets/images/logos/claude.webp',
-  'anthropic.com': '/assets/images/logos/claude.webp',
-  'cloudflare.com': '/assets/images/logos/cloudflar.webp',
-  'figma.com': '/assets/images/logos/figma.webp',
-  'tinypng.com': '/assets/images/logos/tinypng.webp',
-  'unsplash.com': '/assets/images/logos/unsplash.webp',
-  'vercel.com': '/assets/images/logos/vercel.webp',
-  'fonts.google.com': '/assets/images/logos/Materialicons.webp',
-  'material.io': '/assets/images/logos/Materialicons.webp',
-  'colorhunt.co': '/assets/images/logos/colorhunt.webp',
-  'flinto.com': '/assets/images/logos/flinto.webp',
-  'flaticon.com': '/assets/images/logos/flaticon.webp',
-  'fontawesome.com': '/assets/images/logos/fontawesomeicon.webp',
-  'framer.com': '/assets/images/logos/framer.webp',
-  'freepik.com': '/assets/images/logos/freepik.webp',
-  'gemini.google.com': '/assets/images/logos/gemini.svg',
-  'iconarchive.com': '/assets/images/logos/iconarchive.webp',
-  'iconfinder.com': '/assets/images/logos/Iconfinder.webp',
-  'iconfont.cn': '/assets/images/logos/iconfont.webp',
-  'iconmonstr.com': '/assets/images/logos/iconmonstr.webp',
-  'ionicons.com': '/assets/images/logos/ionicons.webp',
-  'leonardo.ai': '/assets/images/logos/leonardo.webp',
-  'poe.com': '/assets/images/logos/poe.svg',
-  'producthunt.com': '/assets/images/logos/producthunt.webp',
-  'tensor.art': '/assets/images/logos/tensorart.webp',
-  'icomoon.io': '/assets/images/logos/IcoMoonApp.webp',
-  'findicons.com': '/assets/images/logos/FindIcons.webp',
-  'principleformac.com': '/assets/images/logos/principle.webp',
-  'worldvectorlogo.com': '/assets/images/logos/worldvectorlogo.webp',
-  'shots.so': '/assets/images/logos/shots.webp',
-  'simplelineicons.com': '/assets/images/logos/simplelineicons.webp',
-  'sqlformat.org': '/assets/images/logos/sqlformat.webp',
-  'tableconvert.com': '/assets/images/logos/tableconvert.webp',
-  'json.cn': '/assets/images/logos/json.webp',
-  'beautifier.io': '/assets/images/logos/beautifier.webp',
-  'ui-cloud.com': '/assets/images/logos/UICloud.webp',
-  'ads.google.com': '/assets/images/logos/gads.webp',
-  'analytics.google.com': '/assets/images/logos/analytics.webp',
+  'chatgpt.com': '/brand-icons/chatgpt.svg',
+  'chat.openai.com': '/brand-icons/chatgpt.svg',
+  'openai.com': '/brand-icons/chatgpt.svg',
+  'claude.ai': '/brand-icons/claude.svg',
+  'anthropic.com': '/brand-icons/claude.svg',
+  'cloudflare.com': '/brand-icons/cloudflare.png',
+  'figma.com': '/brand-icons/figma.svg',
+  'tinypng.com': '/brand-icons/tinypng.png',
+  'unsplash.com': '/brand-icons/unsplash.png',
+  'vercel.com': '/brand-icons/vercel.png',
+  'fonts.google.com': '/brand-icons/Materialicons.webp',
+  'material.io': '/brand-icons/Materialicons.webp',
+  'colorhunt.co': '/brand-icons/colorhunt.webp',
+  'flinto.com': '/brand-icons/flinto.webp',
+  'flaticon.com': '/brand-icons/flaticon.png',
+  'fontawesome.com': '/brand-icons/font-awesome.svg',
+  'framer.com': '/brand-icons/framer.webp',
+  'freepik.com': '/brand-icons/freepik.webp',
+  'gemini.google.com': '/brand-icons/gemini.svg',
+  'iconarchive.com': '/brand-icons/iconarchive.webp',
+  'iconfinder.com': '/brand-icons/Iconfinder.webp',
+  'iconfont.cn': '/brand-icons/iconfont.svg',
+  'iconmonstr.com': '/brand-icons/iconmonstr.webp',
+  'ionicons.com': '/brand-icons/ionicons.webp',
+  'leonardo.ai': '/brand-icons/leonardo.png',
+  'poe.com': '/brand-icons/poe.svg',
+  'producthunt.com': '/brand-icons/producthunt.webp',
+  'tensor.art': '/brand-icons/tensorart.webp',
+  'icomoon.io': '/brand-icons/IcoMoonApp.webp',
+  'findicons.com': '/brand-icons/FindIcons.webp',
+  'principleformac.com': '/brand-icons/principle.webp',
+  'worldvectorlogo.com': '/brand-icons/worldvectorlogo.webp',
+  'shots.so': '/brand-icons/shots.webp',
+  'simplelineicons.com': '/brand-icons/simplelineicons.webp',
+  'sqlformat.org': '/brand-icons/sqlformat.webp',
+  'tableconvert.com': '/brand-icons/tableconvert.webp',
+  'json.cn': '/brand-icons/json.webp',
+  'beautifier.io': '/brand-icons/beautifier.webp',
+  'ui-cloud.com': '/brand-icons/UICloud.webp',
+  'ads.google.com': '/brand-icons/gads.webp',
+  'analytics.google.com': '/brand-icons/analytics.webp',
 }
 
 /**
@@ -295,13 +300,13 @@ export function resolveSiteIcon(
 
     // 3. 知名品牌标题关键词模糊回退
     const lowerTitle = (title || '').toLowerCase()
-    if (lowerTitle.includes('chatgpt') || lowerTitle.includes('openai')) return '/assets/images/logos/chatgpt.webp'
-    if (lowerTitle.includes('claude')) return '/assets/images/logos/claude.webp'
-    if (lowerTitle.includes('cloudflare')) return '/assets/images/logos/cloudflar.webp'
-    if (lowerTitle.includes('figma')) return '/assets/images/logos/figma.webp'
-    if (lowerTitle.includes('tinypng')) return '/assets/images/logos/tinypng.webp'
-    if (lowerTitle.includes('unsplash')) return '/assets/images/logos/unsplash.webp'
-    if (lowerTitle.includes('vercel')) return '/assets/images/logos/vercel.webp'
+    if (lowerTitle.includes('chatgpt') || lowerTitle.includes('openai')) return '/brand-icons/chatgpt.svg'
+    if (lowerTitle.includes('claude')) return '/brand-icons/claude.svg'
+    if (lowerTitle.includes('cloudflare')) return '/brand-icons/cloudflare.png'
+    if (lowerTitle.includes('figma')) return '/brand-icons/figma.svg'
+    if (lowerTitle.includes('tinypng')) return '/brand-icons/tinypng.png'
+    if (lowerTitle.includes('unsplash')) return '/brand-icons/unsplash.png'
+    if (lowerTitle.includes('vercel')) return '/brand-icons/vercel.png'
 
     // 4. 直取目标站点自己的 favicon —— 不经任何第三方图标服务。
     //    历史上这里用 icon.horse（"无防盗链阻碍的高速 CDN"），但代价是把

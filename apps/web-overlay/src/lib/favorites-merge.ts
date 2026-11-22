@@ -22,6 +22,8 @@ export interface CloudFavoriteLike {
   /** 标签（T22）：云端权威；null = 已清除（与 note 同语义） */
   tags?: string[] | null
   createdAt: number
+  /** 云端行最后更新时间（U-371：合并后它是本条的水位） */
+  updatedAt?: number
   site: CloudFavoriteSiteLike | null
 }
 
@@ -35,6 +37,8 @@ export interface LocalFavoriteLike {
   tags?: string[]
   folderId?: string | null
   createdAt: number
+  /** 内容最后改动时间（U-371：云端合并时带回，见 mergeCloudFavorites） */
+  updatedAt?: number
   /** 快捷链接（v1 本地 only）：运行时 spread 已保留，云端合并只做展示字段补齐，不洗掉它 */
   quickPrefix?: string
   templateUrl?: string
@@ -70,6 +74,9 @@ export function mergeCloudFavorites<T extends LocalFavoriteLike>(
       tags: remote.tags ?? undefined,
       folderId: remote.folderId,
       createdAt: remote.createdAt || cached?.createdAt || Date.now(),
+      // U-371：云端行的更新时刻带回本地（全量合并后它就是本条的水位）；
+      // 云端没给时保留本地值，别回退到 createdAt 把水位洗旧。
+      updatedAt: remote.updatedAt ?? cached?.updatedAt ?? cached?.createdAt,
     } as T)
   }
   return merged

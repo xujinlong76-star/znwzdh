@@ -19,7 +19,7 @@
               "title": "ChatGPT",
               "href": "https://chatgpt.com",
               "description": "OpenAI 的对话式 AI 助手",
-              "icon": "/assets/images/logos/chatgpt.webp",
+              "icon": "/brand-icons/chatgpt.svg",
               "enabled": true,
               "tags": [
                 "对话",
@@ -43,7 +43,7 @@
               "title": "Claude",
               "href": "https://claude.ai",
               "description": "Anthropic 的大语言模型对话助手，擅长长文本与代码理解",
-              "icon": "/assets/images/logos/claude.webp",
+              "icon": "/brand-icons/claude.svg",
               "enabled": true,
               "tags": [
                 "对话",
@@ -435,7 +435,7 @@
               "title": "Vercel",
               "href": "https://vercel.com",
               "description": "前端部署平台，推送即上线",
-              "icon": "/assets/images/logos/vercel.webp",
+              "icon": "/brand-icons/vercel.png",
               "enabled": true,
               "tags": [
                 "托管",
@@ -465,7 +465,7 @@
               "title": "Cloudflare",
               "href": "https://cloudflare.com",
               "description": "CDN、DNS、Workers 边缘计算与 Pages 部署",
-              "icon": "/assets/images/logos/cloudflar.webp",
+              "icon": "/brand-icons/cloudflare.png",
               "enabled": true,
               "tags": [
                 "cdn",
@@ -642,7 +642,7 @@
               "title": "TinyPNG",
               "href": "https://tinypng.com",
               "description": "在线图片压缩，显著减小体积且保持画质",
-              "icon": "/assets/images/logos/tinypng.webp",
+              "icon": "/brand-icons/tinypng.png",
               "enabled": true,
               "tags": [
                 "压缩",
@@ -675,7 +675,7 @@
               "title": "Google Fonts",
               "href": "https://fonts.google.com",
               "description": "免费开源字体库，中英文字体齐全",
-              "icon": "/assets/images/logos/Materialicons.webp",
+              "icon": "/brand-icons/Materialicons.webp",
               "enabled": true,
               "tags": [
                 "免费",
@@ -717,7 +717,7 @@
               "title": "Unsplash",
               "href": "https://unsplash.com",
               "description": "免费高清图片素材库，可商用",
-              "icon": "/assets/images/logos/unsplash.webp",
+              "icon": "/brand-icons/unsplash.png",
               "enabled": true,
               "tags": [
                 "图片素材",
@@ -738,7 +738,7 @@
               "title": "Figma",
               "href": "https://figma.com",
               "description": "在线 UI 设计与原型协作工具，多人实时编辑",
-              "icon": "/assets/images/logos/figma.webp",
+              "icon": "/brand-icons/figma.svg",
               "enabled": true,
               "tags": [
                 "协作",

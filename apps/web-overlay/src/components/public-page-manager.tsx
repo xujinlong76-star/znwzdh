@@ -1,9 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Check, Copy, EyeOff, Globe, Link2, Trash2 } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowRight, Check, Copy, EyeOff, Globe, Link2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PublicNavPreviewCard } from '@/components/public-nav-preview-card'
 import { cn } from '@/lib/utils'
 import { copyText } from '@/lib/clipboard'
 import {
@@ -30,7 +32,9 @@ import {
  *
  * 诚实边界：
  * - 只有云端身份能发布：本地收藏只存本机，没有服务端身份，发不出去——
- *   未登录时整个区置灰并明说原因，不做「点了才告诉你不行」的假按钮。
+ *   未登录时不摆「点了才告诉你不行」的假按钮：卖点 + 预览卡 + 登录 CTA
+ *   一次讲清（CTA 直接去登录页，登录后即能发布），原因只留一行小字脚注，
+ *   不再是两行冷冰冰的限制提示。
  * - 空文件夹不发：选中当前文件夹时发布前就按条数拦（0 条或超 100 条都
  *   明说）；换了别的收藏夹时条数未知，交给中枢兜底——中枢也会拦并回人话。
  * - 下线/删除都是两步确认；删除不可恢复，按钮文案直接写清楚。
@@ -199,9 +203,27 @@ export default function PublicPageManager({
       </div>
 
       {!cloudIdentity ? (
-        <p className="text-xs text-muted-foreground">
-          需登录并同步到云端收藏后才能发布——本地收藏只存在本机，没有可发布到的服务端身份。
-        </p>
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_300px] md:items-start">
+          <div className="space-y-3">
+            <p className="text-sm leading-relaxed">
+              把你的私藏文件夹发布成免登只读公开页{' '}
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">/pub/xxx</code>
+              ，随收藏实时更新、随时可下线。
+            </p>
+            <div>
+              <Button asChild size="sm" className="min-h-11">
+                <Link href="/auth/signin?callbackUrl=/favorites">
+                  登录并发布我的首个公开导航页
+                  <ArrowRight className="ml-1.5 size-4" aria-hidden />
+                </Link>
+              </Button>
+            </div>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              登录后即可发布；本地收藏需先同步到云端。
+            </p>
+          </div>
+          <PublicNavPreviewCard />
+        </div>
       ) : (
         <>
           {showForm && (

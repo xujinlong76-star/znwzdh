@@ -87,9 +87,8 @@ describe('SSR 半：首帧仍默认「极速置顶」，空站表仍为空串', 
   it('有站表 → 首帧只有「极速置顶」被选中', () => {
     const html = renderToString(
       createElement(HomeQuickDock, {
-        allSites: [site('site-a'), site('site-b'), site('site-c')],
-        activeWorkspace: 'all',
         // P2-14（main 线）：速拨顺序由父级算好经 speedSites 透传；测试按新契约传参。
+        // U-358：allSites/activeWorkspace 已从 HomeQuickDockProps 删除（坞内从未使用）。
         speedSites: [site('site-a'), site('site-b'), site('site-c')],
       }),
     )
@@ -102,7 +101,7 @@ describe('SSR 半：首帧仍默认「极速置顶」，空站表仍为空串', 
 
   it('空站表 → 渲染为空串（整坞不存在）', () => {
     const html = renderToString(
-      createElement(HomeQuickDock, { allSites: [], activeWorkspace: 'all', speedSites: [] }),
+      createElement(HomeQuickDock, { speedSites: [] }),
     )
     expect(html).toBe('')
   })

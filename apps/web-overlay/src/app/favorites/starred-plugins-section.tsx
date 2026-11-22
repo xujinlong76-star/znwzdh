@@ -52,11 +52,14 @@ export function StarredPluginsSectionView({
   snapshot: StarredPluginsSnapshot
   onRetry: () => void
 }) {
+  // 右侧留白：悬浮小猫（#xiaomaomao）固定在视口右下角；窄屏下容器贴边，
+  // 该分区右端内容（查看全部链接 / 加载文案）会压到小猫下面。64px 右留白
+  // 只在 <xl 生效（容器定宽居中后内容已在小猫左侧，桌面恢复常规边距）。
   return (
     <section
       aria-label="星标插件"
       data-testid="starred-plugins-section"
-      className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 sm:p-4 space-y-3"
+      className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 pr-16 sm:p-4 sm:pr-16 xl:pr-4 space-y-3"
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center gap-1.5 text-sm font-medium">

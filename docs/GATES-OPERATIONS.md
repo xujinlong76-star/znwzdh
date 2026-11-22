@@ -18,7 +18,8 @@
 | 覆盖率门禁 | **CI `coverage` 作业**（判定，2026-11-06 接线）；`pnpm coverage` 本地同口径 | 覆盖率必须基于全量测试；pre-commit 是暂存区子集，算覆盖率是假数字。阈值 lines≥83.68% / functions≥84.35%（= 2026-11-06 全量实测 85.68/86.35 减 2pp 容差），低于即红；收紧时只改 `coverage-thresholds.json`（独立 PR），ci.yml 里没有阈值参数 | 见 §4 |
 | PR 模板必填校验 | 阶段 1：只落模板（零 CI 改动）；阶段 2（可选）：`pr-hygiene` 作业读 `github.event.pull_request.body` | 先看两周遵守率再上硬门禁 | 0s / <1min |
 | 锁文件一致性 | 已有 `pnpm install --frozen-lockfile` | 无需新增 | — |
-| overlay 双镜像 / 扩展 / 上游 ref / 语法 / typecheck / 选测 | 已有 `pre-commit` | 已在跑，保持 | 30s–6min |
+| overlay 双镜像 / 扩展 / 上游 ref / 语法 | 已有 `pre-commit` | 已在跑，保持 | 秒级 |
+| 全量 typecheck + 选测 vitest | **CI**（`test-sqlite`：`pnpm run typecheck` + 全量 vitest 三片；`test-web`：前端 tsc / lint / build）；本地按需跑 `node scripts/typecheck.mjs` / `node .git/hooks/navhub-precommit-tests.mjs` | U-385（2026-11-21）钩子瘦身：70–77 秒全量 typecheck 与选测绑在每次提交上，理性选择永远是绕过（锚点累计 92 例绕过声明）；本地钩子只留快查，全量留 CI，合入前分支保护不变 | CI 见作业；本地按需 |
 | 全量测试 + 7 项门禁 | 已有 `pnpm verify` | 已在跑，保持 | 见 §4 |
 
 ---

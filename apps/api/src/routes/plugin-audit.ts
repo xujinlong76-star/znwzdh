@@ -102,6 +102,7 @@ const AUDIT_USER_AGENT =
 const REACHABILITY_CAVEAT =
   "可达性为「从本机网络测得」的即时快照：超时与抓取失败可能是地域/网络限制或目标站风控，不等于死链，需人工复核；" +
   "401/403/405/412/418/429 属于「存活但拒绝爬虫」（站点本身可用），已计入可达率；" +
+  "跳到不同终域的链接已单列为「待改为终域」（finalDomainItems，声明地址应改为终域），不计入不可达；" +
   "疑似停放/软404已通过 Shannon 信息熵与关键词特征识别，独立于健康站点展示。"
 
 /**
@@ -578,6 +579,8 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
             suspiciousCount: summary.suspicious,
             brokenCount: summary.broken,
             redirected: summary.redirected,
+            needsFinalDomain: summary.needsFinalDomain,
+            finalDomainItems: summary.finalDomainItems,
             reachability: summary.reachability,
             brokenItems: summary.brokenItems,
             blockedItems: summary.blockedItems,

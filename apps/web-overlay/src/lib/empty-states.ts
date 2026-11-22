@@ -127,3 +127,14 @@ export function hotlistSourceEmptyCopy(source: {
     actionLabel: `去${source.name}看实时热搜`,
   }
 }
+
+/**
+ * 全空态「六源状态」列表里的每源状态词（只在全空态下用：此时每源都无条目）。
+ * empty = 从没抓到过；stale = 上次抓取失败且无缓存可顶（路由口径下 stale
+ * 本应有条目，全空态里出现即防御分支）；ok 按路由要求 items.length > 0、
+ * 在全空态下不可达，兜底同样显示「暂无数据」（本行本就无条目可出）。
+ */
+export function hotlistSourceStatusLabel(status: 'ok' | 'stale' | 'empty'): string {
+  if (status === 'stale') return '抓取失败'
+  return '暂无数据'
+}

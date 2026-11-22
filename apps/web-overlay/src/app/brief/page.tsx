@@ -12,6 +12,7 @@ import {
   hotlistAllEmptyCopy,
   hotlistEmptyVariant,
   hotlistSourceEmptyCopy,
+  hotlistSourceStatusLabel,
 } from '@/lib/empty-states'
 import {
   formatClock,
@@ -21,7 +22,7 @@ import {
   type HubHotlistSource,
 } from '@/lib/server/brief'
 import { formatHotValue } from '@/lib/format-hot-value'
-import { formatHotlistSubline } from '@/lib/relative-time'
+import { formatFreshness, formatFullTimestamp, formatHotlistSubline } from '@/lib/relative-time'
 import BriefWatch from './brief-watch'
 import BriefResurface from './brief-resurface'
 import HotlistFreshness from './hotlist-freshness'
@@ -276,23 +277,55 @@ export default async function BriefPage() {
                   每小时更新一次；只汇总各平台的标题与链接，点任意条目直达原平台。各源热度口径不同，只并列展示、不混算总榜。
                 </p>
                 {hotlistCopy ? (
-                  <EmptyState
-                    // 服务端页：图标传已渲染的元素，不把 Flame 组件函数传过 RSC 边界
-                    //（尺寸与主色按 warning 档自带，与 EmptyState 的 iconTone="warning" 同值）。
-                    icon={<Flame className="h-6 w-6 text-amber-700 dark:text-amber-400" aria-hidden />}
-                    iconTone="warning"
-                    title={hotlistCopy.title}
-                    description={
-                      <>
-                        {hotlistCopy.why} {hotlistCopy.next}
-                      </>
-                    }
-                    action={
-                      <Button asChild size="sm" variant="outline" className="text-xs">
-                        <Link href={hotlistCopy.actionHref}>{hotlistCopy.actionLabel}</Link>
-                      </Button>
-                    }
-                  />
+                  <>
+                    <EmptyState
+                      // 服务端页：图标传已渲染的元素，不把 Flame 组件函数传过 RSC 边界
+                      //（尺寸与主色按 warning 档自带，与 EmptyState 的 iconTone="warning" 同值）。
+                      icon={<Flame className="h-6 w-6 text-amber-700 dark:text-amber-400" aria-hidden />}
+                      iconTone="warning"
+                      title={hotlistCopy.title}
+                      description={
+                        <>
+                          {hotlistCopy.why} {hotlistCopy.next}
+                        </>
+                      }
+                      action={
+                        <Button asChild size="sm" variant="outline" className="text-xs">
+                          <Link href={hotlistCopy.actionHref}>{hotlistCopy.actionLabel}</Link>
+                        </Button>
+                      }
+                    />
+                    {/* 全空态补充信息（W4 第一步）：六源状态列表 + 上次成功刷新行。
+                        数据全来自现有 hotlist.sources[] / hotlist.generatedAt，
+                        不新增取数；generatedAt 为 null 时明说「从未成功抓取过」，
+                        不留空、不写「—」、不拿当前时间冒充上次成功时间。 */}
+                    <div className="mx-auto mt-4 max-w-lg rounded-xl border bg-card p-4 text-left">
+                      <p className="mb-2 text-xs font-medium text-foreground">六源状态</p>
+                      <ul className="space-y-1.5">
+                        {hotlist.sources.map((source) => (
+                          <li key={source.id} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="text-foreground">{source.name}</span>
+                            <span className="flex items-center gap-3">
+                              <span className="text-muted-foreground">{hotlistSourceStatusLabel(source.status)}</span>
+                              <a
+                                href={safeHref(source.homeUrl)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-link hover:underline"
+                              >
+                                官方榜单 <ExternalLink className="h-3 w-3" aria-hidden />
+                              </a>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-3 border-t pt-2 text-xs text-muted-foreground">
+                        {hotlist.generatedAt === null
+                          ? '从未成功抓取过'
+                          : `上次成功抓取：${formatFreshness(hotlist.generatedAt) ?? '时间未知'}（${formatFullTimestamp(hotlist.generatedAt) ?? '时间未知'}）`}
+                      </p>
+                    </div>
+                  </>
                 ) : (
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {hotlist.sources.map((source) => (

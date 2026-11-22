@@ -119,7 +119,10 @@ export function hotlistSourceEmptyCopy(source: {
       source.status === 'empty'
         ? '首次抓取按小时跑，跑完这里就有内容了。'
         : source.status === 'stale'
-          ? '这次没抓到，也没有旧缓存可显示。'
+          // 路由口径（apps/api/src/routes/hotlist.ts）：stale 要求 items.length > 0，
+          // 即 stale 源永远有条目、永远走不到这个空分支；本分支只是防御性兜底，
+          // 文案必须与口径一致——stale 有旧缓存可显示，绝不能写成「没有旧缓存」。
+          ? '这次没抓到，下面是旧缓存。'
           : '这个源暂时没有条目。',
     actionLabel: `去${source.name}看实时热搜`,
   }

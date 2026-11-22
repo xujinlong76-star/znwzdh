@@ -136,7 +136,7 @@ function SourceColumn({ source }: { source: HubHotlistSource }) {
             href={safeHref(source.homeUrl)}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-link hover:underline"
+            className="inline-flex min-h-11 items-center gap-1 text-xs text-link hover:underline"
           >
             {hotlistSourceEmptyCopy(source).actionLabel}
             <ExternalLink className="h-3 w-3" aria-hidden />
@@ -319,10 +319,10 @@ export default async function BriefPage() {
                         不新增取数；generatedAt 为 null 时明说「从未成功抓取过」，
                         不留空、不写「—」、不拿当前时间冒充上次成功时间。 */}
                     <div className="mx-auto mt-4 max-w-lg rounded-xl border bg-card p-4 text-left">
-                      <p className="mb-2 text-xs font-medium text-foreground">六源状态</p>
+                      <p className="mb-2 text-sm font-medium text-foreground">六源状态</p>
                       <ul className="space-y-1.5">
                         {hotlist.sources.map((source) => (
-                          <li key={source.id} className="flex items-center justify-between gap-2 text-xs">
+                          <li key={source.id} className="flex items-center justify-between gap-2 text-sm">
                             <span className="text-foreground">{source.name}</span>
                             <span className="flex items-center gap-3">
                               <span className="text-muted-foreground">{hotlistSourceStatusLabel(source.status)}</span>
@@ -330,7 +330,7 @@ export default async function BriefPage() {
                                 href={safeHref(source.homeUrl)}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-link hover:underline"
+                                className="inline-flex min-h-11 items-center gap-1 text-link hover:underline"
                               >
                                 官方榜单 <ExternalLink className="h-3 w-3" aria-hidden />
                               </a>
@@ -338,7 +338,7 @@ export default async function BriefPage() {
                           </li>
                         ))}
                       </ul>
-                      <p className="mt-3 border-t pt-2 text-xs text-muted-foreground">
+                      <p className="mt-3 border-t pt-2 text-sm text-muted-foreground">
                         {hotlist.generatedAt === null
                           ? '从未成功抓取过'
                           : `上次成功抓取：${formatFreshness(hotlist.generatedAt) ?? '时间未知'}（${formatFullTimestamp(hotlist.generatedAt) ?? '时间未知'}）`}

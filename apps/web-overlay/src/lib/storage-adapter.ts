@@ -424,7 +424,7 @@ export function createGithubAdapter(opts: GithubAdapterOptions): StorageAdapter 
       if (res.status === 404) {
         return path.includes("navigation.json") ? { navigationItems: [] } : {};
       }
-      if (!res.ok) throw new StorageError("GitHub 读取失败 " + res.status + "：" + path, res.status);
+      if (!res.ok) { void res.body?.cancel().catch(() => {}); throw new StorageError("GitHub 读取失败 " + res.status + "：" + path, res.status); }
       return res.json();
     },
     async write(path: string, content: string, message: string) {

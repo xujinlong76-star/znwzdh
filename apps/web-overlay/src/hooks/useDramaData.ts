@@ -24,7 +24,7 @@ function fetchJsonOnce<T>(url: string): Promise<T> {
   if (hit) return hit;
   const promise = fetch(url, { headers: { Accept: "application/json" } }).then(
     async (res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) { void res.body?.cancel().catch(() => {}); throw new Error(`HTTP ${res.status}`); }
       return (await res.json()) as T;
     },
   );

@@ -24,7 +24,15 @@ export function useDramaCheckStates(): DramaCheckStatesResult {
     let alive = true;
     fetch("/api/me/drama-check-states", { cache: "no-store" })
       .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+          /*
+           * 2026-11-22：错误响应也必须消费/取消 body，否则浏览器把连接挂在
+           * keep-alive 里不释放——/drama 首屏这条 401 会让 networkidle 永远
+           * 等不到（实测 requestfinished 20 秒不触发，页面看似卡死）。
+           */
+          void res.body?.cancel().catch(() => { /* 连接已断开时忽略 */ });
+          throw new Error(`HTTP ${res.status}`);
+        }
         return res.json() as Promise<DramaCheckStatesResponse>;
       })
       .then((data) => {

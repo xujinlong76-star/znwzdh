@@ -532,7 +532,7 @@ export function PluginCard({
             作者页（有 ownerKey 才链，无则纯文本）。徽章只在 authorVerified
             严格为 true 时出现，未认证/字段缺失不占位、不留「未认证」文案。 */}
         {plugin.author && (
-          <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <span>作者：</span>
             {plugin.ownerKey ? (
               <Link
@@ -545,7 +545,7 @@ export function PluginCard({
               <span className="font-medium text-foreground">{plugin.author}</span>
             )}
             {plugin.authorVerified === true && <AuthorVerifiedBadge />}
-          </p>
+          </div>
         )}
 
         {/* 指标摘要 */}

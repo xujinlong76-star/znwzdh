@@ -8,7 +8,7 @@
  * 4. 协作式限时退出（run.shouldStop()）与顺延。
  */
 
-import { auditPageHealth, BOT_BLOCKED_ERROR_PREFIX, classifyProbeStatus } from "@navhub/core";
+import { auditPageHealth, BOT_BLOCKED_ERROR_PREFIX, classifyCorporateTerminalRedirect, classifyProbeStatus } from "@navhub/core";
 import type { AppContext } from "../../context.ts";
 import {
   HEALTH_FAIL_THRESHOLD,
@@ -195,6 +195,16 @@ export async function handleHealthCheck(
           if (audit.status === "SUSPICIOUS_PARKED" || audit.status === "SOFT_404") {
             healthy = false;
             reason = `伪健康识别: ${audit.reason}`;
+          }
+        }
+
+        // U-429：301/302 终点为 corporate/企业站域名时，终点 200 只是企业官网
+        // 内容，不得判健康——记未证实（ok=false + 原因），需浏览器层复核。
+        if (healthy) {
+          const corporate = classifyCorporateTerminalRedirect(site.url, res.finalUrl, res.status);
+          if (corporate) {
+            healthy = false;
+            reason = corporate.reason;
           }
         }
 

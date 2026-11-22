@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import {
   BOT_BLOCKED_STATUSES,
   CONFIRMED_GONE_STATUSES,
+  classifyCorporateTerminalRedirect,
   classifyProbeError,
   classifyProbeStatus,
   isBotBlockedStatus,
@@ -140,5 +141,47 @@ describe("口径一致性：候选档位与深检结论不得互相矛盾", () =
       expect(outcome.reason).not.toContain("不可达");
       expect(outcome.reason).not.toContain("已下线");
     }
+  });
+});
+
+describe("企业站终点（U-429）：301/302 落到 corporate 域名不算存活", () => {
+  it("真实旧错：www.jd.com 301 到 corporate.jd.com/home、终点 200，记未证实而非存活", () => {
+    const o = classifyCorporateTerminalRedirect("https://www.jd.com", "https://corporate.jd.com/home", 200);
+    expect(o?.kind).toBe("unverified");
+    expect(o?.status).toBe(200);
+    expect(o?.reason).toContain("未证实");
+    expect(o?.reason).toContain("corporate.jd.com");
+    expect(o?.reason).toContain("浏览器层复核");
+    // 未证实翻成候选档位仍是 unverified，绝不能是 verified（存活）
+    expect(outcomeToCandidateGrade(o!.kind)).toBe("unverified");
+  });
+
+  it("终点换成同站 corporate 子域也算：跨域即触发，不只认 jd.com", () => {
+    const o = classifyCorporateTerminalRedirect("https://www.example.com", "https://corporate.example.com/", 200);
+    expect(o?.kind).toBe("unverified");
+  });
+
+  it("终点与原站同域不算（corporate.example.com 本就是该站官网时）", () => {
+    expect(
+      classifyCorporateTerminalRedirect("https://corporate.example.com/", "https://corporate.example.com/home", 200),
+    ).toBeNull();
+  });
+
+  it("跨域但终点不是企业站域名不算", () => {
+    expect(classifyCorporateTerminalRedirect("https://www.example.com", "https://www.other.com/", 200)).toBeNull();
+    // corporate 只出现在路径里也不算：看的是终点域名，不是 URL 文本
+    expect(classifyCorporateTerminalRedirect("https://www.example.com", "https://www.other.com/corporate", 200)).toBeNull();
+  });
+
+  it("无重定向（终点即原站）不算", () => {
+    expect(classifyCorporateTerminalRedirect("https://www.jd.com", "https://www.jd.com/", 200)).toBeNull();
+  });
+
+  it("域名大小写不影响判定，非法 URL 不抛错只返回 null", () => {
+    expect(classifyCorporateTerminalRedirect("https://www.jd.com", "https://CORPORATE.JD.COM/home", 200)?.kind).toBe(
+      "unverified",
+    );
+    expect(classifyCorporateTerminalRedirect("not-a-url", "https://corporate.jd.com/home", 200)).toBeNull();
+    expect(classifyCorporateTerminalRedirect("https://www.jd.com", "not-a-url", 200)).toBeNull();
   });
 });

@@ -20,5 +20,9 @@
     "dead": "http-error",
     "unverified": "http-error",
     "server-error": "server-error"
+  },
+  "corporateTerminalRedirect": {
+    "kind": "unverified",
+    "note": "301/302 终点为 corporate/企业站域名时记未证实而非存活（U-429：www.jd.com → corporate.jd.com/home，终点 200 只是企业官网壳页），需浏览器层复核；终点与原站同域不算"
   }
 }

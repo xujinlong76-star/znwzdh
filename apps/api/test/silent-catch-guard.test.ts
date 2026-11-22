@@ -201,6 +201,7 @@ export interface AllowListEntry {
 
 export const ALLOW_LIST: AllowListEntry[] = [
   { file: "alerts.ts", reason: BEST_EFFORT_REASON },
+  { file: "brief/brief.ts", reason: LOOKUP_REASON },
   { file: "fs-file-store.ts", reason: BEST_EFFORT_REASON },
   { file: "hotlist/refresh.ts", reason: AUDIT_REASON },
   { file: "jobs/tasks/daily-brief.task.ts", reason: AUDIT_REASON },

@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import {
   BOT_BLOCKED_STATUSES,
   CONFIRMED_GONE_STATUSES,
+  classifyCorporateTerminalRedirect,
   outcomeToCandidateGrade,
   outcomeToHttpVerdict,
   type ProbeOutcomeKind,
@@ -28,6 +29,7 @@ async function loadContract() {
     confirmedGoneStatuses: number[];
     kindToGrade: Record<string, string>;
     kindToHttpVerdict: Record<string, string | null>;
+    corporateTerminalRedirect: { kind: string; note: string };
   };
 }
 
@@ -57,5 +59,12 @@ describe("探活契约文件", () => {
     for (const grade of contract.candidateGrades) {
       expect(codeGrades.has(grade as never)).toBe(true);
     }
+  });
+
+  it("企业站终点条目与代码一致：301/302 落到 corporate 域名记未证实（U-429）", async () => {
+    const contract = await loadContract();
+    expect(contract.corporateTerminalRedirect.kind).toBe("unverified");
+    const code = classifyCorporateTerminalRedirect("https://www.jd.com", "https://corporate.jd.com/home", 200);
+    expect(code?.kind).toBe(contract.corporateTerminalRedirect.kind);
   });
 });

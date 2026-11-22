@@ -16,8 +16,10 @@ import { HomeDIYTrigger } from '@/components/home-diy-trigger'
 import { HomeCapsuleRow } from '@/components/home-capsule-row'
 import { HomeSubtitleHint } from '@/components/home-subtitle-hint'
 import { HomeQuickDock } from '@/components/home-quick-dock'
+import { HomeTodayWidget } from '@/components/home-today-widget'
 import type { HomeTodayBadgeSummary } from '@/lib/home-today-summary'
 import type { HubPluginItem } from '@/lib/navhub-api'
+import type { TodayHotItem } from '@/lib/today-widget'
 import { usePinnedCornerWidgets } from '@/lib/modular/pinned-widgets-store'
 import { DirectoryPillToolbar } from '@/components/directory-pill-toolbar'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
@@ -213,6 +215,11 @@ interface NavigationContentProps {
   pluginItems?: HubPluginItem[] | null
   /** 顶栏「📅 今日」角标摘要 */
   todayBadge?: HomeTodayBadgeSummary
+  /**
+   * 今日小部件的热点轮换源：服务端随 RSC 下发的飙升榜前 30 条最小形状
+   * （与 /hot 同口径，page.tsx 把 HubSite 投影为 TodayHotItem；取数失败时为 null/[]，部件只留日期段）。
+   */
+  trendingSites?: TodayHotItem[] | null
 }
 
 /**
@@ -262,6 +269,7 @@ export function NavigationContent({
   cinemaInitial,
   pluginItems = null,
   todayBadge,
+  trendingSites = null,
 }: NavigationContentProps) {
   const { toast } = useToast()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -1331,6 +1339,12 @@ export function NavigationContent({
               )}
             </div>
           ) : null}
+
+          {/* 首页「今日」小部件（2026-11-22-0822）：胶囊行之后、分类网格之前，
+              只在非工作台模式渲染；日期段点开今日中心（复用 handleOpenTodayCenter）。 */}
+          {viewMode !== 'workbench' && (
+            <HomeTodayWidget trendingSites={trendingSites} onOpenTodayCenter={handleOpenTodayCenter} />
+          )}
 
           {viewMode === 'workbench' ? (
             <div className="space-y-6">

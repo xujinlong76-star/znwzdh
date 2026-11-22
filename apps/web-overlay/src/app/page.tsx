@@ -2,7 +2,7 @@ import { cache } from "react";
 import { NavigationContent } from "@/components/navigation-content";
 import { computeHomeTodayBadge } from "@/lib/home-today-summary";
 import { hubGet } from "@/lib/server/hub";
-import type { HubPluginItem } from "@/lib/navhub-api";
+import type { HubPluginItem, HubSite } from "@/lib/navhub-api";
 import { Metadata } from "next/types";
 import { getProcessedData } from "@/lib/data-loader";
 import { collectDramaSites, countCategorySites } from "@/lib/drama-sites";
@@ -317,13 +317,16 @@ export default async function HomePage() {
   // 导航数据与目录带互不依赖：串行 await 等于在白送一个中枢往返的 TTFB，
   // 而首页是爬虫面第一入口（getData 内部已并行，loadDirectoryLinks 内部也已并行）。
   // 影院首张海报的读取同样独立，并进同一批（升级第 1 条：LCP）。
-  const [{ navigationData, siteData }, directoryLinks, cinemaPoster, featuredRes] = await Promise.all([
+  const [{ navigationData, siteData }, directoryLinks, cinemaPoster, featuredRes, trendingRes] = await Promise.all([
     getData(),
     loadDirectoryLinks(),
     getFirstDramaPoster(),
     // P2-12：首页插件精选区（与市场页同款取数口径：featured + sort=featured + limit=6）。
     // 取不到（中枢抖动）返回 null，精选区只留入口、不编假插件名。
     hubGet<{ items: HubPluginItem[]; total: number }>('/api/plugins?featured=true&sort=featured&limit=6', 60),
+    // 今日小部件热点轮换源：与 /hot 飙升榜同口径（limit=30，60s 缓存）；失败返回
+    // null，部件降级为纯日期条，绝不拖垮首页（2026-11-22-0822）。
+    hubGet<{ hits: { site: HubSite }[]; recomputedAt?: number | null }>('/api/rank/trending?limit=30', 60),
   ]);
   // 影院区首屏初始数据（升级第 1 条）：服务端用同一份导航数据算好榜单与横幅
   // 站数，随 RSC 一起下发，影院组件就不再请求 /api/home/navigation；首张海报
@@ -339,6 +342,13 @@ export default async function HomePage() {
   };
 
   const todayBadge = computeHomeTodayBadge();
+  // 今日小部件热点源（与 /hot 的 pick 同款过滤）：取数失败或空榜时为空数组。
+  // 只下发标题 + 链接两个字段（TodayHotItem）：完整 SitePayload 约 500B/条，
+  // 30 条全量下发约 15KB，会吃掉 HTML 增量 <5KB 预算；投影后约 2KB。
+  const trendingSites = (trendingRes?.hits ?? [])
+    .map((h) => h.site)
+    .filter((s): s is HubSite => Boolean(s))
+    .map((s) => ({ title: s.title, url: s.url }));
 
   return (
     <>
@@ -351,6 +361,7 @@ export default async function HomePage() {
       cinemaInitial={cinemaInitial}
       pluginItems={featuredRes ? featuredRes.items : null}
       todayBadge={todayBadge}
+      trendingSites={trendingSites}
     />
       {origin ? (
         <>

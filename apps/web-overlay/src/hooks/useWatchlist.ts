@@ -456,6 +456,10 @@ export interface WatchlistSyncStatus {
   at: number
   ok: boolean
   pushed: number
+  /** U-460：服务端确认应用的 ops 数（缺失时回退 pushed） */
+  applied?: number
+  /** U-460：被另一台设备的更新版本覆盖、LWW 跳过的 ops 数 */
+  skipped?: number
   remoteRemoved: number
   error?: string
 }
@@ -477,6 +481,8 @@ export function readWatchlistSyncStatus(): WatchlistSyncStatus | null {
       at: Number(parsed.at) || 0,
       ok: Boolean(parsed.ok),
       pushed: Number(parsed.pushed) || 0,
+      applied: typeof parsed.applied === 'number' ? parsed.applied : undefined,
+      skipped: typeof parsed.skipped === 'number' ? parsed.skipped : undefined,
       remoteRemoved: Number(parsed.remoteRemoved) || 0,
       error: typeof parsed.error === 'string' ? parsed.error : undefined,
     }
@@ -528,8 +534,20 @@ function markDirty(keys: string[]): void {
   writeDirty(next)
 }
 
-function clearDirty(): void {
-  writeDirty(new Set<string>())
+/**
+ * 清除脏标记：不传 ids = 全部确认（replaceAll / resetLocal 调用）；
+ * 传 ids = 只确认这几条（U-460：同步成功后只清已 applied 的 op，被 LWW
+ * 跳过的保留脏标记——与收藏 clearDirty 同口径）。
+ */
+function clearDirty(ids?: string[]): void {
+  if (!ids) {
+    writeDirty(new Set<string>())
+    return
+  }
+  if (ids.length === 0) return
+  const current = readDirty()
+  for (const id of ids) current.delete(id)
+  writeDirty(current)
 }
 
 function readSyncCursor(identity: string): number {
@@ -575,11 +593,46 @@ export interface WatchlistCloudSyncResult {
   ok: boolean
   localCount: number
   pushed: number
+  /** U-460：服务端确认应用的 ops 数（applied + skipped = pushed） */
+  applied: number
+  /** U-460：被另一台设备的更新版本覆盖、LWW 跳过的 ops 数 */
+  skipped: number
+  /** U-460：被跳过的 op 对应的 key（客户端从回传 items 推导，见 deriveSkippedWatchKeys） */
+  skippedKeys: string[]
   /** 已算好的「本地应变成什么」；失败时为 null（不许落库）。页面用它整体替换本地 */
   nextItems: WatchEntry[] | null
   remoteRemoved: number
   error?: string
   retryable: boolean
+}
+
+/**
+ * U-460：从单批回执推导被 LWW 跳过的 op。
+ *
+ * 服务端只回 applied 计数、不回 skipped 明细。推导依据服务端 apply 语义
+ * （packages/store/src/repository/watchlist.ts 的 applyWatchOps）：
+ * 应用成功的行 updated_at 被写成 op.at；被跳过的行保持更大的 updated_at。
+ * 因此回传行 updatedAt > op.at 即该 op 输了 LWW；等于 op.at 即赢了。
+ *
+ * 推导成立的前提是赢家行在 since 切片里：本地旧编辑存在本身就说明赢家
+ * 编辑晚于上次游标——否则上次同步的增量早已把它合进本地，本地 updatedAt
+ * 不会还停在旧值。无证据的 op 一律按已应用算（skipped 总数仍以服务端
+ * applied 计数为准，横幅不瞒报）；推导不到的极端残差（时钟回拨等）见轮次笔记。
+ */
+function deriveSkippedWatchKeys(
+  chunk: WatchSyncOp[],
+  items: HubWatchSyncPayload['items'],
+): string[] {
+  if (chunk.length === 0 || items.length === 0) return []
+  const byKey = new Map(items.map((item) => [item.key, item]))
+  const skipped: string[] = []
+  for (const op of chunk) {
+    const row = byKey.get(op.key)
+    if (!row) continue
+    const at = typeof op.at === 'number' ? op.at : 0
+    if (row.updatedAt > at) skipped.push(op.key)
+  }
+  return skipped
 }
 
 /**
@@ -590,13 +643,16 @@ export async function syncWatchlistToCloud(): Promise<WatchlistCloudSyncResult> 
   const { items: local, blocked } = loadLocal()
   const identity = getIdentity()
   if (blocked) {
-    return { ok: false, localCount: 0, pushed: 0, nextItems: null, remoteRemoved: 0, error: blocked, retryable: false }
+    return { ok: false, localCount: 0, pushed: 0, applied: 0, skipped: 0, skippedKeys: [], nextItems: null, remoteRemoved: 0, error: blocked, retryable: false }
   }
   if (!identity || identity.startsWith('anon-')) {
     return {
       ok: false,
       localCount: local.length,
       pushed: 0,
+      applied: 0,
+      skipped: 0,
+      skippedKeys: [],
       nextItems: null,
       remoteRemoved: 0,
       error: '未登录：追剧清单只保存在本机浏览器',
@@ -654,20 +710,34 @@ export async function syncWatchlistToCloud(): Promise<WatchlistCloudSyncResult> 
 
   let version = since
   let aggregated: HubWatchSyncPayload['items'] = []
+  // U-460：分片汇总服务端回执的 applied，并按回传 items 推导被跳过的 key。
+  // skipped 总数以服务端计数为准（applied + skipped = pushed）；skippedKeys
+  // 是「只清已确认应用的 op」与「被跳过条目放回 nextItems」的依据。
+  let appliedCount = 0
+  const skippedKeys: string[] = []
   for (const chunk of chunks) {
     const result = await syncBatchWithRetry(chunk, since, onFail)
     if (!result) {
       writeSyncStatus({ at: Date.now(), ok: false, pushed: 0, remoteRemoved: 0, error: failure.message })
-      return { ok: false, localCount: local.length, pushed: 0, nextItems: null, remoteRemoved: 0, error: failure.message, retryable: failure.retryable }
+      return { ok: false, localCount: local.length, pushed: 0, applied: 0, skipped: 0, skippedKeys: [], nextItems: null, remoteRemoved: 0, error: failure.message, retryable: failure.retryable }
     }
     version = Math.max(version, result.version)
     aggregated.push(...result.items)
+    // 旧协议回执无 applied 时按整批确认（老服务端 applied 只是增量条数，
+    // 不能拿 applied < 提交数反推跳过——与收藏同款兜底）。
+    appliedCount += typeof result.applied === 'number' ? result.applied : chunk.length
+    // 服务端已回 skippedKeys 时直接用（将来补齐后）；现阶段恒走推导。
+    if (Array.isArray(result.skippedKeys) && result.skippedKeys.length > 0) {
+      skippedKeys.push(...result.skippedKeys)
+    } else {
+      skippedKeys.push(...deriveSkippedWatchKeys(chunk, result.items))
+    }
   }
   if (chunks.length === 0) {
     const pulled = await syncBatchWithRetry([], since, onFail)
     if (!pulled) {
       writeSyncStatus({ at: Date.now(), ok: false, pushed: 0, remoteRemoved: 0, error: failure.message })
-      return { ok: false, localCount: local.length, pushed: 0, nextItems: null, remoteRemoved: 0, error: failure.message, retryable: failure.retryable }
+      return { ok: false, localCount: local.length, pushed: 0, applied: 0, skipped: 0, skippedKeys: [], nextItems: null, remoteRemoved: 0, error: failure.message, retryable: failure.retryable }
     }
     aggregated = pulled.items
     version = pulled.version
@@ -676,8 +746,27 @@ export async function syncWatchlistToCloud(): Promise<WatchlistCloudSyncResult> 
   writeSyncCursor(identity, version)
   const alive = aggregated.filter((item) => item.deletedAt == null)
   const remoteRemoved = aggregated.length - alive.length
-  const nextItems = since === 0 ? mergeCloudWatchlist(local, alive) : applyWatchDelta(local, aggregated)
-  clearDirty()
-  writeSyncStatus({ at: Date.now(), ok: true, pushed: ops.length, remoteRemoved })
-  return { ok: true, localCount: local.length, pushed: ops.length, nextItems, remoteRemoved, retryable: false }
+  let nextItems = since === 0 ? mergeCloudWatchlist(local, alive) : applyWatchDelta(local, aggregated)
+  // U-460：被跳过的 op 对应的本地改动不能被云端增量覆盖掉——覆盖掉就等于
+  // 「败方改动静默丢失」，脏标记留着也没东西可重试。把跳过条目的同步前
+  // 本地值原样放回（仍脏着，下次同步会重推；用户再改一次会刷新 updatedAt，
+  // 之后就能赢下 LWW）。remove 被跳过时本地已无该条目：云端活行经增量本
+  // 就会回到 nextItems 里（删除输了，条目复活、用户看得见），无需另行放回。
+  const skippedLocal = new Map(local.filter((e) => skippedKeys.includes(e.key)).map((e) => [e.key, e]))
+  if (skippedLocal.size > 0) {
+    nextItems = nextItems.map((item) => skippedLocal.get(item.key) ?? item)
+    const present = new Set(nextItems.map((i) => i.key))
+    for (const e of local) {
+      if (skippedLocal.has(e.key) && !present.has(e.key)) nextItems.push(e)
+    }
+  }
+  // U-460：只清已确认应用的 op。被跳过的 op 保留脏标记，下次同步仍会推
+  // （add/update 同 at 重推仍会被跳过——横幅已告知用户「再改一次即可重试」；
+  // remove 重推带新鲜 at，是用户删除意图的延续，与收藏同款）。
+  // 全部请求失败的路径（上面几处 return）故意一个不清。
+  const appliedKeys = ops.map((o) => o.key).filter((key) => !skippedKeys.includes(key))
+  clearDirty(appliedKeys)
+  const skippedCount = Math.max(0, ops.length - appliedCount)
+  writeSyncStatus({ at: Date.now(), ok: true, pushed: ops.length, applied: appliedCount, skipped: skippedCount, remoteRemoved })
+  return { ok: true, localCount: local.length, pushed: ops.length, applied: appliedCount, skipped: skippedCount, skippedKeys, nextItems, remoteRemoved, retryable: false }
 }

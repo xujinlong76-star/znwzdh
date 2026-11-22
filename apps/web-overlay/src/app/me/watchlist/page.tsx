@@ -392,7 +392,15 @@ export default function WatchlistPage() {
       }
       setBanner(
         result.ok
-          ? { ok: true, pushed: result.pushed, remoteRemoved: result.remoteRemoved }
+          ? {
+              ok: true,
+              pushed: result.pushed,
+              // U-460：横幅按 applied 说成功数、按 skipped 报被覆盖数，
+              // 再不许拿 pushed 冒充「已合并」。
+              applied: result.applied,
+              skipped: result.skipped,
+              remoteRemoved: result.remoteRemoved,
+            }
           : { ok: false, error: result.error, retryable: result.retryable },
       )
     } finally {

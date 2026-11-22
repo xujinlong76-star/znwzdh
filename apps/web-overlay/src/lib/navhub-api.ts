@@ -1096,6 +1096,14 @@ export interface WatchSyncOp {
 export interface HubWatchSyncPayload {
   ok: boolean
   applied: number
+  /**
+   * U-460：服务端暂不回传 skipped 明细（只有 applied 计数）。声明为可选，
+   * 供将来服务端补齐 skipped/skippedKeys 后客户端直接用；当前客户端按
+   * applied 与回传 items 自行推导（见 useWatchlist 的 deriveSkippedWatchKeys）。
+   */
+  skipped?: number
+  /** U-460：被 LWW 跳过的 op 对应的 key（服务端补齐后直接用，现由客户端推导） */
+  skippedKeys?: string[]
   version: number
   items: HubWatchEntry[]
   truncatedTitles: number

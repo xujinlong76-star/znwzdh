@@ -366,7 +366,7 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
                       </Badge>
                       {tap.lastSyncedAt && (
                         <span className="text-[10px] text-muted-foreground">
-                          上次同步: {new Date(tap.lastSyncedAt).toLocaleDateString()}
+                          上次同步: {new Date(tap.lastSyncedAt).toLocaleDateString(undefined, { timeZone: 'Asia/Shanghai' })}
                         </span>
                       )}
                     </div>

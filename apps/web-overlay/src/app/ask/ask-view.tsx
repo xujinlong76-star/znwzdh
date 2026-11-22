@@ -47,6 +47,7 @@ const UNKNOWN_SUMMARY = '在你的收藏里没找到能回答这个问题的依�
 function formatFavDate(createdAt: number): string {
   try {
     return new Date(createdAt).toLocaleDateString('zh-CN', {
+      timeZone: 'Asia/Shanghai',
       year: 'numeric',
       month: 'numeric',
       day: 'numeric',

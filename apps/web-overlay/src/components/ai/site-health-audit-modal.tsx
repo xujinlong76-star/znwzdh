@@ -336,7 +336,7 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
               <div className="text-xs font-semibold text-muted-foreground flex items-center justify-between">
                 <span>检测到的待自愈站点列表 ({summary.issues.length})</span>
                 <span className="text-[10px] font-normal font-mono">
-                  上次巡检：{new Date(summary.scannedAt).toLocaleTimeString()}
+                  上次巡检：{new Date(summary.scannedAt).toLocaleTimeString(undefined, { timeZone: 'Asia/Shanghai' })}
                 </span>
               </div>
 

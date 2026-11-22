@@ -185,7 +185,7 @@ function tryParseDateToTimestamp(input: string): SpeculativeIntentResult | null 
   const ms = d.getTime();
   const sec = Math.floor(ms / 1000);
   const iso = d.toISOString();
-  const localStr = d.toLocaleString('zh-CN', { hour12: false });
+  const localStr = d.toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
 
   return {
     type: 'date_to_ts',
@@ -220,7 +220,7 @@ function tryParseTimestamp(input: string): SpeculativeIntentResult | null {
   if (date.getFullYear() < 2000 || date.getFullYear() > 2050) return null;
 
   const iso = date.toISOString();
-  const local = date.toLocaleString('zh-CN', { hour12: false });
+  const local = date.toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
   const diffSec = Math.round((Date.now() - ms) / 1000);
   let relative = '';
   if (Math.abs(diffSec) < 60) relative = '刚刚';
@@ -1068,11 +1068,11 @@ function tryParseJwt(input: string): SpeculativeIntentResult | null {
       const now = Date.now();
       if (expDate.getTime() < now) {
         status = '⚠️ 已过期';
-        expireInfo = `于 ${expDate.toLocaleString()} 过期`;
+        expireInfo = `于 ${expDate.toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })} 过期`;
       } else {
         const diffMins = Math.round((expDate.getTime() - now) / 60000);
         status = '✅ 有效期内';
-        expireInfo = `将于 ${expDate.toLocaleString()} 过期 (约 ${diffMins} 分钟后)`;
+        expireInfo = `将于 ${expDate.toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })} 过期 (约 ${diffMins} 分钟后)`;
       }
     }
 

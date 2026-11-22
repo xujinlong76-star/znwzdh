@@ -408,7 +408,7 @@ export function VideoPlayerSidePanel(props: VideoPlayerSidePanelProps) {
                                                 >
                                                     ⏱️ {formatDuration(n.timeSec)}
                                                 </button>
-                                                <span className="text-[10px]">{new Date(n.createdAt).toLocaleDateString()}</span>
+                                                <span className="text-[10px]">{new Date(n.createdAt).toLocaleDateString(undefined, { timeZone: 'Asia/Shanghai' })}</span>
                                             </div>
                                             <p className="text-foreground leading-relaxed">{n.userNote}</p>
                                             {n.codeSnippet && (

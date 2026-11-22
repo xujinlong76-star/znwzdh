@@ -87,7 +87,7 @@ export function VideoSlideDeckViewer({
 
   const handleExportSlideOutline = () => {
     let md = `# ${videoTitle} - 课件大纲与幻灯片索引\n\n`
-    md += `生成时间: ${new Date().toLocaleString()}\n`
+    md += `生成时间: ${new Date().toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })}\n`
     md += `总页数: ${slides.length} 页\n\n---\n\n`
 
     slides.forEach(s => {

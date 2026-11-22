@@ -200,7 +200,7 @@ export function saveDiySnapshot(
   }
   const entry: DiySnapshot = {
     id: `snap_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-    name: name?.trim() || `版本 ${new Date().toLocaleString()}`,
+    name: name?.trim() || `版本 ${new Date().toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })}`,
     createdAt: Date.now(),
     config: cloned,
     source: 'manual',

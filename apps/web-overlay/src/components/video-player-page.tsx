@@ -1442,7 +1442,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                         ) : null}
                                         {selectedVideo.videoConfig.publishedAt && (
                                             <span className="text-muted-foreground">
-                                                发布时间: {new Date(selectedVideo.videoConfig.publishedAt).toLocaleDateString()}
+                                                发布时间: {new Date(selectedVideo.videoConfig.publishedAt).toLocaleDateString(undefined, { timeZone: 'Asia/Shanghai' })}
                                             </span>
                                         )}
                                         {selectedVideo.href && (

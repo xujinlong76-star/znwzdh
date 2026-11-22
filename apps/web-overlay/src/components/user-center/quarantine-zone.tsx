@@ -39,7 +39,7 @@ function baseKeyLabel(baseKey: string): string {
 function formatSavedAt(savedAt: number | null): string {
   if (savedAt === null) return '时间未知'
   try {
-    return new Date(savedAt).toLocaleString()
+    return new Date(savedAt).toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })
   } catch {
     return '时间未知'
   }

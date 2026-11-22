@@ -50,6 +50,7 @@ export interface SaveAnnotationPanelProps {
 function formatDate(ts: number): string {
   try {
     return new Date(ts).toLocaleString('zh-CN', {
+      timeZone: 'Asia/Shanghai',
       month: 'numeric',
       day: 'numeric',
       hour: '2-digit',

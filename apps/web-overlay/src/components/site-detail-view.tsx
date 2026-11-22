@@ -154,7 +154,7 @@ function safeHostname(url: string): string {
 function formatArchiveDay(ts: number | null | undefined): string | null {
   if (typeof ts !== 'number' || !Number.isFinite(ts) || ts <= 0) return null
   try {
-    return new Date(ts).toLocaleDateString('zh-CN')
+    return new Date(ts).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })
   } catch {
     return null
   }
@@ -877,7 +877,7 @@ export function SiteDetailView({
                 </>
               )}
               {site.health?.lastCheckedAt && (
-                <span>· 巡检时间: {new Date(site.health.lastCheckedAt).toLocaleDateString('zh-CN')}</span>
+                <span>· 巡检时间: {new Date(site.health.lastCheckedAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}</span>
               )}
             </div>
           </div>

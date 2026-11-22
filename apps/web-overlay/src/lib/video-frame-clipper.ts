@@ -145,7 +145,7 @@ export function deleteStudyNote(noteId: string): void {
  */
 export function exportNotesAsMarkdown(notes: VideoStudyNote[], videoTitle: string): string {
   let md = `# ${videoTitle} · 视频学习笔记与代码快照\n\n`
-  md += `*生成时间: ${new Date().toLocaleString()} | 包含 ${notes.length} 条笔记*\n\n---\n\n`
+  md += `*生成时间: ${new Date().toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })} | 包含 ${notes.length} 条笔记*\n\n---\n\n`
 
   for (const n of notes) {
     const m = Math.floor(n.timeSec / 60)

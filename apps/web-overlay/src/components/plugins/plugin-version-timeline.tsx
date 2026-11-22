@@ -314,7 +314,7 @@ export function PluginVersionTimeline({ slug, currentVersion, installedVersion, 
                   </div>
 
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>{new Date(v.publishedAt).toLocaleDateString()}</span>
+                    <span>{new Date(v.publishedAt).toLocaleDateString(undefined, { timeZone: 'Asia/Shanghai' })}</span>
                     <button
                       type="button"
                       onClick={() => handleCopyChecksum(v.checksum)}

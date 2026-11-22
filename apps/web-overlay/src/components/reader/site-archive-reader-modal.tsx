@@ -157,7 +157,7 @@ export function SiteArchiveReaderModal({
     const bodyText = archive.plainText || (archive as any).excerpt || ''
     const md = `# ${archive.title}\n\n> 来源: ${archive.url}\n> 归档时间: ${new Date(
       archive.capturedAt || Date.now()
-    ).toLocaleString()}\n\n${bodyText}`
+    ).toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })}\n\n${bodyText}`
     copyText(md)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -322,7 +322,7 @@ export function SiteArchiveReaderModal({
               </span>
               <span className="hidden min-[480px]:inline">·</span>
               <span className="hidden min-[480px]:inline">
-                归档时间: {new Date(archive.capturedAt || Date.now()).toLocaleTimeString()}
+                归档时间: {new Date(archive.capturedAt || Date.now()).toLocaleTimeString(undefined, { timeZone: 'Asia/Shanghai' })}
               </span>
             </div>
 

@@ -1093,7 +1093,7 @@ export function HomeDIYBackupDialog({
               将删除中枢上这份端侧加密的 DIY 备份
               {typeof cloudVaultMeta?.version === 'number' ? `（版本 v${cloudVaultMeta.version}` : '（版本未知'}
               {cloudVaultMeta?.updatedAt
-                ? `，更新于 ${new Date(cloudVaultMeta.updatedAt).toLocaleString()}）`
+                ? `，更新于 ${new Date(cloudVaultMeta.updatedAt).toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })}）`
                 : '）'}
               。本机排版与已导出的文件不受影响。此操作不可撤销——金库表没有软删列，
               想重新漫游需要再次点「加密同步至云端」建立新备份。

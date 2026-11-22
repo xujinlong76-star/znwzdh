@@ -176,7 +176,7 @@ export function planLayoutImport(
       boards: [
         {
           id: `imported-${Date.now()}`,
-          name: `导入看板 (${new Date().toLocaleDateString('zh-CN')})`,
+          name: `导入看板 (${new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })})`,
           widgets: cleaned.items,
         },
       ],

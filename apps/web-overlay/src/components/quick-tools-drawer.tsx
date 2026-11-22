@@ -152,7 +152,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
     }
     const ms = val.length === 10 ? n * 1000 : n
     const d = new Date(ms)
-    setTsResult(isNaN(d.getTime()) ? '无效时间戳' : d.toLocaleString('zh-CN', { hour12: false }))
+    setTsResult(isNaN(d.getTime()) ? '无效时间戳' : d.toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' }))
   }
 
   // URL 编解码

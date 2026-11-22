@@ -170,18 +170,18 @@ export function tryParseJwt(input: string): SpeculativeIntentResult | null {
       const now = Date.now();
       if (expDate.getTime() < now) {
         status = '⚠️ 已过期';
-        expireInfo = `于 ${expDate.toLocaleString()} 过期`;
+        expireInfo = `于 ${expDate.toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })} 过期`;
       } else {
         const diffMins = Math.round((expDate.getTime() - now) / 60000);
         status = '✅ 有效期内';
-        expireInfo = `将于 ${expDate.toLocaleString()} 过期 (约 ${diffMins} 分钟后)`;
+        expireInfo = `将于 ${expDate.toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })} 过期 (约 ${diffMins} 分钟后)`;
       }
     }
 
     return {
       type: 'jwt',
       title: `JWT 结构反序列化 (${status}) — 未验签，仅供调试`,
-      subtitle: `算法: ${header.alg || '未知'} | 签发者/主题: ${payload.iss || payload.sub || '缺省'}${payload.nbf ? ` | nbf: ${new Date(payload.nbf * 1000).toLocaleString()}` : ''}`,
+      subtitle: `算法: ${header.alg || '未知'} | 签发者/主题: ${payload.iss || payload.sub || '缺省'}${payload.nbf ? ` | nbf: ${new Date(payload.nbf * 1000).toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })}` : ''}`,
       previewValue: JSON.stringify(payload, null, 2),
       actionLabel: '复制 Payload 详情',
       copyValue: JSON.stringify(payload, null, 2),

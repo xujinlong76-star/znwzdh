@@ -140,7 +140,7 @@ export function LocalDataManager() {
     }
     if (
       !window.confirm(
-        `确定要把首页排版恢复到「${res.snapshot.name}」（${new Date(res.snapshot.createdAt).toLocaleString()}）吗？恢复前会自动把当前排版另存为一个版本，恢复后按 Ctrl/Cmd+Z 也可撤销。`,
+        `确定要把首页排版恢复到「${res.snapshot.name}」（${new Date(res.snapshot.createdAt).toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })}）吗？恢复前会自动把当前排版另存为一个版本，恢复后按 Ctrl/Cmd+Z 也可撤销。`,
       )
     ) {
       return
@@ -749,7 +749,7 @@ export function LocalDataManager() {
                     </span>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    {new Date(snap.createdAt).toLocaleString()}
+                    {new Date(snap.createdAt).toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })}
                   </p>
                 </div>
                 <Button

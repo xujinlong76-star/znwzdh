@@ -466,7 +466,7 @@ export function PluginReviewSection({
                         v{rev.installedVersion}
                       </span>
                     )}
-                    <span>{new Date(rev.updatedAt || rev.createdAt).toLocaleDateString()}</span>
+                    <span>{new Date(rev.updatedAt || rev.createdAt).toLocaleDateString(undefined, { timeZone: 'Asia/Shanghai' })}</span>
                   </div>
                 </div>
 
@@ -567,7 +567,7 @@ export function PluginReviewSection({
                       </span>
                       {rev.authorRepliedAt && (
                         <span className="text-[10px] text-muted-foreground font-mono">
-                          {new Date(rev.authorRepliedAt).toLocaleDateString()}
+                          {new Date(rev.authorRepliedAt).toLocaleDateString(undefined, { timeZone: 'Asia/Shanghai' })}
                         </span>
                       )}
                     </div>

@@ -292,7 +292,7 @@ describe('T7：链接安全属性不变', () => {
 })
 
 describe('T8：源码硬编码不回潮', () => {
-  it('「去官网打印准考证」只出现一次且位于映射函数内，四处例外文案各出现一次', () => {
+  it('「去官网打印准考证」只出现一次且位于映射函数内，五处例外文案各出现一次', () => {
     const island = read('src/app/exam/my-exam-tracker.tsx')
     expect(island.match(/去官网打印准考证/g)?.length).toBe(1)
     expect(island).toContain('function nodeLinkCopy')
@@ -304,11 +304,13 @@ describe('T8：源码硬编码不回潮', () => {
     expect(island.match(/查看官方公告/g)?.length).toBe(1)
     expect(island.match(/去报名系统申请复核/g)?.length).toBe(1)
     expect(island.match(/去系统查成绩/g)?.length).toBe(1)
-    // 映射表恰好覆盖 4 个例外 label + 默认分支，不写死域名。
+    expect(island.match(/去官网缴费/g)?.length).toBe(1)
+    // 映射表恰好覆盖 5 个例外 label + 默认分支，不写死域名。
     expect(island).toContain("label === '报名'")
     expect(island).toContain("label === '公共科目笔试'")
     expect(island).toContain("label === '江西成绩复核'")
     expect(island).toContain("label === '成绩查询'")
+    expect(island).toContain("label === '缴费'")
     expect(island).not.toContain('rsj.beijing.gov.cn')
     expect(island).not.toContain('beijing.gov.cn')
     expect(island).not.toContain('jdyw.jxeea.cn')

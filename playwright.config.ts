@@ -89,6 +89,15 @@ export default defineConfig({
       // E2E 不验证语义排序（search.spec 只测意图微部件），关掉后走关键词
       // 检索，安装/审核路径与状态机完全一致。
       NAVHUB_EMBEDDING_ENABLED: '0',
+      /*
+       * 2026-11-22：关掉后台定时任务。
+       *
+       * plugin_url_health 启动时会探活几十个外部检索 URL（ScienceDirect / CNKI /
+       * 芒果TV…），实测单个任务就要 24–34 秒，403/超时还会重试；叠加 Next 16
+       * turbopack 首次编译，webServer 轻松超过 120s 超时，E2E 根本起不来。
+       * 这类巡检对 E2E 断言毫无价值（不验证外网站点可达性），只做事件记录。
+       */
+      NAVHUB_JOBS_ENABLED: '0',
     },
   },
 });

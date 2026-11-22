@@ -131,18 +131,104 @@ describe('空态文案：What/Why/Next 齐全、有且只有一个主行动', ()
 })
 
 describe('单源空体：为什么空 + 去源站的出口', () => {
-  it('从没抓过 vs 抓取失败：原因文案不同', () => {
+  // W4 修正（进化轮 2026-11-23 02:22）：stale 分支旧文案「这次没抓到，也没有
+  // 旧缓存可显示」与路由口径矛盾——路由定义 stale 要求 items.length > 0
+  //（apps/api/src/routes/hotlist.ts），即 stale 源永远有旧缓存、永远走不出
+  // 空分支；说「没有旧缓存」是错的。修正后的文案不得再断言无缓存——无论 W1
+  // 改成「下面是旧缓存」还是直接删掉该分支，本断言都成立。
+  it('从没抓过 vs 抓取失败：原因文案不同，stale 不得说「没有旧缓存」', () => {
     const never = hotlistSourceEmptyCopy({ status: 'empty', name: '微博' })
     const failed = hotlistSourceEmptyCopy({ status: 'stale', name: '微博' })
     expect(never.why).not.toBe(failed.why)
     expect(never.why).toContain('首次抓取')
-    expect(failed.why).toContain('没有旧缓存')
+    expect(failed.why).not.toContain('没有旧缓存')
+    expect(failed.why).not.toContain('没有缓存')
   })
 
   it('出口带源名、指向源站实时榜（不是回首页）', () => {
     const copy = hotlistSourceEmptyCopy({ status: 'empty', name: '微博' })
     expect(copy.actionLabel).toBe('去微博看实时热搜')
     expect(copy.actionLabel).toContain('微博')
+  })
+})
+
+/**
+ * W4（进化轮 2026-11-23 02:22，W2 测试）：/brief#hotlist 诚实空态
+ * 第一批验收（W4 设计 §4）的文案层断言。渲染层断言在
+ * brief-hotlist-honest-empty.test.ts；这里只钉 lib 层可判定的部分：
+ *  - 验收 1：六源全 empty → never-fetched，标题含「还在等第一次抓取」，
+ *    主行动去 /hot；
+ *  - 验收 2：六源全 empty 但有源失败过 → fetch-failed，标题含
+ *    「这次没能取回数据」（不是「还在等第一次抓取」），主行动仍去 /hot；
+ *  - 验收 3：任一源有条目 → 不是全榜空态；空源列文案 +
+ *    「去{源名}看实时热搜」外链；
+ *  - 验收 5：中枢不可达（null）→ 不是空态（见上文 describe，已有覆盖）。
+ * 验收 4（全 stale 页级横幅）是页面渲染层，无 lib 判定函数，见渲染测试。
+ * 六源用 W4 设计 §1.2 的清单：微博/百度/头条/抖音/B站/知乎。
+ */
+describe('W4 诚实空态：六源全空判定与文案（验收 1/2/3）', () => {
+  const sixEmpty = () =>
+    hotlist([
+      source('empty', 0),
+      source('empty', 0),
+      source('empty', 0),
+      source('empty', 0),
+      source('empty', 0),
+      source('empty', 0),
+    ])
+
+  it('验收 1：六源全 empty → never-fetched，标题「还在等第一次抓取」，主行动去 /hot', () => {
+    expect(hotlistEmptyVariant(sixEmpty())).toBe('never-fetched')
+    const copy = hotlistAllEmptyCopy('never-fetched')
+    expect(copy.title).toContain('还在等第一次抓取')
+    expect(copy.actionHref).toBe('/hot')
+    expect(copy.actionLabel).toBe('先看站内热度榜')
+    expect(copy.why).toContain('每小时')
+  })
+
+  it('验收 2：六源全 empty 但有源上次失败过 → fetch-failed，标题「这次没能取回数据」，主行动仍去 /hot', () => {
+    const failedOnce = hotlist([
+      source('empty', 0),
+      source('empty', 0),
+      source('empty', 0),
+      source('empty', 0),
+      source('empty', 0),
+      source('stale', 0),
+    ])
+    expect(hotlistEmptyVariant(failedOnce)).toBe('fetch-failed')
+    const copy = hotlistAllEmptyCopy('fetch-failed')
+    expect(copy.title).toContain('这次没能取回数据')
+    expect(copy.title).not.toContain('还在等第一次抓取')
+    expect(copy.actionHref).toBe('/hot')
+    expect(copy.actionLabel).toBe(hotlistAllEmptyCopy('never-fetched').actionLabel)
+    expect(copy.why).toContain('失败')
+  })
+
+  it('验收 3：任一源有条目、其余为空 → 不是全榜空态，空源列有 why + 去源站外链', () => {
+    const partial = hotlist([
+      source('ok', 5),
+      source('empty', 0),
+      source('empty', 0),
+      source('empty', 0),
+      source('empty', 0),
+      source('empty', 0),
+    ])
+    expect(hotlistEmptyVariant(partial)).toBeNull()
+    const emptyCopy = hotlistSourceEmptyCopy({ status: 'empty', name: '微博' })
+    expect(emptyCopy.why.trim()).not.toBe('')
+    expect(emptyCopy.actionLabel).toBe('去微博看实时热搜')
+    // 六源名逐个拼外链文案，不许漏源、不许写错源名
+    for (const name of ['微博', '百度', '今日头条', '抖音', '哔哩哔哩', '知乎']) {
+      expect(hotlistSourceEmptyCopy({ status: 'empty', name }).actionLabel).toBe(
+        `去${name}看实时热搜`,
+      )
+    }
+  })
+
+  it('ok 分支不受 W4 stale 修正牵连：仍是「暂时没有条目」', () => {
+    expect(hotlistSourceEmptyCopy({ status: 'ok', name: '微博' }).why).toBe(
+      '这个源暂时没有条目。',
+    )
   })
 })
 

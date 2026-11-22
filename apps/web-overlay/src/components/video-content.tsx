@@ -701,7 +701,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                 </div>
             </div>
 
-            <main id="main-content" className="flex-1">
+            <main id="main-content" className="min-w-0 flex-1">
                 <div className="sticky top-0 bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 h-14 border-b border-border/50 flex items-center">
                     <div className="flex items-center gap-3 w-full">
                         <div className="flex-1 max-w-xl">
@@ -922,7 +922,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                         <div className="flex flex-wrap items-center gap-3 py-2.5 px-3 sm:px-4 rounded-xl bg-card/60 border border-border/60 shadow-2xs backdrop-blur-md">
                             {/* 来源平台筛选 */}
                             <div className="flex items-center gap-1.5 text-xs">
-                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground/80 shrink-0">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
                                     <Video className="w-3.5 h-3.5 text-muted-foreground" />
                                     <span>平台：</span>
                                 </span>
@@ -952,7 +952,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
 
                             {/* 时长偏好 */}
                             <div className="flex items-center gap-1.5 text-xs overflow-x-auto scrollbar-none">
-                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground/80 shrink-0">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
                                     <Clock className="w-3.5 h-3.5 text-muted-foreground" />
                                     <span>时长偏好：</span>
                                 </span>
@@ -987,7 +987,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
 
                             {/* 排序方式 */}
                             <div className="flex items-center gap-1.5 text-xs ml-auto">
-                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground/80 shrink-0">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
                                     <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />
                                     <span>排序：</span>
                                 </span>
@@ -1015,7 +1015,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                 )}
                                 {activeSubCategoryId && (
                                     <>
-                                        <span className="text-muted-foreground/60">/</span>
+                                        <span className="text-muted-foreground">/</span>
                                         <span className="font-semibold text-primary">{subCategoryChips.find((s) => s.id === activeSubCategoryId)?.title}</span>
                                     </>
                                 )}
@@ -1084,7 +1084,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                 {searchResults.length === 0 ? (
                                     <div className="py-10 text-center space-y-2">
                                         <p className="text-sm text-muted-foreground">未找到与 “{searchQuery}” 匹配的视频教程</p>
-                                        <p className="text-xs text-muted-foreground/70">尝试缩短搜索词，或按上方领域分类直接浏览</p>
+                                        <p className="text-xs text-muted-foreground">尝试缩短搜索词，或按上方领域分类直接浏览</p>
                                     </div>
                                 ) : (
                                     <div className="space-y-6">
@@ -1294,7 +1294,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                                         </span>
                                                     </h2>
                                                     {subTitles.length > 0 && (
-                                                        <p className="text-xs text-muted-foreground/80 mt-0.5 line-clamp-1">
+                                                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
                                                             {subTitles.map((s) => s.title).join(' · ')}
                                                             {(category.subCategories || []).length > subTitles.length && ' …'}
                                                         </p>
@@ -1329,7 +1329,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                                     </span>
                                                 </h2>
                                                 {category.description && (
-                                                    <p className="text-xs sm:text-sm text-muted-foreground/80 mt-0.5 line-clamp-1 leading-normal font-normal">
+                                                    <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 line-clamp-1 leading-normal font-normal">
                                                         {category.description}
                                                     </p>
                                                 )}
@@ -1384,7 +1384,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                                             <span className="w-1.5 h-3.5 bg-amber-500/80 rounded-full" />
                                                             <span>精选推荐</span>
                                                         </h3>
-                                                        <span className="text-[11px] font-mono text-muted-foreground/60 bg-muted/40 px-2 py-0.5 rounded-md border border-border/30">
+                                                        <span className="text-[11px] font-mono text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-md border border-border/30">
                                                             {category.items.length} 个视频
                                                         </span>
                                                     </div>
@@ -1426,12 +1426,12 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                                                 <span className="w-1.5 h-3.5 bg-primary/80 rounded-full" />
                                                                 <span>{subCategory.title}</span>
                                                                 {subCategory.description && (
-                                                                    <span className="text-xs text-muted-foreground/70 font-normal hidden md:inline-block ml-1">
+                                                                    <span className="text-xs text-muted-foreground font-normal hidden md:inline-block ml-1">
                                                                         · {subCategory.description}
                                                                     </span>
                                                                 )}
                                                             </h3>
-                                                            <span className="text-[11px] font-mono text-muted-foreground/60 bg-muted/40 px-2 py-0.5 rounded-md border border-border/30">
+                                                            <span className="text-[11px] font-mono text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-md border border-border/30">
                                                                 {totalSubCount} 个视频
                                                             </span>
                                                         </div>
@@ -1455,7 +1455,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                                                         <>
                                                                             <ChevronUp className="w-3.5 h-3.5 text-muted-foreground group-hover/expand:text-primary transition-transform" />
                                                                             <span>收起多余教程</span>
-                                                                            <span className="font-mono text-[10px] text-muted-foreground/70">
+                                                                            <span className="font-mono text-[10px] text-muted-foreground">
                                                                                 （保留前 {INITIAL_VISIBLE_PER_SUBCAT} 部）
                                                                             </span>
                                                                         </>

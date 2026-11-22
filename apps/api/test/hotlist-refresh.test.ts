@@ -9,12 +9,12 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
-import { refreshHotlistSource, type HotlistFetch } from "../src/hotlist/refresh.ts";
-import { hotlistSourceById } from "../src/hotlist/sources.ts";
+import { makeGuardedHotlistFetch, refreshHotlistSource, type HotlistFetch } from "../src/hotlist/refresh.ts";
+import { HOTLIST_TRUSTED_HOSTS, hotlistSourceById } from "../src/hotlist/sources.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 function fixtureBody(name: string): string {
@@ -134,5 +134,52 @@ describe("知乎刷新层（官方接口 + fail-closed）", () => {
       expect(item.url).not.toContain("utm_");
     }
     expect((body.uncovered as Array<{ id: string }>).map((u) => u.id)).toEqual(["kuaishou"]);
+  });
+});
+
+describe("makeGuardedHotlistFetch 白名单（U-284）", () => {
+  it("HOTLIST_TRUSTED_HOSTS 恰为六个 covered 源的精确主机名", () => {
+    expect([...HOTLIST_TRUSTED_HOSTS].sort()).toEqual(
+      [
+        "weibo.com",
+        "top.baidu.com",
+        "www.toutiao.com",
+        "www.douyin.com",
+        "api.bilibili.com",
+        "developer.zhihu.com",
+      ].sort(),
+    );
+  });
+
+  it("白名单主机解析到被禁段时仍能取数入库（桩掉全局 fetch，不碰外网）", async () => {
+    // 本机网关把 weibo.com 解析到 198.18.246.9，无白名单时 guardedFetch
+    // 会在 resolveAndCheck 抛 SsrfBlockedError；白名单命中则跳过 DNS 校验。
+    const def = hotlistSourceById("weibo")!;
+    const fetchImpl = makeGuardedHotlistFetch(ctx);
+    let calledUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      async (input: unknown) => {
+        calledUrl = String(input);
+        return new Response(fixtureBody("weibo.json"), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    );
+    try {
+      const entry = await refreshHotlistSource(ctx, def, fetchImpl, Date.now());
+      expect(entry.ok).toBe(true);
+      expect(entry.items).toBeGreaterThanOrEqual(5);
+      expect(calledUrl).toBe("https://weibo.com/ajax/side/hotSearch");
+      const stored = await ctx.repo.listHotlistEntries("weibo");
+      expect(stored).toHaveLength(entry.items!);
+      expect(stored[0]?.title).toBe("商场看中羽绒服网上便宜一千");
+      expect(stored[0]?.hotValue).toBe(1123390);
+      const states = await ctx.repo.listHotlistSources();
+      expect(states.find((s) => s.source === "weibo")?.status).toBe("ok");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

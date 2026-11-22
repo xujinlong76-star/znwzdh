@@ -48,6 +48,16 @@ export function GuokaoAdmissionReminder({
           去打印准考证
           <ArrowUpRight className="ml-0.5 inline h-3.5 w-3.5" aria-hidden />
         </a>
+        {' · 门户备用：'}
+        <a
+          href={safeHref(reminder.portalUrl)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-sky-700 hover:underline dark:text-sky-400"
+        >
+          专题网站门户
+          <ArrowUpRight className="ml-0.5 inline h-3.5 w-3.5" aria-hidden />
+        </a>
       </p>
     )
   }
@@ -77,6 +87,18 @@ export function GuokaoAdmissionReminder({
         去打印准考证
         <ArrowUpRight className="h-4 w-4" aria-hidden />
       </a>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+        打不开时走专题网站门户{' '}
+        <a
+          href={safeHref(reminder.portalUrl)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-sky-700 hover:underline dark:text-sky-400"
+        >
+          bm.scs.gov.cn/kl2027
+        </a>
+        ，选「考生考务入口」进入打印系统。
+      </p>
     </div>
   )
 }

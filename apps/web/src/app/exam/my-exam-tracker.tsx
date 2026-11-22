@@ -186,6 +186,18 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
                   <ArrowUpRight className="h-4 w-4" aria-hidden />
                 </a>
               ) : null}
+              {node.portalUrl ? (
+                <a
+                  href={safeHref(node.portalUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`${node.label}专题网站门户入口（新窗口打开）`}
+                  className="inline-flex min-h-11 shrink-0 items-center gap-0.5 whitespace-nowrap text-xs font-medium text-sky-700 underline decoration-sky-700/40 underline-offset-2 hover:decoration-sky-700 dark:text-sky-400"
+                >
+                  专题网站门户
+                  <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+                </a>
+              ) : null}
               <span className="shrink-0 text-xs text-muted-foreground">
                 {/* 峰值日包 W10：11-18 七项目标时刻已过时文案读「已截止」
                     （examNodeDeadlineLabel，渲染层时刻口径）；其余节点

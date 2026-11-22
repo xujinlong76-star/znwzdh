@@ -29,6 +29,11 @@ export interface ExamNode {
    * exam-calendar 的 URL 常量里，节点数据不写死域名；无入口的节点留空。
    */
   url?: string
+  /**
+   * 备用入口：专题网站门户（如国考准考证节点的 bm.scs.gov.cn/kl2027）。
+   * 只挂已核实的官方门户；渲染层作次要文字链，不作主按钮目标。
+   */
+  portalUrl?: string
   /** 节点开始日（YYYY-MM-DD，北京时间自然日） */
   startISO: string
   /** 节点结束日（单日节点与开始日相同） */
@@ -123,7 +128,8 @@ export const SHANGHAI_SHENGKAO_ADMISSION_URL = 'https://www.shacs.gov.cn/'
  *  - 门户（GUOKAO_PORTAL_URL，见下）：bm.scs.gov.cn/kl2027，国家公务员局
  *    2027 年度招考专题网站，是报名/审查的门户入口，不是打印系统直达
  *    地址——实测仅 334 B JS 跳转页，当前直接访问会跳到招考专题 gkIndex.html，
- *    点它找不到打印系统，故不作准考证节点的点击目标。
+ *    点它找不到打印系统，故门户作准考证节点的备用链（`portalUrl`），只作
+ *    次要文字链，不作主按钮目标；文案须写清『选「考生考务入口」』。
  *
  * 事实来源：官方 2026-10-25 单独公告《报名确认及准考证打印网址》所载
  * 直达网址（教育在线 2026-10-26 逐字转载 + 河南华图报考指南逐字引用 +
@@ -139,9 +145,10 @@ export const GUOKAO_ADMISSION_URL = 'http://gwy.cpta.com.cn'
 
 /**
  * 国考专题网站门户入口（报名/审查）：国家公务员局 2027 年度招考专题
- * 网站 http://bm.scs.gov.cn/kl2027。保留作门户引用，不作准考证打印
- * 节点与提醒的点击目标（见 GUOKAO_ADMISSION_URL 注释：仅 334 B JS
- * 跳转页，当前直接访问会跳到招考专题 gkIndex.html、找不到打印系统）。
+ * 网站 http://bm.scs.gov.cn/kl2027。作准考证节点与提醒的备用链
+ * （`portalUrl`），只作次要文字链，不作主按钮目标（见 GUOKAO_ADMISSION_URL
+ * 注释：仅 334 B JS 跳转页，当前直接访问会跳到招考专题 gkIndex.html、
+ * 找不到打印系统，故文案须写清『选「考生考务入口」』）。
  */
 export const GUOKAO_PORTAL_URL = 'http://bm.scs.gov.cn/kl2027'
 
@@ -233,6 +240,7 @@ export const EXAMS: ExamInfo[] = [
         startISO: '2026-11-23',
         endISO: '2026-11-29',
         url: GUOKAO_ADMISSION_URL,
+        portalUrl: GUOKAO_PORTAL_URL,
       },
       {
         label: '专业科目笔试',
@@ -1335,16 +1343,18 @@ export const EXAM_REMINDER_TIER_LABEL: Record<ExamReminderTier, string> = {
  * U-59，2026-11-17 雷达第 16 轮定性）：
  *  - 打印窗口 11 月 23 日 0:00 至 11 月 29 日 15:00，逾期系统关闭、无法补打；
  *  - 退场句出自考场规则、不在公告正文；
- *  - 站内提醒唯一可点击入口是报名确认及准考证打印系统直达
+ *  - 站内提醒主链挂报名确认及准考证打印系统直达
  *    http://gwy.cpta.com.cn（官方 2026-10-25 公告《报名确认及准考证
  *    打印网址》所载，教育在线 2026-10-26 逐字转载；根路径实测 405，
- *    表单系统常见响应，非死链；链接写 http）；
+ *    表单系统常见响应，非死链；链接写 http），门户作备用文字链
+ *    （`portalUrl`）；
  *  - 专题网站门户 http://bm.scs.gov.cn/kl2027（报名/审查入口，见
  *    GUOKAO_PORTAL_URL）实测仅 334 B JS 跳转页，当前直接访问会跳到
- *    招考专题 www.scs.gov.cn/gkIndex.html、找不到打印系统，故不作提醒的点击目标；
+ *    招考专题 www.scs.gov.cn/gkIndex.html、找不到打印系统，故只作备用
+ *    文字链，不作主按钮目标；
  * 文案（U-98）：card/strip 双写两层——登录专题网站 bm.scs.gov.cn/kl2027，
- * 选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn）；点击目标仍只
- * 挂 gwy 直链，不挂门户。
+ * 选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn）；提醒主链挂 gwy
+ * 直达，门户作备用文字链（`portalUrl`）。
  *  - 「考生考务入口」来源：2027 年度报考指南原文（报名确认段）——华图
  *    2026-10-31 文引原文“登录专题网站，选择「考生考务入口」（或报名确认
  *    及准考证打印网址）进入”；本轮未从 scs.gov.cn 原站直读该指南原文，
@@ -1385,6 +1395,8 @@ export interface GuokaoAdmissionReminder {
    *  11-23–11-29 开放期（open / last-call）才有；11-15–11-22 不设，行为不变。 */
   slimCardLine?: string
   url: string
+  /** 专题网站门户（备用链）：http://bm.scs.gov.cn/kl2027，读 GUOKAO_PORTAL_URL 常量 */
+  portalUrl: string
 }
 
 /**
@@ -1427,7 +1439,7 @@ export function admissionReminderFor(
     const days = daysUntil('2026-11-23', nowMs)
     const strip = `国考准考证距打印开启 ${days} 天，11 月 23 日 0:00 开放打印，11 月 29 日 15:00 截止；登录专题网站 bm.scs.gov.cn/kl2027，选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn）`
     const card = `2027 国考准考证距打印开启 ${days} 天，11 月 23 日 0:00 开放打印，11 月 29 日 15:00 截止——报名确认成功的考生，带报名序号登录专题网站 bm.scs.gov.cn/kl2027，选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn），多打两份备用。笔试 11 月 28–29 日：专业科目 11 月 28 日 14:00–16:00（部分职位），公共科目 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。今年新规：开考 15 分钟后不得入场（去年为 30 分钟，据国家公务员局 2027 年度招考公告）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。`
-    return { phase, stripLine: strip, cardLine: card, url: GUOKAO_ADMISSION_URL }
+    return { phase, stripLine: strip, cardLine: card, url: GUOKAO_ADMISSION_URL, portalUrl: GUOKAO_PORTAL_URL }
   }
   const copy = GUOKAO_ADMISSION_COPY[phase]
   // U-236：开放期（open / last-call）卡片收敛为瘦身行；倒计时 / 预热期不设。
@@ -1439,5 +1451,6 @@ export function admissionReminderFor(
     cardLine: copy.card,
     slimCardLine,
     url: GUOKAO_ADMISSION_URL,
+    portalUrl: GUOKAO_PORTAL_URL,
   }
 }

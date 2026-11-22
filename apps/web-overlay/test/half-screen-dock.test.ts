@@ -276,7 +276,8 @@ describe('已知局限（v1 接受，不擅自修）', () => {
 
   it('不碰禁区文件：导航工具栏多选按钮 title 与第 11 项落点一致', () => {
     const toolbar = read(NAV_TOOLBAR)
-    expect(toolbar).toContain("title={selectionMode ? '退出多选模式（快捷键 M）' : '多选模式：批量导出 / 复制 / 置顶（快捷键 M）'}")
+    // 2026-11-21 顶栏收口：快捷键提示精简为「（M）」，语义与入口不变
+  expect(toolbar).toContain("label={selectionMode ? '退出多选模式（M）' : '多选模式：批量导出 / 复制 / 置顶（M）'}")
   })
 
   it('下沉栏不新增 window 级 Esc 监听（第 11 项禁令，只依赖 Radix 默认行为）', () => {

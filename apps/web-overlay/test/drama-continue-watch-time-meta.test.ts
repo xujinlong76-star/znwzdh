@@ -108,7 +108,11 @@ function renderDrama(): string {
 }
 
 function renderStrip(): string {
-  return renderToString(createElement(HomeMicroStrip, { pluginItems: null }))
+  // 2026-11-22：短剧默认移出全局首屏，需显式进入短剧上下文才能渲染胶囊。
+  // 本文件测的是「继续追」时间文案，与曝光策略无关，故传 short-drama 上下文。
+  return renderToString(
+    createElement(HomeMicroStrip, { pluginItems: null, activeWorkspace: 'short-drama' }),
+  )
 }
 
 describe('/drama「继续追」行：相对时间 meta', () => {

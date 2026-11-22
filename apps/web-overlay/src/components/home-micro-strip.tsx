@@ -16,6 +16,13 @@ import { useWatchlist } from '@/hooks/useWatchlist'
 import { formatRelativeTime } from '@/lib/format-relative-time'
 import { HorizontalScrollFade } from '@/components/horizontal-scroll-fade'
 import type { CinemaInitialData } from '@/components/home-drama-cinema'
+import {
+  collectDramaContextSectionIds,
+  dramaExposureAllowed,
+  isDramaContextCategory,
+  readDramaHotlistOptIn,
+} from '@/lib/modular/workspace-presets'
+import { useDramaHotlistOptIn } from '@/hooks/useDramaHotlistOptIn'
 import type { HubPluginItem } from '@/lib/navhub-api'
 import { MARKETPLACE_CATEGORIES_PATH } from '@/lib/plugins/marketplace-categories'
 import { ONBOARDING_DISMISSED_VALUE, ONBOARDING_STORAGE_KEY } from '@/lib/onboarding'
@@ -92,10 +99,27 @@ export function HomeMicroStrip({
       ? formatRelativeTime(latestWatch.lastProgressAt)
       : null
   const topPlugins = pluginItems?.slice(0, 2) ?? []
-  // 运营胶囊按场景 Tab 动态展示（首屏瘦身）：研发全栈 / AI 实验室场景下
-  // 隐藏短剧推广胶囊（该场景用户以研发与 AI 找站为主），其余场景保持单行轻量。
-  const hideDramaForWorkspace = activeWorkspace === 'dev' || activeWorkspace === 'ai'
-  const showDrama = showDramaCapsule && !hideDramaForWorkspace
+  /*
+   * 短剧热榜默认移出全局首屏（2026-11-22）：
+   * 只有「影音娱乐/短剧分类上下文」或「DIY 显式开启」才放行。
+   * 不再按 workspace === dev/ai 硬编码隐藏——那会误伤 DIY 在该场景的显式开启。
+   */
+  const diyOptIn = useDramaHotlistOptIn()
+  const dramaContextIds = collectDramaContextSectionIds([])
+  const inDramaCategoryContext =
+    dramaContextIds.size > 0 ||
+    isDramaContextCategory(String(activeWorkspace ?? '')) ||
+    activeWorkspace === 'short-drama'
+  const showDrama =
+    showDramaCapsule &&
+    dramaExposureAllowed({ inDramaCategoryContext, diyOptIn })
+
+  // 通告条与各胶囊是并列的渲染门槛：通告条默认关不能连带藏掉
+  // DIY 开启或分类上下文下的短剧热榜。
+  const pluginVisible = Boolean(topPlugins.length) || Boolean(pluginItems)
+  const guideVisible = showGuideBadge && Boolean(guidePending && onOpenGuideTab)
+  const announceVisible = true
+  const hasAnything = showDrama || pluginVisible || guideVisible
 
   return (
     <>
@@ -190,6 +214,9 @@ export function HomeMicroStrip({
             <Compass className="h-3.5 w-3.5 shrink-0" />
             <span>向导与设首页</span>
           </button>
+        ) : null}
+        {announceVisible ? (
+          <span className="sr-only">快捷入口通告</span>
         ) : null}
       </HorizontalScrollFade>
 

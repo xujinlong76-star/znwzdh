@@ -1,9 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback, memo } from 'react'
+import { useState, useEffect, useCallback, memo , useMemo} from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import dynamic from 'next/dynamic'
+import {
+  resolveSidebarGroups,
+  type WorkspaceId,
+} from '@/lib/modular/workspace-presets'
 import { cn } from '@/lib/utils'
 import { preferredScrollBehavior } from '@/lib/motion'
 import { Button } from '@/registry/new-york/ui/button'
@@ -78,6 +82,8 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   /** 品牌标题是否渲染为 h1。默认 true；移动抽屉传 false，保证同一页面
       DOM 内恰好一个 h1（复核 2026-11-20 首屏瘦身第 1 项）。 */
   brandAsHeading?: boolean
+  /** 当前工作台：驱动类目级渐进式披露（置顶 / 折叠 / 隐藏） */
+  activeWorkspace?: WorkspaceId
 }
 
 // P0-2：包 memo——navigationData 已 memo 化、onClose 已 useCallback 化。
@@ -104,7 +110,7 @@ function shortBrandName(full: string): string {
   return trimmed.length > 6 ? trimmed.slice(0, 6) : trimmed
 }
 
-export const Sidebar = memo(function Sidebar({ className, navigationData, siteInfo, onClose, brandAsHeading = true }: SidebarProps) {
+export const Sidebar = memo(function Sidebar({ className, navigationData, siteInfo, onClose, brandAsHeading = true, activeWorkspace = 'all' }: SidebarProps) {
   /* 侧栏不再渲染通知铃铛：订阅源只保留顶栏一处（见页脚注释）。 */
   /* 2026-11-21：侧栏铃铛已移除，未读订阅与角标文案随之删掉——
      同一个订阅源现在只服务顶栏铃铛一处，避免两处红点不同步。 */
@@ -185,6 +191,45 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
       return acc
     }, {} as Record<string, boolean>)
   })
+
+  /*
+   * 角色视图类目级渐进式披露（2026-11-22）：
+   * 置顶高相关类目、生活娱乐默认折叠、非核心类目按工作台隐藏。
+   */
+  const sidebarGroups = useMemo(
+    () =>
+      resolveSidebarGroups(
+        navigationData.navigationItems.map((c) => c.id),
+        activeWorkspace,
+      ),
+    [navigationData.navigationItems, activeWorkspace],
+  )
+  const { featuredCategoryIds, collapsedGroupIds } = sidebarGroups
+  /** 生活娱乐等分组的默认折叠集合（DIY 手动展开后不强制收起） */
+  const [collapsedGroupIdsState, setCollapsedGroupIds] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(collapsedGroupIds.map((id: string) => [id, true])),
+  )
+  const featuredIdsKey = featuredCategoryIds.join(',')
+  useEffect(() => {
+    // 只补展开、不动用户手动折叠的状态
+    if (!featuredIdsKey) return
+    setExpandedCategories((prev) => {
+      const next = { ...prev }
+      let changed = false
+      for (const id of featuredIdsKey.split(',')) {
+        if (next[id] !== true) { next[id] = true; changed = true }
+      }
+      return changed ? next : prev
+    })
+  }, [featuredIdsKey])
+
+  // 锚点高亮 + 侧栏内自动滚动至可视区
+  const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null)
+  useEffect(() => {
+    if (!activeAnchorId) return
+    const el = document.querySelector('[data-sidebar-anchor="' + activeAnchorId + '"]')
+    if (el) el.scrollIntoView({ block: 'nearest' })
+  }, [activeAnchorId])
 
   // 当前在视口内激活的一级分类 ID（用于左侧导航高亮与指示条）
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(() => {
@@ -497,6 +542,35 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
 
       <ScrollArea className="flex-1 px-2.5 py-2 [&_[data-radix-scroll-area-viewport]>div]:!block">
         <div className="space-y-0.5">
+          {/* 角色视图分组小标题（置顶与折叠由 resolveSidebarGroups 裁决）。
+              只渲染有可见类目的组，避免空标题占位。 */}
+          {sidebarGroups.groups.map((group) => {
+            const groupVisible = group.categoryIds.some((id) =>
+              navigationData.navigationItems.some(
+                (c) => c.id === id && !hiddenCategoryIds.includes(c.id) && !isCategoryHidden(c.id),
+              ),
+            )
+            if (!groupVisible) return null
+            const isGroupCollapsed = Boolean(collapsedGroupIdsState[group.id])
+            return (
+              <button
+                key={'group-' + group.id}
+                type="button"
+                data-sidebar-anchor={group.id}
+                aria-expanded={!isGroupCollapsed}
+                onClick={() =>
+                  setCollapsedGroupIds((prev: Record<string, boolean>) => ({
+                    ...prev,
+                    [group.id]: !prev[group.id],
+                  }))
+                }
+                className="flex w-full items-center justify-between px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
+              >
+                <span>{group.label}</span>
+                <span aria-hidden="true">{isGroupCollapsed ? '▸' : '▾'}</span>
+              </button>
+            )
+          })}
           {navigationData.navigationItems
             .filter((category) => {
               if (!bypassMaskTemporarily && (hiddenCategoryIds.includes(category.id) || isCategoryHidden(category.id))) {

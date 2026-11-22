@@ -4960,7 +4960,7 @@
               "id": "nav-8aca4a15bb97",
               "hubId": "nav-8aca4a15bb97",
               "title": "京东",
-              "href": "https://www.jd.com",
+              "href": "https://www.jd.com/?cu=true",
               "description": "自营电商，数码家电配送快",
               "icon": "https://jd.com/favicon.ico",
               "enabled": true,

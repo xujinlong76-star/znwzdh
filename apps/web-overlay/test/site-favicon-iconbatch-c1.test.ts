@@ -57,7 +57,7 @@ const CASES: Array<{ url: string; title: string; customIcon?: string; expected: 
   { url: 'https://github.com/features/copilot', title: 'GitHub Copilot', customIcon: 'https://github.com/favicon.ico', expected: '/brand-icons/copilot.svg' },
   // G3：域名映射；淘宝/京东/抖音/快手/哔哩哔哩的 customIcon 均为远端 …/favicon.ico
   { url: 'https://www.taobao.com', title: '淘宝', customIcon: 'https://taobao.com/favicon.ico', expected: '/brand-icons/taobao.png' },
-  { url: 'https://www.jd.com', title: '京东', customIcon: 'https://jd.com/favicon.ico', expected: '/brand-icons/jd.png' },
+  { url: 'https://www.jd.com/?cu=true', title: '京东', customIcon: 'https://jd.com/favicon.ico', expected: '/brand-icons/jd.png' },
   { url: 'https://www.douyin.com', title: '抖音', customIcon: 'https://www.douyin.com/favicon.ico', expected: '/brand-icons/douyin.png' },
   { url: 'https://www.kuaishou.com', title: '快手', customIcon: 'https://www.kuaishou.com/favicon.ico', expected: '/brand-icons/kuaishou.png' },
   { url: 'https://www.bilibili.com', title: '哔哩哔哩', customIcon: 'https://bilibili.com/favicon.ico', expected: '/brand-icons/bilibili.png' },

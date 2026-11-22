@@ -636,7 +636,7 @@
       "icon": "https://taobao.com/favicon.ico"
     },
     {
-      "url": "https://www.jd.com",
+      "url": "https://www.jd.com/?cu=true",
       "title": "京东",
       "description": "自营电商，数码家电配送快",
       "categorySlug": "ecommerce",
@@ -2280,7 +2280,7 @@
           "sort": 0
         },
         {
-          "site": "https://www.jd.com",
+          "site": "https://www.jd.com/?cu=true",
           "note": "自营物流快，家电数码买得放心",
           "sort": 1
         },

@@ -43,12 +43,16 @@ import {
   CalendarDays,
   Puzzle,
   SlidersHorizontal,
+  Sun,
+  Moon,
 } from 'lucide-react'
+import { useTheme } from 'next-themes'
 import { GithubIcon } from '@/components/icons'
 import dynamic from 'next/dynamic'
 import type { SiteConfig } from '@/types/site'
 import { ModeToggle } from '@/components/mode-toggle'
 import { FontSizeToggle } from '@/components/font-size-toggle'
+import { HighContrastToggle } from '@/components/high-contrast-toggle'
 import { cn } from '@/lib/utils'
 import { trackDiyEvent } from '@/lib/navhub-api'
 import { summarizeSelection } from '@/lib/selection'
@@ -115,6 +119,9 @@ export const NavigationToolbar = memo(function NavigationToolbar({
   onOpenAiFinder,
 }: NavigationToolbarProps) {
   const hasTodayAlert = Boolean(todayBadge && (todayBadge.urgentCount > 0 || todayBadge.todayCount > 0))
+  // W8（2026-11-23 00:22 轮）：探索菜单内「切换主题」条目用，与 ModeToggle 同款三元式
+  // （必须用 resolvedTheme：defaultTheme="system" 时 theme 是 'system'，见 mode-toggle.tsx）。
+  const { resolvedTheme, setTheme } = useTheme()
   return (
         <header className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 shadow-2xs">
           <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 md:h-14 md:flex-nowrap">
@@ -253,6 +260,21 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                     <div className="flex flex-col">
                       <span className="font-medium text-foreground">多选模式</span>
                       <span className="text-xs text-muted-foreground">批量导出 / 复制 / 置顶 (M)</span>
+                    </div>
+                  </DropdownMenuItem>
+                  {/* W8（2026-11-23 00:22 轮，协调员裁决）：主题切换 <sm 收进探索菜单
+                      （工具栏内按钮 <640px 隐藏，见下方 ModeToggle 注释）；≥sm 该条目
+                      隐藏，按钮恢复显示。点击路径与 ModeToggle 一致：resolvedTheme
+                      深色↔浅色互切；图标按当前主题用 Sun（浅色）/ Moon（深色）。 */}
+                  <DropdownMenuItem onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')} className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent sm:hidden">
+                    {resolvedTheme === 'dark' ? (
+                      <Moon className="h-4 w-4 text-indigo-500 shrink-0" />
+                    ) : (
+                      <Sun className="h-4 w-4 text-amber-500 shrink-0" />
+                    )}
+                    <div className="flex flex-col">
+                      <span className="font-medium text-foreground">切换主题</span>
+                      <span className="text-xs text-muted-foreground">深色 / 浅色</span>
                     </div>
                   </DropdownMenuItem>
                   {/* U-155（2026-11-19）：小组件盒 <390px 的工具栏内替代入口（工具栏按钮
@@ -488,17 +510,29 @@ export const NavigationToolbar = memo(function NavigationToolbar({
               <div className="h-4 w-px bg-border/60 mx-1 hidden lg:block" />
               {/* 字号切换全尺寸可见（A13）：保留手机 1 键放大，不把长辈高频需求埋深 */}
               <div className="inline-flex"><FontSizeToggle /></div>
-              <ModeToggle />
+              {/* 高对比开关（2026-11-23 00:22 轮 W3）：与字号开关并排，全尺寸可见，
+                  不收进探索菜单。W8 同轮裁决（协调员定）：高对比加入后 360px 行由
+                  6 钮 294px 变 7 钮 344px，超 336px 可用宽 8px；腾出的 44px 来自
+                  主题按钮——ModeToggle 在 <sm 收进探索菜单（上方「切换主题」
+                  条目），≥sm 恢复显示；主题不是长辈高频需求，且外观向导弹窗内
+                  已有 ModeToggle（appearance-guide-dialog.tsx:225），功能不丢。
+                  宽度账回到 360px 行 6 钮 6×44+5×6 = 294px ≤ 336px，
+                  390px 行 7 钮 7×44+6×6 = 344px ≤ 366px；e2e/toolbar-360-overflow.spec.ts 的
+                  「行不溢出」断言不再红，C-W7-5 修掉的菜单按钮裁切不回归。 */}
+              <div className="inline-flex"><HighContrastToggle /></div>
+              {/* W8（2026-11-23 00:22 轮）：主题切换 <sm 收进探索菜单（菜单内「切换主题」
+                  条目），≥sm 恢复显示。ModeToggle 仍在 HighContrastToggle 之后
+                  （test/high-contrast.test.ts 的挂载顺序守卫依赖此顺序）。 */}
+              <div className="hidden sm:inline-flex"><ModeToggle /></div>
               {/* U-155 方案 A（2026-11-19）：纯图标改为图标 + 可见文字标签「DIY 排版」，
                   让 DIY 入口首屏可见可识别；<sm 沿用「今日」按钮的上下叠排（图标上、
                   文字下），仍占 44px 宽；≥sm 横排，与「AI 找站」按钮同式。
-                  360px 宽度账（2026-11-21 C-W7-5 修正：右组 gap-1.5 = 6px，
-                  旧注「6×2px 间隙」与代码不符）：小组件盒 <390px 已收进探索菜单，
-                  但行内仍为 7×44px + 6×6px = 344px > 360−24px 可用宽，
-                  菜单按钮右缘被 html overflow-x: clip 裁掉 8px；390px 时
-                  8×44px + 7×6px = 394px > 390−24px，裁掉 28px。
-                  C-W7-5：多选按钮 <sm 收进探索菜单（360px 行 294px ≤ 336px；
-                  390px 行 344px ≤ 366px）。点击路径不动：仍打开
+                  360px 宽度账（2026-11-23 00:22 轮 W8 更新：右组 gap-1.5 = 6px）：
+                  高对比开关加入后 360px 行一度 7×44px + 6×6px = 344px > 360−24px
+                  可用宽，菜单按钮右缘会被裁掉 8px；W8 裁决把主题按钮 <sm 收进
+                  探索菜单，360px 行回到 6×44px + 5×6px = 294px ≤ 336px；
+                  390px 时小组件盒恢复显示，7×44px + 6×6px = 344px ≤ 366px。
+                  C-W7-5：多选按钮 <sm 收进探索菜单。点击路径不动：仍打开
                   外观向导小窗（默认 appearance 页签），底部「开启 DIY」进编排态。 */}
               {onOpenAppearanceGuide ? (
                 <Button

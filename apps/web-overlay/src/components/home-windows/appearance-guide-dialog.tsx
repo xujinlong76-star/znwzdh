@@ -21,6 +21,7 @@ import { ViewModeToggle } from '@/components/view-mode-toggle'
 import { DensityToggle } from '@/components/density-toggle'
 import { FontSizeToggle } from '@/components/font-size-toggle'
 import { ElderModeToggle } from '@/components/elder-mode-toggle'
+import { HighContrastToggle } from '@/components/high-contrast-toggle'
 import { SceneSwitcher } from '@/components/scene-switcher'
 import { SkinPicker } from '@/components/skin-picker'
 import { ModeToggle } from '@/components/mode-toggle'
@@ -62,6 +63,7 @@ export function AppearanceGuideDialog({
   const { toast } = useToast()
   const [tab, setTab] = useState<'appearance' | 'guide'>(defaultTab)
   const [claimedHomepage, setClaimedHomepage] = useState(false)
+  const [hcAnnouncement, setHcAnnouncement] = useState('')
   const [catState, setCatState] = useState<{
     available: boolean
     alwaysDynamic: boolean
@@ -95,6 +97,19 @@ export function AppearanceGuideDialog({
     const handleCatEvent = () => syncCat()
     window.addEventListener('navhub:xiaomaomao-state', handleCatEvent)
     return () => window.removeEventListener('navhub:xiaomaomao-state', handleCatEvent)
+  }, [open])
+
+  // 高对比播报：本站内开关（工具栏 / 本弹窗）经同一事件总线同步，
+  // 此处只监听事件播报一次；开关本身的状态与同步由 HighContrastToggle 管。
+  useEffect(() => {
+    const announce = (event: Event) => {
+      const detail = (event as CustomEvent<{ on?: boolean }>).detail
+      if (typeof detail?.on === 'boolean') {
+        setHcAnnouncement(detail.on ? '已开启高对比' : '已关闭高对比')
+      }
+    }
+    window.addEventListener('navhub:high-contrast-changed', announce)
+    return () => window.removeEventListener('navhub:high-contrast-changed', announce)
   }, [open])
 
   useEffect(() => {
@@ -179,9 +194,17 @@ export function AppearanceGuideDialog({
                 <div className="flex items-center justify-between rounded-xl border border-border/70 bg-card/70 px-3 py-2">
                   <div>
                     <p className="text-xs font-semibold">长辈适老模式</p>
-                    <p className="text-[11px] text-muted-foreground">大字高对比 + 宽松间距</p>
+                    <p className="text-[11px] text-muted-foreground">特大字 + 宽松间距</p>
                   </div>
                   <ElderModeToggle />
+                </div>
+
+                <div className="flex items-center justify-between rounded-xl border border-border/70 bg-card/70 px-3 py-2">
+                  <div>
+                    <p className="text-xs font-semibold">高对比</p>
+                    <p className="text-[11px] text-muted-foreground">加深文字与边框，弱光下也看得清；与长辈模式可同时开启</p>
+                  </div>
+                  <HighContrastToggle />
                 </div>
 
                 <div className="flex items-center justify-between rounded-xl border border-border/70 bg-card/70 px-3 py-2">
@@ -289,6 +312,13 @@ export function AppearanceGuideDialog({
                   <SlidersHorizontal className="h-3.5 w-3.5" />
                   <span>{isEditingLayout ? '退出 DIY' : '开启 DIY'}</span>
                 </Button>
+              </div>
+
+              {/* 高对比切换播报：复用站内已有的 sr-only live-region 模式
+                  （favorites/page、ai-copilot-drawer 同款 role="status"），
+                  切换后读屏播报一次，平时不占视觉空间 */}
+              <div role="status" aria-live="polite" className="sr-only">
+                {hcAnnouncement}
               </div>
             </TabsContent>
 

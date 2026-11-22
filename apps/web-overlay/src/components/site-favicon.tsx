@@ -1019,6 +1019,53 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   // 'github.com' / 'adobe.com' 键绝不加。
   // 全库 383 站核对：'udemy.com' 键只命中 Udemy 一站，无后缀串站、无子域站。
   'udemy.com=udemyp',
+  // 2026-11-22（进化轮 2222，C 线，4 站 AI 办公）。
+  // 全库仅剩 4 站既无 icon 字段又无 map 键（B 线逐一核对 23 站空 icon
+  // 清单，19 站有 map 键兜底，仅此 4 站无），卡片只能渲染渐变底 +
+  // 首字母兜底徽章；4 站全在 AI 办公类目。navigation.json 不动。
+  // 来源均经 curl 重新验证（200 + image MIME + 魔数 + 尺寸）：
+  // - 千问办公：官网 apple-touch-icon 180×180
+  //   https://img.alicdn.com/imgextra/i4/O1CN01HdCyPs1MZh3Szwmxo_!!6000000001449-2-tps-180-180.png
+  //   （200、image/png、13,406 B，SHA-256
+  //   0287e8361985920e2cb0ac7d941c0f11e622b33bbbfe12a3d44aa56f08cf06de；
+  //   首页 head 另声明 32×32 / 48×48 同标，站根 /favicon.svg 404 未用）。
+  //   黑圆角方块 + 亮绿 #52E890 字标，四角透明；Pillow LANCZOS
+  //   180→128 落盘 qwenwork.png（10,112 B，md5
+  //   d9ee7cd24b0f1b9eefe7526874ecb83b）。'qwen.svg' 是通义千问、不可复用；
+  //   标题 '千问办公' 不含 'qwen'，不触发上方 qwen3 标题规则。
+  // - WPS 灵犀：manifest
+  //   https://qn.cache.wpscdn.cn/lingxi-app/web/manifest_v2.json 给出官方
+  //   logo 三档，取 192×192
+  //   https://qn.cache.wpscdn.cn/copilot-test/copilot-cdn/images/copilot/lingxi_logo_192_v1.png
+  //   （200、image/png、19,806 B，SHA-256
+  //   5e59eb231012f80de70f2bc7102f64c61337675a2d21fc71974cca0b367929f5；
+  //   站根 /favicon.ico 实为 HTML 壳页未用）。青紫渐变圆角徽 + 白底黑字标，
+  //   四角透明；LANCZOS 192→128 落盘 lingxi.png（15,659 B，md5
+  //   2ce27498de252b0dc9e2dd1d2b23f1fb）。
+  // - WorkBuddy：官网 logo.svg
+  //   https://assets.workbuddy.cn/web/workbuddy/7b25e1f24385a28a7c133de175ff1dc2bc6b455e/assets/logo.svg
+  //   （200、image/svg+xml、4,142 B，SHA-256
+  //   10ccbc099e7bc3d5ff12c315c4edd7b21386aa7166c1ec19997b3d55010d5c7d；
+  //   40×40 viewBox 渐变圆角方块），SVG 原样落盘 workbuddy.svg。
+  // - 百度搭子：站方 favicon.png
+  //   https://now.bdstatic.com/store/v2/d33e0f5/qianfan-desktop-h5/4d5dbbe/favicon.png
+  //   （200、image/png、5,521 B，144×144，SHA-256
+  //   02e8924440fddc11aff3574eeb6f74aec55a6a21d154b86d6fd81eb21a1dd3a2）。
+  //   浅薰衣草圆角方块 + 深色字标，四角透明；LANCZOS 144→128 落盘
+  //   dumate.png（11,969 B，md5 fd009359737bf1f7a76678bcce1e0722）。
+  // 键的精确性：'lingxi.kdocs.cn' 必须用完整子域精确键——map 已有
+  // 'kdocs.cn=kdocsj'（WPS 文档站），后缀匹配会让灵犀错指 kdocs.jpg；
+  // 精确查找在后缀循环之前，精确键优先命中。'dumate.baidu.com' 同理
+  // 用完整子域（map 无 'baidu.com' 裸域键，绝不加）。'qwenwork.cn' /
+  // 'workbuddy.cn'（www 已去前缀）各只命中对应一站，无后缀串站、无子域站。
+  // 浅/深主题：四标 ASCII 渲染均为真实品牌标；qwenwork 深色下黑方块与底色
+  // 相融但亮绿字标仍醒目，lingxi 渐变徽边框定形、dumate 深色字标可读，
+  // workbuddy 满幅渐变方块双主题均可见；按规范 §9 不做单站底块补丁、
+  // 不配 LOGO_TILE_MAP（resolveLogoTile 为 null），留待统一处理轮。
+  'qwenwork.cn=qwenworkp',
+  'lingxi.kdocs.cn=lingxip',
+  'workbuddy.cn=workbuddys',
+  'dumate.baidu.com=dumatep',
  ];
 
 /**

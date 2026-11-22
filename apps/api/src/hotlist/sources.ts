@@ -316,6 +316,22 @@ export const HOTLIST_SOURCES: readonly HotlistSourceDef[] = [
   },
 ];
 
+/**
+ * 热榜采集端点的精确主机名白名单（SSRF 守卫 trustedHosts 的唯一来源）。
+ *
+ * 为什么需要：本机出口网关用合成地址（198.18.246.x，属 198.18.0.0/15
+ * 基准测试段）代理真实出站，六个源域名解析后全落该段，SSRF 守卫的
+ * DNS-IP 校验会把它们全拦掉（U-284）。白名单只放行从 covered 源的
+ * endpoint 派生的精确主机名；用户提交的 URL 永不走这条路。
+ * 从注册表派生而非手写：源增减时白名单自动跟随，不会漂移。
+ */
+export const HOTLIST_TRUSTED_HOSTS: ReadonlySet<string> = new Set(
+  HOTLIST_SOURCES.flatMap((s) => {
+    if (!s.covered || !s.endpoint) return [];
+    return [new URL(s.endpoint).hostname.toLowerCase()];
+  }),
+);
+
 export function hotlistSourceById(id: string): HotlistSourceDef | undefined {
   return HOTLIST_SOURCES.find((s) => s.id === id);
 }

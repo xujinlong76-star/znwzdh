@@ -163,12 +163,13 @@ describe('A2：estimated 节点永不进今日集合', () => {
 })
 
 describe('A5 纯函数：接续节点取自节点数据（文职 / 京考）', () => {
-  it('11-18 文职接续恰好是准考证打印 + 全军统一笔试，京考接续恰好是准考证打印 + 公安 + 公共科目', () => {
+  it('11-18 文职接续恰好是准考证打印 + 全军统一笔试，京考接续恰好是缴费 + 准考证打印 + 公安 + 公共科目', () => {
     const ups = todayFollowUpNodes(NOV_18_0800_CST)
     const jundui = ups.filter((u) => u.exam.id === 'jundui-wenzhi')
     const jingkao = ups.filter((u) => u.exam.id === 'jingkao')
     expect(jundui.map((u) => u.node.label)).toEqual(['准考证打印', '全军统一笔试'])
     expect(jingkao.map((u) => u.node.label)).toEqual([
+      '缴费',
       '准考证打印',
       '公安专业科目笔试',
       '公共科目笔试',
@@ -184,9 +185,9 @@ describe('A5 纯函数：接续节点取自节点数据（文职 / 京考）', (
     expect(byKey.get('jingkao:公共科目笔试')?.detail).toContain('12 月 6 日')
   })
 
-  it('「京考缴费 11-21–23」不出现：京考接续里没有缴费节点，全部接续节点都是 EXAMS 数据原节点', () => {
+  it('「京考缴费 11-21–23」出现（接续区）：京考接续含缴费节点，全部接续节点仍是 EXAMS 数据原节点', () => {
     const ups = todayFollowUpNodes(NOV_18_0800_CST)
-    expect(ups.filter((u) => u.exam.id === 'jingkao').map((u) => u.node.label)).not.toContain('缴费')
+    expect(ups.filter((u) => u.exam.id === 'jingkao').map((u) => u.node.label)).toContain('缴费')
     const dataNodes = new Set(EXAMS.flatMap((e) => e.nodes))
     for (const u of ups) expect(dataNodes.has(u.node)).toBe(true)
   })

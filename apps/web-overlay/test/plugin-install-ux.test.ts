@@ -138,6 +138,28 @@ describe("安装确认里的主题变量数：不能把 21 项说成 0 项", () 
   })
 })
 
+describe("安装确认里的网址包站点数：不能把 2 个站点说成 0 个", () => {
+  const modal = overlaySource("src/components/plugins/plugin-install-modal.tsx")
+
+  it("摘要缺失（详情接口把 summary 放在响应外层）时按清单 sites/categories 计数", () => {
+    expect(modal).toContain("sitePackSiteCount")
+    expect(modal).toContain("sitePackCategoryCount")
+    // 兜底与服务端 summarizePluginManifest 同口径：站点数 = sites 长度，
+    // 分类数 = categories 长度（未声明分类数组时为 0，与服务端摘要一致）
+    expect(modal).toContain("plugin.manifest?.payload?.sites")
+    expect(modal).toContain("plugin.manifest?.payload?.categories")
+    // 旧的 ?? 0 会把任意网址包都说成「新增约 0 个」，与下方 overlap 预览
+    // 「2 个站点全部新增」自相矛盾（U-404：详情页弹窗拿不到 summary）
+    expect(modal).not.toContain("summary?.siteCount ?? 0")
+    expect(modal).not.toContain("summary?.categoryCount ?? 0")
+  })
+
+  it("顶部计数用兜底后的变量渲染，而不是直接读 summary", () => {
+    expect(modal).toContain("{sitePackSiteCount}")
+    expect(modal).toContain("{sitePackCategoryCount}")
+  })
+})
+
 describe("卸载回执不谎报清理范围", () => {
   const modal = overlaySource("src/components/plugins/plugin-install-modal.tsx")
 

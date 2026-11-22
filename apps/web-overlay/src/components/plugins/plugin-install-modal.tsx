@@ -179,6 +179,21 @@ export function PluginInstallModal({
     (plugin.kind === 'theme' ? Object.keys(plugin.manifest?.payload?.tokens ?? {}).length : 0)
   const themeAccent =
     summary?.accent ?? (plugin.kind === 'theme' ? plugin.manifest?.payload?.accent : undefined)
+  // 网址包站点/分类数：详情接口把 summary 放在响应外层，plugin 上没有 summary，
+  // 详情页打开的弹窗拿不到——缺失时按清单实际结构计数，与本文件预设/主题
+  // 的兜底口径一致（U-404 实测：弹窗「新增约 0 个」vs 下方预览「2 个站点全部新增」）。
+  // 兜底与服务端 summarizePluginManifest 同口径：站点数 = payload.sites 长度，
+  // 分类数 = payload.categories 长度（未声明分类数组时为 0，与服务端摘要一致）。
+  const sitePackSites: Array<{ url: string; title?: string; category?: string }> | null =
+    plugin.kind === 'site-pack' && Array.isArray(plugin.manifest?.payload?.sites)
+      ? plugin.manifest.payload.sites
+      : null
+  const sitePackSiteCount = summary?.siteCount ?? sitePackSites?.length ?? 0
+  const sitePackCategoryCount =
+    summary?.categoryCount ??
+    (Array.isArray(plugin.manifest?.payload?.categories)
+      ? plugin.manifest.payload.categories.length
+      : 0)
   // D1 更新链路：已安装且市场版本更高时，本弹窗以「更新」语义呈现
   // （执行通道不变——重装即升级，服务端幂等增量，只增不删）
   const isUpdate =
@@ -428,8 +443,8 @@ export function PluginInstallModal({
                     <span>增量站点与分类导入</span>
                   </div>
                   <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
-                    <li>将新增约 <strong className="text-foreground">{summary?.siteCount ?? 0}</strong> 个精选站点</li>
-                    <li>将新增约 <strong className="text-foreground">{summary?.categoryCount ?? 0}</strong> 个分类导航</li>
+                    <li>将新增约 <strong className="text-foreground">{sitePackSiteCount}</strong> 个精选站点</li>
+                    <li>将新增约 <strong className="text-foreground">{sitePackCategoryCount}</strong> 个分类导航</li>
                     {/* 跨包重复预览：装第二个包时最需要的一句话，避免「以为装了两百个，实际只多三个」 */}
                     {overlap && overlap.existing > 0 ? (
                       <li>

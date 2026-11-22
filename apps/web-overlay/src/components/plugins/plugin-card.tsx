@@ -530,9 +530,14 @@ export function PluginCard({
 
         {/* P2-1：作者行——卡片此前不展示作者，认证徽章无处可挂；作者名链向
             作者页（有 ownerKey 才链，无则纯文本）。徽章只在 authorVerified
-            严格为 true 时出现，未认证/字段缺失不占位、不留「未认证」文案。 */}
+            严格为 true 时出现，未认证/字段缺失不占位、不留「未认证」文案。
+            U-408：作者行不能是 <p>——徽章根节点是 <div>（Badge），HTML 解析器
+            遇到 <p> 内的 <div> 会提前闭合 <p>，SSR 与客户端树不一致致整树
+            水合失败（48 处作者行全中、首击被吞）。作者行是元数据行（标签 +
+            作者链接 + 徽章），不是正文段落，改 <div> 语义无损；flex 类名
+            原样保留，布局不变。Badge 本身不动（全站 76 文件 / 236 处用量）。 */}
         {plugin.author && (
-          <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <span>作者：</span>
             {plugin.ownerKey ? (
               <Link
@@ -545,7 +550,7 @@ export function PluginCard({
               <span className="font-medium text-foreground">{plugin.author}</span>
             )}
             {plugin.authorVerified === true && <AuthorVerifiedBadge />}
-          </p>
+          </div>
         )}
 
         {/* 指标摘要 */}

@@ -13,6 +13,7 @@ import { z } from "zod";
 import {
   runAutonomousHealing,
   httpUrl,
+  canonicalizeUrl,
   evaluateSiteQuality,
   SiteAuditApplyInput,
   type SiteHealthAuditSummary,
@@ -55,13 +56,12 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       reply.code(413);
       return { ok: false, error: "采集证据超过 16KB 限制" };
     }
-    const canonical = new URL(body.data.url);
-    canonical.hash = "";
+    const canonicalUrl = canonicalizeUrl(body.data.url);
     const id = randomUUID();
     const candidate = await ctx.repo.upsertSiteDiscoveryCandidate({
       id,
       url: body.data.url,
-      canonicalUrl: canonical.toString(),
+      canonicalUrl,
       title: body.data.title ?? null,
       description: body.data.description ?? null,
       categoryId: body.data.categoryId ?? null,

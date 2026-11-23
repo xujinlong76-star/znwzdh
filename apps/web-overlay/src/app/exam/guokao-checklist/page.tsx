@@ -3,24 +3,20 @@ import Link from 'next/link'
 import {
   AlertTriangle,
   ArrowLeft,
-  ArrowUpRight,
   CalendarDays,
   ClipboardCheck,
-  Printer,
 } from 'lucide-react'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { GuokaoChecklistPhaseBanner } from '@/components/guokao-checklist-phase-banner'
+import { GuokaoChecklistEntry } from '@/components/guokao-checklist-entry'
 import { JsonLd } from '@/components/json-ld'
-import { safeHref } from '@/lib/safe-url'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { absUrl } from '@/lib/seo/json-ld'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 import {
   EXAMS,
-  GUOKAO_ADMISSION_URL,
-  GUOKAO_PORTAL_URL,
 } from '@/lib/exam-calendar'
 import {
   GUOKAO_CHECKLIST_ADMISSION_RULES_LINE,
@@ -167,38 +163,12 @@ export default async function GuokaoChecklistPage() {
           <GuokaoChecklistIsland />
         </section>
 
-        {/* 入口区：主按钮只挂打印系统直链（读常量，不写死域名）；
-            门户只作文字链，不作主按钮目标；两链接均写 http。 */}
-        <section aria-labelledby="guokao-checklist-entry-heading">
-          <h2 id="guokao-checklist-entry-heading" className="text-lg font-bold text-foreground">
-            去打印准考证
-          </h2>
-          <div className="mt-4 rounded-2xl border border-border bg-card p-5">
-            <a
-              href={safeHref(GUOKAO_ADMISSION_URL)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex min-h-11 items-center gap-1 rounded-full border border-sky-500/25 bg-sky-500/5 px-3.5 text-sm font-medium text-sky-700 hover:underline dark:text-sky-400"
-            >
-              <Printer className="h-4 w-4" aria-hidden />
-              去打印准考证
-              <ArrowUpRight className="h-4 w-4" aria-hidden />
-            </a>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              报名/审查走专题网站门户
-              {' '}
-              <a
-                href={safeHref(GUOKAO_PORTAL_URL)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-sky-700 hover:underline dark:text-sky-400"
-              >
-                bm.scs.gov.cn/kl2027
-              </a>
-              ，选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn）。
-            </p>
-          </div>
-        </section>
+        {/* 入口区（2026-11-23 15:22 轮 W3 R1：由服务端静态区改为客户端岛
+            GuokaoChecklistEntry，与阶段横幅同款 60 秒 tick）：截止后主按钮
+            置灰 disabled、不再链向已关的打印系统；主按钮只挂打印系统直链
+            （读常量，不写死域名），门户只作文字链，不作主按钮目标，
+            两链接均写 http——以上 G8 口径现由岛组件承接。 */}
+        <GuokaoChecklistEntry />
 
         {/* 时间对照表（读国考节点原文）+ 入场新规 */}
         <section aria-labelledby="guokao-checklist-time-heading">

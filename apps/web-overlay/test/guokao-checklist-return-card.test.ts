@@ -31,10 +31,12 @@ import {
   daysUntil,
   firstExamDay,
   guokaoAdmissionPhase,
+  isGuokaoAdmissionClosed,
   shanghaiMidnightMs,
 } from '@/lib/exam-calendar'
 import {
   GuokaoChecklistReturnCard,
+  guokaoReturnCardClosure,
   guokaoReturnCardContent,
 } from '@/components/guokao-checklist-return-card'
 import { guangdongZikaoSignupCardCopy } from '@/components/guangdong-zikao-signup-card'
@@ -483,6 +485,54 @@ describe('C1+C4 双卡叠加首屏预算（2026-11-23 12:22 轮，备选 Q1）',
     // 像素实测待 live L1，见末尾 it.todo。C1 的 186 来自 C-G8 的逐相位实算。
     const C4_MOBILE_BUDGET_PX = 220
     expect(c1HeightBudgetPx().mobile390 + C4_MOBILE_BUDGET_PX).toBeLessThanOrEqual(406)
+  })
+})
+
+describe('C1 收尾行（2026-11-23 15:22 轮 W3 R1）：11-29 15:00 后不凭空消失', () => {
+  it('门控：isGuokaoAdmissionClosed 只认 11-29 15:00 之后，窗口未开不算截止', () => {
+    expect(isGuokaoAdmissionClosed(at('2026-11-14', 12, 0))).toBe(false)
+    expect(isGuokaoAdmissionClosed(at('2026-11-22', 23, 59))).toBe(false)
+    expect(isGuokaoAdmissionClosed(at('2026-11-29', 14, 59))).toBe(false)
+    expect(isGuokaoAdmissionClosed(at('2026-11-29', 15, 0))).toBe(true)
+    expect(isGuokaoAdmissionClosed(at('2026-11-29', 15, 0, 1))).toBe(true)
+    expect(isGuokaoAdmissionClosed(at('2026-11-30', 0, 0))).toBe(true)
+    expect(isGuokaoAdmissionClosed(at('2026-12-06', 12, 0))).toBe(true)
+  })
+
+  it('收尾纯函数：截止前一律 null（不抢正常卡、不提前显示已截止），截止整点起给收尾文案', () => {
+    for (const now of [
+      at('2026-11-14', 12, 0),
+      at('2026-11-22', 23, 59),
+      at('2026-11-23', 12, 0),
+      at('2026-11-29', 14, 59),
+    ]) {
+      expect(guokaoReturnCardClosure(now)).toBeNull()
+    }
+    for (const now of [at('2026-11-29', 15, 0), at('2026-11-29', 15, 0, 1), at('2026-11-30', 0, 0)]) {
+      expect(guokaoReturnCardClosure(now)).toEqual({
+        title: '准考证打印已截止',
+        label: '后续安排见考试日历',
+        subline: '系统 11 月 29 日 15:00 已关闭，无法补打',
+      })
+    }
+  })
+
+  it('收尾行 360px 仍 1 行：标题 262px、副行 288px、CTA 约 196px，均 ≤ 内容宽 302px', () => {
+    const closure = guokaoReturnCardClosure(at('2026-11-29', 15, 0))!
+    const titleLine = `${closure.title} · ${closure.label}`
+    expect(estimateTextWidthPx(titleLine)).toBeLessThanOrEqual(302)
+    expect(estimateTextWidthPx(closure.subline)).toBeLessThanOrEqual(302)
+    const ctaW = estimateTextWidthPx('去 /exam 看后续安排 →') + 28 + 4 + 2
+    expect(ctaW).toBeLessThanOrEqual(302)
+  })
+
+  it('组件接线：收尾 CTA 是去 /exam 的普通 <a>，正常卡 <Link> 仍唯一、href 字面量守卫不变', () => {
+    expect(componentCode).toContain('isGuokaoAdmissionClosed(nowMs)')
+    expect(componentCode).toContain('去 /exam 看后续安排 →')
+    // 收尾 CTA 是普通 <a>（属性换行写，故用 \s+ 跨空白匹配），不是第二个 <Link>。
+    expect(componentCode).toMatch(/<a\s+href="\/exam"/)
+    expect(componentCode.match(/<Link/g) ?? []).toHaveLength(1)
+    expect(componentCode).toContain('href="/exam/guokao-checklist"')
   })
 })
 

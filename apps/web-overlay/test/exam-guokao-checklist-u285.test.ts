@@ -36,6 +36,10 @@ import {
   GuokaoChecklistPhaseBannerView,
   checklistPhaseBanner,
 } from '../src/components/guokao-checklist-phase-banner'
+import {
+  GuokaoChecklistEntryView,
+  guokaoChecklistEntry,
+} from '../src/components/guokao-checklist-entry'
 import { GUOKAO_ADMISSION_URL, GUOKAO_PORTAL_URL } from '../src/lib/exam-calendar'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -378,23 +382,34 @@ describe('U-285 D：/exam 国考卡片入口链接（G8 一半）', () => {
     expect(page).not.toContain('scs.gov.cn')
     expect(page).not.toContain('gwy.cpta.com.cn')
   })
+
+  it('R1（2026-11-23 15:22 轮 W3）：11-29 15:00 后入口文案改过去时，不留进行时', () => {
+    // 服务端按 isGuokaoAdmissionClosed() 翻态（与 guokaoAdmissionPhase()
+    // 同一门控、同一截止常量）；单 Link、单 href 字面量，计数守卫仍为 1。
+    expect(page).toContain('isGuokaoAdmissionClosed')
+    expect(page).toContain('准考证打印已截止 · 清单回顾 →')
+    expect(page.match(/\/exam\/guokao-checklist/g)?.length).toBe(1)
+  })
 })
 
 describe('U-285 D：清单页入口双写（G8 另一半）+ 横幅接线守卫', () => {
   const checklist = read('src/app/exam/guokao-checklist/page.tsx')
   const banner = read('src/components/guokao-checklist-phase-banner.tsx')
+  // R1（2026-11-23 15:22 轮 W3）：入口区由 page.tsx 服务端静态区改为
+  // 客户端岛 guokao-checklist-entry.tsx，G8 断言随之改读岛组件，口径不变。
+  const entry = read('src/components/guokao-checklist-entry.tsx')
 
   it('G8：主按钮读 GUOKAO_ADMISSION_URL 常量，门户读 GUOKAO_PORTAL_URL 常量，均写 http', () => {
     expect(GUOKAO_ADMISSION_URL).toBe('http://gwy.cpta.com.cn')
     expect(GUOKAO_PORTAL_URL).toBe('http://bm.scs.gov.cn/kl2027')
-    expect(checklist).toContain('safeHref(GUOKAO_ADMISSION_URL)')
-    expect(checklist).toContain('safeHref(GUOKAO_PORTAL_URL)')
-    expect(checklist).not.toContain('href="http://')
-    expect(checklist).not.toContain('href="https://')
-    expect(checklist).not.toContain('https://gwy.cpta.com.cn')
-    expect(checklist).not.toContain('https://bm.scs.gov.cn')
-    expect(checklist).toContain('报名/审查走专题网站门户')
-    expect(checklist).toContain('选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn）')
+    expect(entry).toContain('safeHref(GUOKAO_ADMISSION_URL)')
+    expect(entry).toContain('safeHref(GUOKAO_PORTAL_URL)')
+    expect(entry).not.toContain('href="http://')
+    expect(entry).not.toContain('href="https://')
+    expect(entry).not.toContain('https://gwy.cpta.com.cn')
+    expect(entry).not.toContain('https://bm.scs.gov.cn')
+    expect(entry).toContain('报名/审查走专题网站门户')
+    expect(entry).toContain('选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn）')
   })
 
   it('横幅接在展板之后、截止警示框之前，canonical 与面包屑未被接线改动', () => {
@@ -417,6 +432,58 @@ describe('U-285 D：清单页入口双写（G8 另一半）+ 横幅接线守卫'
     expect(banner).not.toContain('gwy.cpta.com.cn')
     expect(banner).not.toContain('scs.gov.cn')
     expect(banner).not.toMatch(/https?:\/\/[a-zA-Z0-9]/)
+  })
+})
+
+describe('U-285 R1：清单页打印 CTA 截止后置灰（2026-11-23 15:22 轮 W3）', () => {
+  const entryHtml = (nowMs: number) =>
+    renderToString(createElement(GuokaoChecklistEntryView, { nowMs }))
+
+  it('门控：截止前一分钟未截止、截止整点已截止，窗口未开不算截止', () => {
+    expect(guokaoChecklistEntry(NOV_14_NOON_CST).closed).toBe(false)
+    expect(guokaoChecklistEntry(NOV_23_NOON_CST).closed).toBe(false)
+    expect(guokaoChecklistEntry(NOV_29_1459_CST).closed).toBe(false)
+    expect(guokaoChecklistEntry(NOV_29_1500_CST).closed).toBe(true)
+    expect(guokaoChecklistEntry(NOV_30_0800_CST).closed).toBe(true)
+  })
+
+  it('未截止：主按钮是去打印系统的可点外链，标题为「去打印准考证」', () => {
+    const html = entryHtml(NOV_23_NOON_CST)
+    expect(html).toContain('去打印准考证')
+    expect(html).toContain('href="http://gwy.cpta.com.cn"')
+    expect(html).not.toContain('disabled')
+    expect(html).not.toContain('准考证打印已截止')
+  })
+
+  it('已截止：按钮置灰 disabled、无打印系统链接，标题与按钮均为「已截止」', () => {
+    const html = entryHtml(NOV_29_1500_CST)
+    expect(html).toContain('准考证打印已截止')
+    expect(html).toContain('disabled')
+    expect(html).toContain('cursor-not-allowed')
+    expect(html).not.toContain('gwy.cpta.com.cn')
+    expect(html).not.toContain('去打印准考证')
+    // 门户文字链保留（报名/审查信息仍可走专题网站门户查询），
+    // 但「进入打印系统」一句已撤下。
+    expect(html).toContain('bm.scs.gov.cn/kl2027')
+    expect(html).not.toContain('进入打印系统')
+    expect(html).toContain('打印系统已于 11 月 29 日 15:00 关闭，无法补打')
+  })
+
+  it('入口岛接在清单区之后、时间对照表之前；岛组件门控只走同一 phase 函数', () => {
+    const page = read('src/app/exam/guokao-checklist/page.tsx')
+    expect(page).toContain('<GuokaoChecklistEntry />')
+    const entryAt = page.indexOf('<GuokaoChecklistEntry />')
+    const islandAt = page.indexOf('<GuokaoChecklistIsland />')
+    const timeAt = page.indexOf('guokao-checklist-time-heading')
+    expect(entryAt).toBeGreaterThan(islandAt)
+    expect(timeAt).toBeGreaterThan(entryAt)
+    // 入口区已移出 page.tsx：主按钮常量与门户文案现由岛组件承接。
+    expect(page).not.toContain('safeHref(GUOKAO_ADMISSION_URL)')
+    const entry = read('src/components/guokao-checklist-entry.tsx')
+    expect(entry).toContain('isGuokaoAdmissionClosed')
+    expect(entry).toContain('useState<number | null>(null)')
+    expect(entry).toContain('if (now === null) return null')
+    expect(entry).toContain('setInterval(() => setNow(Date.now()), 60_000)')
   })
 })
 

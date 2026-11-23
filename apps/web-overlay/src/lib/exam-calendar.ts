@@ -1430,17 +1430,38 @@ export const EXAM_REMINDER_TIER_LABEL: Record<ExamReminderTier, string> = {
  */
 export type GuokaoAdmissionPhase = 'countdown' | 'warmup' | 'open' | 'last-call'
 
+/**
+ * 国考准考证打印截止时刻（毫秒，北京时间 2026-11-29 15:00）：
+ * 与 guokaoAdmissionPhase() 的 deadline 同一值、同一算法
+ * （shanghaiMidnightMs('2026-11-29') + 15h），抽成模块常量，
+ * 供三处收尾门控共用，不各自重写日期字面量。
+ */
+export const GUOKAO_ADMISSION_DEADLINE_MS =
+  shanghaiMidnightMs('2026-11-29') + 15 * 3600 * 1000
+
 export function guokaoAdmissionPhase(nowMs: number = Date.now()): GuokaoAdmissionPhase | null {
   const countdownStart = shanghaiMidnightMs('2026-11-15')
   const warmupStart = shanghaiMidnightMs('2026-11-22')
   const openStart = shanghaiMidnightMs('2026-11-23')
   const lastCallStart = shanghaiMidnightMs('2026-11-27')
-  const deadline = shanghaiMidnightMs('2026-11-29') + 15 * 3600 * 1000
+  const deadline = GUOKAO_ADMISSION_DEADLINE_MS
   if (nowMs >= countdownStart && nowMs < warmupStart) return 'countdown'
   if (nowMs < warmupStart || nowMs >= deadline) return null
   if (nowMs < openStart) return 'warmup'
   if (nowMs < lastCallStart) return 'open'
   return 'last-call'
+}
+
+/**
+ * 国考准考证打印是否已截止（2026-11-29 15:00 之后）：
+ * phase 为 null 有两种情况——11-15 之前（窗口未开）与 11-29 15:00
+ * 之后（已截止）；本函数只认后者，与 guokaoAdmissionPhase() 同一
+ * 门控、同一截止常量。三处收尾（C1 回访卡收尾行、清单页打印 CTA、
+ * /exam 清单入口文案）一律读这里，不各自重写日期字面量。
+ * （2026-11-23 15:22 轮 W3 R1 收尾。）
+ */
+export function isGuokaoAdmissionClosed(nowMs: number = Date.now()): boolean {
+  return guokaoAdmissionPhase(nowMs) === null && nowMs >= GUOKAO_ADMISSION_DEADLINE_MS
 }
 
 export interface GuokaoAdmissionReminder {

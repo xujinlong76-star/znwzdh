@@ -29,6 +29,7 @@ import {
   EXAMS,
   EXAM_DATA_NOTE,
   activeExamReminders,
+  isGuokaoAdmissionClosed,
   nearestExam,
 } from '@/lib/exam-calendar'
 import { ExamCountdown } from './exam-countdown'
@@ -91,6 +92,12 @@ export default async function ExamPage() {
   const prepSites = await loadExamPrepSites()
   const origin = configuredSiteOrigin()
   const nearest = nearestExam()
+  // 国考准考证打印是否已截止（2026-11-23 15:22 轮 W3 R1）：只读
+  // isGuokaoAdmissionClosed()（与 guokaoAdmissionPhase() 同一门控、
+  // 同一截止常量），清单入口文案截止后改过去时。服务端直出随
+  // revalidate 3600 翻态、最多迟 1 小时，与本页提醒岛（60 秒 tick）
+  // 的翻态速度不同，属已知滞后，不另造客户端岛只为一行文案。
+  const guokaoClosed = isGuokaoAdmissionClosed(Date.now())
   // 撞期提醒只读数据层派生（activeExamReminders，过期自动隐藏）：
   // 12-07 起省考两条下线、12-20 起三条全下线，不读 EXAM_REMINDERS 原数组。
   const reminders = activeExamReminders()
@@ -207,14 +214,18 @@ export default async function ExamPage() {
                   {exam.id === 'guokao' ? <GuokaoAdmissionReminderIsland exam={exam} /> : null}
                   {/* U-285 D 步：国考卡片内清单页入口一行（提醒岛之后、note 之前）。
                       常驻显示，不随门控隐藏——清单页 11-23 前即可访问；内部
-                      路由用 Next Link，不写死域名、不挂外链。 */}
+                      路由用 Next Link，不写死域名、不挂外链。
+                      R1（2026-11-23 15:22 轮 W3）：11-29 15:00 截止后文案改
+                      过去时「准考证打印已截止 · 清单回顾」，不留进行时误导。 */}
                   {exam.id === 'guokao' ? (
                     <p className="mt-3">
                       <Link
                         href="/exam/guokao-checklist"
                         className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-sky-700 hover:underline dark:text-sky-400"
                       >
-                        打印前清单：三件事先勾好 →
+                        {guokaoClosed
+                          ? '准考证打印已截止 · 清单回顾 →'
+                          : '打印前清单：三件事先勾好 →'}
                       </Link>
                     </p>
                   ) : null}

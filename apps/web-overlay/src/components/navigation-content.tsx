@@ -1218,7 +1218,7 @@ export function NavigationContent({
               首页主内容区又无其它 h1，致移动端无可见主标题（mobile-layout
               冒烟红）。此处补一个移动端专用的紧凑标题（短标题「山羊胡导航」），
               仅移动端可见；桌面端仍由侧边栏品牌担任唯一 h1。 */}
-          <h1 className="md:hidden text-lg font-bold tracking-tight text-foreground pb-3">山羊胡导航</h1>
+          <p className="md:hidden text-lg font-bold tracking-tight text-foreground pb-3">山羊胡导航</p>
           {/* 增量掩码与时间轴回收站快捷感知条（当用户存在已删减功能或处于 DIY 编辑态时呈现） */}
           {(totalPrunedCount > 0 || isEditingLayout) && (
             <div

@@ -12,6 +12,7 @@ import {
   type TaxonomyProposal,
   type TaxonomyProposalKind,
   type SiteOfflineArchive,
+  type SiteQualityResult,
 } from "@navhub/core";
 import type { Db } from "./driver.ts";
 import { collectionInPredicate } from "./sql-in.ts";
@@ -820,6 +821,15 @@ async savedPluginEmbeddings(filter?: {
   /** 某站点持久连续失败计数（sites.consecutive_failures，事实源） */
   async getConsecutiveFailures(siteId: string): Promise<number> {
     return healthRepo.getSiteConsecutiveFailures(this, siteId);
+  }
+
+  /** 站点质量影子评分：保存/读取最新版本，不参与线上排序。 */
+  async saveSiteQualityAssessment(siteId: string, assessment: SiteQualityResult): Promise<void> {
+    return healthRepo.saveSiteQualityAssessment(this, siteId, assessment);
+  }
+
+  async getSiteQualityAssessment(siteId: string): Promise<healthRepo.SiteQualityAssessmentRecord | null> {
+    return healthRepo.getSiteQualityAssessment(this, siteId);
   }
 
   /* ------------------------------ LLM 用量 ------------------------------ */

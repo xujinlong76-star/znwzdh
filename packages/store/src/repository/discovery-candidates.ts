@@ -119,7 +119,7 @@ export async function listSiteDiscoveryCandidates(
   const offset = Math.max(0, Math.floor(options.offset ?? 0));
   const rows = await repo.raw(
     `SELECT * FROM site_discovery_candidates ${where}
-      ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'reviewing' THEN 1 ELSE 2 END,
+      ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,
         discovered_at DESC, id ASC LIMIT ? OFFSET ?`,
     [...params, limit, offset],
   );

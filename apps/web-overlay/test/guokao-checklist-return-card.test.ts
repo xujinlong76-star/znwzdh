@@ -71,8 +71,9 @@ const c4ComponentCode = stripComments(c4ComponentSrc)
  * C-G8 / Q1 共用：字宽模型与 C1 高度预算（2026-11-23 12:22 轮）。
  *
  * 阈值依据：Tailwind text-sm = 14px 字号；CJK/全角/箭头字形 advance ≈ 1em
- * = 14px，ASCII/数字/半角 ≈ 8px（保守值，系统字数字 advance 约 7–8px，
- * 「·」实宽更窄也按 8px 计）。行高取 Tailwind 默认：text-sm 20px、
+ * = 14px，ASCII/数字/半角 ≈ 8px（保守值，系统字数字 advance 约 7–8px；
+ * 例外：「·」(U+00B7) 在 Noto Sans CJK SC face 实宽 14.00px，模型按 8px 计
+ * 属低估——此前“实宽更窄”是 JP face 的数，15:22 轮 W5 按 W8 指正修正）。行高取 Tailwind 默认：text-sm 20px、
  * text-xs 16px；min-h-11 = 44px；py-3 = 24px；pt-3 = 12px；
  * gap-x-4/gap-y-2 = 16px/8px；border 2px；mt-0.5 = 2px。
  * 390px 视口内容宽 = 390 - section px-3×2 (24) - 卡体 px-4×2 (32) - border 2
@@ -80,7 +81,9 @@ const c4ComponentCode = stripComments(c4ComponentSrc)
  * 14:22 轮 W5 修正：此前 334px 漏扣 border，与 360px 档口径统一）；
  * 360px 视口内容宽 = 360 - 24 - 32 - border 2 = 302px（卡体 border 1px×2，
  * Tailwind preflight border-box，border 吃内容宽）；
- * 桌面内容宽 = min(vw, 1600) - sm:px-5×2 (40) - sm:px-5×2 (40)。
+ * 桌面内容宽 = min(vw, 1600) - sm:px-5×2 (40) - sm:px-5×2 (40) - border 2
+ * = min(vw, 1600) - 82（15:22 轮 W5 修正：此前 -80 漏扣 border，与移动档
+ * 口径统一；C4 的 1920px 文本宽 1520 同根因，同步改为 1518）。
  */
 /** CJK/全角/箭头字形（advance ≈ 1em），其余半角字符按 8px 计 */
 const isWideChar = (ch: string) => {
@@ -137,7 +140,7 @@ const c1HeightBudgetPx = () => {
   const ctaW = estimateTextWidthPx('打印前清单：三件事先勾好 →') + 28 + 4 + 2
   const desktopTotals: Record<number, number> = {}
   for (const vw of [640, 768, 1024, 1280, 1536, 1920]) {
-    const textW = Math.min(vw, 1600) - 80 - badgeW - ctaW - 32
+    const textW = Math.min(vw, 1600) - 82 - badgeW - ctaW - 32
     const titleLines = Math.ceil(maxTitleW / textW)
     desktopTotals[vw] =
       12 + Math.max(26, titleLines * 20 + 2 + 20, 44) + 24 + 2
@@ -357,15 +360,18 @@ describe('C-G9 高度守卫：C1 卡片 360px 窄屏预算（2026-11-23 13:22 �
     // 字宽取自文案函数实算，最长 600px（11-27 last-call）；2 行容量
     // 2×302 = 604px，余量 604 - 600 = 4px。
     // 双口径（W1 fontTools 实测 Noto Sans CJK SC 14px，W1/W5 两方一致）：
-    // 模型余量 4px（加 1 个 CJK 字即红），真实余量约 69px（标题真实宽
-    // 534.6px，约 5 个 CJK 字才真折行）。模型红灯先核对文案是否真的加长，
+    // 模型余量 4px（加 1 个 CJK 字即红），真实余量 63.2px（标题真实宽
+    // 540.8px，约 4.5 个 CJK 字才真折行；15:22 轮 W5 按 W8 指正修正——此前
+    // 534.6px/约 69px 是拿 JP face 的「·」7.85px 算的，SC face 的「·」
+    // (U+00B7) 实宽 14.00px）。模型红灯先核对文案是否真的加长，
     // 不要直接改阈值。
     // 余量薄到改文案者必须知晓：最长标题再长 1 个全角字（14px）即折
     // 3 行，预算跳 206px，本条与下一条预算 it 同时变红；600 + 14 = 614
     // > 604（修正除数）且 > 608（旧除数），两种口径下都红。
     // 模型本身方向保守：12 个空格按 8px 计（实际约 3.5px，高估约 54px），
-    // 数字/·低估约 12px，现实宽度约 534.6px，2 行结论稳；只有空格真按
-    // 8px（14px 字号下 0.57em，正常字体不存在）才超 4px。
+    // 现实宽度 540.8px，2 行结论稳；只有空格真按 8px（14px 字号下 0.57em，
+    // 正常字体不存在）才超 4px。（15:22 轮 W5 按 W8 指正删“数字/·低估约
+    // 12px”——方向与量级都错；数字/·合计实为高估约 0.9px。）
     const moments = [
       at('2026-11-23', 12, 0),
       at('2026-11-27', 0, 0),
@@ -382,7 +388,8 @@ describe('C-G9 高度守卫：C1 卡片 360px 窄屏预算（2026-11-23 13:22 �
 
   it('副行 1 行 + 徽章/CTA 单行放得下（360px 内容宽 302px）：副行 294px 余量 8px', () => {
     // 副行「打印截止 11 月 29 日 15:00，逾期无法补打」294px ≤ 302px，
-    // 余量 8px（现实宽度约 272px：5 个空格高估约 22px）；徽章 164px、
+    // 余量 8px（现实宽度 263.7px：5 个空格高估约 22px；15:22 轮 W5 按
+    // W8 指正修正，此前约 272px 有误）；徽章 164px、CTA 224px 均 < 302px，
     // CTA 224px 均 < 302px，360px 下三者仍为叠放三行、无横向挤压。
     expect(
       estimateTextWidthPx('打印截止 11 月 29 日 15:00，逾期无法补打'),
@@ -397,6 +404,9 @@ describe('C-G9 高度守卫：C1 卡片 360px 窄屏预算（2026-11-23 13:22 �
     // 360px 与 390px 行数相同（标题 2 行、副行 1 行），故预算同为
     // 186px = 12 + (26 + 8 + (2×20 + 2 + 20) + 8 + 44) + 24 + 2；
     // 两档相等是实算结论不是巧合，任一档行数变多会同时红在这里。
+    // 186px 有效下界是 vw≥358：352–357px 标题折 3 行（206px）、≤351px
+    // 标题 3 行 + 副行 2 行双折（226px）；C-G9 只钉恰好 360px 一点，
+    // 窄于 358px 的视口不在本预算内（15:22 轮 W5 按 W8 指正补记）。
     const { mobile360, mobile390 } = c1HeightBudgetPx()
     expect(mobile360).toBeLessThanOrEqual(186)
     expect(mobile360).toBe(mobile390)
@@ -435,7 +445,7 @@ describe('C1+C4 双卡叠加首屏预算（2026-11-23 12:22 轮，备选 Q1）',
   it('叠加预算 1920px ≤ 228px：C1 82 + C4 146（C4 五相位最多 5 行文案，行行 1 行）', () => {
     // C4 146px：逐相位 copy 实算——标题 1 + statusLines + subLines + 防仿冒 1，
     // 最多 5 行（P4 apply，2 行副行），行高 5×20 + 4×2 = 108px；
-    // 1920px 下每行都 ≤ 文案宽（徽章/CTA 占位后余 1058px），不折行。
+    // 1920px 下每行都 ≤ 文案宽（徽章/CTA 占位后余 1056px），不折行。
     const c4BadgeW = estimateTextWidthPx('广东自考 · 报名报考') + 14 + 6 + 20 + 2
     const c4MaxCtaW = Math.max(
       ...(
@@ -445,7 +455,7 @@ describe('C1+C4 双卡叠加首屏预算（2026-11-23 12:22 轮，备选 Q1）',
         return estimateTextWidthPx(label) + 28 + 4 + 2
       }),
     )
-    const textW1920 = 1520 - c4BadgeW - c4MaxCtaW - 32
+    const textW1920 = 1518 - c4BadgeW - c4MaxCtaW - 32
     let c4MaxLines = 0
     for (const phase of [
       'signup',
@@ -484,6 +494,6 @@ describe('待补（live L1 实测，不在本文件断言范围）', () => {
     'live L1：C1+C4 双卡叠加实测 ≤ 406px（390px）/ ≤ 228px（1920px），并重测首屏露出卡数/百分比，对照 b702e89 基线 41.7%/43.8%（@1920×911，C1/C4 挂载前）',
   )
   it.todo(
-    'live L1：360px 各相位实测高度 ≤ 186px（C-G9 预算值）；标题行 2 行容量余量仅 4px（模型口径；真实余量约 69px），实测若折 3 行回协调员，不许悄悄压字号凑数',
+    'live L1：360px 各相位实测高度 ≤ 186px（C-G9 预算值）；标题行 2 行容量余量仅 4px（模型口径；真实余量 63.2px），实测若折 3 行回协调员，不许悄悄压字号凑数',
   )
 })

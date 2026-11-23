@@ -246,13 +246,20 @@ async function readColors(page: Page, locator: Locator): Promise<{ fg: RgbColor;
 
 /**
  * 对关键选择器实测对比度（lib 函数在 Node 侧算，颜色在页面侧取）：
- * 正文 = body 默认文字色；标题 = main h1；次要文字 = main 内首个可见
+ * 正文 = body 默认文字色；标题 = 页面首个可见 h1；次要文字 = main 内首个可见
  * .text-muted-foreground。三者都必须 ≥ 4.5:1。
+ *
+ * 标题不用 `main#main-content h1`：main 内唯一的 h1 是移动端专用标题
+ *（navigation-content.tsx:1207，`md:hidden`，U-263），桌面视口（本 spec
+ * 1280×900）下它是 display:none，`.first()` 命中它后 `toBeVisible` 必超时，
+ * 致浅色（:273）与深色（:306）两用例双双红——测试选择器问题，不是实现问题。
+ * 桌面端的可见 h1 是侧边栏品牌标题（sidebar.tsx:375，`hidden md:block` 的
+ * nav 内，main 之外），故用 `h1:visible` 取当前视口下真实可见的主标题。
  */
 async function expectKeyContrasts(page: Page, mode: string): Promise<void> {
   const targets: Array<{ label: string; locator: Locator }> = [
     { label: '正文（body）', locator: page.locator('body') },
-    { label: '标题（main h1）', locator: page.locator('main#main-content h1').first() },
+    { label: '标题（可见 h1）', locator: page.locator('h1:visible').first() },
     {
       label: '次要文字（main 内 .text-muted-foreground）',
       locator: page.locator('main#main-content .text-muted-foreground:visible').first(),
@@ -292,6 +299,10 @@ test.describe('高对比开关主流程', () => {
     await page.waitForLoadState('load', { timeout: 120_000 }).catch(() => {});
     await expect(page.locator(CAT)).toBeAttached({ timeout: 60_000 });
     await page.waitForTimeout(600);
+    // 刷新会销毁页面 JS 上下文：armChangedEvents 装的监听与 __hcEvents
+    // 一并消失，关闭事件若不重装就录不到（lastChangedDetail 得 undefined，
+    // 文末 on:false 断言必超时）。刷新后重装，只录刷新后的事件。
+    await armChangedEvents(page);
     await expectHighContrastOn(page);
     await expectKeyContrasts(page, '浅色开启（刷新后）');
 

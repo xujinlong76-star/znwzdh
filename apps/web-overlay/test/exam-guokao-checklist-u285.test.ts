@@ -605,6 +605,61 @@ describe('U-285 R2：入口区上移 + 7/7 勾完反馈（2026-11-23 16:22 轮 W
   })
 })
 
+describe('U-285 R-1：清单岛 60 秒 tick——闲置跨截止点后完成态翻 closed（2026-11-23 17:22 轮 W3）', () => {
+  const ALL_SEVEN = [
+    'registration-number',
+    'id-number',
+    'account-login',
+    'exam-site',
+    'exam-room',
+    'exam-time',
+    'spare-copies',
+  ]
+
+  it('tick 接线：照抄同页入口岛/横幅岛——60 秒 interval + 清理，完成态读 tick 的 now', () => {
+    const island = read('src/app/exam/guokao-checklist/guokao-checklist-island.tsx')
+    expect(island).toContain('useState<number | null>(null)')
+    expect(island).toContain('setInterval(() => setNow(Date.now()), 60_000)')
+    expect(island).toContain('clearInterval(timer)')
+    // 完成态必须读 tick 的 now，不再是渲染时裸 Date.now()：否则闲置跨
+    // 截止点后无重渲染，「可以去打印了」+ 锚点无限期停留（R1 同类假承诺）。
+    expect(island).toContain('guokaoChecklistCompletion([...done], now')
+    expect(island).not.toContain('guokaoChecklistCompletion([...done], Date.now())')
+    // 岛内有且仅有一个定时器，interval 恰为 60_000：滞后 ≤1 分钟，与两岛一致。
+    expect(island.match(/setInterval\(/g)?.length).toBe(1)
+    expect(island).not.toContain('setTimeout(')
+  })
+
+  it('不照抄两岛的挂载前 null：清单区须服务端直出，now 为 null 只回落 Date.now()', () => {
+    const island = read('src/app/exam/guokao-checklist/guokao-checklist-island.tsx')
+    expect(island).not.toContain('if (now === null) return null')
+    expect(island).toContain('now ?? Date.now()')
+    // 挂载前哨兵仍在：checked 为 null 按未勾选渲染（SSR 一致），见上方
+    // 「挂载前 SSR 一致」describe；此处只锁 tick 未动该哨兵。
+    expect(island).toContain('checked ?? []')
+  })
+
+  it('闲置跨截止点：tick 每次重算的两态——14:59 仍 ready+锚点，15:00 翻 closed、无锚点', async () => {
+    // 诚实边界：本仓库 vitest 环境是 node，无 jsdom/testing-library，
+    // renderToString 不跑 useEffect，tick 触发的重渲染无法在此直接观测。
+    // 本断言锁定 tick 每次重算都会得到的两端输出（与 R2 纯函数边界同一
+    // 门控）；真实浏览器闲置跨 15:00 后 60 秒内翻态，须 live browser 复核。
+    vi.spyOn(Date, 'now').mockReturnValue(NOV_29_1459_CST)
+    const before = await renderIsland(ALL_SEVEN)
+    expect(before).toContain('data-checklist-completion="ready"')
+    expect(before).toContain('7 项全部完成，可以去打印了')
+    expect(before).toContain(`href="#${GUOKAO_CHECKLIST_ENTRY_SECTION_ID}"`)
+
+    vi.spyOn(Date, 'now').mockReturnValue(NOV_29_1500_CST)
+    const after = await renderIsland(ALL_SEVEN)
+    expect(after).toContain('data-checklist-completion="closed"')
+    expect(after).toContain('7 项全部完成')
+    expect(after).not.toContain('可以去打印了')
+    expect(after).not.toContain('<a ')
+    expect(after).not.toContain('gwy.cpta.com.cn')
+  })
+})
+
 describe('U-285 C+D：清单页已接线——勾选岛 + 阶段横幅均已挂上，无静态 □ 残留', () => {
   it('page 含勾选岛与阶段横幅，不含静态 □ 占位符', () => {
     const page = read('src/app/exam/guokao-checklist/page.tsx')

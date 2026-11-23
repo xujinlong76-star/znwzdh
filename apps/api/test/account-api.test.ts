@@ -241,6 +241,27 @@ describe("账号生命周期 API", () => {
     expect(captured[0].to).toBe("dave@example.com");
   });
 
+  it("忘记密码：活跃重置令牌期间不重复发送重置邮件", async () => {
+    captured.length = 0;
+    await post("/api/account/register", {
+      username: "reset-cooldown",
+      email: "reset-cooldown@example.com",
+      password: "StrongPassw0rd!",
+    });
+    // 注册验证邮件与重置邮件分开统计。
+    captured.length = 0;
+    const first = await post("/api/account/forgot-password", {
+      email: "reset-cooldown@example.com",
+    });
+    const second = await post("/api/account/forgot-password", {
+      email: "reset-cooldown@example.com",
+    });
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(captured).toHaveLength(1);
+    expect(captured[0].subject).toContain("重置");
+  });
+
   it("重置密码：用邮件令牌设置新密码后可登录", async () => {
     captured.length = 0;
     await post("/api/account/register", {

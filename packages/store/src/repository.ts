@@ -840,6 +840,10 @@ async savedPluginEmbeddings(filter?: {
     return healthRepo.siteQualityOverview(this);
   }
 
+  async countSiteQualityAssessments(band?: SiteQualityResult["band"]): Promise<number> {
+    return healthRepo.countSiteQualityAssessments(this, band);
+  }
+
   /* ------------------------------ LLM 用量 ------------------------------ */
 
   /** 记录一次模型调用（成功/失败都记；失败静默，不影响调用结果） */

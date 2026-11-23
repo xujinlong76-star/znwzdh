@@ -28,7 +28,18 @@ import { EXAMS, GUOKAO_PORTAL_URL } from '../apps/web-overlay/src/lib/exam-calen
  */
 // nodeLinkCopy 的 5 个例外 label（其余带 url 节点文案均为「去官网打印准考证」）。
 // U-395：京考「缴费」是第 5 个例外（去官网缴费），军队文职缴费节点无 url 不渲染。
-const NON_PRINT_LABELS = ['报名', '缴费', '公共科目笔试', '江西成绩复核', '成绩查询']
+const NON_PRINT_LABELS = [
+  '报名',
+  '缴费',
+  '公共科目笔试',
+  '江西成绩复核',
+  '成绩查询',
+  '新生预报名',
+  '正式报名',
+  '考生报考',
+  '网上缴费',
+  '考试',
+]
 const JINGKAO_APPLY_URL = 'http://rsj.beijing.gov.cn/bm/ztzl/gwy/'
 const JINGKAO_NOTICE_URL =
   'https://www.beijing.gov.cn/gongkai/rsxx/gwyzk/202611/t20261109_4938196.html'

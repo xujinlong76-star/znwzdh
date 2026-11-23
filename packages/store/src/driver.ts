@@ -309,15 +309,6 @@ CREATE TABLE IF NOT EXISTS health_checks (
 CREATE INDEX IF NOT EXISTS health_checks_site_idx ON health_checks(site_id);
 CREATE INDEX IF NOT EXISTS health_checks_checked_idx ON health_checks(checked_at);
 
--- Site quality shadow assessment; latest snapshot per site, never used for live ranking.
-CREATE TABLE IF NOT EXISTS site_quality_assessments (
-  site_id TEXT PRIMARY KEY, version TEXT NOT NULL, evaluated_at BIGINT NOT NULL,
-  overall_score DOUBLE PRECISION, evidence_coverage DOUBLE PRECISION NOT NULL,
-  observed_dimensions INTEGER NOT NULL, risk_score DOUBLE PRECISION, band TEXT NOT NULL,
-  dimensions_json TEXT NOT NULL, updated_at BIGINT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS site_quality_assessments_band_idx ON site_quality_assessments(band);
-
 -- 站点质量评分（影子模式）：每站点/规则版本只保留最新快照，不参与线上排序。
 CREATE TABLE IF NOT EXISTS site_quality_assessments (
   site_id TEXT PRIMARY KEY, version TEXT NOT NULL, evaluated_at INTEGER NOT NULL,
@@ -1101,6 +1092,15 @@ CREATE TABLE IF NOT EXISTS health_checks (
 );
 CREATE INDEX IF NOT EXISTS health_checks_site_idx ON health_checks(site_id);
 CREATE INDEX IF NOT EXISTS health_checks_checked_idx ON health_checks(checked_at);
+
+-- Site quality shadow assessment; latest snapshot per site, never used for live ranking.
+CREATE TABLE IF NOT EXISTS site_quality_assessments (
+  site_id TEXT PRIMARY KEY, version TEXT NOT NULL, evaluated_at BIGINT NOT NULL,
+  overall_score DOUBLE PRECISION, evidence_coverage DOUBLE PRECISION NOT NULL,
+  observed_dimensions INTEGER NOT NULL, risk_score DOUBLE PRECISION, band TEXT NOT NULL,
+  dimensions_json TEXT NOT NULL, updated_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS site_quality_assessments_band_idx ON site_quality_assessments(band);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id BIGSERIAL PRIMARY KEY, actor TEXT NOT NULL, actor_kind TEXT NOT NULL DEFAULT 'user',

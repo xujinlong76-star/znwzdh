@@ -127,12 +127,11 @@ export function evaluateSiteQuality(
   }
 
   // 输出副本，避免调用方之后修改输入对象，导致已生成结果被静默篡改。
-  const snapshot = Object.fromEntries(
-    SITE_QUALITY_DIMENSIONS.map((dimension) => {
-      const item = dimensions[dimension];
-      return [dimension, { score: item.score, evidence: [...item.evidence] }];
-    }),
-  ) as SiteQualityAssessments;
+  const snapshot = {} as SiteQualityAssessments;
+  for (const dimension of SITE_QUALITY_DIMENSIONS) {
+    const item = dimensions[dimension];
+    snapshot[dimension] = { score: item.score, evidence: [...item.evidence] };
+  }
 
   return {
     version: SITE_QUALITY_VERSION,

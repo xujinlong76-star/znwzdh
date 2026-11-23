@@ -173,6 +173,33 @@ describe("搬家漏网：可灵AI 新址与定价覆盖表键一致", () => {
   });
 });
 
+describe("搬家漏网：Codeup 新址与定价覆盖表键一致（2026-11-24 03:22 轮 W3）", () => {
+  it("双份 navigation.json 均为新址，无旧址残留", () => {
+    for (const rel of [
+      "apps/web-overlay/src/navsphere/content/navigation.json",
+      "apps/web/src/navsphere/content/navigation.json",
+    ]) {
+      const nav = JSON.parse(read(rel)) as unknown;
+      const text = JSON.stringify(nav);
+      // 旧址 codeup.aliyun.com 200 但落地阿里云登录页；新址为公开介绍页
+      // （2026-11-24 curl 实测 200、无登录跳转，标题“云效代码管理 Codeup”）。
+      // 按 href 字段断言：Codeup 的 icon 字段仍为 codeup.aliyun.com/favicon.ico，
+      // 故不能用裸 URL 子串断言“无旧址残留”。
+      expect(text).toContain('"href":"https://www.aliyun.com/product/yunxiao/codeup"');
+      expect(text).not.toContain('"href":"https://codeup.aliyun.com"');
+    }
+  });
+
+  it("pricing-overrides 键为 aliyun.com/product/yunxiao/codeup（去 www 的 host + path）", () => {
+    const overrides = JSON.parse(read("packages/core/src/pricing-overrides.json")) as Record<
+      string,
+      { pricing: string }
+    >;
+    expect(overrides["aliyun.com/product/yunxiao/codeup"]?.pricing).toBe("freemium");
+    expect(overrides["codeup.aliyun.com"]).toBeUndefined();
+  });
+});
+
 describe("B13-余 §9 两行核对（第 16 轮）：洛伦兹双模型 + 镜像机制", () => {
   it("hyperbolic.ts 双模型并存：庞加莱与洛伦兹函数均导出", () => {
     const src = read("packages/core/src/hyperbolic.ts");

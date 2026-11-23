@@ -457,6 +457,8 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   // 'ui.shadcn.com'。'leetcode.cn' 与 'leetcode.com' 各自建键、互不干扰。
   // 全库 383 站核对：本批 19 个 map 键各只命中 1 站，无后缀串站
   // （Gitee AI 的 href 是 moark.com，不在 gitee.com 名下）。
+  // 2026-11-24 03:22 轮 W3：Codeup href 迁至 www.aliyun.com/product/yunxiao/codeup，
+  // 'codeup.aliyun.com' 键随之删除（死键）、改走下方标题规则；本批 map 键现为 18 个。
   // Java 官方文档：站方 favicon 即红色 Oracle 椭圆 O 标（120×120），
   // 不是 Java 咖啡杯；按“官网在用图标”原样接线，未擅自换标，只记录。
   // ISO/IEC 标准：iso.svg 为白字透明底（fill 仅 #fff，无底色），
@@ -467,7 +469,8 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   'gitee.com=giteep',
   'gitlab.com=gitlabp',
   'gitcode.com=gitcodep',
-  'codeup.aliyun.com=codeupp',
+  // 2026-11-24 03:22 轮 W3：Codeup href 已迁至 www.aliyun.com/product/yunxiao/codeup，
+  // 'codeup.aliyun.com' 键随之删除（死键）、改走下方标题规则；aliyun.com 为 4 站共享域，裸域键禁加。
   'bitbucket.org=bitbucketp',
   'juejin.cn=juejinp',
   'csdn.net=csdnp',
@@ -1367,6 +1370,13 @@ export function resolveSiteIcon(
     // 来源：www.gov.cn 首页声明的 trs_favicon.ico（内容实为 PNG 16×16，
     // 按内容解码落盘 gov.png，原样不放大，见 C12 测试事实钉死）。
     if (lowerTitle.includes('中国政府网')) return '/brand-icons/gov.png'
+    // 2026-11-24 03:22 轮 W3：Codeup。旧 href codeup.aliyun.com 200 但落地
+    // 阿里云登录页；新 href 为 www.aliyun.com/product/yunxiao/codeup 公开
+    // 介绍页（curl 实测 200、无登录跳转，标题“云效代码管理 Codeup”）。
+    // aliyun.com 为 4 站共享域（Codeup / 通义灵码 / 通义千问 / 阿里云官网），
+    // 裸域键禁加（见 C12 不串站断言）；子串 'codeup' 在双份 navigation.json
+    // 标题中仅命中 Codeup 一站，故走标题规则，必须放在 map 精确查找之前。
+    if (lowerTitle.includes('codeup')) return '/brand-icons/codeup.png'
 
     if (LOCAL_LOGO_MAP[hostname]) {
       return LOCAL_LOGO_MAP[hostname]!

@@ -228,10 +228,13 @@ describe('resolveSiteIcon（图标修复 C 类第 12 批）', () => {
     expect(resolveSiteIcon('https://www.12333.gov.cn/', '12333 人社服务', undefined)).toBe('/brand-icons/12333.jpg')
   })
 
-  it('事实钉死：aliyun.com 键不串站（3 个子域站各有精确键）', () => {
+  it('事实钉死：aliyun.com 键不串站（Codeup 改走标题规则，其余子域站各有精确键）', () => {
     expect(resolveSiteIcon('https://qianwen.aliyun.com', '通义千问', 'https://qianwen.aliyun.com/favicon.ico')).toBe('/brand-icons/qwen.svg')
     expect(resolveSiteIcon('https://lingma.aliyun.com', 'Tongyi Lingma', 'https://lingma.aliyun.com/favicon.ico')).toBe('/brand-icons/lingma.png')
-    expect(resolveSiteIcon('https://codeup.aliyun.com', 'Codeup', 'https://codeup.aliyun.com/favicon.ico')).toBe('/brand-icons/codeup.png')
+    // 2026-11-24 03:22 轮 W3：Codeup href 迁至 www.aliyun.com/product/yunxiao/codeup
+    // 公开介绍页（旧 codeup.aliyun.com 落地阿里云登录页）；'codeup.aliyun.com' map 键已删，
+    // 改走标题规则（'codeup' 在双份 navigation.json 标题中仅命中一站）。
+    expect(resolveSiteIcon('https://www.aliyun.com/product/yunxiao/codeup', 'Codeup', 'https://codeup.aliyun.com/favicon.ico')).toBe('/brand-icons/codeup.png')
     expect(resolveSiteIcon('https://www.aliyun.com/', 'Alibaba Cloud', 'https://www.aliyun.com/favicon.ico')).toBe('/brand-icons/aliyun.png')
   })
 

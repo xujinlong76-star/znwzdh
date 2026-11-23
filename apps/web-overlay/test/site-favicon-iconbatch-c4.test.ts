@@ -75,7 +75,7 @@ const CASES: Array<{ url: string; title: string; customIcon?: string; expected: 
   { url: 'https://github.com/trending', title: 'GitHub Trending', customIcon: 'https://github.com/favicon.ico', expected: '/brand-icons/github-trending.svg' },
   { url: 'https://gitlab.com', title: 'GitLab', customIcon: 'https://gitlab.com/favicon.ico', expected: '/brand-icons/gitlab.png' },
   { url: 'https://gitcode.com', title: 'GitCode', customIcon: 'https://gitcode.com/favicon.ico', expected: '/brand-icons/gitcode.png' },
-  { url: 'https://codeup.aliyun.com', title: 'Codeup', customIcon: 'https://codeup.aliyun.com/favicon.ico', expected: '/brand-icons/codeup.png' },
+  { url: 'https://www.aliyun.com/product/yunxiao/codeup', title: 'Codeup', customIcon: 'https://codeup.aliyun.com/favicon.ico', expected: '/brand-icons/codeup.png' },
   // Bitbucket / 掘金 / CSDN / 力扣 LeetCode / 牛客网 的 customIcon 均含 favicon
   { url: 'https://bitbucket.org', title: 'Bitbucket', customIcon: 'https://bitbucket.org/favicon.ico', expected: '/brand-icons/bitbucket.png' },
   { url: 'https://juejin.cn', title: '掘金', customIcon: 'https://juejin.cn/favicon.ico', expected: '/brand-icons/juejin.png' },

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { EXAMS, GUOKAO_PORTAL_URL } from '../apps/web-overlay/src/lib/exam-calendar'
+import { examNodeLinkCopy } from '../apps/web-overlay/src/lib/exam-node-link-copy'
 
 /**
  * U-124 /exam 节点外链文案按节点类型映射：点按回归（E1–E3）。
@@ -26,20 +27,6 @@ import { EXAMS, GUOKAO_PORTAL_URL } from '../apps/web-overlay/src/lib/exam-calen
  * 页内只有 tracker 渲染「（新窗口打开）」aria-label（提醒卡不渲染），
  * 派生口径与断言口径一致。
  */
-// nodeLinkCopy 的 5 个例外 label（其余带 url 节点文案均为「去官网打印准考证」）。
-// U-395：京考「缴费」是第 5 个例外（去官网缴费），军队文职缴费节点无 url 不渲染。
-const NON_PRINT_LABELS = [
-  '报名',
-  '缴费',
-  '公共科目笔试',
-  '江西成绩复核',
-  '成绩查询',
-  '新生预报名',
-  '正式报名',
-  '考生报考',
-  '网上缴费',
-  '考试',
-]
 const JINGKAO_APPLY_URL = 'http://rsj.beijing.gov.cn/bm/ztzl/gwy/'
 const JINGKAO_NOTICE_URL =
   'https://www.beijing.gov.cn/gongkai/rsxx/gwyzk/202611/t20261109_4938196.html'
@@ -138,18 +125,19 @@ test.describe('U-124 /exam 节点外链点按回归', () => {
       (node) => node.portalUrl,
     )
     const expectedTotal = linkedNodes.length + portalNodes.length
-    const expectedPrint = linkedNodes.filter(
-      (node) => !NON_PRINT_LABELS.includes(node.label),
+    // 与 UI 共用同一份纯文案映射，数据新增/映射扩展时不会出现两套规则漂移。
+    const expectedPrintFromCopy = linkedNodes.filter(
+      (node) => examNodeLinkCopy(node.label).text === '去官网打印准考证',
     ).length
     // 兜底：数据层若被清空，派生期望 0 会让断言空过，须先拦住。
     expect(expectedTotal).toBeGreaterThan(0)
-    expect(expectedPrint).toBeGreaterThan(0)
+    expect(expectedPrintFromCopy).toBeGreaterThan(0)
     const links = page.locator('a[aria-label$="（新窗口打开）"]')
     await expect(links).toHaveCount(expectedTotal)
     const texts = await links.evaluateAll((els) =>
       els.map((el) => el.textContent?.trim() ?? ''),
     )
-    expect(texts.filter((t) => t === '去官网打印准考证')).toHaveLength(expectedPrint)
+    expect(texts.filter((t) => t === '去官网打印准考证')).toHaveLength(expectedPrintFromCopy)
     // U-426：多出的 1 条须确为国考准考证行的门户备用链（补丁 T9 的 E2E 版）。
     const portalLink = page.getByRole('link', {
       name: '准考证打印专题网站门户入口（新窗口打开）',

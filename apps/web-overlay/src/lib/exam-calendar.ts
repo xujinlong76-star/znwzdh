@@ -783,6 +783,64 @@ export const EXAMS: ExamInfo[] = [
     note: '统考 10 月 24–25 日已结束，条目存在只为承载成绩节点；成绩复核无全省统一窗口，各市自考办在成绩公布后 10 个工作日内安排具体受理时间与地点，以所在市公布为准，须本人持身份证、准考证到参加考试所在市自考办申请，逾期不予受理，仅限漏评、漏记分、错记分、加错分四种情形。',
   },
   {
+    id: 'guangdong-zikao-2027-01',
+    name: '2027 年 1 月广东省高等教育自学考试',
+    shortName: '广东自考·1月',
+    tagline: '新生报名 11 月 24 日开始',
+    examDateLabel: '1 月 9–10 日',
+    startISO: '2027-01-09',
+    endISO: '2027-01-10',
+    // 广东自考 2027 年 1 月考期（C4，2026-11-23 核实）：广东省教育考试院
+    // 《广东省 2027 年 1 月高等教育自学考试网上报名报考须知》（省自考委办，
+    // 2026-11-10，eea.gd.gov.cn/zxks/content/post_4977287.html）原文；
+    // 考试 2027-01-09–10 由粤考办〔2026〕16 号双重确认。新考期单独立条目，
+    // 旧 guangdong-zikao（2026 年 10 月考期成绩节点）与 PEAK 守卫键一字不动。
+    // 节点只有日期字段（ExamNode 无时刻字段），10:00 / 12:00 / 14:00 /
+    // 17:00 四个时刻级边界只进文件末尾的 guangdongZikaoSignupPhase，不进节点；
+    // 打印准考证（“考试前 10 天内”）与成绩（“预计 2027 年 2 月”）均无确切日，
+    // 不设节点。全部节点挂 GUANGDONG_ZIKAO_SCORE_URL（同一系统既是报名报考
+    // 入口也是成绩查询入口；U-87 规则：须知原文给出可直接登录办理的线上系统
+    // URL 才挂链）。
+    nodes: [
+      {
+        label: '新生预报名',
+        detail: '11 月 24 日 10:00 至 11 月 27 日 12:00：无准考证号的新生先预报名（录入信息、手机绑定、相片采集），审核通过后才能正式报名；预报名号仅当次有效',
+        startISO: '2026-11-24',
+        endISO: '2026-11-27',
+        url: GUANGDONG_ZIKAO_SCORE_URL,
+      },
+      {
+        label: '正式报名',
+        detail: '11 月 24 日 10:00 至 11 月 27 日 17:00：凭预报名号确认，成功后获得唯一准考证号；11 月 28 日后不再受理线下正式报名',
+        startISO: '2026-11-24',
+        endISO: '2026-11-27',
+        url: GUANGDONG_ZIKAO_SCORE_URL,
+      },
+      {
+        label: '考生报考',
+        detail: '12 月 1 日 14:00 至 12 月 4 日 17:00：每次考试只限报考一次、只能选一个考区、最多 4 门；一经确认不得增加、删减、更改',
+        startISO: '2026-12-01',
+        endISO: '2026-12-04',
+        url: GUANGDONG_ZIKAO_SCORE_URL,
+      },
+      {
+        label: '网上缴费',
+        detail: '12 月 2 日 10:00 至 12 月 5 日 17:00：笔试课程每科 52 元；缴费后须再次登录确认缴费状态为“已缴费”，报考费一旦缴纳成功则不予退还',
+        startISO: '2026-12-02',
+        endISO: '2026-12-05',
+        url: GUANGDONG_ZIKAO_SCORE_URL,
+      },
+      {
+        label: '考试',
+        detail: '2027 年 1 月 9–10 日',
+        startISO: '2027-01-09',
+        endISO: '2027-01-10',
+        url: GUANGDONG_ZIKAO_SCORE_URL,
+      },
+    ],
+    note: '新生先报名拿准考证号，12 月 1 日 14:00 起报考选课；报考最多 4 门、只能选一个考区，一经确认不得增减更改，缴费不予退还。',
+  },
+  {
     id: 'shanghai-zikao',
     name: '2026 年下半年上海市高等教育自学考试',
     shortName: '上海自考',
@@ -1023,7 +1081,7 @@ export function todayFollowUpNodes(
 
 /** 最近一场：未结束的考试里首考日最早的；多日考试末日仍算未结束
  *（考研 12-19–20：12-20 当天条带仍在，与 /exam 倒计时岛「进行中 ·
- * 第 2 天」一致）；十一场全结束则返回 undefined（调用方渲染空态条带）。
+ * 第 2 天」一致）；十二场全结束则返回 undefined（调用方渲染空态条带）。
  * 排序按首考日（firstExamDay），不是公共科目首日 startISO：有加试的
  * 考试（国考首考日 11-28 < startISO 11-29；京考首考日 12-05 < startISO
  * 12-06）应按考生实际最早开考日排。同日首考平局时数组在前者胜出
@@ -1278,7 +1336,7 @@ export function urgencyTier(
 
 /**
  * 时钟卡倒计时行（纯派生）：最近一场未结束考试的一行文案 + 紧迫档位。
- * 十一场全结束返回 undefined（调用方隐藏该行，不写未公布日期）。
+ * 十二场全结束返回 undefined（调用方隐藏该行，不写未公布日期）。
  * 文案与 /exam 倒计时岛同口径：首考日当天「今天国考 · 专业科目 14:00
  * 开考」（国考首考日 11-28 设了 firstDayLabel）、进行中「考研进行中 ·
  * 第 2 天」、首考日前一天「明天国考（专业科目先考 11 月 28 日）」
@@ -1453,4 +1511,44 @@ export function admissionReminderFor(
     url: GUOKAO_ADMISSION_URL,
     portalUrl: GUOKAO_PORTAL_URL,
   }
+}
+
+/**
+ * 广东自考 2027 年 1 月报名报考门控（C4，定稿见
+ * evolution-round-2026-11-23-0922-w2.md §4.2；事实源为省考试院 2026-11-10
+ * 报名报考须知 post_4977287）。
+ *
+ * 七相位（北京时间；时刻级边界含整点本身，即 10:00:00 即进入该相位、
+ * 17:00:00 即离开，与 guokaoAdmissionPhase 的 15:00 边界同款语义）：
+ *  - < 11-24 10:00：null（不渲染；11-23 不渲染，明天 10:00 自动出现）；
+ *  - 11-24 10:00 – 11-27 12:00：'signup'（新生报名进行中）；
+ *  - 11-27 12:00 – 11-27 17:00：'signup-last-call'（报名末班：预报名已截止）；
+ *  - 11-27 17:00 – 12-01 14:00：'waiting'（等报考；弱提醒、无 CTA，D1 定稿）；
+ *  - 12-01 14:00 – 12-04 17:00：'apply'（报考进行中；12-02 10:00 缴费开始不切相位）；
+ *  - 12-04 17:00 – 12-05 17:00：'pay-last-call'（缴费末班：报考已截止）；
+ *  - ≥ 12-05 17:00：null（整卡消失）。
+ * 时刻判定只发生在这里（与 guokaoAdmissionPhase 同款做法）；不给 ExamNode
+ * 加时刻字段，不用 daysUntil 算时刻级截止，不做天数倒计时。
+ */
+export type GuangdongZikaoSignupPhase =
+  | 'signup'
+  | 'signup-last-call'
+  | 'waiting'
+  | 'apply'
+  | 'pay-last-call'
+
+export function guangdongZikaoSignupPhase(nowMs: number = Date.now()): GuangdongZikaoSignupPhase | null {
+  const signupStart = shanghaiMidnightMs('2026-11-24') + 10 * 3600 * 1000
+  const preRegDeadline = shanghaiMidnightMs('2026-11-27') + 12 * 3600 * 1000
+  const signupDeadline = shanghaiMidnightMs('2026-11-27') + 17 * 3600 * 1000
+  const applyStart = shanghaiMidnightMs('2026-12-01') + 14 * 3600 * 1000
+  const applyDeadline = shanghaiMidnightMs('2026-12-04') + 17 * 3600 * 1000
+  const payDeadline = shanghaiMidnightMs('2026-12-05') + 17 * 3600 * 1000
+  if (nowMs < signupStart) return null
+  if (nowMs < preRegDeadline) return 'signup'
+  if (nowMs < signupDeadline) return 'signup-last-call'
+  if (nowMs < applyStart) return 'waiting'
+  if (nowMs < applyDeadline) return 'apply'
+  if (nowMs < payDeadline) return 'pay-last-call'
+  return null
 }

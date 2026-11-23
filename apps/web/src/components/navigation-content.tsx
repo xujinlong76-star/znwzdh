@@ -52,6 +52,13 @@ const ExamStripContent = dynamic(
   () => import('@/components/home-exam-strip').then((m) => m.HomeExamStrip),
   { ssr: false, loading: () => null },
 )
+// C4 广东自考 2027 年 1 月报名报考卡（2026-11-23）：首屏 JS 增量 0 字节
+// （dynamic ssr:false，与 HomeExamStrip 同款 U-358 模式）；门控与文案见
+// guangdong-zikao-signup-card.tsx，窗口 11-24 10:00–12-05 17:00，窗口外渲染 null。
+const GuangdongZikaoSignupCardContent = dynamic(
+  () => import('@/components/guangdong-zikao-signup-card').then((m) => m.GuangdongZikaoSignupCard),
+  { ssr: false, loading: () => null },
+)
 const HandoffCardWithCloudContent = dynamic(
   () => import('@/components/handoff-card-with-cloud').then((m) => m.HandoffCardWithCloud),
   { ssr: false, loading: () => null },
@@ -1295,6 +1302,11 @@ export function NavigationContent({
           <HomeSubtitleHint
             tagline={homeControl.basic.tagline || siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
           />
+
+          {/* C4 广东自考 2027 年 1 月报名报考卡（2026-11-23）：HomeSubtitleHint
+              之后、胶囊行之前，viewMode !== 'workbench' 守卫内；C1 卡若落地在上、
+              C4 在下（D4，W2 §6 建议顺序）。窗口外岛内渲染 null，不留空壳。 */}
+          {viewMode !== 'workbench' ? <GuangdongZikaoSignupCardContent /> : null}
 
           {/* 首屏瘦身：工作区胶囊行与运营胶囊行合并为一行（HomeCapsuleRow，
               2026-11-20）：原来上下两行（工作区 ~63px + 运营 ~46px）压成单行

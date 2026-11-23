@@ -31,6 +31,13 @@ export interface GuokaoChecklistEntryState {
   closed: boolean
 }
 
+/**
+ * 入口区 section 的锚点 id（2026-11-23 16:22 轮 W3 R2）。
+ * 清单岛 7/7 完成态的锚点链到这里；定义一次、两处引用，不各自写字面量。
+ * 清单岛只引用该 id 字符串，不读入口岛内部——两岛零耦合。
+ */
+export const GUOKAO_CHECKLIST_ENTRY_SECTION_ID = 'guokao-checklist-entry'
+
 export function guokaoChecklistEntry(nowMs: number): GuokaoChecklistEntryState {
   return { closed: isGuokaoAdmissionClosed(nowMs) }
 }
@@ -39,7 +46,11 @@ export function guokaoChecklistEntry(nowMs: number): GuokaoChecklistEntryState {
 export function GuokaoChecklistEntryView({ nowMs }: { nowMs: number }) {
   const { closed } = guokaoChecklistEntry(nowMs)
   return (
-    <section aria-labelledby="guokao-checklist-entry-heading">
+    <section
+      id={GUOKAO_CHECKLIST_ENTRY_SECTION_ID}
+      aria-labelledby="guokao-checklist-entry-heading"
+      className="scroll-mt-20"
+    >
       <h2 id="guokao-checklist-entry-heading" className="text-lg font-bold text-foreground">
         {closed ? '准考证打印已截止' : '去打印准考证'}
       </h2>

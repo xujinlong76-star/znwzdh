@@ -17,6 +17,7 @@ import {
   type GuokaoChecklistGroup,
   type GuokaoChecklistItem,
 } from './guokao-checklist'
+import { isGuokaoAdmissionClosed } from './exam-calendar'
 
 export type { GuokaoChecklistGroup, GuokaoChecklistItem }
 
@@ -54,4 +55,30 @@ export function toggleGuokaoChecklist(checked: string[], id: string): string[] {
 export function groupCheckedCount(checked: string[], group: GuokaoChecklistGroup): number {
   const done = new Set(checked)
   return group.items.filter((i) => done.has(i.id)).length
+}
+
+/**
+ * 清单完成态纯决策（2026-11-23 16:22 轮 W3 R2：7/7 勾完反馈）。
+ *
+ *  - done 按 parseGuokaoChecklist 收敛后计数（未知 id 丢弃、去重），
+ *    不直接数原数组长度。
+ *  - complete 只认 done === total（7 项）；未满一律不带 closed 字段——
+ *    岛内渲染与 nowMs 无关，服务端/挂载前输出不受时刻影响，水合无错位。
+ *  - 满 7 项才判 closed：复用 isGuokaoAdmissionClosed（与
+ *    guokaoAdmissionPhase() 同一门控、同一截止常量 GUOKAO_ADMISSION_DEADLINE_MS，
+ *    不写新日期字面量）。closed 时完成态不许写「可以去打印」、不许链打印
+ *    系统——与 R1 同一诚实口径。
+ */
+export type GuokaoChecklistCompletion =
+  | { complete: false; done: number; total: number }
+  | { complete: true; done: number; total: number; closed: boolean }
+
+export function guokaoChecklistCompletion(
+  checked: string[],
+  nowMs: number,
+): GuokaoChecklistCompletion {
+  const done = parseGuokaoChecklist(checked).length
+  const total = GUOKAO_CHECKLIST_ITEMS.length
+  if (done < total) return { complete: false, done, total }
+  return { complete: true, done, total, closed: isGuokaoAdmissionClosed(nowMs) }
 }

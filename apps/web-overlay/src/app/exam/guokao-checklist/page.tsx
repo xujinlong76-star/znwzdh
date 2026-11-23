@@ -151,6 +151,15 @@ export default async function GuokaoChecklistPage() {
           </p>
         </div>
 
+        {/* 入口区（R2，2026-11-23 16:22 轮 W3：由清单区之后上移到此——
+            截止警示之后、清单区之前；本页唯一目标动作是「去打印」，不许被
+            三组清单挡在两屏之后。仍是客户端岛 GuokaoChecklistEntry，与阶段
+            横幅同款 60 秒 tick：截止后主按钮置灰 disabled、不再链向已关的
+            打印系统；主按钮只挂打印系统直链（读常量，不写死域名），门户只作
+            文字链，不作主按钮目标，两链接均写 http——以上 G8 口径现由岛组件
+            承接。岛内 7/7 完成态的锚点链到本区 section id。 */}
+        <GuokaoChecklistEntry />
+
         {/* 清单区：A/B/C 三组勾选岛（C 步 W3，照抄 U-237 交互）。 */}
         <section aria-labelledby="guokao-checklist-heading">
           <h2 id="guokao-checklist-heading" className="text-lg font-bold text-foreground">
@@ -162,13 +171,6 @@ export default async function GuokaoChecklistPage() {
           </p>
           <GuokaoChecklistIsland />
         </section>
-
-        {/* 入口区（2026-11-23 15:22 轮 W3 R1：由服务端静态区改为客户端岛
-            GuokaoChecklistEntry，与阶段横幅同款 60 秒 tick）：截止后主按钮
-            置灰 disabled、不再链向已关的打印系统；主按钮只挂打印系统直链
-            （读常量，不写死域名），门户只作文字链，不作主按钮目标，
-            两链接均写 http——以上 G8 口径现由岛组件承接。 */}
-        <GuokaoChecklistEntry />
 
         {/* 时间对照表（读国考节点原文）+ 入场新规 */}
         <section aria-labelledby="guokao-checklist-time-heading">

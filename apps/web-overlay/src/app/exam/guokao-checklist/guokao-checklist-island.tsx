@@ -8,7 +8,9 @@ import {
 import {
   GUOKAO_CHECKLIST_ITEMS,
   groupCheckedCount,
+  guokaoChecklistCompletion,
 } from '@/lib/guokao-checklist-state'
+import { GUOKAO_CHECKLIST_ENTRY_SECTION_ID } from '@/components/guokao-checklist-entry'
 
 /**
  * 国考准考证打印前清单勾选岛（U-285，Spec §4.2 C）。
@@ -34,6 +36,10 @@ export function GuokaoChecklistIsland() {
   // 挂载前哨兵：按未勾选渲染，与服务端直出一致。
   const done = new Set(checked ?? [])
   const totalDone = GUOKAO_CHECKLIST_ITEMS.filter((i) => done.has(i.id)).length
+  // R2 完成态：纯函数决策。未满时返回的 complete:false 不带 closed，
+  // 渲染与 nowMs 无关——服务端/挂载前 totalDone 恒为 0，该分支永不进入
+  // SSR 输出，水合无错位；挂载后用户勾满才按客户端时刻判截止。
+  const completion = guokaoChecklistCompletion([...done], Date.now())
 
   return (
     <div>
@@ -108,6 +114,34 @@ export function GuokaoChecklistIsland() {
           )
         })}
       </div>
+      {/* R2 完成态：7/7 才出现。未截止：给下一步推力——文案 + 锚点跳回
+          上方的打印入口（R2 已把入口区移到清单区之前，一跳即达）；
+          已截止：只认完成，不写「可以去打印」、不链打印系统。
+          锚点是原生 <a>：label 之外、组卡片之外，不嵌进任何 label；
+          role=status（非紧急，不用 alert）。 */}
+      {completion.complete ? (
+        <div
+          role="status"
+          data-checklist-completion={completion.closed ? 'closed' : 'ready'}
+          className="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3.5"
+        >
+          <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+            {completion.closed
+              ? `${completion.done} 项全部完成`
+              : `${completion.done} 项全部完成，可以去打印了`}
+          </p>
+          {completion.closed ? null : (
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              <a
+                href={`#${GUOKAO_CHECKLIST_ENTRY_SECTION_ID}`}
+                className="font-medium text-sky-700 hover:underline dark:text-sky-400"
+              >
+                去打印准考证 ↑
+              </a>
+            </p>
+          )}
+        </div>
+      ) : null}
       <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
         {GUOKAO_CHECKLIST_SOURCE_NOTE}
       </p>

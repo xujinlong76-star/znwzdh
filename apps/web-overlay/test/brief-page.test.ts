@@ -177,3 +177,27 @@ describe('待读岛守卫', () => {
     expect(row).toContain('bg-rose-500/10')
   })
 })
+
+describe('「常去却未收藏」岛守卫', () => {
+  it('/brief 在今日重温之后、待读岛之前挂常去却未收藏岛，SSR 壳本身不带用户数据', () => {
+    const page = read('src/app/brief/page.tsx')
+    expect(page).toContain("import BriefFrequentUnfavorited from './brief-frequent-unfavorited'")
+    expect(page).toContain('<BriefFrequentUnfavorited />')
+    // 两岛并排、同口径：重温（已收藏却没打开）在上，常去却未收藏在下，再下是待读岛
+    expect(page.indexOf('<BriefFrequentUnfavorited />')).toBeGreaterThan(page.indexOf('<BriefResurface />'))
+    expect(page.indexOf('<BriefTriage />')).toBeGreaterThan(page.indexOf('<BriefFrequentUnfavorited />'))
+    const island = read('src/app/brief/brief-frequent-unfavorited.tsx')
+    expect(island).toContain("'use client'")
+    // 无建议或收藏未就绪时安静消失，不拿空盒子占版面
+    expect(island).toContain('if (!favorites.ready || picks.length === 0) return null')
+    // 频率信号读本机快照，不用无 count 的合并 visits
+    expect(island).toContain('readOfflineVisits(OFFLINE_RECENT_LIMIT)')
+    expect(island).toContain('selectFrequentUnfavoritedVisits')
+    // 一键收藏走现有 favorites.toggle
+    expect(island).toContain('favorites.toggle({')
+    // 口径写清是本机记录，不谎称跨设备准确
+    expect(island).toContain('按本机记录算')
+    // 岛不调任何 /api，不新增请求
+    expect(island).not.toContain('/api/')
+  })
+})

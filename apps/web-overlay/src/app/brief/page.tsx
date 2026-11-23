@@ -26,6 +26,7 @@ import { formatHotValue } from '@/lib/format-hot-value'
 import { formatFreshness, formatFullTimestamp, formatHotlistSubline, STALE_ESCALATION_MS } from '@/lib/relative-time'
 import BriefWatch from './brief-watch'
 import BriefResurface from './brief-resurface'
+import BriefFrequentUnfavorited from './brief-frequent-unfavorited'
 import HotlistFreshness from './hotlist-freshness'
 import BriefTriage from './brief-triage'
 import DailyFocus from '@/components/daily-focus'
@@ -232,6 +233,8 @@ export default async function BriefPage() {
             <BriefWatch />
 
             <BriefResurface />
+
+            <BriefFrequentUnfavorited />
 
             <BriefTriage />
 

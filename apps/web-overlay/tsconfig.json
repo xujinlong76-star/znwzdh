@@ -58,20 +58,17 @@
     "**/*.tsx",
     ".vercel/output/static/types/**/*.ts",
     "next-env.d.ts",
-    // 构建目录的注入类型一律用**单一通配**覆盖（评审 P2-13）：此前 13 个 .next* 目录
-    // 各自具名列出，等于把构建期噪音写进事实源 tsconfig —— 新增一个构建目录就要同步
-    // 改 overlay 与 web 两份，还会在镜像比对里制造假差异。`.next*` 同时匹配 .next、
-    // .next-e2e、.next-prod、.next-gate、.next-e2e-local 等全部现役目录。
+    // 构建目录的注入类型一律用**单一通配**覆盖（2026-11-23 根治）：
+    // `.next*` 匹配 .next、.next-e2e、.next-debug、.next-final 等全部变体。
+    // 具名条目会让 Next.js 每次换 NEXT_DIST_DIR 时自动修改 tsconfig，
+    // 导致 overlay 与 web 镜像漂移——只用通配符，一劳永逸。
     ".next*/types/**/*.ts",
     ".next*/dev/types/**/*.ts",
-    ".next-e2e-local/types/**/*.ts",
-    ".next-e2e-local/dev/types/**/*.ts",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts",
-    ".next-e2e/types/**/*.ts",
-    ".next-e2e/dev/types/**/*.ts"
+    ".next*/types/**/*.ts",
+    ".next*/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    ".next*/**"
   ]
 }

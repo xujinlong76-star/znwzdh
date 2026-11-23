@@ -96,7 +96,8 @@ import {
 import { useMergedVisits } from '@/lib/resurface-visits'
 import { describeResurfaced, daysSinceOpen, latestVisitsById, selectStaleFavorites, staleBadgeLabel } from '@/lib/resurface'
 import { OFFLINE_RECENT_LIMIT, readOfflineVisits, recordOfflineVisit, type RecentVisit } from '@/lib/offline-recent'
-import { FREQUENT_UNFAVORITED_LIMIT, selectFrequentUnfavoritedVisits } from '@/lib/frequent-unfavorited'
+import { FREQUENT_UNFAVORITED_DISMISSED_KEY, FREQUENT_UNFAVORITED_LIMIT, filterDismissedVisits, selectFrequentUnfavoritedVisits } from '@/lib/frequent-unfavorited'
+import { addDismissedId, parseDismissedIds, serializeDismissedIds } from '@/lib/smart-collections'
 import { encryptVault, decryptVault, type EncryptedVaultPayload } from '@/lib/vault'
 import { UserCenterNav } from '@/components/user-center/user-center-nav'
 import { StarredPluginsSection } from './starred-plugins-section'
@@ -177,6 +178,27 @@ function writeLocalFolders(folders: LocalFolder[]): void {
     window.localStorage.setItem(LOCAL_FOLDERS_KEY, serializeLocalFolders(folders))
   } catch {
     // 写不进去只丢分组能力，不影响收藏本身
+  }
+}
+
+/**
+ * 「常去却未收藏」不再提示的本机持久化（R13 修法 a，照抄
+ * smart-collections-panel 的 read/writeDismissedIds）：键与 /brief 岛共用，
+ * 值是站 id 数组。读 / 写失败只丢「不再提示」，不影响建议本身。
+ */
+function readDismissedFrequentIds(): string[] {
+  try {
+    return parseDismissedIds(window.localStorage.getItem(FREQUENT_UNFAVORITED_DISMISSED_KEY))
+  } catch {
+    return []
+  }
+}
+
+function writeDismissedFrequentIds(ids: readonly string[]): void {
+  try {
+    window.localStorage.setItem(FREQUENT_UNFAVORITED_DISMISSED_KEY, serializeDismissedIds(ids))
+  } catch {
+    // 写不进去只丢「不再提示」，不影响建议本身
   }
 }
 
@@ -288,7 +310,13 @@ export default function FavoritesPage() {
   // 是 ResurfaceVisitLike（无 count），登录用户另一设备的高频点击不进榜，
   // 文案因此写“按本机记录算”（与 stale 横幅同口径）。
   const [localVisits, setLocalVisits] = useState<RecentVisit[]>([])
-  const [unfavoritedDismissed, setUnfavoritedDismissed] = useState(false)
+  // R13：旧的 `unfavoritedDismissed` 布尔只在当次会话内生效，刷新后建议
+  // 重现，与「不再提示」的文案承诺不符。改为按站 id 持久化（与 /brief 岛
+  // 共用同一个键）：点一次记下当时在榜的站 id，刷新 / 离开再回来也不再
+  // 出现；新达标的站仍会进榜。
+  const [unfavoritedDismissedIds, setUnfavoritedDismissedIds] = useState<string[]>(() =>
+    typeof window === 'undefined' ? [] : readDismissedFrequentIds(),
+  )
   useEffect(() => {
     let alive = true
     readOfflineVisits(OFFLINE_RECENT_LIMIT)
@@ -303,13 +331,21 @@ export default function FavoritesPage() {
     }
   }, [])
   const unfavoritedFrequent = useMemo(() => {
-    if (unfavoritedDismissed || localVisits.length === 0) return []
+    if (localVisits.length === 0) return []
     return selectFrequentUnfavoritedVisits(
-      localVisits,
+      filterDismissedVisits(localVisits, unfavoritedDismissedIds),
       new Set(favorites.items.map((f) => f.siteId)),
       FREQUENT_UNFAVORITED_LIMIT,
     )
-  }, [localVisits, favorites.items, unfavoritedDismissed])
+  }, [localVisits, favorites.items, unfavoritedDismissedIds])
+  // 「不再提示」：只记当时在榜的站 id（addDismissedId 已去重），不整区
+  // 永久屏蔽——之后别的站达标仍会进榜。写 localStorage 后立即 setState，
+  // 当次即消失；刷新后从键里重读，仍不出现。
+  const dismissUnfavoritedVisible = () => {
+    const next = unfavoritedFrequent.reduce((acc, visit) => addDismissedId(acc, visit.id), unfavoritedDismissedIds)
+    setUnfavoritedDismissedIds(next)
+    writeDismissedFrequentIds(next)
+  }
   /**
    * 冬眠徽标快查（所有视图共用，不只分区态）：有关键词 / 夹 / 状态筛选时分区
    * 不生效，但冬眠条目仍挂「冬眠中」徽标，用户才知道它为什么平时沉在底下。
@@ -1587,7 +1623,7 @@ export default function FavoritesPage() {
               <span className="ml-auto" />
               <button
                 type="button"
-                onClick={() => setUnfavoritedDismissed(true)}
+                onClick={dismissUnfavoritedVisible}
                 className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
               >
                 不再提示

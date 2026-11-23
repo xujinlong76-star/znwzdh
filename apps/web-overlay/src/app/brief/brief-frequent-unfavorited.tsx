@@ -27,9 +27,16 @@ import { ArrowRight, Star } from 'lucide-react'
 import { SiteFavicon } from '@/components/site-favicon'
 import { useFavorites } from '@/hooks/useFavorites'
 import {
+  FREQUENT_UNFAVORITED_DISMISSED_KEY,
   FREQUENT_UNFAVORITED_LIMIT,
+  filterDismissedVisits,
   selectFrequentUnfavoritedVisits,
 } from '@/lib/frequent-unfavorited'
+import {
+  addDismissedId,
+  parseDismissedIds,
+  serializeDismissedIds,
+} from '@/lib/smart-collections'
 import {
   OFFLINE_RECENT_LIMIT,
   readOfflineVisits,
@@ -38,13 +45,39 @@ import {
 } from '@/lib/offline-recent'
 import { safeHref } from '@/lib/safe-url'
 
+/**
+ * 「不再提示」的本机持久化（R13 修法 a，照抄 smart-collections-panel 的
+ * read/writeDismissedIds）：键与 /favorites 建议区共用，值是站 id 数组。
+ * 读 / 写失败只丢「不再提示」，不影响建议本身。
+ */
+function readDismissedIds(): string[] {
+  try {
+    return parseDismissedIds(window.localStorage.getItem(FREQUENT_UNFAVORITED_DISMISSED_KEY))
+  } catch {
+    return []
+  }
+}
+
+function writeDismissedIds(ids: readonly string[]): void {
+  try {
+    window.localStorage.setItem(FREQUENT_UNFAVORITED_DISMISSED_KEY, serializeDismissedIds(ids))
+  } catch {
+    // 写不进去只丢「不再提示」，不影响建议本身
+  }
+}
+
 export default function BriefFrequentUnfavorited() {
   const favorites = useFavorites()
   // 频率信号只取本机快照——useMergedVisits 的合并 visits 无 count，
   // 与 /favorites 建议区同款：另读一次 readOfflineVisits（与 stale 计算
   // 并行，不阻塞简报正文；读失败 → 空区不渲染）。
   const [localVisits, setLocalVisits] = useState<RecentVisit[]>([])
-  const [dismissed, setDismissed] = useState(false)
+  // R13：旧的 `dismissed` 布尔只在当次会话内生效，刷新后建议重现，与
+  // 「不再提示」的文案承诺不符。改为按站 id 持久化：点一次记下当时在榜
+  // 的站 id，刷新 / 离开再回来也不再出现；新达标的站仍会进榜。
+  const [dismissedIds, setDismissedIds] = useState<string[]>(() =>
+    typeof window === 'undefined' ? [] : readDismissedIds(),
+  )
   useEffect(() => {
     let alive = true
     readOfflineVisits(OFFLINE_RECENT_LIMIT)
@@ -60,13 +93,22 @@ export default function BriefFrequentUnfavorited() {
   }, [])
 
   const picks = useMemo(() => {
-    if (dismissed || localVisits.length === 0) return []
+    if (localVisits.length === 0) return []
     return selectFrequentUnfavoritedVisits(
-      localVisits,
+      filterDismissedVisits(localVisits, dismissedIds),
       new Set(favorites.items.map((f) => f.siteId)),
       FREQUENT_UNFAVORITED_LIMIT,
     )
-  }, [localVisits, favorites.items, dismissed])
+  }, [localVisits, favorites.items, dismissedIds])
+
+  // 「不再提示」：只记当时在榜的站 id（addDismissedId 已去重），不整区
+  // 永久屏蔽——之后别的站达标仍会进榜。写 localStorage 后立即 setState，
+  // 当次即消失；刷新后从键里重读，仍不出现。
+  const dismissVisible = () => {
+    const next = picks.reduce((acc, visit) => addDismissedId(acc, visit.id), dismissedIds)
+    setDismissedIds(next)
+    writeDismissedIds(next)
+  }
 
   // 收藏未就绪前不渲染：items 为空时算出的建议可能含已收藏站，闪一下
   // 再消失比不出现更坏；与 BriefResurface 的 favorites.ready 门同款。
@@ -122,7 +164,7 @@ export default function BriefFrequentUnfavorited() {
       <div className="mt-3 text-right">
         <button
           type="button"
-          onClick={() => setDismissed(true)}
+          onClick={dismissVisible}
           className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
         >
           不再提示

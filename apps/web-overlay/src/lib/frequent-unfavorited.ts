@@ -26,6 +26,38 @@ import {
 /** 建议区最多露几条：轻推，不是清单（与 /brief 每日重温 3 条同量级）。 */
 export const FREQUENT_UNFAVORITED_LIMIT = 3
 
+/**
+ * 「不再提示」的持久化键（R13 修法 a）。
+ *
+ * 键名照抄 smart-collections 的范式（`navhub.favorites.smart-collections.dismissed.v1`）：
+ * 同一命名空间、同一版本号后缀。值是站 id 的 JSON 数组（读写走
+ * smart-collections 的 parseDismissedIds / serializeDismissedIds /
+ * addDismissedId，调用方 localStorage 读写也照抄 smart-collections-panel
+ * 的 read/writeDismissedIds）。
+ *
+ * 按站 id 存，不整区屏蔽：点「不再提示」只记下当时在榜的站 id；之后
+ * 别的站达标仍会进榜，已 dismissed 的站即使仍常去也不再出现。
+ * /brief 岛与 /favorites 建议区共用同一个键——同一条建议，两处是一回事，
+ * 一处点了另一处也不再出现。
+ */
+export const FREQUENT_UNFAVORITED_DISMISSED_KEY =
+  'navhub.favorites.frequent-unfavorited.dismissed.v1'
+
+/**
+ * 去掉已 dismissed 的站（纯函数）。
+ *
+ * 在 selectFrequentUnfavoritedVisits 之前过滤：被点掉的站腾出的名额由
+ * 下一个达标的站补上，而不是留一个空位。
+ */
+export function filterDismissedVisits(
+  visits: RecentVisit[],
+  dismissedIds: readonly string[],
+): RecentVisit[] {
+  if (dismissedIds.length === 0) return [...visits]
+  const dismissed = new Set(dismissedIds)
+  return visits.filter((v) => !v || !dismissed.has(v.id))
+}
+
 /** 进榜最低点击次数：复用速览坞置顶门槛，不另写一个 3。 */
 export const FREQUENT_UNFAVORITED_MIN_USES = MRU_MIN_USES_FOR_BOOST
 

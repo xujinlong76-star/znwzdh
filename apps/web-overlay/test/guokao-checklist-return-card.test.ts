@@ -75,7 +75,9 @@ const c4ComponentCode = stripComments(c4ComponentSrc)
  * 「·」实宽更窄也按 8px 计）。行高取 Tailwind 默认：text-sm 20px、
  * text-xs 16px；min-h-11 = 44px；py-3 = 24px；pt-3 = 12px；
  * gap-x-4/gap-y-2 = 16px/8px；border 2px；mt-0.5 = 2px。
- * 390px 视口内容宽 = 390 - section px-3×2 (24) - 卡体 px-4×2 (32) = 334px；
+ * 390px 视口内容宽 = 390 - section px-3×2 (24) - 卡体 px-4×2 (32) - border 2
+ * = 332px（卡体 border 1px×2，Tailwind preflight border-box，border 吃内容宽；
+ * 14:22 轮 W5 修正：此前 334px 漏扣 border，与 360px 档口径统一）；
  * 360px 视口内容宽 = 360 - 24 - 32 - border 2 = 302px（卡体 border 1px×2，
  * Tailwind preflight border-box，border 吃内容宽）；
  * 桌面内容宽 = min(vw, 1600) - sm:px-5×2 (40) - sm:px-5×2 (40)。
@@ -125,7 +127,7 @@ const c1MaxTitleWidthPx = () => {
  */
 const c1HeightBudgetPx = () => {
   const maxTitleW = c1MaxTitleWidthPx()
-  const titleLines390 = Math.ceil(maxTitleW / 334)
+  const titleLines390 = Math.ceil(maxTitleW / 332)
   const mobile390 =
     12 + (26 + 8 + (titleLines390 * 20 + 2 + 20) + 8 + 44) + 24 + 2
   const titleLines360 = Math.ceil(maxTitleW / 302)
@@ -314,7 +316,7 @@ describe('C-G8 高度守卫：C1 卡片高度预算（2026-11-23 12:22 轮，备
     expect(componentCode).toContain('min-h-11')
   })
 
-  it('标题行逐相位 ≤ 2 行（390px 内容宽 334px）：副行 1 行', () => {
+  it('标题行逐相位 ≤ 2 行（390px 内容宽 332px）：副行 1 行', () => {
     // 四个相位各取一个代表时刻（open / last-call 11-27 / 11-28 / 11-29），
     // 标题行 = title + ' · ' + label（组件内同一 <p> 渲染，见源码）。
     const moments = [
@@ -326,12 +328,12 @@ describe('C-G8 高度守卫：C1 卡片高度预算（2026-11-23 12:22 轮，备
     for (const now of moments) {
       const content = guokaoReturnCardContent(now)!
       const titleLine = `${content.title} · ${content.label}`
-      expect(estimateTextWidthPx(titleLine)).toBeLessThanOrEqual(2 * 334)
+      expect(estimateTextWidthPx(titleLine)).toBeLessThanOrEqual(2 * 332)
     }
     expect(componentCode).toContain('打印截止 11 月 29 日 15:00，逾期无法补打')
     expect(
       estimateTextWidthPx('打印截止 11 月 29 日 15:00，逾期无法补打'),
-    ).toBeLessThanOrEqual(334)
+    ).toBeLessThanOrEqual(332)
   })
 
   it('高度预算 390px ≤ 186px（徽章 26 + gap 8 + 文案块 + gap 8 + CTA 44 + py-3 24 + border 2 + pt-3 12）', () => {

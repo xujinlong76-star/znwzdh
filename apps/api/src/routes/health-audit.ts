@@ -39,11 +39,12 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       : undefined;
     const limit = Math.min(100, Math.max(1, Math.floor(Number(query.limit) || 50)));
     const offset = Math.max(0, Math.floor(Number(query.offset) || 0));
-    const [summary, items] = await Promise.all([
+    const [summary, items, total] = await Promise.all([
       ctx.repo.siteQualityOverview(),
       ctx.repo.listSiteQualityAssessments({ band, limit, offset }),
+      ctx.repo.countSiteQualityAssessments(band),
     ]);
-    return { ok: true, summary, items, limit, offset, band: band ?? "all" };
+    return { ok: true, summary, items, total, limit, offset, band: band ?? "all" };
   });
 
   /**

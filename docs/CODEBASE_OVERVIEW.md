@@ -438,7 +438,7 @@ JobRunner.tick()（定时）
 | 3 | RRF 融合而非分数加权 | 异构通道分数尺度不可比；RRF 只看排名，无需调参 |
 | 4 | 能力可选、失败不致命 | 缺模型/缺 Key 时服务仍可用，只在 `/api/health` 如实上报 `capabilities` |
 | 5 | OpenAPI 从路由表生成 | 手写清单必然漂移，`onRoute` 收集保证文档与真实路由同源 |
-| 6 | 鉴权默认关闭 | 个人/NAS 部署零配置可用；公开部署显式开 `NAVHUB_AUTH_REQUIRED` |
+| 6 | 鉴权默认跟随 `NODE_ENV`（生产默认开启，开发默认关闭） | 开发与个人部署零配置可用；公开部署默认开启鉴权，可用 `NAVHUB_AUTH_REQUIRED` 覆盖 |
 | 7 | 身份 HMAC 与鉴权解耦 | 即便开放模式，只要配了 `NAVHUB_IDENTITY_SECRET`，带身份的请求必须签名，否则可自称任意用户 |
 | 8 | 降级必须「如实说」 | 多个纯函数模块（`degrade.ts`、`hub-health.ts`、`offline-banner.ts`、`profile-view.ts`）专门把「失败」与「空」分开，禁止用 `?? 50` 编数据 |
 | 9 | 损坏数据先备份再回退 | 收藏/布局的解析失败若直接回退默认值，下一次写盘会覆盖用户原数据；因此先备份再降级 |

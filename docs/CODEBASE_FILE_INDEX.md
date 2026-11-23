@@ -252,7 +252,7 @@ REST 中枢：配置/上下文装配、横切关注点、28 个路由插件（11
 | 文件 | 行数 | 职责与实现要点 | 关键导出 | 主要依赖 |
 | :--- | ---: | :--- | :--- | :--- |
 | `apps/api/src/alerts.ts` | 63 | 任务失败告警的 webhook 投递器：URL 来自运维配置故不走 SSRF 守卫，但限定 http/https；永不抛错，超时钳制 1s~30s，避免拖住 JobRunner 的 tick。 | `clampWebhookTimeout`、`sendWebhookAlert`、`WebhookAlertPayload` | — |
-| `apps/api/src/auth.ts` | 101 | REST 层鉴权基元：token 生成/哈希/前缀、scope 解析与包含关系（read<write<admin）、恒定时间比较、Bearer 提取。默认关闭鉴权以兼容个人部署。 | `hashToken`、`generateToken`、`tokenPrefixOf`、`parseScopes`、`scopeSatisfies`、`secureEqual`、`bearerOf`、`ANONYMOUS_IDENTITY`… | 外部 fastify |
+| `apps/api/src/auth.ts` | 101 | REST 层鉴权基元：token 生成/哈希/前缀、scope 解析与包含关系（read<write<admin）、恒定时间比较、Bearer 提取。鉴权默认跟随 `NODE_ENV`（生产默认开启，开发默认关闭）。 | `hashToken`、`generateToken`、`tokenPrefixOf`、`parseScopes`、`scopeSatisfies`、`secureEqual`、`bearerOf`、`ANONYMOUS_IDENTITY`… | 外部 fastify |
 | `apps/api/src/config.ts` | 248 | 运行配置装配：解析 lite/standard 双模式、端口、CORS、SQLite/PG 路径、embedding 与 LLM 参数、鉴权与代理开关，输出不可变 AppConfig。 | `loadConfig`、`NavHubMode`、`AppConfig` | — |
 | `apps/api/src/context.ts` | 172 | 应用上下文工厂：把配置、数据库、仓储、检索引擎、向量/FTS 适配器、embedding 服务装配为 AppContext，是双模式差异被消化的唯一位置（能力可选、失败不致命）。 | `createContext`、`Capabilities`、`AppContext` | 包 @navhub/ai、@navhub/store；相对模块 1 个（./config.ts） |
 | `apps/api/src/identity-signature.ts` | 48 | 终端用户身份 HMAC 签名：以 NAVHUB_IDENTITY_SECRET 对 userId/anonId 签名，阻断「自称任意身份」读写他人收藏与画像。 | `signIdentity`、`verifyIdentitySignature` | — |
@@ -274,7 +274,7 @@ REST 中枢：配置/上下文装配、横切关注点、28 个路由插件（11
 | `apps/api/src/routes/enrich.ts` | 80 | AI 富化路由域：URL 抓取 → 元数据抽取 → 分类/标签推断 → 自动入库。 | `enrichRoutes` | 包 @navhub/ai、@navhub/core；相对模块 2 个（../index-site.ts、../context.ts）；外部 fastify、zod |
 | `apps/api/src/routes/facets.ts` | 79 | 分面路由域：受控分面词表、分类/标签下的分面热度分布、单站点分面属性维护。 | `facetRoutes` | 包 @navhub/core；相对模块 2 个（../context.ts、./shared.ts）；外部 fastify、zod |
 | `apps/api/src/routes/favorites.ts` | 97 | 终端用户收藏夹路由域：增删查与收藏夹分组。 | `favoriteRoutes` | 相对模块 2 个（./shared.ts、../context.ts）；外部 fastify、zod |
-| `apps/api/src/routes/health.ts` | 100 | 健康与能力探针：/api/health、/ready、/metrics、/warmup，如实上报语义/全文/LLM 能力状态。默认开放模式可匿名抓取；开启 `NAVHUB_AUTH_REQUIRED` 后需带 read 及以上 scope 的 Bearer token。 /metrics 刻意只暴露有界基数的维度与聚合计数，不含站点内容或身份信息。 | `healthRoutes` | 相对模块 2 个（../metrics.ts、../context.ts）；外部 fastify |
+| `apps/api/src/routes/health.ts` | 100 | 健康与能力探针：/api/health、/ready、/metrics、/warmup，如实上报语义/全文/LLM 能力状态。开发默认开放模式可匿名抓取（生产默认开启鉴权）；开启 `NAVHUB_AUTH_REQUIRED` 后需带 read 及以上 scope 的 Bearer token。 /metrics 刻意只暴露有界基数的维度与聚合计数，不含站点内容或身份信息。 | `healthRoutes` | 相对模块 2 个（../metrics.ts、../context.ts）；外部 fastify |
 | `apps/api/src/routes/history.ts` | 33 | 搜索历史路由域：记录、读取与清空。 | `historyRoutes` | 相对模块 2 个（./shared.ts、../context.ts）；外部 fastify |
 | `apps/api/src/routes/identity.ts` | 43 | 终端用户身份同步：OAuth 登录后的用户 upsert。 | `identityRoutes` | 相对模块 2 个（../context.ts、./shared.ts）；外部 fastify、zod |
 | `apps/api/src/routes/jobs.ts` | 239 | 任务队列管理路由：入队、明细、取消、重试、历史修剪与 SSE 实时事件推流。 | `jobRoutes` | 包 @navhub/core；相对模块 3 个（../context.ts、../jobs.ts、./shared.ts）；外部 fastify、zod |

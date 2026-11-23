@@ -4,7 +4,7 @@
  * 问题：身份标示（`userId` / `anonId`）一直是**纯字符串**——Header、Query、Body
  * 任选一处传值即可自称任何身份。开启 `NAVHUB_AUTH_REQUIRED` 只是把门抬到
  * 「必须持票」，票内并不绑定身份，于是任何持票人可读写任意用户的收藏 / 历史 / 画像。
- * 默认开放模式（`authRequired=false`）下更是完全无门槛。
+ * 开放模式（`authRequired=false`）下更是完全无门槛。
  *
  * 方案：配置 `NAVHUB_IDENTITY_SECRET`（防伪造，只在前端与中枢之间共享）后，
  * 凡带身份标示的请求都必须携带

@@ -506,7 +506,7 @@ export async function buildServer(ctx: AppContext) {
    *   write   管理面写入（站点与类目 CRUD / 任务入队 / 存储写入 / 富化）
    *   admin   高危（token 管理 / 删除站点）
    *
-   * 开放模式（默认）下 hook 直接返回，行为与历史版本完全一致；
+   * 开放模式下 hook 直接返回，行为与历史版本完全一致；
    * 开启 NAVHUB_AUTH_REQUIRED 后，read/write/admin 路由必须带 Bearer token，
    * 且 token 的 scope 不低于路由要求（admin ⊇ write ⊇ read）。
    */

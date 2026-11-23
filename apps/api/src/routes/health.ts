@@ -113,7 +113,7 @@ export const healthRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
   /**
    * Prometheus 指标（文本格式）。
-   * 权限位 read：开放模式（默认）与 /api/health 一样可匿名抓取；
+   * 权限位 read：开放模式下与 /api/health 一样可匿名抓取；
    * 一旦开启 NAVHUB_AUTH_REQUIRED，抓取方需带 read 及以上 scope 的 Bearer token。
    * 刻意只暴露有界基数的维度与聚合计数，不含任何站点内容/身份信息。
    */

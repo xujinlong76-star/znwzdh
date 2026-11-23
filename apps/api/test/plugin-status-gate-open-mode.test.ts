@@ -1,5 +1,5 @@
 /**
- * A 批开放模式口径一致性：生产默认是开放模式（authRequired=false），匿名身份
+ * A 批开放模式口径一致性：开放模式（authRequired=false，非生产默认）下，匿名身份
  * 按设计持有全部 scope（apps/api/src/auth.ts 的 ANONYMOUS_IDENTITY，actor "api"），
  * 即开放模式下匿名等同运营者本人——isAdminScope 对匿名返回 true。
  *

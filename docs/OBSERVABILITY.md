@@ -8,7 +8,7 @@
 - 端点：`GET /api/metrics`
 - 响应：`text/plain; version=0.0.4; charset=utf-8`
 - 端口：默认 `8787`（`NAVHUB_PORT` / `PORT` 可覆盖）
-- 鉴权：默认开放模式可匿名抓取；`NAVHUB_AUTH_REQUIRED=1` 时需要 `read` 及以上 scope 的 Bearer token
+- 鉴权：开发默认开放模式可匿名抓取（生产默认开启鉴权）；`NAVHUB_AUTH_REQUIRED=1` 时需要 `read` 及以上 scope 的 Bearer token
 - **自反馈排除**：`/api/metrics` 自身不会计入 HTTP 指标
 
 ```yaml

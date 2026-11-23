@@ -115,7 +115,7 @@ export interface AppContext {
 
 #### 三条设计约束
 
-1. **默认关闭**（`NAVHUB_AUTH_REQUIRED` 未设时为开放模式）——个人/NAS 部署零配置可用，公开站显式开启，**不破坏存量部署**。
+1. **默认跟随 `NODE_ENV`**（2026-11-09 S-2 起：`NAVHUB_AUTH_REQUIRED` 未设时，生产默认开启、开发/测试默认关闭）——开发与个人部署零配置可用，公开站默认受保护，**不破坏存量部署**。
 2. **只保护管理面**，不碰终端用户功能：搜索、事件上报、收藏夹、投稿、榜单本来就是匿名可用的产品能力（投稿另有 5 次/小时/IP 限流），全局强制会误伤访客。
 3. **库里只存 sha256**，明文只在创建时返回一次；比对用 `timingSafeEqual` 防时序攻击。
 
@@ -159,7 +159,7 @@ export interface AppContext {
 | --- | --- | --- |
 | token 调用 | token 名称 | `token` |
 | bootstrap 调用 | `bootstrap` | `static` |
-| 开放模式（默认） | `api` | `anonymous`（与历史语义一致） |
+| 开放模式（未开启鉴权时） | `api` | `anonymous`（与历史语义一致） |
 
 成功鉴权还会 `touchApiToken()` 刷新 `last_used_at`（失败不影响主流程）。
 

@@ -303,7 +303,7 @@ export function submissionNumber(id: string): number {
  * 工作面的中间态，不属于数据面消费者的可见范围。
  *
  * 口径：
- *  - 开放模式（`authRequired=false`，个人/NAS 默认）保持原样：本机即管理面；
+ *  - 开放模式（`authRequired=false`）保持原样：本机即管理面；
  *  - 路由自身声明 admin → 可见；
  *  - `kind:"static"`（管理令牌 / 会话特权）→ 可见；
  *  - 用户级 `token` → 只有 scope 含 admin 才可见；
@@ -391,7 +391,7 @@ export function identityAllowed(ctx: AppContext, req: { auth?: { kind?: string }
  *
  * 第一轴（`identityAllowed` / Bearer token）只回答「调用方是不是持票人」。
  * 但有两类合法调用方天生没有票：
- *   - 开放模式（`authRequired=false`，个人/NAS 默认）；
+ *   - 开放模式（`authRequired=false`）；
  *   - 公共站的匿名访客——Web 侧 `/api/hub/*` 代理会给他们的身份打 HMAC 签名
  *     （见 `server.ts` 的 preValidation hook，配了 `NAVHUB_IDENTITY_SECRET` 才生效）。
  * 只按第一轴收紧，会把这两类调用方的终端用户功能整片砍掉。

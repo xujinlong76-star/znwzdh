@@ -93,7 +93,8 @@ export interface AppConfig {
   trustProxy: boolean | string;
   /**
    * 是否对管理面强制 Bearer token 鉴权
-   * 默认 false（开放模式）：个人 / NAS 部署零配置可用
+   * 默认跟随 NODE_ENV（`loadConfig`：`bool("NAVHUB_AUTH_REQUIRED", isProd)`）：
+   * 生产默认开启，开发/测试默认关闭（开放模式）；可用 NAVHUB_AUTH_REQUIRED 覆盖。
    */
   authRequired: boolean;
   /**

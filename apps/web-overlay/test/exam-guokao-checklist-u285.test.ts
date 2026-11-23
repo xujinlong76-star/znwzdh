@@ -25,6 +25,7 @@ import {
   GUOKAO_CHECKLIST_ITEMS,
   GUOKAO_CHECKLIST_STORAGE_KEY,
   groupCheckedCount,
+  guokaoChecklistCompletion,
   parseGuokaoChecklist,
   toggleGuokaoChecklist,
 } from '../src/lib/guokao-checklist-state'
@@ -37,6 +38,7 @@ import {
   checklistPhaseBanner,
 } from '../src/components/guokao-checklist-phase-banner'
 import {
+  GUOKAO_CHECKLIST_ENTRY_SECTION_ID,
   GuokaoChecklistEntryView,
   guokaoChecklistEntry,
 } from '../src/components/guokao-checklist-entry'
@@ -469,14 +471,118 @@ describe('U-285 R1：清单页打印 CTA 截止后置灰（2026-11-23 15:22 轮 
     expect(html).toContain('打印系统已于 11 月 29 日 15:00 关闭，无法补打')
   })
 
-  it('入口岛接在清单区之后、时间对照表之前；岛组件门控只走同一 phase 函数', () => {
+  // R2（2026-11-23 16:22 轮 W3）：入口岛已上移到清单区之前，顺序断言
+  // 搬到下方的 R2 describe；此处只留门控/渲染断言。
+})
+
+describe('U-285 R2：入口区上移 + 7/7 勾完反馈（2026-11-23 16:22 轮 W3）', () => {
+  const ALL_SEVEN = [
+    'registration-number',
+    'id-number',
+    'account-login',
+    'exam-site',
+    'exam-room',
+    'exam-time',
+    'spare-copies',
+  ]
+
+  it('纯决策：未满 7 项不 complete、不带 closed；未知 id 与重复不计入', () => {
+    const six = guokaoChecklistCompletion(ALL_SEVEN.slice(0, 6), NOV_23_NOON_CST)
+    expect(six).toEqual({ complete: false, done: 6, total: 7 })
+    expect('closed' in six).toBe(false)
+    expect(guokaoChecklistCompletion([], NOV_23_NOON_CST)).toEqual({
+      complete: false,
+      done: 0,
+      total: 7,
+    })
+    // 未知 id 丢弃、重复去重：7 个不同已知 id 才算满。
+    expect(
+      guokaoChecklistCompletion(
+        [...ALL_SEVEN, 'no-such-item', 'registration-number'],
+        NOV_23_NOON_CST,
+      ),
+    ).toEqual({ complete: true, done: 7, total: 7, closed: false })
+    expect(
+      guokaoChecklistCompletion(['registration-number', 'no-such-item'], NOV_23_NOON_CST),
+    ).toEqual({ complete: false, done: 1, total: 7 })
+  })
+
+  it('纯决策：满 7 项才判 closed——截止前一分钟未截止、截止整点已截止', () => {
+    expect(guokaoChecklistCompletion(ALL_SEVEN, NOV_23_NOON_CST)).toEqual({
+      complete: true,
+      done: 7,
+      total: 7,
+      closed: false,
+    })
+    expect(guokaoChecklistCompletion(ALL_SEVEN, NOV_29_1459_CST)).toEqual({
+      complete: true,
+      done: 7,
+      total: 7,
+      closed: false,
+    })
+    expect(guokaoChecklistCompletion(ALL_SEVEN, NOV_29_1500_CST)).toEqual({
+      complete: true,
+      done: 7,
+      total: 7,
+      closed: true,
+    })
+    expect(guokaoChecklistCompletion(ALL_SEVEN, NOV_30_0800_CST)).toEqual({
+      complete: true,
+      done: 7,
+      total: 7,
+      closed: true,
+    })
+  })
+
+  it('7/7 未截止：完成态 role=status，文案给下一步推力 + 锚点链到入口区', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(NOV_23_NOON_CST)
+    const html = await renderIsland(ALL_SEVEN)
+    expect(html).toContain('role="status"')
+    expect(html).toContain('data-checklist-completion="ready"')
+    expect(html).toContain('7 项全部完成，可以去打印了')
+    expect(html).toContain(`href="#${GUOKAO_CHECKLIST_ENTRY_SECTION_ID}"`)
+    expect(html).toContain('去打印准考证 ↑')
+    // 岛内 <a> 仅完成态锚点一处；label 内仍零 <a>（行内不嵌交互元素）。
+    expect(html.match(/<a /g)?.length).toBe(1)
+    for (const label of labelChunks(html)) {
+      expect(label).not.toContain('<a ')
+    }
+  })
+
+  it('6/7 与挂载前：无完成态、无 status、无 <a>', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(NOV_23_NOON_CST)
+    const sixHtml = await renderIsland(ALL_SEVEN.slice(0, 6))
+    expect(sixHtml).not.toContain('role="status"')
+    expect(sixHtml).not.toContain('全部完成')
+    expect(sixHtml).not.toContain('<a ')
+    const nullHtml = await renderIsland(null)
+    expect(nullHtml).not.toContain('role="status"')
+    expect(nullHtml).not.toContain('全部完成')
+  })
+
+  it('7/7 已截止：只认完成，不写「可以去打印」、不链打印系统', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(NOV_30_0800_CST)
+    const html = await renderIsland(ALL_SEVEN)
+    expect(html).toContain('role="status"')
+    expect(html).toContain('data-checklist-completion="closed"')
+    expect(html).toContain('7 项全部完成')
+    expect(html).not.toContain('可以去打印了')
+    expect(html).not.toContain('<a ')
+    expect(html).not.toContain('gwy.cpta.com.cn')
+  })
+
+  it('顺序：入口岛在截止警示之后、清单岛之前、时间对照表之前；岛组件门控只走同一 phase 函数', () => {
+    // 旧布局「入口在清单区之后」已被 R2 废止：入口区上移就是本次修法本身。
     const page = read('src/app/exam/guokao-checklist/page.tsx')
     expect(page).toContain('<GuokaoChecklistEntry />')
+    const alertAt = page.indexOf('role="alert"')
     const entryAt = page.indexOf('<GuokaoChecklistEntry />')
     const islandAt = page.indexOf('<GuokaoChecklistIsland />')
     const timeAt = page.indexOf('guokao-checklist-time-heading')
-    expect(entryAt).toBeGreaterThan(islandAt)
-    expect(timeAt).toBeGreaterThan(entryAt)
+    expect(alertAt).toBeGreaterThan(0)
+    expect(entryAt).toBeGreaterThan(alertAt)
+    expect(islandAt).toBeGreaterThan(entryAt)
+    expect(timeAt).toBeGreaterThan(islandAt)
     // 入口区已移出 page.tsx：主按钮常量与门户文案现由岛组件承接。
     expect(page).not.toContain('safeHref(GUOKAO_ADMISSION_URL)')
     const entry = read('src/components/guokao-checklist-entry.tsx')
@@ -484,6 +590,18 @@ describe('U-285 R1：清单页打印 CTA 截止后置灰（2026-11-23 15:22 轮 
     expect(entry).toContain('useState<number | null>(null)')
     expect(entry).toContain('if (now === null) return null')
     expect(entry).toContain('setInterval(() => setNow(Date.now()), 60_000)')
+  })
+
+  it('锚点契约：入口 section 挂同一 id + scroll-mt，岛内只引用该常量', () => {
+    expect(GUOKAO_CHECKLIST_ENTRY_SECTION_ID).toBe('guokao-checklist-entry')
+    const entry = read('src/components/guokao-checklist-entry.tsx')
+    expect(entry).toContain('id={GUOKAO_CHECKLIST_ENTRY_SECTION_ID}')
+    expect(entry).toContain('scroll-mt-20')
+    const island = read('src/app/exam/guokao-checklist/guokao-checklist-island.tsx')
+    expect(island).toContain('guokaoChecklistCompletion')
+    expect(island).toContain('GUOKAO_CHECKLIST_ENTRY_SECTION_ID')
+    expect(island).toContain('role="status"')
+    expect(island).not.toContain('#guokao-checklist-entry')
   })
 })
 
@@ -525,6 +643,7 @@ function stubBrowserEnv() {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 

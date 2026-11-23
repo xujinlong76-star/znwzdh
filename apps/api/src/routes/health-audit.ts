@@ -8,6 +8,7 @@
  * 4. POST /api/sites/:id/recommend-alternative - 用当前配置的大模型生成精选替代品（模型名以响应 model 字段为准）
  */
 import type { FastifyPluginAsync } from "fastify";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   runAutonomousHealing,
@@ -26,6 +27,155 @@ import type { AppContext } from "../context.ts";
 
 export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
+
+  /**
+   * 自动采集候选进入隔离队列；采集端永远不能直接把站点发布到导航目录。
+   */
+  app.post("/api/discovery/candidates", {
+    config: { scope: "write", rateLimit: { max: 60, timeWindow: "1 minute" } },
+  }, async (req, reply) => {
+    const body = z.object({
+      url: httpUrl(),
+      source: z.enum(["manual", "import", "submission", "ai", "seed", "navsphere", "api", "mcp"]),
+      title: z.string().trim().min(1).max(120).optional(),
+      description: z.string().trim().max(500).optional(),
+      categoryId: z.string().max(64).optional(),
+      tags: z.array(z.string().trim().min(1).max(32)).max(20).optional(),
+      confidence: z.number().min(0).max(1).optional(),
+      evidence: z.record(z.string(), z.unknown()).optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) {
+      reply.code(400);
+      return { ok: false, error: "采集候选参数无效", details: body.error.issues };
+    }
+    const evidence = body.data.evidence ?? {};
+    if (JSON.stringify(evidence).length > 16_384) {
+      reply.code(413);
+      return { ok: false, error: "采集证据超过 16KB 限制" };
+    }
+    const canonical = new URL(body.data.url);
+    canonical.hash = "";
+    const id = randomUUID();
+    const candidate = await ctx.repo.upsertSiteDiscoveryCandidate({
+      id,
+      url: body.data.url,
+      canonicalUrl: canonical.toString(),
+      title: body.data.title ?? null,
+      description: body.data.description ?? null,
+      categoryId: body.data.categoryId ?? null,
+      tags: body.data.tags ?? [],
+      source: body.data.source,
+      confidence: body.data.confidence ?? null,
+      evidence,
+    });
+    reply.code(202);
+    return { ok: true, duplicate: candidate.id !== id, candidate };
+  });
+
+  /** 管理端只读候选队列；分页总数与状态筛选保持一致。 */
+  app.get("/api/admin/discovery/candidates", { config: { scope: "read" } }, async (req, reply) => {
+    const query = z.object({
+      status: z.enum(["pending", "approved", "rejected"]).optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(50),
+      offset: z.coerce.number().int().min(0).max(100_000).default(0),
+    }).safeParse(req.query ?? {});
+    if (!query.success) {
+      reply.code(400);
+      return { ok: false, error: "筛选参数无效", details: query.error.issues };
+    }
+    const [items, total] = await Promise.all([
+      ctx.repo.listSiteDiscoveryCandidates(query.data),
+      ctx.repo.countSiteDiscoveryCandidates(query.data.status),
+    ]);
+    return { ok: true, items, total, limit: query.data.limit, offset: query.data.offset, status: query.data.status ?? "all" };
+  });
+
+  /** 审核是唯一进入站点目录的入口；采集候选本身永远不自动发布。 */
+  app.post("/api/admin/discovery/candidates/:id/review", {
+    config: { scope: "write", rateLimit: { max: 30, timeWindow: "1 minute" } },
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z.object({
+      action: z.enum(["approve", "reject"]),
+      categoryId: z.string().max(64).optional(),
+      rejectionReason: z.string().trim().max(500).optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) {
+      reply.code(400);
+      return { ok: false, error: "审核参数无效", details: body.error.issues };
+    }
+    const candidate = await ctx.repo.getSiteDiscoveryCandidate(id);
+    if (!candidate) {
+      reply.code(404);
+      return { ok: false, error: "采集候选不存在" };
+    }
+    if (candidate.status !== "pending") {
+      reply.code(409);
+      return { ok: false, error: "该候选已完成审核，不能重复处理", status: candidate.status };
+    }
+
+    if (body.data.action === "reject") {
+      const reviewed = await ctx.repo.reviewSiteDiscoveryCandidate({
+        id,
+        status: "rejected",
+        reviewer: req.auth.actor,
+        rejectionReason: body.data.rejectionReason || "人工审核未通过",
+      });
+      if (!reviewed || reviewed.status !== "rejected") {
+        reply.code(409);
+        return { ok: false, error: "候选状态已变化，请刷新后重试" };
+      }
+      await ctx.repo.audit({
+        ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
+        action: "discovery.candidate_rejected", target: id,
+        diff: { source: candidate.source, reason: reviewed.rejectionReason },
+      });
+      return { ok: true, candidate: reviewed };
+    }
+
+    let categoryId = body.data.categoryId ?? candidate.categoryId;
+    if (categoryId) {
+      const categoryCheck = await ctx.repo.checkSiteCategoryAttachment(categoryId);
+      if (!categoryCheck.ok) {
+        reply.code(400);
+        return { ok: false, error: "分类不可用于站点入库", detail: categoryCheck.error };
+      }
+      categoryId = categoryCheck.categoryId ?? undefined;
+    }
+    categoryId ??= await ctx.repo.ensureUncategorized();
+
+    let site = await ctx.repo.findSiteByUrl(candidate.url);
+    let created = false;
+    if (!site) {
+      site = await ctx.repo.createSite({
+        url: candidate.url,
+        title: candidate.title || new URL(candidate.url).hostname,
+        description: candidate.description,
+        categoryId,
+        tags: candidate.tags,
+        source: candidate.source,
+        status: "active",
+      });
+      await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
+      created = true;
+    }
+    const reviewed = await ctx.repo.reviewSiteDiscoveryCandidate({
+      id,
+      status: "approved",
+      reviewer: req.auth.actor,
+      siteId: site.id,
+    });
+    if (!reviewed || reviewed.status !== "approved") {
+      reply.code(409);
+      return { ok: false, error: "候选状态已变化；站点可能已存在，请刷新队列后复核", siteId: site.id };
+    }
+    await ctx.repo.audit({
+      ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
+      action: "discovery.candidate_approved", target: id,
+      diff: { siteId: site.id, created, source: candidate.source },
+    });
+    return { ok: true, created, site, candidate: reviewed };
+  });
 
   /**
    * 站点质量治理工作台数据。

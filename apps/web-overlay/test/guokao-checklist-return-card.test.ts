@@ -179,8 +179,8 @@ describe('C1 国考准考证打印回访卡（0422-W3 §3.4）', () => {
     expect(componentCode.match(/text-xs/g) ?? []).toHaveLength(1)
   })
 
-  it.skip('C-G7：单落点——仅首页 navigation-content.tsx 一处挂载，/brief 与 AnnouncementBar 不渲染（挂载轮启用）', () => {
-    // 挂载是下一步（W5 只建组件+测试+验证脚本，不挂载）；本 it 在挂载落地后取消 skip。
+  it('C-G7：单落点——仅首页 navigation-content.tsx 一处挂载，/brief 与 AnnouncementBar 不渲染（2026-11-23 11:22 轮挂载落地后启用）', () => {
+    // 挂载已落地（navigation-content.tsx，HomeSubtitleHint 之后、C4 卡之上）；本 it 在挂载落地后取消 skip。
     for (const root of [resolve(REPO_ROOT, 'apps', 'web'), OVERLAY_ROOT]) {
       const nav = readFileSync(resolve(root, 'src/components/navigation-content.tsx'), 'utf8')
       expect(nav.match(/<GuokaoReturnCardContent/g) ?? []).toHaveLength(1)

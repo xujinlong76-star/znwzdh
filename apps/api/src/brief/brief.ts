@@ -15,6 +15,11 @@ import type { AppContext } from "../context.ts";
 import { llmProviderReadyAny, resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
 import { HOTLIST_SOURCES } from "../hotlist/sources.ts";
+import { isReservedDramaKey, normalizeDramaTitle } from "../drama/featured.ts";
+import {
+  DRAMA_CALENDAR_SNAPSHOT_KEY,
+  type DramaCalendarSnapshot,
+} from "../drama/calendar.ts";
 import type { WatchEntryRecord } from "@navhub/store";
 
 /** 简报与热榜的「今天」统一按 Asia/Shanghai 算（本站用户都在国内时区） */
@@ -49,6 +54,9 @@ function weekdayOfDateKey(dateKey: string): number {
  * 它只断言「按用户标注的节奏，今天是更新日」，不断言平台真更新了。
  */
 export function isWatchReminderDue(entry: WatchEntryRecord, now: Date): boolean {
+  // 预约态永不到期：还没开播，没有“更新日”可催；开播日提醒走
+  // premieringToday（按开播日历现算），不在这里混进待看区。
+  if (isReservedDramaKey(entry.key)) return false;
   if (!entry.remind) return false;
   const cadence = entry.cadence;
   const today = briefDateKey(now.getTime());
@@ -72,6 +80,10 @@ export interface BriefWatchItem {
   playUrl: string;
   episode: number;
   priority: "high" | "normal";
+  /** 预约态开播日提醒才带：预计开播日（YYYY-MM-DD，上海时区）。 */
+  premiereDate?: string | null;
+  /** 预约态才为 true：平台待确认，无播放页（playUrl 为空）。 */
+  reserved?: boolean;
 }
 
 export interface BriefWatchSection {
@@ -79,12 +91,32 @@ export interface BriefWatchSection {
   due: BriefWatchItem[];
   /** 节奏未标注：只给「去看看」的诚实入口，不说更新了 */
   check: BriefWatchItem[];
+  /**
+   * 今天开播（U-377）：预约态条目里预计开播日就是今天的。
+   * 开播日按开播日历快照现算（预约榜的预计日期，以官方为准），
+   * 快照读不到时本区为空，不编日期、不把预约条目塞进 due/check。
+   */
+  premieringToday: BriefWatchItem[];
 }
 
 export async function watchSectionForUser(ctx: AppContext, userId: string, now: Date): Promise<BriefWatchSection> {
   const entries = await ctx.repo.listWatchEntries(userId);
   const due: BriefWatchItem[] = [];
   const check: BriefWatchItem[] = [];
+  const premieringToday: BriefWatchItem[] = [];
+  // 开播日历快照：预约态条目的开播日存在这里（同步协议不存开播日，
+  // 跨设备也以快照为准重算）；读不到按空处理，不阻断 due/check。
+  const snapshot = await ctx.repo
+    .getSystemState<DramaCalendarSnapshot>(DRAMA_CALENDAR_SNAPSHOT_KEY)
+    .catch(() => {
+      // 可选读取：读不到按缺省值处理，调用方已处理空值。
+      return null;
+    });
+  const premiereByKey = new Map<string, string>();
+  for (const e of snapshot?.entries ?? []) {
+    if (e.premiereDate) premiereByKey.set(e.key, e.premiereDate);
+  }
+  const today = briefDateKey(now.getTime());
   for (const entry of entries) {
     const item: BriefWatchItem = {
       key: entry.key,
@@ -94,6 +126,14 @@ export async function watchSectionForUser(ctx: AppContext, userId: string, now: 
       episode: entry.episode,
       priority: entry.priority,
     };
+    // 预约态：不进 due/check；预计开播日是今天才进 premieringToday。
+    if (isReservedDramaKey(entry.key)) {
+      const premiereDate = premiereByKey.get(normalizeDramaTitle(entry.title)) ?? null;
+      if (premiereDate === today) {
+        premieringToday.push({ ...item, premiereDate, reserved: true });
+      }
+      continue;
+    }
     if (entry.cadence.kind === "finished") continue;
     if (isWatchReminderDue(entry, now)) due.push(item);
     else if (entry.cadence.kind === "unknown" && entry.remind) check.push(item);
@@ -101,7 +141,8 @@ export async function watchSectionForUser(ctx: AppContext, userId: string, now: 
   const rank = (e: BriefWatchItem) => (e.priority === "high" ? 0 : 1);
   due.sort((a, b) => rank(a) - rank(b));
   check.sort((a, b) => rank(a) - rank(b));
-  return { due, check };
+  premieringToday.sort((a, b) => rank(a) - rank(b));
+  return { due, check, premieringToday };
 }
 
 /* ------------------------------ 公共组版 ------------------------------ */

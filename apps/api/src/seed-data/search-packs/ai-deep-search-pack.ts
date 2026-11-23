@@ -7,7 +7,7 @@ export const aiDeepSearchPack: SeedPluginDef = {
     "manifestVersion": 1,
     "kind": "search-pack",
     "name": "AI 深度研究、前沿模型与实测榜单搜索引擎包",
-    "description": "38 个前沿 AI 模型、深度研究引擎、模型目录与实测榜单一次装齐：在主搜索框用 !ppx、!felo、!gsp、!phind、!sci、!kimi、!deepseek、!qwen 等前缀直接向对话模型、学术引用网络、前沿预印本、模型/数据集目录、云端推理平台与实测榜单发起定向检索。",
+    "description": "36 个前沿 AI 模型、深度研究引擎、模型目录与实测榜单一次装齐：在主搜索框用 !ppx、!felo、!gsp、!sci、!kimi、!deepseek、!qwen 等前缀直接向对话模型、学术引用网络、前沿预印本、模型/数据集目录、云端推理平台与实测榜单发起定向检索。",
     "icon": "🔬",
     "author": "山羊胡官方",
     "homepage": "https://www.shanyanghu.com/",
@@ -43,13 +43,6 @@ export const aiDeepSearchPack: SeedPluginDef = {
           "searchUrl": "https://www.genspark.ai/search?query={q}",
           "icon": "✨",
           "description": "自动生成个性化微型研究火花页面的 AI 搜索"
-        },
-        {
-          "name": "Phind",
-          "prefix": "!phind",
-          "searchUrl": "https://www.phind.com/search?q={q}",
-          "icon": "💡",
-          "description": "专为程序员量身定制的技术深度问答搜索引擎"
         },
         {
           "name": "SciSpace",
@@ -92,13 +85,6 @@ export const aiDeepSearchPack: SeedPluginDef = {
           "searchUrl": "https://www.biorxiv.org/search/{q}",
           "icon": "🧬",
           "description": "冷泉港实验室生命科学前沿学术预印本检索"
-        },
-        {
-          "name": "Papers with Code",
-          "prefix": "!pwc",
-          "searchUrl": "https://paperswithcode.com/search?q_meta=&q_type=&q={q}",
-          "icon": "📊",
-          "description": "检索论文附带的开源复现代码与基准评测榜单"
         },
         {
           "name": "DeepSeek",

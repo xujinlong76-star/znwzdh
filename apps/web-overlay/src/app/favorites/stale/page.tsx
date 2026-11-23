@@ -184,7 +184,7 @@ export default function StaleFavoritesPage() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold">{item.title}</p>
                         <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                          归档于 {new Date(item.archivedAt).toLocaleDateString('zh-CN')}
+                          归档于 {new Date(item.archivedAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}
                         </p>
                       </div>
                       <Button size="sm" variant="outline" className="h-8 shrink-0 text-xs" onClick={() => handleRestore(item)}>

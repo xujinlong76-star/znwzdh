@@ -35,5 +35,5 @@ export function rankingMetric(key: RankingGroupKey, p: HubPluginItem): string {
     }
     return '暂无评价'
   }
-  return p.publishedAt ? new Date(p.publishedAt).toLocaleDateString('zh-CN') : '刚刚上架'
+  return p.publishedAt ? new Date(p.publishedAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '刚刚上架'
 }

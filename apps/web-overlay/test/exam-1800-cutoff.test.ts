@@ -110,6 +110,7 @@ import type { ExamInfo, ExamNode } from '../src/lib/exam-calendar'
 import {
   EXAMS,
   EXAM_NODE_STATUS_LABEL,
+  JINGKAO_APPLY_URL,
   admissionReminderFor,
   examNodeDeadlineLabel,
   examNodeStatus,
@@ -126,6 +127,7 @@ const jundui = EXAMS.find((e) => e.id === 'jundui-wenzhi')!
 const guokao = EXAMS.find((e) => e.id === 'guokao')!
 const chengkao = EXAMS.find((e) => e.id === 'chengkao')!
 const jingkaoApply = jingkao.nodes.find((n) => n.label === '报名')!
+const jingkaoFee = jingkao.nodes.find((n) => n.label === '缴费')!
 const junduiFee = jundui.nodes.find((n) => n.label === '缴费')!
 const guokaoAdmit = guokao.nodes.find((n) => n.label === '准考证打印')!
 
@@ -169,10 +171,53 @@ describe('事实锚点：两节点的窗口与 18:00 截止写在数据里', () 
     expect(junduiFee.detail).toContain('每门考试科目人民币 50 元')
   })
 
+  it('京考缴费窗口 11-21→11-23，detail 写明 11 月 23 日 24:00 与自动放弃（U-395）', () => {
+    expect(jingkaoFee.startISO).toBe('2026-11-21')
+    expect(jingkaoFee.endISO).toBe('2026-11-23')
+    expect(jingkaoFee.url).toBe(JINGKAO_APPLY_URL)
+    expect(jingkaoFee.detail).toContain('11 月 23 日 24:00')
+    expect(jingkaoFee.detail).toContain('自动放弃')
+    expect(jingkaoFee.detail).toContain('北京市人事考试通用平台')
+    // 公告未写费用数额：detail 不得出现金额
+    expect(jingkaoFee.detail).not.toMatch(/每人|人民币|元/)
+  })
+
   it('国考准考证窗口 11-23→11-29，detail 写明 11 月 29 日 15:00（回归锚点）', () => {
     expect(guokaoAdmit.startISO).toBe('2026-11-23')
     expect(guokaoAdmit.endISO).toBe('2026-11-29')
     expect(guokaoAdmit.detail).toContain('11 月 29 日 15:00')
+  })
+})
+
+describe('京考缴费日期边界（U-395：截止是 11-23 24:00 自然日末，纯日期口径）', () => {
+  /** 2026-11-21 08:00 北京时间（缴费窗口首日） */
+  const NOV_21_0800_CST = Date.UTC(2026, 10, 21, 0, 0, 0)
+  /** 2026-11-23 08:00 北京时间（缴费窗口末日） */
+  const NOV_23_0800_CST = Date.UTC(2026, 10, 23, 0, 0, 0)
+  /** 2026-11-24 08:00 北京时间（窗口次日） */
+  const NOV_24_0800_CST = Date.UTC(2026, 10, 24, 0, 0, 0)
+
+  it('11-21 首日与 11-23 末日均为进行中：examNodeStatus 为 active，文案为「进行中」', () => {
+    expect(examNodeStatus(jingkaoFee, NOV_21_0800_CST)).toBe('active')
+    expect(examNodeStatus(jingkaoFee, NOV_23_0800_CST)).toBe('active')
+    expect(EXAM_NODE_STATUS_LABEL[examNodeStatus(jingkaoFee, NOV_23_0800_CST)]).toBe('进行中')
+  })
+
+  it('11-21 与 11-23 缴费进今日行，11-24 不再进今日行/接续区', () => {
+    const key = (t: { exam: ExamInfo; node: ExamNode }) => `${t.exam.id}:${t.node.label}`
+    expect(todayNodes(NOV_21_0800_CST).map(key)).toContain('jingkao:缴费')
+    expect(todayNodes(NOV_23_0800_CST).map(key)).toContain('jingkao:缴费')
+    expect(todayNodes(NOV_24_0800_CST).map(key)).not.toContain('jingkao:缴费')
+    expect(todayFollowUpNodes(NOV_24_0800_CST).map(key)).not.toContain('jingkao:缴费')
+  })
+
+  it('11-24 节点状态翻已结束（done），且缴费不进 PEAK 截止时刻表', () => {
+    expect(examNodeStatus(jingkaoFee, NOV_24_0800_CST)).toBe('done')
+    expect(examNodeDeadlineLabel(jingkao, jingkaoFee, NOV_23_0800_CST)).toBeNull()
+    expect(examNodeDeadlineLabel(jingkao, jingkaoFee, NOV_24_0800_CST)).toBeNull()
+    expect(
+      todayNodeDeadlineMs({ exam: jingkao, node: jingkaoFee, kind: 'endsToday' }),
+    ).toBeUndefined()
   })
 })
 
@@ -1243,7 +1288,7 @@ describe('U-222 12 月峰值周末七节点时刻门控（todayNodeDeadlineMs / 
     expect(nodeDeadlineDisplayLabel(shanghaiZikao(), shanghaiQuery(), DEC_18_160000_CST)).toBe('进行中')
   })
 
-  it('四日今日行 kind 分流：11-29 3 项、12-05 4 项、12-06 8 项、12-13 2 项（七节点末日皆为 endsToday）', () => {
+  it('四日今日行 kind 分流：11-29 3 项、12-05 5 项、12-06 8 项、12-13 2 项（七节点末日皆为 endsToday；C4：12-05 多广东自考·1月网上缴费末日）', () => {
     const items29 = todayNodes(NOV_29_0800_CST)
     expect(items29).toHaveLength(3)
     const byKey29 = new Map(
@@ -1251,11 +1296,12 @@ describe('U-222 12 月峰值周末七节点时刻门控（todayNodeDeadlineMs / 
     )
     expect(byKey29.get('chengkao:浙江志愿确认')?.kind).toBe('endsToday')
     const items05 = todayNodes(DEC_05_0800_CST)
-    expect(items05).toHaveLength(4)
+    expect(items05).toHaveLength(5)
     const byKey05 = new Map(
       items05.map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
     )
     expect(byKey05.get('shengkao:上海准考证打印')?.kind).toBe('endsToday')
+    expect(byKey05.get('guangdong-zikao-2027-01:网上缴费')?.kind).toBe('endsToday')
     const items06 = todayNodes(DEC_06_0800_CST)
     expect(items06).toHaveLength(8)
     const byKey06 = new Map(

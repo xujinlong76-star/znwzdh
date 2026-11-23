@@ -24,6 +24,8 @@ import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-url'
+import { buildDeadLinkWaybackUrl } from '@/lib/dead-link'
+import { isFailingHealthState, siteHealthState, siteHealthTitle, type SiteHealthState } from '@/lib/site-health'
 import { tagSlug } from '@/lib/seo/tag-slug'
 import { recordOfflineVisit } from '@/lib/offline-recent'
 import { getIdentity } from '@/lib/identity'
@@ -109,11 +111,105 @@ function CardThumbnailVisual({
   )
 }
 
+/**
+ * 健康徽标（03 §4.2：与速览弹窗同款式——圆点 + 文案 + 延迟）。
+ *
+ * 渲染用 `siteHealthState()` 的分级（不用旧二元口径）；`state` 为 null
+ * （未巡检）时调用方不渲染本组件——徽标只在有巡检事实时出现，不占位、
+ * 不写“检测中”。徽标是纯展示信息，不做成按钮；`title` 悬停是补充信息，
+ * 种类文案本身已在可见文本里（§7）。零新增请求：health 随分片静态下发。
+ *
+ * “看存档”只在疑似失效 / 已失效时出现：卡片没有 `createdAt`（导航 JSON
+ * 无此字段），一律用 `*` 回落（最新快照），`title` 写明“查看最近存档快照”，
+ * 不编一个假时间戳（§4.3）。徽标本体留在 pointer-events-none 的内容层里
+ * （点徽标仍是点卡片、打开原站），只有“看存档”链接本身可点。
+ */
+function CardHealthBadge({
+  href,
+  health,
+  state,
+}: {
+  href: string
+  health: NavigationSubItem['health']
+  state: SiteHealthState
+}) {
+  const title = siteHealthTitle(health)
+  const showArchive = state.state === 'dead' || state.state === 'suspect-soft404'
+  const dotClass =
+    state.tone === 'ok'
+      ? 'bg-emerald-500 animate-pulse'
+      : state.tone === 'error'
+        ? 'bg-rose-500'
+        : 'bg-amber-500'
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground"
+      title={title ?? undefined}
+    >
+      <span aria-hidden="true" className={cn('h-2 w-2 rounded-full', dotClass)} />
+      <span>{state.label}</span>
+      {state.latencyMs != null && <span>({state.latencyMs}ms)</span>}
+      {showArchive && (
+        <a
+          href={buildDeadLinkWaybackUrl(href)}
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+          title="查看最近存档快照"
+          className="pointer-events-auto underline underline-offset-2 hover:text-foreground"
+        >
+          看存档
+        </a>
+      )}
+    </span>
+  )
+}
+
+/**
+ * 「只看失效」开关（03 §7，show-failing-only）：默认关闭，只在用户主动
+ * 打开时生效；开关状态不进 URL、不持久化（纯视图筛选，刷新即复位）。
+ * 列表方持有 `checked` 状态、把 `showFailingOnly` 透传给每张卡片；
+ * 开关打开且无失败时，列表方显示空态文案 `ALL_SITES_ACCESSIBLE_EMPTY_TEXT`。
+ */
+export function FailingOnlyToggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label="只看失效站点"
+      title="只显示巡检异常的站点"
+      onClick={() => onChange(!checked)}
+      className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/60 px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+    >
+      <span
+        aria-hidden="true"
+        className={cn('h-2 w-2 rounded-full', checked ? 'bg-rose-500' : 'bg-muted-foreground/50')}
+      />
+      <span>只看失效</span>
+    </button>
+  )
+}
+
+/** 「只看失效」开关打开且无失败时的空态文案（03 §7）。 */
+export const ALL_SITES_ACCESSIBLE_EMPTY_TEXT = '全部站点均可访问'
+
 export interface NavigationCardProps {
   item: NavigationSubItem
   siteConfig?: SiteConfig
   onPeek?: (item: NavigationSubItem) => void
   cardDisplayMode?: CardDisplayMode
+  /**
+   * 「只看失效」开关（03 §7）：打开时只留失效侧卡片，其余整卡不渲染、不占位。
+   * 默认关闭；开关状态不进 URL、不持久化（纯视图筛选，刷新即复位），
+   * 状态由列表方持有（见 FailingOnlyToggle），卡片只按它过滤自己。
+   */
+  showFailingOnly?: boolean
   isPinnedInCategory?: boolean
   onTogglePinInCategory?: (siteId: string) => void
   isDraggable?: boolean
@@ -154,6 +250,7 @@ export interface NavigationCardProps {
 export const NavigationCard = memo(function NavigationCard({
   item,
   onPeek,
+  showFailingOnly = false,
   cardDisplayMode = 'standard',
   isPinnedInCategory = false,
   onTogglePinInCategory,
@@ -182,15 +279,12 @@ export const NavigationCard = memo(function NavigationCard({
   const isCapsuleCollapsed = !effectiveCardElements.showDescription && !effectiveCardElements.showTags
 
   /**
-   * 死链徽标已从卡片移除（2026-11-12，research #4 收敛到详情页）：
-   * 卡片数据来自静态导航 JSON，从没有任何一条带巡检 health，首页也不取
-   * 中枢数据，`nav-<hex>` 的导航 id 与中枢站点的 id 之间又没有可验证的
-   * 对应关系——徽标在生产里永远画不出来，留着只是死 UI。死链恢复的唯一
-   * 活入口在详情页：site-detail-view 直接用中枢站点的 health + createdAt，
-   * 一键打开收录时刻的 Wayback 快照（见 lib 里的 Wayback 恢复工具）。
-   * 若将来有了卡片可用的巡检生产者，再把徽标与判定口径从
-   * git 历史里请回来，不要凭空猜一个 id 对应关系把它焊上去。
+   * 健康徽标已恢复（2026-11-12 移除，hubId 打通后恢复，见 03 §4.1）：
+   * 卡片数据来自静态导航 JSON，hubId 打通后分片自带巡检 health，
+   * 徽标按 siteHealthState() 的分级渲染；未巡检（healthState 为 null）
+   * 时不渲染任何徽标位、不占位、不写“检测中”——与移除前的无徽标视觉一致。
    */
+  const healthState = siteHealthState(item.health)
 
   /**
    * dnd-kit 拖拽手柄的 ref 回调（轻量 context，不 import dnd-kit）。
@@ -571,6 +665,10 @@ export const NavigationCard = memo(function NavigationCard({
       </Button>
     ) : null
 
+  // 「只看失效」开关（03 §7）：打开时只留失效侧卡片，其余整卡不渲染、不占位。
+  // 放在全部 Hook 调用之后、三段形态返回之前：Hook 顺序不受开关影响。
+  if (showFailingOnly && !isFailingHealthState(healthState)) return null
+
   // 1. 紧凑单行条形多态 (Compact Bar Mode)
   if (cardDisplayMode === 'compact') {
     return (
@@ -650,6 +748,9 @@ export const NavigationCard = memo(function NavigationCard({
                       <Star className="w-2 h-2 text-pinned fill-pinned" />
                       {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
                     </span>
+                  )}
+                  {healthState && (
+                    <CardHealthBadge href={item.href} health={item.health} state={healthState} />
                   )}
                 </div>
               </div>
@@ -899,6 +1000,9 @@ export const NavigationCard = memo(function NavigationCard({
                             <span title={item.title} className="block text-foreground group-hover/card:text-primary min-w-0 line-clamp-1 truncate leading-snug">{item.title}</span>
                           )}
                         </CardTitle>
+                        {healthState && (
+                          <CardHealthBadge href={item.href} health={item.health} state={healthState} />
+                        )}
                       </div>
 
                       {effectiveCardElements.showDescription && (
@@ -1205,6 +1309,7 @@ export const NavigationCard = memo(function NavigationCard({
                 </div>
                 )}
                 <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2 min-w-0">
                   <CardTitle className="text-sm sm:text-base font-semibold tracking-tight text-foreground group-hover/card:text-primary transition-colors min-w-0 flex-1">
                     {hasSiteDetail ? (
                       <Link
@@ -1219,6 +1324,10 @@ export const NavigationCard = memo(function NavigationCard({
                       <span title={item.title} className="block text-foreground group-hover/card:text-primary min-w-0 line-clamp-1 truncate leading-snug">{item.title}</span>
                     )}
                   </CardTitle>
+                  {healthState && (
+                    <CardHealthBadge href={item.href} health={item.health} state={healthState} />
+                  )}
+                  </div>
                 </div>
               </div>
 

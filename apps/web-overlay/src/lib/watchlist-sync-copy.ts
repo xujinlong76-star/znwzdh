@@ -10,6 +10,10 @@ export interface WatchSyncBannerInput {
   syncing?: boolean
   ok?: boolean
   pushed?: number
+  /** U-460：服务端确认应用的 ops 数（缺失时回退 pushed，老调用方仍能用） */
+  applied?: number
+  /** U-460：被另一台设备的更新版本覆盖、LWW 跳过的 ops 数 */
+  skipped?: number
   remoteRemoved?: number
   error?: string
   retryable?: boolean
@@ -25,14 +29,32 @@ export function describeWatchlistSyncBanner(input: WatchSyncBannerInput | null):
   if (input.syncing) return { tone: 'syncing', text: '正在与云端同步追剧清单…' }
 
   if (input.ok) {
+    // U-460：成功数按 applied 说，不许拿 pushed（提交数）冒充「已合并」。
+    // 老调用方没传 applied 时回退 pushed，文案与以前一致。
+    const pushed = input.pushed ?? 0
+    const applied = typeof input.applied === 'number' ? input.applied : pushed
+    const skipped = input.skipped ?? 0
+    // 被跳过的改动必须说出来：用户要知道「有改动没上去、本机还留着」，
+    // 而不是看到一句「已合并」以为万事大吉。
+    if (skipped > 0) {
+      const text =
+        applied > 0
+          ? `已把本机 ${applied} 条追剧更新合并到云端；另有 ${skipped} 条被另一台设备的更新版本覆盖，本机改动已保留，再改一次即可重试同步`
+          : `本次提交的 ${pushed} 条追剧更新都被另一台设备的更新版本覆盖，未合并到云端；本机改动已保留，再改一次即可重试同步`
+      const removed =
+        input.remoteRemoved && input.remoteRemoved > 0
+          ? `；另一台设备移除了 ${input.remoteRemoved} 部剧，已与云端保持一致`
+          : ''
+      return { tone: 'success', text: text + removed }
+    }
     if (input.remoteRemoved && input.remoteRemoved > 0) {
       return { tone: 'success', text: `另一台设备移除了 ${input.remoteRemoved} 部剧，已与云端保持一致` }
     }
     return {
       tone: 'success',
       text:
-        input.pushed && input.pushed > 0
-          ? `已把本机 ${input.pushed} 条追剧更新合并到云端`
+        applied > 0
+          ? `已把本机 ${applied} 条追剧更新合并到云端`
           : '云端同步正常',
     }
   }

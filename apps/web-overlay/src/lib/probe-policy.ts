@@ -105,6 +105,51 @@ export function classifyProbeStatus(status: number): ProbeOutcome | null {
   return { kind: "unverified", status, reason: `HTTP ${status}：请求被目标拒绝，未能确认可用性` };
 }
 
+/**
+ * 企业站终点（U-429）：301/302 把请求从原站带到 corporate/企业站域名时，
+ * 终点回的 200 只是企业官网/投资者关系页，不是原站内容——京东 www.jd.com
+ * 从海外出口 IP 访问时 301 到 corporate.jd.com/home 即是此例（终点 686 字节
+ * JoyGen 壳页，无一件商品）。这类终点不得判「存活」：记 unverified（未证实），
+ * 需浏览器层复核。
+ *
+ * 只在「换了域名」时触发：终点与原站同域（corporate.example.com 本就是该站
+ * 官网）不算；终点域名以 `corporate.` 开头或含 `.corporate.` 段即算企业站。
+ * 看的是终点域名，不是 URL 文本：corporate 只出现在路径里不算。
+ */
+export function corporateTerminalHostname(originalUrl: string, finalUrl: string): string | null {
+  try {
+    const from = new URL(originalUrl);
+    const to = new URL(finalUrl);
+    if (to.hostname.toLowerCase() === from.hostname.toLowerCase()) return null;
+    const host = to.hostname.toLowerCase();
+    if (host === "corporate" || host.startsWith("corporate.") || host.includes(".corporate.")) return host;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 301/302 终点为 corporate/企业站域名 → 未证实（未证实 ≠ 存活，需浏览器层复核）。
+ * 只看终点域名、不看状态码：终点 200 正是最常见的触发情形（301/302 只是典型
+ * 成因，函数本身不校验原始状态码是否为 301/302，也不校验终点状态码）。
+ * 终点不是 corporate 域名（同域、其他异域、URL 无法解析）时返回 null，交回
+ * 调用方继续做内容判定；状态码仅原样带入结论，不作判定依据。
+ */
+export function classifyCorporateTerminalRedirect(
+  originalUrl: string,
+  finalUrl: string,
+  status?: number,
+): ProbeOutcome | null {
+  const host = corporateTerminalHostname(originalUrl, finalUrl);
+  if (!host) return null;
+  return {
+    kind: "unverified",
+    status,
+    reason: `重定向终点为企业站域名（${host}）：终点返回的只是企业官网内容，未证实原站可用，需浏览器层复核`,
+  };
+}
+
 export interface ProbeErrorContext {
   /** 本次探测实际耗时（毫秒） */
   elapsedMs: number;

@@ -1,3 +1,10 @@
+'use client'
+
+// U-358：本区只在「今日中心」小窗打开时渲染，此前为服务端组件、由 page.tsx 经
+// 内容槽位透传——服务端每请求都渲染、客户端岛（daily-focus 等）也随首屏 JS 下发。
+// 改为客户端组件后由 NavigationContent 以 dynamic(ssr:false) 按需加载；
+// 本体只用纯函数（exam-calendar / drama-featured / safe-url）与客户端岛，无服务端取数，
+// 渲染结果与服务端版一致（日期按 Asia/Shanghai 显式算，见 todayLabel）。
 import Link from 'next/link'
 import { ArrowRight, ArrowUpRight, BellRing, CalendarDays, Clapperboard } from 'lucide-react'
 import DailyFocus from '@/components/daily-focus'
@@ -23,7 +30,7 @@ import { HomeTodayCountdown } from '@/components/home-today-countdown'
  *   - 今日专注（DailyFocus 岛，本机 localStorage，明天自动清空）；
  *   - 考试倒计时（exam-calendar 的 nearestExamCountdown / nextExamNode，
  *     服务端纯函数直出，不挂每秒 tick 的倒计时岛——tick 岛仍只在折叠区
- *     的完整考试条里；十一场全结束时整行不渲染，不挂空态占位）；
+ *     的完整考试条里；十二场全结束时整行不渲染，不挂空态占位）；
  *   - 今日提醒（U-102：exam-calendar 的 todayNodes / todayFollowUpNodes，
  *     服务端纯函数直出；有今日节点时才渲染今日行，无节点时整行不渲染、
  *     不挂空态占位；节点行有已核实官方 URL 的挂行内直达链接（U-31 配方），

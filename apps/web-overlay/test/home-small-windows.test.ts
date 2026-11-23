@@ -89,12 +89,22 @@ describe('pinned-widgets-store（桌面角落固定微件）', () => {
 })
 
 describe('首页极简结构与小窗懒加载边界', () => {
-  it('page.tsx 将今日/简报/考试/接力注入 todaySlots，不在首屏上方直接堆叠渲染', () => {
+  // U-358：今日/简报/考试/接力四条内容不再由 page.tsx 注入 todaySlots——
+  // 它们只在「今日中心」小窗打开时才需要，现由 NavigationContent 以
+  // dynamic(ssr:false) 按需加载；page.tsx 只把 todayBadge 摘要传给导航中心，
+  // 首屏上方不直接堆叠渲染。
+  it('page.tsx 不再注入今日内容（改由导航中心 dynamic 懒加载），不在首屏上方直接堆叠渲染', () => {
     const src = readOverlay('src/app/page.tsx')
-    expect(src).toContain('todaySlots={{')
+    expect(src).not.toContain('todaySlots={{')
     expect(src).toContain('todayBadge={todayBadge}')
     expect(src).not.toContain('<HomeTodayMore>')
     expect(src).not.toContain('<HomePluginSpotlight')
+    const nav = readOverlay('src/components/navigation-content.tsx')
+    expect(nav).toContain('todayContent={<TodayZoneContent />}')
+    expect(nav).toContain('briefContent={<BriefStripContent />}')
+    expect(nav).toContain('examContent={<ExamStripContent />}')
+    expect(nav).toContain('<HandoffCardWithCloudContent />')
+    expect(nav).toContain('<StreakBarContent />')
   })
 
   it('layout.tsx 不再全局渲染遮挡顶部的 fixed HomepageBanner', () => {

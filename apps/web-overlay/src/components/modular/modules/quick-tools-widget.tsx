@@ -157,7 +157,7 @@ export function QuickToolsWidget() {
               {currentTs || '—'}
             </div>
             <div className="text-xs text-muted-foreground font-mono">
-              {currentTs ? new Date(currentTs * 1000).toLocaleString('zh-CN') : '—'}
+              {currentTs ? new Date(currentTs * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '—'}
             </div>
             <div className="flex items-center justify-center gap-2">
               <Button

@@ -182,7 +182,10 @@ describe('名字解析', () => {
   })
 
   it('图标字段可能是图片地址：isIconUrl 只认路径与 http(s)', () => {
-    expect(isIconUrl('/assets/images/logos/claude.webp')).toBe(true)
+    // U-389 分层修法（2026-11-21）：旧例 '/assets/images/logos/claude.webp' 指向仓库内
+    // 无落盘的上游 vendor 目录；已随同名引用迁入 git 跟踪的 brand-icons/，
+    // 本断言只钉 isIconUrl 的路径识别行为，改例不改意图。
+    expect(isIconUrl('/brand-icons/claude.svg')).toBe(true)
     expect(isIconUrl('https://icon.horse/icon/github.com')).toBe(true)
     expect(isIconUrl('http://example.com/a.png')).toBe(true)
     expect(isIconUrl('code')).toBe(false)

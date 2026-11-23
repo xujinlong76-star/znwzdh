@@ -538,7 +538,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
                   收到来自「{incoming.payload.senderName}」的快传
                 </span>
                 <span className="text-[10px] font-mono text-zinc-400">
-                  {new Date(incoming.payload.timestamp).toLocaleTimeString()}
+                  {new Date(incoming.payload.timestamp).toLocaleTimeString(undefined, { timeZone: 'Asia/Shanghai' })}
                 </span>
               </div>
               <p className="text-xs text-zinc-600 dark:text-zinc-300">{incomingSummary.text}。</p>

@@ -94,7 +94,7 @@ export function ClockWidget({ config: _config }: { config?: Record<string, any> 
   const seconds = String(time.getSeconds()).padStart(2, '0')
 
   // 时钟卡倒计时行：最近一场未结束考试的一行文案（纯派生，不写存储）。
-  // time 每秒 tick 一次，午夜边界自动翻到下一场；十一场全结束返回
+  // time 每秒 tick 一次，午夜边界自动翻到下一场；十二场全结束返回
   // undefined，该行隐藏。只在时钟模式显示，专注模式不打扰。
   const countdown = nearestExamCountdown(time.getTime())
 
@@ -141,7 +141,7 @@ export function ClockWidget({ config: _config }: { config?: Record<string, any> 
               <span className="text-lg text-primary font-normal">:{seconds}</span>
             </div>
             <div className="text-xs text-muted-foreground font-mono">
-              {time.toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              {time.toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Shanghai' })}
               {lunarLabel ? ` · ${lunarLabel}` : ''}
             </div>
             {countdown && (

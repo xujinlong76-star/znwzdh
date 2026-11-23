@@ -108,6 +108,13 @@ export const USER_DATA_DOMAINS: readonly UserDataDomain[] = [
     note: "追剧清单条目（剧名/进度/节奏标注都是用户自记内容）；本期不进导出包（导出/导入另行排期），注销必须删净",
   },
   {
+    id: "examFollows",
+    table: "exam_follows",
+    ownerColumns: ["user_id"],
+    disposition: "delete",
+    note: "考试关注（U-379：关注的考试 + 已勾选的考前节点，与追剧清单同款云同步）；本期不进导出包，注销必须删净",
+  },
+  {
     id: "dramaCheckStates",
     table: "drama_check_states",
     ownerColumns: ["user_id"],

@@ -202,7 +202,7 @@ export function PluginAuditModal({ open, onOpenChange, plugin }: PluginAuditModa
           )}
 
           <div className="text-[11px] text-muted-foreground flex flex-wrap gap-1 items-center justify-between pt-1 font-mono">
-            <span>认证时间：{new Date(view.auditedAt).toLocaleString()}</span>
+            <span>认证时间：{new Date(view.auditedAt).toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })}</span>
             <span>契约版本：v1.0</span>
           </div>
 

@@ -167,7 +167,7 @@ export function formatVerifiedDate(verifiedAt: number | null | undefined): strin
   if (verifiedAt == null || !Number.isFinite(verifiedAt)) return null
   const date = new Date(verifiedAt)
   if (Number.isNaN(date.getTime())) return null
-  return date.toLocaleDateString('zh-CN')
+  return date.toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })
 }
 
 /**

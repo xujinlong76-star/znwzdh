@@ -15,6 +15,7 @@
 import { guardedFetch, outboundProfile, withTimeout, type GuardedFetchResult } from "@navhub/ai";
 import {
   auditPageHealth,
+  classifyCorporateTerminalRedirect,
   classifyProbeError as classifyErrorOutcome,
   classifyProbeStatus as classifyStatusOutcome,
   conditionalHeaders,
@@ -97,6 +98,11 @@ export function classifyProbeStatus(status: number): { grade: CandidateGrade; re
 function candidateOutcomeOf(res: GuardedFetchResult, url: string): ProbeOutcome {
   const statusOutcome = classifyStatusOutcome(res.status)
   if (statusOutcome) return statusOutcome
+  // U-429：301/302 终点为 corporate/企业站域名时，终点 200 只是企业官网内容，
+  // 不得判「存活」——记未证实，需浏览器层复核。必须在内容判定之前：企业站壳页
+  // 无停放词，正文检测会把它放过。
+  const corporate = classifyCorporateTerminalRedirect(url, res.finalUrl, res.status)
+  if (corporate) return corporate
   // 非文本响应（PDF/图片/压缩包）不做正文判定：二进制乱码的低熵会被读成停放页
   if (res.body && isTextualContentType(res.contentType)) {
     const health = auditPageHealth(url, res.body, undefined, undefined, { truncated: res.truncated })

@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS sites (
   redirect_to TEXT,
   health_error TEXT,
   last_checked_at INTEGER,
+  consecutive_failures INTEGER NOT NULL DEFAULT 0,
   deleted_at INTEGER,
   metadata TEXT,
   visit_count INTEGER NOT NULL DEFAULT 0,
@@ -419,6 +420,17 @@ CREATE TABLE IF NOT EXISTS watch_entries (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS watch_entries_user_key_idx ON watch_entries(user_id, drama_key);
 CREATE INDEX IF NOT EXISTS watch_entries_user_idx ON watch_entries(user_id);
+CREATE TABLE IF NOT EXISTS exam_follows (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  exam_id TEXT NOT NULL,
+  checked_json TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS exam_follows_user_exam_idx ON exam_follows(user_id, exam_id);
+CREATE INDEX IF NOT EXISTS exam_follows_user_idx ON exam_follows(user_id);
 CREATE TABLE IF NOT EXISTS drama_check_states (
  user_id TEXT NOT NULL,
  drama_key TEXT NOT NULL,
@@ -877,6 +889,7 @@ CREATE TABLE IF NOT EXISTS sites (
   redirect_to TEXT,
   health_error TEXT,
   last_checked_at BIGINT,
+  consecutive_failures INTEGER NOT NULL DEFAULT 0,
   deleted_at BIGINT,
   metadata TEXT,
   visit_count INTEGER NOT NULL DEFAULT 0,
@@ -1181,6 +1194,17 @@ CREATE TABLE IF NOT EXISTS watch_entries (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS watch_entries_user_key_idx ON watch_entries(user_id, drama_key);
 CREATE INDEX IF NOT EXISTS watch_entries_user_idx ON watch_entries(user_id);
+CREATE TABLE IF NOT EXISTS exam_follows (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  exam_id TEXT NOT NULL,
+  checked_json TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS exam_follows_user_exam_idx ON exam_follows(user_id, exam_id);
+CREATE INDEX IF NOT EXISTS exam_follows_user_idx ON exam_follows(user_id);
 CREATE TABLE IF NOT EXISTS drama_check_states (
  user_id TEXT NOT NULL,
  drama_key TEXT NOT NULL,

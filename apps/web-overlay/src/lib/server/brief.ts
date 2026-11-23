@@ -56,6 +56,10 @@ export interface HubBriefWatchItem {
   playUrl: string
   episode: number
   priority: 'high' | 'normal'
+  /** 预约态开播日提醒才带：预计开播日（YYYY-MM-DD）。 */
+  premiereDate?: string | null
+  /** 预约态才为 true：平台待确认，无播放页。 */
+  reserved?: boolean
 }
 
 export interface HubBrief {
@@ -69,7 +73,12 @@ export interface HubBrief {
   /** today = 今天真有新增；recent = 无今日新增、展示最近收录（带日期） */
   newSitesScope: 'today' | 'recent'
   newSites: HubBriefNewSite[]
-  watch: { due: HubBriefWatchItem[]; check: HubBriefWatchItem[] } | null
+  watch: {
+    due: HubBriefWatchItem[]
+    check: HubBriefWatchItem[]
+    /** 今天开播的预约剧（预计开播日就是今天，平台待确认）。 */
+    premieringToday: HubBriefWatchItem[]
+  } | null
 }
 
 export async function loadHotlist(revalidate = 300): Promise<HubHotlist | null> {
@@ -78,14 +87,6 @@ export async function loadHotlist(revalidate = 300): Promise<HubHotlist | null> 
 
 export async function loadBriefToday(revalidate = 300): Promise<HubBrief | null> {
   return hubGet<HubBrief>('/api/brief/today', revalidate)
-}
-
-/** 热度数值展示：12345 → 1.2万；源站没给数值时返回 null（不编造） */
-export function formatHotValue(value: number | null | undefined): string | null {
-  if (value == null || !Number.isFinite(value) || value <= 0) return null
-  if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(1).replace(/\.0$/, '')}亿`
-  if (value >= 10_000) return `${(value / 10_000).toFixed(1).replace(/\.0$/, '')}万`
-  return String(value)
 }
 
 /** 毫秒戳 → HH:mm（展示「更新于」） */

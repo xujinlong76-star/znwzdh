@@ -1019,6 +1019,12 @@ export type HubFavoriteSyncItem = HubFavorite & {
 export interface HubFavoritesSyncPayload {
   ok: boolean
   applied: number
+  /** U-371：本批被 LWW 跳过的 op 数（applied + skipped = 提交的 ops 数） */
+  skipped?: number
+  /** U-371：被跳过的 op 对应的 siteId（客户端按它保留脏标记、可重试） */
+  skippedSiteIds?: string[]
+  /** 超长备注被服务端截断的条数（此前类型未声明，回了也被丢弃） */
+  truncatedNotes?: number
   version: number
   items: HubFavoriteSyncItem[]
   folders: HubFavoriteFolder[]
@@ -1090,6 +1096,14 @@ export interface WatchSyncOp {
 export interface HubWatchSyncPayload {
   ok: boolean
   applied: number
+  /**
+   * U-460：服务端暂不回传 skipped 明细（只有 applied 计数）。声明为可选，
+   * 供将来服务端补齐 skipped/skippedKeys 后客户端直接用；当前客户端按
+   * applied 与回传 items 自行推导（见 useWatchlist 的 deriveSkippedWatchKeys）。
+   */
+  skipped?: number
+  /** U-460：被 LWW 跳过的 op 对应的 key（服务端补齐后直接用，现由客户端推导） */
+  skippedKeys?: string[]
   version: number
   items: HubWatchEntry[]
   truncatedTitles: number
@@ -1120,6 +1134,63 @@ export async function syncWatchlistBatch(
       }
       const text = await res.text()
       return (text ? JSON.parse(text) : {}) as HubWatchSyncPayload
+    },
+    onDegraded,
+  )
+}
+
+/* ------------------------------ 考试关注同步 ------------------------------ */
+
+export interface MyExamSyncOp {
+  op: 'follow' | 'check' | 'unfollow'
+  examId: string
+  /** follow/check 时的全量勾选组（调用方发本地整组，不发增量差分） */
+  checked?: string[]
+  createdAt?: number
+  /** 客户端发生时间；省略则由服务端取当前时间（LWW 依据） */
+  at?: number
+}
+
+export interface HubExamFollowItem {
+  examId: string
+  checked: string[]
+  createdAt: number
+  updatedAt: number
+  deletedAt?: number | null
+}
+
+export interface HubMyExamsSyncPayload {
+  ok: boolean
+  applied: number
+  version: number
+  items: HubExamFollowItem[]
+}
+
+/**
+ * 考试关注批量同步（U-379）：与追剧清单同步同一套协议（ops + since 增量 + 墓碑），
+ * 走 BFF `/api/me/exams/sync`（会话派生身份）——匿名身份不适用，
+ * 未登录时关注只存本机（见 useMyExams 的 syncMyExamsToCloud）。
+ */
+export async function syncMyExamsBatch(
+  ops: MyExamSyncOp[],
+  since: number,
+  onDegraded?: DegradedHandler,
+): Promise<HubMyExamsSyncPayload | null> {
+  return degrade<HubMyExamsSyncPayload | null>(
+    null,
+    async () => {
+      const res = await fetch('/api/me/exams/sync', {
+        method: 'POST',
+        signal: readSignal(undefined),
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ops, since }),
+      })
+      if (!res.ok) {
+        const detail = await hubServerMessage(res)
+        throw hubError(res.status, detail.message, detail.payload)
+      }
+      const text = await res.text()
+      return (text ? JSON.parse(text) : {}) as HubMyExamsSyncPayload
     },
     onDegraded,
   )

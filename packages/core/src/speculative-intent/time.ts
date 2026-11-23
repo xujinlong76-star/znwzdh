@@ -29,7 +29,7 @@ export function tryParseDateToTimestamp(input: string): SpeculativeIntentResult 
   const ms = d.getTime();
   const sec = Math.floor(ms / 1000);
   const iso = d.toISOString();
-  const localStr = d.toLocaleString('zh-CN', { hour12: false });
+  const localStr = d.toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
 
   return {
     type: 'date_to_ts',
@@ -72,7 +72,7 @@ export function tryParseTimestamp(input: string): SpeculativeIntentResult | null
   if (date.getFullYear() < 2000 || date.getFullYear() > 2050) return null;
 
   const iso = date.toISOString();
-  const local = date.toLocaleString('zh-CN', { hour12: false });
+  const local = date.toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
   const diffSec = Math.round((Date.now() - ms) / 1000);
   let relative = '';
   if (Math.abs(diffSec) < 60) relative = '刚刚';

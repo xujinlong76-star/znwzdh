@@ -55,7 +55,7 @@ afterAll(() => {
 const NOV_18_0800_CST = Date.UTC(2026, 10, 18, 0, 0, 0)
 /** 2026-11-24 08:00 北京时间：无今日节点（复核窗口进行中，但既非单日也非起止日） */
 const NOV_24_0800_CST = Date.UTC(2026, 10, 24, 0, 0, 0)
-/** 2026-12-21 08:00 北京时间：十一场全过，无今日节点、无倒计时 */
+/** 2026-12-21 08:00 北京时间：十二场未全过——无今日节点，倒计时切到广东自考·1月 */
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
 
 const renderZone = (nowMs: number) =>
@@ -94,16 +94,19 @@ describe('A3：有今日节点时渲染今日行，7 项 label 与 detail 原文
     expect(html).toContain('11 月 18 日 15:00 起可查')
   })
 
-  it('无今日节点的日子整行不渲染、不挂空态占位（11-24 倒计时行仍在，12-21 整卡消失）', () => {
-    const nov24 = renderZone(NOV_24_0800_CST)
-    expect(nov24).not.toContain('aria-label="今日节点"')
-    expect(nov24).not.toContain('今日提醒')
-    expect(nov24).not.toContain('今日截止')
+  it('11-24 今日行出现（广东自考·1月新生预报名 / 正式报名开始日），12-21 无今日行但倒计时切到广东自考·1月', () => {
+    const nov24 = unesc(renderZone(NOV_24_0800_CST))
+    expect(nov24).toContain('aria-label="今日节点"')
+    expect(nov24).toContain('今日提醒')
+    expect(nov24).toContain('新生预报名')
+    expect(nov24).toContain('正式报名')
     expect(nov24).toContain('距国考 4 天')
     const dec21 = renderZone(DEC_21_0800_CST)
     expect(dec21).not.toContain('aria-label="今日节点"')
     expect(dec21).not.toContain('今日提醒')
     expect(dec21).not.toContain('今日截止')
+    // C4（D2 定稿接受 nearest 改写）：12-21 考研已过，倒计时行显示新最近场
+    expect(dec21).toContain('距广东自考·1月 19 天')
   })
 })
 
@@ -154,9 +157,15 @@ describe('A5 渲染：今日行展开区展示接续节点（文职 / 京考，�
     expect(html).toContain('12 月 1 日 9:00 至 12 月 6 日 16:30')
   })
 
-  it('「京考缴费 11-21–23」不出现', () => {
+  // U-395 按新行为改写（不是删除）：京考缴费节点已收，11-18 当天接续区即出现
+  // 「京考 · 缴费」行。注意旧断言写的是无分隔的「京考缴费」，而渲染层
+  // TodayNodeLabel 拼的是「京考 · 缴费」（带 · 分隔），旧「不出现」断言
+  // 即使节点存在也会通过，是空断言；改写后按真实渲染文案断言。
+  it('「京考缴费 11-21–23」出现（接续区）', () => {
     const html = unesc(renderZone(NOV_18_0800_CST))
-    expect(html).not.toContain('京考缴费')
+    expect(html).toContain('京考 · 缴费')
+    expect(html).toContain('11 月 23 日 24:00')
+    expect(html).toContain('逾期未完成缴费视为自动放弃报考资格')
   })
 })
 

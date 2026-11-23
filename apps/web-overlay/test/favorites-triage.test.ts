@@ -326,7 +326,7 @@ describe('接线守卫：hook 与调用点按设计走', () => {
   })
 
   it('toggle() 新收按开关打戳：开着进 inbox，关着直接 permanent', () => {
-    expect(hook).toContain('enterInbox({ ...site, createdAt: now }, now)')
+    expect(hook).toContain('enterInbox({ ...site, createdAt: now, updatedAt: now }, now)')
     expect(hook).toContain('readTriageSettings().enabled')
   })
 

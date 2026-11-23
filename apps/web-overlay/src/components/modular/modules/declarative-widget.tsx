@@ -346,7 +346,7 @@ export function DeclarativeWidget({ config, title: titleProp, onConfigure }: Dec
       {/* 底部更新状态 */}
       {lastUpdated && (
         <div className="pt-2 text-[10px] text-muted-foreground text-right border-t border-border/40">
-          已更新于 {lastUpdated.toLocaleTimeString()}
+          已更新于 {lastUpdated.toLocaleTimeString(undefined, { timeZone: 'Asia/Shanghai' })}
         </div>
       )}
     </div>

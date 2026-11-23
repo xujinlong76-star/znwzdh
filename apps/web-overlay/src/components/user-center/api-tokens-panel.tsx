@@ -39,7 +39,7 @@ function scopeLabel(scopes: string[]): string {
 function formatDate(ts: number | null): string {
   if (!ts) return '—'
   try {
-    return new Date(ts).toLocaleDateString('zh-CN')
+    return new Date(ts).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })
   } catch {
     return '—'
   }

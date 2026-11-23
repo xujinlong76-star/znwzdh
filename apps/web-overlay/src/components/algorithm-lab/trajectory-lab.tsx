@@ -338,7 +338,7 @@ export default function TrajectoryLab() {
         const url = origin ? `${origin}${next.targetPath}` : next.targetPath;
         const action = classifyCandidate(url, compiled);
         const entry: TrajectoryHitLogEntry = {
-          time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+          time: new Date().toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' }),
           url,
           speed: Number(next.speed.toFixed(3)),
           angleDeg: Number((Math.acos(Math.min(1, Math.max(-1, next.cosTheta))) * 180 / Math.PI).toFixed(1)),

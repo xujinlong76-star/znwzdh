@@ -12,7 +12,7 @@
  *  - unknown → 永不进表，进 `unscheduled`（「还没排进来」区）。
  * 周一起点、今天判定一律用本地时区（复用 `localDateKey`）。
  */
-import { isCadenceDay, localDateKey, type WatchEntry } from './watchlist'
+import { isCadenceDay, isReservedEntry, localDateKey, type WatchEntry } from './watchlist'
 
 export interface WeekScheduleDay {
   /** 当天本地零点 */
@@ -87,6 +87,8 @@ export function buildWeekSchedule(entries: WatchEntry[], weekStart: Date, now: D
   }
 
   for (const entry of entries) {
+    // 预约态不进表：还没开播、没有更新节奏可排；它在清单页有自己的预约区。
+    if (isReservedEntry(entry)) continue
     const cadence = entry.cadence
     if (cadence.kind === 'daily') {
       daily.push(entry)

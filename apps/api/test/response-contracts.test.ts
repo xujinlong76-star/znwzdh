@@ -36,6 +36,7 @@ import {
   InstalledPluginsResponse,
   LinkHealthOverviewResponse,
   LinkHealthVisibilityResponse,
+  MeExamsSyncResponse,
   MeFavoriteTrashClearResponse,
   MeFavoriteTrashListResponse,
   MeFavoriteTrashPurgeResponse,
@@ -1110,6 +1111,41 @@ describe("写路由真实响应满足契约（状态码 + 形状）", () => {
     const deletedBody = deleted.json();
     expectRoutedContract("DELETE /api/me/wanted/{id}", MeWantedSearchDeleteResponse, deletedBody);
     expect(deletedBody.removed).toBe(true);
+  });
+
+  it("考试关注同步（U-379）：follow 一场 + 增量拉取，响应满足契约", async () => {
+    // 开放模式：自报头即受信身份，与本组其它写路由同一口径（WRITE_HEADERS）；
+    // 与追剧/收藏同步不同：本文件直接跑真实响应，所以不进豁免清单。
+    // 用独立 examId（guokao）且只写 contract-write-user 的行，不碰 ME_IDENTITY 的
+    // 概览断言；成功路径只记同步水位，不写审计/通知，不污染其它用例。
+    const now = Date.now();
+    const synced = await app.inject({
+      method: "POST",
+      url: "/api/me/exams/sync",
+      headers: WRITE_HEADERS,
+      payload: { ops: [{ op: "follow", examId: "guokao", checked: ["准考证打印"], createdAt: now, at: now }] },
+    });
+    expect(synced.statusCode).toBe(200);
+    const syncedBody = synced.json();
+    expectRoutedContract("POST /api/me/exams/sync", MeExamsSyncResponse, syncedBody);
+    expect(syncedBody.ok).toBe(true);
+    expect(syncedBody.applied).toBe(1);
+    expect(syncedBody.items).toHaveLength(1);
+    expect(syncedBody.items[0].examId).toBe("guokao");
+    expect(syncedBody.items[0].checked).toEqual(["准考证打印"]);
+
+    // 用返回的 version 当 since 再拉一次：无新写即 applied=0、增量为空
+    const again = await app.inject({
+      method: "POST",
+      url: "/api/me/exams/sync",
+      headers: WRITE_HEADERS,
+      payload: { ops: [], since: syncedBody.version },
+    });
+    expect(again.statusCode).toBe(200);
+    const againBody = again.json();
+    expectRoutedContract("POST /api/me/exams/sync", MeExamsSyncResponse, againBody, "POST /api/me/exams/sync（增量）");
+    expect(againBody.applied).toBe(0);
+    expect(againBody.items).toEqual([]);
   });
 
   it("精选专题全链路：建改删 + 条目增改删 + 公开详情", async () => {

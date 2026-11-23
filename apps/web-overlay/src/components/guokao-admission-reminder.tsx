@@ -48,6 +48,16 @@ export function GuokaoAdmissionReminder({
           去打印准考证
           <ArrowUpRight className="ml-0.5 inline h-3.5 w-3.5" aria-hidden />
         </a>
+        {' · 门户备用：'}
+        <a
+          href={safeHref(reminder.portalUrl)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-sky-700 hover:underline dark:text-sky-400"
+        >
+          专题网站门户
+          <ArrowUpRight className="ml-0.5 inline h-3.5 w-3.5" aria-hidden />
+        </a>
       </p>
     )
   }
@@ -55,11 +65,23 @@ export function GuokaoAdmissionReminder({
   // U-236：开放期（open / last-call）卡片收敛为一行瘦身提示——窗口与入口
   // 已在时间轴节点行完整出现，提醒块只留节点行没有的增量（入场新规 +
   // 多打两份）；11-15–11-22（countdown / warmup）无 slimCardLine，走全句。
+  // U-421：瘦身行仍须带「去打印准考证」直达链——开窗在即，用户在提醒块
+  // 就应一点直达，不必再去节点行找入口；只加打印链（reminder.url，即
+  // GUOKAO_ADMISSION_URL），不加窗口文案与门户备用链，瘦身口径不变。
   if (reminder.slimCardLine) {
     return (
       <div className="mt-4 rounded-xl border border-red-500/25 bg-red-500/5 p-3.5">
         <p className="text-sm font-semibold text-red-700 dark:text-red-400">准考证打印提醒</p>
         <p className="mt-1 text-sm leading-relaxed text-foreground">{reminder.slimCardLine}</p>
+        <a
+          href={safeHref(reminder.url)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-flex min-h-11 items-center gap-1 rounded-full border border-sky-500/25 bg-sky-500/5 px-3.5 text-sm font-medium text-sky-700 hover:underline dark:text-sky-400"
+        >
+          去打印准考证
+          <ArrowUpRight className="h-4 w-4" aria-hidden />
+        </a>
       </div>
     )
   }
@@ -77,6 +99,18 @@ export function GuokaoAdmissionReminder({
         去打印准考证
         <ArrowUpRight className="h-4 w-4" aria-hidden />
       </a>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+        打不开时走专题网站门户{' '}
+        <a
+          href={safeHref(reminder.portalUrl)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-sky-700 hover:underline dark:text-sky-400"
+        >
+          bm.scs.gov.cn/kl2027
+        </a>
+        ，选「考生考务入口」进入打印系统。
+      </p>
     </div>
   )
 }

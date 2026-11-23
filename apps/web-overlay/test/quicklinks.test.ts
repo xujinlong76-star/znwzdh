@@ -8,8 +8,10 @@
  *  1. 校验：合法模板通过，8 类非法输入逐一拒绝且 reason 正确；
  *  2. 代入：整段参数一次 encodeURIComponent，`& = # {q} 中文 emoji` 全转义，
  *     空参数走落地页，超 500 字符 → null；
- *  3. 匹配：`!gh x` / `gh x` 命中，`!gh` 命中落地页，裸 `gh` / 空串 /
- *     `!unknown x` / 拼错前缀均 null，大小写不敏感，用户 gh 覆盖内置 gh；
+ *  3. 匹配：`!gh x` / `@gh x` / `gh x` 命中同一引擎、同一 URL，`!gh`
+ *     命中落地页，裸 `gh` / 空串 / 未完成形态返 `none`，完整形态的
+ *     `!unknown x` / 拼错前缀返 `unknown-prefix` 信号，大小写不敏感，
+ *     用户 gh 覆盖内置 gh；
  *  4. 往返：quicklinkFromFavorite 缺任一字段 → null。
  */
 import { describe, expect, it } from 'vitest'
@@ -230,59 +232,124 @@ describe('resolveQuicklinkUrl / landingUrl', () => {
 describe('matchQuicklinkCommand', () => {
   const entries = [GH, NPM]
 
-  it('!gh react 与 gh react 都命中，arg 正确', () => {
-    expect(matchQuicklinkCommand('!gh react', entries)).toEqual({
+  it('!gh react、@gh react 与 gh react 都命中同一引擎、同一 URL，arg 正确', () => {
+    const expected = {
+      kind: 'hit',
       entry: GH,
       arg: 'react',
       url: 'https://github.com/search?q=react',
-    })
-    expect(matchQuicklinkCommand('gh react', entries)).toEqual({
-      entry: GH,
-      arg: 'react',
-      url: 'https://github.com/search?q=react',
-    })
-    expect(matchQuicklinkCommand('!npm lodash', entries)?.url).toBe(
-      'https://www.npmjs.com/search?q=lodash',
-    )
+    }
+    expect(matchQuicklinkCommand('!gh react', entries)).toEqual(expected)
+    expect(matchQuicklinkCommand('@gh react', entries)).toEqual(expected)
+    expect(matchQuicklinkCommand('gh react', entries)).toEqual(expected)
+    const npmHit = matchQuicklinkCommand('!npm lodash', entries)
+    expect(npmHit.kind).toBe('hit')
+    if (npmHit.kind === 'hit') expect(npmHit.url).toBe('https://www.npmjs.com/search?q=lodash')
   })
 
   it('!gh（无参数）命中落地页；裸 gh（无 !、无参数）不触发', () => {
     expect(matchQuicklinkCommand('!gh', entries)).toEqual({
+      kind: 'hit',
       entry: GH,
       arg: '',
       url: 'https://github.com/search?q=',
     })
-    expect(matchQuicklinkCommand('gh', entries)).toBeNull()
-    expect(matchQuicklinkCommand('gh   ', entries)).toBeNull()
+    expect(matchQuicklinkCommand('gh', entries)).toEqual({ kind: 'none' })
+    expect(matchQuicklinkCommand('gh   ', entries)).toEqual({ kind: 'none' })
+    expect(matchQuicklinkCommand('@gh', entries)).toEqual({ kind: 'none' })
   })
 
-  it('空串 / !unknown x / 拼错前缀 githb x 均 null，不报错', () => {
-    expect(matchQuicklinkCommand('', entries)).toBeNull()
-    expect(matchQuicklinkCommand('   ', entries)).toBeNull()
-    expect(matchQuicklinkCommand('!unknown x', entries)).toBeNull()
-    expect(matchQuicklinkCommand('unknown x', entries)).toBeNull()
-    expect(matchQuicklinkCommand('!githb react', entries)).toBeNull()
-    expect(matchQuicklinkCommand('githb react', entries)).toBeNull()
+  it('空串返 none；完整形态的未知前缀返 unknown-prefix 信号，不报错', () => {
+    expect(matchQuicklinkCommand('', entries)).toEqual({ kind: 'none' })
+    expect(matchQuicklinkCommand('   ', entries)).toEqual({ kind: 'none' })
+    expect(matchQuicklinkCommand('!unknown x', entries)).toEqual({
+      kind: 'unknown-prefix',
+      prefix: 'unknown',
+      arg: 'x',
+    })
+    expect(matchQuicklinkCommand('unknown x', entries)).toEqual({
+      kind: 'unknown-prefix',
+      prefix: 'unknown',
+      arg: 'x',
+    })
+    expect(matchQuicklinkCommand('!githb react', entries)).toEqual({
+      kind: 'unknown-prefix',
+      prefix: 'githb',
+      arg: 'react',
+    })
+    expect(matchQuicklinkCommand('githb react', entries)).toEqual({
+      kind: 'unknown-prefix',
+      prefix: 'githb',
+      arg: 'react',
+    })
+  })
+
+  it('! 形态 arg 为空时不判未知：!unknown（无参数）返 none，不闪提示', () => {
+    expect(matchQuicklinkCommand('!unknown', entries)).toEqual({ kind: 'none' })
+    expect(matchQuicklinkCommand('!unknown ', entries)).toEqual({ kind: 'none' })
   })
 
   it('大小写不敏感：!GH React 命中 gh', () => {
-    expect(matchQuicklinkCommand('!GH React', entries)?.entry).toBe(GH)
-    expect(matchQuicklinkCommand('Gh react', entries)?.entry).toBe(GH)
+    const a = matchQuicklinkCommand('!GH React', entries)
+    expect(a.kind).toBe('hit')
+    if (a.kind === 'hit') expect(a.entry).toBe(GH)
+    const b = matchQuicklinkCommand('Gh react', entries)
+    expect(b.kind).toBe('hit')
+    if (b.kind === 'hit') expect(b.entry).toBe(GH)
   })
 
   it('多词参数整体保留；前后空白不影响', () => {
-    expect(matchQuicklinkCommand('  !gh  react hooks  ', entries)?.arg).toBe('react hooks')
-    expect(matchQuicklinkCommand('gh   react hooks', entries)?.arg).toBe('react hooks')
+    const a = matchQuicklinkCommand('  !gh  react hooks  ', entries)
+    expect(a.kind).toBe('hit')
+    if (a.kind === 'hit') {
+      expect(a.arg).toBe('react hooks')
+      expect(a.url).toBe('https://github.com/search?q=react%20hooks')
+    }
+    const b = matchQuicklinkCommand('gh   react hooks', entries)
+    expect(b.kind).toBe('hit')
+    if (b.kind === 'hit') expect(b.arg).toBe('react hooks')
   })
 
-  it('@gh react 不走这里（保持 parseOmniCommand 现状）', () => {
-    expect(matchQuicklinkCommand('@gh react', entries)).toBeNull()
+  it('内置引擎默认注入：不传用户 entries 时 !gh/@gh/gh 仍命中 GitHub', () => {
+    for (const q of ['!gh react', '@gh react', 'gh react']) {
+      const hit = matchQuicklinkCommand(q, [])
+      expect(hit.kind).toBe('hit')
+      if (hit.kind === 'hit') {
+        expect(hit.entry.quickPrefix).toBe('gh')
+        expect(hit.url).toBe('https://github.com/search?q=react')
+      }
+    }
+    expect(matchQuicklinkCommand('/gh react', [])).toEqual({ kind: 'none' })
   })
 
-  it('前缀命中但参数超 500 字符 → url 为 null（调用方 toast、不开页）', () => {
+  it('用户条目同前缀覆盖内置：用户 gh 优先于内置 GitHub', () => {
+    const hit = matchQuicklinkCommand('!gh react', [GH])
+    expect(hit.kind).toBe('hit')
+    if (hit.kind === 'hit') expect(hit.entry).toBe(GH)
+  })
+
+  it('模板无占位符 → bad-template（调用方明示、Enter 不外跳）', () => {
+    const bad: QuicklinkEntry = {
+      siteId: 'bad',
+      title: '坏模板',
+      href: 'https://example.com/',
+      quickPrefix: 'bad',
+      templateUrl: 'https://example.com/search',
+    }
+    expect(matchQuicklinkCommand('!bad x', [bad])).toEqual({
+      kind: 'bad-template',
+      entry: bad,
+      arg: 'x',
+    })
+  })
+
+  it('前缀命中但参数超 500 字符 → hit 且 url 为 null（调用方 toast、不开页）', () => {
     const hit = matchQuicklinkCommand(`!gh ${'a'.repeat(501)}`, entries)
-    expect(hit?.entry).toBe(GH)
-    expect(hit?.url).toBeNull()
+    expect(hit.kind).toBe('hit')
+    if (hit.kind === 'hit') {
+      expect(hit.entry).toBe(GH)
+      expect(hit.url).toBeNull()
+    }
   })
 })
 

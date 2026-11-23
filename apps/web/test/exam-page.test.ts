@@ -5,7 +5,7 @@
  *  - 国考卡片挂准考证打印提醒岛（只在 11-22–11-29 15:00 渲染，官方链接在
  *    exam-calendar 常量里，不在页面写死域名；15:00 边界 60 秒 tick 重算、
  *    最长迟 1 分钟下线（U-235），服务端页 revalidate 1 小时会迟到 1 小时）；
- *  - 考试清单只含已核实的十一场：国考、四六级、省考、京考、考研、成考、军队文职、教资面试、江苏自考、广东自考、上海自考，不含已考完的
+ *  - 考试清单只含已核实的十二场：国考、四六级、省考、京考、考研、成考、军队文职、教资面试、江苏自考、广东自考、广东自考·1月、上海自考，不含已考完的
  *    经济师（11-07–08）等过期场次；省考文案不写「联考」；
  *    成考是例外：统考 10-17–18 已结束，但成绩节点 11-18 未过，故列入清单。
  *    江苏自考是第二个例外：考期 10-24–25 已结束，但成绩节点 11-18 未过，故列入清单。
@@ -43,11 +43,13 @@ const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
 
 describe('daysUntil（北京时间自然日）', () => {
-  it('十一场考试距 11-13 的天数与日历一致', () => {
+  it('十二场考试距 11-13 的天数与日历一致', () => {
     expect(daysUntil('2026-11-29', NOV_13_0800_CST)).toBe(16)
     expect(daysUntil('2026-12-06', NOV_13_0800_CST)).toBe(23)
     expect(daysUntil('2026-12-12', NOV_13_0800_CST)).toBe(29)
     expect(daysUntil('2026-12-19', NOV_13_0800_CST)).toBe(36)
+    // 广东自考·1月考期 2027-01-09 距 11-13 为 57 天（11 月余 17 天 + 12 月 31 天 + 1 月 9 天）
+    expect(daysUntil('2027-01-09', NOV_13_0800_CST)).toBe(57)
     // 京考按首考日算：公安专业科目 12-05 距 11-13 为 22 天（公共科目 12-06 为 23 天，与省考同值）；
     // 教资面试首日也是 12-05，距 11-13 同为 22 天
     expect(daysUntil('2026-12-05', NOV_13_0800_CST)).toBe(22)
@@ -178,9 +180,9 @@ describe('countdownParts', () => {
   })
 })
 
-describe('考试清单只含已核实的十一场', () => {
-  it('恰好十一场，首日与核实日期一致', () => {
-    expect(EXAMS.map((e) => e.id)).toEqual(['guokao', 'cet', 'shengkao', 'jiaoshi-mianshi', 'jundui-wenzhi', 'jingkao', 'kaoyan', 'chengkao', 'jiangsu-zikao', 'guangdong-zikao', 'shanghai-zikao'])
+describe('考试清单只含已核实的十二场', () => {
+  it('恰好十二场，首日与核实日期一致', () => {
+    expect(EXAMS.map((e) => e.id)).toEqual(['guokao', 'cet', 'shengkao', 'jiaoshi-mianshi', 'jundui-wenzhi', 'jingkao', 'kaoyan', 'chengkao', 'jiangsu-zikao', 'guangdong-zikao', 'guangdong-zikao-2027-01', 'shanghai-zikao'])
     expect(EXAMS.map((e) => e.startISO)).toEqual([
       '2026-11-29',
       '2026-12-12',
@@ -192,6 +194,7 @@ describe('考试清单只含已核实的十一场', () => {
       '2026-10-17',
       '2026-10-24',
       '2026-10-24', // 广东自考（与江苏自考同日）
+      '2027-01-09', // 广东自考·1月（2027 年 1 月考期，C4 新增）
       '2026-10-24', // 上海自考（与江苏/广东自考同日）
     ])
   })
@@ -365,20 +368,21 @@ describe('广东自考节点（U-144）', () => {
 describe('京考节点（U-76）', () => {
   const jingkao = EXAMS.find((e) => e.id === 'jingkao')!
 
-  it('只列已核实的四节点：报名、准考证打印、公安专业科目、公共科目；成绩与缴费节点不收', () => {
+  it('只列已核实的五节点：报名、缴费、准考证打印、公安专业科目、公共科目；成绩节点不收', () => {
     expect(jingkao.name).toBe('2027 年度北京市公务员考试')
     expect(jingkao.shortName).toBe('京考')
     expect(jingkao.tagline).toBe('公安专业科目 12 月 5 日 · 公共科目 12 月 6 日')
     expect(jingkao.examDateLabel).toBe('12 月 5–6 日')
     expect(jingkao.firstExamDayISO).toBe('2026-12-05')
-    expect(jingkao.nodes.map((n) => n.label)).toEqual(['报名', '准考证打印', '公安专业科目笔试', '公共科目笔试'])
+    expect(jingkao.nodes.map((n) => n.label)).toEqual(['报名', '缴费', '准考证打印', '公安专业科目笔试', '公共科目笔试'])
     expect(jingkao.nodes.map((n) => [n.label, n.startISO, n.endISO])).toEqual([
       ['报名', '2026-11-12', '2026-11-18'],
+      ['缴费', '2026-11-21', '2026-11-23'],
       ['准考证打印', '2026-12-01', '2026-12-06'],
       ['公安专业科目笔试', '2026-12-05', '2026-12-05'],
       ['公共科目笔试', '2026-12-06', '2026-12-06'],
     ])
-    // 报名与准考证打印挂北京市人事考试通用平台（公告原文内嵌 URL，http 原文）；
+    // 报名、缴费与准考证打印挂北京市人事考试通用平台（公告原文内嵌 URL，http 原文）；
     // 公共科目挂首都之窗官方公告；公安专业科目无入口不挂。
     expect(JINGKAO_APPLY_URL).toBe('http://rsj.beijing.gov.cn/bm/ztzl/gwy/')
     expect(JINGKAO_NOTICE_URL).toBe(
@@ -386,13 +390,13 @@ describe('京考节点（U-76）', () => {
     )
     const byLabel = new Map(jingkao.nodes.map((n) => [n.label, n]))
     expect(byLabel.get('报名')?.url).toBe(JINGKAO_APPLY_URL)
+    expect(byLabel.get('缴费')?.url).toBe(JINGKAO_APPLY_URL)
     expect(byLabel.get('准考证打印')?.url).toBe(JINGKAO_APPLY_URL)
     expect(byLabel.get('公安专业科目笔试')?.url).toBeUndefined()
     expect(byLabel.get('公共科目笔试')?.url).toBe(JINGKAO_NOTICE_URL)
-    // 成绩节点不收（官方只写「2027 年 1 月」，无确切日）；缴费节点不收
-    // （文件无缴费类节点先例）。label 里出现即红。
+    // 成绩节点不收（官方只写「2027 年 1 月」，无确切日）。缴费节点已收
+    // （U-395，公告原文逐字核实；军队文职已有缴费节点先例）。label 里出现即红（仅成绩）。
     expect(jingkao.nodes.map((n) => n.label).join('')).not.toContain('成绩')
-    expect(jingkao.nodes.map((n) => n.label).join('')).not.toContain('缴费')
   })
 
   it('节点状态按日期翻转：报名窗口内进行中、11-19 已结束；准考证窗口内进行中、12-07 已结束；两科笔试当天为今天、次日已结束', () => {

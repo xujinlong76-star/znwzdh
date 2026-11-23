@@ -63,6 +63,7 @@ const RENDER_ITEM_FIELDS = [
   "enabled",
   "status",
   "tags",
+  "hubId",
   "health",
   "videoConfig",
 ] as const;

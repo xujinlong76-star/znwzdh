@@ -5,12 +5,17 @@
  * 入口不再全文重复；11-15–11-22（countdown / warmup）行为不变。
  * 验收：11-23–11-29 视角下「11 月 29 日 15:00 截止」与打印入口在提醒块
  * 内不再出现（只剩节点行一次完整表达）；11-15–11-22 提醒块行为不变。
+ * 订正（U-421）：瘦身行仍须带「去打印准考证」直达链——开窗在即，用户在
+ * 提醒块就应一点直达；只加一条打印链（reminder.url），窗口文案与门户
+ * 备用链仍不重复。下述「无 <a>」断言按新行为改写为「恰一条打印链」，
+ * 其余 U-236 断言（无截止时刻、无门户域名）不变。
  */
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { GuokaoAdmissionReminder } from '../src/components/guokao-admission-reminder'
-import { EXAMS, admissionReminderFor } from '../src/lib/exam-calendar'
+import { EXAMS, GUOKAO_ADMISSION_URL, admissionReminderFor } from '../src/lib/exam-calendar'
+import { safeHref } from '../src/lib/safe-url'
 
 const guokao = EXAMS.find((e) => e.id === 'guokao')!
 
@@ -58,22 +63,30 @@ describe('U-236：瘦身行只在开放期出现，11-15–11-22 不设', () => 
   })
 })
 
-describe('U-236：开放期卡片真渲染为瘦身块（无窗口、无入口链接）', () => {
-  it('11-23 卡片渲染：标题 + 瘦身行各一次，无 <a>、无截止时刻、无入口域名', () => {
+describe('U-236：开放期卡片真渲染为瘦身块（U-421：瘦身行带一条打印链）', () => {
+  it('11-23 卡片渲染：标题 + 瘦身行 + 恰一条打印链，无截止时刻、无门户域名', () => {
     const html = cardHtml(NOV_23_NOON_CST)
     expect(html).toContain('准考证打印提醒')
     expect(html).toContain('多打两份备用')
     expect(html).toContain('开考 15 分钟后不得入场')
-    expect(html).not.toContain('<a ')
+    // U-421：瘦身行带「去打印准考证」直达链（恰一条 <a>，目标为 GUOKAO_ADMISSION_URL）；
+    // 窗口文案与门户备用链仍不重复（U-236 口径不变）。
+    expect(html).toContain('去打印准考证')
+    expect(html).toContain(`href="${safeHref(GUOKAO_ADMISSION_URL)}"`)
+    expect(html.match(/<a /g)?.length).toBe(1)
     expect(html).not.toContain('11 月 29 日 15:00')
-    expect(html).not.toContain('gwy.cpta.com.cn')
-    expect(html).not.toContain('去打印准考证')
+    // U-421：打印链 href 本身就是 gwy.cpta.com.cn（目标常量），故此处只禁门户域名；
+    // 入口域名是否恰为打印系统，由上方的 href 全等断言锁定。
+    expect(html).not.toContain('bm.scs.gov.cn')
+    expect(html).not.toContain('专题网站门户')
   })
 
-  it('11-27 末班卡片同样收敛为瘦身块', () => {
+  it('11-27 末班卡片同样收敛为瘦身块（U-421：同样带一条打印链）', () => {
     const html = cardHtml(NOV_27_NOON_CST)
     expect(html).toContain('多打两份备用')
-    expect(html).not.toContain('<a ')
+    expect(html).toContain('去打印准考证')
+    expect(html).toContain(`href="${safeHref(GUOKAO_ADMISSION_URL)}"`)
+    expect(html.match(/<a /g)?.length).toBe(1)
     expect(html).not.toContain('11 月 29 日 15:00')
   })
 

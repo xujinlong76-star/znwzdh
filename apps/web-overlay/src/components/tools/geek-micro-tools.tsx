@@ -167,7 +167,7 @@ export function GeekMicroTools({ query, onSelectSample }: GeekMicroToolsProps) {
             const expSec = payloadObj.exp
             const nowSec = Math.floor(Date.now() / 1000)
             isExpired = nowSec > expSec
-            expFormatted = new Date(expSec * 1000).toLocaleString()
+            expFormatted = new Date(expSec * 1000).toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })
           }
         } catch {
           error = 'Payload 解密解析失败'
@@ -259,7 +259,7 @@ export function GeekMicroTools({ query, onSelectSample }: GeekMicroToolsProps) {
     const sec = Math.floor(parsedDate.getTime() / 1000)
     const ms = parsedDate.getTime()
     const iso = parsedDate.toISOString()
-    const local = parsedDate.toLocaleString()
+    const local = parsedDate.toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })
     const diffSec = Math.floor((now - ms) / 1000)
     const relative =
       Math.abs(diffSec) < 60

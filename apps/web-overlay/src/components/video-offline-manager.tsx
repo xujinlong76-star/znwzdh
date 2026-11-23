@@ -161,7 +161,7 @@ export function VideoOfflineManager({
                         {pkg.title}
                       </div>
                       <div className="text-[10px] text-muted-foreground font-mono">
-                        已保存 · {new Date(pkg.downloadedAt).toLocaleDateString()}
+                        已保存 · {new Date(pkg.downloadedAt).toLocaleDateString(undefined, { timeZone: 'Asia/Shanghai' })}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">

@@ -198,7 +198,7 @@ export const FEATURED_COLLECTION_EDITORIALS: FeaturedCollectionEditorial[] = [
     editorNote: "本期只收能直接打开的购物与比价平台；价格与优惠随时会变，下单前请以商品页为准，返利到账以各平台规则为准，切勿轻信先付款后返现的私人交易。链接如失效，欢迎通过页面底部的纠错入口告诉我们。",
     correctionHref: correctionIssueUrl("网购省钱指南"),
     acts: [
-      { id: "act-1", title: "第一幕 · 大站买买买", description: "先上大站挑东西：品类全、物流快，是网购的主阵地。", siteUrls: ["https://www.taobao.com", "https://www.jd.com", "https://www.pinduoduo.com"] },
+      { id: "act-1", title: "第一幕 · 大站买买买", description: "先上大站挑东西：品类全、物流快，是网购的主阵地。", siteUrls: ["https://www.taobao.com", "https://www.jd.com/?cu=true", "https://www.pinduoduo.com"] },
       { id: "act-2", title: "第二幕 · 先比价再下单", description: "爆料、历史价、返利三件套，把价格压到最低。", siteUrls: ["https://www.smzdm.com", "https://www.manmanbuy.com", "https://www.fanli.com"] },
     ],
   },

@@ -113,7 +113,9 @@ async function main() {
     console.log(
       `${pct(reachability).padStart(4)} 可达 | 声明 ${String(first.declared).padStart(3)} / 抽样 ${String(sampled).padStart(2)}` +
         ` | 正常 ${first.okCount} · 拒绝爬虫 ${merged.blocked.length} · 稳定不可达 ${stableBroken}` +
-        (merged.flaky.length ? ` · 抖动 ${merged.flaky.length}` : ""),
+        (merged.flaky.length ? ` · 抖动 ${merged.flaky.length}` : "") +
+        // U-387(b) 302 规则：跳到不同终域的链接必须显眼，不能只藏在 redirected 计数里静默通过
+        ((first.needsFinalDomain ?? 0) > 0 ? ` · 待改终域 ${first.needsFinalDomain}` : ""),
     );
 
     rows.push({
@@ -126,9 +128,17 @@ async function main() {
       broken: stableBroken,
       flaky: merged.flaky.length,
       redirected: first.redirected,
+      needsFinalDomain: first.needsFinalDomain ?? 0,
       reachability,
     });
-    detail.push({ slug: pack.slug, broken: merged.broken, flaky: merged.flaky, blocked: merged.blocked });
+    detail.push({
+      slug: pack.slug,
+      broken: merged.broken,
+      flaky: merged.flaky,
+      blocked: merged.blocked,
+      // 两轮复测只为区分稳定失败与抖动；终域跳转是确定性的，取首轮结果即可
+      finalDomain: first.finalDomainItems ?? [],
+    });
   }
 
   const scored = rows.filter((r) => typeof r.reachability === "number");
@@ -149,6 +159,21 @@ async function main() {
       console.log(`  - ${r.slug}（${pct(r.reachability)}）不可达 ${r.broken} 条，示例：`);
       for (const i of (d?.broken ?? []).slice(0, 3)) {
         console.log(`      ${i.url} ${i.status ? "HTTP " + i.status : i.error ?? "不可达"}`);
+      }
+    }
+  }
+
+  // U-387(b) 302 规则：跳到不同终域的链接单列「待改为终域」，处置是把声明地址
+  // 改成终域地址（不是死链、不扣可达率）。旧规则下这类链接只计 redirected 静默通过，
+  // lingxi.wps.cn → lingxi.kdocs.cn 就是这么漏网的。
+  const needsDomain = scored.filter((r) => (r.needsFinalDomain ?? 0) > 0);
+  if (needsDomain.length) {
+    console.log("\n待改为终域的链接（302/301 跳到不同终域，声明地址应改为终域）：");
+    for (const r of needsDomain) {
+      const d = detail.find((x) => x.slug === r.slug);
+      console.log(`  - ${r.slug}（${r.needsFinalDomain} 条）：`);
+      for (const i of (d?.finalDomain ?? []).slice(0, 5)) {
+        console.log(`      ${i.url} → ${i.finalUrl}`);
       }
     }
   }

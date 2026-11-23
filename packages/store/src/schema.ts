@@ -78,6 +78,13 @@ export const sites = sqliteTable("sites", {
   redirectTo: text("redirect_to"),
   healthError: text("health_error"),
   lastCheckedAt: integer("last_checked_at"),
+  /**
+   * 连续失败计数（03 §3.3，W1 §13 第 2 条 verdict ①：sites 表内嵌列）。
+   * 由 updateSiteHealth 与 health 写回 + lastCheckedAt 同一次写入、同一事务
+   * 可见；成功或 bot-blocked（未测准）时清零，失败时 +1。升级阈值见 core 的
+   * CONSECUTIVE_FAILURES_THRESHOLD（= 2）。旧行默认 0（无历史 = 0 次失败）。
+   */
+  consecutiveFailures: integer("consecutive_failures").notNull().default(0),
 
   /* ---- 软删除（回收站）：NULL=正常，非 NULL=删除时刻，可恢复 ---- */
   deletedAt: integer("deleted_at"),

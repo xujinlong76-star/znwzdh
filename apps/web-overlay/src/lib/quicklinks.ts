@@ -216,34 +216,101 @@ export interface QuicklinkCommandMatch {
 }
 
 /**
- * 触发匹配：接受 `!gh react` 与 `gh react` 两种；`!gh`（无参数）命中落地页；
- * 裸 `gh`（无 `!`、无参数）不触发；`!unknown x` / 拼错前缀不触发；
- * `@gh react` 不走这里（保持 parseOmniCommand 现状）。
+ * 04 §2.2：`matchQuicklinkCommand` 的结构化返回（写死）。
+ *
+ * - `hit`：前缀命中（`url` 仍可能为 null：参数超 500 字符 / 模板已不安全，
+ *   调用方 toast、不开页、不回落）；
+ * - `unknown-prefix`：已满足完整形态（前缀 + 空白 + ≥1 个非空参数字符）
+ *   但查无此 `quickPrefix`——调用方在列表顶部渲染一行明示，Enter 走普通搜索；
+ *   `!` 形态 arg 为空时不判未知（无参数命令），裸前缀无参数时也不判未知；
+ * - `bad-template`：前缀命中但模板缺少 `{q}` 占位符（创建时校验已拦，
+ *   这里是纵深防御：只对内置/历史模板生效），调用方渲染提示、Enter 不外跳；
+ * - `none`：不是命令形态（空串、裸前缀无参数等），按普通查询处理。
+ */
+export type QuicklinkMatch =
+  | { kind: 'hit'; entry: QuicklinkEntry; arg: string; url: string | null }
+  | { kind: 'unknown-prefix'; prefix: string; arg: string }
+  | { kind: 'bad-template'; entry: QuicklinkEntry; arg: string }
+  | { kind: 'none' }
+
+/**
+ * 04 §2.1：内置引擎表（原 `search-palette.tsx` 的 `OMNI_ENGINES`）作为
+ * `matchQuicklinkCommand` 的默认内置 entries——全仓唯一定义点。
+ * 用户收藏 entries 优先：同前缀时用户条目覆盖内置（见 `matchQuicklinkCommand`
+ * 的合并逻辑）。模板只认 `{q}`（与 `resolveQuicklinkUrl` 同口径）。
+ */
+export const DEFAULT_QUICKLINK_ENTRIES: readonly QuicklinkEntry[] = [
+  { siteId: 'builtin-g', title: 'Google', href: 'https://www.google.com/', quickPrefix: 'g', templateUrl: 'https://www.google.com/search?q={q}' },
+  { siteId: 'builtin-google', title: 'Google', href: 'https://www.google.com/', quickPrefix: 'google', templateUrl: 'https://www.google.com/search?q={q}' },
+  { siteId: 'builtin-gh', title: 'GitHub', href: 'https://github.com/', quickPrefix: 'gh', templateUrl: 'https://github.com/search?q={q}' },
+  { siteId: 'builtin-github', title: 'GitHub', href: 'https://github.com/', quickPrefix: 'github', templateUrl: 'https://github.com/search?q={q}' },
+  { siteId: 'builtin-npm', title: 'npm', href: 'https://www.npmjs.com/', quickPrefix: 'npm', templateUrl: 'https://www.npmjs.com/search?q={q}' },
+  { siteId: 'builtin-bing', title: 'Bing', href: 'https://www.bing.com/', quickPrefix: 'bing', templateUrl: 'https://www.bing.com/search?q={q}' },
+  { siteId: 'builtin-mdn', title: 'MDN', href: 'https://developer.mozilla.org/', quickPrefix: 'mdn', templateUrl: 'https://developer.mozilla.org/zh-CN/search?q={q}' },
+  { siteId: 'builtin-baidu', title: '百度', href: 'https://www.baidu.com/', quickPrefix: 'baidu', templateUrl: 'https://www.baidu.com/s?wd={q}' },
+  { siteId: 'builtin-bd', title: '百度', href: 'https://www.baidu.com/', quickPrefix: 'bd', templateUrl: 'https://www.baidu.com/s?wd={q}' },
+]
+
+/**
+ * 触发匹配（04 §2.1：唯一 bang 权威；三种写法 `!gh react` / `@gh react` /
+ * `gh react` 命中同一引擎、同一 URL；`!gh`（无参数）命中落地页；
+ * 裸 `gh`（无 `!`、无参数）不触发；`!unknown x` / 拼错前缀不触发普通
+ * 命中、而是返回 `unknown-prefix` 信号供调用方明示）。
+ *
+ * 内置引擎（`DEFAULT_QUICKLINK_ENTRIES`，原 OMNI_ENGINES）默认注入：
+ * 只传用户 entries 时内置引擎同样可命中；同前缀时用户条目优先覆盖内置。
  * 前缀精确匹配，不做模糊 / 拼音容错；大小写不敏感。
  */
 export function matchQuicklinkCommand(
   raw: string,
   entries: readonly QuicklinkEntry[],
-): QuicklinkCommandMatch | null {
+  builtinEntries: readonly QuicklinkEntry[] = DEFAULT_QUICKLINK_ENTRIES,
+): QuicklinkMatch {
   const trimmed = (typeof raw === 'string' ? raw : '').trim()
-  if (!trimmed) return null
+  if (!trimmed) return { kind: 'none' }
   let prefixRaw: string
   let arg: string
+  let argRequired: boolean
   if (trimmed.startsWith('!')) {
+    // `!` 形态 arg 可空：`!gh` 命中落地页，`!gh `（末尾只有空格）同理
     const match = trimmed.match(/^!([A-Za-z0-9_-]+)(?:\s+(.*))?$/)
-    if (!match) return null
+    if (!match) return { kind: 'none' }
     prefixRaw = match[1]!
     arg = (match[2] ?? '').trim()
+    argRequired = false
+  } else if (trimmed.startsWith('@')) {
+    // `@` 形态 arg 必填（与裸形态一致）：`@gh` 无参数不触发、走普通搜索
+    const match = trimmed.match(/^@([A-Za-z0-9_-]+)\s+(.+)$/)
+    if (!match) return { kind: 'none' }
+    prefixRaw = match[1]!
+    arg = match[2]!.trim()
+    argRequired = true
   } else {
     // 裸前缀必须带参数：`gh react` 命中，裸 `gh` 不触发、走正常搜索
     const match = trimmed.match(/^([A-Za-z0-9_-]+)\s+(.+)$/)
-    if (!match) return null
+    if (!match) return { kind: 'none' }
     prefixRaw = match[1]!
     arg = match[2]!.trim()
+    argRequired = true
   }
-  const entry = entries.find((e) => e.quickPrefix === prefixRaw.toLowerCase())
-  if (!entry) return null
-  return { entry, arg, url: resolveQuicklinkUrl(entry.templateUrl, arg) }
+  // 用户条目在前、同前缀覆盖内置（§2.1：用户优先是已定规则）
+  const taken = new Set(entries.map((e) => e.quickPrefix))
+  const merged = [...entries, ...builtinEntries.filter((e) => !taken.has(e.quickPrefix))]
+  const prefix = prefixRaw.toLowerCase()
+  const entry = merged.find((e) => e.quickPrefix === prefix)
+  if (!entry) {
+    // 未知前缀只在「完整形态」下判定：arg 非空（`!` 形态 arg 为空时不判未知，
+    // 只当无参数命令处理；此时前缀无条目也按普通查询走）
+    if (argRequired || arg !== '') return { kind: 'unknown-prefix', prefix, arg }
+    return { kind: 'none' }
+  }
+  // 模板无占位符校验（§2.3，抄 Bonjourr `No %s present in URL`）：
+  // 模板既无 `{q}` 时视为配置错误——渲染提示、Enter 不外跳。
+  // 占位符口径以 `resolveQuicklinkUrl` 实测为准：只认 `{q}`，恰好一个。
+  if (countPlaceholders(entry.templateUrl) === 0) {
+    return { kind: 'bad-template', entry, arg }
+  }
+  return { kind: 'hit', entry, arg, url: resolveQuicklinkUrl(entry.templateUrl, arg) }
 }
 
 /** v1 可选：前缀联想——输入的前缀开头能对上哪些 quicklink（空输入返回 []） */

@@ -109,7 +109,7 @@ export function CrdtSyncStatusPill() {
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">最近云端合流时间</span>
               <span className="font-mono text-muted-foreground">
-                {lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString('zh-CN') : '尚未上云'}
+                {lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '尚未上云'}
               </span>
             </div>
           </div>

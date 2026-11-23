@@ -28,29 +28,28 @@ test.describe('站点卡片：单一 Tab 入口与方向键操作区', () => {
     await page.waitForSelector('[data-navhub-site-id] a[data-prefetch-target]', { timeout: 60_000 });
 
     /**
-     * 先等水合后的两轮重渲染完成再开始键盘序列。
-     * 根因：首页水合后会换掉首屏卡片的 DOM 节点两次，若 Tab 已聚焦旧节点，
+     * 先等水合后的一轮重渲染完成再开始键盘序列。
+     * 根因：首页水合后会换掉首屏卡片的 DOM 节点，若 Tab 已聚焦旧节点，
      * 焦点会掉到 body 且不再回来，hintOk 断言随后稳定失败（CI 快机器上
      * 几乎总在 :58→:66 之间撞上）：
      * ① SSR 只渲染前 4 个分类（page.tsx homeInitialSsrCategories），
      * 水合后 mounted 翻转才揭示全部分类（navigation-content.tsx
-     * renderedCategories）；
-     * ② dnd-kit chunk（133KB）挂载后才包上拖拽 provider，
-     * 切换瞬间 grid 子树会 remount 一次（navigation-content.tsx
-     * DiyGridDragBoundary 上的注释自述）。
-     * networkidle 挡不住（两轮都与网络无关，实测无效），expect.poll
+     * renderedCategories）。
+     * networkidle 挡不住（揭示与网络无关，实测无效），expect.poll
      * 也救不了（焦点丢了就不再回来），1 秒节点稳定等待也不够（本机实测
-     * 揭示晚到 20 秒以上）。两轮都有直接的 DOM 信号：① 占位 section
-     * 数量——SSR 为 2 个，揭示后变为 12 个；② 拖拽说明元素
-     * #diy-drag-instructions 只在 provider 挂载后出现。
+     * 揭示晚到 20 秒以上）。揭示有直接的 DOM 信号：占位 section
+     * 数量——SSR 为 2 个，揭示后变为 12 个。
+     *
+     * 注（2026-11-21，U-361）：旧注释曾写“② dnd-kit chunk 挂载后才包
+     * 上拖拽 provider，切换瞬间 grid 子树 remount”，并以
+     * #diy-drag-instructions 的出现作第二道水合门。P1-6（51412246）后
+     * provider 只在 DIY 编辑态挂载（navigation-content.tsx
+     * DiyGridDragBoundary enabled={isEditingLayout}），本用例全程不进
+     * 编辑态，该元素永不出现，第二道门已死——U-361 将其删除。不要把门 2
+     * 加回来：浏览态键盘模型与拖拽 provider 无关。
      */
     await page.waitForFunction(
       () => document.querySelectorAll('section[id$="-placeholder"]').length > 2,
-      undefined,
-      { timeout: 60_000 },
-    );
-    await page.waitForFunction(
-      () => !!document.getElementById('diy-drag-instructions'),
       undefined,
       { timeout: 60_000 },
     );

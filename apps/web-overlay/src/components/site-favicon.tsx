@@ -225,7 +225,7 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   // 改用同站验证过的 favicon.png（200 image/png 14725B）。
   'zhiwen.xfyun.cn=https://zhiwen.xfyun.cn/favicon.png',
   'cursor.com=cursorp',
-  'v0.dev=/assets/images/logos/vercel.webp',
+  'v0.dev=/brand-icons/vercel.png',
   'kimi.moonshot.cn=kimi-searchp',
   'doubao.com=doubaop',
   'www.doubao.com=doubaop',
@@ -246,53 +246,53 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   'chat.openai.com=chatgpts',
   'openai.com=openaip',
   'claude.ai=claudes',
-  'anthropic.com=/assets/images/logos/claude.webp',
+  'anthropic.com=/brand-icons/claude.svg',
   'cloudflare.com=cloudflarep',
   'figma.com=figmas',
   'tinypng.com=tinypngp',
   'unsplash.com=unsplashp',
   'vercel.com=vercelp',
   'fonts.google.com=google-fontss',
-  'material.io=/assets/images/logos/Materialicons.webp',
-  'colorhunt.co=/assets/images/logos/colorhunt.webp',
-  'flinto.com=/assets/images/logos/flinto.webp',
+  'material.io=/brand-icons/Materialicons.webp',
+  'colorhunt.co=/brand-icons/colorhunt.webp',
+  'flinto.com=/brand-icons/flinto.webp',
   'flaticon.com=flaticonp',
   'fontawesome.com=font-awesomes',
-  'framer.com=/assets/images/logos/framer.webp',
-  'freepik.com=/assets/images/logos/freepik.webp',
+  'framer.com=/brand-icons/framer.webp',
+  'freepik.com=/brand-icons/freepik.webp',
   'gemini.google.com=geminis',
-  'iconarchive.com=/assets/images/logos/iconarchive.webp',
-  'iconfinder.com=/assets/images/logos/Iconfinder.webp',
+  'iconarchive.com=/brand-icons/iconarchive.webp',
+  'iconfinder.com=/brand-icons/Iconfinder.webp',
   // 2026-11-20（U-08 补站 Iconfont）：原值 '/assets/images/logos/iconfont.webp'
   // 为上游底座 44×44 WebP（apps/web 镜像树资产）；改指站方 favicon 本体 SVG
   // （www.iconfont.cn/favicon.ico 302 至 img.alicdn.com 官方标，83×82，5,688 B，
   // md5 dcc980d06bc7209d1c9ec24870620f0d），与导航条目同源、矢量更清晰。
   // 全库 383 站核对：'iconfont.cn' 键只命中 Iconfont 一站，无后缀串站。
   'iconfont.cn=iconfonts',
-  'iconmonstr.com=/assets/images/logos/iconmonstr.webp',
-  'ionicons.com=/assets/images/logos/ionicons.webp',
+  'iconmonstr.com=/brand-icons/iconmonstr.webp',
+  'ionicons.com=/brand-icons/ionicons.webp',
   'leonardo.ai=leonardop',
-  'poe.com=/assets/images/logos/poe.svg',
-  'producthunt.com=/assets/images/logos/producthunt.webp',
-  'tensor.art=/assets/images/logos/tensorart.webp',
-  'icomoon.io=/assets/images/logos/IcoMoonApp.webp',
-  'findicons.com=/assets/images/logos/FindIcons.webp',
-  'principleformac.com=/assets/images/logos/principle.webp',
-  'worldvectorlogo.com=/assets/images/logos/worldvectorlogo.webp',
-  'shots.so=/assets/images/logos/shots.webp',
-  'simplelineicons.com=/assets/images/logos/simplelineicons.webp',
-  'sqlformat.org=/assets/images/logos/sqlformat.webp',
-  'tableconvert.com=/assets/images/logos/tableconvert.webp',
-  'json.cn=/assets/images/logos/json.webp',
-  'beautifier.io=/assets/images/logos/beautifier.webp',
-  'ui-cloud.com=/assets/images/logos/UICloud.webp',
-  'ads.google.com=/assets/images/logos/gads.webp',
-  'analytics.google.com=/assets/images/logos/analytics.webp',
-  'photoshop.com=/assets/images/logos/photoshop.webp',
-  'affinity.serif.com=/assets/images/logos/AffinityDesigner.webp',
-  'instantlogosearch.com=/assets/images/logos/InstantLogoSearch.webp',
-  'iconsfeed.com=/assets/images/logos/iconsfeed.webp',
-  'iosicongallery.com=/assets/images/logos/iosicongallery.webp',
+  'poe.com=/brand-icons/poe.svg',
+  'producthunt.com=/brand-icons/producthunt.webp',
+  'tensor.art=/brand-icons/tensorart.webp',
+  'icomoon.io=/brand-icons/IcoMoonApp.webp',
+  'findicons.com=/brand-icons/FindIcons.webp',
+  'principleformac.com=/brand-icons/principle.webp',
+  'worldvectorlogo.com=/brand-icons/worldvectorlogo.webp',
+  'shots.so=/brand-icons/shots.webp',
+  'simplelineicons.com=/brand-icons/simplelineicons.webp',
+  'sqlformat.org=/brand-icons/sqlformat.webp',
+  'tableconvert.com=/brand-icons/tableconvert.webp',
+  'json.cn=/brand-icons/json.webp',
+  'beautifier.io=/brand-icons/beautifier.webp',
+  'ui-cloud.com=/brand-icons/UICloud.webp',
+  'ads.google.com=/brand-icons/gads.webp',
+  'analytics.google.com=/brand-icons/analytics.webp',
+  'photoshop.com=/brand-icons/photoshop.webp',
+  'affinity.serif.com=/brand-icons/AffinityDesigner.webp',
+  'instantlogosearch.com=/brand-icons/InstantLogoSearch.webp',
+  'iconsfeed.com=/brand-icons/iconsfeed.webp',
+  'iosicongallery.com=/brand-icons/iosicongallery.webp',
   // 2026-11-17（图标 A 类第 1 批 a1a + a1b，独立复审 R1–R6 后合批）：
   // 本批 8 个键均为原地替换旧值（旧值指向不存在的 /assets/images/logos/*，
   // 不另起重复块）：chatgpt.com → chatgpt.svg；chat.openai.com → chatgpt.svg
@@ -1019,6 +1019,53 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   // 'github.com' / 'adobe.com' 键绝不加。
   // 全库 383 站核对：'udemy.com' 键只命中 Udemy 一站，无后缀串站、无子域站。
   'udemy.com=udemyp',
+  // 2026-11-22（进化轮 2222，C 线，4 站 AI 办公）。
+  // 全库仅剩 4 站既无 icon 字段又无 map 键（B 线逐一核对 23 站空 icon
+  // 清单，19 站有 map 键兜底，仅此 4 站无），卡片只能渲染渐变底 +
+  // 首字母兜底徽章；4 站全在 AI 办公类目。navigation.json 不动。
+  // 来源均经 curl 重新验证（200 + image MIME + 魔数 + 尺寸）：
+  // - 千问办公：官网 apple-touch-icon 180×180
+  //   https://img.alicdn.com/imgextra/i4/O1CN01HdCyPs1MZh3Szwmxo_!!6000000001449-2-tps-180-180.png
+  //   （200、image/png、13,406 B，SHA-256
+  //   0287e8361985920e2cb0ac7d941c0f11e622b33bbbfe12a3d44aa56f08cf06de；
+  //   首页 head 另声明 32×32 / 48×48 同标，站根 /favicon.svg 404 未用）。
+  //   黑圆角方块 + 亮绿 #52E890 字标，四角透明；Pillow LANCZOS
+  //   180→128 落盘 qwenwork.png（10,112 B，md5
+  //   d9ee7cd24b0f1b9eefe7526874ecb83b）。'qwen.svg' 是通义千问、不可复用；
+  //   标题 '千问办公' 不含 'qwen'，不触发上方 qwen3 标题规则。
+  // - WPS 灵犀：manifest
+  //   https://qn.cache.wpscdn.cn/lingxi-app/web/manifest_v2.json 给出官方
+  //   logo 三档，取 192×192
+  //   https://qn.cache.wpscdn.cn/copilot-test/copilot-cdn/images/copilot/lingxi_logo_192_v1.png
+  //   （200、image/png、19,806 B，SHA-256
+  //   5e59eb231012f80de70f2bc7102f64c61337675a2d21fc71974cca0b367929f5；
+  //   站根 /favicon.ico 实为 HTML 壳页未用）。青紫渐变圆角徽 + 白底黑字标，
+  //   四角透明；LANCZOS 192→128 落盘 lingxi.png（15,659 B，md5
+  //   2ce27498de252b0dc9e2dd1d2b23f1fb）。
+  // - WorkBuddy：官网 logo.svg
+  //   https://assets.workbuddy.cn/web/workbuddy/7b25e1f24385a28a7c133de175ff1dc2bc6b455e/assets/logo.svg
+  //   （200、image/svg+xml、4,142 B，SHA-256
+  //   10ccbc099e7bc3d5ff12c315c4edd7b21386aa7166c1ec19997b3d55010d5c7d；
+  //   40×40 viewBox 渐变圆角方块），SVG 原样落盘 workbuddy.svg。
+  // - 百度搭子：站方 favicon.png
+  //   https://now.bdstatic.com/store/v2/d33e0f5/qianfan-desktop-h5/4d5dbbe/favicon.png
+  //   （200、image/png、5,521 B，144×144，SHA-256
+  //   02e8924440fddc11aff3574eeb6f74aec55a6a21d154b86d6fd81eb21a1dd3a2）。
+  //   浅薰衣草圆角方块 + 深色字标，四角透明；LANCZOS 144→128 落盘
+  //   dumate.png（11,969 B，md5 fd009359737bf1f7a76678bcce1e0722）。
+  // 键的精确性：'lingxi.kdocs.cn' 必须用完整子域精确键——map 已有
+  // 'kdocs.cn=kdocsj'（WPS 文档站），后缀匹配会让灵犀错指 kdocs.jpg；
+  // 精确查找在后缀循环之前，精确键优先命中。'dumate.baidu.com' 同理
+  // 用完整子域（map 无 'baidu.com' 裸域键，绝不加）。'qwenwork.cn' /
+  // 'workbuddy.cn'（www 已去前缀）各只命中对应一站，无后缀串站、无子域站。
+  // 浅/深主题：四标 ASCII 渲染均为真实品牌标；qwenwork 深色下黑方块与底色
+  // 相融但亮绿字标仍醒目，lingxi 渐变徽边框定形、dumate 深色字标可读，
+  // workbuddy 满幅渐变方块双主题均可见；按规范 §9 不做单站底块补丁、
+  // 不配 LOGO_TILE_MAP（resolveLogoTile 为 null），留待统一处理轮。
+  'qwenwork.cn=qwenworkp',
+  'lingxi.kdocs.cn=lingxip',
+  'workbuddy.cn=workbuddys',
+  'dumate.baidu.com=dumatep',
  ];
 
 /**
@@ -1352,14 +1399,14 @@ export function resolveSiteIcon(
     if (lowerTitle.includes('通义灵码')) return 'https://img.alicdn.com/imgextra/i1/O1CN01BN6Jtc1lCfJNviV7H_!!6000000004783-2-tps-134-133.png'
     if (lowerTitle.includes('runway')) return '/brand-icons/runway.png'
     if (lowerTitle.includes('deepseek')) return '/brand-icons/deepseek.png'
-    if (lowerTitle.includes('gemini')) return '/assets/images/logos/gemini.svg'
-    if (lowerTitle.includes('chatgpt') || lowerTitle.includes('openai')) return '/assets/images/logos/chatgpt.webp'
-    if (lowerTitle.includes('claude')) return '/assets/images/logos/claude.webp'
-    if (lowerTitle.includes('cloudflare')) return '/assets/images/logos/cloudflar.webp'
-    if (lowerTitle.includes('figma')) return '/assets/images/logos/figma.webp'
-    if (lowerTitle.includes('tinypng')) return '/assets/images/logos/tinypng.webp'
-    if (lowerTitle.includes('unsplash')) return '/assets/images/logos/unsplash.webp'
-    if (lowerTitle.includes('vercel')) return '/assets/images/logos/vercel.webp'
+    if (lowerTitle.includes('gemini')) return '/brand-icons/gemini.svg'
+    if (lowerTitle.includes('chatgpt') || lowerTitle.includes('openai')) return '/brand-icons/chatgpt.svg'
+    if (lowerTitle.includes('claude')) return '/brand-icons/claude.svg'
+    if (lowerTitle.includes('cloudflare')) return '/brand-icons/cloudflare.png'
+    if (lowerTitle.includes('figma')) return '/brand-icons/figma.svg'
+    if (lowerTitle.includes('tinypng')) return '/brand-icons/tinypng.png'
+    if (lowerTitle.includes('unsplash')) return '/brand-icons/unsplash.png'
+    if (lowerTitle.includes('vercel')) return '/brand-icons/vercel.png'
 
     // 未命中内置 Logo 且无合法自定义图标时，不向浏览器返回远端裸 /favicon.ico，
     // 避免浏览器盲发跨域请求触发 CORP (NotSameOrigin) 阻断或 404/502 报错；

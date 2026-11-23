@@ -571,6 +571,15 @@ export interface BriefTodayResponse {
       priority: "high" | "normal";
       [key: string]: unknown;
     })[];
+    premieringToday: ({
+      key: string;
+      title: string;
+      platformTitle: string;
+      playUrl: string;
+      episode: number;
+      priority: "high" | "normal";
+      [key: string]: unknown;
+    })[];
     [key: string]: unknown;
   } | null;
   [key: string]: unknown;
@@ -969,6 +978,11 @@ export interface MeSafetyResponse {
       lastErrorCode: "timeout" | "network" | "server_5xx" | "validation_4xx" | "unknown" | null;
     };
     watchlist: {
+      lastSuccessAt: number | null;
+      lastFailureAt: number | null;
+      lastErrorCode: "timeout" | "network" | "server_5xx" | "validation_4xx" | "unknown" | null;
+    };
+    exams: {
       lastSuccessAt: number | null;
       lastFailureAt: number | null;
       lastErrorCode: "timeout" | "network" | "server_5xx" | "validation_4xx" | "unknown" | null;
@@ -3204,6 +3218,7 @@ export interface MeMergeResponse {
   target: string;
   favoritesMoved: number;
   favoritesSkipped: number;
+  examFollowsMoved: number;
   foldersMoved: number;
   searchesMoved: number;
   eventsMoved: number;
@@ -3290,6 +3305,17 @@ export interface MeWatchlistSyncResponse {
   applied: number;
   version: number;
   entries: unknown[];
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/me/exams/sync
+ */
+export interface MeExamsSyncResponse {
+  ok: true;
+  applied: number;
+  version: number;
+  items: unknown[];
   [key: string]: unknown;
 }
 
@@ -3723,6 +3749,7 @@ export interface RestContractRoutes {
   "POST /api/me/custom-sites": MeCustomSiteItemResponse;
   "POST /api/me/custom-sites/reorder": MeCustomSitesReorderResponse;
   "POST /api/me/diagnostics": MeDiagnosticsResponse;
+  "POST /api/me/exams/sync": MeExamsSyncResponse;
   "POST /api/me/favorites/sync": MeFavoritesSyncResponse;
   "POST /api/me/favorites/trash/restore-batch": MeFavoriteTrashRestoreBatchResponse;
   "POST /api/me/favorites/trash/{siteId}/restore": MeFavoriteTrashRestoreResponse;

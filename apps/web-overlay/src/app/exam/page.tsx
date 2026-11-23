@@ -38,13 +38,13 @@ import { MyExamTracker } from './my-exam-tracker'
 /**
  * 考试日历页（/exam，服务端渲染 + 倒计时客户端岛）。
  *
- * 存在理由：2026 年考试季十一场大考（见 EXAMS，不再此处枚举场次与日期，
+ * 存在理由：2026 年考试季十二场大考（见 EXAMS，不再此处枚举场次与日期，
  * 注释枚举与数据不同步正是本次漂移的根因），站内只有分散的报名入口，没有
  * 一处能同时看到倒计时与关键节点；三家大导航同期也没有像样的考试
  * 专题或倒计时（360 只有一个内容过期到 2024/2025 的财会考试日历）。
- * 第一轮只做最小静态页：倒计时卡 + 十一场时间轴 + 撞期与双考提醒 +
- * 备考站点区；第二轮已落地「我的考试」关注 + 考前清单待办（本机
- * localStorage 存放，不登录、不跨设备同步，见 src/lib/my-exams.ts）。
+ * 第一轮只做最小静态页：倒计时卡 + 十二场时间轴 + 撞期与双考提醒 +
+ * 备考站点区；第二轮已落地「我的考试」关注 + 考前清单待办（未登录存
+ * 本机 localStorage，登录后走云端同步、换设备也不丢，见 src/lib/my-exams.ts）。
  *
  * 日期全部据官方公告核实（见 src/lib/exam-calendar.ts 文件头），
  * 备考站点区直接读站内「考试备考」分类，不硬编码链接。
@@ -173,7 +173,7 @@ export default async function ExamPage() {
             {nearest ? `${EXAMS.length}场大考倒计时` : `${EXAMS.length}场大考`}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            关注考试后可逐项勾选考前清单；关注与勾选只保存在本机浏览器。
+            关注考试后可逐项勾选考前清单；登录后关注与勾选跟账号走，换设备也不丢，未登录只保存在本机浏览器。
           </p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             {EXAMS.map((exam) => {

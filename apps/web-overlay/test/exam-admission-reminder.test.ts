@@ -163,6 +163,10 @@ describe('admissionReminderFor（只对国考）', () => {
     expect(node.url).toBe(GUOKAO_ADMISSION_URL)
     expect(node.url).toBe('http://gwy.cpta.com.cn')
     expect(node.url).not.toBe(GUOKAO_PORTAL_URL)
+    // 门户备用链：节点挂 portalUrl（专题网站门户），只作次要文字链，不作主链。
+    expect(node.portalUrl).toBe(GUOKAO_PORTAL_URL)
+    expect(node.portalUrl).toBe('http://bm.scs.gov.cn/kl2027')
+    expect(node.portalUrl).not.toBe(GUOKAO_ADMISSION_URL)
   })
 
   it('U-98：card/strip 双写两层（专题网站门户 + 打印系统直链），点击目标仍只挂 gwy 直链', () => {
@@ -179,6 +183,16 @@ describe('admissionReminderFor（只对国考）', () => {
       expect(r.cardLine).not.toContain('登录专题网站打印')
       expect(r.url).toBe(GUOKAO_ADMISSION_URL)
       expect(r.url).toBe('http://gwy.cpta.com.cn')
+    }
+  })
+
+  it('门户备用链：admissionReminderFor 四档均返回 portalUrl（专题网站门户），不与主链混淆', () => {
+    for (const t of [NOV_15_NOON_CST, NOV_22_0000_CST, NOV_23_0000_CST, NOV_27_0000_CST]) {
+      const r = admissionReminderFor(guokao, t)!
+      expect(r.portalUrl).toBe('http://bm.scs.gov.cn/kl2027')
+      expect(r.portalUrl).toBe(GUOKAO_PORTAL_URL)
+      expect(r.portalUrl).not.toBe(r.url)
+      expect(r.url).toBe(GUOKAO_ADMISSION_URL)
     }
   })
 
@@ -235,11 +249,20 @@ describe('准考证提醒源码守卫', () => {
     expect(reminder).toContain('safeHref')
     expect(reminder).toContain('rel="noopener noreferrer"')
     expect(reminder).toContain('target="_blank"')
-    expect(reminder).not.toContain('bm.scs.gov.cn')
-    expect(reminder).not.toContain('kl2027')
+    // 门户备用链只走 reminder.portalUrl（数据层常量），href 不写死域名。
+    expect(reminder).toContain('safeHref(reminder.portalUrl)')
+    expect(reminder).toContain('safeHref(reminder.url)')
+    // 规格 §3.3 注：card 分支的门户链接可见文本即域名 bm.scs.gov.cn/kl2027
+    // （照抄清单页范本，供用户肉眼核对），故本守卫不再断言源码不含该域名；
+    // 守卫的实质是不许出现带协议的完整 URL 字面量、href 不写死域名：
     // 组件注释里只许出现「http://」一词（说明用 http 而非 https 的原因），
     // 不许出现任何完整 URL 字面量：完整 URL 的 // 后必跟字母数字
     expect(reminder).not.toMatch(/https?:\/\/[a-zA-Z0-9]/)
+    expect(reminder).not.toContain('gwy.cpta.com.cn')
+    // href 只走 safeHref(reminder.url / reminder.portalUrl)：strip 主链 +
+    // 门户链 2 处、开放期瘦身行主链 1 处（U-421）、全句卡片主链 + 门户链
+    // 2 处，共 5 处。
+    expect(reminder.match(/safeHref\(reminder\.(url|portalUrl)\)/g)).toHaveLength(5)
   })
 
   it('提醒组件：挂载前渲染 null（防 SSR/水合午夜边界错位），窗口外渲染 nothing', () => {

@@ -2,7 +2,7 @@
  * 首页「考试季」运营条（HomeExamStrip）红线测试：
  *  - 最近一场与「下一步」节点只按 exam-calendar 事实源算，不硬编码日期；
  *  - 多日考试末日仍算最近一场（考研 12-20 当天条带仍在）；
- *  - 十一场全结束时渲染静态空态条带（保留考试日历入口），不再整条消失；
+ *  - 十二场全结束时渲染静态空态条带（保留考试日历入口），不再整条消失；
  *    空态不挂倒计时岛、不挂客户端视图、不读存储、不含未公布日期；
  *  - 倒计时走 ExamCountdown 客户端岛，服务端 JSX 里不直出天数；
  *  - 条内常驻链接唯一指向 /exam；准考证打印提醒期（11-22–11-29 15:00）
@@ -14,9 +14,10 @@
  *    旧口径“考试条挂在简报条之后、连胜条之前（首屏顶部）”随 U-24 定义
  *    作废：今日区已把考试倒计时与下一步节点提上首屏第一位，完整考试条
  *    折叠收起不等于信息丢失。
- *  - 结构：服务端外壳（home-exam-strip.tsx）只挑全局最近场；
- *    个性化由客户端视图（home-exam-strip-view.tsx）挂载后接手——
- *    挂载前渲染与服务端直出一致，关注了未结束考试才切到已关注场。
+ *  - 结构：外壳（home-exam-strip.tsx，U-358 起为客户端组件、由导航中心
+ *    dynamic(ssr:false) 按需加载）只挑全局最近场；个性化由客户端视图
+ *    （home-exam-strip-view.tsx）挂载后接手——挂载前渲染与服务端直出一致，
+ *    关注了未结束考试才切到已关注场。
  */
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -43,11 +44,13 @@ const DEC_13_0800_CST = Date.UTC(2026, 11, 13, 0, 0, 0)
 const DEC_19_0800_CST = Date.UTC(2026, 11, 19, 0, 0, 0)
 /** 2026-12-20 08:00 北京时间：考研第二天，仍在进行中 */
 const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
-/** 2026-12-21 08:00 北京时间：十一场全过 */
+/** 2026-12-21 08:00 北京时间：考研已过，最近场切到广东自考·1月（2027-01-09） */
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
+/** 2027-01-11 08:00 北京时间：十二场全过（广东自考·1月 2027-01-10 已结束） */
+const JAN_11_0800_CST = Date.UTC(2027, 0, 11, 0, 0, 0)
 
 describe('nearestExam（最近一场）', () => {
-  it('11-13 最近是国考，11-30 最近是教资面试，12-13 最近是军队文职，12-20 考研末日仍是考研，12-21 十一场全过返回 undefined', () => {
+  it('11-13 最近是国考，11-30 最近是教资面试，12-13 最近是军队文职，12-20 考研末日仍是考研，12-21 最近是广东自考·1月，2027-01-11 十二场全过返回 undefined', () => {
     expect(nearestExam(NOV_13_0800_CST)?.id).toBe('guokao')
     // 教资面试首考日 12-05 与京考同日、且在 EXAMS 数组中排在京考之前，
     // stable sort 平局数组在前者胜出，故国考过后最近场是教资面试而非京考
@@ -55,7 +58,9 @@ describe('nearestExam（最近一场）', () => {
     // 12-13 四六级已过，军队文职当天 today；此前同一天最近场是考研
     expect(nearestExam(DEC_13_0800_CST)?.id).toBe('jundui-wenzhi')
     expect(nearestExam(DEC_20_0800_CST)?.id).toBe('kaoyan')
-    expect(nearestExam(DEC_21_0800_CST)).toBeUndefined()
+    // C4（D2 定稿接受 nearest 改写）：考研结束后最近场切到广东自考·1月
+    expect(nearestExam(DEC_21_0800_CST)?.id).toBe('guangdong-zikao-2027-01')
+    expect(nearestExam(JAN_11_0800_CST)).toBeUndefined()
   })
 
   it('考试当天仍算最近一场（daysUntil 为 0），考后才切下一场', () => {
@@ -63,11 +68,12 @@ describe('nearestExam（最近一场）', () => {
     expect(nearestExam(Date.UTC(2026, 10, 30, 0, 0))?.id).toBe('jiaoshi-mianshi')
   })
 
-  it('多日考试末日仍算最近一场（12-19 首日与 12-20 末日都是考研），12-21 才返回 undefined', () => {
+  it('多日考试末日仍算最近一场（12-19 首日与 12-20 末日都是考研），12-21 最近场切到广东自考·1月，2027-01-11 才返回 undefined', () => {
     expect(nearestExam(Date.UTC(2026, 11, 19, 0, 0, 0))?.id).toBe('kaoyan')
     expect(nearestExam(Date.UTC(2026, 11, 20, 0, 0, 0))?.id).toBe('kaoyan')
     expect(nearestExam(Date.UTC(2026, 11, 20, 15, 59, 59))?.id).toBe('kaoyan')
-    expect(nearestExam(Date.UTC(2026, 11, 21, 0, 0, 0))).toBeUndefined()
+    expect(nearestExam(Date.UTC(2026, 11, 21, 0, 0, 0))?.id).toBe('guangdong-zikao-2027-01')
+    expect(nearestExam(Date.UTC(2027, 0, 11, 0, 0, 0))).toBeUndefined()
   })
 
   it('排序按首考日：加试考试（首考日早、公共科目首日晚）排在无加试考试之前', () => {
@@ -149,7 +155,7 @@ describe('首页考试条源码守卫', () => {
   const strip = read('src/components/home-exam-strip.tsx')
   const view = read('src/components/home-exam-strip-view.tsx')
 
-  it('服务端外壳：最近一场与下一步节点都走 exam-calendar，不硬编码日期', () => {
+  it('外壳：最近一场与下一步节点都走 exam-calendar，不硬编码日期', () => {
     expect(strip).toContain("from '@/lib/exam-calendar'")
     expect(strip).toContain('nearestExam()')
     expect(strip).toContain('nextExamNode(nearest)')
@@ -159,8 +165,11 @@ describe('首页考试条源码守卫', () => {
     expect(strip).not.toContain('2026-12-19')
   })
 
-  it('服务端外壳保持服务端组件：十一场全结束时渲染静态空态条带（不再 return null），只把最近场交给客户端视图', () => {
-    expect(strip).not.toContain("'use client'")
+  // U-358：外壳由服务端组件转为客户端组件（只在「今日中心」小窗打开时才需要，
+  // 由导航中心 dynamic(ssr:false) 按需加载）；空态行为不变——十二场全结束时仍渲染
+  // 静态空态条带（不再 return null），只把最近场交给客户端视图。
+  it('外壳为客户端组件：十二场全结束时渲染静态空态条带（不再 return null），只把最近场交给客户端视图', () => {
+    expect(strip).toContain("'use client'")
     expect(strip).not.toContain('if (!nearest) return null')
     expect(strip).toContain('if (!nearest) return <HomeExamStripEmptyState />')
     expect(strip).toContain("import { HomeExamStripView } from './home-exam-strip-view'")
@@ -175,7 +184,9 @@ describe('首页考试条源码守卫', () => {
     expect(strip).not.toContain('四场考试已结束')
   })
 
-  it('空态条带：纯服务端静态，不挂倒计时岛、不挂客户端视图、不读存储', () => {
+  // 空态分支本身仍是静态 JSX：不挂倒计时岛、不挂客户端视图、不读存储
+  //（外壳文件 U-358 起为客户端组件，但空态分支不因此多挂任何岛）。
+  it('空态条带：静态直出，不挂倒计时岛、不挂客户端视图、不读存储', () => {
     expect(strip).not.toContain('ExamCountdown')
     // HomeExamStripView 全文件只出现 2 次（import + 有最近场分支），空态分支里没有
     expect(strip.match(/HomeExamStripView/g)?.length).toBe(2)
@@ -258,22 +269,26 @@ describe('首页考试条源码守卫', () => {
 describe('首页挂载位置守卫（U-24）', () => {
   const home = read('src/app/page.tsx')
 
-  it('今日区与考试日历均经 page.tsx todaySlots 注入今日中心小窗，首屏不再堆叠挡在导航上方', () => {
-    expect(home).toContain('import { HomeTodayZone } from "@/components/home-today-zone"')
-    expect(home).toContain('import { HomeExamStrip } from "@/components/home-exam-strip"')
-    const nav = home.indexOf('<NavigationContent')
-    const slots = home.indexOf('todaySlots={{')
-    const todaySlot = home.indexOf('today: <HomeTodayZone />')
-    const briefSlot = home.indexOf('brief: <HomeBriefStrip />')
-    const examSlot = home.indexOf('exam: <HomeExamStrip />')
-    const handoffSlot = home.indexOf('<HandoffCardWithCloud />')
-    const streakSlot = home.indexOf('<StreakBar />')
-    expect(nav).toBeGreaterThan(-1)
-    expect(slots).toBeGreaterThan(nav)
-    expect(todaySlot).toBeGreaterThan(slots)
-    expect(briefSlot).toBeGreaterThan(todaySlot)
-    expect(examSlot).toBeGreaterThan(briefSlot)
-    expect(handoffSlot).toBeGreaterThan(examSlot)
-    expect(streakSlot).toBeGreaterThan(handoffSlot)
+  // U-358：今日区与考试条不再经 page.tsx todaySlots 注入——两区只在「今日中心」小窗
+  // 打开时才需要，现由 NavigationContent 以 dynamic(ssr:false) 按需加载；
+  // 首屏不再堆叠挡在导航上方，也不再为它们付首屏 JS 体积。顺序仍为今日→简报→考试→接力。
+  it('今日区与考试日历均由导航中心 dynamic(ssr:false) 按需加载进今日中心小窗', () => {
+    expect(home).not.toContain('todaySlots')
+    expect(home).not.toContain('HomeTodayZone')
+    expect(home).not.toContain('HomeExamStrip')
+    const nav = read('src/components/navigation-content.tsx')
+    expect(nav).toContain("() => import('@/components/home-today-zone')")
+    expect(nav).toContain("() => import('@/components/home-exam-strip')")
+    expect(nav).toContain('{ ssr: false')
+    const todayAt = nav.indexOf('todayContent={<TodayZoneContent />}')
+    const briefAt = nav.indexOf('briefContent={<BriefStripContent />}')
+    const examAt = nav.indexOf('examContent={<ExamStripContent />}')
+    const handoffAt = nav.indexOf('<HandoffCardWithCloudContent />')
+    const streakAt = nav.indexOf('<StreakBarContent />')
+    expect(todayAt).toBeGreaterThan(-1)
+    expect(briefAt).toBeGreaterThan(todayAt)
+    expect(examAt).toBeGreaterThan(briefAt)
+    expect(handoffAt).toBeGreaterThan(examAt)
+    expect(streakAt).toBeGreaterThan(handoffAt)
   })
 })

@@ -41,14 +41,28 @@ describe('首页顶栏：搜索框与快捷键徽章', () => {
   })
 
   it('Omni 命令前缀四件套齐全（@g / @gh / @npm / @mdn）', () => {
-    // 键名不带 @，解析器允许 `@` 与 `!` 两种前缀；这里锁「四个引擎都真实存在」。
+    // Batch 1 L6（2026-11-21）：引擎表从 search-palette.tsx 的 OMNI_ENGINES
+    // 搬到 src/lib/quicklinks.ts 的 DEFAULT_QUICKLINK_ENTRIES（全仓唯一定义点），
+    // 面板只剩 parseOmniCommand 薄壳。守卫跟到新位置，不改弱：
+    // 四引擎必须真实存在 + 面板不得自立第二份引擎表。
+    // 键名不带 @、不带冒号（quickPrefix: 'gh'），解析器允许 `@` / `!` / 裸前缀
+    // 三种写法；这里锁「四个引擎都真实存在」。
     // Phase 2 批 A：导航搜索条与快捷链接都认 !gh，首页面板旧正则只认 @/无前缀，
-    // 输「!gh react」恒为 null、建议行永远不出；正则须同时接受 !，断言按新行为改写。
-    for (const key of ['g:', 'gh:', 'npm:', 'mdn:']) {
-      expect(src, `缺少 ${key} 引擎`).toContain(key)
+    // 输「!gh react」恒为 null、建议行永远不出；三形态正则须都在 quicklinks.ts，
+    // 断言按新行为改写。
+    const engines = overlaySource('src/lib/quicklinks.ts')
+    expect(engines).toContain('DEFAULT_QUICKLINK_ENTRIES')
+    for (const key of ['g', 'gh', 'npm', 'mdn']) {
+      expect(engines, `缺少 ${key} 引擎`).toContain(`quickPrefix: '${key}'`)
     }
+    // 三种前缀形态的解析正则都在 quicklinks.ts（唯一 bang 权威）
+    expect(engines).toContain('/^!([A-Za-z0-9_-]+)')
+    expect(engines).toContain('/^@([A-Za-z0-9_-]+)')
+    expect(engines).toContain('/^([A-Za-z0-9_-]+)')
+    // 面板只调薄壳，不自立引擎表：无 OMNI_ENGINES、无 quickPrefix: 定义
     expect(src).toContain('parseOmniCommand')
-    expect(src).toContain('/^[!@]?([a-zA-Z]+)')
+    expect(src).not.toContain('OMNI_ENGINES')
+    expect(src).not.toContain('quickPrefix:')
   })
 })
 

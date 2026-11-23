@@ -519,7 +519,7 @@ export default function FavoritesTrashPage() {
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
                       {row.folderName ? `原分类：${row.folderName}` : '未分组'}
                       {' · '}
-                      删除于 {new Date(row.deletedAt).toLocaleDateString('zh-CN')}
+                      删除于 {new Date(row.deletedAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}
                       {' · '}
                       {formatTrashRemaining(row.deletedAt)}
                       {row.source === 'local' && loggedIn ? ' · 仅本机' : ''}

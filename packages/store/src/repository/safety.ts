@@ -19,7 +19,7 @@ export type SafetyStatus = "ok" | "warning" | "critical" | "unknown";
 /** 同步失败错误码：有限枚举，映射不到一律 unknown，绝不猜具体原因。 */
 export type SyncErrorCode = "timeout" | "network" | "server_5xx" | "validation_4xx" | "unknown";
 
-export type SyncDomain = "favorites" | "watchlist";
+export type SyncDomain = "favorites" | "watchlist" | "exams";
 
 export interface SyncState {
   lastSuccessAt: number | null;
@@ -55,6 +55,8 @@ export interface DataSafety {
   sync: {
     favorites: SyncState;
     watchlist: SyncState;
+    /** 考试关注同步水位（U-379）：与追剧同口径；安全卡暂只展示收藏/追剧两行 */
+    exams: SyncState;
     vault: { exists: boolean; version: number | null; updatedAt: number | null };
     crdt: { exists: boolean; updatedAt: number | null };
     unreadSyncFailures: number;
@@ -322,7 +324,7 @@ export function buildSafetyChecks(safety: DataSafety): SafetyCheck[] {
   const vaultOk = safety.sync.vault.exists || safety.sync.crdt.exists;
 
   const exportDetail = safety.lastExport?.at
-    ? `上次导出在 ${new Date(safety.lastExport.at).toLocaleString("zh-CN", { hour12: false })}` +
+    ? `上次导出在 ${new Date(safety.lastExport.at).toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })}` +
       (safety.lastExport.truncated === true
         ? "，且该次导出被截断过（不完整）"
         : safety.lastExport.truncated === false
@@ -377,7 +379,7 @@ export async function getUserSafetyStatus(
   identity: string,
   now = Date.now(),
 ): Promise<DataSafety> {
-  const [overview, exportLogs, importLogs, syncFailedLogs, favState, watchState, crdtRow, unread] =
+  const [overview, exportLogs, importLogs, syncFailedLogs, favState, watchState, examState, crdtRow, unread] =
     await Promise.all([
       getUserCenterOverview(repo, identity),
       listAuditLogs(repo, { actor: identity, action: "user.export", limit: 1 }),
@@ -385,6 +387,7 @@ export async function getUserSafetyStatus(
       listAuditLogs(repo, { actor: identity, action: "user.sync_failed", limit: 1 }),
       getUserSyncState(repo, identity, "favorites"),
       getUserSyncState(repo, identity, "watchlist"),
+      getUserSyncState(repo, identity, "exams"),
       repo.raw("SELECT version, updated_at FROM user_vault_sync WHERE user_id = ? LIMIT 1", [
         "crdt:" + identity,
       ]),
@@ -404,6 +407,7 @@ export async function getUserSafetyStatus(
   };
   const favorites = fillFailure(favState, "favorites");
   const watchlist = fillFailure(watchState, "watchlist");
+  const exams = fillFailure(examState, "exams");
 
   const lastExport = parseExportAudit(exportLogs.items[0]);
   const lastImport = parseImportAudit(importLogs.items[0]);
@@ -417,6 +421,7 @@ export async function getUserSafetyStatus(
     sync: {
       favorites,
       watchlist,
+      exams,
       vault: overview.vault,
       crdt: {
         exists: Boolean(crdt),

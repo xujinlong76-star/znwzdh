@@ -16,6 +16,19 @@
 /** stale 升级阈值：漏掉 ≥ 2 个刷新周期（每小时一轮）即视为旧缓存告警。边界 2 小时整按升级算（`>=`）。 */
 export const STALE_ESCALATION_MS = 2 * 60 * 60_000
 
+/**
+ * 绝对时间戳（本地时间，`YYYY-MM-DD HH:mm`），与 brief 页的 formatClock
+ * 同口径（本地时/分）。只用于「上次成功抓取：X 前（绝对时间）」这类
+ * 需要同时给相对时间与绝对时间的行；相对时间仍以 formatFreshness 为准。
+ */
+export function formatFullTimestamp(ts: number | null | undefined): string | null {
+  if (ts == null || !Number.isFinite(ts) || ts <= 0) return null
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return null
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
 export function formatFreshness(
   fetchedAt: number | null | undefined,
   now: number = Date.now(),

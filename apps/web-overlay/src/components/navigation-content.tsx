@@ -35,6 +35,45 @@ const TodayCenterDialog = dynamic(
   () => import('@/components/home-windows/today-center-dialog').then((m) => m.TodayCenterDialog),
   { ssr: false, loading: () => null },
 )
+// U-358：今日中心四区此前由 page.tsx（服务端）静态 import 后经内容槽位透传，
+// 服务端每请求都渲染进 RSC payload、客户端叶子（daily-focus、exam-countdown、
+// handoff 云同步等）也随首屏 JS 下发，尽管小窗默认关闭（todayOpen=false）。
+// 改为这里 ssr:false 动态加载：四区只在小窗首次打开时才下载，首屏不再付这份体积。
+// 三区外壳原为服务端组件，已转为客户端组件（见各文件头注释），内容与取数口径不变。
+const TodayZoneContent = dynamic(
+  () => import('@/components/home-today-zone').then((m) => m.HomeTodayZone),
+  { ssr: false, loading: () => null },
+)
+const BriefStripContent = dynamic(
+  () => import('@/components/home-brief-strip').then((m) => m.HomeBriefStrip),
+  { ssr: false, loading: () => null },
+)
+const ExamStripContent = dynamic(
+  () => import('@/components/home-exam-strip').then((m) => m.HomeExamStrip),
+  { ssr: false, loading: () => null },
+)
+// C4 广东自考 2027 年 1 月报名报考卡（2026-11-23）：首屏 JS 增量 0 字节
+// （dynamic ssr:false，与 HomeExamStrip 同款 U-358 模式）；门控与文案见
+// guangdong-zikao-signup-card.tsx，窗口 11-24 10:00–12-05 17:00，窗口外渲染 null。
+const GuangdongZikaoSignupCardContent = dynamic(
+  () => import('@/components/guangdong-zikao-signup-card').then((m) => m.GuangdongZikaoSignupCard),
+  { ssr: false, loading: () => null },
+)
+// C1 国考准考证打印回访卡（2026-11-23）：首屏 JS 增量 0 字节
+// （dynamic ssr:false，与 HomeExamStrip 同款 U-358 模式）；门控与文案见
+// guokao-checklist-return-card.tsx，窗口 11-23 00:00–11-29 15:00，窗口外渲染 null。
+const GuokaoReturnCardContent = dynamic(
+  () => import('@/components/guokao-checklist-return-card').then((m) => m.GuokaoChecklistReturnCard),
+  { ssr: false, loading: () => null },
+)
+const HandoffCardWithCloudContent = dynamic(
+  () => import('@/components/handoff-card-with-cloud').then((m) => m.HandoffCardWithCloud),
+  { ssr: false, loading: () => null },
+)
+const StreakBarContent = dynamic(
+  () => import('@/components/growth/streak-bar').then((m) => m.StreakBar),
+  { ssr: false, loading: () => null },
+)
 const WidgetBoxDialog = dynamic(
   () => import('@/components/home-windows/widget-box-dialog').then((m) => m.WidgetBoxDialog),
   { ssr: false, loading: () => null },
@@ -190,13 +229,6 @@ interface NavigationContentProps {
   pluginItems?: HubPluginItem[] | null
   /** 顶栏「📅 今日」角标摘要 */
   todayBadge?: HomeTodayBadgeSummary
-  /** 今日中心小窗 4 个服务端渲染内容槽位 */
-  todaySlots?: {
-    today: ReactNode
-    brief: ReactNode
-    exam: ReactNode
-    handoff: ReactNode
-  }
 }
 
 /**
@@ -246,7 +278,6 @@ export function NavigationContent({
   cinemaInitial,
   pluginItems = null,
   todayBadge,
-  todaySlots,
 }: NavigationContentProps) {
   const { toast } = useToast()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -1293,6 +1324,15 @@ export function NavigationContent({
             tagline={homeControl.basic.tagline || siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
           />
 
+          {/* C1 国考准考证打印回访卡（2026-11-23）：HomeSubtitleHint
+              之后、C4 卡之上，viewMode !== 'workbench' 守卫内；窗口外岛内渲染 null，不留空壳。 */}
+          {viewMode !== 'workbench' ? <GuokaoReturnCardContent /> : null}
+
+          {/* C4 广东自考 2027 年 1 月报名报考卡（2026-11-23）：HomeSubtitleHint
+              之后、胶囊行之前，viewMode !== 'workbench' 守卫内；C1 在上、
+              C4 在下（D4）。窗口外岛内渲染 null，不留空壳。 */}
+          {viewMode !== 'workbench' ? <GuangdongZikaoSignupCardContent /> : null}
+
           {/* 首屏瘦身：工作区胶囊行与运营胶囊行合并为一行（HomeCapsuleRow，
               2026-11-20）：原来上下两行（工作区 ~63px + 运营 ~46px）压成单行
               约 44px；<1024px 只留「全部探索」＋「AI 找站」，其余进「更多」折叠菜单。
@@ -1320,8 +1360,6 @@ export function NavigationContent({
               {!isModuleHidden('mod:speed-dial') && (
                 <div data-feature-id="mod:speed-dial" className="relative min-w-0 min-[1536px]:flex-1">
                   <HomeQuickDock
-                    allSites={visibleSites}
-                    activeWorkspace={activeWorkspace}
                     dialDigitById={mounted ? dialMap.digitById : undefined}
                     // P2-14：速拨顺序由父级 dialSites 一次算好透传，坞不再自己重算。
                     speedSites={dialSites}
@@ -1637,14 +1675,19 @@ export function NavigationContent({
         )}
 
         {/* 按需小窗口弹出层：全部动态懒加载，零首屏占高与体积膨胀 */}
-        {todayOpen && todaySlots ? (
+        {todayOpen ? (
           <TodayCenterDialog
             open={todayOpen}
             onOpenChange={setTodayOpen}
-            todayContent={todaySlots.today}
-            briefContent={todaySlots.brief}
-            examContent={todaySlots.exam}
-            handoffContent={todaySlots.handoff}
+            todayContent={<TodayZoneContent />}
+            briefContent={<BriefStripContent />}
+            examContent={<ExamStripContent />}
+            handoffContent={
+              <>
+                <HandoffCardWithCloudContent />
+                <StreakBarContent />
+              </>
+            }
             countdownLabel={todayBadge?.countdownLabel}
             todayCount={todayBadge?.todayCount}
           />

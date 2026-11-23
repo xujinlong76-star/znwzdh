@@ -26,6 +26,15 @@ export interface FetchGuardOptions {
   maxRedirects: number;
   /** 显式放行私网（仅本地开发/NAS 内网导航站需要） */
   allowPrivateNetworks: boolean;
+  /**
+   * 精确主机名白名单：仅对这些主机跳过 DNS 解析后的 IP 校验。
+   * 用途：出口网关用合成地址（198.18.0.0/15 基准测试段）代理真实出站时，
+   * 写死在代码里的第一方采集端点会被误拦。只接受精确主机名（小写比较，
+   * 不做后缀/通配匹配），不适用于字面 IP 主机名；协议、端口、凭证、超时、
+   * 响应体上限与重定向逐跳校验一律保留。默认不设 = 不放行任何主机。
+   * 绝不在用户可控 URL 的路径上设置此项。
+   */
+  trustedHosts?: ReadonlySet<string> | readonly string[];
   userAgent: string;
   /**
    * 严格域名白名单（2026-11-21）。非空时只允许这些 host（子域按 `*.example.com` 写法）。
@@ -269,6 +278,16 @@ async function lookupWithTimeout(host: string, timeoutMs: number): Promise<Array
   }
 }
 
+/** 白名单只认精确主机名（小写比较，不做后缀/通配匹配）；字面 IP 永不走白名单 */
+export function isTrustedHost(host: string, trustedHosts: FetchGuardOptions["trustedHosts"]): boolean {
+  if (!trustedHosts) return false;
+  const want = host.toLowerCase();
+  for (const h of trustedHosts) {
+    if (h.toLowerCase() === want) return true;
+  }
+  return false;
+}
+
 /** DNS 解析并校验全部解析结果，返回已校验安全的 IP 地址清单 */
 /**
  * 无论是否放行私网都**永久拦截**的地址段。
@@ -313,11 +332,18 @@ export async function resolveAndCheck(url: URL, opts: FetchGuardOptions): Promis
   }
   const host = url.hostname.replace(/^\[|\]$/g, "");
 
-  // 主机名本身就是字面 IP 时直接判
+  // 主机名本身就是字面 IP 时直接判（白名单不适用于字面 IP）
   if (isIP(host)) {
     if (isBlockedIp(host)) throw new SsrfBlockedError("目标是受保护网段: " + host, "blocked-ip");
     return [host];
   }
+
+  // 精确主机名白名单：跳过 DNS-IP 校验（出口网关用合成地址代理出站时，
+  // 写死在代码里的第一方端点会被误拦，见 U-284）。协议/端口/凭证校验在
+  // assertUrlShape 里已做；重定向每一跳都重新进本函数按新 URL 主机名判定，
+  // 跳出白名单的主机仍会被校验。返回 [] 表示“已放行、无需钉 IP 直连”
+  //（http 明文钉 IP 分支见 runGuardedFetch；本机六源全是 https）。
+  if (isTrustedHost(host, opts.trustedHosts)) return [];
 
   let addrs: Array<{ address: string }>;
   try {

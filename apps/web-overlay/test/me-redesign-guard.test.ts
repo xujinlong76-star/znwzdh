@@ -74,4 +74,20 @@ describe('用户中心（/me）重新设计守卫', () => {
     expect(heatmap).toContain('近 4 周活跃日历')
     expect(heatmap).toContain('展开近 16 周')
   })
+
+  it('U-372：/me 成长横幅 Lv/XP 旁挂「本机」角标，成长只存本机不冒充云端同步', () => {
+    const view = read('src/app/me/me-view.tsx')
+    const banner = view.slice(view.indexOf('function GrowthBanner()'))
+    // 角标紧贴 Lv/XP 文案之后，同一行内
+    const lvAt = banner.indexOf('Lv.{lp.level}')
+    expect(lvAt).toBeGreaterThan(-1)
+    const badgeAt = banner.indexOf('本机', lvAt)
+    expect(badgeAt).toBeGreaterThan(lvAt)
+    // 角标在 Lv/XP 文案与「连续 N 天」之间，同一行内
+    expect(banner.slice(lvAt, badgeAt)).not.toContain('连续')
+    expect(banner).toContain('成长档案只保存在这台设备的浏览器里')
+    // 成长页深处的披露与横幅同一口径
+    const panel = read('src/components/user-center/growth-panel.tsx')
+    expect(panel).toContain('成长档案只存在这台设备的浏览器里，不回传服务器')
+  })
 })

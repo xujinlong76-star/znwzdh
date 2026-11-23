@@ -22,7 +22,7 @@ import type { Overview } from '@/lib/me-types'
 function formatDate(ts: number | null | undefined): string {
   if (!ts) return '—'
   try {
-    return new Date(ts).toLocaleDateString('zh-CN')
+    return new Date(ts).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })
   } catch {
     return '—'
   }

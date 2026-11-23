@@ -200,7 +200,7 @@ export function LiveApiWidget({ config }: LiveApiWidgetProps) {
 
       <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-border/30">
         <span>轮询频率: {intervalSec}s</span>
-        <span>{lastUpdated ? `更新于 ${lastUpdated.toLocaleTimeString()}` : '等待同步'}</span>
+        <span>{lastUpdated ? `更新于 ${lastUpdated.toLocaleTimeString(undefined, { timeZone: 'Asia/Shanghai' })}` : '等待同步'}</span>
       </div>
     </div>
   )

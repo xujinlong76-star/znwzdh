@@ -473,6 +473,138 @@
   }
 }
 
+/* 高对比模式 (High Contrast)：与长辈模式正交 —— 长辈模式只改尺寸
+   （字号/间距/触控目标），本模式只改颜色 token；两者可叠加，各自只写
+   自己那一维变量，互不覆盖对方（本块不含任何字号/间距/边框宽度声明）。
+   位置刻意在 @layer 之外：未分层声明优先于全部分层规则（:root/.dark 在
+   @layer base、bg-card/85 等工具类在 @layer utilities），故 token 覆盖与
+   下面的透明度归一都不需要 !important 即可压过默认值与工具类；关闭态
+   （无 data-high-contrast 属性）零新增规则、零副作用。
+   数值口径：lib/visual-fingerprint.ts:127 calculateContrastRatio
+  （WCAG 2.1，(L1+0.05)/(L2+0.05)，保留两位小数；本块数值由同口径脚本
+   实算，见轮次笔记 evolution-round-2026-11-23-0022-w5.md）。
+   接线（W2 已落地，未提交）：lib/high-contrast.ts 的 applyHighContrast
+   把属性挂在 documentElement 上，开关接在 navigation-toolbar 与
+   外观弹窗（appearance-guide-dialog），状态只存本机 localStorage
+  （键 navhub.highContrast.v1）；首访无已存偏好时跟随系统
+   prefers-contrast: more，手动切换后只认手动值。故本块随开关实时生效，
+   不是惰性样式；关闭态摘掉属性即回到普通态。 */
+[data-high-contrast="on"] {
+  /* 次要文字：沿用现值 —— 浅色 #62626A 对白 6.04:1（对 --muted 底 5.50:1），
+     本就 ≥4.5:1；本次修的是下面的透明度变体，不是 token 本身。 */
+  --muted-foreground: 240 4% 40%;
+  /* 边框：现值 #E4E4E7 对白仅 1.27:1（WCAG 1.4.11 要求 ≥3:1）。
+     取 240 5% 55% #878792，对白 3.55:1（不用既有 --border-strong 的 58%，
+     其 3.20:1 余量太薄）；--border-strong 再提一档到 46%。 */
+  --border: 240 5% 55%;
+  --border-strong: 240 5% 46%; /* #6F6F7B，对白 4.96:1 */
+  --input: 240 5% 46%; /* #6F6F7B，对白 4.96:1（与 --ring 同值） */
+  --sidebar-border: 240 5% 55%;
+  /* 焦点环：现值 240 5% 46% 对白 4.96:1 已 ≥3:1，沿用；环形见下方重申规则。 */
+  --ring: 240 5% 46%;
+  /* 卡片不透明度意图值。注意 precedence：--card-alpha 由
+     navigation-content.tsx 以行内 style 注入（clamp 0.88~1.0），行内样式
+     优先于任何样式表规则，故本行只作意图声明，真正生效的归一在下方
+     .nav-card-deferred / [class*="bg-card/"] 两条未分层规则。 */
+  --card-alpha: 1;
+}
+
+.dark[data-high-contrast="on"] {
+  /* 次要文字：沿用现值 —— 深色 #A1A1AA 对深底 7.76:1（对 --muted 底 5.81:1），
+     本就 ≥4.5:1；修的是透明度变体。 */
+  --muted-foreground: 240 5% 64.9%;
+  /* 边框：现值 #27272A 对深底仅 1.34:1。取 240 4% 46% #71717A，对深底
+     4.12:1（不用既有 --border-strong 的 39%，其 3.14:1 余量太薄）。 */
+  --border: 240 4% 46%;
+  --border-strong: 240 5% 64.9%; /* #A1A1AA，对深底 7.76:1 */
+  --input: 240 5% 64.9%; /* #A1A1AA，对深底 7.76:1 */
+  --sidebar-border: 240 4% 46%;
+  /* 焦点环：现值 240 4.9% 83.9% 对深底 13.46:1，沿用。 */
+  --ring: 240 4.9% 83.9%;
+  --card-alpha: 1;
+}
+
+/* 1) 次要文字透明度变体归一为不透明（F4 /90 先例的推广：文件末尾的
+   .nav-card-deferred .text-muted-foreground\/90 规则只归一了卡片内 /90；
+   全仓尚有 /30 /40 /60 /70 /75 /80 共 49 处，/90 另有 2 处）。
+   实算（浅色，对白）：/90 4.77、/80 3.87、/75 3.48、/70 3.13、/60 2.57、
+   /40 1.82、/30 1.54 —— 除 /90 外全跌破 4.5:1；深色 /60 对深底 3.38:1
+   同样跌破。归一后统一回到 token 本身：浅 6.04:1 / 深 7.76:1。
+   子串选择器覆盖 dark: 变体与 hover: 变体（class 属性里都含 text-muted-foreground/）。 */
+[data-high-contrast="on"] [class*="text-muted-foreground/"] {
+  color: hsl(var(--muted-foreground));
+}
+
+/* 占位文字同口径：Firefox 默认 placeholder opacity 0.54 会把已达标的
+   token 再拉低，强制不透明。 */
+[data-high-contrast="on"] ::placeholder {
+  color: hsl(var(--muted-foreground));
+  opacity: 1;
+}
+
+/* 2) 半透明卡片 / 背景归一为不透明 + 去模糊。--card  token 本身已不透明
+   （浅白 / 深 #09090B），半透明只来自三处：--card-alpha（行内注入，见上）、
+   bg-card/85、dark:bg-card/45 等工具类、.glass-surface 的 /0.88。
+   归一后卡片内文字对比度回到 token 对卡片底的标称值（标题 19.90/19.06、
+   描述 6.04/7.76）。backdrop-filter: none 去掉毛玻璃，避免模糊后的壁纸
+   颜色渗入卡片改变有效底色。 */
+[data-high-contrast="on"] .nav-card-deferred {
+  background-color: hsl(var(--card));
+}
+
+[data-high-contrast="on"] .glass-surface {
+  /* / 1 显式不透明（与 hsl(var(--card)) 等价）：wallpaper-contrast-guard
+     解析 alpha 时只认 hsl(var(--card) / a) 写法，裸写会被判为缺失。 */
+  background-color: hsl(var(--card) / 1);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+[data-high-contrast="on"] [class*="bg-card/"] {
+  background-color: hsl(var(--card));
+}
+
+[data-high-contrast="on"] [class*="bg-background/"] {
+  background-color: hsl(var(--background));
+}
+
+[data-high-contrast="on"] [class*="bg-surface/"] {
+  background-color: var(--surface-base);
+}
+
+[data-high-contrast="on"] [class*="backdrop-blur"] {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* 3) 焦点环 2px 实线全程可见。基础规则（:focus-visible 2px solid +
+   offset 2px）已在 @layer base，本条未分层重申以压过工具类自绘 ring；
+   :not([data-focus-ring="off"]) 尊重组件已有的自绘焦点退出声明；
+   @media (forced-colors: none) 把系统强制颜色模式让给 :190 的 Highlight
+   规则（forced-colors 下系统色优先，本条不与之争）。环色对比度：
+   浅 4.96:1 / 深 13.46:1，均 ≥3:1。 */
+@media (forced-colors: none) {
+  [data-high-contrast="on"] :focus-visible:not([data-focus-ring="off"]) {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+}
+
+/* 4) 壁纸：文字可读优先于壁纸好看。precedence 调查结论——克隆内不存在
+   名为 wallpaper-contrast-guard 的文件/测试（只有 .glass-surface 注释里
+   一处文字引用），也没有独立的壁纸遮罩元素；壁纸是 <main> 的行内 backgroundImage
+  （navigation-content.tsx:1129-1135），唯一已落地的可读性兜底是
+   --card-alpha 夹取 [0.88, 1.0]（diy-presets.ts:681 clampCardOpacity）。
+   因此不存在“遮罩不透明度”可调：本块用 background-image: none !important
+   直接关掉 <main> 上的壁纸（含 canvas-bg-* 装饰渐变，同元素 background-image），
+   文字回到 --background 实底上，所有对比度回到本块实算的标称值。
+   !important 是必需的：壁纸是行内 style，非 !important 压不住。
+   未动：backdropFilter 行内 blur（壁纸已无，blur 无对象可糊）、各页自有
+   装饰渐变（非 main 元素，alpha ≤0.12，影响在 W1 审计复核范围）。 */
+[data-high-contrast="on"] main {
+  background-image: none !important;
+}
+
 @layer base {
   * {
     @apply border-border;

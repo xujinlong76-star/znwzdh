@@ -29,6 +29,11 @@ export interface ExamNode {
    * exam-calendar 的 URL 常量里，节点数据不写死域名；无入口的节点留空。
    */
   url?: string
+  /**
+   * 备用入口：专题网站门户（如国考准考证节点的 bm.scs.gov.cn/kl2027）。
+   * 只挂已核实的官方门户；渲染层作次要文字链，不作主按钮目标。
+   */
+  portalUrl?: string
   /** 节点开始日（YYYY-MM-DD，北京时间自然日） */
   startISO: string
   /** 节点结束日（单日节点与开始日相同） */
@@ -123,7 +128,8 @@ export const SHANGHAI_SHENGKAO_ADMISSION_URL = 'https://www.shacs.gov.cn/'
  *  - 门户（GUOKAO_PORTAL_URL，见下）：bm.scs.gov.cn/kl2027，国家公务员局
  *    2027 年度招考专题网站，是报名/审查的门户入口，不是打印系统直达
  *    地址——实测仅 334 B JS 跳转页，当前直接访问会跳到招考专题 gkIndex.html，
- *    点它找不到打印系统，故不作准考证节点的点击目标。
+ *    点它找不到打印系统，故门户作准考证节点的备用链（`portalUrl`），只作
+ *    次要文字链，不作主按钮目标；文案须写清『选「考生考务入口」』。
  *
  * 事实来源：官方 2026-10-25 单独公告《报名确认及准考证打印网址》所载
  * 直达网址（教育在线 2026-10-26 逐字转载 + 河南华图报考指南逐字引用 +
@@ -139,9 +145,10 @@ export const GUOKAO_ADMISSION_URL = 'http://gwy.cpta.com.cn'
 
 /**
  * 国考专题网站门户入口（报名/审查）：国家公务员局 2027 年度招考专题
- * 网站 http://bm.scs.gov.cn/kl2027。保留作门户引用，不作准考证打印
- * 节点与提醒的点击目标（见 GUOKAO_ADMISSION_URL 注释：仅 334 B JS
- * 跳转页，当前直接访问会跳到招考专题 gkIndex.html、找不到打印系统）。
+ * 网站 http://bm.scs.gov.cn/kl2027。作准考证节点与提醒的备用链
+ * （`portalUrl`），只作次要文字链，不作主按钮目标（见 GUOKAO_ADMISSION_URL
+ * 注释：仅 334 B JS 跳转页，当前直接访问会跳到招考专题 gkIndex.html、
+ * 找不到打印系统，故文案须写清『选「考生考务入口」』）。
  */
 export const GUOKAO_PORTAL_URL = 'http://bm.scs.gov.cn/kl2027'
 
@@ -233,6 +240,7 @@ export const EXAMS: ExamInfo[] = [
         startISO: '2026-11-23',
         endISO: '2026-11-29',
         url: GUOKAO_ADMISSION_URL,
+        portalUrl: GUOKAO_PORTAL_URL,
       },
       {
         label: '专业科目笔试',
@@ -457,10 +465,11 @@ export const EXAMS: ExamInfo[] = [
     firstExamDayISO: '2026-12-05',
     firstDayLabel: '今天京考 · 公安专业科目 14:00 开考',
     eveLabel: '明天京考（公安专业科目先考 12 月 5 日）',
-    // 京考节点（U-76，2026-11-17 按首都之窗公告原文逐字核实）：
-    // 报名 11-12 9:00–11-18 18:00、准考证打印 12-01 9:00–12-06 16:30、
-    // 公安专业科目 12-05 14:00–16:00、公共科目 12-06（行测 9:00–11:00、
-    // 申论 14:00–16:30）。
+    // 京考节点（U-76，2026-11-17 按首都之窗公告原文逐字核实；缴费节点
+    // U-395，2026-11-22 按同一公告原文逐字核实）：
+    // 报名 11-12 9:00–11-18 18:00、缴费 11-21 0:00–11-23 24:00、
+    // 准考证打印 12-01 9:00–12-06 16:30、公安专业科目 12-05 14:00–16:00、
+    // 公共科目 12-06（行测 9:00–11:00、申论 14:00–16:30）。
     // 报名是多日窗口节点（11-12–11-18），节点状态 examNodeStatus 仍是
     // 纯日期口径：11-18 全天为进行中，11-19 才翻已结束，detail 写明
     // 「18:00 截止」。18:00 时刻截止只在渲染层按表查
@@ -468,8 +477,11 @@ export const EXAMS: ExamInfo[] = [
     // `${exam.id}:${node.label}`），调用方用
     // `deadlineLabel ?? EXAM_NODE_STATUS_LABEL[status]` 取文案；不给
     // ExamNode 加时刻字段，不改 examNodeStatus / todayNodes。
-    // 不收缴费节点：官方窗口 11-21 0:00–11-23 24:00 已核实，但文件无
-    // 缴费类节点先例（国考/省考均不设缴费节点），最小切口不收。
+    // 收缴费节点（U-395，2026-11-22 按首都之窗公告原文逐字核实）：
+    // 官方窗口 11-21 0:00–11-23 24:00 进行中，逾期未完成缴费视为自动
+    // 放弃报考资格；军队文职已有缴费节点先例，文件不再「无缴费类节点
+    // 先例」。截止是 11-23 24:00 = 自然日末，日期口径下 11-23 全天为
+    // 进行中、11-24 自动翻已结束，不进 PEAK 截止时刻表。
     // 不收成绩节点：官方只写「2027 年 1 月」，无确切日；成绩类禁用
     // estimated（开考后才有意义），无确切日 + 无可信占位日 = 不收，
     // 待官方公布具体日期后再补。
@@ -479,6 +491,13 @@ export const EXAMS: ExamInfo[] = [
         detail: '11 月 12 日 9:00 至 11 月 18 日 18:00，登录北京市人事考试通用平台提交报考申请；未通过资格审查者可在 11 月 18 日 18:00 前改报其他职位',
         startISO: '2026-11-12',
         endISO: '2026-11-18',
+        url: JINGKAO_APPLY_URL,
+      },
+      {
+        label: '缴费',
+        detail: '11 月 21 日 0:00 至 11 月 23 日 24:00，登录北京市人事考试通用平台缴费；逾期未完成缴费视为自动放弃报考资格',
+        startISO: '2026-11-21',
+        endISO: '2026-11-23',
         url: JINGKAO_APPLY_URL,
       },
       {
@@ -764,6 +783,64 @@ export const EXAMS: ExamInfo[] = [
     note: '统考 10 月 24–25 日已结束，条目存在只为承载成绩节点；成绩复核无全省统一窗口，各市自考办在成绩公布后 10 个工作日内安排具体受理时间与地点，以所在市公布为准，须本人持身份证、准考证到参加考试所在市自考办申请，逾期不予受理，仅限漏评、漏记分、错记分、加错分四种情形。',
   },
   {
+    id: 'guangdong-zikao-2027-01',
+    name: '2027 年 1 月广东省高等教育自学考试',
+    shortName: '广东自考·1月',
+    tagline: '新生报名 11 月 24 日开始',
+    examDateLabel: '1 月 9–10 日',
+    startISO: '2027-01-09',
+    endISO: '2027-01-10',
+    // 广东自考 2027 年 1 月考期（C4，2026-11-23 核实）：广东省教育考试院
+    // 《广东省 2027 年 1 月高等教育自学考试网上报名报考须知》（省自考委办，
+    // 2026-11-10，eea.gd.gov.cn/zxks/content/post_4977287.html）原文；
+    // 考试 2027-01-09–10 由粤考办〔2026〕16 号双重确认。新考期单独立条目，
+    // 旧 guangdong-zikao（2026 年 10 月考期成绩节点）与 PEAK 守卫键一字不动。
+    // 节点只有日期字段（ExamNode 无时刻字段），10:00 / 12:00 / 14:00 /
+    // 17:00 四个时刻级边界只进文件末尾的 guangdongZikaoSignupPhase，不进节点；
+    // 打印准考证（“考试前 10 天内”）与成绩（“预计 2027 年 2 月”）均无确切日，
+    // 不设节点。全部节点挂 GUANGDONG_ZIKAO_SCORE_URL（同一系统既是报名报考
+    // 入口也是成绩查询入口；U-87 规则：须知原文给出可直接登录办理的线上系统
+    // URL 才挂链）。
+    nodes: [
+      {
+        label: '新生预报名',
+        detail: '11 月 24 日 10:00 至 11 月 27 日 12:00：无准考证号的新生先预报名（录入信息、手机绑定、相片采集），审核通过后才能正式报名；预报名号仅当次有效',
+        startISO: '2026-11-24',
+        endISO: '2026-11-27',
+        url: GUANGDONG_ZIKAO_SCORE_URL,
+      },
+      {
+        label: '正式报名',
+        detail: '11 月 24 日 10:00 至 11 月 27 日 17:00：凭预报名号确认，成功后获得唯一准考证号；11 月 28 日后不再受理线下正式报名',
+        startISO: '2026-11-24',
+        endISO: '2026-11-27',
+        url: GUANGDONG_ZIKAO_SCORE_URL,
+      },
+      {
+        label: '考生报考',
+        detail: '12 月 1 日 14:00 至 12 月 4 日 17:00：每次考试只限报考一次、只能选一个考区、最多 4 门；一经确认不得增加、删减、更改',
+        startISO: '2026-12-01',
+        endISO: '2026-12-04',
+        url: GUANGDONG_ZIKAO_SCORE_URL,
+      },
+      {
+        label: '网上缴费',
+        detail: '12 月 2 日 10:00 至 12 月 5 日 17:00：笔试课程每科 52 元；缴费后须再次登录确认缴费状态为“已缴费”，报考费一旦缴纳成功则不予退还',
+        startISO: '2026-12-02',
+        endISO: '2026-12-05',
+        url: GUANGDONG_ZIKAO_SCORE_URL,
+      },
+      {
+        label: '考试',
+        detail: '2027 年 1 月 9–10 日',
+        startISO: '2027-01-09',
+        endISO: '2027-01-10',
+        url: GUANGDONG_ZIKAO_SCORE_URL,
+      },
+    ],
+    note: '新生先报名拿准考证号，12 月 1 日 14:00 起报考选课；报考最多 4 门、只能选一个考区，一经确认不得增减更改，缴费不予退还。',
+  },
+  {
     id: 'shanghai-zikao',
     name: '2026 年下半年上海市高等教育自学考试',
     shortName: '上海自考',
@@ -973,10 +1050,10 @@ export function todayNodes(
  *
  * 只取当天有今日节点的考试、且不在今日集合内、仍可办（isNodeActionable）
  * 的节点，按 startISO 排序：文职 11-18 接续为准考证打印 + 全军统一笔试，
- * 京考接续为准考证打印 + 公安专业科目笔试 + 公共科目笔试；成考接续为
+ * 京考接续为缴费 + 准考证打印 + 公安专业科目笔试 + 公共科目笔试；成考接续为
  * 三省复核 + 浙江志愿确认 + 天津成绩复核结果查询（U-279）（estimated 的浙江成绩查询被 isNodeActionable
- * 排除）。全部取自节点数据，不写死日期、不新造节点——京考没有缴费节点，
- * 故「京考缴费」不可能出现。
+ * 排除）。全部取自节点数据，不写死日期、不新造节点（U-395：京考缴费节点
+ * 11-21–23 已收，11-18 当天接续区即出现「京考缴费」）。
  */
 export interface TodayFollowUpItem {
   exam: ExamInfo
@@ -1004,7 +1081,7 @@ export function todayFollowUpNodes(
 
 /** 最近一场：未结束的考试里首考日最早的；多日考试末日仍算未结束
  *（考研 12-19–20：12-20 当天条带仍在，与 /exam 倒计时岛「进行中 ·
- * 第 2 天」一致）；十一场全结束则返回 undefined（调用方渲染空态条带）。
+ * 第 2 天」一致）；十二场全结束则返回 undefined（调用方渲染空态条带）。
  * 排序按首考日（firstExamDay），不是公共科目首日 startISO：有加试的
  * 考试（国考首考日 11-28 < startISO 11-29；京考首考日 12-05 < startISO
  * 12-06）应按考生实际最早开考日排。同日首考平局时数组在前者胜出
@@ -1259,7 +1336,7 @@ export function urgencyTier(
 
 /**
  * 时钟卡倒计时行（纯派生）：最近一场未结束考试的一行文案 + 紧迫档位。
- * 十一场全结束返回 undefined（调用方隐藏该行，不写未公布日期）。
+ * 十二场全结束返回 undefined（调用方隐藏该行，不写未公布日期）。
  * 文案与 /exam 倒计时岛同口径：首考日当天「今天国考 · 专业科目 14:00
  * 开考」（国考首考日 11-28 设了 firstDayLabel）、进行中「考研进行中 ·
  * 第 2 天」、首考日前一天「明天国考（专业科目先考 11 月 28 日）」
@@ -1324,16 +1401,18 @@ export const EXAM_REMINDER_TIER_LABEL: Record<ExamReminderTier, string> = {
  * U-59，2026-11-17 雷达第 16 轮定性）：
  *  - 打印窗口 11 月 23 日 0:00 至 11 月 29 日 15:00，逾期系统关闭、无法补打；
  *  - 退场句出自考场规则、不在公告正文；
- *  - 站内提醒唯一可点击入口是报名确认及准考证打印系统直达
+ *  - 站内提醒主链挂报名确认及准考证打印系统直达
  *    http://gwy.cpta.com.cn（官方 2026-10-25 公告《报名确认及准考证
  *    打印网址》所载，教育在线 2026-10-26 逐字转载；根路径实测 405，
- *    表单系统常见响应，非死链；链接写 http）；
+ *    表单系统常见响应，非死链；链接写 http），门户作备用文字链
+ *    （`portalUrl`）；
  *  - 专题网站门户 http://bm.scs.gov.cn/kl2027（报名/审查入口，见
  *    GUOKAO_PORTAL_URL）实测仅 334 B JS 跳转页，当前直接访问会跳到
- *    招考专题 www.scs.gov.cn/gkIndex.html、找不到打印系统，故不作提醒的点击目标；
+ *    招考专题 www.scs.gov.cn/gkIndex.html、找不到打印系统，故只作备用
+ *    文字链，不作主按钮目标；
  * 文案（U-98）：card/strip 双写两层——登录专题网站 bm.scs.gov.cn/kl2027，
- * 选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn）；点击目标仍只
- * 挂 gwy 直链，不挂门户。
+ * 选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn）；提醒主链挂 gwy
+ * 直达，门户作备用文字链（`portalUrl`）。
  *  - 「考生考务入口」来源：2027 年度报考指南原文（报名确认段）——华图
  *    2026-10-31 文引原文“登录专题网站，选择「考生考务入口」（或报名确认
  *    及准考证打印网址）进入”；本轮未从 scs.gov.cn 原站直读该指南原文，
@@ -1374,6 +1453,8 @@ export interface GuokaoAdmissionReminder {
    *  11-23–11-29 开放期（open / last-call）才有；11-15–11-22 不设，行为不变。 */
   slimCardLine?: string
   url: string
+  /** 专题网站门户（备用链）：http://bm.scs.gov.cn/kl2027，读 GUOKAO_PORTAL_URL 常量 */
+  portalUrl: string
 }
 
 /**
@@ -1416,7 +1497,7 @@ export function admissionReminderFor(
     const days = daysUntil('2026-11-23', nowMs)
     const strip = `国考准考证距打印开启 ${days} 天，11 月 23 日 0:00 开放打印，11 月 29 日 15:00 截止；登录专题网站 bm.scs.gov.cn/kl2027，选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn）`
     const card = `2027 国考准考证距打印开启 ${days} 天，11 月 23 日 0:00 开放打印，11 月 29 日 15:00 截止——报名确认成功的考生，带报名序号登录专题网站 bm.scs.gov.cn/kl2027，选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn），多打两份备用。笔试 11 月 28–29 日：专业科目 11 月 28 日 14:00–16:00（部分职位），公共科目 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。今年新规：开考 15 分钟后不得入场（去年为 30 分钟，据国家公务员局 2027 年度招考公告）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。`
-    return { phase, stripLine: strip, cardLine: card, url: GUOKAO_ADMISSION_URL }
+    return { phase, stripLine: strip, cardLine: card, url: GUOKAO_ADMISSION_URL, portalUrl: GUOKAO_PORTAL_URL }
   }
   const copy = GUOKAO_ADMISSION_COPY[phase]
   // U-236：开放期（open / last-call）卡片收敛为瘦身行；倒计时 / 预热期不设。
@@ -1428,5 +1509,46 @@ export function admissionReminderFor(
     cardLine: copy.card,
     slimCardLine,
     url: GUOKAO_ADMISSION_URL,
+    portalUrl: GUOKAO_PORTAL_URL,
   }
+}
+
+/**
+ * 广东自考 2027 年 1 月报名报考门控（C4，定稿见
+ * evolution-round-2026-11-23-0922-w2.md §4.2；事实源为省考试院 2026-11-10
+ * 报名报考须知 post_4977287）。
+ *
+ * 七相位（北京时间；时刻级边界含整点本身，即 10:00:00 即进入该相位、
+ * 17:00:00 即离开，与 guokaoAdmissionPhase 的 15:00 边界同款语义）：
+ *  - < 11-24 10:00：null（不渲染；11-23 不渲染，明天 10:00 自动出现）；
+ *  - 11-24 10:00 – 11-27 12:00：'signup'（新生报名进行中）；
+ *  - 11-27 12:00 – 11-27 17:00：'signup-last-call'（报名末班：预报名已截止）；
+ *  - 11-27 17:00 – 12-01 14:00：'waiting'（等报考；弱提醒、无 CTA，D1 定稿）；
+ *  - 12-01 14:00 – 12-04 17:00：'apply'（报考进行中；12-02 10:00 缴费开始不切相位）；
+ *  - 12-04 17:00 – 12-05 17:00：'pay-last-call'（缴费末班：报考已截止）；
+ *  - ≥ 12-05 17:00：null（整卡消失）。
+ * 时刻判定只发生在这里（与 guokaoAdmissionPhase 同款做法）；不给 ExamNode
+ * 加时刻字段，不用 daysUntil 算时刻级截止，不做天数倒计时。
+ */
+export type GuangdongZikaoSignupPhase =
+  | 'signup'
+  | 'signup-last-call'
+  | 'waiting'
+  | 'apply'
+  | 'pay-last-call'
+
+export function guangdongZikaoSignupPhase(nowMs: number = Date.now()): GuangdongZikaoSignupPhase | null {
+  const signupStart = shanghaiMidnightMs('2026-11-24') + 10 * 3600 * 1000
+  const preRegDeadline = shanghaiMidnightMs('2026-11-27') + 12 * 3600 * 1000
+  const signupDeadline = shanghaiMidnightMs('2026-11-27') + 17 * 3600 * 1000
+  const applyStart = shanghaiMidnightMs('2026-12-01') + 14 * 3600 * 1000
+  const applyDeadline = shanghaiMidnightMs('2026-12-04') + 17 * 3600 * 1000
+  const payDeadline = shanghaiMidnightMs('2026-12-05') + 17 * 3600 * 1000
+  if (nowMs < signupStart) return null
+  if (nowMs < preRegDeadline) return 'signup'
+  if (nowMs < signupDeadline) return 'signup-last-call'
+  if (nowMs < applyStart) return 'waiting'
+  if (nowMs < applyDeadline) return 'apply'
+  if (nowMs < payDeadline) return 'pay-last-call'
+  return null
 }

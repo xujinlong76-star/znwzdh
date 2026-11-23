@@ -6,6 +6,8 @@
  *
  * 口径与追剧清单页一致：due 只断言「按你标注的节奏，今天是更新日」，
  * 不断言平台真的更新了；check 只给「去看看有没有更新」的诚实入口。
+ * premieringToday（U-377）：预约态的剧预计今天开播，平台待确认——
+ * 只写「今天开播」，不链任何平台入口，点剧名回清单页看预约态。
  * 未登录（watch=null）时给一句通用引导；已登录但今天没到期条目时
  * 安静消失，不拿空盒子占版面。
  */
@@ -56,13 +58,27 @@ export default function BriefWatch() {
     )
   }
 
-  if (watch.due.length === 0 && watch.check.length === 0) return null
+  if (watch.due.length === 0 && watch.check.length === 0 && watch.premieringToday.length === 0) return null
 
   return (
     <section aria-label="在追的剧今日提醒" className="rounded-xl border border-amber-300/60 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-950/30">
       <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">
         <BellRing className="h-4 w-4 text-amber-700 dark:text-amber-400" aria-hidden /> 在追的剧 · 今日提醒
       </h2>
+      {watch.premieringToday.length > 0 ? (
+        <ul className="space-y-1.5">
+          {watch.premieringToday.map((item) => (
+            <li key={item.key} className="flex flex-wrap items-baseline gap-x-2 text-sm">
+              <Link href="/me/watchlist" className="font-medium hover:text-primary">
+                {item.title}
+              </Link>
+              <span className="text-xs text-muted-foreground">
+                今天开播 · 平台待确认（档期为平台预计，以官方为准）
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {watch.due.length > 0 ? (
         <ul className="space-y-1.5">
           {watch.due.map((item) => (

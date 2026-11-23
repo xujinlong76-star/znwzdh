@@ -36,7 +36,7 @@ const PAGE_SIZE = 20
 function formatTime(ts: number): string {
   if (!ts) return ''
   try {
-    return new Date(ts).toLocaleString('zh-CN', { hour12: false })
+    return new Date(ts).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' })
   } catch {
     return ''
   }

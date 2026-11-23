@@ -46,6 +46,19 @@ export function dramaKeyFor(platformSiteId: string, title: string): string {
  return `${platformSiteId}::${normalizeDramaTitle(title)}`;
 }
 
+/**
+ * 预约态键前缀（U-377，与前端 lib/watchlist.ts 同口径）：
+ * 开播日历上的剧没有平台信息，键为 `reserved::归一化剧名`，不指向平台入口。
+ * 服务端据此前缀判定预约态：不进 due/check 提醒、不进新集检查基线；
+ * 开播日提醒（premieringToday）按开播日历快照现算，不依赖条目存开播日。
+ */
+export const RESERVED_KEY_PREFIX = "reserved::";
+
+/** 是否预约态的键。 */
+export function isReservedDramaKey(key: string): boolean {
+ return key.startsWith(RESERVED_KEY_PREFIX);
+}
+
 const CHECK_KINDS: ReadonlySet<string> = new Set([
  "migu-list",
  "wikipedia",

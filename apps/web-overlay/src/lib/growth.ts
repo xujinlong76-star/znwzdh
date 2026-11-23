@@ -2043,6 +2043,50 @@ export function growthSummary(profile: GrowthProfile, now: Date = new Date()): G
   }
 }
 
+/**
+ * 本机成长快照（U-372 诚实化小步，导出用）。
+ *
+ * 口径与服务端 UserDataExport.growthSnapshot（@navhub/store）同源：
+ * scope 恒为 'local-only'，source 恒为 'browser-localStorage'——这份档案
+ * 只存在这台设备的浏览器里，导出只是把它原样打包进备份文件，绝不代表
+ * 它已同步到云端；导入时服务端不回写它（见 /api/me/import）。
+ * profile 是本机档案原文，供用户留档；摘要字段让备份不用解析全文也能核对。
+ */
+export interface GrowthExportSnapshot {
+  scope: 'local-only'
+  source: 'browser-localStorage'
+  note: string
+  exportedAt: number
+  level: number
+  title: string
+  totalXp: number
+  streak: number
+  longestStreak: number
+  freezeCards: number
+  profile: GrowthProfile
+}
+
+export const GROWTH_SNAPSHOT_NOTE =
+  '成长档案只保存在这台设备的浏览器里（localStorage），不回传服务端；本快照是导出时从本机读取的备份存档，导入时不会写回服务端，换设备后需在本机重新积累。'
+
+export function buildGrowthExportSnapshot(now: Date = new Date()): GrowthExportSnapshot {
+  const profile = loadGrowthProfile()
+  const summary = growthSummary(profile, now)
+  return {
+    scope: 'local-only',
+    source: 'browser-localStorage',
+    note: GROWTH_SNAPSHOT_NOTE,
+    exportedAt: now.getTime(),
+    level: summary.level,
+    title: summary.title,
+    totalXp: profile.totalXp,
+    streak: summary.streak,
+    longestStreak: profile.longestStreak,
+    freezeCards: profile.freezeCards,
+    profile,
+  }
+}
+
 /* ---------------- 存储包装（浏览器端） ---------------- */
 
 function emitSettleEvents(events: SettleEvent[]): void {

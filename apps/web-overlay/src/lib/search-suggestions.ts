@@ -121,6 +121,8 @@ function matchToken(token: string, haystack: string): boolean {
   )
 }
 
+import { isLatinQuery, matchPinyin, type PinyinKeys } from './palette-pinyin'
+
 /**
  * 容错匹配：查询词与候选文本是否「算命中」。
  *
@@ -137,6 +139,26 @@ export function matchSuggestionText(query: string, text: string): boolean {
     .split(/\s+/)
     .filter(Boolean)
     .every((token) => matchToken(token, t))
+}
+
+/**
+ * 容错匹配 + 拼音第二通道（04 §1.4，写死）。
+ *
+ * 旧函数签名与行为一字不改（它是四组 matcher 的共同 funnel）：
+ * 先走现有逻辑，命中即返回 true；不中时，若 `keys` 已提供且查询为拉丁
+ * 查询，再对候选行的 `PinyinKeys` 做 `matchPinyin(query, keys) > 0` 判定。
+ * `keys` 未提供（拼音库未加载）时与旧函数完全等价。
+ * 拼音通道只服务本地行（操作 / 工具 / 收藏 / 快捷链接），服务端 hits
+ * 不进这个函数。
+ */
+export function matchSuggestionTextWithPinyin(
+  query: string,
+  text: string,
+  keys?: PinyinKeys,
+): boolean {
+  if (matchSuggestionText(query, text)) return true
+  if (!keys) return false
+  return matchPinyin(query, keys) > 0
 }
 
 /**

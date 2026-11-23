@@ -18,14 +18,33 @@ import { test, expect, type Page } from '@playwright/test';
  * 原因见该用例上方注释。
  */
 
+// C-W7-5（2026-11-21，待雷达落号）修正：右组实际 gap-1.5 = 6px，
+// 上文「7×2px 间隙 = 320px」「390px 366=366 恰好占满」与当前 HEAD 代码不符；
+// 修正后预算：360px 行 344px（超 8px）、390px 行 394px（超 28px），
+// Part 1 后：360px 行 294px ≤ 336px、390px 行 344px ≤ 366px，
+// 详见 evolution-round-2026-11-21-0522-w5.md §2（吸顶约 184px，见 W8 修正）。
+//
+// U-382/U-383（2026-11-21，基底 52e919e2）：d28b4b84（C-W7-5 Part 1）已把
+// 布局侧溢出修掉——多选按钮 <sm 收进探索菜单，360px 行 294≤336、390px 行
+// 344≤366，gap-1.5 保持不变；但 :53/:105 仍红，根因未动：①:53 的旧探针
+// measureToolbarRow 仍用 closest('div.overflow-hidden')，8ebc4b08 后恒为
+// null → found:false；现改按 data-testid="toolbar-button-row" 直接量行
+// （navigation-toolbar.tsx），布局不再动 gap。②:105 后半段仍定位行内
+// 「向导与设首页」按钮，c5a83877 后该按钮 hidden lg:inline-flex，360px 下
+// 不在无障碍树里；改走「更多」菜单内同名条目，见该用例上方注释。
+// d28b4b84 新增的 :148（行实测）与 :181（多选菜单）用例本身已通过，不动。
+
 async function measureToolbarRow(page: Page) {
   return await page.evaluate(() => {
-    // 2026-11-21：改用稳定的 data-testid 而非 closest('div.overflow-hidden')。
-    // 后者与 DOM 结构耦合，改一次布局就会静默失效（返回 found:false 让用例假绿）。
-    const row = document.querySelector('[data-testid="nav-toolbar-actions"]');
+    // U-382（2026-11-21）：旧探针用 menuBtn.closest('div.overflow-hidden') 找行，
+    // 8ebc4b08 顶栏重构后行容器为 <div class="shrink-0 flex items-center gap-1.5">，
+    // 祖先链上再无 div.overflow-hidden，closest() 恒返回 null、found:false，
+    // 与真实溢出无关。现直接按 data-testid 定位行容器（navigation-toolbar.tsx），
+    // 对 header 内容宽量 scrollWidth/clientWidth。
+    const row = document.querySelector('[data-testid="toolbar-button-row"]');
     if (!row) return { found: false as const };
-    // 「打开菜单」只在 <md 存在；桌面端测量不依赖它
     const menuBtn = row.querySelector('button[aria-label="打开菜单"]');
+    if (!menuBtn) return { found: false as const };
     const boxes = [...row.querySelectorAll('button, a')]
       .filter((el) => {
         const r = el.getBoundingClientRect();
@@ -55,15 +74,13 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     test(`${width}px：工具栏行不溢出、全部可见按钮在视口内`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.goto('/');
-      // 2026-11-21：顶栏收敛后「今日中心」按钮已下沉进聚合菜单，
-      // 不再是行内常驻元素。改为等「打开菜单」这个必然存在的锚点。
-      const menuBtn = page.getByRole('button', { name: '打开菜单', exact: true });
-      await expect(menuBtn).toBeVisible({ timeout: 60_000 });
+      const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
+      await expect(todayBtn).toBeVisible({ timeout: 60_000 });
       const m = await measureToolbarRow(page);
       expect(m.found).toBe(true);
       if (!m.found) return;
-      // 实测数进日志：改前 360px 为 scrollWidth=366 > clientWidth=336；
-      // 改后应为 320 ≤ 336（U-155：小组件盒 <390px 收进菜单省 46px，外观按钮保留）。
+      // 实测数进日志：C-W7-5 修正前 360px 行 scrollWidth=344 > clientWidth=336；
+      // 改后应为 294 ≤ 336（C-W7-5：多选按钮 <640px 收进菜单省 50px）。
       console.log(
         `[toolbar360] ${width}px: rowScrollWidth=${m.rowScrollWidth} rowClientWidth=${m.rowClientWidth} buttons=${m.boxes.length} menuRight=${m.boxes.find((b) => b.label === '打开菜单')?.right}`,
       );
@@ -78,6 +95,21 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
           `${b.label} 右缘出视口（right=${b.right} > innerWidth=${m.innerWidth}）`,
         ).toBeLessThanOrEqual(m.innerWidth);
       }
+      // U-382（2026-11-21，基底 52e919e2）：窄屏溢出由 d28b4b84 收多选按钮进
+      // 探索菜单解决，行 gap 保持 1.5（6px）未动；此处锁定 gap 仍为 6px，
+      // 防止后人以挤间距代替减入口修溢出（桌面档由下方 1280px 用例锁定）。
+      const gap = await page
+        .getByTestId('toolbar-button-row')
+        .evaluate((el) => getComputedStyle(el).columnGap);
+      expect(gap, `${width}px 行 gap 应仍为 6px（gap-1.5），溢出靠减入口解决`).toBe('6px');
+      // U-382：390px 菜单按钮曾被裁 16px、右缘 406 > 390 点不到；右缘在视口内
+      // 还不够，须真点一次验证可点：点开后 aria-expanded 翻为 true、
+      // 移动端抽屉 #mobile-nav-drawer 滑入（translate-x-0）。
+      const menuBtn = page.getByRole('button', { name: '打开菜单', exact: true });
+      await expect(menuBtn).toHaveAttribute('aria-expanded', 'false');
+      await menuBtn.click();
+      await expect(menuBtn).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.locator('#mobile-nav-drawer')).toHaveClass(/translate-x-0/);
     });
   }
 
@@ -87,30 +119,36 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
   // 本用例随新行为改写（旧断言「1280px 标签仍可见」与该修复直接冲突；单元侧
   // header-layout-guard / touch-keyboard-hints 守卫已在同一提交改写）；断言未删，
   // 只改断言方向，并补 1600px（2xl）档的标签可见用例。
-  test('1280px：工具栏行不溢出、菜单按钮在视口内', async ({ page }) => {
-    // 2026-11-21 改写：原用例断言「今日标签按 2xl 断点隐藏」，
-    // 但顶栏收敛后今日中心已下沉进聚合菜单，「打开菜单」按钮内部没有
-    // 文字 span，标签断点断言失去对象（会恒失败）。
-    // 改为与本文件主用例同口径的溢出断言——这才是这个横宽档位真正要守的。
+  test('1280px：「今日」标签按 2xl 断点隐藏、按钮仍可见', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/');
-    // 「打开菜单」是 md:hidden（移动端专用），1280px 下不渲染。
-    // 改用桌面端必然可见的聚合入口作锚点。
-    const anchor = page.getByRole('button', { name: '个人菜单', exact: true });
-    await expect(anchor).toBeVisible({ timeout: 60_000 });
-    const m = await measureToolbarRow(page);
-    expect(m.found).toBe(true);
-    if (!m.found) return;
-    expect(m.rowScrollWidth).toBeLessThanOrEqual(m.rowClientWidth);
-    for (const b of m.boxes) {
-      expect(b.right, `${b.label} 右缘出视口`).toBeLessThanOrEqual(m.innerWidth);
-    }
+    const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
+    await expect(todayBtn).toBeVisible({ timeout: 60_000 });
+    const label = todayBtn.locator('span:not([aria-hidden])');
+    await expect(label).toBeHidden();
   });
 
-  // 2026-11-21：原「1600px 今日标签可见」用例已删除。
-  // 顶栏收敛把「今日中心」从行内按钮下沉进聚合菜单（11 图标 → 4 核心 + 2 聚合），
-  // 该按钮在任何宽度都不再是行内元素，断点断言失去对象。
-  // 对应守卫改由 test/u155-diy-entry-guard.test.ts 覆盖「入口保留在聚合菜单内」。
+  // U-382（2026-11-21）：d28b4b84 只收窄屏档的入口，行容器 gap-1.5 全宽度保留；
+  // 本用例锁定桌面端（≥sm）间距仍为 6px，防止窄屏修复误伤桌面同行按钮间距。
+  test('1280px：工具栏行 gap 仍为 6px（桌面间距不变）', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/');
+    const row = page.getByTestId('toolbar-button-row');
+    await expect(row).toBeVisible({ timeout: 60_000 });
+    const gap = await row.evaluate((el) => getComputedStyle(el).columnGap);
+    console.log(`[toolbar360] 1280px: rowGap=${gap}`);
+    expect(gap, '桌面端行 gap 应仍为 6px（gap-1.5），窄屏修复不得收窄桌面').toBe('6px');
+  });
+
+  test('1600px（2xl）：「今日」标签仍可见', async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 800 });
+    await page.goto('/');
+    const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
+    await expect(todayBtn).toBeVisible({ timeout: 60_000 });
+    const label = todayBtn.locator('span:not([aria-hidden])');
+    await expect(label).toBeVisible();
+    await expect(label).toHaveText(/^今日( \d+ 项)?$/);
+  });
 
   test('360px：工具栏外观按钮可见，点开同一小窗「外观与排版」tab 可切', async ({ page }) => {
     // 意图变更（U-155 方案 A，88fce3f2）：02:22 轮修复曾把工具栏外观按钮在 <390px
@@ -121,9 +159,8 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     // 微胶囊行「向导与设首页」仍作为第二入口保留覆盖。
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto('/');
-    // 2026-11-21：锚点改为必然存在的聚合菜单按钮（「今日中心」已下沉）
-    const menuBtn = page.getByRole('button', { name: '打开菜单', exact: true });
-    await expect(menuBtn).toBeVisible({ timeout: 60_000 });
+    const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
+    await expect(todayBtn).toBeVisible({ timeout: 60_000 });
     const toolbarAppearance = page.getByRole('button', {
       name: '打开外观排版与新手向导小窗',
       exact: true,
@@ -137,12 +174,75 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
       'data-state',
       'active',
     );
-    // 2026-11-21：移除「微胶囊第二入口」断言。
-    // 该胶囊由客户端水合后据 localStorage(guidePending) 决定是否渲染，
-    // 冷启动时可能长时间不出现——断言依赖水合时序，与本用例的核心目的
-    //（360px 下外观按钮可见且能打开同一小窗）无关，属脆弱断言。
-    // 第二入口的存在性由 test/u155-diy-entry-guard.test.ts 的源码级守卫覆盖。
+    // 第二入口仍在，但已折叠（U-383，2026-11-21）：c5a83877「胶囊行合并」后
+    // 行内胶囊按钮为 hidden lg:inline-flex，360px 下 display:none、不在无障碍树里，
+    // 旧定位 getByRole('button', { name: '向导与设首页' }) 在此宽度恒为 not found；
+    // 360px 下唯一入口是 home-capsule-row.tsx:367 藏在「更多」菜单内的同名
+    // DropdownMenuItem（role=menuitem）。本用例随新行为改写定位方式：先点
+    // 「更多工作区与快捷功能」开菜单、再点其中条目；不断言行内按钮（产品侧
+    // 不把入口搬回行内，与首屏批目标一致）。只改测试，零产品风险。
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
+    const moreMenu = page.getByRole('button', { name: '更多工作区与快捷功能', exact: true });
+    await expect(moreMenu).toBeVisible({ timeout: 60_000 });
+    await moreMenu.click();
+    // 菜单条目由客户端水合后据 localStorage 决定是否渲染（guidePending 默认 false，
+    // useEffect 读存储后才置 true），冷启动水合长尾下 15 秒默认超时不够；
+    // 与本仓库 U-155 用例同例，用 60 秒预算只防冷启动，不代表常规耗时。
+    const capsuleItem = page.getByRole('menuitem', { name: '向导与设首页', exact: true });
+    await expect(capsuleItem).toBeVisible({ timeout: 60_000 });
+    await capsuleItem.click();
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('tab', { name: '外观与排版' })).toBeVisible();
+  });
+
+  test('360px/390px：按钮行实测不超宽（C-W7-5，待雷达落号）', async ({ page }) => {
+    // 直接量工具栏 flex 行（菜单按钮 → 右组 → flex-wrap 行容器），
+    // 不经过 closest('div.overflow-hidden')——旧 helper 的目标祖先
+    // 在当前壳里定位不明（navigation-content.tsx / app/page.tsx /
+    // app/layout.tsx 内 grep overflow-hidden 0 命中），实施轮须以
+    // 本用例的 console.log 核对旧 helper 实际量的是哪一层。
+    for (const width of [360, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto('/');
+      const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
+      await expect(todayBtn).toBeVisible({ timeout: 60_000 });
+      const m = await page.evaluate(() => {
+        const menuBtn = document.querySelector('button[aria-label="打开菜单"]');
+        const row = menuBtn?.parentElement?.parentElement; // 右组 → flex-wrap 行
+        if (!menuBtn || !row) return { found: false as const };
+        return {
+          found: true as const,
+          rowScrollWidth: row.scrollWidth,
+          rowClientWidth: row.clientWidth,
+        };
+      });
+      expect(m.found).toBe(true);
+      if (!m.found) return;
+      console.log(
+        `[toolbar360-cw75] ${width}px: rowScrollWidth=${m.rowScrollWidth} rowClientWidth=${m.rowClientWidth}`,
+      );
+      expect(
+        m.rowScrollWidth,
+        `按钮行溢出：scrollWidth=${m.rowScrollWidth} > clientWidth=${m.rowClientWidth}`,
+      ).toBeLessThanOrEqual(m.rowClientWidth);
+    }
+  });
+
+  test('360px：多选按钮收进探索菜单，菜单内可点开多选态（C-W7-5，待雷达落号）', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.goto('/');
+    const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
+    await expect(todayBtn).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('button[aria-label="多选模式"]')).toBeHidden();
+    await page
+      .getByRole('button', { name: '探索矩阵与导航工具箱', exact: true })
+      .click();
+    const menuItem = page.getByRole('menuitem', { name: /多选模式/ });
+    await expect(menuItem).toBeVisible();
+    await menuItem.click();
+    await expect(
+      page.locator('button[aria-label="多选模式"][aria-pressed="true"]'),
+    ).toHaveCount(1);
   });
 });

@@ -214,7 +214,9 @@ describe('A2：页头清理/清空操作栏只属于搜索 tab', () => {
     expect(PAGE).toContain("tab === 'searches' && items.length > 0 ? (")
     // 操作栏内仍是搜索历史专属按钮：清理零结果、清空全部。
     const actionsIdx = PAGE.indexOf("tab === 'searches' && items.length > 0 ? (")
-    const actionsBlock = PAGE.slice(actionsIdx, actionsIdx + 1200)
+    // U-400 起窗口 1600：零结果按钮加了武装态 title/aria 与两态文案，块变长；
+    // 窗口只覆盖页头操作栏，仍不断言操作栏之外的文案。
+    const actionsBlock = PAGE.slice(actionsIdx, actionsIdx + 1600)
     expect(actionsBlock).toContain('清理零结果记录')
     expect(actionsBlock).toContain('清空全部')
   })
@@ -432,5 +434,81 @@ describe('访问历史清空两步确认（clearVisits 与 clearAll 同构）', 
     expect(body).toContain('if (confirmDeleteId !== id) {')
     expect(body).toContain('setConfirmDeleteId(id)')
     expect(body).toContain('deleteSearchHistoryItem(identity, id)')
+  })
+})
+
+/** 截取 handleCleanZeroResults 的 useCallback 体（从声明起到其依赖数组结尾）。 */
+function cleanZeroBody(src: string): string {
+  const start = src.indexOf('const handleCleanZeroResults = useCallback')
+  expect(start, 'handleCleanZeroResults 应存在').toBeGreaterThanOrEqual(0)
+  const end = src.indexOf('}, [', start)
+  expect(end, 'handleCleanZeroResults 应有依赖数组').toBeGreaterThan(start)
+  return src.slice(start, end)
+}
+
+describe('U-400：零结果批量清理两步确认 + 全账号范围文案', () => {
+  it('断言 1：confirmCleanZero 状态存在（false = 无武装）', () => {
+    expect(PAGE).toContain('const [confirmCleanZero, setConfirmCleanZero] = useState(false)')
+  })
+
+  it('断言 2：武装分支先于接口调用——第一击只武装、不调 batchCleanZeroResultSearchHistory', () => {
+    const body = cleanZeroBody(PAGE)
+    assertOrder(
+      body,
+      ['if (!confirmCleanZero) {', 'setConfirmCleanZero(true)', 'return'],
+      'handleCleanZeroResults 武装分支',
+    )
+    const armReturn = body.indexOf('return', body.indexOf('setConfirmCleanZero(true)'))
+    const apiCall = body.indexOf('batchCleanZeroResultSearchHistory')
+    expect(apiCall, '接口调用应在武装分支的 return 之后').toBeGreaterThan(armReturn)
+    // 武装分支内无删除调用：第一击零网络请求。
+    expect(body.slice(0, armReturn)).not.toContain('batchCleanZeroResultSearchHistory')
+    // 依赖数组含武装态，否则闭包读到旧值、第二击仍走武装分支。
+    const depStart = PAGE.indexOf('}, [', PAGE.indexOf('const handleCleanZeroResults = useCallback'))
+    const depEnd = PAGE.indexOf('])', depStart)
+    expect(PAGE.slice(depStart, depEnd)).toContain('confirmCleanZero')
+  })
+
+  it('断言 3：第二击才调接口，且成功/失败两路都清武装（finally 锁死竞态）', () => {
+    const body = cleanZeroBody(PAGE)
+    expect(body).toContain('batchCleanZeroResultSearchHistory(identity)')
+    const finallyIdx = body.indexOf('finally {')
+    expect(finallyIdx, 'handleCleanZeroResults 应有 finally').toBeGreaterThanOrEqual(0)
+    const finallyBlock = body.slice(finallyIdx)
+    expect(finallyBlock).toContain('setCleaningZero(false)')
+    expect(finallyBlock).toContain('setConfirmCleanZero(false)')
+    // 删后 toast 报服务端真实数，不报按钮上的已加载页条数。
+    expect(body).toContain("title: `已清理 ${removed} 条零结果无效搜索记录`")
+  })
+
+  it('断言 4：按钮默认文案只认已加载条数，武装态写明「全部」+ 全账号范围', () => {
+    // 默认态：N 的口径写清是「已加载」，不再裸标 (N) 让人误以为是总数。
+    expect(PAGE).toContain('`清理零结果记录（已加载 ${zeroResultItems.length} 条）`')
+    // 武装态：文案写「全部」，title 写清删除范围是该账号全部零结果记录、
+    // 不限于已加载条数，且不可撤销；两态 title 都写范围，悬停即见。
+    expect(PAGE).toContain('确认清理全部零结果记录')
+    expect(PAGE).toContain('将删除该账号全部零结果记录（不限于已加载的条数），此操作不可撤销')
+    expect(PAGE).toContain('将删除该账号全部零结果记录（不限于已加载的条数），需再次点击确认')
+    // 武装态 destructive + aria-pressed，与单条删除/清空全部同口径。
+    expect(PAGE).toContain("variant={confirmCleanZero ? 'destructive' : 'outline'}")
+    expect(PAGE).toContain('aria-pressed={confirmCleanZero}')
+    // 执行中仍 disabled + spinner。
+    expect(PAGE).toContain('disabled={cleaningZero}')
+  })
+
+  it('断言 5：切 tab 时清 confirmCleanZero 武装（与 confirmClear 同款）', () => {
+    const handler = tabSwitchHandler(PAGE)
+    expect(handler).toContain('setConfirmCleanZero(false)')
+    expect(handler).toContain('setConfirmClear(false)')
+    expect(handler).toContain('setTab(key)')
+  })
+
+  it('断言 6：服务端语义不变——仍走 filter=zero_results 全账号清理，不加 LIMIT', () => {
+    // U-400 只修前端确认与文案：服务端全量清理是该功能的既定语义
+    // （T4 一次往返），加 LIMIT 会静默留存、让 toast 反向撒谎；只删
+    // 零结果、不误删有结果记录由 apps/api/test/me-data-api.test.ts 的
+    // batch-delete 用例覆盖（removed 数 + 剩余全 resultCount > 0）。
+    expect(NAVHUB_API).toContain("filter: 'zero_results'")
+    expect(PAGE).toContain('batchCleanZeroResultSearchHistory(identity)')
   })
 })

@@ -270,7 +270,7 @@ export default function PreferencesPage() {
             {[
               { icon: Search, label: '搜索次数', value: profile!.searchCount, hint: '累计参与统计' },
               { icon: Heart, label: '收藏站点', value: profile!.favoriteSiteIds.length, hint: '参与重排' },
-              { icon: Clock, label: '画像更新', value: new Date(profile!.updatedAt).toLocaleDateString('zh-CN'), hint: '本地时区' },
+              { icon: Clock, label: '画像更新', value: new Date(profile!.updatedAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }), hint: '本地时区' },
             ].map((stat) => (
               <div
                 key={stat.label}
@@ -363,7 +363,7 @@ export default function PreferencesPage() {
               <p className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/50 pt-3 text-[11px] text-muted-foreground">
                 <span>展示最近 {Math.min(20, profile!.visitedSiteIds.length)} 个</span>
                 <span aria-hidden>·</span>
-                <span>更新于 {new Date(profile!.updatedAt).toLocaleString('zh-CN')}</span>
+                <span>更新于 {new Date(profile!.updatedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</span>
               </p>
             </section>
 

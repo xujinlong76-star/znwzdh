@@ -37,7 +37,7 @@ import { Highlighter, Search } from 'lucide-react'
 
 function formatDate(ts: number): string {
   try {
-    return new Date(ts).toLocaleDateString('zh-CN')
+    return new Date(ts).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })
   } catch {
     return ''
   }

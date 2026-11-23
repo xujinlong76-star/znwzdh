@@ -12,7 +12,8 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { formatClock, formatHotValue } from '../src/lib/server/brief'
+import { formatClock } from '../src/lib/server/brief'
+import { formatHotValue } from '../src/lib/format-hot-value'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
@@ -132,13 +133,17 @@ describe('首页简报条守卫', () => {
     expect(strip).toContain('safeHref(pick.url)')
   })
 
-  it('首页简报条经 todaySlots 注入导航中心（首屏不挡在导航正文上方）', () => {
+  // U-358：简报条不再经服务端 todaySlots 注入——它只在「今日中心」小窗打开时才需要，
+  // 现由 NavigationContent 以 dynamic(ssr:false) 按需加载（见 navigation-content.tsx 的
+  // BriefStripContent），首页首屏不再为它付取数与 JS 体积；小窗未打开时正文上方无堆叠。
+  it('首页简报条由导航中心 dynamic(ssr:false) 按需加载，不在首屏上方直接堆叠渲染', () => {
     const home = read('src/app/page.tsx')
-    const nav = home.indexOf('<NavigationContent')
-    const brief = home.indexOf('<HomeBriefStrip />')
-    expect(nav).toBeGreaterThan(-1)
-    expect(brief).toBeGreaterThan(nav)
-    expect(home.indexOf('brief: <HomeBriefStrip />')).toBeGreaterThan(-1)
+    expect(home).not.toContain('HomeBriefStrip')
+    expect(home).not.toContain('todaySlots')
+    const nav = read('src/components/navigation-content.tsx')
+    expect(nav).toContain("() => import('@/components/home-brief-strip')")
+    expect(nav).toContain('{ ssr: false')
+    expect(nav).toContain('briefContent={<BriefStripContent />}')
   })
 })
 

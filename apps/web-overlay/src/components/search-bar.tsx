@@ -219,12 +219,15 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
   )
   /**
    * 横幅与回车的唯一口径：quicklink 命中时用它，否则用合并引擎的命中。
-   * 前缀命中但代入失败（quicklinkMatch 非空、url 为 null）时 displayShortcut
+   * 前缀命中但代入失败（kind 为 hit、url 为 null）时 displayShortcut
    * 必须为 null，绝不能回落到 matchedShortcut——合并引擎列表里的同一条
    * 模板会被 matchSearchShortcut 无上限代入，是绕过 500 字符上限的第二入口。
+   * 未知前缀 / 模板无占位符时（kind 非 hit）按无命中处理，正常落回
+   * matchedShortcut / 普通搜索（search-bar 不渲染未知前缀明示行，
+   * 明示行只在命令面板内，见 search-palette.tsx）。
    */
   const quicklinkBanner =
-    quicklinkMatch?.url != null
+    quicklinkMatch.kind === 'hit' && quicklinkMatch.url != null
       ? {
           prefix: `!${quicklinkMatch.entry.quickPrefix}`,
           engineName: quicklinkMatch.entry.title,
@@ -235,7 +238,7 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
         }
       : null
   const displayShortcut =
-    quicklinkMatch != null
+    quicklinkMatch.kind === 'hit'
       ? quicklinkBanner
       : matchedShortcut.matched && matchedShortcut.engine && matchedShortcut.directUrl
         ? {
@@ -246,7 +249,7 @@ export function SearchBar({ navigationData, onSearch, searchResults, searchQuery
           }
         : null
   /** 前缀命中但代入失败（参数超 500 字符 / 模板已不安全）：拦截态 */
-  const quicklinkBlocked = quicklinkMatch != null && quicklinkMatch.url == null
+  const quicklinkBlocked = quicklinkMatch.kind === 'hit' && quicklinkMatch.url == null
   /** 拦截态的唯一出口：toast、不开页、不 clearSearch、不落回正常搜索 */
   const toastQuicklinkBlocked = () => {
     toast({

@@ -66,7 +66,7 @@ async function loadCompareShare(slug: string) {
 
 function formatFrozenDate(createdAt: number): string {
   if (!createdAt || !Number.isFinite(createdAt)) return '未知日期'
-  return new Date(createdAt).toLocaleDateString('zh-CN')
+  return new Date(createdAt).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {

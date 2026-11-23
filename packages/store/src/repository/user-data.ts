@@ -51,6 +51,30 @@ export interface ExportedLlmConfig {
   updatedAt: number;
 }
 
+/**
+ * 本机成长快照（U-372 诚实化小步）。
+ *
+ * 成长档案只存浏览器 localStorage、不回传服务端（见 growth.ts），服务端从不
+ * 持有它：服务端导出的这一字段恒为 null，浏览器在下载导出文件时把本机档案
+ * 读出来填进同一字段（scope 恒为 "local-only"）。导入端不回写它（见
+ * /api/me/import：快照只作备份存档，growthSnapshotIgnored 如实回传）。
+ * profile 是本机档案原文（GrowthProfile），供用户在换设备前留档。
+ */
+export interface ExportedGrowthSnapshot {
+  /** 快照口径：永远是本机快照，绝不是云端数据 */
+  scope: "local-only";
+  source: "browser-localStorage";
+  note: string;
+  exportedAt: number;
+  level: number;
+  title: string;
+  totalXp: number;
+  streak: number;
+  longestStreak: number;
+  freezeCards: number;
+  profile: unknown;
+}
+
 export interface UserDataExport {
   /** 备份格式版本（导入端向前兼容判别用；见 EXPORT_SCHEMA_VERSION） */
   schemaVersion: number;
@@ -67,6 +91,11 @@ export interface UserDataExport {
   llmConfig: ExportedLlmConfig | null;
   /** 插件星标（导出补齐：原先只有安装记录） */
   pluginStars: Array<{ pluginId: string; slug: string | null; name: string | null; starredAt: number }>;
+  /**
+   * 本机成长快照（U-372 诚实化小步）：服务端恒为 null——成长档案只存本机
+   * localStorage，服务端没有它；浏览器下载导出文件时把本机档案填进这里。
+   */
+  growthSnapshot: ExportedGrowthSnapshot | null;
   /** 用户撰写的插件评价（含正文——这是用户自己的内容，属于数据主权范围） */
   pluginReviews: Array<{
     id: string;
@@ -196,6 +225,9 @@ export async function exportUserData(repo: Repository, identity: string): Promis
       name: row.name == null ? null : String(row.name),
       starredAt: Number(row.created_at),
     })),
+    // 成长快照：服务端没有本机档案，诚实地置 null；浏览器下载时填本机快照
+    // （见 apps/web-overlay/src/app/me/data/page.tsx handleExport）。
+    growthSnapshot: null,
     pluginReviews: reviewRows.map((row) => ({
       id: String(row.id),
       pluginSlug: row.plugin_slug == null ? null : String(row.plugin_slug),
@@ -256,6 +288,8 @@ export interface UserDataDeletionCounts {
   favorites: number;
   favoriteFolders: number;
   watchEntries: number;
+  /** 考试关注行数（U-379） */
+  examFollows: number;
   searchHistory: number;
   events: number;
   profile: number;
@@ -302,6 +336,7 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
       favorites: await count("SELECT COUNT(*) AS c FROM favorites WHERE user_id = ?", [identity]),
       favoriteFolders: await count("SELECT COUNT(*) AS c FROM favorite_folders WHERE user_id = ?", [identity]),
       watchEntries: await count("SELECT COUNT(*) AS c FROM watch_entries WHERE user_id = ?", [identity]),
+      examFollows: await count("SELECT COUNT(*) AS c FROM exam_follows WHERE user_id = ?", [identity]),
       searchHistory: await count("SELECT COUNT(*) AS c FROM search_history WHERE user_id = ?", [identity]),
       events: await count("SELECT COUNT(*) AS c FROM events WHERE identity = ?", [identity]),
       profile: await count("SELECT COUNT(*) AS c FROM user_profiles WHERE user_id = ?", [identity]),

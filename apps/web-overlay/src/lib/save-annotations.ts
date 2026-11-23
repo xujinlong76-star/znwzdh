@@ -375,7 +375,7 @@ export function escapeMarkdownText(text: string): string {
 
 function formatAnnotationDate(ts: number): string {
   try {
-    return new Date(ts).toLocaleDateString('zh-CN')
+    return new Date(ts).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })
   } catch {
     return ''
   }

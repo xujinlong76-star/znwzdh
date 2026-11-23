@@ -337,8 +337,13 @@ describe('接线守卫：replaceAll 不经过撤销路径；hook 回调推栈', 
   })
 
   it('syncFavoritesToCloud 的 add op 优先用恢复时刻覆盖（撤销才不会被 LWW 挡掉）', () => {
-    expect(hookSrc).toContain('restoreAt[f.siteId] ?? f.createdAt')
-    expect(hookSrc).toContain('clearRestoreAt(ops.map((o) => o.siteId))')
+    // U-371 改写：op.at 口径从 restoreAt ?? createdAt 改为
+    // restoreAt ?? updatedAt ?? createdAt——撤销覆盖仍优先（第一位不变），
+    // 只是非撤销的离线改动改取真正的 updatedAt，不再拿 createdAt 当 at。
+    expect(hookSrc).toContain('restoreAt[f.siteId] ?? f.updatedAt ?? f.createdAt')
+    // U-371 改写：撤销时刻覆盖只清已确认应用的 op——被 LWW 跳过的恢复
+    // 仍待确认，覆盖标记要留着供下次重试用，不再整批清掉。
+    expect(hookSrc).toContain('clearRestoreAt(appliedIds)')
   })
 
   it('回收站键：persist 成功后再写回收站；写失败报 trashError 不拦删除', () => {

@@ -1,0 +1,109 @@
+# =============================================================================
+# links-weekly：每周定时全量 —— 外链巡检（严格阈值 + 按域名分组开 issue）
+#
+# 方案 03-livelink-mapping §6.2。北京时间每周一 03:00（UTC 周日 19:00），
+# 全量跑导航 JSON 里的站外链。
+#
+# 注意（与 §6.2 原文的一处有意偏离）：本周工作流不传 `--config lychee.toml`。
+# lychee.toml 是 PR 门禁配置，内含 offline = true；若每周全量也加载它，
+# 在线检查会被静默关掉，全绿假通过。周全量所需的 max_concurrency /
+# format 已在下方 args 里逐字写死，行为与 §6.2 一致，只是配置来源不同。
+#
+# 退出码：lychee 步骤用 set +e 捕获 $? 传给报告脚本（0=通过、2=有死链、
+# 1/3=配置/运行错误）。报告脚本按 §6.2 接线：1/3 时不开 issue、报维护者。
+# =============================================================================
+
+name: links-weekly
+
+on:
+  schedule:
+    # 北京时间每周一 03:00 = UTC 每周日 19:00
+    - cron: "0 19 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  links-weekly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+
+      - name: Install lychee v0.24.2 (release tarball, sha256 verified)
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/lychee.tar.gz \
+            https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz
+          curl -fsSL -o /tmp/lychee.tar.gz.sha256 \
+            https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz.sha256
+          cd /tmp && sha256sum -c lychee.tar.gz.sha256
+          tar -xzf /tmp/lychee.tar.gz -C /tmp lychee
+          sudo install -m 0755 /tmp/lychee /usr/local/bin/lychee
+          lychee --version
+
+      - name: Restore lychee cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .lycheecache
+          key: lychee-${{ github.sha }}
+          restore-keys: |
+            lychee-
+
+      - name: Build URL list from navigation.json
+        run: |
+          mkdir -p lychee
+          node > lychee/urls.txt <<'EOF'
+          const fs = require('node:fs');
+          const nav = JSON.parse(fs.readFileSync('apps/web-overlay/src/navsphere/content/navigation.json', 'utf8'));
+          const urls = [];
+          for (const cat of nav.navigationItems) {
+            const collect = (items) => { for (const s of items ?? []) if (s.href) urls.push(s.href); };
+            collect(cat.items);
+            for (const sub of cat.subCategories ?? []) collect(sub.items);
+          }
+          const deduped = [...new Set(urls)];
+          console.error('URL 清单：' + urls.length + ' 条（去重后 ' + deduped.length + ' 条）');
+          console.log(deduped.join('\n'));
+          EOF
+
+      - name: Run lychee (weekly full scan)
+        id: lychee
+        run: |
+          set +e
+          lychee \
+            --cache --max-cache-age 7d \
+            --cache-exclude-status '429, 500..599' \
+            --accept '200..=299,429' --max-concurrency 16 \
+            --host-concurrency 2 --host-request-interval 500ms \
+            --max-retries 2 --retry-wait-time 5 --timeout 30 \
+            -X head,get --suggest --archive wayback \
+            --user-agent 'Mozilla/5.0 (compatible; ShanYangHu-LinkCheck/1.0; +https://www.shanyanghu.com)' \
+            --github-token ${{ secrets.GITHUB_TOKEN }} \
+            --format json --output lychee/out.json \
+            --exclude '^https?://(www\.)?linkedin\.com' \
+            lychee/urls.txt
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Upload lychee output
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: lychee-weekly-out
+          path: lychee/out.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Weekly report (group by domain, open issues)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          node scripts/lychee-weekly-report.mjs \
+            --input lychee/out.json \
+            --lychee-exit-code "${{ steps.lychee.outputs.exit_code }}"

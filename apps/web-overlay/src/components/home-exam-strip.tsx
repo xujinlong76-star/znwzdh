@@ -1,3 +1,8 @@
+'use client'
+
+// U-358：与 HomeTodayZone 同理——只在「今日中心」小窗打开时渲染，
+// 转客户端组件后由 NavigationContent 以 dynamic(ssr:false) 按需加载；
+// 外壳只用 exam-calendar 纯函数挑最近一场，无服务端取数，渲染结果不变。
 import Link from 'next/link'
 import { ArrowRight, CalendarDays } from 'lucide-react'
 import { nearestExam, nextExamNode } from '@/lib/exam-calendar'
@@ -6,7 +11,7 @@ import { HomeExamStripView } from './home-exam-strip-view'
 /**
  * 首页「考试季」运营条（服务端外壳）。
  *
- * 服务端只做一件事：按事实源挑全局最近一场；十一场全结束时不再整条
+ * 服务端只做一件事：按事实源挑全局最近一场；十二场全结束时不再整条
  * 消失，改渲染静态空态条带（2026-12-21 起）：不挂倒计时岛、不读
  * localStorage、不挂载客户端视图，纯服务端静态直出，SSR 一致。
  * 空态只说已核实的事实——本轮考试已结束、2027 日程以官方公告为准，

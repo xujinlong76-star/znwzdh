@@ -79,6 +79,45 @@ export function vaultExportFilename(now: number): string {
   return `navhub-vault-${day}.navhub.vault`
 }
 
+/**
+ * 金库主密码强度（导出表单的即时反馈，纯函数、可测）。
+ *
+ * 计分（0–4 分，上限 4）：
+ * - 长度 ≥ 8 位：+1；长度 ≥ 12 位：再 +1
+ * - 大小写混合：+1；含数字：+1；含符号：+1
+ * 标签：0 分「未输入」（空串专用）、1 分「弱」、2 分「一般」、3 分「良好」、4 分「很强」。
+ * 注意：强度条只是建议，不拦截导出——导出底线仍是页面里的 6 位校验。
+ */
+export interface VaultPasswordStrength {
+  score: number
+  label: string
+}
+
+export function getVaultPasswordStrength(password: string): VaultPasswordStrength {
+  if (!password) return { score: 0, label: '未输入' }
+  let score = 0
+  if (password.length >= 8) score += 1
+  if (password.length >= 12) score += 1
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 1
+  if (/\d/.test(password)) score += 1
+  if (/[^A-Za-z0-9]/.test(password)) score += 1
+  const clamped = Math.min(4, score)
+  const label = clamped <= 1 ? '弱' : clamped === 2 ? '一般' : clamped === 3 ? '良好' : '很强'
+  return { score: clamped, label }
+}
+
+/**
+ * 金库里带快捷模板的条数（导出前提醒的 M，纯函数、可测）。
+ *
+ * 判定口径与 hooks/useFavorites 一致：templateUrl 存在当且仅当是快捷链接
+ * （quickPrefix 单独存在不算——两字段总是一起写盘，templateUrl 是唯一判定）。
+ */
+export function countVaultQuicklinks(
+  items: ReadonlyArray<{ quickPrefix?: string | null; templateUrl?: string | null }>,
+): number {
+  return items.filter((item) => Boolean(item.templateUrl)).length
+}
+
 /** 与收藏页 syncStatus 的三态一致：信息（部分完成）不能借用绿色或红色 */
 export type VaultRestoreTone = 'success' | 'info' | 'error'
 

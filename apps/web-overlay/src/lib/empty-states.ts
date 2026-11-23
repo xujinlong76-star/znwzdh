@@ -1,3 +1,5 @@
+import { formatFreshness } from './relative-time'
+
 /**
  * 空态文案与判定（研究 P0 #5：空态 + 首次引导）。
  *
@@ -102,7 +104,7 @@ export function hotlistAllEmptyCopy(variant: HotlistEmptyVariant): EmptyStateCop
   }
   return {
     title: '全网热榜还在等第一次抓取',
-    why: '热榜每小时从各平台抓一次；这台站刚部署，第一轮抓取还没跑过，所以这里暂时是空的——不是坏了，也不是你操作错了。',
+    why: '热榜每小时从各平台抓一次；到现在还没成功抓到过一次，第一轮抓取还没完成，所以这里暂时是空的——不是坏了，也不是你操作错了。',
     next: '站内热度榜一直有内容，先去那里看看；过一会儿再回来，全网热榜就有了。',
     actionLabel: '先看站内热度榜',
     actionHref: '/hot',
@@ -119,8 +121,36 @@ export function hotlistSourceEmptyCopy(source: {
       source.status === 'empty'
         ? '首次抓取按小时跑，跑完这里就有内容了。'
         : source.status === 'stale'
-          ? '这次没抓到，也没有旧缓存可显示。'
+          // 路由口径（apps/api/src/routes/hotlist.ts）：stale 要求 items.length > 0，
+          // 即 stale 源永远有条目、永远走不到这个空分支；本分支只是防御性兜底，
+          // 文案必须与口径一致——stale 有旧缓存可显示，绝不能写成「没有旧缓存」。
+          ? '这次没抓到，下面是旧缓存。'
           : '这个源暂时没有条目。',
     actionLabel: `去${source.name}看实时热搜`,
   }
+}
+
+/**
+ * 全空态「六源状态」列表里的每源状态词（只在全空态下用：此时每源都无条目）。
+ * empty = 从没抓到过；stale = 上次抓取失败且无缓存可顶（路由口径下 stale
+ * 本应有条目，全空态里出现即防御分支）；ok 按路由要求 items.length > 0、
+ * 在全空态下不可达，兜底同样显示「暂无数据」（本行本就无条目可出）。
+ */
+export function hotlistSourceStatusLabel(status: 'ok' | 'stale' | 'empty'): string {
+  if (status === 'stale') return '抓取失败'
+  return '暂无数据'
+}
+
+/**
+ * 全 stale 页级过期横幅文案（W4 第一步）：整榜在显示旧缓存时，写明最近一次
+ * 成功抓取的相对时间（generatedAt 经 formatFreshness 算出，与各列副行同口径），
+ * 不谎称实时。generatedAt 为 null 时不编造时间，明说时间未知。
+ */
+export function hotlistAllStaleBannerCopy(
+  generatedAt: number | null,
+  now: number = Date.now(),
+): string {
+  const fresh = formatFreshness(generatedAt, now)
+  const when = fresh === null ? '上次成功抓取时间未知' : `最近一次成功抓取是 ${fresh}`
+  return `全网热榜正在显示旧缓存：${when}，此后各平台抓取均失败。下面的榜单是旧内容，请以各源官方榜单或站内热度榜为准。`
 }

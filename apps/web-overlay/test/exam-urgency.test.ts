@@ -5,7 +5,7 @@
  *    不依赖真实今天；
  *  - 源码守卫：倒计时岛与首页条带按档位上色、提醒文案只对已关注考试
  *    显示、未关注只变色不出文案；时钟卡倒计时行只读 nearestExamCountdown、
- *    点按跳 /exam、十一场全结束隐藏。
+ *    点按跳 /exam、十二场全结束隐藏。
  */
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -71,8 +71,10 @@ const DEC_13_0800_CST = Date.UTC(2026, 11, 13, 0, 0, 0)
 const DEC_19_0800_CST = Date.UTC(2026, 11, 19, 0, 0, 0)
 /** 2026-12-20 08:00 北京时间：考研末日（进行中） */
 const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
-/** 2026-12-21 08:00 北京时间：十一场全过 */
+/** 2026-12-21 08:00 北京时间：考研已过，最近场切到广东自考·1月（2027-01-09） */
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
+/** 2027-01-11 08:00 北京时间：十二场全过（广东自考·1月 2027-01-10 已结束） */
+const JAN_11_0800_CST = Date.UTC(2027, 0, 11, 0, 0, 0)
 
 describe('urgencyTier（倒计时紧迫度分档）', () => {
   it('8 天以上 relaxed：15 天与 8 天无差别', () => {
@@ -276,8 +278,8 @@ describe('nearestExamCountdown（时钟卡倒计时行）', () => {
     })
   })
 
-  it('十一场全结束返回 undefined：12-21 时钟卡该行隐藏，不写未公布日期', () => {
-    expect(nearestExamCountdown(DEC_21_0800_CST)).toBeUndefined()
+  it('十二场全结束返回 undefined：2027-01-11 时钟卡该行隐藏，不写未公布日期', () => {
+    expect(nearestExamCountdown(JAN_11_0800_CST)).toBeUndefined()
   })
 })
 
@@ -302,7 +304,7 @@ describe('源码守卫：按档位上色、提醒只对已关注显示', () => {
     expect(view).not.toContain('text-sky-600')
   })
 
-  it('时钟卡倒计时行只读 nearestExamCountdown、点按跳 /exam、十一场全结束隐藏', () => {
+  it('时钟卡倒计时行只读 nearestExamCountdown、点按跳 /exam、十二场全结束隐藏', () => {
     const widget = read('src/components/modular/modules/clock-widget.tsx')
     expect(widget).toContain('nearestExamCountdown(')
     expect(widget).toContain('href="/exam"')

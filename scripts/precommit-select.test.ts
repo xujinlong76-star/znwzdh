@@ -11,6 +11,8 @@
  * 这里把「哪些改动 → 应该选中哪些文件」固定成断言。选测器是生成物
  * （`.git/hooks/navhub-precommit-tests.mjs`），所以先重装再跑；
  * 用 `NAVHUB_PRECOMMIT_FILES` 注入改动集、`NAVHUB_PRECOMMIT_DRYRUN=1` 只看不跑。
+ * U-385（2026-11-21）：选测器不再由 pre-commit 默认调用，改为按需工具，
+ * 但生成逻辑与本自检保持不变——“少跑”策略的漏选风险仍在，断言仍须守住。
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";

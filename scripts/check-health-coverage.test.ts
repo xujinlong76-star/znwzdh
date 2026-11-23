@@ -201,29 +201,29 @@ describe("check-health-coverage：--check 只判不变量，--strict 才判 SLO"
     expect(strict.out).toContain("未探测占比 50%");
   });
 
-  it("broken 缺「连续 3 次失败」证据 ⇒ --check 判红（这正是验收标准 3 的反面）", () => {
+  it("broken 缺「连续 2 次失败」证据 ⇒ --check 判红（这正是验收标准 3 的反面）", () => {
     const now = Date.now();
     const sites: SiteSeed[] = [
       { id: "demoted", status: "broken", lastCheckedAt: now - DAY, healthOk: 0, history: [false] },
     ];
     const res = run([`--db=${buildDb(sites)}`, "--check"]);
     expect(res.status).toBe(1);
-    expect(res.out).toContain("缺「连续 3 次失败」证据");
+    expect(res.out).toContain("缺「连续 2 次失败」证据");
     expect(res.out).toContain("demoted");
   });
 
-  it("broken 有 3 次连续失败 ⇒ 不变量通过", () => {
+  it("broken 有 2 次连续失败 ⇒ 不变量通过", () => {
     const now = Date.now();
     const sites: SiteSeed[] = [
-      { id: "legit", status: "broken", lastCheckedAt: now - DAY, healthOk: 0, history: [false, false, false] },
+      { id: "legit", status: "broken", lastCheckedAt: now - DAY, healthOk: 0, history: [false, false] },
     ];
     expect(run([`--db=${buildDb(sites)}`, "--check"]).status).toBe(0);
   });
 
-  it("最近 3 次里有 1 次成功 ⇒ 仍判红（说明降级绕过了「连续」语义）", () => {
+  it("最近 2 次里有 1 次成功 ⇒ 仍判红（说明降级绕过了「连续」语义）", () => {
     const now = Date.now();
     const sites: SiteSeed[] = [
-      { id: "flappy", status: "broken", lastCheckedAt: now - DAY, healthOk: 0, history: [false, false, true] },
+      { id: "flappy", status: "broken", lastCheckedAt: now - DAY, healthOk: 0, history: [false, true] },
     ];
     const res = run([`--db=${buildDb(sites)}`, "--check"]);
     expect(res.status).toBe(1);

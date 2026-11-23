@@ -6,8 +6,12 @@
  * 合并为单个 ~56px 紧凑单行坞，支持内联切换「⚡ 极速置顶 | ⭐ 我的常用 | 🕒 最近访问」，
  * 并支持右侧「全部 ▾」按需打开完整清单小窗口。
  * 保持 `id="quick-access-tray"` 与 `data-speed-dial="true"` 兼容 DIY 与直达规范。
+ *
+ * 默认 tab 契约（D-W3-Tier1，选项 ii 钉选优先）：仅当无钉选且有最近访问时默认
+ * 「最近」；有钉选的用户首屏不变（钉选是显式表达）。三 tab 顺序固定为
+ * 极速置顶 / 常用 / 最近；数字直达角标只在「极速置顶」渲染，不要“统一”到三 tab。
  */
-import { useEffect, useMemo, useState, memo } from 'react'
+import { useEffect, useMemo, useRef, useState, memo } from 'react'
 import dynamic from 'next/dynamic'
 import { ChevronRight, History, Star, Zap } from 'lucide-react'
 import { SiteFavicon } from '@/components/site-favicon'
@@ -15,6 +19,8 @@ import { HorizontalScrollFade } from '@/components/horizontal-scroll-fade'
 import { NumberDialBadge } from '@/components/number-dial-badge'
 import { safeHref } from '@/lib/safe-url'
 import type { SpeedDialSite } from '@/lib/speed-dial-order'
+import { formatRelativeTime } from '@/lib/format-relative-time'
+import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import {
   OFFLINE_RECENT_LIMIT,
   readOfflineVisits,
@@ -22,9 +28,7 @@ import {
   topFrequentVisits,
   type RecentVisit,
 } from '@/lib/offline-recent'
-import type { DialSite } from '@/lib/number-dial'
 import { useExternalLinkTarget } from '@/lib/user-preferences'
-import type { WorkspaceId } from '@/components/workspace-filter'
 
 const QuickDockAllDialog = dynamic(
   () => import('@/components/home-windows/quick-dock-all-dialog').then((m) => m.QuickDockAllDialog),
@@ -33,9 +37,32 @@ const QuickDockAllDialog = dynamic(
 
 type DockTab = 'speed' | 'frequent' | 'recent'
 
+/**
+ * 默认 tab 规则（D-W3-Tier1，选项 ii 钉选优先）：
+ * 仅当无钉选且有最近访问时默认「最近」；有钉选的用户首屏不变。
+ * 为什么是钉选优先：钉选是用户在 DIY 里做的唯一显式表达，最近访问只是
+ * 隐式信号（一次误点即进榜）；且「极速置顶」里已内嵌最近前 3
+ * （speed-dial-order.ts 的 RECENT_VISIT_TOP_N），回访优先相对钉选优先的
+ * 增量收益只剩“第 4 个以后的最近站 + 时间 meta”；数字直达角标只在
+ * 「极速置顶」渲染，回访优先会把它藏到第二 tab 之后，削弱 Batch 1 第 04 项
+ * （MRU + Alt+数字）的可发现性。纯函数：仓库 vitest 是 node 环境、无 jsdom，
+ * 组件挂载测不了，规则放纯函数里单测。
+ */
+export function resolveDefaultDockTab(pinnedCount: number, recentCount: number): DockTab {
+  return pinnedCount === 0 && recentCount > 0 ? 'recent' : 'speed'
+}
+
+/**
+ * 「最近」tab 的相对时间 meta。formatRelativeTime 对非法值返回“—”，
+ * 脏数据（NaN / Infinity / 0 / 负数）不能渲染成“—”或 1970 年日期，留空。
+ */
+export function recentVisitMeta(v: RecentVisit): string | undefined {
+  return Number.isFinite(v.visitedAt) && v.visitedAt > 0
+    ? formatRelativeTime(v.visitedAt)
+    : undefined
+}
+
 export interface HomeQuickDockProps {
-  allSites: DialSite[]
-  activeWorkspace: WorkspaceId
   dialDigitById?: ReadonlyMap<string, number | string>
   /**
    * P2-14：速拨顺序（Top 9）由父级 navigation-content 的 dialSites 一次算好透传，
@@ -47,19 +74,31 @@ export interface HomeQuickDockProps {
   maxInlineItems?: number
 }
 
-// P0-2：包 memo——父组件传的 allSites/activeWorkspace/dialDigitById/speedSites 均已稳定。
+// P0-2：包 memo——父组件传的 dialDigitById/speedSites 均已稳定。
+// U-358：allSites/activeWorkspace 曾随速拨重构传入、坞内从未使用，已删（lint 2 警告随之消失）。
 export const HomeQuickDock = memo(function HomeQuickDock({
-  allSites,
-  activeWorkspace,
   dialDigitById,
   speedSites,
   maxInlineItems = 7,
 }: HomeQuickDockProps) {
   const externalTarget = useExternalLinkTarget()
+  // 默认 tab 决策只读钉选 id 列表；速拨顺序仍由父级透传（P2-14），此处不重算。
+  const { speedDialPinnedIds } = useHomeDIY()
   const [mounted, setMounted] = useState(false)
   const [activeTab, setActiveTab] = useState<DockTab>('speed')
   const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
+  const [recentLoaded, setRecentLoaded] = useState(false)
   const [allDialogOpen, setAllDialogOpen] = useState(false)
+  // 用户手动切过 tab 后不再自动改默认 tab；默认 tab 只在最近访问首次回填后决定一次，
+  // 此后 focus 回填 / 取消钉选都不再中途翻 tab。
+  const userChoseTabRef = useRef(false)
+  const defaultTabAppliedRef = useRef(false)
+
+  // 手动切 tab 即显式选择：记下来，默认 tab 规则不再覆盖它。
+  const chooseTab = (tab: DockTab) => {
+    userChoseTabRef.current = true
+    setActiveTab(tab)
+  }
 
   useEffect(() => {
     setMounted(true)
@@ -67,10 +106,14 @@ export const HomeQuickDock = memo(function HomeQuickDock({
     const sync = () => {
       void readOfflineVisits(OFFLINE_RECENT_LIMIT)
         .then((rows) => {
-          if (!cancelled) setRecentVisits(rows)
+          if (!cancelled) {
+            setRecentVisits(rows)
+            setRecentLoaded(true)
+          }
         })
         .catch(() => {
           // 离线存储不可用时不阻断直达坞展示
+          if (!cancelled) setRecentLoaded(true)
         })
     }
     sync()
@@ -83,6 +126,17 @@ export const HomeQuickDock = memo(function HomeQuickDock({
 
   // P2-14：速拨顺序由父级透传 speedSites（见 props 注释），此处不再重算。
   // recentVisits 仍由坞自己维护，供「常用/最近」两个页签用。
+  // 默认 tab（选项 ii）：最近访问是异步回填的，必须等回填后再定 tab，避免首屏闪跳；
+  // 且不能放在挂载 effect 的闭包里读 speedDialPinnedIds——挂载 effect 闭包捕获的是
+  // 首帧渲染时的值（DIY 配置在 effect 里水合，首帧默认空钉选），钉选用户会被误判为
+  // 无钉选。决定只做一次。
+  useEffect(() => {
+    if (!mounted || !recentLoaded || defaultTabAppliedRef.current) return
+    defaultTabAppliedRef.current = true
+    if (userChoseTabRef.current) return
+    const next = resolveDefaultDockTab(speedDialPinnedIds.length, recentVisits.length)
+    if (next !== 'speed') setActiveTab(next)
+  }, [mounted, recentLoaded, recentVisits, speedDialPinnedIds])
   const frequentVisits = useMemo(
     () => (mounted ? topFrequentVisits(recentVisits, 12) : []),
     [mounted, recentVisits],
@@ -106,7 +160,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
         href: v.href,
         icon: v.icon ?? null,
         digit: undefined as number | string | undefined,
-        meta: undefined as string | undefined,
+        meta: recentVisitMeta(v),
       }))
     }
     return speedSites.slice(0, maxInlineItems).map((s) => ({
@@ -130,9 +184,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
         id="quick-access-tray"
         data-speed-dial="true"
         aria-label="高频直达与常用访问"
-        /* 2026-11-21 首屏压缩：h-12(48px) → h-[42px]，圆角 xl → lg，
-           padding px-3 → px-2.5。要求给的 40–44px 区间取中值。 */
-        className="mb-2 flex h-[42px] items-center gap-2 rounded-lg border border-border/60 bg-card/75 px-2.5 backdrop-blur-xs"
+        className="mb-1 flex h-12 items-center gap-2 rounded-xl border border-border/60 bg-card/75 px-3 backdrop-blur-xs"
       >
         {/* 首屏瘦身：单行 48px（h-12）——左紧凑 tab + 中间横向滚动胶囊区 +
             右「展开全部」。胶囊区已接入 HorizontalScrollFade 横向滚动渐隐
@@ -142,8 +194,8 @@ export const HomeQuickDock = memo(function HomeQuickDock({
               type="button"
               role="tab"
               aria-selected={activeTab === 'speed'}
-              onClick={() => setActiveTab('speed')}
-              className={`inline-flex h-[26px] items-center gap-1 rounded-full px-2 text-[11px] font-medium transition-colors cursor-pointer ${
+              onClick={() => chooseTab('speed')}
+              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer ${
                 activeTab === 'speed'
                   ? 'bg-primary/12 text-primary'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -157,8 +209,8 @@ export const HomeQuickDock = memo(function HomeQuickDock({
               role="tab"
               aria-selected={activeTab === 'frequent'}
               disabled={!mounted || frequentVisits.length === 0}
-              onClick={() => setActiveTab('frequent')}
-              className={`inline-flex h-[26px] items-center gap-1 rounded-full px-2 text-[11px] font-medium transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
+              onClick={() => chooseTab('frequent')}
+              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
                 activeTab === 'frequent'
                   ? 'bg-primary/12 text-primary'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -172,8 +224,8 @@ export const HomeQuickDock = memo(function HomeQuickDock({
               role="tab"
               aria-selected={activeTab === 'recent'}
               disabled={!mounted || recentVisits.length === 0}
-              onClick={() => setActiveTab('recent')}
-              className={`inline-flex h-[26px] items-center gap-1 rounded-full px-2 text-[11px] font-medium transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
+              onClick={() => chooseTab('recent')}
+              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
                 activeTab === 'recent'
                   ? 'bg-primary/12 text-primary'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -205,8 +257,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
                   icon: item.icon,
                 })
               }
-              /* 胶囊更紧凑：h-9(36px) → h-8(32px)、px-2.5 → px-2、标题上限 96 → 84px */
-              className="group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/50 bg-background/80 px-2 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent/50"
+              className="group relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border/50 bg-background/80 px-2.5 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent/50"
             >
               <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
                 <SiteFavicon
@@ -217,7 +268,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
                 />
                 <NumberDialBadge digit={item.digit} className="-bottom-1 -right-1" />
               </span>
-              <span className="max-w-[84px] truncate">{item.title}</span>
+              <span className="max-w-[96px] truncate">{item.title}</span>
               {item.meta ? (
                 <span className="text-[10px] text-muted-foreground">{item.meta}</span>
               ) : null}
@@ -228,7 +279,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
         <button
           type="button"
           onClick={() => setAllDialogOpen(true)}
-          className="inline-flex h-[26px] shrink-0 items-center gap-0.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+          className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
         >
           <span>展开全部</span>
           <ChevronRight className="h-3.5 w-3.5" />

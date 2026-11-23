@@ -137,6 +137,10 @@ describe("搜索历史 API", () => {
     expect(byFilter.json().removed).toBe(3);
     const after = await data("GET", "/api/search-history?limit=50");
     expect(after.json().items.every((i: { resultCount: number }) => i.resultCount > 0)).toBe(true);
+    // U-400：filter 只删本身份的零结果——有命中记录留存，他身份的零结果也不动。
+    expect(after.json().items.some((i: { query: string }) => i.query === "命中 c")).toBe(true);
+    const otherAfter = await other("GET", "/api/search-history?limit=50");
+    expect(otherAfter.json().items.some((i: { query: string }) => i.query === "别人的零结果")).toBe(true);
 
     // ids 路径：删自己的 + 混入他人的 id → 只删自己的
     const page = await data("GET", "/api/search-history?limit=1");
@@ -258,6 +262,40 @@ describe("设置与画像信号", () => {
     expect(await ctx.repo.listFavorites(USER)).toHaveLength(1);
   });
 
+  it("U-401：POST /api/me/prune 的 events_profile 全删——200 天前的旧事件与画像行一并清除", async () => {
+    // 文案曾称只清「近 180 天」，服务端实际是无日期过滤的全删（DELETE FROM events
+    // WHERE identity = ? + DELETE FROM user_profiles WHERE user_id = ?）。
+    // 本用例用 200 天前的旧事件钉住「全删」语义：若服务端改成只删 180 天内，
+    // 旧事件残留，本用例变红；文案与实现脱节时，前端守卫
+    // me-data-prune-events-profile-copy.test.ts 同步变红。
+    const pruneUser = "github:u-prune-180";
+    const now = Date.now();
+    const oldTs = now - 200 * 24 * 60 * 60 * 1000;
+    await ctx.repo.run(
+      "INSERT INTO events (kind, site_id, query, category_id, meta, identity, created_at) VALUES (?,?,?,?,?,?,?)",
+      ["click", siteId, null, null, null, pruneUser, now],
+    );
+    await ctx.repo.run(
+      "INSERT INTO events (kind, site_id, query, category_id, meta, identity, created_at) VALUES (?,?,?,?,?,?,?)",
+      ["click", siteId, null, null, null, pruneUser, oldTs],
+    );
+    await ctx.repo.run("INSERT INTO user_profiles (user_id, updated_at) VALUES (?, ?)", [pruneUser, now]);
+    const prune = await data(
+      "POST",
+      "/api/me/prune",
+      { domains: ["events_profile"] },
+      signedHeaders(pruneUser),
+    );
+    expect(prune.statusCode).toBe(200);
+    expect(prune.json().ok).toBe(true);
+    // 2 条事件（1 新 1 旧）+ 1 行画像 = 3；若只删 180 天内，计数为 2 且旧事件残留。
+    expect(prune.json().pruned.events_profile).toBe(3);
+    const remaining = await ctx.repo.raw("SELECT COUNT(*) AS c FROM events WHERE identity = ?", [pruneUser]);
+    expect(Number(remaining[0]?.c ?? 0)).toBe(0);
+    const profiles = await ctx.repo.raw("SELECT COUNT(*) AS c FROM user_profiles WHERE user_id = ?", [pruneUser]);
+    expect(Number(profiles[0]?.c ?? 0)).toBe(0);
+  });
+
   it("DELETE /api/profile/signals/click 清空点击事件", async () => {
     await ctx.repo.recordEvent("click", { siteId, identity: USER });
     const res = await data("DELETE", "/api/profile/signals/click");
@@ -344,6 +382,42 @@ describe("备份导入：恢复多少就报多少", () => {
     expect(body.favoritesSkippedMissingSite).toBe(1);
     // 混在一个数里时用户无从判断「再收藏一次就好」还是「站点真的没了」
     expect(body.favoritesSkipped - body.favoritesSkippedMissingSite).toBe(1);
+  });
+
+  it("U-372：备份里的本机成长快照只作存档、不回写，响应如实标记忽略", async () => {
+    const res = await importBackup({
+      favoriteFolders: [{ id: "old-f1", name: "诚实导入夹" }],
+      favorites: [{ siteId, folderId: "old-f1" }],
+      // 快照是本机档案原文：服务端没有对应的写入口，收到也只能忽略，
+      // 绝不能把它当云端数据写进任何一张表。
+      growthSnapshot: {
+        scope: "local-only",
+        source: "browser-localStorage",
+        note: "成长档案只保存在这台设备的浏览器里",
+        exportedAt: Date.now(),
+        level: 4,
+        title: "测试称号",
+        totalXp: 422,
+        streak: 3,
+        longestStreak: 5,
+        freezeCards: 1,
+        profile: { v: 2, totalXp: 422 },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.growthSnapshotIgnored).toBe(true);
+    // 收藏照常恢复，快照的存在不影响正常导入
+    expect(body.favoritesImported).toBeGreaterThanOrEqual(0);
+  });
+
+  it("U-372：无快照的备份 growthSnapshotIgnored 为 false", async () => {
+    const res = await importBackup({
+      favoriteFolders: [{ id: "old-f1", name: "诚实导入夹" }],
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().growthSnapshotIgnored).toBe(false);
   });
 
   it("超出单次上限的历史：写入按上限、剩余条数与续导起点都回传", async () => {

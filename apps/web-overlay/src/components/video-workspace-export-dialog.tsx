@@ -58,8 +58,8 @@ export function VideoWorkspaceExportDialog({
     })
   }
 
-  const handleDownloadZipMock = () => {
-    // Generate a downloadable text/json manifest bundle
+  const handleDownloadWorkspaceJson = () => {
+    // Download the workspace manifest as a JSON file (not a zip / scaffold)
     const blob = new Blob([JSON.stringify(workspace, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -75,13 +75,13 @@ export function VideoWorkspaceExportDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <FolderArchive className="w-5 h-5 text-primary" />
-            <span>独立 Git 工程套件与云端 Gist 导出</span>
+            <span>课程工程清单导出</span>
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 pt-2 text-xs">
           <p className="text-muted-foreground leading-relaxed">
-            将当前技术课程中的所有代码演进、避坑笔记、Dockerfile 与自动化配置文件一键打包为标准的工程脚手架。
+            将当前技术课程中的所有代码演进、避坑笔记、Dockerfile 与自动化配置文件整理成一份工程清单 JSON 文件下载到本地。下载的只是清单文件，不是压缩包、不是可直接运行的工程，也不会上传到 GitHub。
           </p>
 
           {/* Workspace Explorer Container */}
@@ -127,14 +127,17 @@ export function VideoWorkspaceExportDialog({
             <div className="flex gap-2">
               <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleCopyGist}>
                 {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                {copied ? '已复制 Gist JSON' : '复制 GitHub Gist'}
+                {copied ? '已复制 Gist 载荷 JSON' : '复制 Gist 载荷 JSON'}
               </Button>
-              <Button size="sm" className="gap-1.5 text-xs" onClick={handleDownloadZipMock}>
+              <Button size="sm" className="gap-1.5 text-xs" onClick={handleDownloadWorkspaceJson}>
                 <Download className="w-3.5 h-3.5" />
-                导出工程包
+                下载工程清单 JSON
               </Button>
             </div>
           </div>
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            复制后请手动到 gist.github.com 粘贴创建 Gist；本站不会替你上传，也不会调用 GitHub API。
+          </p>
         </div>
       </DialogContent>
     </Dialog>

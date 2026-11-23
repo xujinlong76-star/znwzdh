@@ -364,7 +364,7 @@ export function exportTranscriptAsMarkdown(
   title: string
 ): string {
   let md = `# ${title} · 逐字文字稿与学习笔记\n\n`
-  md += `*生成时间: ${new Date().toLocaleString()}*\n\n---\n\n`
+  md += `*生成时间: ${new Date().toLocaleString(undefined, { timeZone: 'Asia/Shanghai' })}*\n\n---\n\n`
 
   for (const item of items) {
     const m = Math.floor(item.startSec / 60)

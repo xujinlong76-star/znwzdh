@@ -2,7 +2,7 @@
  * 「我的考试」关注 + 考前清单（/exam 第二轮）测试：
  *  - 纯规则层 my-exams.ts：解析收敛、关注开关、节点勾选、进度与下一步；
  *  - 共享 hook useMyExams.ts：挂载后才读 localStorage、读写各一处、
- *    十一场卡片与首页条带共用同一份快照（见 test/use-my-exams.test.ts）；
+ *    十二场卡片与首页条带共用同一份快照（见 test/use-my-exams.test.ts）；
  *  - 源码守卫：岛只读事实源（不硬编码日期）、岛内无直接存储调用、
  *    小字与徽章配方合规、按钮 44px、真 checkbox、可勾选只对已关注开放。
  */
@@ -33,14 +33,17 @@ import {
 } from '../src/lib/exam-calendar'
 import {
   MY_EXAMS_STORAGE_KEY,
+  applyMyExamsDelta,
   checkedCount,
   isFollowed,
+  mergeCloudMyExams,
   nearestFollowedExam,
   nextTodoNode,
   nextUncheckedNode,
   parseMyExams,
   toggleFollow,
   toggleNodeCheck,
+  type HubExamFollow,
   type MyExamsState,
 } from '../src/lib/my-exams'
 
@@ -90,7 +93,7 @@ const DEC_20_0800_CST = Date.UTC(2026, 11, 20, 0, 0, 0)
 const DEC_13_0800_CST = Date.UTC(2026, 11, 13, 0, 0, 0)
 /** 2026-12-14 08:00 北京时间：军队文职笔试次日 */
 const DEC_14_0800_CST = Date.UTC(2026, 11, 14, 0, 0, 0)
-/** 2026-12-21 08:00 北京时间：十一场全过 */
+/** 2026-12-21 08:00 北京时间：考研已过（广东自考·1月 2027-01-09 未到） */
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
 
 describe('parseMyExams（不可信输入收敛）', () => {
@@ -153,7 +156,7 @@ describe('toggleFollow', () => {
 
   it('已结束且无可办节点的考试不再接受新关注（纵深防御：岛层按钮已禁用，纯函数层也写不进；U-106：仍有可办节点时放行，见下）', () => {
     const empty: MyExamsState = { followed: [], checked: {} }
-    // 国考 11-29 已过（11-30 时），考研十一场全过（12-21 时）
+    // 国考 11-29 已过（11-30 时），考研已过（12-21 时）
     expect(toggleFollow(empty, 'guokao', NOV_30_0800_CST)).toBe(empty)
     expect(toggleFollow(empty, 'kaoyan', DEC_21_0800_CST)).toBe(empty)
   })
@@ -309,7 +312,7 @@ describe('nearestFollowedExam（已关注优先，首页条带挂载后用）', 
     ).toBe('kaoyan')
   })
 
-  it('十一场全过、关注场全部已结束返回 undefined', () => {
+  it('十二场未全过、关注场全部已结束返回 undefined', () => {
     const state: MyExamsState = { followed: ['guokao', 'cet', 'kaoyan'], checked: {} }
     expect(nearestFollowedExam(state, DEC_21_0800_CST)).toBeUndefined()
   })
@@ -690,10 +693,11 @@ describe('成考成绩分省节点', () => {
 })
 
 describe('京考节点（U-76）', () => {
-  it('只列已核实的四节点，不写成绩/缴费节点；报名与准考证挂报名平台、公共科目挂官方公告', () => {
-    expect(jingkao.nodes.map((n) => n.label)).toEqual(['报名', '准考证打印', '公安专业科目笔试', '公共科目笔试'])
+  it('只列已核实的五节点，不写成绩节点；报名、缴费与准考证挂报名平台、公共科目挂官方公告', () => {
+    expect(jingkao.nodes.map((n) => n.label)).toEqual(['报名', '缴费', '准考证打印', '公安专业科目笔试', '公共科目笔试'])
     expect(jingkao.nodes.map((n) => [n.startISO, n.endISO])).toEqual([
       ['2026-11-12', '2026-11-18'],
+      ['2026-11-21', '2026-11-23'],
       ['2026-12-01', '2026-12-06'],
       ['2026-12-05', '2026-12-05'],
       ['2026-12-06', '2026-12-06'],
@@ -705,6 +709,7 @@ describe('京考节点（U-76）', () => {
     )
     const byLabel = new Map(jingkao.nodes.map((n) => [n.label, n]))
     expect(byLabel.get('报名')?.url).toBe(JINGKAO_APPLY_URL)
+    expect(byLabel.get('缴费')?.url).toBe(JINGKAO_APPLY_URL)
     expect(byLabel.get('准考证打印')?.url).toBe(JINGKAO_APPLY_URL)
     expect(byLabel.get('公安专业科目笔试')?.url).toBeUndefined()
     expect(byLabel.get('公共科目笔试')?.url).toBe(JINGKAO_NOTICE_URL)
@@ -740,10 +745,11 @@ describe('京考节点（U-76）', () => {
     expect(byLabel.get('公共科目笔试')?.detail).toContain('14:00–16:30')
   })
 
-  it('下一步待办：11-17 指报名，11-19 指准考证打印，12-07 全部节点结束返回 undefined', () => {
+  it('下一步待办：11-17 指报名，11-19 指缴费，11-25 指准考证打印，12-07 全部节点结束返回 undefined', () => {
     const state: MyExamsState = { followed: ['jingkao'], checked: {} }
     expect(nextTodoNode(state, jingkao, NOV_17_0800_CST)?.label).toBe('报名')
-    expect(nextTodoNode(state, jingkao, NOV_19_0800_CST)?.label).toBe('准考证打印')
+    expect(nextTodoNode(state, jingkao, NOV_19_0800_CST)?.label).toBe('缴费')
+    expect(nextTodoNode(state, jingkao, NOV_25_0800_CST)?.label).toBe('准考证打印')
     expect(nextTodoNode(state, jingkao, DEC_07_0800_CST)).toBeUndefined()
   })
 })
@@ -965,11 +971,13 @@ describe('我的考试岛源码守卫', () => {
     expect(island).not.toContain('cet.neea.edu.cn')
   })
 
-  it('写明只保存在本机，不承诺云同步', () => {
+  it('写明登录后云同步、未登录只保存在本机（U-379 改写：旧口径「只存本机、不承诺云同步」已失效）', () => {
+    // U-379 改写原因：考试关注已接云端同步（登录后跟账号走），旧断言
+    // 「不承诺云同步」与新行为矛盾；保留「未登录只存本机」的诚实口径。
     expect(island).toContain('关注后可逐项勾选考前清单')
-    expect(read('src/app/exam/page.tsx')).toContain('只保存在本机浏览器')
-    expect(island).not.toContain('云同步')
-    expect(island).not.toContain('登录后同步')
+    expect(read('src/app/exam/page.tsx')).toContain('登录后关注与勾选跟账号走')
+    expect(read('src/app/exam/page.tsx')).toContain('未登录只保存在本机浏览器')
+    expect(island).toContain('云端同步')
   })
 })
 
@@ -986,5 +994,76 @@ describe('考试页接线守卫', () => {
     expect(page).not.toContain('EXAM_NODE_STATUS_LABEL')
     expect(page).not.toContain('examNodeStatus(')
     expect(page).not.toContain('NODE_DOT_CLASS')
+  })
+})
+
+describe('云端合并（U-379：与 mergeCloudWatchlist / applyWatchDelta 同口径）', () => {
+  const row = (examId: string, checked: string[], createdAt: number, extra: Partial<HubExamFollow> = {}): HubExamFollow => ({
+    examId,
+    checked,
+    createdAt,
+    updatedAt: createdAt,
+    deletedAt: null,
+    ...extra,
+  })
+
+  it('mergeCloudMyExams：全量以云端成员集合为准，本地独有被丢、顺序本地优先', () => {
+    const local: MyExamsState = {
+      followed: ['kaoyan', 'guokao'],
+      checked: { kaoyan: ['初试'], guokao: ['准考证打印'] },
+    }
+    const cloud = [
+      row('guokao', ['准考证打印', '公共科目笔试'], 2000),
+      row('cet', [], 3000),
+    ]
+    const merged = mergeCloudMyExams(local, cloud)
+    // kaoyan 只在本地：本次同步已先推过脏考试仍不在云端 = 另一台设备取消了关注，不复活
+    expect(merged.followed).toEqual(['guokao', 'cet'])
+    // 勾选组一律以云端为准
+    expect(merged.checked).toEqual({ guokao: ['准考证打印', '公共科目笔试'] })
+  })
+
+  it('mergeCloudMyExams：墓碑不进成员集合；未知考试 id 与非法 label 被收敛掉', () => {
+    const local: MyExamsState = { followed: ['guokao'], checked: { guokao: ['准考证打印'] } }
+    const cloud = [
+      row('guokao', ['准考证打印'], 1000),
+      row('shengkao', [], 2000, { deletedAt: 2500 }),
+      row('no-such-exam', [], 3000),
+      row('kaoyan', ['不存在的节点', '初试'], 4000),
+    ]
+    const merged = mergeCloudMyExams(local, cloud)
+    expect(merged.followed).toEqual(['guokao', 'kaoyan'])
+    expect(merged.checked).toEqual({ guokao: ['准考证打印'], kaoyan: ['初试'] })
+  })
+
+  it('applyMyExamsDelta：增量只 upsert/删墓碑，本地未推送的关注不被误删', () => {
+    const local: MyExamsState = {
+      followed: ['kaoyan'],
+      checked: { kaoyan: ['初试'] },
+    }
+    const delta = [
+      row('guokao', ['准考证打印'], 2000),
+      row('cet', [], 3000, { deletedAt: 3500 }),
+    ]
+    const next = applyMyExamsDelta(local, delta)
+    expect(next.followed).toEqual(['kaoyan', 'guokao'])
+    expect(next.checked).toEqual({ kaoyan: ['初试'], guokao: ['准考证打印'] })
+
+    // 墓碑删掉本机已关注的场，勾选一并清掉
+    const removed = applyMyExamsDelta(next, [row('kaoyan', [], 4000, { deletedAt: 4500 })])
+    expect(removed.followed).toEqual(['guokao'])
+    expect(removed.checked).toEqual({ guokao: ['准考证打印'] })
+  })
+
+  it('applyMyExamsDelta：增量更新勾选组；空勾选组清除旧勾选', () => {
+    const local: MyExamsState = {
+      followed: ['guokao'],
+      checked: { guokao: ['准考证打印', '公共科目笔试'] },
+    }
+    const updated = applyMyExamsDelta(local, [row('guokao', ['公共科目笔试'], 2000)])
+    expect(updated.checked).toEqual({ guokao: ['公共科目笔试'] })
+    const cleared = applyMyExamsDelta(updated, [row('guokao', [], 3000)])
+    expect(cleared.checked).toEqual({})
+    expect(cleared.followed).toEqual(['guokao'])
   })
 })

@@ -47,7 +47,7 @@ import {
   type RecentSearchItem,
 } from '@/lib/recent-search'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
-import { recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
+import { OFFLINE_RECENT_LIMIT, buildMruNormBySiteId, recordOfflineVisit, readOfflineVisits, splitRecentVisitsForBoost, type RecentVisit } from '@/lib/offline-recent'
 import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
 import { rankSearchHits } from '@/lib/search-rerank'
@@ -87,17 +87,21 @@ import {
 import { matchScenePaletteActions } from '@/lib/modular/scene-palette-actions'
 import { performSceneSwitch, useUserScenes } from '@/components/scene-switcher'
 import {
+  altDigitFromKeyOrCode,
+  altDigitTargetIndex,
   buildPaletteNavItems,
   matchPaletteActions,
   matchPaletteFavorites,
   matchPaletteQuicklinks,
   matchPaletteTools,
+  ZERO_RTT_TOOLS,
   type PaletteActionEntry,
   type PaletteActionId,
   type PaletteFavoriteLike,
   type PaletteQuicklinkItem,
   type PaletteToolEntry,
 } from '@/lib/palette-actions'
+import { ensurePinyinLoaded, isLatinQuery } from '@/lib/palette-pinyin'
 import {
   matchQuicklinkCommand,
   quicklinkFromFavorite,
@@ -141,33 +145,22 @@ const AddSiteDialog = dynamic(
 )
 import type { CategorySuggestion } from '@/components/add-site-dialog'
 
-export const OMNI_ENGINES: Record<string, { name: string; url: (q: string) => string }> = {
-  g: { name: 'Google', url: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}` },
-  google: { name: 'Google', url: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}` },
-  gh: { name: 'GitHub', url: (q) => `https://github.com/search?q=${encodeURIComponent(q)}` },
-  github: { name: 'GitHub', url: (q) => `https://github.com/search?q=${encodeURIComponent(q)}` },
-  npm: { name: 'npm', url: (q) => `https://www.npmjs.com/search?q=${encodeURIComponent(q)}` },
-  bing: { name: 'Bing', url: (q) => `https://www.bing.com/search?q=${encodeURIComponent(q)}` },
-  mdn: { name: 'MDN', url: (q) => `https://developer.mozilla.org/zh-CN/search?q=${encodeURIComponent(q)}` },
-  baidu: { name: '百度', url: (q) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)}` },
-  bd: { name: '百度', url: (q) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)}` },
-}
-
+/**
+ * 04 §2.1：`parseOmniCommand` 是薄壳（写死）——签名与返回值保持不变，
+ * 内部只调 `matchQuicklinkCommand`（唯一 bang 权威，内置引擎表
+ * `DEFAULT_QUICKLINK_ENTRIES` 是全仓唯一定义点），不写任何正则、
+ * 不维护引擎表；`/gh x` 不解析（裁决 D2）。未知前缀与无占位符模板
+ * 在这里都映射为 null（OMNI 调用方行为不变），明示行由渲染层
+ * 直接读 `matchQuicklinkCommand` 的结构化结果单独处理。
+ */
 export function parseOmniCommand(raw: string): { engine: string; engineName: string; term: string; url: string } | null {
-  const trimmed = raw.trim()
-  // 前缀接受 ! 与 @ 两种写法：导航搜索条（search-bar）与快捷链接都认 !gh，
-  // 旧正则只认 @/无前缀，首页面板输「!gh react」恒为 null、建议行永远不出。
-  const match = trimmed.match(/^[!@]?([a-zA-Z]+)\s+(.+)$/)
-  if (!match) return null
-  const prefix = match[1]!.toLowerCase()
-  const term = match[2]!.trim()
-  if (!term || !OMNI_ENGINES[prefix]) return null
-  const target = OMNI_ENGINES[prefix]!
+  const hit = matchQuicklinkCommand(raw, [])
+  if (hit.kind !== 'hit' || !hit.url) return null
   return {
-    engine: prefix,
-    engineName: target.name,
-    term,
-    url: target.url(term),
+    engine: hit.entry.quickPrefix,
+    engineName: hit.entry.title,
+    term: hit.arg,
+    url: hit.url,
   }
 }
 
@@ -242,6 +235,56 @@ interface SearchPaletteProps {
   placeholder?: string
 }
 
+/**
+ * 数字徽标（04 §4.2）：navItems 前 10 条（index 0..9）显示 1..9、0，
+ * 第 11 条起不显示；行首、图标左侧，复用行内 kbd 样式；纯视觉辅助，
+ * `aria-hidden="true"`（读屏器读行标题即可，Alt+数字的操作说明在底部提示行）。
+ */
+export function NavDigitBadge({ index }: { index: number }) {
+  if (index < 0 || index > 9) return null
+  const digit = index === 9 ? '0' : String(index + 1)
+  return (
+    <kbd
+      aria-hidden="true"
+      className="px-1.5 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[10px] text-muted-foreground shrink-0"
+    >
+      {digit}
+    </kbd>
+  )
+}
+
+/**
+ * 面板底部快捷键提示（04 §7.3）：文案一字不差——
+ * `↑↓ 选择 · Enter 打开 · Alt+1–0 直达前 10 条 · Esc 关闭`
+ *（`·` 为分隔，`–` 为 en dash；kbd 键位芯片只影响样式，不影响文案）。
+ */
+export function PaletteFooterHint() {
+  return (
+    <>
+      <span className="inline-flex items-center gap-1">
+        <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↑</kbd>
+        <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↓</kbd>
+        {' '}选择
+      </span>
+      {' · '}
+      <span className="inline-flex items-center gap-1">
+        <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Enter</kbd>
+        {' '}打开
+      </span>
+      {' · '}
+      <span className="inline-flex items-center gap-1">
+        <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Alt+1–0</kbd>
+        {' '}直达前 10 条
+      </span>
+      {' · '}
+      <span className="inline-flex items-center gap-1">
+        <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Esc</kbd>
+        {' '}关闭
+      </span>
+    </>
+  )
+}
+
 export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导航…（中文 / 拼音 / 语义）（按 / 快速搜索）' }: SearchPaletteProps) {
   const [query, setQuery] = useState('')
   const [isFocused, setIsFocused] = useState(false)
@@ -312,6 +355,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [relaxedFacets, setRelaxedFacets] = useState<Record<string, string[]> | undefined>(undefined)
   const [recent, setRecent] = useState<RecentSearchItem[]>([])
   const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
+  /** MRU 加分用的全量快照（上限 50 条）：与空面板直达区的 8 条分轨，
+      8 条之外的收藏也能拿到 MRU 加分（W6b 补丁 2）。 */
+  const [mruVisits, setMruVisits] = useState<RecentVisit[]>([])
   /** 中枢不可用（历史拉取降级）：与「真的没有历史」区分，避免把故障渲染成「暂无数据」 */
   const [recentDegraded, setRecentDegraded] = useState(false)
   /** 清空最近搜索的两步确认是否已 armed（同 /me/history「清空全部」→「确认清空全部」） */
@@ -380,6 +426,13 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   /** 已加载到的偏移（不进 React state，避免其变化误触发第一页重查） */
   const offsetRef = useRef(0)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** IME 组词守卫（04 §5.2-2）：组词期间暂停防抖检索（用 ref 不用 state，
+      避免每次组词开始/结束都触发重渲染）；与 keydown 的 isComposing 守卫互补 */
+  const isComposingRef = useRef(false)
+  /** 组词完成后的那一次查询不等待 200ms 防抖、立即检索（§5.2-2） */
+  const skipDebounceRef = useRef(false)
+  /** 拼音库是否已加载（04 §1.3）：加载成功后本地行 matcher 才走拼音通道 */
+  const [pinyinReady, setPinyinReady] = useState(false)
   const identity = useMemo(() => getIdentity(), [])
   const favorites = useFavorites()
   const { toast } = useToast()
@@ -606,6 +659,13 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       }).catch(() => {
         // 容错降级：本地最近访问读取失败保持空数组
       })
+      // MRU 加分读全量（OFFLINE_RECENT_LIMIT = 50）：与 8 条直达区分轨，
+      // 预填查询打开时快照也可能为空——读全量后 mruNorm 不再依赖直达区。
+      readOfflineVisits(OFFLINE_RECENT_LIMIT).then((visits) => {
+        setMruVisits(visits)
+      }).catch(() => {
+        // 容错降级：MRU 加分读取失败保持空映射（mruNorm 全为 0）
+      })
 
       setConfirmClearRecent(false)
       void refreshRecent()
@@ -644,6 +704,14 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     if (abortRef.current) abortRef.current.abort()
     // 查询变了，在途的「加载更多」也属于上一个查询，必须一起取消
     if (moreAbortRef.current) moreAbortRef.current.abort()
+    // IME 组词期（04 §5.2-2）：不发请求、不清空旧结果——组词中途的半截
+    // 拼音（如 `da`）既不能发请求、也不能把面板闪空；旧结果保留展示。
+    // 在途请求已在上面取消；loading 标志复位，避免被取消的请求把转圈挂住。
+    if (isComposingRef.current) {
+      setLoading(false)
+      setPluginLoading(false)
+      return
+    }
     // 新查询必须清空旧结果与旧提示：否则防抖 + 网络窗口里会拿上一个查询的结果
     // 冒充新查询的答案（还会带着上一个查询的「已放宽」横幅）
     setHits([])
@@ -675,6 +743,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     // 新查询 = 回到第一页（offsetRef 不进依赖，否则追加页会触发重查）
     offsetRef.current = 0
     setLoading(true)
+    // 组词完成后的那一次查询不等待 200ms 防抖、立即检索（§5.2-2：用户已
+    // 明确完成输入，等 200ms 是可感知的卡顿）；其余查询仍走 200ms 防抖。
+    const delay = skipDebounceRef.current ? 0 : 200
+    skipDebounceRef.current = false
     debounceRef.current = setTimeout(() => {
       const controller = new AbortController()
       abortRef.current = controller
@@ -739,6 +811,25 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
   }, [query, categoryId, identity, retryToken, nocorrectQuery])
+
+  /**
+   * 拼音库触发加载（04 §1.3，写死）：面板打开后，第一次出现拉丁字母查询
+   * 且本地行目录非空时执行 `import('pinyin-pro')`（Promise 缓存复用，
+   * 加载失败时静默回落旧匹配、面板不报错；pre-fetch 先不开，等 P-d 实测）。
+   * 中文查询、空查询、纯数字查询均不触发；面板未打开时不加载。
+   */
+  useEffect(() => {
+    if (pinyinReady || !isFocused) return
+    if (!isLatinQuery(query)) return
+    if (ZERO_RTT_TOOLS.length === 0 && favorites.items.length === 0) return
+    let cancelled = false
+    void ensurePinyinLoaded().then((ok) => {
+      if (!cancelled && ok) setPinyinReady(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [query, isFocused, pinyinReady, favorites.items.length])
 
   /** 加载下一页并追加（同一查询的延续——服务端因此不重复记事件） */
   const loadMore = useCallback(() => {
@@ -1118,9 +1209,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   )
   const matchedPaletteActions = useMemo(
     () => matchPaletteActions(query, paletteActionOpts),
-    [query, paletteActionOpts],
+    [query, paletteActionOpts, pinyinReady],
   )
-  const matchedPaletteTools = useMemo(() => matchPaletteTools(query), [query])
+  const matchedPaletteTools = useMemo(
+    () => matchPaletteTools(query),
+    [query, pinyinReady],
+  )
   /**
    * 参数化快捷链接：收藏上挂了模板的条目即 quicklink（模板非法的不进）。
    * 命令命中时同一 siteId 不再出现在收藏分组里（去重走 excludeSiteIds）。
@@ -1144,16 +1238,37 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     () => matchPaletteQuicklinks(query, quicklinkEntries),
     [query, quicklinkEntries],
   )
+  /**
+   * 收藏行的 MRU 归一分（04 §3.3/§6）：`mruNorm = mruScore / 100`，无记录为 0，
+   * 随 `matchPaletteFavorites` 传给 §6 总分的 0.15 权重项。数据源是全量
+   * 50 条快照 `mruVisits`（与空面板 8 条直达区分轨），8 条之外的收藏
+   * 也能拿到 MRU 加分；建库起点取本次快照最早一条（与 `topFrequentVisits`
+   * 同口径）；同一调用内只取一次 now。
+   */
+  const mruNormBySiteId = useMemo(
+    () => buildMruNormBySiteId(mruVisits),
+    [mruVisits],
+  )
   const matchedPaletteFavorites = useMemo(
     () =>
       matchPaletteFavorites(query, favorites.items, {
         excludeSiteIds: new Set([
           ...hits.map((h) => h.siteId),
-          ...(quicklinkMatch ? [quicklinkMatch.entry.siteId] : []),
+          ...(quicklinkMatch.kind === 'hit' ? [quicklinkMatch.entry.siteId] : []),
         ]),
+        mruNormBySiteId,
       }),
-    [query, favorites.items, hits, quicklinkMatch],
+    [query, favorites.items, hits, quicklinkMatch, mruNormBySiteId, pinyinReady],
   )
+  /**
+   * 空查询「最近访问」分区顺序（04 §3.3，C2 前半）：count≥3 的 boosted
+   * 段按 mruScore 置顶在前，count<3 的 rest 段按时间倒序排在后段；两段
+   * 并起来就是原快照，不删除、不隐藏任何记录。
+   */
+  const orderedRecentVisits = useMemo(() => {
+    const { boosted, rest } = splitRecentVisitsForBoost(recentVisits)
+    return [...boosted, ...rest]
+  }, [recentVisits])
   /** 空查询面板直接展示的四操作（matchPaletteActions('') 即全部）与收藏 */
   const emptyPanelActions = useMemo(
     () => matchPaletteActions('', paletteActionOpts),
@@ -1289,6 +1404,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
   const onSearchKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
+      // IME 组词守卫（04 §5.2-1，裁决 D3：一票否决）：组词中任何键都不触发
+      // 面板行为——Enter 不打开结果、↑↓ 不移动高亮、Alt+数字不直达；
+      // 组词键（选词用的数字键、空格、Enter 选词）全部放行给输入法，
+      // 不 preventDefault。写法照抄 batch-keyboard.ts 与 cmdk 源码守卫
+      // 的同一条件（isComposing || keyCode === 229）。
+      if (e.nativeEvent.isComposing || e.keyCode === 229) return
       if (e.key === 'Enter' && aiMode) {
         // AI 模式：回车不打开站内结果，直接把整句查询发给 AI 找站。
         // 空查询不发（抽屉打开却没问题，等于白点一下）。
@@ -1309,11 +1430,37 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         })
         return
       }
+      // Alt+数字直达前 10 条（04 §4.1，裁决 D1）：Alt+1..9 → navItems[0..8]，
+      // Alt+0 → navItems[9]。裸数字不劫持打字（输 123 正常进文本）；
+      // meta/ctrl 同时按下时不触发（浏览器/系统组合键优先）。
+      // macOS 回退（W6b 补丁 3，协调员已批）：macOS 上 Option+数字的
+      // e.key 是 ¡/™ 等特殊字符，用 e.code（Digit*/Numpad*）取 OR 兜底。
+      // IME 守卫在函数顶部（§5.2-1），组词中本分支不会执行到。
+      if (e.altKey && !e.metaKey && !e.ctrlKey) {
+        const digit = altDigitFromKeyOrCode(e.key, e.code)
+        const target = digit !== null ? altDigitTargetIndex(digit, navItems.length) : null
+        if (target !== null) {
+          // 与 Enter 打开同一行完全相同的打开逻辑：点真实元素（站点行 onClick
+          // 打开、插件行 Link 跳转、建议行采纳），打开后按各行既有行为关闭面板
+          // 并 recordOfflineVisit；先滚进可视区再打开（§7.4）。
+          const el = findOptionElement(target)
+          if (el) {
+            e.preventDefault()
+            el.scrollIntoView({ block: 'nearest' })
+            el.click()
+          }
+          return
+        }
+        // Alt+数字但超出结果数（如只有 3 条时 Alt+5）：静默无操作，不落到其他分支。
+        if (digit !== null) return
+      }
       if (e.key === 'Enter') {
-        // 优先级：quicklink 精确匹配 > OMNI_ENGINES 硬编码引擎 > 导航第一条结果。
+        // 优先级：quicklink 精确匹配 > 内置引擎 > 导航第一条结果。
         // 前缀命中但代入失败（参数超 500 字符 / 模板已不安全）时 toast、
-        // 不开页，也不落到 OMNI 或导航首条——否则超长参数会悄悄走另一条路。
-        if (quicklinkMatch) {
+        // 不开页，也不落到内置引擎或导航首条——否则超长参数会悄悄走另一条路。
+        // 未知前缀 / 模板无占位符时不拦截：落到后面的普通搜索（Enter 打开
+        // 首条结果，与明示行文案「按 Enter 按普通搜索」一致）。
+        if (quicklinkMatch.kind === 'hit') {
           e.preventDefault()
           if (quicklinkMatch.url) {
             openQuicklink({
@@ -1470,6 +1617,20 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             }
             setQuery(resolved.query)
             setIsFocused(true)
+          }}
+          // IME 组词期暂停防抖检索（04 §5.2-2，三件套之二）：
+          // 开始组词时取消在途检索（复用 AbortController 取消逻辑），防止
+          // 半截查询回包覆盖组词完成后的结果；组词完成后立即用完整 query
+          // 触发一次检索（不等待 200ms 防抖，见 skipDebounceRef）。
+          onCompositionStart={() => {
+            isComposingRef.current = true
+            if (debounceRef.current) clearTimeout(debounceRef.current)
+            if (abortRef.current) abortRef.current.abort()
+            if (moreAbortRef.current) moreAbortRef.current.abort()
+          }}
+          onCompositionEnd={() => {
+            isComposingRef.current = false
+            skipDebounceRef.current = true
           }}
           onFocus={() => setIsFocused(true)}
           className="h-9.5 min-w-0 flex-1 border-0 bg-transparent px-0 py-1 shadow-none focus-visible:ring-0 text-base sm:text-sm"
@@ -1682,7 +1843,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           )}
 
           {/* 常用与最近常去站点快捷直达 */}
-          {recentVisits.length > 0 && (
+          {orderedRecentVisits.length > 0 && (
             <div className="p-2.5 bg-muted/20">
               <div className="text-[11px] font-semibold text-muted-foreground flex items-center justify-between mb-2 px-1">
                 <span className="flex items-center gap-1.5">
@@ -1692,7 +1853,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 <span className="text-[10px] font-mono text-muted-foreground">一键直达</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                {recentVisits.map((visit) => (
+                {orderedRecentVisits.map((visit) => (
                   <a
                     key={visit.id}
                     href={safeHref(visit.href)}
@@ -1863,8 +2024,25 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
       {showResults && (
         <div id="navhub-search-results-panel" ref={resultsPanelRef} className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-0 mt-0 sm:mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
+          {/* 未知前缀明示行（04 §2.2）：静默 null 改为一行明示，置于列表顶部、
+              quicklink 行之上；Enter 走普通搜索，不拦截、不外跳 */}
+          {quicklinkMatch.kind === 'unknown-prefix' && (
+            <div className="px-3.5 py-2.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center gap-2">
+              <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                未找到前缀 “{quicklinkMatch.prefix}”，按 Enter 按普通搜索
+              </span>
+            </div>
+          )}
+          {/* 模板无占位符明示行（04 §2.3）：Enter 不外跳、走普通搜索 */}
+          {quicklinkMatch.kind === 'bad-template' && (
+            <div className="px-3.5 py-2.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center gap-2">
+              <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                快捷链接模板缺少占位符，无法填入查询词
+              </span>
+            </div>
+          )}
           {/* 快捷链接横幅：精确匹配时置顶（复用 search-bar 的 matchedShortcut 横幅样式），鼠标可点，回车直达；命中时 OMNI 横幅让位 */}
-          {quicklinkMatch?.url && (
+          {quicklinkMatch.kind === 'hit' && quicklinkMatch.url && (
             <div className="px-3.5 py-2.5 bg-primary/10 border-b border-primary/20 flex items-center justify-between gap-2">
               <button
                 type="button"
@@ -1894,7 +2072,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               </span>
             </div>
           )}
-          {!quicklinkMatch && omniCommand && (
+          {quicklinkMatch.kind !== 'hit' && omniCommand && (
             <div className="px-3.5 py-2.5 bg-primary/10 border-b border-primary/20 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-xs font-medium text-primary min-w-0">
                 <span className="px-1.5 py-0.5 rounded bg-primary/20 font-mono text-[10px] uppercase font-bold shrink-0">
@@ -1973,6 +2151,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       }`
                       const inner = (
                         <>
+                          <NavDigitBadge index={idx} />
                           <span className="min-w-0 flex-1">
                             <span className="block text-sm font-medium truncate">
                               <Highlighted text={item.label} query={query} />
@@ -2041,6 +2220,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                           }`}
                         >
+                          <NavDigitBadge index={idx} />
                           <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-mono text-[10px] font-bold shrink-0">
                             !{item.entry.quickPrefix}
                           </span>
@@ -2083,6 +2263,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                           }`}
                         >
+                          <NavDigitBadge index={idx} />
                           <span className="w-8 h-8 rounded-lg bg-violet-500/10 border border-violet-500/15 flex items-center justify-center shrink-0">
                             <Icon className="h-4 w-4 text-violet-500" />
                           </span>
@@ -2126,6 +2307,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                           }`}
                         >
+                          <NavDigitBadge index={idx} />
                           <span className="w-8 h-8 rounded-lg bg-teal-500/10 border border-teal-500/15 flex items-center justify-center shrink-0">
                             <Layers className="h-4 w-4 text-teal-500" />
                           </span>
@@ -2175,6 +2357,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                           }`}
                         >
+                          <NavDigitBadge index={idx} />
                           <span className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/15 flex items-center justify-center shrink-0">
                             <SiteFavicon
                               title={fav.title}
@@ -2222,6 +2405,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                           }`}
                         >
+                          <NavDigitBadge index={idx} />
                           <span className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/15 flex items-center justify-center shrink-0">
                             <Icon className="h-4 w-4 text-amber-500" />
                           </span>
@@ -2266,6 +2450,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                           }`}
                         >
+                          <NavDigitBadge index={idx} />
                           <span className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/15 flex items-center justify-center shrink-0">
                             <Icon className="h-4 w-4 text-emerald-500" />
                           </span>
@@ -2518,6 +2703,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           navIndexById.get('plugin-' + p.id) === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                         }`}
                       >
+                        <NavDigitBadge index={navIndexById.get('plugin-' + p.id) ?? -1} />
                         <span className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/15 flex items-center justify-center shrink-0">
                           <Store className="h-4 w-4 text-primary" />
                         </span>
@@ -2760,6 +2946,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           navIndexById.get('site-' + site.id) === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                         }`}
                       >
+                      <NavDigitBadge index={navIndexById.get('site-' + site.id) ?? -1} />
                       <div className="flex-shrink-0 w-8 h-8 rounded-md p-1 bg-muted/60 dark:bg-muted/30 border border-border/50 flex items-center justify-center">
                         <SiteFavicon
                           title={site.title}
@@ -2828,19 +3015,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               {/* 键盘提示：能力存在但没人知道，等于不存在（桌面端才显示） */}
               {(displayHits.length > 0 || pluginItems.length > 0 || matchedPaletteFavorites.length > 0 || matchedPaletteActions.length > 0 || matchedPaletteTools.length > 0) && (
                 <div className="hidden sm:flex sm:pointer-coarse:hidden items-center gap-3 border-t border-border/60 bg-muted/20 px-3 py-1.5 text-[10px] text-muted-foreground">
-                  <span className="inline-flex items-center gap-1">
-                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↑</kbd>
-                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↓</kbd>
-                    选择
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Enter</kbd>
-                    打开
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Esc</kbd>
-                    关闭
-                  </span>
+                  <PaletteFooterHint />
                 </div>
               )}
               {showResults && displayHits.length > 0 && hasMore && (

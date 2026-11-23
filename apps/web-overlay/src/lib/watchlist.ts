@@ -26,12 +26,13 @@ export type WatchCadence =
 export type WatchPriority = 'high' | 'normal'
 
 export interface WatchEntry {
-  /** 同步键：`${platformSiteId}::${归一化剧名}` */
+  /** 同步键：`${platformSiteId}::${归一化剧名}`；预约态见 dramaReservedKeyFor */
   key: string
   title: string
   platformSiteId: string
+  /** 预约态（无平台）时为「平台待确认」，不指向任何平台入口 */
   platformTitle: string
-  /** 官方播放页（平台站地址快照）；渲染时必须再过 safeHref */
+  /** 官方播放页（平台站地址快照）；渲染时必须再过 safeHref。预约态为空串——没有平台就没有播放页 */
   playUrl: string
   icon?: string
   /** 看到第几集（0 = 还没开始看），只由用户手动改 */
@@ -46,6 +47,13 @@ export interface WatchEntry {
   lastProgressAt: number
   createdAt: number
   updatedAt: number
+  /**
+   * 预约态的预计开播日（YYYY-MM-DD，上海时区的日历日期；只精确到月时为 null）。
+   * 只存本机：云端同步协议没有该字段，往返后由 mergeCloudWatchlist /
+   * applyWatchDelta 用本地缓存补回；简报侧的开播日由服务端从开播日历快照重算，
+   * 不依赖本字段跨设备。
+   */
+  premiereDate?: string | null
 }
 
 /** 从平台站卡加入追剧时需要的平台快照 */
@@ -66,6 +74,45 @@ export function normalizeDramaTitle(title: string): string {
 
 export function dramaKeyFor(platformSiteId: string, title: string): string {
   return `${platformSiteId}::${normalizeDramaTitle(title)}`
+}
+
+/**
+ * 预约态（U-377）：开播日历上的剧没有平台信息（预约榜不给平台），
+ * 追剧清单键是 platformSiteId:归一化剧名，无平台就无键——修法是只按
+ * 剧名占位，不乱指一个平台入口。
+ *  - 键 = `reserved::${归一化剧名}`：`reserved::` 命名空间与一切平台键
+ *    互斥，不指向平台入口；同一剧名归一后只占一个位；
+ *  - 平台字段留空：platformSiteId / playUrl 为空串，platformTitle 固定
+ *    为「平台待确认」，渲染层据此不画播放入口；
+ *  - 开播日存在 premiereDate（日历给的预计日期），只精确到月时为 null。
+ */
+export const RESERVED_KEY_PREFIX = 'reserved::'
+export const RESERVED_PLATFORM_TITLE = '平台待确认'
+
+export function dramaReservedKeyFor(title: string): string {
+  return `${RESERVED_KEY_PREFIX}${normalizeDramaTitle(title)}`
+}
+
+/** 是否预约态条目（键前缀判定，与服务端 brief.ts 同口径）。 */
+export function isReservedEntry(entry: WatchEntry): boolean {
+  return entry.key.startsWith(RESERVED_KEY_PREFIX)
+}
+
+/** 是否预约态的键（服务端 WatchEntryRecord 同样用它判定）。 */
+export function isReservedDramaKey(key: string): boolean {
+  return key.startsWith(RESERVED_KEY_PREFIX)
+}
+
+/** 预约态的预计开播日是否已到（含当天）：到了也不静默消失，只改文案。 */
+export function isReservedPremiereDue(entry: WatchEntry, now: Date): boolean {
+  if (!isReservedEntry(entry) || !entry.premiereDate) return false
+  return entry.premiereDate <= localDateKey(now.getTime())
+}
+
+/** 校验 YYYY-MM-DD 形状的日期键；非法返回 null（不猜、不补）。 */
+export function asPremiereDate(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null
 }
 
 /** 节奏归一（客户端口径，与服务端 parseWatchCadence 一致）：非法形状收敛成 unknown */
@@ -135,6 +182,9 @@ export function isCadenceDay(cadence: WatchCadence, at: Date): boolean {
  * 注意它只断言「按你标注的节奏，今天是更新日」，不断言平台真的更新了。
  */
 export function isReminderDue(entry: WatchEntry, now: Date): boolean {
+  // 预约态永不到期：还没开播，没有“更新日”可催；开播日提醒走简报的
+  // premieringToday（按开播日历现算），不在这里混进待看区。
+  if (isReservedEntry(entry)) return false
   if (!entry.remind) return false
   if (!isCadenceDay(resolveEntryCadence(entry), now)) return false
   const today = localDateKey(now.getTime())
@@ -153,6 +203,12 @@ export interface WatchlistPartitions {
   active: WatchEntry[]
   /** 已完结：留着补看，不提醒 */
   finished: WatchEntry[]
+  /**
+   * 预约态（U-377）：开播日历上预约的、无平台的剧。独立分区——
+   * 不进 due/check/active/finished，不进新集检查，不进本周追剧表；
+   * 开播日到了也留在这里，只改文案为「已到开播日 · 平台待确认」。
+   */
+  reserved: WatchEntry[]
 }
 
 const priorityRank = (e: WatchEntry) => (e.priority === 'high' ? 0 : 1)
@@ -162,7 +218,13 @@ export function partitionWatchlist(entries: WatchEntry[], now: Date): WatchlistP
   const check: WatchEntry[] = []
   const active: WatchEntry[] = []
   const finished: WatchEntry[] = []
+  const reserved: WatchEntry[] = []
   for (const entry of entries) {
+    // 预约态先分流：不参与任何节奏判定，不进 due/check/active/finished
+    if (isReservedEntry(entry)) {
+      reserved.push(entry)
+      continue
+    }
     const cadence = resolveEntryCadence(entry)
     if (cadence.kind === 'finished') finished.push(entry)
     else if (isReminderDue(entry, now)) due.push(entry)
@@ -174,7 +236,13 @@ export function partitionWatchlist(entries: WatchEntry[], now: Date): WatchlistP
   check.sort((a, b) => priorityRank(a) - priorityRank(b) || b.updatedAt - a.updatedAt)
   active.sort((a, b) => priorityRank(a) - priorityRank(b) || b.updatedAt - a.updatedAt)
   finished.sort((a, b) => b.updatedAt - a.updatedAt)
-  return { due, check, active, finished }
+  // 预约区：开播日近的在前（已到开播日的置顶待确认），无日期的沉底
+  reserved.sort(
+    (a, b) =>
+      (a.premiereDate ?? '9999-12-31').localeCompare(b.premiereDate ?? '9999-12-31') ||
+      b.updatedAt - a.updatedAt,
+  )
+  return { due, check, active, finished, reserved }
 }
 
 /** 首页影院区「继续追」续看行每行最多露出的部数。 */
@@ -184,6 +252,7 @@ export const CONTINUE_WATCHING_LIMIT = 4
  * 首页「继续追」续看行取行口径（与分类页横幅、简报页同源，都走 partitionWatchlist，
  * 不另立口径）：due（今日待看）优先、不足用 check（节奏未标注）补、再不足用
  * active 补，凑满 limit；finished（已完结）不进——完结的剧不叫「继续追」。
+ * 预约态（reserved）也不进——还没开播的剧不叫「继续追」。
  * 空清单返回 []，调用方整行不渲染，不留占位。
  */
 export function selectContinueWatching(
@@ -205,16 +274,26 @@ export function sanitizeWatchEntry(raw: unknown): WatchEntry | null {
   const title = typeof r.title === 'string' ? r.title.trim().slice(0, WATCH_TITLE_MAX) : ''
   const platformSiteId = typeof r.platformSiteId === 'string' ? r.platformSiteId : ''
   const playUrl = typeof r.playUrl === 'string' ? r.playUrl : ''
-  if (!title || !platformSiteId || !playUrl) return null
-  const key =
-    typeof r.key === 'string' && r.key ? r.key : dramaKeyFor(platformSiteId, title)
+  const keyHint = typeof r.key === 'string' ? r.key : ''
+  // 预约态（U-377）：键为 reserved::归一化剧名，无平台占位——平台与播放页
+  // 为空是合法形状，不丢弃；平台名固定为「平台待确认」，不编一个入口。
+  const reserved = isReservedDramaKey(keyHint)
+  if (!title) return null
+  if (!reserved && (!platformSiteId || !playUrl)) return null
+  const key = keyHint ? keyHint : dramaKeyFor(platformSiteId, title)
   const episodeRaw = typeof r.episode === 'number' && Number.isFinite(r.episode) ? Math.trunc(r.episode) : 0
   const createdAt = typeof r.createdAt === 'number' && r.createdAt > 0 ? r.createdAt : Date.now()
+  const premiereDate = asPremiereDate(r.premiereDate)
   return {
     key,
     title,
     platformSiteId,
-    platformTitle: typeof r.platformTitle === 'string' && r.platformTitle ? r.platformTitle : platformSiteId,
+    platformTitle:
+      typeof r.platformTitle === 'string' && r.platformTitle
+        ? r.platformTitle
+        : reserved
+          ? RESERVED_PLATFORM_TITLE
+          : platformSiteId,
     playUrl,
     icon: typeof r.icon === 'string' && r.icon ? r.icon : undefined,
     episode: Math.min(Math.max(episodeRaw, 0), WATCH_EPISODE_MAX),
@@ -226,6 +305,9 @@ export function sanitizeWatchEntry(raw: unknown): WatchEntry | null {
       typeof r.lastProgressAt === 'number' && r.lastProgressAt > 0 ? r.lastProgressAt : createdAt,
     createdAt,
     updatedAt: typeof r.updatedAt === 'number' && r.updatedAt > 0 ? r.updatedAt : createdAt,
+    // 只有真有开播日才带字段：无日期的条目不凭空多一个 premiereDate: null，
+    // 否则落盘往返 toEqual 会多出字段（旧测试「往返一致」的口径）。
+    ...(premiereDate !== null ? { premiereDate } : {}),
   }
 }
 
@@ -248,7 +330,12 @@ export function mergeCloudWatchlist(local: WatchEntry[], cloud: HubWatchEntry[])
     if (!clean) continue
     // createdAt 优先云端；云端缺失时用本地的（同一 key 的条目在两端应是同一条）
     const cached = localByKey.get(clean.key)
-    merged.push(cached && !remote.createdAt ? { ...clean, createdAt: cached.createdAt } : clean)
+    // 预约态的开播日只存本机（同步协议无该字段）：云端往返丢了就用本地缓存补回
+    const withPremiere =
+      isReservedEntry(clean) && !clean.premiereDate && cached?.premiereDate
+        ? { ...clean, premiereDate: cached.premiereDate }
+        : clean
+    merged.push(cached && !remote.createdAt ? { ...withPremiere, createdAt: cached.createdAt } : withPremiere)
   }
   return merged.sort((a, b) => b.createdAt - a.createdAt)
 }
@@ -267,8 +354,14 @@ export function applyWatchDelta(local: WatchEntry[], delta: HubWatchEntry[]): Wa
     }
     const clean = sanitizeWatchEntry(remote)
     if (!clean) continue
-    if (map.has(clean.key)) map.set(clean.key, clean)
-    else fresh.push(clean)
+    // 预约态的开播日只存本机：增量上来的云端条目没带就用本地缓存补回
+    const localPrev = map.get(clean.key)
+    const withPremiere =
+      isReservedEntry(clean) && !clean.premiereDate && localPrev?.premiereDate
+        ? { ...clean, premiereDate: localPrev.premiereDate }
+        : clean
+    if (map.has(withPremiere.key)) map.set(withPremiere.key, withPremiere)
+    else fresh.push(withPremiere)
   }
   return fresh.length > 0 ? [...fresh, ...map.values()] : [...map.values()]
 }

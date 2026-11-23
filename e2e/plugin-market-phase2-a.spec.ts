@@ -120,9 +120,29 @@ test.describe('插件市场 Phase 2 批 A：搜索、排序注明、空态、ban
     const searchInput = page.getByPlaceholder(/搜索(导航|站点)/);
     await expect(searchInput).toBeVisible({ timeout: 60_000 });
     await searchInput.fill('!gh react');
-    await expect(page.getByText('按 Enter 直达外部搜索：')).toBeVisible();
-    await expect(page.getByText('react', { exact: true }).first()).toBeVisible();
-    const omniLink = page.locator('a[href*="github.com/search?q=react"]').first();
-    await expect(omniLink).toBeVisible();
+    // Batch 1（f3f68008）后直达建议行是 quicklink 横幅（源码注释写明「命中时 OMNI 横幅让位」）：
+    // 旧断言的 OMNI 行文案「按 Enter 直达外部搜索：」/ 裸词 'react' / github 锚链自此不再渲染——
+    // OMNI 行被 `quicklinkMatch.kind !== 'hit'` 门挡住，对内置前缀恒不可达（U-363 余项根因）；
+    // 行为本身正确（横幅在、回车直达），故断言按现行横幅契约重写，标题与意图不变。
+    const banner = page.getByRole('button', { name: /在 GitHub 搜索/ });
+    await expect(banner).toBeVisible();
+    await expect(banner.getByText('"react"', { exact: true })).toBeVisible();
+    // 「回车直达」是横幅 <button> 的兄弟 <span>（不在 button 内），且结果列表里另有一处同文案；
+    // 以 button 的父级横幅行（px-3.5 bg-primary/10）为作用域断言，避开 strict mode 多匹配。
+    await expect(banner.locator('xpath=..').getByText('回车直达')).toBeVisible();
+    // 行为断言：回车直达外部搜索——新标签页即 github 搜索地址（横幅是 <button>，
+    // 无 href 锚链可断言，故以 popup URL 为准，比「存在一个 href」更强）。
+    // 外跳目标是 github 外站：本 VM 浏览器无代理、直连失败瞬间落到 chrome-error 页
+    // （连 popup.url() 即读都已是 chrome-error；curl 经代理是 200），CI 有外网则能直达。
+    // 为让断言只验「开的是什么地址」而不依赖外站可达性，用 context.route 把这次
+    // github 搜索导航本地 fulfill（URL 保持不变），popup 正常落到目标地址。
+    await page.context().route(/github\.com\/search\?q=react/, (route) =>
+      route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>stub</title>' }),
+    );
+    const popupPromise = page.waitForEvent('popup');
+    await searchInput.press('Enter');
+    const popup = await popupPromise;
+    await expect(popup).toHaveURL(/github\.com\/search\?q=react/);
+    await popup.close();
   });
 });

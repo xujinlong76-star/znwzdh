@@ -192,7 +192,7 @@ async function fetchDiff(baseId: string, againstId: string): Promise<SnapshotDif
 
 function formatSnapshotDate(createdAt: number): string {
   if (!createdAt || !Number.isFinite(createdAt)) return '时间未知'
-  return new Date(createdAt).toLocaleString('zh-CN')
+  return new Date(createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
 }
 
 function formatDiffValue(value: string | null): string {

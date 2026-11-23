@@ -2,7 +2,11 @@
  * TS 7 分离门禁守卫（P3）：
  *   - 门禁只跑 @navhub/*，不应把前端 navsphere 或 overlay 误算进来；
  *   - 门禁用 typescript7 别名，lint/工具仍必须是 typescript 5.9.3；
- *   - verify 与 pre-commit 必须复用同一脚本，避免只改 package.json 的假接线。
+ *   - verify 与 CI（test-sqlite 的 pnpm run typecheck）复用同一脚本。
+ * U-385（2026-11-21 钩子瘦身）：全量 typecheck 已移出本地 pre-commit，
+ * 全量只在 CI 跑——pre-commit 模板里不再有 `node scripts/typecheck.mjs`
+ * 这一行是预期行为，不是接线丢失；改回钩子前须同步恢复 gates.json 的
+ * staged 登记，否则 check-gates-registry 即红。
  */
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
@@ -32,13 +36,20 @@ describe("TS 7 类型检查门禁（scripts/typecheck.mjs）", () => {
     expect(pkg.devDependencies.typescript).toBe("5.9.3");
   });
 
-  it("verify 与 pre-commit 复用同一门禁脚本", () => {
+  it("verify 与 CI 复用同一门禁脚本；pre-commit 不再跑全量 typecheck（U-385）", () => {
     const verify = readFileSync(join(ROOT, "scripts/verify.mjs"), "utf8");
     const hooks = readFileSync(join(ROOT, "scripts/install-git-hooks.mjs"), "utf8");
     // 断言的是「这一步存在且命令是它」，不是包它的那个函数名——
     // verify 后来把部分步骤包进 gate(...)（--changed 档要带跳过条件），名字会变。
     expect(verify).toMatch(/(?:run|gate)\("类型检查", "node", \["scripts\/typecheck\.mjs"\]/);
-    expect(hooks).toContain("node scripts/typecheck.mjs || exit 1");
+    // U-385 钩子瘦身：全量 typecheck（70–77 秒）已移出本地 pre-commit，全量
+    // 只在 CI 跑（test-sqlite 的 pnpm run typecheck）；模板里不再有这一行是
+    // 预期行为。注意：断言只钉模板里的接线行（`|| exit 1`），不钉注释里
+    // 的按需跑法说明——注释不是接线（stripShellComments 会剥掉它们）。
+    expect(hooks).not.toContain("node scripts/typecheck.mjs || exit 1");
+    // CI 侧仍在跑：test-sqlite 作业有 pnpm run typecheck 步骤。
+    const ci = readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8");
+    expect(ci).toContain("pnpm run typecheck");
   });
 
   it("后端 lint 必须在 verify 链里，且门禁不许把跳过说成通过", () => {

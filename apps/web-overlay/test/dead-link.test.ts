@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import {
   buildDeadLinkWaybackUrl,
   formatWaybackTimestamp,
+  isDeadLinkHealth,
 } from "../src/lib/dead-link";
+import { siteHealthState } from "../src/lib/site-health";
 
 /**
  * 死链防御 #4：一键 Wayback 存档恢复（仅详情页）。
@@ -86,16 +88,94 @@ describe("一键 Wayback 链接 buildDeadLinkWaybackUrl", () => {
   });
 });
 
-describe("接线守卫：死链恢复只活在详情页，卡片不再承诺徽标", () => {
-  it("卡片上没有任何死链徽标：徽标文案、判定口径与恢复动作都已移除", () => {
+describe("isDeadLinkHealth 旧口径回归（03 §4.3：判定输入改为映射后的 health）", () => {
+  const CHECKED = Date.UTC(2026, 10, 19, 8, 0, 0);
+  // 旧口径：跑过巡检 + ok === false + 404/410/451/5xx；映射后等价为 dead 档。
+  it("连续失败 2 次 + 404/410/451/5xx 算死链", () => {
+    for (const code of [404, 410, 451, 500, 503]) {
+      expect(
+        isDeadLinkHealth(
+          siteHealthState({ ok: false, httpStatus: code, lastCheckedAt: CHECKED, consecutiveFailures: 2 }),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("单次失败不算死链（连续失败 1 次 + 404 只到疑似）", () => {
+    expect(
+      isDeadLinkHealth(
+        siteHealthState({ ok: false, httpStatus: 404, lastCheckedAt: CHECKED, consecutiveFailures: 1 }),
+      ),
+    ).toBe(false);
+  });
+
+  it("401/403/429 反爬与无状态码的探测失败都不算死链", () => {
+    for (const code of [401, 403, 429]) {
+      expect(
+        isDeadLinkHealth(
+          siteHealthState({ ok: false, httpStatus: code, lastCheckedAt: CHECKED, consecutiveFailures: 5 }),
+        ),
+      ).toBe(false);
+    }
+    expect(
+      isDeadLinkHealth(
+        siteHealthState({ ok: false, httpStatus: null, lastCheckedAt: CHECKED, consecutiveFailures: 5 }),
+      ),
+    ).toBe(false);
+  });
+
+  it("SOFT_404 高置信度（>= 0.9）单次只返疑似失效，不算死链；连续两次命中才算", () => {
+    expect(
+      isDeadLinkHealth(
+        siteHealthState({
+          ok: true,
+          httpStatus: 200,
+          lastCheckedAt: CHECKED,
+          auditStatus: "SOFT_404",
+          auditConfidence: 0.95,
+          consecutiveFailures: 1,
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isDeadLinkHealth(
+        siteHealthState({
+          ok: true,
+          httpStatus: 200,
+          lastCheckedAt: CHECKED,
+          auditStatus: "SOFT_404",
+          auditConfidence: 0.95,
+          consecutiveFailures: 2,
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("未巡检（null）与可访问都不算死链", () => {
+    expect(isDeadLinkHealth(null)).toBe(false);
+    expect(isDeadLinkHealth(undefined)).toBe(false);
+    expect(
+      isDeadLinkHealth(siteHealthState({ ok: true, httpStatus: 200, lastCheckedAt: CHECKED })),
+    ).toBe(false);
+  });
+});
+
+describe("接线守卫：卡片徽标已恢复（03 §4.1，2026-11-20 hubId 打通后恢复）", () => {
+  it("卡片用 siteHealthState() 的分级画徽标，Wayback 入口一律用 * 回落（最新快照）", () => {
     const src = overlayFile("src/components/navigation-card.tsx");
-    expect(src).not.toContain("已失效 · 看存档");
-    expect(src).not.toContain("isDeadLinkHealth");
-    expect(src).not.toContain("buildDeadLinkWaybackUrl");
-    expect(src).not.toContain("handleDeadLinkRecovery");
-    expect(src).not.toContain("dead-link");
-    expect(src).not.toContain("item.health?.ok === false");
-    expect(src).not.toContain("快照自愈");
+    expect(src).toContain("siteHealthState(item.health)");
+    expect(src).toContain("CardHealthBadge");
+    // 卡片没有 createdAt：看存档一律用 * 回落，title 写明“查看最近存档快照”，不编假时间戳
+    expect(src).toContain("buildDeadLinkWaybackUrl(href)");
+    expect(src).not.toContain("buildDeadLinkWaybackUrl(item.href, ");
+    expect(src).toContain('title="查看最近存档快照"');
+    // 2026-11-12 移除的历史引用保留一行
+    expect(src).toContain("2026-11-12 移除，hubId 打通后恢复");
+  });
+
+  it("卡片只在疑似失效 / 已失效时出现“看存档”", () => {
+    const src = overlayFile("src/components/navigation-card.tsx");
+    expect(src).toContain("state.state === 'dead' || state.state === 'suspect-soft404'");
   });
 
   it("详情页 Wayback 链接定向到收录时刻（site.createdAt），不再是 *", () => {

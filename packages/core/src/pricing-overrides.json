@@ -1949,14 +1949,14 @@
   "evidence": "官网设免费版与标准版（98元/月）、高级版（198元/月）付费档",
   "title": "千问办公"
  },
- "lingxi.wps.cn": {
+ "lingxi.kdocs.cn": {
   "pricing": "freemium",
   "evidence": "官网设体验版限时免费与标准版（48元/月）、进阶版（128元/月）、旗舰版（398元/月）付费档",
   "title": "WPS 灵犀"
  },
  "doubao.com/work": {
   "pricing": "freemium",
-  "evidence": "官网设免费版与标准套餐（68元/月）、加强套餐（200元/月）、高级套餐（500元/月）付费档",
+  "evidence": "官网设免费版与标准套餐（连续包月 68元/月）、加强套餐（连续包月 200元/月）、高级套餐（连续包月 500元/月）付费档",
   "title": "豆包工作"
  },
  "workbuddy.cn": {
@@ -1966,7 +1966,7 @@
  },
  "dumate.baidu.com/app": {
   "pricing": "freemium",
-  "evidence": "官网设体验版免费与 Pro 版（59元/月）、Max 版（129元/月）付费档",
+  "evidence": "官网设体验版免费与 Pro 版（首月 9.9 元、次月起 59 元/月）、Max 版（首月 69 元、次月起 129 元/月）付费档",
   "title": "百度搭子"
  }
 }

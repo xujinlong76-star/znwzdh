@@ -286,7 +286,7 @@ describe("精选专题（第 5 笔：网购省钱指南、小说影视追更）"
     expect(shopping).toBeDefined();
     if (!shopping) return;
     expect(shopping.acts.flatMap((a) => a.siteUrls)).toContain("https://www.taobao.com");
-    expect(shopping.acts.flatMap((a) => a.siteUrls)).toContain("https://www.jd.com");
+    expect(shopping.acts.flatMap((a) => a.siteUrls)).toContain("https://www.jd.com/?cu=true");
     const novel = getFeaturedEditorial("novel-film-tracking");
     expect(novel).toBeDefined();
     if (!novel) return;
@@ -295,7 +295,7 @@ describe("精选专题（第 5 笔：网购省钱指南、小说影视追更）"
     expect(col1).toBeDefined();
     if (!col1) return;
     expect(seedSiteUrls(col1)).toContain("https://www.taobao.com");
-    expect(seedSiteUrls(col1)).toContain("https://www.jd.com");
+    expect(seedSiteUrls(col1)).toContain("https://www.jd.com/?cu=true");
     const col2 = seedCollection("novel-film-tracking");
     expect(col2).toBeDefined();
     if (!col2) return;

@@ -67,11 +67,29 @@ describe('确定性渐变徽标与自适应 Favicon 生成管线 (Deterministic 
     expect(resolveSiteIcon('https://github.com', 'GitHub', 'https://custom.icon/gh.png')).toBe('https://custom.icon/gh.png')
 
     // 2. 本地高画质 Logo 映射 (ChatGPT, Claude, Vercel, Figma)
-    expect(resolveSiteIcon('https://chatgpt.com', 'ChatGPT')).toBe('/assets/images/logos/chatgpt.webp')
-    expect(resolveSiteIcon('https://claude.ai', 'Claude')).toBe('/assets/images/logos/claude.webp')
-    expect(resolveSiteIcon('https://vercel.com', 'Vercel')).toBe('/assets/images/logos/vercel.webp')
-    expect(resolveSiteIcon('https://figma.com', 'Figma')).toBe('/assets/images/logos/figma.webp')
-    expect(resolveSiteIcon('https://fonts.google.com', 'Google Fonts')).toBe('/assets/images/logos/Materialicons.webp')
+    // U-389 分层修法（2026-11-21）：旧值 /assets/images/logos/* 指向仓库内
+    // 无落盘的上游 vendor 目录；P1/P2/P3 已迁入 git 跟踪的 brand-icons/，
+    // 缺的文件按 served 树字节原样落盘（不只改路径）；文件名按既有品牌
+    // 资产改（chatgpt.svg / claude.svg / vercel.png 等）。本项是资产归属
+    // 问题，不是运行时 404。
+    expect(resolveSiteIcon('https://chatgpt.com', 'ChatGPT')).toBe('/brand-icons/chatgpt.svg')
+    expect(resolveSiteIcon('https://claude.ai', 'Claude')).toBe('/brand-icons/claude.svg')
+    expect(resolveSiteIcon('https://vercel.com', 'Vercel')).toBe('/brand-icons/vercel.png')
+    expect(resolveSiteIcon('https://figma.com', 'Figma')).toBe('/brand-icons/figma.svg')
+    expect(resolveSiteIcon('https://fonts.google.com', 'Google Fonts')).toBe('/brand-icons/Materialicons.webp')
+    // U-389：core 侧独有的重命名映射（overlay 侧同键早已走 brand-icons 裸文件名）。
+    expect(resolveSiteIcon('https://flaticon.com', 'Flaticon')).toBe('/brand-icons/flaticon.png')
+    expect(resolveSiteIcon('https://fontawesome.com', 'Font Awesome')).toBe('/brand-icons/font-awesome.svg')
+    expect(resolveSiteIcon('https://gemini.google.com', 'Gemini')).toBe('/brand-icons/gemini.svg')
+    expect(resolveSiteIcon('https://iconfont.cn', 'Iconfont')).toBe('/brand-icons/iconfont.svg')
+    expect(resolveSiteIcon('https://leonardo.ai', 'Leonardo.Ai')).toBe('/brand-icons/leonardo.png')
+
+    // U-389 P2/P3：死键按分层修法迁入 brand-icons/（不删；文件已落盘），
+    // 解析值与迁前同名文件一致（只改目录前缀 + P2 指定的两个重命名）。
+    expect(resolveSiteIcon('https://chat.openai.com', 'ChatGPT')).toBe('/brand-icons/chatgpt.svg')
+    expect(resolveSiteIcon('https://anthropic.com', 'Anthropic')).toBe('/brand-icons/claude.svg')
+    expect(resolveSiteIcon('https://framer.com', 'Framer')).toBe('/brand-icons/framer.webp')
+    expect(resolveSiteIcon('https://producthunt.com', 'Product Hunt')).toBe('/brand-icons/producthunt.webp')
 
     // 3. 通用域名直取站点自身 favicon（历史上的 icon.horse CDN 已移除：不再外泄浏览记录）
     expect(resolveSiteIcon('https://github.com/features/copilot', 'GitHub Copilot')).toBe('https://github.com/favicon.ico')
@@ -87,7 +105,8 @@ describe('确定性渐变徽标与自适应 Favicon 生成管线 (Deterministic 
     expect(isThirdPartyIconUrl('https://www.google.com/s2/favicons?domain=x.com')).toBe(true)
     expect(isThirdPartyIconUrl('https://icons.duckduckgo.com/ip3/x.com.ico')).toBe(true)
     expect(isThirdPartyIconUrl('https://github.com/favicon.ico')).toBe(false)
-    expect(isThirdPartyIconUrl('/assets/images/logos/chatgpt.webp')).toBe(false) // 相对路径不误伤
+    // U-389（2026-11-21）：相对路径示例随同名引用迁入 brand-icons/，仍为相对路径。
+    expect(isThirdPartyIconUrl('/brand-icons/chatgpt.svg')).toBe(false) // 相对路径不误伤
 
     // 6. 机器生成的 icon URL 净化：第三方服务 -> null（视同没有），其余去空白保留
     expect(sanitizeIconUrl('https://icon.horse/icon/v2ex.com')).toBeNull()

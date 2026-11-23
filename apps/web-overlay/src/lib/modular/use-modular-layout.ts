@@ -417,7 +417,7 @@ export function useModularLayout() {
 
     const newBoard: Board = {
       id: newBoardId,
-      name: name.trim() || `新看板 ${new Date().toLocaleDateString('zh-CN')}`,
+      name: name.trim() || `新看板 ${new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
       widgets: newWidgets,
     }
 

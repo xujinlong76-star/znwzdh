@@ -95,6 +95,8 @@ import {
 } from '@/lib/favorites-semantic-search'
 import { useMergedVisits } from '@/lib/resurface-visits'
 import { describeResurfaced, daysSinceOpen, latestVisitsById, selectStaleFavorites, staleBadgeLabel } from '@/lib/resurface'
+import { OFFLINE_RECENT_LIMIT, readOfflineVisits, recordOfflineVisit, type RecentVisit } from '@/lib/offline-recent'
+import { FREQUENT_UNFAVORITED_LIMIT, selectFrequentUnfavoritedVisits } from '@/lib/frequent-unfavorited'
 import { encryptVault, decryptVault, type EncryptedVaultPayload } from '@/lib/vault'
 import { UserCenterNav } from '@/components/user-center/user-center-nav'
 import { StarredPluginsSection } from './starred-plugins-section'
@@ -107,7 +109,7 @@ import {
 import {
   Shield, KeyRound, CheckCircle2, AlertTriangle, EyeOff,
   RefreshCw, CloudOff, Search, X, Package, Folder, FolderPlus, Pencil, Trash2, Check, LogIn, ChevronUp, ChevronDown, Tag,
-  Download, FileUp, CheckSquare, Square, Layers, Zap, Inbox, Link2, Moon, Sun,
+  Download, FileUp, CheckSquare, Square, Layers, Zap, Inbox, Link2, Moon, Sun, Star,
 } from 'lucide-react'
 import {
   exportFavoritesToHtml,
@@ -282,6 +284,32 @@ export default function FavoritesPage() {
     if (favorites.items.length === 0) return new Map<string, ReturnType<typeof selectStaleFavorites>[number]>()
     return new Map(selectStaleFavorites(favorites.items, recentVisits, Date.now()).map((s) => [s.siteId, s]))
   }, [favorites.items, recentVisits])
+  // 「常去却未收藏」：频率信号只取本机快照——useMergedVisits 的合并 visits
+  // 是 ResurfaceVisitLike（无 count），登录用户另一设备的高频点击不进榜，
+  // 文案因此写“按本机记录算”（与 stale 横幅同口径）。
+  const [localVisits, setLocalVisits] = useState<RecentVisit[]>([])
+  const [unfavoritedDismissed, setUnfavoritedDismissed] = useState(false)
+  useEffect(() => {
+    let alive = true
+    readOfflineVisits(OFFLINE_RECENT_LIMIT)
+      .then((list) => {
+        if (alive) setLocalVisits(list)
+      })
+      .catch(() => {
+        // 本地读取失败保持空区不渲染，不阻断收藏列表本身
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+  const unfavoritedFrequent = useMemo(() => {
+    if (unfavoritedDismissed || localVisits.length === 0) return []
+    return selectFrequentUnfavoritedVisits(
+      localVisits,
+      new Set(favorites.items.map((f) => f.siteId)),
+      FREQUENT_UNFAVORITED_LIMIT,
+    )
+  }, [localVisits, favorites.items, unfavoritedDismissed])
   /**
    * 冬眠徽标快查（所有视图共用，不只分区态）：有关键词 / 夹 / 状态筛选时分区
    * 不生效，但冬眠条目仍挂「冬眠中」徽标，用户才知道它为什么平时沉在底下。
@@ -1542,6 +1570,64 @@ export default function FavoritesPage() {
               去重温
             </Link>
           </div>
+        )}
+
+        {/* 常去却未收藏：本机记录里常点（≥3 次）却从没收藏的站，给一个一键收藏
+            入口——换设备 / 清数据也不丢直达路径。反向是上面的「好久没打开」。
+            无建议时整区不渲染；点收藏成功后该条随 favorites.items 更新自动消失；
+            收藏写失败时行保留原位（页顶已有存储阻塞横幅兜底说明原因）。 */}
+        {unfavoritedFrequent.length > 0 && (
+          <section aria-label="常去却未收藏" className="rounded-xl border border-border/70 bg-card/50 p-3 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Star className="h-3.5 w-3.5" />
+                常去却未收藏
+              </span>
+              <span className="text-xs text-muted-foreground">按本机记录算，最近常去、还没收藏的站</span>
+              <span className="ml-auto" />
+              <button
+                type="button"
+                onClick={() => setUnfavoritedDismissed(true)}
+                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+              >
+                不再提示
+              </button>
+            </div>
+            <ul className="space-y-1.5">
+              {unfavoritedFrequent.map((visit) => (
+                <li key={visit.id} className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/60 px-2 py-1.5 text-xs">
+                  <span className="w-5 h-5 shrink-0 flex items-center justify-center">
+                    <SiteFavicon title={visit.title} url={visit.href} icon={visit.icon} className="w-5 h-5 object-contain rounded" />
+                  </span>
+                  <a
+                    href={safeHref(visit.href)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => recordOfflineVisit(visit)}
+                    className="min-w-0 flex-1 truncate font-medium text-foreground hover:text-primary"
+                  >
+                    {visit.title}
+                  </a>
+                  <span className="shrink-0 text-muted-foreground">最近常去 · {visit.count ?? 1} 次</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void favorites.toggle({
+                        siteId: visit.id,
+                        title: visit.title,
+                        href: visit.href,
+                        icon: visit.icon ?? undefined,
+                      })
+                    }}
+                    className="shrink-0 inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 font-medium text-foreground hover:bg-accent"
+                  >
+                    <Star className="h-3.5 w-3.5" />
+                    收藏
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
 
         {/* 待读分流：结算写已移出区失败时，过期项还留在原处——原因必须说出来 */}

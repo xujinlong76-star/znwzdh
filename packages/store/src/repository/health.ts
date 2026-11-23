@@ -213,3 +213,111 @@ export async function getSiteQualityAssessment(
     updatedAt: Number(row.updated_at),
   };
 }
+
+
+export interface SiteQualityOverview {
+  totalSites: number;
+  assessedSites: number;
+  unassessedSites: number;
+  highRiskCount: number;
+  insufficientEvidenceCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  averageScore: number | null;
+  averageEvidenceCoverage: number | null;
+  lastEvaluatedAt: number | null;
+}
+
+export interface SiteQualityListItem extends SiteQualityAssessmentRecord {
+  title: string;
+  url: string;
+  categoryId: string;
+  status: string;
+}
+
+function qualityRecordFromRow(row: Record<string, unknown>): SiteQualityAssessmentRecord {
+  return {
+    siteId: String(row.site_id),
+    version: String(row.version) as SiteQualityResult["version"],
+    evaluatedAt: Number(row.evaluated_at),
+    score: row.overall_score == null ? null : Number(row.overall_score),
+    evidenceCoverage: Number(row.evidence_coverage),
+    observedDimensions: Number(row.observed_dimensions),
+    riskScore: row.risk_score == null ? null : Number(row.risk_score),
+    band: String(row.band) as SiteQualityResult["band"],
+    dimensions: JSON.parse(String(row.dimensions_json)) as SiteQualityResult["dimensions"],
+    updatedAt: Number(row.updated_at),
+  };
+}
+
+/** 质量治理列表：风险优先、证据不足次之；不包含软删除站点。 */
+export async function listSiteQualityAssessments(
+  repo: Repository,
+  options: { band?: SiteQualityResult["band"]; limit?: number; offset?: number } = {},
+): Promise<SiteQualityListItem[]> {
+  const where = ["s.deleted_at IS NULL"];
+  const params: unknown[] = [];
+  if (options.band) {
+    where.push("q.band = ?");
+    params.push(options.band);
+  }
+  const limit = Math.min(100, Math.max(1, Math.floor(options.limit ?? 50)));
+  const offset = Math.max(0, Math.floor(options.offset ?? 0));
+  const rows = await repo.raw(
+    `SELECT q.*, s.title, s.url, s.category_id, s.status
+       FROM site_quality_assessments q
+       JOIN sites s ON s.id = q.site_id
+      WHERE ${where.join(" AND ")}
+      ORDER BY CASE q.band
+        WHEN 'high_risk' THEN 0
+        WHEN 'insufficient_evidence' THEN 1
+        WHEN 'low' THEN 2
+        WHEN 'medium' THEN 3
+        ELSE 4 END,
+        q.overall_score ASC, q.updated_at DESC, q.site_id ASC
+      LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  );
+  return rows.map((row) => ({
+    ...qualityRecordFromRow(row),
+    title: String(row.title ?? ""),
+    url: String(row.url ?? ""),
+    categoryId: String(row.category_id ?? ""),
+    status: String(row.status ?? ""),
+  }));
+}
+
+/** 质量总览把「尚未评估」单独列出，不把缺少快照的站点当作零分。 */
+export async function siteQualityOverview(repo: Repository): Promise<SiteQualityOverview> {
+  const [siteRows, rows] = await Promise.all([
+    repo.raw("SELECT COUNT(*) AS total FROM sites WHERE deleted_at IS NULL"),
+    repo.raw(`SELECT
+      COUNT(*) AS assessed,
+      SUM(CASE WHEN band = 'high_risk' THEN 1 ELSE 0 END) AS high_risk,
+      SUM(CASE WHEN band = 'insufficient_evidence' THEN 1 ELSE 0 END) AS insufficient,
+      SUM(CASE WHEN band = 'high' THEN 1 ELSE 0 END) AS high_count,
+      SUM(CASE WHEN band = 'medium' THEN 1 ELSE 0 END) AS medium_count,
+      SUM(CASE WHEN band = 'low' THEN 1 ELSE 0 END) AS low_count,
+      AVG(overall_score) AS average_score,
+      AVG(evidence_coverage) AS average_coverage,
+      MAX(evaluated_at) AS last_evaluated_at
+      FROM site_quality_assessments`),
+  ]);
+  const totalSites = Number(siteRows[0]?.total ?? 0);
+  const row = rows[0] ?? {};
+  const assessedSites = Number(row.assessed ?? 0);
+  return {
+    totalSites,
+    assessedSites,
+    unassessedSites: Math.max(0, totalSites - assessedSites),
+    highRiskCount: Number(row.high_risk ?? 0),
+    insufficientEvidenceCount: Number(row.insufficient ?? 0),
+    highCount: Number(row.high_count ?? 0),
+    mediumCount: Number(row.medium_count ?? 0),
+    lowCount: Number(row.low_count ?? 0),
+    averageScore: row.average_score == null ? null : Number(Number(row.average_score).toFixed(2)),
+    averageEvidenceCoverage: row.average_coverage == null ? null : Number(Number(row.average_coverage).toFixed(2)),
+    lastEvaluatedAt: row.last_evaluated_at == null ? null : Number(row.last_evaluated_at),
+  };
+}

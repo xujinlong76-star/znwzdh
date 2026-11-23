@@ -54,6 +54,7 @@ interface QualityResponse {
   ok: boolean
   summary: QualitySummary
   items: QualityItem[]
+  total: number
   limit: number
   offset: number
   band: string
@@ -124,7 +125,7 @@ export default function SiteQualityAdminPage() {
   }, [load])
 
   const summary = data?.summary
-  const hasMore = Boolean(data && data.items.length < (filter === 'all' ? data.summary.assessedSites : data.items.length + (data.items.length === PAGE_SIZE ? 1 : 0)))
+  const hasMore = Boolean(data && data.items.length < data.total)
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-3 sm:p-6">

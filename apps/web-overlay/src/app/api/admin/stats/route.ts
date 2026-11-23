@@ -18,7 +18,7 @@ export async function GET() {
 
     // 计算一级分类数量
     const parentCategories = navigationItems.length
-    console.log('Parent categories:', parentCategories)
+    console.error('Parent categories:', parentCategories)
 
     // 计算二级分类数量
     const subCategories = navigationItems.reduce((total: number, category: NavigationItem) => {
@@ -50,7 +50,7 @@ export async function GET() {
       totalSites
     }
 
-    console.log('Sending stats:', result)
+    console.error('Sending stats:', result)
     return NextResponse.json(result)
   } catch (error) {
     console.error('Failed to fetch stats:', error)

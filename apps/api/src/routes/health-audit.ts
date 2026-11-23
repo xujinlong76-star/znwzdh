@@ -13,11 +13,13 @@ import { z } from "zod";
 import {
   runAutonomousHealing,
   httpUrl,
+  evaluateSiteQuality,
   SiteAuditApplyInput,
   type SiteHealthAuditSummary,
   type SiteHealthAuditIssue,
 } from "@navhub/core";
 import { indexSite } from "../index-site.ts";
+import { buildSiteQualityAssessments } from "../site-quality-assessment.ts";
 import { llmProviderReady, resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../llm-quota.ts";
@@ -175,6 +177,36 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       diff: { siteId: site.id, created, source: candidate.source },
     });
     return { ok: true, created, site, candidate: reviewed };
+  });
+
+  /**
+   * 分批补算既有站点质量快照。只读取现有目录字段与巡检历史，不发起外网请求。
+   */
+  app.post("/api/admin/quality/rebuild", { config: { scope: "write", rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const body = z.object({
+      offset: z.coerce.number().int().min(0).max(100_000).default(0),
+      limit: z.coerce.number().int().min(1).max(100).default(50),
+    }).safeParse(req.body ?? {});
+    if (!body.success) {
+      reply.code(400);
+      return { ok: false, error: "补算参数无效", details: body.error.issues };
+    }
+    const sites = await ctx.repo.listSites({ limit: body.data.limit, offset: body.data.offset });
+    let saved = 0;
+    for (const site of sites) {
+      const samples = await ctx.repo.recentHealthChecks(site.id, 5);
+      const dimensions = buildSiteQualityAssessments(site, samples);
+      const assessment = evaluateSiteQuality(dimensions);
+      await ctx.repo.saveSiteQualityAssessment(site.id, assessment);
+      saved += 1;
+    }
+    const nextOffset = sites.length === body.data.limit ? body.data.offset + sites.length : null;
+    await ctx.repo.audit({
+      ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
+      action: "quality.shadow_rebuild",
+      diff: { offset: body.data.offset, requested: body.data.limit, saved, nextOffset },
+    });
+    return { ok: true, saved, offset: body.data.offset, nextOffset, done: nextOffset === null };
   });
 
   /**

@@ -446,6 +446,30 @@ export const siteQualityAssessments = sqliteTable("site_quality_assessments", {
   updatedAt: integer("updated_at").notNull(),
 }, (t) => [index("site_quality_assessments_band_idx").on(t.band)]);
 
+export const siteDiscoveryCandidates = sqliteTable("site_discovery_candidates", {
+  id: text("id").primaryKey(),
+  url: text("url").notNull(),
+  canonicalUrl: text("canonical_url").notNull().unique(),
+  title: text("title"),
+  description: text("description"),
+  categoryId: text("category_id"),
+  tagsJson: text("tags_json").notNull().default("[]"),
+  source: text("source").notNull(),
+  confidence: real("confidence"),
+  evidenceJson: text("evidence_json").notNull().default("{}"),
+  status: text("status").notNull().default("pending"),
+  siteId: text("site_id"),
+  discoveredAt: integer("discovered_at").notNull(),
+  lastSeenAt: integer("last_seen_at").notNull(),
+  reviewedAt: integer("reviewed_at"),
+  reviewedBy: text("reviewed_by"),
+  rejectionReason: text("rejection_reason"),
+  updatedAt: integer("updated_at").notNull(),
+}, (t) => [
+  index("site_discovery_candidates_status_idx").on(t.status, t.discoveredAt),
+  index("site_discovery_candidates_site_idx").on(t.siteId),
+]);
+
 export const auditLogs = sqliteTable("audit_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   actor: text("actor").notNull(),

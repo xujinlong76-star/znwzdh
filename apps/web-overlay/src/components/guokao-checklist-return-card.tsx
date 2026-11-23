@@ -69,8 +69,8 @@ export function guokaoReturnCardContent(nowMs: number): GuokaoReturnCardContent 
  * 首页回访卡客户端组件。模式照抄 GuokaoAdmissionReminderIsland：
  * 挂载前渲染 null（门控依赖客户端时间，SSR 直出会在午夜边界与水合结果差一天），
  * 挂载后 60 秒 tick 按绝对时刻重算门控（15:00 边界最长迟 1 分钟翻态）。
- * 挂载点（下一步，另轮）：navigation-content.tsx，HomeSubtitleHint 之后、
- * 胶囊行之前，dynamic(ssr: false) 按需加载，本文件不负责挂载。
+ * 挂载点（已落地 2026-11-23）：navigation-content.tsx，HomeSubtitleHint 之后、
+ * C4 卡之上（胶囊行之前），dynamic(ssr: false) 按需加载，本文件不负责挂载。
  */
 export function GuokaoChecklistReturnCard() {
   const [now, setNow] = useState<number | null>(null)

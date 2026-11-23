@@ -188,8 +188,11 @@ describe('「常去却未收藏」岛守卫', () => {
     expect(page.indexOf('<BriefTriage />')).toBeGreaterThan(page.indexOf('<BriefFrequentUnfavorited />'))
     const island = read('src/app/brief/brief-frequent-unfavorited.tsx')
     expect(island).toContain("'use client'")
-    // 无建议或收藏未就绪时安静消失，不拿空盒子占版面
-    expect(island).toContain('if (!favorites.ready || picks.length === 0) return null')
+    // 无建议且无已忽略 id 时安静消失，不拿空盒子占版面；O5：有已忽略 id
+    // 时空态仍渲染恢复行，否则正是需要恢复入口时它不在
+    expect(island).toContain('if (!favorites.ready) return null')
+    expect(island).toContain('if (picks.length === 0) {')
+    expect(island).toContain('if (dismissedIds.length === 0) return null')
     // 频率信号读本机快照，不用无 count 的合并 visits
     expect(island).toContain('readOfflineVisits(OFFLINE_RECENT_LIMIT)')
     expect(island).toContain('selectFrequentUnfavoritedVisits')
@@ -203,6 +206,13 @@ describe('「常去却未收藏」岛守卫', () => {
     expect(island).toContain('writeDismissedIds(next)')
     expect(island).toContain('addDismissedId')
     expect(island).not.toContain('setDismissed(true)')
+    // O5：误点「不再提示」可逆——恢复入口与 dismiss 对称，清掉已忽略 id
+    // 并写回同一键（与 /favorites 共用），空态有已忽略 id 时仍渲染恢复行
+    expect(island).toContain('restoreDismissed')
+    expect(island).toContain('重新提示')
+    expect(island).toContain('writeDismissedIds([])')
+    expect(island).toContain('aria-label="已忽略的常去建议"')
+    expect(island).toContain('已忽略 {dismissedIds.length} 条')
     // 口径写清是本机记录，不谎称跨设备准确
     expect(island).toContain('按本机记录算')
     // 岛不调任何 /api，不新增请求

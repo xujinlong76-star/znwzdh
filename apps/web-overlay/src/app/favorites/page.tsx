@@ -346,6 +346,13 @@ export default function FavoritesPage() {
     setUnfavoritedDismissedIds(next)
     writeDismissedFrequentIds(next)
   }
+  // O5（2026-11-24 01:22 轮）：「不再提示」误点可逆——与 dismiss 对称的恢复入口，
+  // 照抄 smart-collections-panel 的 showDismissedAgain：清空已忽略 id 并落盘，
+  // 仍达标的站当场重回榜单，恢复行随之消失（恢复本身就是反馈，不另加提示态）。
+  const restoreUnfavoritedDismissed = () => {
+    setUnfavoritedDismissedIds([])
+    writeDismissedFrequentIds([])
+  }
   /**
    * 冬眠徽标快查（所有视图共用，不只分区态）：有关键词 / 夹 / 状态筛选时分区
    * 不生效，但冬眠条目仍挂「冬眠中」徽标，用户才知道它为什么平时沉在底下。
@@ -1621,6 +1628,15 @@ export default function FavoritesPage() {
               </span>
               <span className="text-xs text-muted-foreground">按本机记录算，最近常去、还没收藏的站</span>
               <span className="ml-auto" />
+              {unfavoritedDismissedIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={restoreUnfavoritedDismissed}
+                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                >
+                  重新提示
+                </button>
+              )}
               <button
                 type="button"
                 onClick={dismissUnfavoritedVisible}
@@ -1663,6 +1679,26 @@ export default function FavoritesPage() {
                 </li>
               ))}
             </ul>
+          </section>
+        )}
+
+        {/* O5（2026-11-24 01:22 轮）：全部建议都被「不再提示」后建议区整区消失，
+            恢复入口必须在空态下仍可见——否则正是需要它时它不在。只在有已忽略
+            id 时渲染；点「重新提示」后仍达标的站重回上区，本行随之消失。 */}
+        {unfavoritedFrequent.length === 0 && unfavoritedDismissedIds.length > 0 && (
+          <section aria-label="已忽略的常去建议" className="rounded-xl border border-border/70 bg-card/50 p-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="flex-1 min-w-0">
+                已忽略 {unfavoritedDismissedIds.length} 条「常去却未收藏」建议
+              </span>
+              <button
+                type="button"
+                onClick={restoreUnfavoritedDismissed}
+                className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+              >
+                重新提示
+              </button>
+            </div>
           </section>
         )}
 

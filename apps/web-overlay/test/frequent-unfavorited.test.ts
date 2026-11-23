@@ -10,6 +10,9 @@
  *  - R13（2026-11-24 00:22 轮 W3）：「不再提示」按站 id 持久化——纯函数半
  *    断言 filterDismissedVisits + serialize→parse 落盘重读后重算仍排除；
  *    接线半断言两处（岛 + /favorites）都读/写同一个 localStorage 键。
+ *  - O5（2026-11-24 01:22 轮 W3）：误点「不再提示」可逆——恢复 = 清空
+ *    dismissedIds 写回同一键，站重回榜单；接线半断言两处都有「重新提示」
+ *    入口，且空态（无建议但有已忽略 id）下恢复行仍渲染。
  *  - 真浏览器挂载后的行为（IndexedDB 回填、点「收藏」后行消失、360px 视觉）
  *    无法在 node 环境测，缺口如实记在这里，等 E2E/人工验收。
  */
@@ -161,6 +164,28 @@ describe('R13：不再提示按站 id 持久化（刷新/重挂后已 dismissed 
   })
 })
 
+describe('O5：重新提示——误点「不再提示」可逆（2026-11-24 01:22 轮）', () => {
+  it('恢复语义：清空 dismissed 后，该站重回榜单（与 dismiss 对称）', () => {
+    const dismissed = parseDismissedIds(serializeDismissedIds(addDismissedId([], 'often-old')))
+    const hidden = selectFrequentUnfavoritedVisits(
+      filterDismissedVisits(MIXED, dismissed),
+      new Set(['faved-often']),
+    )
+    expect(hidden.map((v) => v.id)).toEqual(['mid'])
+    // 恢复 = 把 dismissedIds 清空（写 [] 回同一键），不再过滤
+    const restored = selectFrequentUnfavoritedVisits(
+      filterDismissedVisits(MIXED, parseDismissedIds(serializeDismissedIds([]))),
+      new Set(['faved-often']),
+    )
+    expect(restored.map((v) => v.id)).toEqual(['often-old', 'mid'])
+  })
+
+  it('恢复不碰其他站：只清 dismissed 列表，不改选榜门槛与上限', () => {
+    expect(selectFrequentUnfavoritedVisits(MIXED, new Set(['faved-often']))).toHaveLength(2)
+    expect(FREQUENT_UNFAVORITED_LIMIT).toBe(3)
+  })
+})
+
 describe('/favorites 建议区接线（源码守卫）', () => {
   const page = readSrc('src/app/favorites/page.tsx')
   it('页面存在且读得到', () => {
@@ -208,6 +233,19 @@ describe('/favorites 建议区接线（源码守卫）', () => {
     expect(page).toContain('addDismissedId')
     expect(page).not.toContain('setUnfavoritedDismissed(true)')
     expect(page).not.toContain('const [unfavoritedDismissed, setUnfavoritedDismissed]')
+  })
+
+  it('O5：误点「不再提示」可逆——恢复入口与 dismiss 对称，清掉已忽略 id', () => {
+    expect(page).toContain('restoreUnfavoritedDismissed')
+    expect(page).toContain('重新提示')
+    expect(page).toContain('writeDismissedFrequentIds([])')
+    expect(page).toContain('setUnfavoritedDismissedIds([])')
+  })
+
+  it('O5：空态下恢复入口仍可见——全部建议被忽略后建议区消失，恢复行不消失', () => {
+    expect(page).toContain('unfavoritedFrequent.length === 0 && unfavoritedDismissedIds.length > 0')
+    expect(page).toContain('aria-label="已忽略的常去建议"')
+    expect(page).toContain('已忽略 {unfavoritedDismissedIds.length} 条')
   })
 
   it('不新增数据源、不碰红线：建议区不调任何 /api，不提 17K/书旗', () => {

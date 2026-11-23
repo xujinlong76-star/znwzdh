@@ -110,9 +110,38 @@ export default function BriefFrequentUnfavorited() {
     writeDismissedIds(next)
   }
 
+  // O5（2026-11-24 01:22 轮）：与 dismiss 对称的恢复入口，照抄
+  // smart-collections-panel 的 showDismissedAgain：清空已忽略 id 并落盘，
+  // 与 /favorites 建议区共用同一个键，一处恢复、两处同时回来。
+  const restoreDismissed = () => {
+    setDismissedIds([])
+    writeDismissedIds([])
+  }
+
   // 收藏未就绪前不渲染：items 为空时算出的建议可能含已收藏站，闪一下
   // 再消失比不出现更坏；与 BriefResurface 的 favorites.ready 门同款。
-  if (!favorites.ready || picks.length === 0) return null
+  // O5：无建议时仍可能有已忽略的站——恢复入口必须在空态下可见，否则
+  // 正是需要它时它不在；只有既无建议又无已忽略 id 时才安静消失。
+  if (!favorites.ready) return null
+  if (picks.length === 0) {
+    if (dismissedIds.length === 0) return null
+    return (
+      <section aria-label="已忽略的常去建议" className="rounded-xl border bg-card p-4">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="flex-1 min-w-0">
+            已忽略 {dismissedIds.length} 条「常去却未收藏」建议
+          </span>
+          <button
+            type="button"
+            onClick={restoreDismissed}
+            className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+          >
+            重新提示
+          </button>
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section aria-label="常去却未收藏" className="rounded-xl border bg-card p-4">
@@ -161,7 +190,16 @@ export default function BriefFrequentUnfavorited() {
           </li>
         ))}
       </ul>
-      <div className="mt-3 text-right">
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-3">
+        {dismissedIds.length > 0 && (
+          <button
+            type="button"
+            onClick={restoreDismissed}
+            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+          >
+            重新提示
+          </button>
+        )}
         <button
           type="button"
           onClick={dismissVisible}

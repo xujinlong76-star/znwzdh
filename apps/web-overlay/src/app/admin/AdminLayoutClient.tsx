@@ -34,6 +34,7 @@ import {
   Bot,
   DatabaseBackup,
   HeartPulse,
+  ShieldCheck,
 } from "lucide-react"
 import { cn } from '@/lib/utils'
 import {
@@ -56,7 +57,6 @@ import {
 } from "@/registry/new-york/ui/sheet"
 import { Avatar, AvatarImage, AvatarFallback } from "@/registry/new-york/ui/avatar"
 import { useTheme } from "next-themes"
-import { ShieldCheck } from "lucide-react"
 
 interface AdminLayoutClientProps {
   children: React.ReactNode

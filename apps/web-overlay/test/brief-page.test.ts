@@ -195,6 +195,14 @@ describe('「常去却未收藏」岛守卫', () => {
     expect(island).toContain('selectFrequentUnfavoritedVisits')
     // 一键收藏走现有 favorites.toggle
     expect(island).toContain('favorites.toggle({')
+    // R13：不再提示按站 id 持久化到 localStorage（与 /favorites 共用同一个
+    // 键），不是当次会话布尔——刷新 / 离开再回来也不再出现
+    expect(island).toContain('FREQUENT_UNFAVORITED_DISMISSED_KEY')
+    expect(island).toContain('filterDismissedVisits(localVisits, dismissedIds)')
+    expect(island).toContain('readDismissedIds()')
+    expect(island).toContain('writeDismissedIds(next)')
+    expect(island).toContain('addDismissedId')
+    expect(island).not.toContain('setDismissed(true)')
     // 口径写清是本机记录，不谎称跨设备准确
     expect(island).toContain('按本机记录算')
     // 岛不调任何 /api，不新增请求

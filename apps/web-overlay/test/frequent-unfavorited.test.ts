@@ -7,6 +7,9 @@
  *    时间分与频率分趋近 0，排序由 count 主导；
  *  - 接线半：/favorites 页的建议区只做源码断言（页面本体太大，renderToString
  *    不现实；与 stale 横幅同款——它也是内联渲染、无独立渲染测试）；
+ *  - R13（2026-11-24 00:22 轮 W3）：「不再提示」按站 id 持久化——纯函数半
+ *    断言 filterDismissedVisits + serialize→parse 落盘重读后重算仍排除；
+ *    接线半断言两处（岛 + /favorites）都读/写同一个 localStorage 键。
  *  - 真浏览器挂载后的行为（IndexedDB 回填、点「收藏」后行消失、360px 视觉）
  *    无法在 node 环境测，缺口如实记在这里，等 E2E/人工验收。
  */
@@ -15,10 +18,13 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
+  FREQUENT_UNFAVORITED_DISMISSED_KEY,
   FREQUENT_UNFAVORITED_LIMIT,
   FREQUENT_UNFAVORITED_MIN_USES,
+  filterDismissedVisits,
   selectFrequentUnfavoritedVisits,
 } from '../src/lib/frequent-unfavorited'
+import { addDismissedId, parseDismissedIds, serializeDismissedIds } from '../src/lib/smart-collections'
 import { MRU_MIN_USES_FOR_BOOST, type RecentVisit } from '../src/lib/offline-recent'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -115,6 +121,46 @@ describe('selectFrequentUnfavoritedVisits', () => {
   })
 })
 
+describe('R13：不再提示按站 id 持久化（刷新/重挂后已 dismissed 的站不再出现）', () => {
+  it('键名照抄 smart-collections 范式：同命名空间、版本号后缀', () => {
+    expect(FREQUENT_UNFAVORITED_DISMISSED_KEY).toBe(
+      'navhub.favorites.frequent-unfavorited.dismissed.v1',
+    )
+  })
+
+  it('filterDismissedVisits：只去掉被点的站，其余原样保留', () => {
+    const out = filterDismissedVisits(MIXED, ['often-old'])
+    expect(out.map((v) => v.id)).toEqual(['once-new', 'twice', 'mid', 'faved-often'])
+  })
+
+  it('filterDismissedVisits：空 dismissed 返回拷贝，不改输入', () => {
+    const input = [...MIXED]
+    expect(filterDismissedVisits(input, [])).toEqual(MIXED)
+    expect(input).toEqual(MIXED)
+  })
+
+  it('刷新/重挂模拟：dismissed 经 serialize→parse 落盘重读后，该站仍不进榜', () => {
+    const persisted = serializeDismissedIds(addDismissedId([], 'often-old'))
+    const reloaded = parseDismissedIds(persisted)
+    const out = selectFrequentUnfavoritedVisits(
+      filterDismissedVisits(MIXED, reloaded),
+      new Set(['faved-often']),
+    )
+    expect(out.map((v) => v.id)).toEqual(['mid'])
+  })
+
+  it('不整区永久屏蔽：被点掉的站腾出的名额由下一达标站补上', () => {
+    const many = Array.from({ length: 5 }, (_, i) =>
+      visit(`site-${i}`, `站 ${i}`, 1000 + i, 5 + i),
+    )
+    const out = selectFrequentUnfavoritedVisits(filterDismissedVisits(many, ['site-4']), new Set())
+    expect(out).toHaveLength(3)
+    expect(out.map((v) => v.id)).not.toContain('site-4')
+    // 若先选榜再过滤，site-4 占掉一个名额后只剩 2 条；先过滤再选榜才补满 3 条
+    expect(out.map((v) => v.id)).toContain('site-1')
+  })
+})
+
 describe('/favorites 建议区接线（源码守卫）', () => {
   const page = readSrc('src/app/favorites/page.tsx')
   it('页面存在且读得到', () => {
@@ -151,7 +197,17 @@ describe('/favorites 建议区接线（源码守卫）', () => {
 
   it('有「不再提示」关闭入口，不强求用户收藏', () => {
     expect(page).toContain('不再提示')
-    expect(page).toContain('setUnfavoritedDismissed(true)')
+    expect(page).toContain('dismissUnfavoritedVisible')
+  })
+
+  it('R13：不再提示按站 id 持久化到 localStorage，不是当次会话布尔', () => {
+    expect(page).toContain('FREQUENT_UNFAVORITED_DISMISSED_KEY')
+    expect(page).toContain('readDismissedFrequentIds()')
+    expect(page).toContain('writeDismissedFrequentIds(next)')
+    expect(page).toContain('filterDismissedVisits(localVisits, unfavoritedDismissedIds)')
+    expect(page).toContain('addDismissedId')
+    expect(page).not.toContain('setUnfavoritedDismissed(true)')
+    expect(page).not.toContain('const [unfavoritedDismissed, setUnfavoritedDismissed]')
   })
 
   it('不新增数据源、不碰红线：建议区不调任何 /api，不提 17K/书旗', () => {

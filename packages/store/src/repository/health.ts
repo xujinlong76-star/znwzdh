@@ -302,7 +302,9 @@ export async function siteQualityOverview(repo: Repository): Promise<SiteQuality
       AVG(overall_score) AS average_score,
       AVG(evidence_coverage) AS average_coverage,
       MAX(evaluated_at) AS last_evaluated_at
-      FROM site_quality_assessments`),
+      FROM site_quality_assessments q
+      JOIN sites s ON s.id = q.site_id
+      WHERE s.deleted_at IS NULL`),
   ]);
   const totalSites = Number(siteRows[0]?.total ?? 0);
   const row = rows[0] ?? {};

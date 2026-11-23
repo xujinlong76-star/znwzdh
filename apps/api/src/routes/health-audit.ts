@@ -133,16 +133,16 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       return { ok: true, candidate: reviewed };
     }
 
-    let categoryId = body.data.categoryId ?? candidate.categoryId;
+    let categoryId: string | null = body.data.categoryId ?? candidate.categoryId;
     if (categoryId) {
       const categoryCheck = await ctx.repo.checkSiteCategoryAttachment(categoryId);
       if (!categoryCheck.ok) {
         reply.code(400);
         return { ok: false, error: "分类不可用于站点入库", detail: categoryCheck.error };
       }
-      categoryId = categoryCheck.categoryId ?? undefined;
+      categoryId = categoryCheck.categoryId;
     }
-    categoryId ??= await ctx.repo.ensureUncategorized();
+    const resolvedCategoryId = categoryId ?? await ctx.repo.ensureUncategorized();
 
     let site = await ctx.repo.findSiteByUrl(candidate.url);
     let created = false;
@@ -151,7 +151,7 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
         url: candidate.url,
         title: candidate.title || new URL(candidate.url).hostname,
         description: candidate.description,
-        categoryId,
+        categoryId: resolvedCategoryId,
         tags: candidate.tags,
         source: candidate.source,
         status: "active",

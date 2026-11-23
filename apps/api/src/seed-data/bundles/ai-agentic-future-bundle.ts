@@ -17,7 +17,7 @@ export const aiAgenticFutureBundle: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
     tags: ["AI", "Agent", "MCP", "全家桶", "组合包", "前沿生态"],
     payload: {
       items: [

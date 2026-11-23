@@ -15,7 +15,7 @@ export const macSonomaGlass: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.1",
+    version: "1.0.2",
     tags: ["主题","深色","macOS","现代"],
     payload: {
       "accent": "system-blue",

@@ -19,7 +19,7 @@ export const seedDataWorkbench: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "2.0.1",
+    version: "2.0.2",
     compat: { minAppVersion: "0.1.0" },
     tags: ["工作台", "看板", "效率", "数据"],
     payload: {

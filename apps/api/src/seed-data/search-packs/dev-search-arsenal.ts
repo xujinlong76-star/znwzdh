@@ -22,7 +22,7 @@ export const devSearchArsenal: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "2.1.0",
+    version: "2.1.1",
     tags: ["搜索", "极客", "GitHub", "npm", "MDN", "云原生", "工具"],
     payload: {
       engines: [

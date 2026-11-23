@@ -24,7 +24,7 @@ export const newsReaderBundle: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
     tags: ["组合包", "资讯", "阅读", "起步"],
     payload: {
       items: [
@@ -50,7 +50,7 @@ export const lifeEssentialsBundle: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
     tags: ["组合包", "生活", "民生", "必备"],
     payload: {
       items: [
@@ -75,7 +75,7 @@ export const learnerBundle: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
     tags: ["组合包", "学习", "学术", "成长"],
     payload: {
       items: [
@@ -101,7 +101,7 @@ export const investorBundle: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
     tags: ["组合包", "投资", "财经", "研究"],
     payload: {
       items: [
@@ -127,7 +127,7 @@ export const creatorBundle: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
     tags: ["组合包", "创作者", "运营", "素材"],
     payload: {
       items: [
@@ -153,7 +153,7 @@ export const gamerBundle: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
     tags: ["组合包", "游戏", "电竞", "玩家"],
     payload: {
       items: [

@@ -22,7 +22,7 @@ export const aiPowerBundle: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
     tags: ["AI", "效率", "组合包"],
     payload: {
       items: [

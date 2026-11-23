@@ -12,7 +12,7 @@ export const aiDeepSearchPack: SeedPluginDef = {
     "author": "山羊胡官方",
     "homepage": "https://www.shanyanghu.com/",
     "license": "MIT",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "tags": [
       "AI搜索",
       "深度研究",

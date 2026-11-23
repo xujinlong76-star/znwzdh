@@ -21,7 +21,7 @@ export const familyLifeBundle: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
     tags: ["家庭", "亲子", "宠物", "生活", "组合包"],
     payload: {
       items: [

@@ -19,7 +19,7 @@ export const designerStarterBundle: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.0",
+    version: "1.0.1",
     tags: ["设计", "起步包", "组合", "灵感"],
     payload: {
       items: [

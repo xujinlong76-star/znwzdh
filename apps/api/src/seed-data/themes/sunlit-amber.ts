@@ -19,7 +19,7 @@ export const sunlitAmber: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.1",
+    version: "1.0.2",
     tags: ["主题", "浅色", "琥珀", "护眼"],
     payload: {
       accent: "amber",

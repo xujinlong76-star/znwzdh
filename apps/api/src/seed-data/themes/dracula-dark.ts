@@ -22,7 +22,7 @@ export const draculaDark: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://draculatheme.com/",
     license: "MIT",
-    version: "2.0.1",
+    version: "2.0.2",
     tags: ["主题", "深色", "Dracula", "赛博朋克"],
     payload: {
       accent: "rose",

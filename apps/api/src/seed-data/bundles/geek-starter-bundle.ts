@@ -22,7 +22,7 @@ export const geekStarterBundle: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "2.0.0",
+    version: "2.0.1",
     tags: ["起步包", "组合", "极客", "开发"],
     payload: {
       items: [

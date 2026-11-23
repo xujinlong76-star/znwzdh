@@ -20,7 +20,7 @@ export const aiWorkbench: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.1",
+    version: "1.0.2",
     compat: { minAppVersion: "0.1.0" },
     tags: ["工作台", "AI", "智能体", "模型"],
     payload: {

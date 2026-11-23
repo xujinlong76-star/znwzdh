@@ -19,7 +19,7 @@ export const seedDuskCompass: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "2.0.1",
+    version: "2.0.2",
     tags: ["主题", "深色", "紫罗兰"],
     payload: {
       accent: "violet",

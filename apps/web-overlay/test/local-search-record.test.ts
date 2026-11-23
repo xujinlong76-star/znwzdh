@@ -113,7 +113,12 @@ describe('主搜索提交进搜索历史（/search 结果页记账岛）', () =>
     const src = overlayFile(RESULTS)
     expect(src).toContain("import { SearchHistoryRecorder } from '@/components/search/search-history-recorder'")
     expect(src).toContain('<SearchHistoryRecorder q={q} resultCount={hits.length} />')
-    // 岛挂在返回 fragment 的最前（Container 之前），不插进任何条件分支
+    // 岛只在第 1 页挂载：与服务端「只记首页」（search.ts isFirstPage）同口径；
+    // 第 2 页及以上不挂载，否则 5 分钟窗口内重写同一查询的 result_count。
+    // 直接进 ?page=2 不记账是预期行为（服务端同样不记），不是漏记。
+    expect(src).toContain('{page === 1 ? <SearchHistoryRecorder q={q} resultCount={hits.length} /> : null}')
+    expect(src).not.toMatch(/^\s*<SearchHistoryRecorder /m)
+    // 岛挂在返回 fragment 的最前（Container 之前），只包一层 page===1 条件
     expect(src.indexOf('<SearchHistoryRecorder')).toBeGreaterThan(-1)
     expect(src.indexOf('<SearchHistoryRecorder')).toBeLessThan(src.indexOf('<Container'))
     // 结果页本身仍是纯服务端组件：客户端逻辑只在岛里

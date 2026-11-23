@@ -826,8 +826,11 @@ export function SearchResults({
     <>
       {/* /search 提交记账：主搜索提交此前全仓无记账调用，本结果页是唯一
           choke point（面板提交、热词点选、直接进 URL、分页/分面全经过它）；
-          岛只记历史、不渲染，命中数取本页实际展示的 hits.length。 */}
-      <SearchHistoryRecorder q={q} resultCount={hits.length} />
+          岛只记历史、不渲染，命中数取本页实际展示的 hits.length。
+          只在 page===1 挂载：服务端只在首页记账（search.ts isFirstPage，
+          offset===0），第 2 页及以上挂载会重写 5 分钟窗口内同一查询的
+          result_count；直接进 ?page=2 不记账是预期行为，与服务端一致。 */}
+      {page === 1 ? <SearchHistoryRecorder q={q} resultCount={hits.length} /> : null}
       <Container as="main" id="main-content">
         <div className="mx-auto max-w-4xl space-y-6 py-6 sm:py-10">
           <header className="space-y-3">

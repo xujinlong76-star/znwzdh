@@ -19,7 +19,7 @@ export const auroraEmerald: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.2",
+    version: "1.1.0",
     tags: ["主题", "深色", "极光", "青绿"],
     payload: {
       accent: "emerald",

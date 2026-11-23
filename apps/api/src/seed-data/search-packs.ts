@@ -23,7 +23,7 @@ export const cnSearchArsenal: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.1.1",
+    version: "1.2.0",
     tags: ["搜索", "中文", "生活", "电商", "本地生活"],
     payload: {
       engines: [
@@ -81,7 +81,7 @@ export const academicSearchArsenal: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.1.1",
+    version: "1.2.0",
     tags: ["搜索", "学术", "论文", "文献", "数据"],
     payload: {
       engines: [

@@ -15,7 +15,7 @@ export const codeSearchPack: SeedPluginDef = {
     "author": "山羊胡官方",
     "homepage": "https://www.shanyanghu.com/",
     "license": "MIT",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "tags": [
       "代码搜索",
       "依赖检索",

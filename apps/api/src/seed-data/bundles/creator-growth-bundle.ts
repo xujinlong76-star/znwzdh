@@ -19,7 +19,7 @@ export const creatorGrowthBundle: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.1",
+    version: "1.1.0",
     tags: ["创作者", "运营", "增长", "组合包"],
     payload: {
       items: [

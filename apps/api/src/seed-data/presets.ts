@@ -23,7 +23,7 @@ export const contentCreatorWorkbench: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.2",
+    version: "1.1.0",
     compat: { minAppVersion: "0.1.0" },
     tags: ["工作台", "创作者", "内容", "自媒体"],
     payload: {
@@ -88,7 +88,7 @@ export const studentStudyWorkbench: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.2",
+    version: "1.1.0",
     compat: { minAppVersion: "0.1.0" },
     tags: ["工作台", "学习", "自习", "学生"],
     payload: {
@@ -153,7 +153,7 @@ export const investorWorkbench: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.2",
+    version: "1.1.0",
     compat: { minAppVersion: "0.1.0" },
     tags: ["工作台", "投资", "财经", "研究"],
     payload: {

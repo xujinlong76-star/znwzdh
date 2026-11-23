@@ -19,7 +19,7 @@ export const cnLifeBundle: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.1.1",
+    version: "1.2.0",
     tags: ["中文", "生活", "学习", "组合包"],
     payload: {
       items: [

@@ -19,7 +19,7 @@ export const fullstackProBundle: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "2.0.1",
+    version: "2.1.0",
     tags: ["全栈", "组合包", "效率", "开发"],
     payload: {
       items: [

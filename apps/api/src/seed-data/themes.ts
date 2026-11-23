@@ -22,7 +22,7 @@ export const nordFrostTheme: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.nordtheme.com/",
     license: "MIT",
-    version: "1.0.2",
+    version: "1.1.0",
     tags: ["主题", "深色", "Nord", "冷调"],
     payload: {
       accent: "emerald",
@@ -66,7 +66,7 @@ export const gruvboxRetroTheme: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://github.com/morhetz/gruvbox",
     license: "MIT",
-    version: "1.0.2",
+    version: "1.1.0",
     tags: ["主题", "深色", "Gruvbox", "复古"],
     payload: {
       accent: "amber",
@@ -110,7 +110,7 @@ export const paperLatteTheme: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.2",
+    version: "1.1.0",
     tags: ["主题", "浅色", "纸感", "日间"],
     payload: {
       accent: "latte",
@@ -154,7 +154,7 @@ export const forestPineTheme: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.2",
+    version: "1.1.0",
     tags: ["主题", "深色", "自然", "护眼"],
     payload: {
       accent: "emerald",
@@ -198,7 +198,7 @@ export const oceanDeepTheme: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.2",
+    version: "1.1.0",
     tags: ["主题", "深色", "海洋", "夜间"],
     payload: {
       accent: "ocean",
@@ -242,7 +242,7 @@ export const sakuraMistTheme: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "1.0.2",
+    version: "1.1.0",
     tags: ["主题", "浅色", "柔粉", "日间"],
     payload: {
       accent: "rose",

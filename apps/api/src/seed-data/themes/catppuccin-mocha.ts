@@ -15,7 +15,7 @@ export const catppuccinMocha: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://github.com/catppuccin/catppuccin",
     license: "MIT",
-    version: "1.0.2",
+    version: "1.1.0",
     tags: ["主题","深色","Catppuccin","Mocha","极客"],
     payload: {
       "accent": "violet",

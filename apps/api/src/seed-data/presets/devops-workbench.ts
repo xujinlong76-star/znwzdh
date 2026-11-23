@@ -22,7 +22,7 @@ export const devopsWorkbench: SeedPluginDef = {
     author: "山羊胡官方",
     homepage: "https://www.shanyanghu.com/",
     license: "MIT",
-    version: "2.0.2",
+    version: "2.1.0",
     compat: { minAppVersion: "0.1.0" },
     tags: ["运维", "SRE", "监控", "工作台"],
     payload: {

@@ -21,6 +21,7 @@ import { highlightParts } from '@/lib/highlight'
 import { SearchFacetBar, type FacetGroup } from '@/components/search-facet-bar'
 import { SearchEngineSwitch } from '@/components/search/search-engine-switch'
 import { RecentSearchChips } from '@/components/search/recent-search-chips'
+import { SearchHistoryRecorder } from '@/components/search/search-history-recorder'
 import { ZeroResultActions } from '@/components/search/zero-result-actions'
 import { AlgorithmHudBadge } from '@/components/algorithm-hud-badge'
 import { WantedActions } from '@/components/search/wanted-actions'
@@ -823,6 +824,10 @@ export function SearchResults({
 
   return (
     <>
+      {/* /search 提交记账：主搜索提交此前全仓无记账调用，本结果页是唯一
+          choke point（面板提交、热词点选、直接进 URL、分页/分面全经过它）；
+          岛只记历史、不渲染，命中数取本页实际展示的 hits.length。 */}
+      <SearchHistoryRecorder q={q} resultCount={hits.length} />
       <Container as="main" id="main-content">
         <div className="mx-auto max-w-4xl space-y-6 py-6 sm:py-10">
           <header className="space-y-3">

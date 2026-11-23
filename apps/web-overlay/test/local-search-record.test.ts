@@ -85,3 +85,39 @@ describe('页内搜索进搜索历史', () => {
     expect(src).toContain('aria-label={`再次搜索 ${item.query}`}')
   })
 })
+
+/**
+ * 主搜索提交记账（2026-11-23 23:22 轮 W3 第二步）：候选 5 的前置缺口。
+ *
+ * 21:22 轮 W3 核查：主搜索提交（首页顶栏搜索、SearchPalette 提交、
+ * /search?q=）全仓无任何记账调用，唯一写入只挂在 5 处页内筛选框。
+ * 本轮补记账的 choke point 是 /search 结果页本身（面板提交、热词点选、
+ * 历史重搜、直接进 URL、分页/分面全经过它），不是 SearchPalette。
+ */
+describe('主搜索提交进搜索历史（/search 结果页记账岛）', () => {
+  const RECORDER = 'src/components/search/search-history-recorder.tsx'
+  const RESULTS = 'src/app/search/search-results.tsx'
+
+  it('记账岛是客户端组件：调同一条 hook，只记历史、不渲染', () => {
+    const src = overlayFile(RECORDER)
+    expect(src).toContain("'use client'")
+    expect(src).toContain("import { useLocalSearchRecorder } from '@/lib/local-search-record'")
+    expect(src).toContain('useLocalSearchRecorder(q, resultCount)')
+    expect(src).toContain('return null')
+    // 轻量链路：岛不回指 navhub-api（134KB 首屏教训，见 bundle-guard）
+    expect(src).not.toContain("from '@/lib/navhub-api'")
+    expect(src).not.toContain("from './navhub-api'")
+  })
+
+  it('/search 结果页挂上岛：计数取本页实际展示的命中数，且本页保持纯服务端', () => {
+    const src = overlayFile(RESULTS)
+    expect(src).toContain("import { SearchHistoryRecorder } from '@/components/search/search-history-recorder'")
+    expect(src).toContain('<SearchHistoryRecorder q={q} resultCount={hits.length} />')
+    // 岛挂在返回 fragment 的最前（Container 之前），不插进任何条件分支
+    expect(src.indexOf('<SearchHistoryRecorder')).toBeGreaterThan(-1)
+    expect(src.indexOf('<SearchHistoryRecorder')).toBeLessThan(src.indexOf('<Container'))
+    // 结果页本身仍是纯服务端组件：客户端逻辑只在岛里
+    expect(src).not.toContain("'use client'")
+    expect(src).not.toContain('"use client"')
+  })
+})

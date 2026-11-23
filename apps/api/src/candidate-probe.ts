@@ -242,6 +242,14 @@ export interface StructuredReplacementCandidate {
   verified?: boolean
   latencyMs?: number
   source?: "ai" | "catalog" | "search"
+  /** 内部站点 ID：目录候选可直接关联已持久化的质量快照 */
+  siteId?: string
+  /** 已持久化的目录质量证据；模型自评分 qualityScore 与该字段完全分离 */
+  catalogQuality?: {
+    score: number | null
+    evidenceCoverage: number
+    band: string
+  }
   /** 探活四档结论（未探活时缺省） */
   grade?: CandidateGrade
   /** 未通过时的原因（停放/软404/HTTP 状态/超时） */
@@ -261,7 +269,19 @@ function domainFitOf(candidate: StructuredReplacementCandidate): number {
 }
 
 export function rankCandidate(c: StructuredReplacementCandidate): number {
-  return (GRADE_RANK[c.grade ?? "dead"] ?? 0) * 1000 + (c.confidence?.total ?? 0)
+  const base = (GRADE_RANK[c.grade ?? "dead"] ?? 0) * 1000 + (c.confidence?.total ?? 0)
+  const quality = c.catalogQuality
+  // 目录质量仅作同档、同可信度候选的次级打破并列信号；证据不足/高风险不参与。
+  const eligible = quality &&
+    quality.score !== null &&
+    Number.isFinite(quality.score) &&
+    quality.score >= 0 &&
+    quality.score <= 100 &&
+    Number.isFinite(quality.evidenceCoverage) &&
+    quality.evidenceCoverage >= 40 &&
+    quality.band !== "high_risk" &&
+    quality.band !== "insufficient_evidence"
+  return base + (eligible ? quality.score / 101 : 0)
 }
 
 /**

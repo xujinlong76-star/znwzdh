@@ -321,3 +321,15 @@ export async function siteQualityOverview(repo: Repository): Promise<SiteQuality
     lastEvaluatedAt: row.last_evaluated_at == null ? null : Number(row.last_evaluated_at),
   };
 }
+
+
+export async function countSiteQualityAssessments(
+  repo: Repository,
+  band?: SiteQualityResult["band"],
+): Promise<number> {
+  const rows = await repo.raw(
+    "SELECT COUNT(*) AS total FROM site_quality_assessments" + (band ? " WHERE band = ?" : ""),
+    band ? [band] : [],
+  );
+  return Number(rows[0]?.total ?? 0);
+}

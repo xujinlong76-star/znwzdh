@@ -5,7 +5,7 @@
  *  - 国考卡片挂准考证打印提醒岛（只在 11-22–11-29 15:00 渲染，官方链接在
  *    exam-calendar 常量里，不在页面写死域名；15:00 边界 60 秒 tick 重算、
  *    最长迟 1 分钟下线（U-235），服务端页 revalidate 1 小时会迟到 1 小时）；
- *  - 考试清单只含已核实的十一场：国考、四六级、省考、京考、考研、成考、军队文职、教资面试、江苏自考、广东自考、上海自考，不含已考完的
+ *  - 考试清单只含已核实的十二场：国考、四六级、省考、京考、考研、成考、军队文职、教资面试、江苏自考、广东自考、广东自考·1月、上海自考，不含已考完的
  *    经济师（11-07–08）等过期场次；省考文案不写「联考」；
  *    成考是例外：统考 10-17–18 已结束，但成绩节点 11-18 未过，故列入清单。
  *    江苏自考是第二个例外：考期 10-24–25 已结束，但成绩节点 11-18 未过，故列入清单。
@@ -43,11 +43,13 @@ const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 const NOV_13_0800_CST = Date.UTC(2026, 10, 13, 0, 0, 0)
 
 describe('daysUntil（北京时间自然日）', () => {
-  it('十一场考试距 11-13 的天数与日历一致', () => {
+  it('十二场考试距 11-13 的天数与日历一致', () => {
     expect(daysUntil('2026-11-29', NOV_13_0800_CST)).toBe(16)
     expect(daysUntil('2026-12-06', NOV_13_0800_CST)).toBe(23)
     expect(daysUntil('2026-12-12', NOV_13_0800_CST)).toBe(29)
     expect(daysUntil('2026-12-19', NOV_13_0800_CST)).toBe(36)
+    // 广东自考·1月考期 2027-01-09 距 11-13 为 57 天（11 月余 17 天 + 12 月 31 天 + 1 月 9 天）
+    expect(daysUntil('2027-01-09', NOV_13_0800_CST)).toBe(57)
     // 京考按首考日算：公安专业科目 12-05 距 11-13 为 22 天（公共科目 12-06 为 23 天，与省考同值）；
     // 教资面试首日也是 12-05，距 11-13 同为 22 天
     expect(daysUntil('2026-12-05', NOV_13_0800_CST)).toBe(22)
@@ -178,9 +180,9 @@ describe('countdownParts', () => {
   })
 })
 
-describe('考试清单只含已核实的十一场', () => {
-  it('恰好十一场，首日与核实日期一致', () => {
-    expect(EXAMS.map((e) => e.id)).toEqual(['guokao', 'cet', 'shengkao', 'jiaoshi-mianshi', 'jundui-wenzhi', 'jingkao', 'kaoyan', 'chengkao', 'jiangsu-zikao', 'guangdong-zikao', 'shanghai-zikao'])
+describe('考试清单只含已核实的十二场', () => {
+  it('恰好十二场，首日与核实日期一致', () => {
+    expect(EXAMS.map((e) => e.id)).toEqual(['guokao', 'cet', 'shengkao', 'jiaoshi-mianshi', 'jundui-wenzhi', 'jingkao', 'kaoyan', 'chengkao', 'jiangsu-zikao', 'guangdong-zikao', 'guangdong-zikao-2027-01', 'shanghai-zikao'])
     expect(EXAMS.map((e) => e.startISO)).toEqual([
       '2026-11-29',
       '2026-12-12',
@@ -192,6 +194,7 @@ describe('考试清单只含已核实的十一场', () => {
       '2026-10-17',
       '2026-10-24',
       '2026-10-24', // 广东自考（与江苏自考同日）
+      '2027-01-09', // 广东自考·1月（2027 年 1 月考期，C4 新增）
       '2026-10-24', // 上海自考（与江苏/广东自考同日）
     ])
   })

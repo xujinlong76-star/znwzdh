@@ -1288,7 +1288,7 @@ describe('U-222 12 月峰值周末七节点时刻门控（todayNodeDeadlineMs / 
     expect(nodeDeadlineDisplayLabel(shanghaiZikao(), shanghaiQuery(), DEC_18_160000_CST)).toBe('进行中')
   })
 
-  it('四日今日行 kind 分流：11-29 3 项、12-05 4 项、12-06 8 项、12-13 2 项（七节点末日皆为 endsToday）', () => {
+  it('四日今日行 kind 分流：11-29 3 项、12-05 5 项、12-06 8 项、12-13 2 项（七节点末日皆为 endsToday；C4：12-05 多广东自考·1月网上缴费末日）', () => {
     const items29 = todayNodes(NOV_29_0800_CST)
     expect(items29).toHaveLength(3)
     const byKey29 = new Map(
@@ -1296,11 +1296,12 @@ describe('U-222 12 月峰值周末七节点时刻门控（todayNodeDeadlineMs / 
     )
     expect(byKey29.get('chengkao:浙江志愿确认')?.kind).toBe('endsToday')
     const items05 = todayNodes(DEC_05_0800_CST)
-    expect(items05).toHaveLength(4)
+    expect(items05).toHaveLength(5)
     const byKey05 = new Map(
       items05.map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
     )
     expect(byKey05.get('shengkao:上海准考证打印')?.kind).toBe('endsToday')
+    expect(byKey05.get('guangdong-zikao-2027-01:网上缴费')?.kind).toBe('endsToday')
     const items06 = todayNodes(DEC_06_0800_CST)
     expect(items06).toHaveLength(8)
     const byKey06 = new Map(

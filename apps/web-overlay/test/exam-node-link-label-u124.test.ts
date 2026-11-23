@@ -121,7 +121,7 @@ const allLinks = (): RenderedLink[] => EXAMS.flatMap((exam) => linksOf(exam))
 
 const examById = (id: string): ExamInfo => EXAMS.find((e) => e.id === id)!
 
-/** 17 个带 url 节点逐字映射（examId + label → URL 常量），T4/T6 共用。 */
+/** 23 个带 url 节点逐字映射（examId + label → URL 常量），T4/T6 共用。 */
 const EXPECTED_URLS: Array<[string, string, string]> = [
   ['guokao', '准考证打印', GUOKAO_ADMISSION_URL],
   ['cet', '口试准考证打印', CET_ADMISSION_URL],
@@ -141,10 +141,26 @@ const EXPECTED_URLS: Array<[string, string, string]> = [
   ['jingkao', '公共科目笔试', JINGKAO_NOTICE_URL],
   ['chengkao', '江西成绩复核', JIANGXI_CHENGKAO_REVIEW_URL],
   ['guangdong-zikao', '成绩查询', GUANGDONG_ZIKAO_SCORE_URL],
+  ['guangdong-zikao-2027-01', '新生预报名', GUANGDONG_ZIKAO_SCORE_URL],
+  ['guangdong-zikao-2027-01', '正式报名', GUANGDONG_ZIKAO_SCORE_URL],
+  ['guangdong-zikao-2027-01', '考生报考', GUANGDONG_ZIKAO_SCORE_URL],
+  ['guangdong-zikao-2027-01', '网上缴费', GUANGDONG_ZIKAO_SCORE_URL],
+  ['guangdong-zikao-2027-01', '考试', GUANGDONG_ZIKAO_SCORE_URL],
 ]
 
-/** 5 处例外 label（其余 13 处仍为「去官网打印准考证」）。 */
-const EXCEPTION_LABELS = new Set(['报名', '缴费', '公共科目笔试', '江西成绩复核', '成绩查询'])
+/** 10 处例外 label（其余 13 处仍为「去官网打印准考证」）。 */
+const EXCEPTION_LABELS = new Set([
+  '报名',
+  '缴费',
+  '公共科目笔试',
+  '江西成绩复核',
+  '成绩查询',
+  '新生预报名',
+  '正式报名',
+  '考生报考',
+  '网上缴费',
+  '考试',
+])
 
 describe('T1：京考报名改对', () => {
   it('报名行链接文本为「去官网报名」，不含「打印」，href 仍为报名系统原值', () => {
@@ -197,7 +213,7 @@ describe('T3b：广东自考成绩查询改对', () => {
 describe('T4：其余 13 处准考证打印类节点文案不变', () => {
   it('13 处链接文本仍为「去官网打印准考证」，aria-label 仍为「…官方打印入口」，href 各自原值', () => {
     const links = allLinks()
-    expect(links).toHaveLength(18)
+    expect(links).toHaveLength(23)
     for (const [examId, label, url] of EXPECTED_URLS) {
       if (EXCEPTION_LABELS.has(label)) continue
       const link = links.find((l) => l.examId === examId && l.label === label)!
@@ -209,9 +225,9 @@ describe('T4：其余 13 处准考证打印类节点文案不变', () => {
 })
 
 describe('T5：全量计数（防漏网/防多改）', () => {
-  it('「去官网打印准考证」恰好 13 次、带 url 的 <a> 恰好 18 个、5 处例外无「打印」残留', () => {
+  it('「去官网打印准考证」恰好 13 次、带 url 的 <a> 恰好 23 个、10 处例外无「打印」残留', () => {
     const links = allLinks()
-    expect(links).toHaveLength(18)
+    expect(links).toHaveLength(23)
     expect(links.filter((l) => l.text === '去官网打印准考证')).toHaveLength(13)
     for (const link of links) {
       if (EXCEPTION_LABELS.has(link.label)) {
@@ -227,7 +243,7 @@ describe('T5：全量计数（防漏网/防多改）', () => {
 })
 
 describe('T6：无数据改动（数据层守卫）', () => {
-  it('十一场 id、节点总数 46、18 个 url 逐字一致，无新增 url；ExamNode 只新增 portalUrl（门户备用链）', () => {
+  it('十二场 id、节点总数 51、23 个 url 逐字一致；ExamNode 只新增 portalUrl（门户备用链）', () => {
     expect(EXAMS.map((e) => e.id)).toEqual([
       'guokao',
       'cet',
@@ -239,17 +255,18 @@ describe('T6：无数据改动（数据层守卫）', () => {
       'chengkao',
       'jiangsu-zikao',
       'guangdong-zikao',
+      'guangdong-zikao-2027-01',
       'shanghai-zikao',
     ])
-    expect(EXAMS.flatMap((e) => e.nodes)).toHaveLength(46)
+    expect(EXAMS.flatMap((e) => e.nodes)).toHaveLength(51)
     const byKey = new Map(
       EXAMS.flatMap((e) => e.nodes.map((n) => [`${e.id}:${n.label}`, n] as const)),
     )
-    expect(byKey.size).toBe(46)
+    expect(byKey.size).toBe(51)
     for (const [examId, label, url] of EXPECTED_URLS) {
       expect(byKey.get(`${examId}:${label}`)?.url).toBe(url)
     }
-    expect(EXAMS.flatMap((e) => e.nodes).filter((n) => n.url)).toHaveLength(18)
+    expect(EXAMS.flatMap((e) => e.nodes).filter((n) => n.url)).toHaveLength(23)
     // U-144：江苏两节点不挂 url；广东自考查询节点挂线上系统直链（U-87），
     // url 总数 16→17。U-163：上海两节点不挂 url（无网页深链可挂），url 总数仍 17。
     // U-164：海南查分不挂 url（U-102 口径），url 总数仍 17。
@@ -258,6 +275,7 @@ describe('T6：无数据改动（数据层守卫）', () => {
     // U-252：云南成绩查询不挂 url（转载级，未见官方原文），url 总数仍 17，节点总数 43→44。
     // U-279：天津成绩复核结果查询不挂 url（转载级，未见官方原文），url 总数仍 17，节点总数 44→45。
     // U-395：京考缴费挂报名平台直链（公告原文逐字核实，2026-11-22），节点总数 45→46，url 总数 17→18。
+    // C4：广东自考·1月五节点挂自考系统直链（须知原文，2026-11-23），节点总数 46→51，url 总数 18→23。
     // 门户备用链：只有国考准考证节点挂 portalUrl（专题网站门户 GUOKAO_PORTAL_URL），
     // 其余节点不挂；portalUrl 不作主链，url 计数不受影响。
     expect(EXAMS.flatMap((e) => e.nodes).filter((n) => n.portalUrl)).toHaveLength(1)
@@ -268,6 +286,11 @@ describe('T6：无数据改动（数据层守卫）', () => {
     expect(byKey.get('jiangsu-zikao:成绩查询')?.url).toBeUndefined()
     expect(byKey.get('jiangsu-zikao:成绩复核')?.url).toBeUndefined()
     expect(byKey.get('guangdong-zikao:成绩查询')?.url).toBe(GUANGDONG_ZIKAO_SCORE_URL)
+    expect(byKey.get('guangdong-zikao-2027-01:新生预报名')?.url).toBe(GUANGDONG_ZIKAO_SCORE_URL)
+    expect(byKey.get('guangdong-zikao-2027-01:正式报名')?.url).toBe(GUANGDONG_ZIKAO_SCORE_URL)
+    expect(byKey.get('guangdong-zikao-2027-01:考生报考')?.url).toBe(GUANGDONG_ZIKAO_SCORE_URL)
+    expect(byKey.get('guangdong-zikao-2027-01:网上缴费')?.url).toBe(GUANGDONG_ZIKAO_SCORE_URL)
+    expect(byKey.get('guangdong-zikao-2027-01:考试')?.url).toBe(GUANGDONG_ZIKAO_SCORE_URL)
     expect(byKey.get('shanghai-zikao:成绩查询')?.url).toBeUndefined()
     expect(byKey.get('shanghai-zikao:成绩复核')?.url).toBeUndefined()
     expect(byKey.get('chengkao:海南成绩查询')?.url).toBeUndefined()
@@ -288,9 +311,9 @@ describe('T6：无数据改动（数据层守卫）', () => {
 })
 
 describe('T7：链接安全属性不变', () => {
-  it('全部 18 个链接均有 target="_blank" 与 rel="noopener noreferrer"，href 均过 safeHref', () => {
+  it('全部 23 个链接均有 target="_blank" 与 rel="noopener noreferrer"，href 均过 safeHref', () => {
     const links = allLinks()
-    expect(links).toHaveLength(18)
+    expect(links).toHaveLength(23)
     const urlByKey = new Map(EXPECTED_URLS.map(([e, l, u]) => [`${e}:${l}`, u]))
     for (const link of links) {
       expect(link.target).toBe('_blank')
@@ -301,7 +324,7 @@ describe('T7：链接安全属性不变', () => {
 })
 
 describe('T8：源码硬编码不回潮', () => {
-  it('「去官网打印准考证」只出现一次且位于映射函数内，五处例外文案各出现一次', () => {
+  it('「去官网打印准考证」只出现一次且位于映射函数内，十处例外文案各出现指定次数', () => {
     const island = read('src/app/exam/my-exam-tracker.tsx')
     expect(island.match(/去官网打印准考证/g)?.length).toBe(1)
     expect(island).toContain('function nodeLinkCopy')
@@ -309,17 +332,25 @@ describe('T8：源码硬编码不回潮', () => {
     const defaultAt = island.indexOf('去官网打印准考证')
     expect(fnAt).toBeGreaterThan(-1)
     expect(defaultAt).toBeGreaterThan(fnAt)
-    expect(island.match(/去官网报名/g)?.length).toBe(1)
+    // 「去官网报名」三处（京考报名 + 新生预报名 + 正式报名），「去官网缴费」两处（京考缴费 + 网上缴费）
+    expect(island.match(/去官网报名/g)?.length).toBe(3)
     expect(island.match(/查看官方公告/g)?.length).toBe(1)
     expect(island.match(/去报名系统申请复核/g)?.length).toBe(1)
     expect(island.match(/去系统查成绩/g)?.length).toBe(1)
-    expect(island.match(/去官网缴费/g)?.length).toBe(1)
-    // 映射表恰好覆盖 5 个例外 label + 默认分支，不写死域名。
+    expect(island.match(/去官网缴费/g)?.length).toBe(2)
+    expect(island.match(/去官网报考/g)?.length).toBe(1)
+    expect(island.match(/去官网查看/g)?.length).toBe(1)
+    // 映射表恰好覆盖 10 个例外 label + 默认分支，不写死域名。
     expect(island).toContain("label === '报名'")
     expect(island).toContain("label === '公共科目笔试'")
     expect(island).toContain("label === '江西成绩复核'")
     expect(island).toContain("label === '成绩查询'")
     expect(island).toContain("label === '缴费'")
+    expect(island).toContain("label === '新生预报名'")
+    expect(island).toContain("label === '正式报名'")
+    expect(island).toContain("label === '考生报考'")
+    expect(island).toContain("label === '网上缴费'")
+    expect(island).toContain("label === '考试'")
     expect(island).not.toContain('rsj.beijing.gov.cn')
     expect(island).not.toContain('beijing.gov.cn')
     expect(island).not.toContain('jdyw.jxeea.cn')
@@ -384,6 +415,39 @@ describe('T9：国考准考证节点行双链接（门户备用链）', () => {
         if (isGuokaoAdmission) expect(count).toBe(2)
         else expect(count).toBeLessThanOrEqual(1)
       }
+    }
+  })
+})
+
+describe('T10：广东自考·1月五节点文案按类型映射（C4，不挂默认打印文案）', () => {
+  it('新生预报名 / 正式报名行链接文本为「去官网报名」，不含「打印」', () => {
+    const exam = examById('guangdong-zikao-2027-01')
+    for (const label of ['新生预报名', '正式报名']) {
+      const link = linksOf(exam).find((l) => l.label === label)!
+      expect(link.text).toBe('去官网报名')
+      expect(link.text).not.toContain('打印')
+      expect(link.ariaLabel).toBe(`${label}官方报名入口（新窗口打开）`)
+      expect(link.href).toBe(safeHref(GUANGDONG_ZIKAO_SCORE_URL))
+    }
+  })
+
+  it('考生报考行链接文本为「去官网报考」，网上缴费行为「去官网缴费」，考试行为「去官网查看」，均不含「打印」', () => {
+    const exam = examById('guangdong-zikao-2027-01')
+    const apply = linksOf(exam).find((l) => l.label === '考生报考')!
+    expect(apply.text).toBe('去官网报考')
+    expect(apply.ariaLabel).toBe('考生报考官方报考入口（新窗口打开）')
+    expect(apply.href).toBe(safeHref(GUANGDONG_ZIKAO_SCORE_URL))
+    const pay = linksOf(exam).find((l) => l.label === '网上缴费')!
+    expect(pay.text).toBe('去官网缴费')
+    expect(pay.ariaLabel).toBe('网上缴费官方缴费入口（新窗口打开）')
+    expect(pay.href).toBe(safeHref(GUANGDONG_ZIKAO_SCORE_URL))
+    const examNode = linksOf(exam).find((l) => l.label === '考试')!
+    expect(examNode.text).toBe('去官网查看')
+    expect(examNode.ariaLabel).toBe('考试官方查看入口（新窗口打开）')
+    expect(examNode.href).toBe(safeHref(GUANGDONG_ZIKAO_SCORE_URL))
+    for (const link of [apply, pay, examNode]) {
+      expect(link.text).not.toContain('打印')
+      expect(link.ariaLabel).not.toContain('打印')
     }
   })
 })

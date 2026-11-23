@@ -55,7 +55,7 @@ afterAll(() => {
 const NOV_18_0800_CST = Date.UTC(2026, 10, 18, 0, 0, 0)
 /** 2026-11-24 08:00 北京时间：无今日节点（复核窗口进行中，但既非单日也非起止日） */
 const NOV_24_0800_CST = Date.UTC(2026, 10, 24, 0, 0, 0)
-/** 2026-12-21 08:00 北京时间：十一场全过，无今日节点、无倒计时 */
+/** 2026-12-21 08:00 北京时间：十二场未全过——无今日节点，倒计时切到广东自考·1月 */
 const DEC_21_0800_CST = Date.UTC(2026, 11, 21, 0, 0, 0)
 
 const renderZone = (nowMs: number) =>
@@ -94,16 +94,19 @@ describe('A3：有今日节点时渲染今日行，7 项 label 与 detail 原文
     expect(html).toContain('11 月 18 日 15:00 起可查')
   })
 
-  it('无今日节点的日子整行不渲染、不挂空态占位（11-24 倒计时行仍在，12-21 整卡消失）', () => {
-    const nov24 = renderZone(NOV_24_0800_CST)
-    expect(nov24).not.toContain('aria-label="今日节点"')
-    expect(nov24).not.toContain('今日提醒')
-    expect(nov24).not.toContain('今日截止')
+  it('11-24 今日行出现（广东自考·1月新生预报名 / 正式报名开始日），12-21 无今日行但倒计时切到广东自考·1月', () => {
+    const nov24 = unesc(renderZone(NOV_24_0800_CST))
+    expect(nov24).toContain('aria-label="今日节点"')
+    expect(nov24).toContain('今日提醒')
+    expect(nov24).toContain('新生预报名')
+    expect(nov24).toContain('正式报名')
     expect(nov24).toContain('距国考 4 天')
     const dec21 = renderZone(DEC_21_0800_CST)
     expect(dec21).not.toContain('aria-label="今日节点"')
     expect(dec21).not.toContain('今日提醒')
     expect(dec21).not.toContain('今日截止')
+    // C4（D2 定稿接受 nearest 改写）：12-21 考研已过，倒计时行显示新最近场
+    expect(dec21).toContain('距广东自考·1月 19 天')
   })
 })
 

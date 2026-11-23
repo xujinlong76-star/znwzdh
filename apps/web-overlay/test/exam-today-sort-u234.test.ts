@@ -139,10 +139,10 @@ describe('U-234：合成数据——排序只看目标时刻，不看 kind 与�
 })
 
 describe('U-234：排序不改入选（项数与 kind 与旧口径一致）', () => {
-  it('11-18 7 项、11-19 3 项、11-20 6 项；EXAMS 本身未动', () => {
+  it('11-18 7 项、11-19 3 项、11-20 6 项；EXAMS 共 12 项（含广东自考·1月新条目）', () => {
     expect(todayNodes(NOV_18_0800_CST)).toHaveLength(7)
     expect(todayNodes(NOV_19_0800_CST)).toHaveLength(3)
     expect(todayNodes(NOV_20_0800_CST)).toHaveLength(6)
-    expect(EXAMS).toHaveLength(11)
+    expect(EXAMS).toHaveLength(12)
   })
 })

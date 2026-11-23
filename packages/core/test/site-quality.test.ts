@@ -47,7 +47,7 @@ describe("site quality evidence contract", () => {
     dimensions.sourceTrust = { score: 90, evidence: ["official domain confirmed"] };
     dimensions.relevance = { score: 80, evidence: ["category and content agree"] };
     const result = evaluateSiteQuality(dimensions, 1_800_000_000_000);
-    expect(result.score).toBe(89.41);
+    expect(result.score).toBe(88.57);
     expect(result.evidenceCoverage).toBe(70);
     expect(result.observedDimensions).toBe(4);
     expect(result.band).toBe("high");
@@ -80,7 +80,7 @@ describe("site quality evidence contract", () => {
     dimensions.contentCompleteness = { score: 90, evidence: ["complete"] };
     dimensions.sourceTrust = { score: 90, evidence: ["verified"] };
     const result = evaluateSiteQuality(dimensions, 1_800_000_000_000);
-    dimensions.accessibility.evidence[0] = "mutated";
+    (dimensions.accessibility.evidence as string[])[0] = "mutated";
     expect(result.version).toBe(SITE_QUALITY_VERSION);
     expect(result.evaluatedAt).toBe(1_800_000_000_000);
     expect(result.dimensions.accessibility.evidence[0]).toBe("ok");

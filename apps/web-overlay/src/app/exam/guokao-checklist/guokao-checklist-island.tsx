@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useGuokaoChecklist } from '@/hooks/useGuokaoChecklist'
 import {
   GUOKAO_CHECKLIST_GROUPS,
@@ -33,13 +34,33 @@ import { GUOKAO_CHECKLIST_ENTRY_SECTION_ID } from '@/components/guokao-checklist
 export function GuokaoChecklistIsland() {
   const { checked, storageBlocked, toggle } = useGuokaoChecklist()
 
+  // R-1（2026-11-23 17:22 轮 W3）：60 秒 tick，照抄同页入口岛 /
+  // 阶段横幅（GuokaoChecklistEntry / GuokaoChecklistPhaseBanner 同款写法）。
+  // 完成态的 closed 只在 7/7 时才判时刻；无 tick 时用户在 15:00 前勾满、
+  // 之后闲置停留在页上，「7 项全部完成，可以去打印了」+ 打印锚点会无限期
+  // 停留，而同页入口岛 60 秒内就置灰——锚点指向已置灰的按钮，是 R1 刚修
+  // 掉的同类假承诺。tick 后滞后 ≤1 分钟。
+  // 只影响完成态判定：不照抄两岛的“挂载前返回 null”——清单区须服务端
+  // 直出（挂载前按未勾选渲染，与 SSR 一致），整岛 blank 会是回归；
+  // 挂载前 now 为 null 时沿用 Date.now()（与现行一致，此时 done 恒为 0、
+  // 完成态永不出现，SSR/水合输出不变）。
+  const [now, setNow] = useState<number | null>(null)
+
+  useEffect(() => {
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+
   // 挂载前哨兵：按未勾选渲染，与服务端直出一致。
   const done = new Set(checked ?? [])
   const totalDone = GUOKAO_CHECKLIST_ITEMS.filter((i) => done.has(i.id)).length
   // R2 完成态：纯函数决策。未满时返回的 complete:false 不带 closed，
   // 渲染与 nowMs 无关——服务端/挂载前 totalDone 恒为 0，该分支永不进入
   // SSR 输出，水合无错位；挂载后用户勾满才按客户端时刻判截止。
-  const completion = guokaoChecklistCompletion([...done], Date.now())
+  // R-1：时刻取 tick 的 now（挂载前回落 Date.now()，见上），闲置跨截止
+  // 点后 60 秒内重算、完成态随之翻为 closed，锚点不再承诺打印。
+  const completion = guokaoChecklistCompletion([...done], now ?? Date.now())
 
   return (
     <div>

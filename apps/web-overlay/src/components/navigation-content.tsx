@@ -1214,10 +1214,9 @@ export function NavigationContent({
         )}
 
         <div className="px-3 sm:px-6 md:px-8 pt-2 sm:pt-2 pb-8 flex-1">
-          {/* 移动端品牌主标题（U-263）：桌面侧边栏品牌 h1 在移动端被 hidden，
-              首页主内容区又无其它 h1，致移动端无可见主标题（mobile-layout
-              冒烟红）。此处补一个移动端专用的紧凑标题（短标题「山羊胡导航」），
-              仅移动端可见；桌面端仍由侧边栏品牌担任唯一 h1。 */}
+          {/* 移动端品牌视觉标题（U-263）：桌面侧边栏品牌 h1 在移动端布局中不可见，
+              因此这里保留紧凑的品牌文案供移动端用户识别。它是视觉副标题，不重复创建
+              第二个语义 h1；全页唯一 h1 仍由侧边栏品牌标题提供。 */}
           <p className="md:hidden text-lg font-bold tracking-tight text-foreground pb-3">山羊胡导航</p>
           {/* 增量掩码与时间轴回收站快捷感知条（当用户存在已删减功能或处于 DIY 编辑态时呈现） */}
           {(totalPrunedCount > 0 || isEditingLayout) && (

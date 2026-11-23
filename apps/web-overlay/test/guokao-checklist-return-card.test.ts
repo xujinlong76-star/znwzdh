@@ -16,6 +16,9 @@
  *
  * 2026-11-23 12:22 轮追加（备选 Q4 + Q1）：C-G8 高度守卫与 C1+C4 双卡叠加
  * 首屏预算（见文件末尾）。只加测试，不改组件源码、不改数据文件。
+ *
+ * 2026-11-23 13:22 轮追加：C-G9 360px 窄屏高度守卫（3 it + live L1 todo 1 条）。
+ * 同样只加测试，不改组件源码、不改数据文件。
  */
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -73,6 +76,7 @@ const c4ComponentCode = stripComments(c4ComponentSrc)
  * text-xs 16px；min-h-11 = 44px；py-3 = 24px；pt-3 = 12px；
  * gap-x-4/gap-y-2 = 16px/8px；border 2px；mt-0.5 = 2px。
  * 390px 视口内容宽 = 390 - section px-3×2 (24) - 卡体 px-4×2 (32) = 334px；
+ * 360px 视口内容宽 = 360 - 24 - 32 = 304px；
  * 桌面内容宽 = min(vw, 1600) - sm:px-5×2 (40) - sm:px-5×2 (40)。
  */
 /** CJK/全角/箭头字形（advance ≈ 1em），其余半角字符按 8px 计 */
@@ -113,6 +117,8 @@ const c1MaxTitleWidthPx = () => {
  *  - mobile390：三行叠放（徽章 26 + gap 8 + 文案块 + gap 8 + CTA 44）
  *    + 卡体 py-3 24 + border 2 + section pt-3 12；文案块 = 标题行数×20
  *    + mt-0.5 2 + 副行 1 行×20。
+ *  - mobile360：同款叠放，内容宽 304px（360 - 24 - 32）；行数与 390px
+ *    相同（标题 2 行、副行 1 行），故预算同为 186px（C-G9，13:22 轮实算）。
  *  - desktopTotals：桌面单行 flex，文案块宽 = 内容宽 - 徽章宽 - CTA 宽
  *    - gap-x-4×2；行高取 max(徽章 26, 文案块, CTA 44)。
  */
@@ -121,6 +127,9 @@ const c1HeightBudgetPx = () => {
   const titleLines390 = Math.ceil(maxTitleW / 334)
   const mobile390 =
     12 + (26 + 8 + (titleLines390 * 20 + 2 + 20) + 8 + 44) + 24 + 2
+  const titleLines360 = Math.ceil(maxTitleW / 304)
+  const mobile360 =
+    12 + (26 + 8 + (titleLines360 * 20 + 2 + 20) + 8 + 44) + 24 + 2
   const badgeW = estimateTextWidthPx('国考 · 准考证打印') + 14 + 6 + 20 + 2
   const ctaW = estimateTextWidthPx('打印前清单：三件事先勾好 →') + 28 + 4 + 2
   const desktopTotals: Record<number, number> = {}
@@ -130,7 +139,7 @@ const c1HeightBudgetPx = () => {
     desktopTotals[vw] =
       12 + Math.max(26, titleLines * 20 + 2 + 20, 44) + 24 + 2
   }
-  return { mobile390, desktopTotals, desktop1920: desktopTotals[1920] }
+  return { mobile390, mobile360, maxTitleW, desktopTotals, desktop1920: desktopTotals[1920] }
 }
 
 describe('C1 国考准考证打印回访卡（0422-W3 §3.4）', () => {
@@ -338,6 +347,53 @@ describe('C-G8 高度守卫：C1 卡片高度预算（2026-11-23 12:22 轮，备
   })
 })
 
+describe('C-G9 高度守卫：C1 卡片 360px 窄屏预算（2026-11-23 13:22 轮）', () => {
+  it('标题行逐相位 ≤ 2 行（360px 内容宽 304px）：最长标题 600px，2 行容量 608px，余量仅 8px', () => {
+    // 重算依据（13:22 轮独立重算，非照抄上轮数字）：内容宽 360 - 24 - 32
+    // = 304px；四相位标题行字宽取自文案函数实算，最长 600px（11-27
+    // last-call）；2 行容量 2×304 = 608px，余量 608 - 600 = 8px。
+    // 余量薄到改文案者必须知晓：最长标题再长 1 个全角字（14px）即折
+    // 3 行，预算跳 206px，本条与下一条预算 it 同时变红。
+    // 模型本身方向保守：12 个空格按 8px 计（实际约 3.5px，高估约 54px），
+    // 数字/·低估约 12px，现实宽度约 555px，2 行结论稳；只有空格真按
+    // 8px（14px 字号下 0.57em，正常字体不存在）才超 10px。
+    const moments = [
+      at('2026-11-23', 12, 0),
+      at('2026-11-27', 0, 0),
+      at('2026-11-28', 14, 0),
+      at('2026-11-29', 8, 59),
+    ]
+    for (const now of moments) {
+      const content = guokaoReturnCardContent(now)!
+      const titleLine = `${content.title} · ${content.label}`
+      expect(estimateTextWidthPx(titleLine)).toBeLessThanOrEqual(2 * 304)
+    }
+    expect(c1HeightBudgetPx().maxTitleW).toBeLessThanOrEqual(2 * 304)
+  })
+
+  it('副行 1 行 + 徽章/CTA 单行放得下（360px 内容宽 304px）：副行 294px 余量 10px', () => {
+    // 副行「打印截止 11 月 29 日 15:00，逾期无法补打」294px ≤ 304px，
+    // 余量 10px（现实宽度约 272px：5 个空格高估约 22px）；徽章 164px、
+    // CTA 224px 均 < 304px，360px 下三者仍为叠放三行、无横向挤压。
+    expect(
+      estimateTextWidthPx('打印截止 11 月 29 日 15:00，逾期无法补打'),
+    ).toBeLessThanOrEqual(304)
+    const badgeW = estimateTextWidthPx('国考 · 准考证打印') + 14 + 6 + 20 + 2
+    const ctaW = estimateTextWidthPx('打印前清单：三件事先勾好 →') + 28 + 4 + 2
+    expect(badgeW).toBeLessThanOrEqual(304)
+    expect(ctaW).toBeLessThanOrEqual(304)
+  })
+
+  it('高度预算 360px ≤ 186px（与 390px 同值：标题 2 行、副行 1 行，行数相同）', () => {
+    // 360px 与 390px 行数相同（标题 2 行、副行 1 行），故预算同为
+    // 186px = 12 + (26 + 8 + (2×20 + 2 + 20) + 8 + 44) + 24 + 2；
+    // 两档相等是实算结论不是巧合，任一档行数变多会同时红在这里。
+    const { mobile360, mobile390 } = c1HeightBudgetPx()
+    expect(mobile360).toBeLessThanOrEqual(186)
+    expect(mobile360).toBe(mobile390)
+  })
+})
+
 describe('C1+C4 双卡叠加首屏预算（2026-11-23 12:22 轮，备选 Q1）', () => {
   it('挂载顺序：C1 在上、C4 在下，均在 HomeSubtitleHint 之后、胶囊行之前，且在 viewMode 守卫内', () => {
     for (const root of [resolve(REPO_ROOT, 'apps', 'web'), OVERLAY_ROOT]) {
@@ -417,5 +473,8 @@ describe('待补（live L1 实测，不在本文件断言范围）', () => {
   )
   it.todo(
     'live L1：C1+C4 双卡叠加实测 ≤ 406px（390px）/ ≤ 228px（1920px），并重测首屏露出卡数/百分比，对照 b702e89 基线 41.7%/43.8%（@1920×911，C1/C4 挂载前）',
+  )
+  it.todo(
+    'live L1：360px 各相位实测高度 ≤ 186px（C-G9 预算值）；标题行 2 行容量余量仅 8px，实测若折 3 行回协调员，不许悄悄压字号凑数',
   )
 })

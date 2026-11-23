@@ -7,8 +7,7 @@ import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { safeHref } from '@/lib/safe-url'
 import { pageShareMetadata } from '@/lib/seo/metadata'
-import { EmptyState } from '@/components/ui/empty-state'
-import { Button } from '@/registry/new-york/ui/button'
+import BriefEmptyState from './brief-empty-state'
 import {
   hotlistAllEmptyCopy,
   hotlistAllStaleBannerCopy,
@@ -297,22 +296,16 @@ export default async function BriefPage() {
                 </p>
                 {hotlistCopy ? (
                   <>
-                    <EmptyState
-                      // 服务端页：图标传已渲染的元素，不把 Flame 组件函数传过 RSC 边界
-                      //（尺寸与主色按 warning 档自带，与 EmptyState 的 iconTone="warning" 同值）。
-                      icon={<Flame className="h-6 w-6 text-amber-700 dark:text-amber-400" aria-hidden />}
-                      iconTone="warning"
+                    {/* 全空态经客户端小组件渲染（见 brief-empty-state.tsx）：
+                        图标元素不能由服务端创建后当 prop 传过 RSC 边界，
+                        否则预渲染报 Element type is invalid（2026-11-23 定位）。
+                        这里只传字符串，图标在客户端内部实例化。 */}
+                    <BriefEmptyState
                       title={hotlistCopy.title}
-                      description={
-                        <>
-                          {hotlistCopy.why} {hotlistCopy.next}
-                        </>
-                      }
-                      action={
-                        <Button asChild size="sm" variant="outline" className="text-xs">
-                          <Link href={hotlistCopy.actionHref}>{hotlistCopy.actionLabel}</Link>
-                        </Button>
-                      }
+                      why={hotlistCopy.why}
+                      next={hotlistCopy.next}
+                      actionHref={hotlistCopy.actionHref}
+                      actionLabel={hotlistCopy.actionLabel}
                     />
                     {/* 全空态补充信息（W4 第一步）：六源状态列表 + 上次成功刷新行。
                         数据全来自现有 hotlist.sources[] / hotlist.generatedAt，

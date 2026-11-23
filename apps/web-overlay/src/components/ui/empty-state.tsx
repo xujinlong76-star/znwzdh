@@ -58,7 +58,13 @@ function isComponentType(
   value: unknown,
 ): value is ComponentType<{ className?: string; 'aria-hidden'?: boolean }> {
   if (typeof value === 'function') return true
-  return typeof value === 'object' && value !== null && '$$typeof' in value
+  if (typeof value !== 'object' || value === null || !('$$typeof' in value)) return false
+  // 已渲染的元素（$$typeof 为 react.element）不是组件类型：把它当组件实例化
+  // 会逐字报「Element type is invalid … got: object」。元素由 isValidElement
+  // 分支处理；这里只排除它，不让误判兜底把元素当组件（2026-11-23 /brief 定位：
+  // 服务端创建的图标元素传过 RSC 边界后走到了这条误判路）。
+  if ((value as { $$typeof?: symbol }).$$typeof === Symbol.for('react.element')) return false
+  return true
 }
 
 export function EmptyState({

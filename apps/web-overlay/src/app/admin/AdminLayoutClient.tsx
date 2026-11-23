@@ -56,6 +56,7 @@ import {
 } from "@/registry/new-york/ui/sheet"
 import { Avatar, AvatarImage, AvatarFallback } from "@/registry/new-york/ui/avatar"
 import { useTheme } from "next-themes"
+import { ShieldCheck } from "lucide-react"
 
 interface AdminLayoutClientProps {
   children: React.ReactNode
@@ -122,6 +123,11 @@ const menuItems = [
     title: "站点纠错",
     href: "/admin/site-reports",
     icon: Flag
+  },
+  {
+    title: "质量治理",
+    href: "/admin/site-quality",
+    icon: ShieldCheck
   },
   {
     title: "插件市场",

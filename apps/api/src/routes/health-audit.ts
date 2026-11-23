@@ -20,7 +20,7 @@ import { indexSite } from "../index-site.ts";
 import { llmProviderReady, resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../llm-quota.ts";
-import { probeCandidates, type StructuredReplacementCandidate } from "../candidate-probe.ts";
+import { probeCandidates, rankCandidate, type StructuredReplacementCandidate } from "../candidate-probe.ts";
 import { requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
@@ -296,6 +296,7 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       reason: `同属于分类【${site.categoryId}】的高活跃度替代站点`,
       source: "catalog" as const,
       domainFit: 85,
+      siteId: p.id,
     }));
 
     /**
@@ -309,10 +310,30 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       extra: Record<string, unknown>,
     ) => {
       const probed = await probeCandidates(candidates);
+      // 目录中已收录的候选可附加质量快照；未知/高风险/低覆盖证据只展示，不影响排序。
+      const qualityEnriched = await Promise.all(probed.candidates.map(async (candidate) => {
+        const matchedSite = candidate.siteId
+          ? null
+          : await ctx.repo.findSiteByUrl(candidate.url);
+        const candidateSiteId = candidate.siteId ?? matchedSite?.id;
+        if (!candidateSiteId) return candidate;
+        const quality = await ctx.repo.getSiteQualityAssessment(candidateSiteId);
+        if (!quality) return { ...candidate, siteId: candidateSiteId };
+        return {
+          ...candidate,
+          siteId: candidateSiteId,
+          catalogQuality: {
+            score: quality.score,
+            evidenceCoverage: quality.evidenceCoverage,
+            band: quality.band,
+          },
+        };
+      }));
+      qualityEnriched.sort((a, b) => rankCandidate(b) - rankCandidate(a));
       return {
         ok: true,
         siteId: site.id,
-        recommendations: probed.candidates,
+        recommendations: qualityEnriched,
         probe: probed.summary,
         ...extra,
       };

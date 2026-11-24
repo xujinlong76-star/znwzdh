@@ -331,6 +331,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         userId: user.id,
         purpose: "email_verification",
         tokenHash: hashToken(token),
+        targetEmail: email,
         expiresAt: Date.now() + VERIFY_TTL_MS,
       });
       // P0-3：username 用户可控 → HTML escape 防邮件内容注入/钓鱼

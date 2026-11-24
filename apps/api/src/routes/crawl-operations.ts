@@ -31,6 +31,16 @@ export function moderationVerdictToPrediction(result: { verdict: "auto_approve" 
     actualRisk: result.risks.some(risk => risk !== "none"),
   };
 }
+/** 成本未知时保留 null，绝不把未配置单价伪装成免费。 */
+export function summarizeModerationEvaluationUsage(row: Record<string, unknown>) {
+  const numberOrZero = (value: unknown) => { const parsed = Number(value); return Number.isFinite(parsed) ? Math.max(0,parsed) : 0; };
+  const calls = numberOrZero(row.calls), promptTokens = numberOrZero(row.prompt_tokens), completionTokens = numberOrZero(row.completion_tokens);
+  const pricedCalls = Math.min(calls,numberOrZero(row.priced_calls));
+  const parsedCost = row.cost_rmb == null ? null : Number(row.cost_rmb);
+  return { calls, promptTokens, completionTokens, totalTokens:promptTokens+completionTokens,
+    costRmb:parsedCost !== null && Number.isFinite(parsedCost) ? parsedCost : null,
+    pricedCalls, unpricedCalls:Math.max(0,calls-pricedCalls), failedCalls:Math.min(calls,numberOrZero(row.failed_calls)) };
+}
 /** 输出不含网页正文/URL 的错分摘要，便于审核员定位模型错误样本。 */
 export function buildModerationErrorAnalysis(cases: Array<{id:string;expected:"approve"|"reject"|"review";actual:"approve"|"reject"|"review";expectedRisk?:boolean;actualRisk?:boolean}>) {
   const groups = new Map<string,{expected:string;actual:string;count:number;sampleIds:string[]}>();
@@ -670,12 +680,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         "SELECT COUNT(*) AS calls, SUM(prompt_tokens) AS prompt_tokens, SUM(completion_tokens) AS completion_tokens, SUM(cost_rmb) AS cost_rmb, SUM(CASE WHEN cost_rmb IS NOT NULL THEN 1 ELSE 0 END) AS priced_calls, SUM(CASE WHEN ok THEN 0 ELSE 1 END) AS failed_calls FROM llm_usage WHERE scenario=? AND identity=?",
         ["crawl_moderation_gold_eval", evaluationId],
       );
-      const usageRow = usageRows[0] ?? {};
-      const usage = { calls:Number(usageRow.calls ?? 0), promptTokens:Number(usageRow.prompt_tokens ?? 0),
-        completionTokens:Number(usageRow.completion_tokens ?? 0), totalTokens:Number(usageRow.prompt_tokens ?? 0)+Number(usageRow.completion_tokens ?? 0),
-        costRmb:usageRow.cost_rmb == null ? null : Number(usageRow.cost_rmb),
-        pricedCalls:Number(usageRow.priced_calls ?? 0), unpricedCalls:Math.max(0,Number(usageRow.calls ?? 0)-Number(usageRow.priced_calls ?? 0)),
-        failedCalls:Number(usageRow.failed_calls ?? 0) };
+      const usage = summarizeModerationEvaluationUsage(usageRows[0] ?? {});
       if (failed || predictions.length !== selected.length) {
         reply.code(502); return { ok: false, id: evaluationId, error: "自动评测未完整完成，未保存不完整指标", selected: selected.length, completed: predictions.length, failed, usage };
       }

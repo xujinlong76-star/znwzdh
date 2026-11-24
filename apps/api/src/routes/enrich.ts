@@ -19,6 +19,19 @@ import { requestIdentityOf, identityTrusted } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
 
+const SENSITIVE_DISCOVERY_KEY = /^(?:password|passwd|secret|token|authorization|cookie|set-cookie|api[_-]?key|access[_-]?key|private[_-]?key|__proto__|prototype|constructor)$/i;
+
+function containsSensitiveDiscoveryKey(value: unknown, depth = 0): boolean {
+  if (depth > 8) return true;
+  if (Array.isArray(value)) return value.some((item) => containsSensitiveDiscoveryKey(item, depth + 1));
+  if (value && typeof value === "object") {
+    return Object.entries(value).some(([key, nested]) =>
+      SENSITIVE_DISCOVERY_KEY.test(key) || containsSensitiveDiscoveryKey(nested, depth + 1),
+    );
+  }
+  return false;
+}
+
 export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
@@ -363,22 +376,35 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
     const url = enriched.url;
     const id = randomUUID();
+    const tags = (body.data.tags ?? selection.applied.tags ?? [])
+      .filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+      .slice(0, 20)
+      .map((tag) => tag.trim().slice(0, 32));
+    const evidence = {
+      provenance: enriched.provenance,
+      appliedFields: selection.appliedFields,
+      skippedFields: selection.skipped,
+      ignoredFields: selection.ignoredFields,
+      heuristicOnly: budget.llmBlocked,
+    };
+    if (containsSensitiveDiscoveryKey(evidence)) {
+      reply.code(400);
+      return { ok: false, error: "富化来源证据包含敏感凭据字段，已拒绝入队" };
+    }
+    if (JSON.stringify(evidence).length > 16_384) {
+      reply.code(413);
+      return { ok: false, error: "富化来源证据超过 16KB 限制" };
+    }
     const candidate = await ctx.repo.upsertSiteDiscoveryCandidate({
       id,
       url,
       canonicalUrl: canonicalizeUrl(url),
-      title,
-      description: body.data.description ?? selection.applied.description,
+      title: title.trim().slice(0, 120),
+      description: (body.data.description ?? selection.applied.description ?? "").trim().slice(0, 500) || null,
       categoryId,
-      tags: body.data.tags ?? selection.applied.tags,
+      tags,
       source: "ai",
-      evidence: {
-        provenance: enriched.provenance,
-        appliedFields: selection.appliedFields,
-        skippedFields: selection.skipped,
-        ignoredFields: selection.ignoredFields,
-        heuristicOnly: budget.llmBlocked,
-      },
+      evidence,
     });
     await ctx.repo.audit({
       ip: req.ip,

@@ -21,11 +21,12 @@ type Candidate = {
   discoveredAt:number;lastSeenAt:number;
   duplicateEvidence:{exact:boolean;near:number};
   quality:{score:number;reasons:string[]};
-  aiModeration?:{mode:string;status:string;verdict:string|null;confidence:number|null;qualityScore:number|null;risks:string[];reasons:string[];model:string|null;policyVersion:string|null;reviewedAt:number|null}|null
+  aiModeration?:{mode:string;status:string;action:string|null;autoApprovalGate:{eligible:boolean;reason:string|null;sampleSize:number}|null;verdict:string|null;confidence:number|null;qualityScore:number|null;risks:string[];reasons:string[];model:string|null;policyVersion:string|null;reviewedAt:number|null}|null
 }
 type CandidatePage = {ok:boolean;items:Candidate[];total:number;limit:number;offset:number}
 type Source = {id:string;url:string;kind:'sitemap'|'rss'|'page';enabled:boolean;priority:number;intervalMs:number;nextRunAt:number;lastRunAt:number|null;lastStatus:string|null;lastError:string|null}
-type ModerationPolicy = {enabled:boolean;mode:'shadow';autoApproveConfidence:number;rejectConfidence:number;minQualityScore:number;maxExcerptChars:number;maxAiReviewsPerRun:number;requireHttps:boolean}
+type ModerationPolicy = {enabled:boolean;mode:'shadow'|'auto_approve';autoApproveConfidence:number;rejectConfidence:number;minQualityScore:number;maxExcerptChars:number;maxAiReviewsPerRun:number;requireHttps:boolean}
+type AutoApprovalGate = {ready:boolean;models:Array<{model:string;eligible:boolean;reason:string;sampleSize:number;exactMatchRate:number|null;approvePrecision:number|null;riskRecall:number|null}>}
 type ModelAnalytics = {ok:boolean;days:number;models:Array<{model:string;total:number;completed:number;errors:number;quotaBlocked:number;successRate:number|null;averageConfidence:number|null;verdicts:{autoApprove:number;reject:number;manualReview:number}}>}
 type GoldCase = {id:string;sourceFingerprint:string;title:string|null;description:string|null;category:string|null;sanitizedExcerpt:string|null;status:'pending'|'annotating'|'needs_adjudication'|'gold_ready';annotationCount:number;finalLabel:string|null;finalRisk:boolean|null;createdAt:number;updatedAt:number}
 type GoldAnnotation = {id:string;annotatorId:string;label:'approve'|'reject'|'review';risk:boolean;evidence:string;createdAt:number}
@@ -41,6 +42,7 @@ export default function CrawlOperationsPage(){
   const [page,setPage]=useState<CandidatePage|null>(null)
   const [sources,setSources]=useState<Source[]>([])
   const [policy,setPolicy]=useState<ModerationPolicy>(DEFAULT_POLICY)
+  const [autoApprovalGate,setAutoApprovalGate]=useState<AutoApprovalGate>({ready:false,models:[]})
   const [decisionHistory,setDecisionHistory]=useState<Array<{id:string;candidateId:string;decisionSource:string;verdict:string|null;status:string;createdAt:number;actor:string|null}>>([])
   const [modelAnalytics,setModelAnalytics]=useState<ModelAnalytics|null>(null)
   const [goldCases,setGoldCases]=useState<GoldCase[]>([])
@@ -73,12 +75,12 @@ export default function CrawlOperationsPage(){
         hubGet<Overview>('/api/hub/admin/crawl/overview'),
         hubGet<CandidatePage>('/api/hub/admin/crawl/candidates?status=pending&limit=50&offset=0'),
         hubGet<{ok:boolean;items:Source[]}>('/api/hub/admin/crawl-sources?limit=100'),
-        hubGet<{ok:boolean;policy:ModerationPolicy}>('/api/hub/admin/crawl-moderation/policy'),
+        hubGet<{ok:boolean;policy:ModerationPolicy;autoApprovalGate?:AutoApprovalGate}>('/api/hub/admin/crawl-moderation/policy'),
         hubGet<{ok:boolean;items:Array<{id:string;candidateId:string;decisionSource:string;verdict:string|null;status:string;createdAt:number;actor:string|null}>}>('/api/hub/admin/crawl/moderation-decisions?limit=10'),
         hubGet<ModelAnalytics>('/api/hub/admin/crawl/moderation-analytics?days=30'),
         hubGet<{ok:boolean;items:GoldCase[]}>('/api/hub/admin/crawl/moderation-gold-cases?limit=100&offset=0')
       ])
-      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setDecisionHistory(history.items);setModelAnalytics(analytics);setGoldCases(goldQueue.items)
+      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setAutoApprovalGate(moderation.autoApprovalGate??{ready:false,models:[]});setDecisionHistory(history.items);setModelAnalytics(analytics);setGoldCases(goldQueue.items)
     }catch(e){setError(e instanceof Error?e.message:'采集运营数据加载失败')}
     finally{setLoading(false)}
   },[])
@@ -102,7 +104,7 @@ export default function CrawlOperationsPage(){
   }
   const savePolicy=async()=>{
     if(policyBusy)return;setPolicyBusy(true);setError(null)
-    try{const result=await hubSend<{ok:boolean;policy:ModerationPolicy}>('/api/hub/admin/crawl-moderation/policy','PUT',policy);setPolicy(result.policy)}
+    try{const result=await hubSend<{ok:boolean;policy:ModerationPolicy;autoApprovalGate?:AutoApprovalGate}>('/api/hub/admin/crawl-moderation/policy','PUT',policy);setPolicy(result.policy);setAutoApprovalGate(result.autoApprovalGate??{ready:false,models:[]})}
     catch(e){setError(e instanceof Error?e.message:'保存 AI 审核规则失败')}finally{setPolicyBusy(false)}
   }
   const review=async(item:Candidate,decision:'approve'|'reject')=>{
@@ -250,9 +252,15 @@ export default function CrawlOperationsPage(){
             <div className="flex gap-2"><Button size="sm" variant="outline" disabled={sourceBusy!==null} onClick={()=>void updateSource(source,{enabled:!source.enabled})}>{source.enabled?<><Pause className="mr-1 h-3.5 w-3.5"/>暂停</>:<><Play className="mr-1 h-3.5 w-3.5"/>启用</>}</Button><Button size="sm" variant="ghost" disabled={sourceBusy!==null} onClick={()=>void removeSource(source)} aria-label="删除来源"><Trash2 className="h-4 w-4"/></Button></div>
           </div>)}</div>}
         </CardContent></Card>
-      <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4"/>AI 自动审核规则</CardTitle><CardDescription>使用全局已配置的大模型。当前只允许影子模式：模型生成审核建议并记录证据，不会自动批准、驳回或发布网站。</CardDescription></CardHeader>
+      <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4"/>AI 自动审核规则</CardTitle><CardDescription>使用全局已配置的大模型。默认影子模式；安全自动通过必须先满足真实金标评测门槛，只自动批准高置信度、无风险候选，不自动驳回，也不会自动发布网站。</CardDescription></CardHeader>
         <CardContent className="space-y-4">
-          <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={policy.enabled} onChange={e=>setPolicy(p=>({...p,enabled:e.target.checked}))}/>启用 AI 影子审核</label>
+          <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={policy.enabled} onChange={e=>setPolicy(p=>({...p,enabled:e.target.checked}))}/>启用 AI 审核</label>
+          <label className="block max-w-sm space-y-1 text-sm"><span className="text-muted-foreground">审核模式</span><select value={policy.mode} onChange={e=>setPolicy(p=>({...p,mode:e.target.value as ModerationPolicy['mode']}))} className="h-9 w-full rounded-md border bg-background px-3"><option value="shadow">影子模式（只记录建议）</option><option value="auto_approve">安全自动通过（需金标门槛）</option></select></label>
+          <div className="rounded-lg border p-3 text-sm">
+            <div className="font-medium">{autoApprovalGate.ready?'自动通过门槛已满足':'自动通过门槛尚未满足'}</div>
+            <p className="mt-1 text-xs text-muted-foreground">至少 100 条当前完整金标样本；同模型全量评测通过率精确率 ≥99%、风险召回率 ≥99%、风险漏报为 0，评测不超过 30 天。未达标时自动回退为影子建议。</p>
+            {autoApprovalGate.models.length>0&&<ul className="mt-2 space-y-1 text-xs text-muted-foreground">{autoApprovalGate.models.map(item=><li key={item.model}>{item.model}：{item.eligible?'已达标':item.reason} · {item.sampleSize} 条样本</li>)}</ul>}
+          </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="space-y-1 text-sm"><span className="text-muted-foreground">自动通过建议置信度</span><input type="number" min="0.5" max="1" step="0.01" value={policy.autoApproveConfidence} onChange={e=>setPolicy(p=>({...p,autoApproveConfidence:Number(e.target.value)}))} className="h-9 w-full rounded-md border bg-background px-3"/></label>
             <label className="space-y-1 text-sm"><span className="text-muted-foreground">高风险拒绝建议置信度</span><input type="number" min="0.5" max="1" step="0.01" value={policy.rejectConfidence} onChange={e=>setPolicy(p=>({...p,rejectConfidence:Number(e.target.value)}))} className="h-9 w-full rounded-md border bg-background px-3"/></label>
@@ -261,7 +269,7 @@ export default function CrawlOperationsPage(){
             <label className="space-y-1 text-sm"><span className="text-muted-foreground">正文截断字符数</span><input type="number" min="200" max="12000" step="100" value={policy.maxExcerptChars} onChange={e=>setPolicy(p=>({...p,maxExcerptChars:Number(e.target.value)}))} className="h-9 w-full rounded-md border bg-background px-3"/></label>
             <label className="flex items-center gap-2 pt-6 text-sm"><input type="checkbox" checked={policy.requireHttps} onChange={e=>setPolicy(p=>({...p,requireHttps:e.target.checked}))}/>审核建议要求 HTTPS</label>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"><p className="text-xs text-muted-foreground">当前模式：Shadow · 单日调用仍受系统 LLM 配额保护；每轮审核数可限制批量成本。</p><Button size="sm" onClick={()=>void savePolicy()} disabled={policyBusy}>{policyBusy?'保存中…':'保存审核规则'}</Button></div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"><p className="text-xs text-muted-foreground">当前模式：{policy.mode==='auto_approve'?'安全自动通过（仅高置信度无风险候选，仍需人工发布）':'Shadow（仅记录建议，不改变候选状态）'} · 单日调用受系统 LLM 配额保护。</p><Button size="sm" onClick={()=>void savePolicy()} disabled={policyBusy}>{policyBusy?'保存中…':'保存审核规则'}</Button></div>
         </CardContent></Card>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Globe2 className="h-4 w-4"/>活跃域名分布</CardTitle><CardDescription>按采集任务主机名统计；此处不将相似域名误判为同一企业或产品生态。</CardDescription></CardHeader>
@@ -275,11 +283,11 @@ export default function CrawlOperationsPage(){
             <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h3 className="font-semibold">{item.title||'未命名网站'}</h3><a href={safeHref(item.url)} target="_blank" rel="noopener noreferrer" className="break-all text-sm text-muted-foreground underline">{item.url}</a></div><div className="rounded-lg bg-muted px-3 py-2 text-center"><div className="text-xl font-bold tabular-nums">{item.quality.score}</div><div className="text-[11px] text-muted-foreground">质量参考分</div></div></div>
             {item.description&&<p className="text-sm text-muted-foreground">{item.description}</p>}
             {item.aiModeration?.status==='completed'&&<div className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="font-semibold">AI 影子审核意见</span><span className="rounded bg-background px-2 py-1 text-xs">{item.aiModeration.verdict==='auto_approve'?'建议通过':item.aiModeration.verdict==='reject'?'建议驳回':'建议人工复核'}</span></div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="font-semibold">{item.aiModeration.mode==='auto_approve'?(item.aiModeration.action==='auto_approved'?'AI 自动审核通过（未发布）':'AI 自动审核结果'):'AI 影子审核意见'}</span><span className="rounded bg-background px-2 py-1 text-xs">{item.aiModeration.verdict==='auto_approve'?'建议通过':item.aiModeration.verdict==='reject'?'建议驳回':'建议人工复核'}</span></div>
               <div className="flex flex-wrap gap-2 text-xs text-muted-foreground"><span>置信度：{item.aiModeration.confidence===null?'—':Math.round(item.aiModeration.confidence*100)+'%'}</span><span>质量分：{item.aiModeration.qualityScore??'—'}</span><span>模型：{item.aiModeration.model||'—'}</span></div>
               {!!item.aiModeration.risks.length&&<div className="text-xs">风险标记：{item.aiModeration.risks.join('、')}</div>}
               {!!item.aiModeration.reasons.length&&<ul className="list-disc pl-5 text-xs text-muted-foreground">{item.aiModeration.reasons.slice(0,4).map((reason,i)=><li key={i}>{reason}</li>)}</ul>}
-              <p className="text-[11px] text-muted-foreground">仅供参考；当前不会替代人工审核。</p>
+              <p className="text-[11px] text-muted-foreground">{item.aiModeration.action==='auto_approved'?'已按金标评测门槛自动批准候选；这不会将网站发布到正式目录。':item.aiModeration.autoApprovalGate&&!item.aiModeration.autoApprovalGate.eligible?'自动审核门槛未通过，当前仅记录建议并保留人工复核。':'仅供参考；风险、低置信度和不确定结果仍需人工审核。'}</p>
             </div>}
             {item.aiModeration?.status==='error'&&<p className="text-xs text-amber-700 dark:text-amber-500">AI 审核暂未完成：模型调用失败，候选仍保持待审核。</p>}
             {item.aiModeration?.status==='quota_blocked'&&<p className="text-xs text-amber-700 dark:text-amber-500">AI 审核因额度限制跳过，候选仍保持待审核。</p>}

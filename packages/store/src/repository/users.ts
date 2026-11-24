@@ -143,7 +143,10 @@ export async function updateUserProfileInfo(
     const emailChanged = patch.email !== undefined && nextEmail !== currentEmail;
     const nextEmailVerified = nextEmail === null ? 1 : emailChanged ? 0 : Number(existing.email_verified ?? 0);
     // 先撤销旧邮箱的所有待验证链接，再更新邮箱；更新失败最多要求用户重发，不会留下旧链接可用。
-    if (emailChanged) await repo.revokeAuthTokens(identity, "email_verification");
+    if (emailChanged) {
+      await repo.revokeAuthTokens(identity, "email_verification");
+      await repo.revokeAuthTokens(identity, "password_reset");
+    }
     await repo.run(
       "UPDATE users SET username = ?, avatar = ?, email = ?, email_verified = ? WHERE id = ?",
       [nextUsername, nextAvatar, nextEmail, nextEmailVerified, identity],
@@ -298,6 +301,23 @@ export async function verifyUserPassword(
   return ok && user.emailVerified ? user : null;
 }
 
+/** 仅当当前邮箱仍等于重置链接发放时的邮箱，才允许更新密码。 */
+export async function updateUserPasswordForEmail(
+  repo: Repository,
+  userId: string,
+  newPassword: string,
+  email: string,
+): Promise<boolean> {
+  const pwError = validatePassword(newPassword);
+  if (pwError) return false;
+  const passwordHash = await hashPassword(newPassword);
+  const changes = await repo.runCount(
+    "UPDATE users SET password_hash = ? WHERE id = ? AND LOWER(email) = ?",
+    [passwordHash, userId, email.trim().toLowerCase()],
+  );
+  return changes > 0;
+}
+
 /** 更新密码（找回密码流程用）：先哈希再写，明文不落库 */
 export async function updateUserPassword(
   repo: Repository,
@@ -310,6 +330,15 @@ export async function updateUserPassword(
   const changes = await repo.runCount(
     "UPDATE users SET password_hash = ? WHERE id = ?",
     [passwordHash, userId],
+  );
+  return changes > 0;
+}
+
+/** 仅当当前邮箱仍等于令牌发放时绑定的邮箱，才允许标记已验证。 */
+export async function setUserEmailVerifiedForEmail(repo: Repository, userId: string, email: string): Promise<boolean> {
+  const changes = await repo.runCount(
+    "UPDATE users SET email_verified = 1 WHERE id = ? AND LOWER(email) = ?",
+    [userId, email.trim().toLowerCase()],
   );
   return changes > 0;
 }

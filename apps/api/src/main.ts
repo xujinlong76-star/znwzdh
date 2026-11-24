@@ -8,6 +8,7 @@
  *   因此把启动逻辑放在独立入口，导入即启动，不依赖任何主模块判断。
  */
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import { loadConfig } from "./config.ts";
 import { createContext } from "./context.ts";
 import { buildServer } from "./server.ts";
@@ -60,7 +61,7 @@ if (runner) runner.start();
 // 采集 Worker 与通用巡检任务隔离：默认关闭，完成灰度配置后显式开启。
 // 多实例通过数据库来源租约避免重复认领；抓取实现只允许 guardedFetch。
 const crawlWorker = process.env.NAVHUB_CRAWL_WORKER_ENABLED === "1"
-  ? startCrawlSourceWorker(ctx, { workerId: "api-" + process.pid, limit: 5 })
+  ? startCrawlSourceWorker(ctx, { workerId: "api-" + process.pid + "-" + randomUUID(), limit: 5 })
   : null;
 
 // 启动对账（影子表自愈）：见 video-catalog-boot.ts 头注释。fire-and-forget，

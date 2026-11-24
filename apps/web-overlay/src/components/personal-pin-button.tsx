@@ -33,7 +33,7 @@ export function PersonalPinButton({ site, tabIndex, cardAction }: PersonalPinBut
       aria-pressed={pinned}
       className={
         (cardAction
-          ? 'inline-flex items-center justify-center h-6 w-6 rounded-md transition-colors hover:bg-accent '
+          ? 'pointer-events-auto inline-flex items-center justify-center h-6 w-6 rounded-md transition-colors hover:bg-accent '
           : 'inline-flex items-center justify-center rounded-md p-1 transition-colors hover:bg-muted ') +
         (pinned ? 'text-amber-500 bg-amber-500/10 ' : 'text-muted-foreground hover:text-amber-500 ')
       }

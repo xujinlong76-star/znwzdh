@@ -35,14 +35,16 @@ describe("底栏字号（mobile-nav）", () => {
     for (const bad of ["text-[8px]", "text-[9px]", "text-[10px]"]) {
       expect(src, `mobile-nav.tsx 仍有 ${bad}（触控不可读）`).not.toContain(bad);
     }
-    // 基线值本身也锁住：标签 12px、徽章 11px
-    expect(src).toContain("text-[12px]");
-    expect(src).toContain("text-[11px]");
+    // 基线值本身也锁住：标签 0.75rem（=12px）、徽章 0.6875rem（=11px）
+    expect(src).toContain("text-[0.75rem]");
+    expect(src).toContain("text-[0.6875rem]");
+    // 计次：两处徽章（未读 + 追剧）都应是 0.6875rem，漏换 1 处也不能蒙混过关
+    expect(src.split("text-[0.6875rem]").length - 1).toBe(2);
   });
 
   it("标签行收紧 leading 并禁止换行，防 5 项 flex-1 纵向溢出", () => {
     const src = overlayFile("src/components/mobile-nav.tsx");
-    expect(src).toContain("leading-[14px]");
+    expect(src).toContain("leading-[0.875rem]");
     expect(src).toContain("whitespace-nowrap");
   });
 });

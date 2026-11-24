@@ -131,6 +131,7 @@ describe("账号生命周期仓储", () => {
       userId: user.user.id,
       purpose: "email_verification",
       tokenHash: hashToken(staleVerificationToken),
+      targetEmail: "emailchange-old@example.com",
       expiresAt: Date.now() + 3_600_000,
     });
     expect(await repo.hasActiveAuthToken(user.user.id, "email_verification")).toBe(true);

@@ -9,7 +9,7 @@ export * from "./channels.ts";
 export * from "./cjk.ts";
 export * from "./pinyin.ts";
 export * from "./fusion.ts";
-export * from "./ranking.ts";
+export * from "./ranking.ts";\nexport * from "./similar-sites.ts";
 export * from "./profile.ts";
 export * from "./ecosystem.ts";
 export * from "./speculative-intent.ts";

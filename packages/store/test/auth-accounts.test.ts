@@ -149,6 +149,7 @@ describe("账号生命周期仓储", () => {
       userId: user.user.id,
       purpose: "email_verification",
       tokenHash: hashToken(staleVerificationToken),
+      targetEmail: "emailchange-old@example.com",
     })).toBe(false);
 
     expect(await repo.setUserEmailVerified(user.user.id)).toBe(true);
@@ -205,6 +206,7 @@ describe("账号生命周期仓储", () => {
       userId: user.user.id,
       purpose: "email_verification",
       tokenHash: hashToken(token),
+      targetEmail: "dave@example.com",
       expiresAt: Date.now() + 3_600_000,
     });
 
@@ -212,6 +214,7 @@ describe("账号生命周期仓储", () => {
       userId: user.user.id,
       purpose: "email_verification",
       tokenHash: hashToken(token),
+      targetEmail: "dave@example.com",
     });
     expect(first).toBe(true);
     expect(await repo.setUserEmailVerified(user.user.id)).toBe(true);
@@ -224,6 +227,7 @@ describe("账号生命周期仓储", () => {
       userId: user.user.id,
       purpose: "email_verification",
       tokenHash: hashToken(token),
+      targetEmail: "dave@example.com",
     });
     expect(replay).toBe(false);
   });
@@ -242,6 +246,7 @@ describe("账号生命周期仓储", () => {
       userId: user.user.id,
       purpose: "email_verification",
       tokenHash: hashToken(token),
+      targetEmail: "erin@example.com",
       expiresAt: Date.now() + 3_600_000,
     });
 
@@ -250,6 +255,7 @@ describe("账号生命周期仓储", () => {
       userId: user.user.id,
       purpose: "password_reset",
       tokenHash: hashToken(token),
+      targetEmail: "erin@example.com",
     });
     expect(cross).toBe(false);
   });
@@ -268,12 +274,14 @@ describe("账号生命周期仓储", () => {
       userId: user.user.id,
       purpose: "password_reset",
       tokenHash: hashToken(token),
+      targetEmail: "frank@example.com",
       expiresAt: Date.now() - 1, // 已过期
     });
     const consumed = await repo.consumeAuthToken({
       userId: user.user.id,
       purpose: "password_reset",
       tokenHash: hashToken(token),
+      targetEmail: "frank@example.com",
     });
     expect(consumed).toBe(false);
   });
@@ -292,12 +300,14 @@ describe("账号生命周期仓储", () => {
       userId: user.user.id,
       purpose: "password_reset",
       tokenHash: hashToken(token),
+      targetEmail: "grace@example.com",
       expiresAt: Date.now() + 3_600_000,
     });
     const consumed = await repo.consumeAuthToken({
       userId: user.user.id,
       purpose: "password_reset",
       tokenHash: hashToken(token),
+      targetEmail: "grace@example.com",
     });
     expect(consumed).toBe(true);
 

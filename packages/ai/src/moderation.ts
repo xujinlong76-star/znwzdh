@@ -203,7 +203,7 @@ export interface SiteModerationGoldEvaluation {
   coverage: number | null;
   confusionMatrix: Record<SiteModerationGoldLabel, Record<SiteModerationGoldLabel, number>>;
   perLabel: Record<SiteModerationGoldLabel, SiteModerationLabelMetrics>;
-  riskDetection: { precision: number | null; recall: number | null; falseNegatives: number; falsePositives: number; support: number };
+  riskDetection: { precision: number | null; recall: number | null; falseNegatives: number; falsePositives: number; support: number; positiveSupport: number; negativeSupport: number };
 }
 
 /**
@@ -220,7 +220,7 @@ export function evaluateSiteModerationGoldSet(
   const ids = new Set<string>();
   let correct = 0;
   let covered = 0;
-  let riskTp = 0, riskFp = 0, riskFn = 0, riskSupport = 0;
+  let riskTp = 0, riskFp = 0, riskFn = 0, riskSupport = 0, riskPositiveSupport = 0, riskNegativeSupport = 0;
   for (const item of cases) {
     if (!item.id.trim() || ids.has(item.id)) throw new Error("金标样本 ID 不能为空且必须唯一");
     ids.add(item.id);
@@ -233,6 +233,7 @@ export function evaluateSiteModerationGoldSet(
     }
     if (item.expectedRisk !== undefined && item.actualRisk !== undefined) {
       riskSupport++;
+      if (item.expectedRisk) riskPositiveSupport++; else riskNegativeSupport++;
       if (item.expectedRisk && item.actualRisk) riskTp++;
       else if (!item.expectedRisk && item.actualRisk) riskFp++;
       else if (item.expectedRisk && !item.actualRisk) riskFn++;
@@ -260,6 +261,8 @@ export function evaluateSiteModerationGoldSet(
       falseNegatives: riskFn,
       falsePositives: riskFp,
       support: riskSupport,
+      positiveSupport: riskPositiveSupport,
+      negativeSupport: riskNegativeSupport,
     },
   };
 }

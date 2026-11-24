@@ -33,9 +33,11 @@ const DramaContent = dynamic(
 export function DramaContentLazy({
   sites,
   dramas,
+  featuredUpdatedAt,
 }: {
   sites: DramaSite[];
   dramas: DramaFeatured[];
+  featuredUpdatedAt?: string | null;
 }) {
-  return <DramaContent sites={sites} dramas={dramas} />;
+  return <DramaContent sites={sites} dramas={dramas} featuredUpdatedAt={featuredUpdatedAt} />;
 }

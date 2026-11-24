@@ -20,6 +20,8 @@ const NAVIGATION_PATH = "src/navsphere/content/navigation.json";
 export interface DramaPageData {
   sites: DramaSite[];
   dramas: DramaFeatured[];
+  /** 热门剧清单数据日期（drama-featured.json 顶层 updatedAt；缺失为 null，不编造）。 */
+  featuredUpdatedAt: string | null;
 }
 
 const getDramaData = cache(async (): Promise<DramaPageData> => {
@@ -34,9 +36,11 @@ const getDramaData = cache(async (): Promise<DramaPageData> => {
   } catch {
     // Hub 读不到时回退到构建期基线（与 /videos 的口径一致），页面不挂。
   }
+  const featured = loadDramaFeatured();
   return {
     sites: collectDramaSites(navigationItems),
-    dramas: loadDramaFeatured().dramas,
+    dramas: featured.dramas,
+    featuredUpdatedAt: featured.updatedAt,
   };
 });
 
@@ -52,10 +56,10 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function DramaPage() {
-  const { sites, dramas } = await getDramaData();
+  const { sites, dramas, featuredUpdatedAt } = await getDramaData();
   return (
     <main id="main-content">
-      <DramaContentLazy sites={sites} dramas={dramas} />
+      <DramaContentLazy sites={sites} dramas={dramas} featuredUpdatedAt={featuredUpdatedAt} />
     </main>
   );
 }

@@ -106,9 +106,12 @@ function progressTimeMeta(entry: WatchEntry, now: Date): string | null {
 export function DramaContent({
   sites,
   dramas,
+  featuredUpdatedAt,
 }: {
   sites: DramaSite[];
   dramas: DramaFeatured[];
+  /** 热门剧清单数据日期（drama-featured.json 顶层 updatedAt；null 时不渲染、不编造）。 */
+  featuredUpdatedAt?: string | null;
 }) {
   const appOnlyIds = new Set(sites.filter(isAppOnlySite).map((s) => s.id));
   // 今日待看：与分类横幅、简报、首页影院同口径（partitionWatchlist(...).due.length）。
@@ -322,8 +325,25 @@ export function DramaContent({
 
       <section aria-label="热门剧" className="mt-10">
         <h2 className="text-xl font-semibold">热门剧</h2>
+        {featuredUpdatedAt !== null && featuredUpdatedAt !== undefined && (
+          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+            数据日期 {featuredUpdatedAt}
+          </p>
+        )}
+        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+          红果真人新剧榜部分：数据日期 2026-11-16。
+        </p>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
           榜单页、报道页、百科页链接不是正片，只作来源；集数只写核实过的。
+        </p>
+        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+          抖音热播榜、搜短剧热播榜、红果真人新剧榜是三套统计口径，第一名不是同一部剧：抖音热播榜第 1
+          是《穿越八零，我把娘俩宠成宝》，搜短剧热播榜第 1
+          是《王妈》（《王妈在顾家当保姆后全家只会搞笑了》），红果真人新剧榜第 1
+          是《少夫人来自东北 3》。例如《王妈》在搜短剧热播榜排第 1，在抖音榜只排第
+          95；抖音 TOP100 里 AI 短剧 44 部、漫剧 41 部、真人剧仅 15
+          部。《穿越八零，我把娘俩宠成宝》《持械入宋：第十一季》在抖音榜标 AI
+          短剧，在红果站内标漫剧，两套标签都保留、不改判。
         </p>
 
         <div className="mt-4 flex flex-col gap-3">
@@ -383,7 +403,7 @@ export function DramaContent({
             </div>
           )}
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            题材只标核实过的：热门剧里 7 部有题材标签，其余与日历剧暂无题材、不参与题材筛选；搜剧名即时出结果，筛选与搜索可叠加。
+            题材只标核实过的：热门剧里 12 部有题材标签，其余与日历剧暂无题材、不参与题材筛选；搜剧名即时出结果，筛选与搜索可叠加。
           </p>
         </div>
 

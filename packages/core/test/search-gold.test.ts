@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { finalSearchGoldLabels, validateSearchGoldCase, validateSearchGoldSet, type SearchGoldCase } from "../src/search-gold.ts";
 
 const validCase = (queryId: string): SearchGoldCase => ({
+  schemaVersion: "search-quality-golden-v2", datasetVersion: "search-gold-v1",
   queryId, queryText: "脱敏后的真实查询文本", locale: "zh-CN", intent: "task",
   sampledAt: 1, privacyReviewed: true,
   snapshotId: "snapshot-2026-11-24-001",
@@ -68,6 +69,15 @@ describe("human search gold-set protocol", () => {
     item.annotations[0]!.judgments.pop();
     expect(validateSearchGoldCase(item).errors.join(" ")).toContain("缺少候选");
   });
+  it("rejects mixed dataset versions instead of combining snapshots", () => {
+    const first = validCase("query_000007");
+    const second = validCase("query_000008");
+    second.datasetVersion = "search-gold-v2";
+    const result = validateSearchGoldSet([first, second], 2);
+    expect(result.valid).toBe(false);
+    expect(result.errors.join(" ")).toContain("不得混合不同 datasetVersion");
+  });
+
   it("enforces the 100-query gate without inventing data", () => {
     const result = validateSearchGoldSet(Array.from({ length: 99 }, (_, i) => validCase(`query_${String(i).padStart(6, "0")}`)));
     expect(result.valid).toBe(false);

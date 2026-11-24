@@ -10,12 +10,11 @@ import type { Repository } from "../repository.ts";
 
 let writesSincePrune = 0;
 
-function identifierDigest(identifier: string): string {
-  const key = process.env.NAVHUB_IDENTITY_SECRET || process.env.NAVHUB_SESSION_SECRET || process.env.AUTH_SECRET;
-  if (!key && process.env.NODE_ENV === "production") {
-    throw new Error("A shared identity/session secret is required for distributed login throttling");
+function identifierDigest(identifier: string, sharedSecret: string): string {
+  if (!sharedSecret || (process.env.NODE_ENV === "production" && sharedSecret.length < 32)) {
+    throw new Error("A shared session secret is required for distributed login throttling");
   }
-  return createHmac("sha256", key ?? "navhub-login-failure-development-only")
+  return createHmac("sha256", sharedSecret)
     .update(identifier.trim().toLowerCase())
     .digest("hex");
 }
@@ -27,10 +26,11 @@ function identifierDigest(identifier: string): string {
 export async function reserveLoginAttempt(
   repo: Repository,
   identifier: string,
+  sharedSecret: string,
   now: number,
   windowMs: number,
 ): Promise<{ count: number; identifierHash: string }> {
-  const identifierHash = identifierDigest(identifier);
+  const identifierHash = identifierDigest(identifier, sharedSecret);
   const rows = await repo.raw(
     "INSERT INTO account_login_failures (identifier_hash, failure_count, first_at, updated_at) " +
       "VALUES (?, 1, ?, ?) " +
@@ -59,9 +59,9 @@ export async function reserveLoginAttempt(
 }
 
 /** Successful authentication clears the shared consecutive-attempt window. */
-export async function clearLoginAttempts(repo: Repository, identifier: string): Promise<void> {
+export async function clearLoginAttempts(repo: Repository, identifier: string, sharedSecret: string): Promise<void> {
   await repo.runCount(
     "DELETE FROM account_login_failures WHERE identifier_hash = ?",
-    [identifierDigest(identifier)],
+    [identifierDigest(identifier, sharedSecret)],
   );
 }

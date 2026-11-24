@@ -275,7 +275,13 @@ export default function CrawlOperationsPage(){
     const previous=map.get(item.model)
     if(!previous||item.createdAt>previous.createdAt)map.set(item.model,item)
     return map
-  },new Map<string,ModelEvaluationRun>()).values()).sort((a,b)=>(b.metrics.riskDetection.recall??-1)-(a.metrics.riskDetection.recall??-1)||(b.metrics.exactMatchRate??-1)-(a.metrics.exactMatchRate??-1))
+  },new Map<string,ModelEvaluationRun>()).values())
+  const latestEvaluationGroups=Array.from(latestEvaluationByModel.reduce((map,item)=>{
+    const group=map.get(item.datasetVersion)??[]
+    group.push(item);map.set(item.datasetVersion,group);return map
+  },new Map<string,ModelEvaluationRun[]>()).entries()).map(([datasetVersion,items])=>({
+    datasetVersion,items:items.sort((a,b)=>(b.metrics.riskDetection.recall??-1)-(a.metrics.riskDetection.recall??-1)||(b.metrics.exactMatchRate??-1)-(a.metrics.exactMatchRate??-1))
+  }))
   const latestDiagnostics=latestEvaluationByModel.flatMap(run=>run.metrics.caseDiagnostics??[])
   const errorSummary={
     labelMismatch:latestDiagnostics.filter(item=>item.labelMismatch).length,
@@ -319,7 +325,7 @@ export default function CrawlOperationsPage(){
           <Stat label="标签错分" value={errorSummary.labelMismatch} detail="模型标签与人工金标不一致"/>
           <Stat label="风险漏报" value={errorSummary.riskFalseNegative} detail={"风险误报 "+errorSummary.riskFalsePositive+" 条"}/>
         </div>
-        {!latestEvaluationByModel.length?<p className="text-xs text-muted-foreground">尚无模型评测数据；完成正式金标并运行模型评测后自动生成排行榜。</p>:<div className="overflow-x-auto"><table className="w-full min-w-[620px] text-xs"><thead><tr className="border-b text-left text-muted-foreground"><th className="p-2">排名</th><th className="p-2">模型</th><th className="p-2">样本数</th><th className="p-2">风险召回</th><th className="p-2">精确匹配</th><th className="p-2">风险漏报</th><th className="p-2">预警</th></tr></thead><tbody>{latestEvaluationByModel.map((item,index)=><tr key={item.model} className="border-b"><td className="p-2 font-semibold">{index+1}</td><td className="p-2 font-medium">{item.model}</td><td className="p-2">{item.sampleSize}</td><td className="p-2">{item.metrics.riskDetection.recall===null?'不可评估':(item.metrics.riskDetection.recall*100).toFixed(1)+'%'}</td><td className="p-2">{item.metrics.exactMatchRate===null?'—':(item.metrics.exactMatchRate*100).toFixed(1)+'%'}</td><td className="p-2">{item.metrics.riskDetection.falseNegatives}</td><td className="p-2">{item.metrics.alerts?.length??0}</td></tr>)}</tbody></table></div>}
+        {!latestEvaluationGroups.length?<p className="text-xs text-muted-foreground">尚无模型评测数据；完成正式金标并运行模型评测后自动生成排行榜。</p>:latestEvaluationGroups.map(group=><div key={group.datasetVersion} className="space-y-2"><p className="text-xs font-medium">同一数据集快照 · {group.items.length} 个模型 · <span className="font-mono text-muted-foreground">{group.datasetVersion.slice(0,12)}</span></p><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-xs"><thead><tr className="border-b text-left text-muted-foreground"><th className="p-2">排名</th><th className="p-2">模型</th><th className="p-2">样本数</th><th className="p-2">风险召回</th><th className="p-2">精确匹配</th><th className="p-2">风险漏报</th><th className="p-2">预警</th></tr></thead><tbody>{group.items.map((item,index)=><tr key={item.model} className="border-b"><td className="p-2 font-semibold">{index+1}</td><td className="p-2 font-medium">{item.model}</td><td className="p-2">{item.sampleSize}</td><td className="p-2">{item.metrics.riskDetection.recall===null?'不可评估':(item.metrics.riskDetection.recall*100).toFixed(1)+'%'}</td><td className="p-2">{item.metrics.exactMatchRate===null?'—':(item.metrics.exactMatchRate*100).toFixed(1)+'%'}</td><td className="p-2">{item.metrics.riskDetection.falseNegatives}</td><td className="p-2">{item.metrics.alerts?.length??0}</td></tr>)}</tbody></table></div></div>)}
         <p className="text-xs text-muted-foreground">排行榜是辅助分析，不代表模型已获准上线。样本量、数据集版本和风险正样本覆盖必须同时审查；不得仅凭排名解除 Shadow。</p>
       </CardContent></Card>
       <Card><CardHeader><CardTitle className="text-base">真实金标基线进度</CardTitle><CardDescription>目标 100 条正式金标样本；仅统计双人一致或独立第三人仲裁完成的数据。</CardDescription></CardHeader><CardContent className="space-y-3">

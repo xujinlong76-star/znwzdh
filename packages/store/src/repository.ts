@@ -65,6 +65,7 @@ import * as notificationsRepo from "./repository/notifications.ts";
 import * as dramaCheckRepo from "./repository/drama-check.ts";
 import * as usersRepo from "./repository/users.ts";
 import * as authTokensRepo from "./repository/auth-tokens.ts";
+import * as loginFailuresRepo from "./repository/login-failures.ts";
 import * as tokensRepo from "./repository/tokens.ts";
 import * as collectionsRepo from "./repository/collections.ts";
 import * as submissionReviewsRepo from "./repository/submission-reviews.ts";
@@ -1457,6 +1458,16 @@ async revokeAllSessions(userId: string): Promise<number> {
 
   async pruneAuthTokens(before: number): Promise<number> {
     return authTokensRepo.pruneAuthTokens(this, before);
+  }
+
+  /* ------------------------- 跨实例登录失败计数 ------------------------- */
+
+  async reserveLoginAttempt(identifier: string, now: number, windowMs: number): Promise<{ count: number; identifierHash: string }> {
+    return loginFailuresRepo.reserveLoginAttempt(this, identifier, now, windowMs);
+  }
+
+  async clearLoginAttempts(identifier: string): Promise<void> {
+    return loginFailuresRepo.clearLoginAttempts(this, identifier);
   }
 
   /* ------------------------- 投稿收录汇报 ------------------------- */

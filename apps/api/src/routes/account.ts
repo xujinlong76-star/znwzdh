@@ -266,26 +266,31 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(400);
         return { error: "验证链接无效或已失效" };
       }
-      const consumed = await ctx.repo.consumeAuthToken({
-        userId: String(row.user_id),
-        purpose: "email_verification",
-        tokenHash: hashToken(body.data.token),
-        targetEmail: String(row.target_email),
+      // 消费、验证邮箱与撤销同账号的兄弟令牌必须原子提交。
+      const verifyOutcome = await ctx.repo.withTransaction(async () => {
+        if (ctx.db.dialect === "pg") {
+          // 同一用户的不同验证链接串行化，避免两个并发请求分别消费不同令牌。
+          await ctx.repo.raw("SELECT id FROM users WHERE id = ? FOR UPDATE", [String(row.user_id)]);
+        }
+        const consumed = await ctx.repo.consumeAuthToken({
+          userId: String(row.user_id),
+          purpose: "email_verification",
+          tokenHash: hashToken(body.data.token),
+          targetEmail: String(row.target_email),
+        });
+        if (!consumed) return "used" as const;
+        const verified = await ctx.repo.setUserEmailVerifiedForEmail(String(row.user_id), String(row.target_email));
+        if (!verified) return "stale" as const;
+        await ctx.repo.runCount(
+          "UPDATE auth_tokens SET consumed_at = ? WHERE user_id = ? AND purpose = 'email_verification' AND consumed_at IS NULL",
+          [Date.now(), String(row.user_id)],
+        );
+        return "ok" as const;
       });
-      if (!consumed) {
+      if (verifyOutcome !== "ok") {
         reply.code(400);
-        return { error: "验证链接无效或已使用" };
+        return { error: verifyOutcome === "used" ? "验证链接无效或已使用" : "验证链接已失效，请重新发送验证邮件" };
       }
-      const verified = await ctx.repo.setUserEmailVerifiedForEmail(String(row.user_id), String(row.target_email));
-      if (!verified) {
-        reply.code(400);
-        return { error: "验证链接已失效，请重新发送验证邮件" };
-      }
-      // 成功验证后，撤销同一用户的其他验证链接，避免旧邮件在后续邮箱变更时重放。
-      await ctx.repo.runCount(
-        "UPDATE auth_tokens SET consumed_at = ? WHERE user_id = ? AND purpose = 'email_verification' AND consumed_at IS NULL",
-        [Date.now(), String(row.user_id)],
-      );
       await ctx.repo.audit({
         actor: String(row.user_id),
         actorKind: "user",
@@ -421,26 +426,34 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(400);
         return { error: "重置链接无效或已失效" };
       }
-      const consumed = await ctx.repo.consumeAuthToken({
-        userId: String(row.user_id),
-        purpose: "password_reset",
-        tokenHash,
-        targetEmail: String(row.target_email),
+      // 同一用户的密码重置必须串行化：否则两条不同令牌可能并发通过各自的一次性消费。
+      // PostgreSQL 先锁用户行；SQLite 的 withTransaction 使用 BEGIN IMMEDIATE。
+      const resetOutcome = await ctx.repo.withTransaction(async () => {
+        if (ctx.db.dialect === "pg") {
+          await ctx.repo.raw("SELECT id FROM users WHERE id = ? FOR UPDATE", [String(row.user_id)]);
+        }
+        const consumed = await ctx.repo.consumeAuthToken({
+          userId: String(row.user_id),
+          purpose: "password_reset",
+          tokenHash,
+          targetEmail: String(row.target_email),
+        });
+        if (!consumed) return "used" as const;
+        const updated = await ctx.repo.updateUserPasswordForEmail(
+          String(row.user_id), body.data.password, String(row.target_email),
+        );
+        if (!updated) return "stale" as const;
+        // 与密码更新在同一事务内撤销兄弟令牌；并发请求拿到用户锁后会看到令牌已失效。
+        await ctx.repo.runCount(
+          "UPDATE auth_tokens SET consumed_at = ? WHERE user_id = ? AND purpose = 'password_reset' AND consumed_at IS NULL",
+          [Date.now(), String(row.user_id)],
+        );
+        return "ok" as const;
       });
-      if (!consumed) {
+      if (resetOutcome !== "ok") {
         reply.code(400);
-        return { error: "重置链接无效或已使用" };
+        return { error: resetOutcome === "used" ? "重置链接无效或已使用" : "重置链接已失效，请重新申请密码重置" };
       }
-      const updated = await ctx.repo.updateUserPasswordForEmail(String(row.user_id), body.data.password, String(row.target_email));
-      if (!updated) {
-        reply.code(400);
-        return { error: "重置链接已失效，请重新申请密码重置" };
-      }
-      // 成功重置后撤销该用户所有其他重置令牌，防止旧邮件链接再次覆盖新密码。
-      await ctx.repo.runCount(
-        "UPDATE auth_tokens SET consumed_at = ? WHERE user_id = ? AND purpose = 'password_reset' AND consumed_at IS NULL",
-        [Date.now(), String(row.user_id)],
-      );
     // 密码重置后吊销该用户全部已登录会话：旧的 next-auth JWT (sid) 即便未过期，
     // BFF 也会在下一个 /api/me/* 请求上经 isSessionRevoked 拦下 (401)。
     // row.user_id 是 users 表原始 id——凭据用户为裸 UUID，而 sessions 表按 canonical

@@ -161,6 +161,31 @@ describe("账号生命周期 API", () => {
     ).toBe(400);
   });
 
+  it("登录失败计数在两个 API 实例之间共享", async () => {
+    await post("/api/account/register", {
+      username: "shared-lock",
+      email: "shared-lock@example.com",
+      password: "S3cret-Passw0rd!",
+    });
+    for (let i = 0; i < 5; i++) {
+      expect((await post("/api/account/login", { identifier: "shared-lock@example.com", password: "wrong" })).statusCode).toBe(401);
+    }
+    const replicaCtx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "account.db") }));
+    const replica = await buildServer(replicaCtx);
+    await replica.ready();
+    try {
+      const locked = await replica.inject({
+        method: "POST",
+        url: "/api/account/login",
+        payload: { identifier: "shared-lock@example.com", password: "S3cret-Passw0rd!" },
+      });
+      expect(locked.statusCode).toBe(429);
+    } finally {
+      await replica.close();
+      await replicaCtx.close();
+    }
+  });
+
   it("注册：单字符 TLD 不是真实邮箱", async () => {
     const res = await post("/api/account/register", {
       username: "tld",
@@ -194,10 +219,6 @@ describe("账号生命周期 API", () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toContain("邮箱格式");
   });
-
-  // 注：锁定用例只保留一份。登录失败计数是进程内共享状态（见 routes/account.ts
-  // loginFailures），同一标识的第二份相同用例会在第一次错误登录时就拿到 429，
-  // 永远跑不绿——不是生产行为错了，是用例被粘贴重复了（2026-11-15 删重复）。
 
   it("登录：未验证邮箱拒绝；完成验证后正确口令通过", async () => {
     captured.length = 0;

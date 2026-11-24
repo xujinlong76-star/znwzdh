@@ -14,7 +14,7 @@ import type { AppContext } from "../context.ts";
 import { resolveLlm, llmProviderReady } from "../llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota, replyQuotaBlocked } from "../llm-quota.ts";
 import { callLlm } from "../llm-usage.ts";
-import { CRAWL_AI_MODERATION_POLICY_KEY, CrawlAiModerationPolicySchema, loadCrawlAiModerationPolicy } from "../crawl-moderation-policy.ts";
+import { CRAWL_AI_MODERATION_POLICY_KEY, CrawlAiModerationPolicySchema, getCrawlAiAutoApprovalGate, loadCrawlAiModerationPolicy } from "../crawl-moderation-policy.ts";
 
 /** 来源注册前做 DNS/IP 与危险端口校验；真正抓取时仍必须使用 guardedFetch 逐跳防护。 */
 export async function assertSafeCrawlSourceUrl(rawUrl: string): Promise<void> {
@@ -869,12 +869,34 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     return { ok: true, deleted: true };
   });
 
+  const getAutoApprovalGates = async () => {
+    try {
+      const resolved = await resolveLlm(ctx);
+      const providers = [{ provider: resolved.provider }, ...resolved.fallbacks.map(provider => ({ provider }))]
+        .filter(item => llmProviderReady(item.provider));
+      return await Promise.all(providers.map(item => getCrawlAiAutoApprovalGate(ctx, item.provider.model)));
+    } catch {
+      return [];
+    }
+  };
   app.get("/api/admin/crawl-moderation/policy", { config: { scope: "admin", cache: { maxAge: 0 } } }, async () => {
-    return { ok: true, policy: await loadCrawlAiModerationPolicy(ctx) };
+    const [policy, gates] = await Promise.all([loadCrawlAiModerationPolicy(ctx), getAutoApprovalGates()]);
+    return { ok: true, policy, autoApprovalGate: { ready: gates.some(gate => gate.eligible), models: gates } };
   });
   app.put("/api/admin/crawl-moderation/policy", { config: { scope: "admin", rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
     const body = CrawlAiModerationPolicySchema.safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { ok: false, error: "AI 审核规则无效", details: body.error.issues }; }
+    if (body.data.enabled && body.data.mode === "auto_approve") {
+      const gates = await getAutoApprovalGates();
+      if (!gates.some(gate => gate.eligible)) {
+        reply.code(409);
+        return {
+          ok: false,
+          error: "自动通过尚未达到安全门槛：需要当前完整金标集至少 100 条、同模型全量评测、通过率精确率和风险召回率均达标且无风险漏报",
+          autoApprovalGate: { ready: false, models: gates },
+        };
+      }
+    }
     await ctx.repo.setSystemState(CRAWL_AI_MODERATION_POLICY_KEY, body.data);
     await ctx.repo.audit({ ip: req.ip, actor: String(req.auth.actor ?? "admin"), actorKind: req.auth.kind, action: "crawl.moderation_policy_update", target: CRAWL_AI_MODERATION_POLICY_KEY, diff: { enabled: body.data.enabled, mode: body.data.mode, autoApproveConfidence: body.data.autoApproveConfidence, rejectConfidence: body.data.rejectConfidence, minQualityScore: body.data.minQualityScore, maxAiReviewsPerRun: body.data.maxAiReviewsPerRun } });
     return { ok: true, policy: body.data };

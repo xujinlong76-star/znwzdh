@@ -57,6 +57,11 @@ describe("crawl worker source parsing", () => {
     expect(extractFeedUrls(atom, "https://news.example/feed.xml", "rss")).toEqual([
       "https://news.example/c",
     ]);
+    expect(extractFeedUrls(
+      '<feed><entry><link href="/self" rel="self"/></entry></feed>',
+      "https://news.example/feed.xml",
+      "rss",
+    )).toEqual([]);
   });
 
   it("只把最近的 SimHash 近重复作为审核证据，不自动隐藏候选", () => {
@@ -90,6 +95,11 @@ Disallow: /internal
     expect(isRobotsAllowed(rules, "https://example.com/private/account", "NavHubDiscoveryBot/1.0")).toBe(true);
     expect(isRobotsAllowed(rules, "https://example.com/internal/admin", "NavHubDiscoveryBot/1.0")).toBe(false);
     expect(isRobotsAllowed(rules, "https://example.com/open")).toBe(true);
+    expect(isRobotsAllowed(
+      "User-agent: OtherBot\nDisallow: /",
+      "https://example.com/private",
+      "NavHubDiscoveryBot/1.0",
+    )).toBe(true);
   });
 
   it("parses Retry-After seconds and HTTP-date with a six-hour ceiling", () => {

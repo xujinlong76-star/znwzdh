@@ -60,6 +60,29 @@ interface QualityResponse {
   band: string
 }
 
+interface QualityShadowPreview {
+  ok: boolean
+  query: string
+  productionOrderChanged: boolean
+  baseline: Array<{
+    rank: number
+    siteId: string
+    site: { title: string; url: string } | null
+  }>
+  shadow: Array<{
+    rank: number
+    baselineRank: number
+    siteId: string
+    site: { title: string; url: string } | null
+    qualityScore: number | null
+    evidenceCoverage: number
+    band: QualityBand
+    applied: boolean
+    excludedReason?: string
+  }>
+  note: string
+}
+
 const PAGE_SIZE = 50
 const BAND_LABEL: Record<QualityBand, string> = {
   high: '高质量候选',
@@ -103,6 +126,10 @@ export default function SiteQualityAdminPage() {
   const [rebuilding, setRebuilding] = useState(false)
   const [rebuildOffset, setRebuildOffset] = useState(0)
   const [rebuildNotice, setRebuildNotice] = useState<string | null>(null)
+  const [previewQuery, setPreviewQuery] = useState('')
+  const [preview, setPreview] = useState<QualityShadowPreview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
 
   const load = useCallback(async (offset = 0, append = false) => {
     if (append) setLoadingMore(true)
@@ -129,6 +156,24 @@ export default function SiteQualityAdminPage() {
 
   const summary = data?.summary
   const hasMore = Boolean(data && data.items.length < data.total)
+
+  const runQualityShadowPreview = async () => {
+    const query = previewQuery.trim()
+    if (!query || previewLoading) return
+    setPreviewLoading(true)
+    setPreviewError(null)
+    try {
+      const params = new URLSearchParams({ q: query, limit: '10' })
+      const result = await hubGet<QualityShadowPreview>(
+        '/api/hub/admin/search/quality-shadow-preview?' + params.toString(),
+      )
+      setPreview(result)
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : '搜索影子预览失败')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
 
   const rebuildBatch = async () => {
     if (rebuilding) return
@@ -188,6 +233,68 @@ export default function SiteQualityAdminPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">搜索质量影子预览</CardTitle>
+          <CardDescription>输入真实查询词，对比当前搜索排序与质量证据重排；仅管理员可见，不会改变线上搜索结果。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <input
+              aria-label="搜索质量预览查询词"
+              value={previewQuery}
+              onChange={(event) => setPreviewQuery(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter') void runQualityShadowPreview() }}
+              placeholder="例如：AI 视频生成工具"
+              maxLength={120}
+              className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+            />
+            <Button onClick={() => void runQualityShadowPreview()} disabled={previewLoading || !previewQuery.trim()}>
+              {previewLoading ? '计算中…' : '预览排序'}
+            </Button>
+          </div>
+          {previewError && <p className="text-sm text-destructive">{previewError}</p>}
+          {preview && (
+            <>
+              <p className="text-xs text-muted-foreground">
+                查询：{preview.query} · {preview.productionOrderChanged ? '影子顺序与当前顺序不同' : '影子顺序未改变'}
+              </p>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-lg border p-3">
+                  <h3 className="mb-2 text-sm font-semibold">当前排序（Baseline）</h3>
+                  <ol className="space-y-2">
+                    {preview.baseline.map((item) => (
+                      <li key={item.siteId} className="flex gap-2 text-sm">
+                        <span className="w-6 shrink-0 text-muted-foreground tabular-nums">{item.rank}.</span>
+                        <span className="min-w-0 break-words">{item.site?.title ?? item.siteId}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <h3 className="mb-2 text-sm font-semibold">质量影子排序（Shadow）</h3>
+                  <ol className="space-y-2">
+                    {preview.shadow.map((item) => (
+                      <li key={item.siteId} className="flex gap-2 text-sm">
+                        <span className="w-6 shrink-0 text-muted-foreground tabular-nums">{item.rank}.</span>
+                        <div className="min-w-0">
+                          <p className="break-words">{item.site?.title ?? item.siteId}</p>
+                          <p className="text-xs text-muted-foreground">
+                            原名次 {item.baselineRank} · 质量分 {scoreLabel(item.qualityScore)} · 证据 {item.evidenceCoverage}%
+                            {item.applied ? ' · 已应用' : item.excludedReason ? ` · ${item.excludedReason}` : ' · 未应用'}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">{preview.note}</p>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       {summary && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">

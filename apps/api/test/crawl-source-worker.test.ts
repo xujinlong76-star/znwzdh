@@ -22,7 +22,7 @@ describe("crawl source URL extraction", () => {
 
   it("keeps RSS item metadata and HTML anchor labels attached to their own candidate", () => {
     const feed = extractCrawlCandidateDetails(
-      "<rss><channel><item><title>First article</title><link>https://example.com/1</link><description>First summary</description></item><item><title>Second article</title><link>https://example.com/2</link></item><item><guid isPermaLink="false">article-id-3</guid></item></channel></rss>",
+      `<rss><channel><item><title>First article</title><link>https://example.com/1</link><description>First summary</description></item><item><title>Second article</title><link>https://example.com/2</link></item><item><guid isPermaLink="false">article-id-3</guid></item></channel></rss>`,
       "rss",
       "https://example.com/feed.xml",
     );

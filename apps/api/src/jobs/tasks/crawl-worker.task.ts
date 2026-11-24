@@ -314,6 +314,10 @@ export interface NearDuplicateFingerprint {
 }
 
 /** 对最近指纹做有界 SimHash 比较；只提供审核证据，不自动合并或隐藏候选。 */
+export function hasUsableCrawlFingerprintText(text: string): boolean {
+  return text.trim().length >= 80;
+}
+
 export function rankNearDuplicateFingerprints(
   rows: Array<{ canonical_url: unknown; content_hash: unknown; simhash64: unknown }>,
   contentHash: string,
@@ -534,33 +538,43 @@ export async function handleCrawlWorker(
         }
       } else if (response.body && /(?:text\/html|application\/xhtml\+xml)/i.test(response.contentType ?? "")) {
         const metadata = extractHtmlMetadata(response.body);
-        const fp = fingerprintPageContent(metadata.text);
-        const contentHash = "sha256:" + createHash("sha256").update(metadata.text).digest("hex");
+        const hasFingerprintText = hasUsableCrawlFingerprintText(metadata.text);
+        const fp = hasFingerprintText ? fingerprintPageContent(metadata.text) : null;
+        const contentHash = hasFingerprintText
+          ? "sha256:" + createHash("sha256").update(metadata.text).digest("hex")
+          : null;
         const finalUrl = canonicalUrl(response.finalUrl);
-        const [exactRows, recentFingerprints] = await Promise.all([
-          ctx.repo.raw(
-            "SELECT canonical_url FROM crawl_page_fingerprints WHERE content_hash = ? AND canonical_url <> ? LIMIT 1",
-            [contentHash, finalUrl],
-          ),
-          ctx.repo.raw(
-            "SELECT canonical_url, content_hash, simhash64 FROM crawl_page_fingerprints WHERE canonical_url <> ? ORDER BY fetched_at DESC LIMIT 500",
-            [finalUrl],
-          ),
-        ]);
-        const exactDuplicate = exactRows[0];
-        const nearDuplicates = rankNearDuplicateFingerprints(recentFingerprints, contentHash, fp.simhash, {
-          maxDistance: 3, limit: 5,
-        });
-        await recordCrawlFingerprint(ctx.repo, {
-          canonicalUrl: finalUrl, contentHash, simhash64: fp.simhash,
-          language: response.body.match(/<html[^>]+lang=["']([^"']+)/i)?.[1] ?? null,
-          fetchedAt: Date.now(),
-        });
+        const [exactRows, recentFingerprints] = hasFingerprintText
+          ? await Promise.all([
+              ctx.repo.raw(
+                "SELECT canonical_url FROM crawl_page_fingerprints WHERE content_hash = ? AND canonical_url <> ? LIMIT 1",
+                [contentHash, finalUrl],
+              ),
+              ctx.repo.raw(
+                "SELECT canonical_url, content_hash, simhash64 FROM crawl_page_fingerprints WHERE canonical_url <> ? ORDER BY fetched_at DESC LIMIT 500",
+                [finalUrl],
+              ),
+            ])
+          : [[], []];
+        const exactDuplicate = exactRows[0] ?? null;
+        const nearDuplicates = hasFingerprintText && fp && contentHash
+          ? rankNearDuplicateFingerprints(recentFingerprints, contentHash, fp.simhash, {
+              maxDistance: 3, limit: 5,
+            })
+          : [];
+        if (hasFingerprintText && fp && contentHash) {
+          await recordCrawlFingerprint(ctx.repo, {
+            canonicalUrl: finalUrl, contentHash, simhash64: fp.simhash,
+            language: response.body.match(/<html[^>]+lang=["']([^"']+)/i)?.[1] ?? null,
+            fetchedAt: Date.now(),
+          });
+        }
         if (metadata.title || metadata.description || metadata.text.length >= 80) {
           const candidateEvidence = {
             fetchedStatus: response.status, finalUrl: response.finalUrl,
-            fetchedAt: Date.now(), contentHash, simhash64: fp.simhash,
-            tokenCount: fp.tokenCount, truncated: response.truncated,
+            fetchedAt: Date.now(), fingerprintStatus: hasFingerprintText ? "recorded" : "insufficient_text",
+            contentHash, simhash64: fp?.simhash ?? null,
+            tokenCount: fp?.tokenCount ?? 0, truncated: response.truncated,
             exactDuplicateOf: exactDuplicate?.canonical_url ?? null,
             nearDuplicateCandidates: nearDuplicates,
           };

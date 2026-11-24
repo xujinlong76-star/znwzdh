@@ -147,6 +147,7 @@ async function verifyAdminSecondFactor(code: string): Promise<boolean> {
       headers: { 'content-type': 'application/json', 'x-navhub-internal-token': internalToken },
       body: JSON.stringify({ code }),
       cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
     })
     return res.ok
   } catch {

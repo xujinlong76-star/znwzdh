@@ -30,11 +30,10 @@ describe("human search gold-set protocol", () => {
     item.adjudication = {
       adjudicatorId: "senior", rationale: "根据用户需求与站点功能说明裁决", adjudicatedAt: 3,
       judgments: [
-        { siteId: "site-a", label: 3, rationaleCode: "direct_match" },
         { siteId: "site-b", label: 2, rationaleCode: "related" },
       ],
     };
-    expect(finalSearchGoldLabels(item)["site-b"]).toBe(2);
+    expect(finalSearchGoldLabels(item)).toEqual({ "site-a": 3, "site-b": 2 });
   });
   it("requires every frozen candidate to be annotated", () => {
     const item = validCase("query_000003");

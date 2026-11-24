@@ -691,7 +691,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         const quota = await reserveLlmQuota(ctx, null, { source: selectedProvider.source, estimatedTokens: 1800 });
         if (!quota.ok) { quotaBlockedBody = replyQuotaBlocked(reply, quota.error); break; }
         try {
-          const completion: NonNullable<NonNullable<Parameters<typeof moderateSiteWithAi>[2]>["complete"]> =
+          const completion: NonNullable<NonNullable<Parameters<typeof moderateSiteWithAi>[3]>["complete"]> =
             async (_provider, request) => {
               const result = await callLlm(ctx, evaluationResolved, {
                 scenario: "crawl_moderation_gold_eval", identity: evaluationId, messages: request.messages,

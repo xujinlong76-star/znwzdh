@@ -56,36 +56,62 @@ describe("parseDramaFeatured genres", () => {
     expect(dramas[0]?.genres).toEqual(["玄幻", "穿越"]);
   });
 
-  it("真实 featured.json：8 部剧带已核实的题材，其余留空", () => {
+  it("真实 featured.json：12 部剧带已核实的题材，其余留空", () => {
     const { dramas, skipped } = loadDramaFeatured();
-    expect(dramas.length).toBe(18);
+    expect(dramas.length).toBe(17);
     expect(skipped).toBe(0);
     const withGenres = new Map(
       dramas.filter((d) => d.genres !== undefined).map((d) => [d.title, d.genres]),
     );
     expect([...withGenres.entries()]).toEqual([
+      ["穿越八零，我把娘俩宠成宝", ["年代爱情"]],
+      ["持械入宋：第十一季", ["古风权谋"]],
+      ["全球死考：刚下刑场你让我去考试一季", ["都市脑洞"]],
+      ["少夫人来自东北 3", ["家庭伦理"]],
+      ["嫌疑人的秘密2藏金生死线", ["犯罪"]],
+      ["王妈在顾家当保姆后全家只会搞笑了", ["喜剧"]],
+      ["认下混混老爹，我一路青云", ["家庭"]],
+      ["卖掉养老房那天，我重获新生", ["家庭"]],
+      ["迟来的情缘，董事长的暖心妻", ["爱情"]],
+      ["高考出分后女儿劝我离婚", ["成长"]],
+      ["小镇是非多之同床异梦", ["家庭"]],
       ["十八岁太奶奶驾到，重整家族荣耀 第五部", ["家族"]],
-      ["和离后我带女儿横扫魔域", ["玄幻"]],
-      ["少夫人来自东北 3", ["家族"]],
-      ["悍妻当家，靠美食扶起一家软骨头", ["种田"]],
-      ["万妖图录传 第十四季", ["玄幻"]],
-      ["魔神人生：弃子问天 第二季", ["玄幻"]],
-      ["满院亲戚全是上古大妖 第七季", ["奇幻"]],
-      ["装穷提亲，娶到全家嫌弃的她", ["恋爱"]],
     ]);
   });
 
-  it("真实 featured.json：9 部已完结剧的总集数已按 2026-11-17 核实值填好", () => {
+  it("真实 featured.json：已完结剧的总集数已按 2026-11-18/11-16 核实值填好，未核实只写已更集数或留空", () => {
     const { dramas } = loadDramaFeatured();
     const totals = new Map(
       dramas.map((d) => [d.title, d.totalEpisodes]),
     );
-    expect(totals.get("十八岁太奶奶驾到，重整家族荣耀 第五部")).toBe(102);
+    const known = new Map(
+      dramas.map((d) => [d.title, d.episodesKnown]),
+    );
+    expect(totals.get("穿越八零，我把娘俩宠成宝")).toBe(317);
+    expect(totals.get("持械入宋：第十一季")).toBe(113);
+    expect(totals.get("全球死考：刚下刑场你让我去考试一季")).toBe(785);
     expect(totals.get("少夫人来自东北 3")).toBe(96);
-    expect(totals.get("退役归来，这个保镖不好惹")).toBe(100);
-    expect(totals.get("万妖图录传 第十四季")).toBe(202);
-    expect(totals.get("魔神人生：弃子问天 第二季")).toBe(586);
-    expect(totals.get("满院亲戚全是上古大妖 第七季")).toBe(188);
-    expect(totals.get("装穷提亲，娶到全家嫌弃的她")).toBe(80);
+    expect(totals.get("王妈在顾家当保姆后全家只会搞笑了")).toBe(86);
+    expect(totals.get("十八岁太奶奶驾到，重整家族荣耀 第五部")).toBe(102);
+    // 只核实了集数、未核实是否完结：只写已更集数，总集数留空，不写成“全 X 集”。
+    expect(known.get("嫌疑人的秘密2藏金生死线")).toBe(88);
+    expect(totals.get("嫌疑人的秘密2藏金生死线")).toBeNull();
+    expect(known.get("小镇是非多之同床异梦")).toBe(63);
+    expect(totals.get("小镇是非多之同床异梦")).toBeNull();
+    // 未核实集数的留空，不编。
+    for (const title of [
+      "帐中香第二季",
+      "和离后我带女儿横扫魔域",
+      "聚宝仙盆之杂灵根才是真BOSS 第十六季",
+      "烛九阴第九季",
+      "莞城人生",
+      "认下混混老爹，我一路青云",
+      "卖掉养老房那天，我重获新生",
+      "迟来的情缘，董事长的暖心妻",
+      "高考出分后女儿劝我离婚",
+    ]) {
+      expect(known.get(title)).toBeNull();
+      expect(totals.get(title)).toBeNull();
+    }
   });
 });

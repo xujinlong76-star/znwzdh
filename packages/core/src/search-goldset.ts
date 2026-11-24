@@ -45,6 +45,8 @@ export interface SearchGoldValidationResult {
   totalCases: number;
   eligibleCases: number;
   excludedUnjudgeableCases: number;
+  eligibleIntentCounts: Record<string, number>;
+  eligibleLocaleCounts: Record<string, number>;
   evaluationCases: SearchEvalCase[];
 }
 
@@ -133,6 +135,8 @@ export function validateSearchGoldSet(input: unknown): SearchGoldValidationResul
   const sampleIds = new Set<string>();
   const normalizedQueries = new Set<string>();
   const evaluationCases: SearchEvalCase[] = [];
+  const eligibleIntentCounts: Record<string, number> = {};
+  const eligibleLocaleCounts: Record<string, number> = {};
   let excludedUnjudgeableCases = 0;
 
   for (let index = 0; index < input.cases.length; index++) {
@@ -246,12 +250,18 @@ export function validateSearchGoldSet(input: unknown): SearchGoldValidationResul
       continue;
     }
     evaluationCases.push({ query: item.query, hits, relevance: finalJudgments });
+    const intent = item.intent as string;
+    const locale = item.locale as string;
+    eligibleIntentCounts[intent] = (eligibleIntentCounts[intent] ?? 0) + 1;
+    eligibleLocaleCounts[locale] = (eligibleLocaleCounts[locale] ?? 0) + 1;
   }
 
   return {
     totalCases: input.cases.length,
     eligibleCases: evaluationCases.length,
     excludedUnjudgeableCases,
+    eligibleIntentCounts,
+    eligibleLocaleCounts,
     evaluationCases,
   };
 }

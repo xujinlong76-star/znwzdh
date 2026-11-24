@@ -151,6 +151,20 @@ describe("staged discovery candidate pipeline", () => {
     expect(await ctx.repo.findSiteByUrl("https://candidate-rejected.example/")).toBeNull();
   });
 
+  it("rejects evidence objects containing credential-like keys", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/discovery/candidates",
+      payload: {
+        url: "https://candidate-secret.example/",
+        source: "api",
+        evidence: { crawler: { apiKey: "must-not-be-stored" } },
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toContain("不能包含");
+  });
+
   it("rejects oversized evidence payloads", async () => {
     const response = await app.inject({
       method: "POST",

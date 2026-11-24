@@ -1615,8 +1615,8 @@ async revokeAllSessions(userId: string): Promise<number> {
   }
 
   /** 用户吊销自己的令牌（ownership 校验在 SQL 条件里） */
-  async rotateApiTokenByOwner(ownerIdentity: string, id: string, tokenHash: string, tokenPrefix: string): Promise<ApiTokenRecord | null> {
-    return tokensRepo.rotateApiTokenByOwner(this, ownerIdentity, id, tokenHash, tokenPrefix);
+  async rotateApiTokenByOwner(ownerIdentity: string, id: string, tokenHash: string, tokenPrefix: string, expectedRotatedAt: number | null): Promise<ApiTokenRecord | null> {
+    return tokensRepo.rotateApiTokenByOwner(this, ownerIdentity, id, tokenHash, tokenPrefix, expectedRotatedAt);
   }
 
   async revokeApiTokenByOwner(ownerIdentity: string, id: string): Promise<boolean> {

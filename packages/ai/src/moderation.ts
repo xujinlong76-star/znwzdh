@@ -180,3 +180,83 @@ export async function moderateSiteWithAi(
   const verdict = decideSiteModerationVerdict(parsed, active, safeInput.url);
   return { ...parsed, verdict, model: response.model, policyVersion: "site-moderation-v1" };
 }
+
+
+/** 人工金标标签。review 表示证据不足，应由人复核，不计为 approve/reject。 */
+export type SiteModerationGoldLabel = "approve" | "reject" | "review";
+export interface SiteModerationGoldCase {
+  id: string;
+  expected: SiteModerationGoldLabel;
+  actual: SiteModerationGoldLabel;
+  expectedRisk?: boolean;
+  actualRisk?: boolean;
+}
+export interface SiteModerationLabelMetrics {
+  precision: number | null;
+  recall: number | null;
+  f1: number | null;
+  support: number;
+}
+export interface SiteModerationGoldEvaluation {
+  sampleSize: number;
+  exactMatchRate: number | null;
+  coverage: number | null;
+  confusionMatrix: Record<SiteModerationGoldLabel, Record<SiteModerationGoldLabel, number>>;
+  perLabel: Record<SiteModerationGoldLabel, SiteModerationLabelMetrics>;
+  riskDetection: { precision: number | null; recall: number | null; falseNegatives: number; falsePositives: number; support: number };
+}
+
+/**
+ * 对已双人标注并完成仲裁的脱敏金标样本计算离线指标。
+ * 本函数不调用模型、不产生审核动作；review 预测作为 abstention 计入覆盖率。
+ */
+export function evaluateSiteModerationGoldSet(
+  cases: readonly SiteModerationGoldCase[],
+): SiteModerationGoldEvaluation {
+  const labels: SiteModerationGoldLabel[] = ["approve", "reject", "review"];
+  const confusionMatrix = Object.fromEntries(labels.map(expected => [
+    expected, Object.fromEntries(labels.map(actual => [actual, 0])),
+  ])) as Record<SiteModerationGoldLabel, Record<SiteModerationGoldLabel, number>>;
+  const ids = new Set<string>();
+  let correct = 0;
+  let covered = 0;
+  let riskTp = 0, riskFp = 0, riskFn = 0, riskSupport = 0;
+  for (const item of cases) {
+    if (!item.id.trim() || ids.has(item.id)) throw new Error("金标样本 ID 不能为空且必须唯一");
+    ids.add(item.id);
+    if (!labels.includes(item.expected) || !labels.includes(item.actual)) throw new Error("金标标签无效");
+    confusionMatrix[item.expected][item.actual]++;
+    if (item.expected === item.actual) correct++;
+    if (item.actual !== "review") covered++;
+    if (item.expectedRisk !== undefined) {
+      riskSupport++;
+      if (item.expectedRisk && item.actualRisk === true) riskTp++;
+      else if (!item.expectedRisk && item.actualRisk === true) riskFp++;
+      else if (item.expectedRisk && item.actualRisk !== true) riskFn++;
+    }
+  }
+  const perLabel = Object.fromEntries(labels.map(label => {
+    const tp = confusionMatrix[label][label];
+    const fp = labels.reduce((sum, expected) => sum + (expected === label ? 0 : confusionMatrix[expected][label]), 0);
+    const fn = labels.reduce((sum, actual) => sum + (actual === label ? 0 : confusionMatrix[label][actual]), 0);
+    const precision = tp + fp ? tp / (tp + fp) : null;
+    const recall = tp + fn ? tp / (tp + fn) : null;
+    const f1 = precision !== null && recall !== null && precision + recall > 0
+      ? 2 * precision * recall / (precision + recall) : precision === 0 || recall === 0 ? 0 : null;
+    return [label, { precision, recall, f1, support: tp + fn }];
+  })) as Record<SiteModerationGoldLabel, SiteModerationLabelMetrics>;
+  return {
+    sampleSize: cases.length,
+    exactMatchRate: cases.length ? correct / cases.length : null,
+    coverage: cases.length ? covered / cases.length : null,
+    confusionMatrix,
+    perLabel,
+    riskDetection: {
+      precision: riskTp + riskFp ? riskTp / (riskTp + riskFp) : null,
+      recall: riskTp + riskFn ? riskTp / (riskTp + riskFn) : null,
+      falseNegatives: riskFn,
+      falsePositives: riskFp,
+      support: riskSupport,
+    },
+  };
+}

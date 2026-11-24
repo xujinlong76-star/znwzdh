@@ -57,6 +57,15 @@ describe("站点发现候选仓储", () => {
     expect(repeated.lastSeenAt).toBe(500);
   });
 
+  it("损坏的历史 JSON 不会让候选审核队列整体 500", async () => {
+    await repo.run(
+      "INSERT INTO site_discovery_candidates (id,url,canonical_url,tags_json,source,evidence_json,status,discovered_at,last_seen_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+      ["candidate-corrupt", "https://corrupt.example/", "https://corrupt.example/", "{bad", "legacy", "{bad", "pending", 900, 900, 900],
+    );
+    const candidate = await getSiteDiscoveryCandidate(repo, "candidate-corrupt");
+    expect(candidate?.tags).toEqual([]);
+    expect(candidate?.evidence).toEqual({});
+  });
   it("审核只允许 pending 状态，列表与计数按状态筛选", async () => {
     const candidate = await upsertSiteDiscoveryCandidate(repo, {
       id: "candidate-reject", url: "https://reject.example", canonicalUrl: "https://reject.example/",

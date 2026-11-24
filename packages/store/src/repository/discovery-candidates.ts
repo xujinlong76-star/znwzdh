@@ -101,6 +101,19 @@ export async function upsertSiteDiscoveryCandidate(
   return rowToCandidate(rows[0]);
 }
 
+/** 在事务内锁定候选行，防止多实例部署时并发审核同一条候选。 */
+export async function getSiteDiscoveryCandidateForUpdate(
+  repo: Repository,
+  id: string,
+): Promise<SiteDiscoveryCandidate | null> {
+  const lockClause = repo.db.dialect === "pg" ? " FOR UPDATE" : "";
+  const rows = await repo.raw(
+    "SELECT * FROM site_discovery_candidates WHERE id = ? LIMIT 1" + lockClause,
+    [id],
+  );
+  return rows[0] ? rowToCandidate(rows[0]) : null;
+}
+
 export async function getSiteDiscoveryCandidate(
   repo: Repository,
   id: string,

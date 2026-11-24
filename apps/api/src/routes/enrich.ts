@@ -5,7 +5,6 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { randomUUID } from "node:crypto";
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { enrichUrl } from "@navhub/ai";
 import { INTERACTIVE_LLM_BUDGET_MS } from "../llm-usage.ts";

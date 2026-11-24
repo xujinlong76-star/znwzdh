@@ -304,6 +304,16 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     },
     checksum: "v1_durable_crawl_governance",
   },
+  {
+    version: "20261124_crawl_fingerprint_recent_idx",
+    name: "采集页面指纹最近记录索引",
+    up: async (db: Db) => {
+      const statement = "CREATE INDEX IF NOT EXISTS crawl_fingerprints_recent_idx ON crawl_page_fingerprints(fetched_at DESC)";
+      if (db.dialect === "pg" && db.pg) await db.pg.query(statement);
+      else if (db.sqlite) db.sqlite.exec(statement);
+    },
+    checksum: "v1_crawl_fingerprint_recent_idx",
+  },
 ];
 
 /**

@@ -41,6 +41,34 @@ describe("持久化采集治理队列", () => {
     expect(duplicate.status).toBe("queued");
   });
 
+  it("周期性可信来源可重开 done 任务，但不会复活死信或人工挂起", async () => {
+    const seed = await enqueueCrawlTask(repo, {
+      url: "https://refresh.example/feed.xml", source: "rss_seed", now: 15_000,
+    });
+    const claimed = await claimCrawlTask(repo, "worker-refresh", { now: 15_000, minDomainIntervalMs: 0 });
+    expect(claimed?.id).toBe(seed.id);
+    expect(await settleCrawlTask(repo, {
+      id: seed.id, workerId: "worker-refresh", outcome: "done", now: 15_100,
+    })).toBe(true);
+    const refreshed = await enqueueCrawlTask(repo, {
+      url: "https://refresh.example/feed.xml", source: "rss_seed",
+      requeueCompleted: true, now: 20_000,
+    });
+    expect(refreshed.status).toBe("queued");
+    expect(refreshed.attempts).toBe(0);
+
+    const second = await claimCrawlTask(repo, "worker-refresh", { now: 20_000, minDomainIntervalMs: 0 });
+    expect(second?.id).toBe(seed.id);
+    expect(await settleCrawlTask(repo, {
+      id: seed.id, workerId: "worker-refresh", outcome: "dead_letter", now: 20_100,
+    })).toBe(true);
+    const deadLetter = await enqueueCrawlTask(repo, {
+      url: "https://refresh.example/feed.xml", source: "rss_seed",
+      requeueCompleted: true, now: 30_000,
+    });
+    expect(deadLetter.status).toBe("dead_letter");
+  });
+
   it("域名频控阻止同 host 并发，但不会阻塞其他 host", async () => {
     await enqueueCrawlTask(repo, { url: "https://one.example/a", source: "seed", now: 20_000 });
     const first = await claimCrawlTask(repo, "worker-a", {

@@ -129,6 +129,7 @@ services:
       NAVHUB_SESSION_SECRET_PREV: ${NAVHUB_SESSION_SECRET_PREV:-}
       # 任务重试耗尽时的告警投递（main.ts 横幅会打印是否已配置）。
       NAVHUB_ALERT_WEBHOOK: ${NAVHUB_ALERT_WEBHOOK:-}
+      NAVHUB_CRAWL_SEEDS: ${NAVHUB_CRAWL_SEEDS:-}
       # 终端用户身份签名密钥。**必须与下面 web 服务里的同名变量取值完全一致**。
       # 为什么不像 SESSION_SECRET 那样自动生成：自动配上就等于**默认开启**签名校验，
       # 而只有 Web 的 /api/hub/* 代理会自动签名，直连中枢的消费者

@@ -115,6 +115,7 @@ describe("cron 调度语义", () => {
     const scheduledByKind = new Map<string, number>();
     for (const s of DEFAULT_CRON_SCHEDULES) scheduledByKind.set(s.kind, s.intervalMs);
     const ALLOWED_BY_INTERVAL: Array<{ ms: number; aliases: string[] }> = [
+      { ms: 30 * 60_000, aliases: ["X30MIN"] },
       { ms: 3_600_000, aliases: ["HOURLY"] },
       { ms: 4 * 3_600_000, aliases: ["X4H"] },
       { ms: 86_400_000, aliases: ["DAILY", "DAILY3AM", "DAILY4AM", "DAILY5AM"] },

@@ -305,6 +305,8 @@ export interface GuardedFetchResult {
    */
   etag?: string;
   lastModified?: string;
+  /** 对端 Retry-After 原始值；由队列策略解释并设置上限。 */
+  retryAfter?: string;
 }
 
 /** `guardedFetch` 允许的请求方法。GET/HEAD 不允许携带请求体。 */
@@ -594,6 +596,7 @@ async function runGuardedFetch(
       const { text, truncated, bytes } = await readLimited(res, opts.maxBytes);
       const etag = res.headers.get("etag");
       const lastModified = res.headers.get("last-modified");
+      const retryAfter = res.headers.get("retry-after");
       return {
         finalUrl: current.toString(),
         status: res.status,
@@ -604,6 +607,7 @@ async function runGuardedFetch(
         redirects,
         ...(etag ? { etag } : {}),
         ...(lastModified ? { lastModified } : {}),
+        ...(retryAfter ? { retryAfter } : {}),
       };
     } finally {
       clearTimeout(timer);

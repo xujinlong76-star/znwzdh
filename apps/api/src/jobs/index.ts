@@ -13,3 +13,4 @@ export * from "./tasks/drama-check.task.ts";
 export * from "./tasks/drama-calendar.task.ts";
 export * from "./tasks/drama-rankings.task.ts";
 export * from "./tasks/plugin-url-health.task.ts";
+export * from "./tasks/crawl-worker.task.ts";

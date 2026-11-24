@@ -91,6 +91,7 @@ describe("site quality governance API", () => {
   });
 
   it("excludes archived sites from active quality totals", async () => {
+    const expectedVisibleCount = await ctx.repo.countSiteQualityAssessments();
     const category = await ctx.repo.createCategory({ title: "归档质量测试" });
     const site = await ctx.repo.createSite({
       title: "Archived Quality Fixture",
@@ -113,7 +114,7 @@ describe("site quality governance API", () => {
 
     const response = await app.inject({ method: "GET", url: "/api/admin/quality/report" });
     expect(response.statusCode).toBe(200);
-    expect(response.json().total).toBe(1);
+    expect(response.json().total).toBe(expectedVisibleCount);
     expect(response.json().items.map((item: { siteId: string }) => item.siteId)).not.toContain(site.id);
   });
 

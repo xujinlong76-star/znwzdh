@@ -623,3 +623,28 @@ describe('tablist A-2：其余 tablist 按 plugin-detail-view 模板补 roving t
     expect(handler).not.toContain('.click()')
   })
 })
+
+describe('tablist A-3：tablist 面板补 role="tabpanel" / aria-labelledby（2026-11-24 19:22 轮）', () => {
+  // A 组 6 处（apps/web-overlay/src 下）：
+  // #1 plugin-detail-view（模板本身，6/6 已完整，只复核不改动）、
+  // #2 home-quick-dock（共享面板，aria-labelledby 随 activeTab 动态变）、
+  // #3 workspace-filter（无面板，组件已退役，跳过）、
+  // #4 home-capsule-row（无面板，tab 切整页内容，跳过）、
+  // #5 navigation-category-section（共享内容区，待裁决，不硬套）、
+  // #6 growth-panel（4 面板 0/4，全补）。
+  // 配对规则照模板：tab 的 id + aria-controls ↔ 面板的 id + aria-labelledby，三值逐字一致。
+
+  it('#1 plugin 详情模板：6 组 tab/面板 wiring 完整（复核，不改动）', () => {
+    const detail = read('src/app/marketplace/[slug]/plugin-detail-view.tsx')
+    const panels = read('src/app/marketplace/[slug]/detail-tab-panels.tsx')
+    for (const key of ['preview', 'diff', 'impact', 'raw', 'history', 'reviews']) {
+      expect(detail).toContain(`id="plugin-tab-${key}"`)
+      expect(detail).toContain(`aria-controls="plugin-tabpanel-${key}"`)
+      expect(count(detail, `id="plugin-tab-${key}"`)).toBe(1)
+      expect(panels).toContain(`id="plugin-tabpanel-${key}"`)
+      expect(panels).toContain(`aria-labelledby="plugin-tab-${key}"`)
+      expect(count(panels, `id="plugin-tabpanel-${key}"`)).toBe(1)
+    }
+    expect(count(panels, 'role="tabpanel"')).toBe(6)
+  })
+})

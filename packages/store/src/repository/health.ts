@@ -344,3 +344,33 @@ export async function countSiteQualityAssessments(
   );
   return Number(rows[0]?.total ?? 0);
 }
+
+
+export interface SiteQualityLookupRecord {
+  siteId: string;
+  score: number | null;
+  evidenceCoverage: number;
+  band: SiteQualityResult["band"];
+}
+
+/** 一次批量读取搜索候选的质量快照，避免逐站点 N+1 查询。 */
+export async function getSiteQualityAssessmentsBySiteIds(
+  repo: Repository,
+  siteIds: readonly string[],
+): Promise<SiteQualityLookupRecord[]> {
+  const ids = [...new Set(siteIds.filter((id) => typeof id === "string" && id.length > 0))].slice(0, 100);
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(", ");
+  const rows = await repo.raw(
+    `SELECT site_id, overall_score, evidence_coverage, band
+       FROM site_quality_assessments
+      WHERE site_id IN (${placeholders})`,
+    ids,
+  );
+  return rows.map((row) => ({
+    siteId: String(row.site_id),
+    score: row.overall_score == null ? null : Number(row.overall_score),
+    evidenceCoverage: Number(row.evidence_coverage),
+    band: String(row.band) as SiteQualityResult["band"],
+  }));
+}

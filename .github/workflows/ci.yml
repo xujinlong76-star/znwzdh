@@ -1034,7 +1034,7 @@ jobs:
   #   「执行到的文件」计，分片产物各缺另外 2/3 的覆盖面；`all: true` 又会把
   #   未执行文件计 0% —— 分片内阈值必然失真。合并产物要跨作业传 json 再聚合，
   #   复杂度远高于单作业全量跑一次（本地实测 ~9 分钟）。
-  #   阈值不写在 YAML：单一事实源是仓库根 coverage-thresholds.json（W1 = 实测 − 2pp），
+  #   阈值不写在 YAML：单一事实源是仓库根 coverage-thresholds.json（W1 floor + W3 patch 70%），
   #   全局 + 分区域 floor 都由它给；收紧只改那一份文件并走独立 PR（TESTING-STRATEGY §3.3）。
   #   --max-age 防 clean:false 的陈旧产物假绿（TESTING-STRATEGY §3.5）。
   coverage:

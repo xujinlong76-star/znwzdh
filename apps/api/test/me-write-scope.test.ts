@@ -232,15 +232,21 @@ describe("/api/me 写面：只读令牌一律 403", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("验收 14：用户可轮换自己名下的个人令牌，旧明文立即失效", async () => {
-    const rotated = await inject({
+  it("验收 14：用户轮换个人令牌使用版本 CAS，并使旧明文立即失效", async () => {
+    const listed = await inject({ method: "GET", url: "/api/me/tokens", headers: write() });
+    expect(listed.statusCode).toBe(200);
+    const target = (listed.json() as { tokens: Array<{ id: string; rotatedAt: number | null }> }).tokens.find((t) => t.id === revokeTokenId);
+    expect(target).toBeTruthy();
+    const rotate = () => inject({
       method: "POST",
       url: `/api/me/tokens/${revokeTokenId}/rotate`,
       headers: write(),
-      payload: {},
+      payload: { expectedRotatedAt: target!.rotatedAt },
     });
-    expect(rotated.statusCode).toBe(200);
-    const body = rotated.json() as { token: string; record: { id: string; tokenPrefix: string | null } };
+    const results = await Promise.all([rotate(), rotate()]);
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 404]);
+    const winner = results.find((r) => r.statusCode === 200)!;
+    const body = winner.json() as { token: string; record: { id: string; tokenPrefix: string | null } };
     expect(body.token).toMatch(/^nh_/);
     expect(body.record.id).toBe(revokeTokenId);
     expect(body.record.tokenPrefix).toBe(body.token.slice(0, 12));

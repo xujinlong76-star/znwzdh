@@ -6,7 +6,7 @@ export const CRAWL_AI_MODERATION_POLICY_KEY = "crawl.ai_moderation.policy.v1";
 
 export const CrawlAiModerationPolicySchema = z.object({
   enabled: z.boolean().default(false),
-  // 当前仅开放 shadow；auto 必须等待人工金标评估和安全入库闭环。
+  // auto_approve 由服务端全量金标评测门槛控制；默认始终为 shadow。
   mode: z.enum(["shadow", "auto_approve"]).default("shadow"),
   autoApproveConfidence: z.number().min(0.5).max(1).default(0.93),
   rejectConfidence: z.number().min(0.5).max(1).default(0.97),

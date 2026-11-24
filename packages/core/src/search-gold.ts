@@ -12,6 +12,8 @@ export interface SearchGoldAdjudication {
   adjudicatedAt: number;
 }
 export interface SearchGoldCase {
+  schemaVersion: "search-quality-golden-v2";
+  datasetVersion: string;
   queryId: string;
   queryText: string;
   locale: string;
@@ -74,6 +76,8 @@ export function validateSearchGoldCase(value: unknown): SearchGoldValidation {
   if (!isRecord(value)) return { valid: false, errors: ["样本必须是对象"], needsAdjudication };
   const item = value;
 
+  if (item.schemaVersion !== "search-quality-golden-v2") errors.push("schemaVersion 必须为 search-quality-golden-v2");
+  if (typeof item.datasetVersion !== "string" || !item.datasetVersion.trim()) errors.push("datasetVersion 必填");
   if (typeof item.queryId !== "string" || !/^[a-zA-Z0-9_-]{8,80}$/.test(item.queryId)) {
     errors.push("queryId 必须是脱敏后的稳定 ID");
   }
@@ -170,19 +174,22 @@ export function validateSearchGoldCase(value: unknown): SearchGoldValidation {
   return { valid: errors.length === 0 && needsAdjudication.length === 0, errors, needsAdjudication };
 }
 
-export function validateSearchGoldSet(cases: readonly SearchGoldCase[], minimumCases = 100): SearchGoldValidation {
+export function validateSearchGoldSet(cases: readonly unknown[], minimumCases = 100): SearchGoldValidation {
   const errors: string[] = [], needsAdjudication: string[] = [];
   if (!Number.isInteger(minimumCases) || minimumCases < 1) throw new RangeError("minimumCases 必须是正整数");
   if (cases.length < minimumCases) errors.push(`金标样本不足：需要至少 ${minimumCases} 条，当前 ${cases.length} 条`);
   const ids = new Set<string>();
+  const datasetVersions = new Set<string>();
   for (const item of cases) {
     const queryId = isRecord(item) && typeof item.queryId === "string" ? item.queryId : "invalid-query";
+    if (isRecord(item) && typeof item.datasetVersion === "string" && item.datasetVersion.trim()) datasetVersions.add(item.datasetVersion);
     if (ids.has(queryId)) errors.push(`queryId 重复：${queryId}`);
     ids.add(queryId);
     const result = validateSearchGoldCase(item);
     errors.push(...result.errors.map(error => `${queryId}: ${error}`));
     needsAdjudication.push(...result.needsAdjudication);
   }
+  if (datasetVersions.size > 1) errors.push("一个金标集不得混合不同 datasetVersion");
   return { valid: errors.length === 0 && needsAdjudication.length === 0, errors, needsAdjudication };
 }
 

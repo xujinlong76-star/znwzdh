@@ -142,6 +142,40 @@ describe("账号生命周期 API", () => {
     }
   });
 
+  it("管理员静态凭据与 MFA 失败尝试跨 API 实例共享锁定", async () => {
+    const previousInternalToken = ctx.config.internalToken;
+    ctx.config.internalToken = "mfa-lock-test-internal-token";
+    const verify = (target: typeof app) => target.inject({
+      method: "POST",
+      url: "/api/account/admin-mfa/verify",
+      headers: { "x-navhub-internal-token": "mfa-lock-test-internal-token" },
+      payload: { code: "", credentialValid: false },
+    });
+    const key = "auth:admin-mfa-failure:global";
+    try {
+      for (let i = 0; i < 5; i++) expect((await verify(app)).statusCode).toBe(401);
+      const replicaCtx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "account.db") }));
+      replicaCtx.config.internalToken = "mfa-lock-test-internal-token";
+      const replica = await buildServer(replicaCtx);
+      await replica.ready();
+      try {
+        const locked = await replica.inject({
+          method: "POST",
+          url: "/api/account/admin-mfa/verify",
+          headers: { "x-navhub-internal-token": "mfa-lock-test-internal-token" },
+          payload: { code: "", credentialValid: true },
+        });
+        expect(locked.statusCode).toBe(401);
+      } finally {
+        await replica.close();
+        await replicaCtx.close();
+      }
+    } finally {
+      await ctx.repo.clearLoginFailure(key);
+      ctx.config.internalToken = previousInternalToken;
+    }
+  });
+
   it("注册成功并发送验证邮件", async () => {
     captured.length = 0;
     const res = await post("/api/account/register", {

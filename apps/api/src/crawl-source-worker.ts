@@ -203,7 +203,7 @@ async function moderateCandidateShadow(
       complete: async (_provider, request) => {
         const response = await callLlm(ctx, runtime.resolved, {
           scenario: "crawl_moderation_shadow",
-          identity: candidate.id,
+          identity: null,
           messages: request.messages,
           temperature: request.temperature,
           maxTokens: request.maxTokens,

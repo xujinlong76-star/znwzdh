@@ -306,7 +306,8 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params ?? {});
     const body = z.object({ decision: z.enum(["approve","reject"]), reason: z.string().trim().max(1000).optional() })
       .refine(v => v.decision !== "reject" || Boolean(v.reason?.trim()), "驳回时必须填写原因").safeParse(req.body ?? {});
-    if (!params.success || !body.success) { reply.code(400); return { ok:false,error:"审核参数无效",details:!params.success?params.error.issues:body.error.issues }; }
+    if (!params.success) { reply.code(400); return { ok:false,error:"审核参数无效",details:params.error.issues }; }
+    if (!body.success) { reply.code(400); return { ok:false,error:"审核参数无效",details:body.error.issues }; }
     const reviewer = String(req.auth.actor ?? "admin");
     const result = await ctx.repo.withTransaction(async () => {
       const current = await getSiteDiscoveryCandidateForUpdate(ctx.repo, params.data.id);

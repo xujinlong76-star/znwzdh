@@ -13,7 +13,7 @@ type Overview = {
   sources:{enabled:number;disabled:number};
   candidates:Record<string,number>;
   last24Hours:Record<string,number>;
-  busiestHosts:Array<{host:string;tasks:number}>
+  busiestHosts:Array<{host:string;tasks:number}>;\n  aiModeration:{windowHours:number;sampleSize:number;completed:number;errors:number;quotaBlocked:number;verdicts:Record<string,number>}
 }
 type Candidate = {
   id:string;url:string;title:string|null;description:string|null;source:string;status:string;
@@ -102,7 +102,7 @@ export default function CrawlOperationsPage(){
         <Stat label="待审核候选" value={overview?.candidates.pending??0}/>
         <Stat label="已通过候选" value={overview?.candidates.approved??0}/>
         <Stat label="已驳回候选" value={overview?.candidates.rejected??0}/>
-        <Stat label="近 24 小时处理" value={Object.values(overview?.last24Hours??{}).reduce((a,b)=>a+b,0)}/>
+        <Stat label="近 24 小时处理" value={Object.values(overview?.last24Hours??{}).reduce((a,b)=>a+b,0)}/>\n        <Stat label="近 24 小时 AI 审核" value={overview?.aiModeration.completed??0} detail={`错误 ${overview?.aiModeration.errors??0} · 额度跳过 ${overview?.aiModeration.quotaBlocked??0} · 样本上限 1000`}/>
       </div>
       <Card><CardHeader><CardTitle className="text-base">采集来源管理</CardTitle><CardDescription>维护 Sitemap、RSS/Atom 和普通网页来源；来源仍受 robots.txt 与 SSRF 安全策略约束。</CardDescription></CardHeader>
         <CardContent className="space-y-4">

@@ -133,6 +133,27 @@ export const hasGithubAuth = Boolean(
   process.env.GITHUB_CLIENT_SECRET !== 'your-github-client-secret'
 )
 
+async function verifyAdminSecondFactor(code: string): Promise<boolean> {
+  const internalToken = process.env.NAVHUB_INTERNAL_TOKEN
+  const required = process.env.NAVHUB_ADMIN_MFA_REQUIRED === '1' || process.env.NAVHUB_ADMIN_MFA_REQUIRED === 'true'
+  if (!internalToken) return !required
+  const apiBase =
+    process.env.NAVHUB_STORAGE_BASE_URL ||
+    process.env.NAVHUB_API_BASE_URL ||
+    'http://127.0.0.1:8787'
+  try {
+    const res = await fetch(`${apiBase.replace(/\/+$/, '')}/api/account/admin-mfa/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-navhub-internal-token': internalToken },
+      body: JSON.stringify({ code }),
+      cache: 'no-store',
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 const providers: NextAuthConfig['providers'] = [
   CredentialsProvider({
     id: 'credentials',
@@ -141,6 +162,7 @@ const providers: NextAuthConfig['providers'] = [
       username: { label: '账号/身份', type: 'text' },
       password: { label: '管理密码或 Token', type: 'password' },
       bypass: { label: '快捷通道', type: 'hidden' },
+      otp: { label: '管理员二次验证码 / 恢复码', type: 'text' },
     },
     async authorize(credentials) {
       const isDev = process.env.NODE_ENV !== 'production'
@@ -181,6 +203,7 @@ const providers: NextAuthConfig['providers'] = [
       // P0-6：timingSafeEqual 替代裸 ===，防时序泄露（普通用户口令链路已做到，管理员通道此前是裸比较）
       const envAdminPassword = process.env.NAVHUB_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD
       if (envAdminPassword && timingSafeEq(rawPassword, envAdminPassword)) {
+        if (!(await verifyAdminSecondFactor(typeof credentials?.otp === 'string' ? credentials.otp : ''))) return null;
         return {
           id: 'admin',
           name: username,
@@ -194,6 +217,7 @@ const providers: NextAuthConfig['providers'] = [
       // 不得被复用为浏览器管理员登录凭据，避免低信任服务凭据横向提升为后台会话。
       const adminToken = process.env.NAVHUB_ADMIN_TOKEN
       if (rawPassword && adminToken && timingSafeEq(rawPassword, adminToken)) {
+        if (!(await verifyAdminSecondFactor(typeof credentials?.otp === 'string' ? credentials.otp : ''))) return null;
         return {
           id: 'admin',
           name: username || 'Token 管理员',
@@ -226,6 +250,7 @@ const providers: NextAuthConfig['providers'] = [
             };
             const u = data?.user;
             if (u?.id) {
+              if (u.role === 'admin' && !(await verifyAdminSecondFactor(typeof credentials?.otp === 'string' ? credentials.otp : ''))) return null;
               return {
                 id: u.id,
                 name: u.username ?? rawUsername,

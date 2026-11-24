@@ -265,8 +265,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           },
         });
       } catch {
-        // 影子评测是附加遥测：失败绝不影响搜索主链路。
-        recordSearchWriteFailure("quality_shadow");
+        // 影子评测是附加遥测：失败绝不影响搜索主链路，也不污染主搜索写失败计数。
       }
     }
     let suggestions: string[] = [];

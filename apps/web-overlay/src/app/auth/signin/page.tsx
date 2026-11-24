@@ -32,6 +32,7 @@ function SignInContent() {
 
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('')
+  const [otp, setOtp] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isBypassLoading, setIsBypassLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -78,6 +79,7 @@ function SignInContent() {
       const res = await signIn('credentials', {
         username: username.trim() || 'admin',
         password: password.trim(),
+        otp: otp.trim(),
         callbackUrl,
         redirect: false,
       })
@@ -283,6 +285,21 @@ function SignInContent() {
                         placeholder="输入管理口令 (默认 admin123)"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
+                        disabled={isLoading || isBypassLoading}
+                        className="h-9 text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="otp" className="text-xs font-medium">管理员二次验证码 / 恢复码（启用后填写）</Label>
+                      <Input
+                        id="otp"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        placeholder="6 位验证码或一次性恢复码"
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value)}
                         disabled={isLoading || isBypassLoading}
                         className="h-9 text-xs"
                       />

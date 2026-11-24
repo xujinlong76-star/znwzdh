@@ -103,8 +103,6 @@ describe("账号生命周期 API", () => {
       }
       const counter = Buffer.alloc(8);
       counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
-      const digest = createHash("sha1").update(Buffer.alloc(0)).digest(); // keep crypto import exercised without platform OTP helper
-      void digest;
       const hmac = requireHmac(Buffer.from(bytes), counter);
       const offset = hmac[hmac.length - 1] & 15;
       const binary = ((hmac[offset] & 127) << 24) | ((hmac[offset + 1] & 255) << 16) | ((hmac[offset + 2] & 255) << 8) | (hmac[offset + 3] & 255);

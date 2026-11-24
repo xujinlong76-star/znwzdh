@@ -219,6 +219,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         userId: result.user.id,
         purpose: "email_verification",
         tokenHash: hashToken(token),
+        targetEmail: email,
         expiresAt: Date.now() + VERIFY_TTL_MS,
       });
       // P0-3：username 用户可控 → HTML escape 防邮件内容注入/钓鱼（与 resend 路径同口径）
@@ -257,11 +258,11 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       // 令牌哈希无法反查用户，故先按哈希找到候选行，再校验归属
       const row = (
         await ctx.repo.raw(
-          "SELECT user_id, purpose, expires_at, consumed_at FROM auth_tokens WHERE token_hash = ? AND purpose = 'email_verification' LIMIT 1",
-          [hashToken(body.data.token)],
+          "SELECT user_id, target_email FROM auth_tokens WHERE token_hash = ? AND purpose = 'email_verification' AND consumed_at IS NULL AND expires_at > ? AND target_email IS NOT NULL LIMIT 1",
+          [hashToken(body.data.token), Date.now()],
         )
       )[0];
-      if (!row) {
+      if (!row || !row.target_email) {
         reply.code(400);
         return { error: "验证链接无效或已失效" };
       }
@@ -269,12 +270,13 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         userId: String(row.user_id),
         purpose: "email_verification",
         tokenHash: hashToken(body.data.token),
+        targetEmail: String(row.target_email),
       });
       if (!consumed) {
         reply.code(400);
         return { error: "验证链接无效或已使用" };
       }
-      const verified = await ctx.repo.setUserEmailVerified(String(row.user_id));
+      const verified = await ctx.repo.setUserEmailVerifiedForEmail(String(row.user_id), String(row.target_email));
       if (!verified) {
         reply.code(500);
         return { error: "验证状态更新失败" };
@@ -360,6 +362,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
           userId: user.id,
           purpose: "password_reset",
           tokenHash: hashToken(token),
+          targetEmail: email,
           expiresAt: Date.now() + RESET_TTL_MS,
         });
         await sendResetMail(ctx, ctx.mail, email, buildResetUrl(ctx, token));
@@ -404,11 +407,11 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       const tokenHash = hashToken(body.data.token);
       const row = (
         await ctx.repo.raw(
-          "SELECT user_id FROM auth_tokens WHERE token_hash = ? AND purpose = 'password_reset' LIMIT 1",
-          [tokenHash],
+          "SELECT user_id, target_email FROM auth_tokens WHERE token_hash = ? AND purpose = 'password_reset' AND consumed_at IS NULL AND expires_at > ? AND target_email IS NOT NULL LIMIT 1",
+          [tokenHash, Date.now()],
         )
       )[0];
-      if (!row) {
+      if (!row || !row.target_email) {
         reply.code(400);
         return { error: "重置链接无效或已失效" };
       }
@@ -416,6 +419,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         userId: String(row.user_id),
         purpose: "password_reset",
         tokenHash,
+        targetEmail: String(row.target_email),
       });
       if (!consumed) {
         reply.code(400);

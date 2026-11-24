@@ -130,7 +130,7 @@ function decryptMfaSecret(state: AdminMfaState): string {
 
 function newRecoveryCodes(): string[] {
   return Array.from({ length: 10 }, () => {
-    const raw = randomBytes(9).toString("base64url").toUpperCase();
+    const raw = randomBytes(10).toString("hex").toUpperCase();
     return raw.match(/.{1,4}/g)?.join("-") ?? raw;
   });
 }

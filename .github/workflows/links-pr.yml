@@ -33,13 +33,17 @@ jobs:
       - name: Install lychee v0.24.2 (release tarball, sha256 verified)
         run: |
           set -euo pipefail
-          curl -fsSL -o /tmp/lychee.tar.gz \
-            https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz
-          curl -fsSL -o /tmp/lychee.tar.gz.sha256 \
-            https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz.sha256
-          cd /tmp && sha256sum -c lychee.tar.gz.sha256
-          tar -xzf /tmp/lychee.tar.gz -C /tmp lychee
-          sudo install -m 0755 /tmp/lychee /usr/local/bin/lychee
+          ARCHIVE=lychee-x86_64-unknown-linux-gnu.tar.gz
+          curl -fsSL --retry 3 --retry-delay 5 -o "/tmp/$ARCHIVE" \
+            "https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/$ARCHIVE"
+          curl -fsSL --retry 3 --retry-delay 5 -o "/tmp/$ARCHIVE.sha256" \
+            "https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/$ARCHIVE.sha256"
+          test -s "/tmp/$ARCHIVE" || { echo "::error::lychee archive download is empty or missing"; exit 1; }
+          test -s "/tmp/$ARCHIVE.sha256" || { echo "::error::lychee checksum file download is empty or missing"; exit 1; }
+          cd /tmp && sha256sum -c "$ARCHIVE.sha256"
+          tar -xzf "/tmp/$ARCHIVE" -C /tmp "lychee-x86_64-unknown-linux-gnu/lychee"
+          test -x /tmp/lychee-x86_64-unknown-linux-gnu/lychee || { echo "::error::lychee binary not found in archive"; exit 1; }
+          sudo install -m 0755 /tmp/lychee-x86_64-unknown-linux-gnu/lychee /usr/local/bin/lychee
           lychee --version
 
       - name: Check internal links (offline)

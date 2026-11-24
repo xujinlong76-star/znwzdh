@@ -45,6 +45,8 @@ try {
     totalCases: result.totalCases,
     eligibleCases: result.eligibleCases,
     excludedUnjudgeableCases: result.excludedUnjudgeableCases,
+    eligibleIntentCounts: result.eligibleIntentCounts,
+    eligibleLocaleCounts: result.eligibleLocaleCounts,
     requiredEligibleCases: args.minCases,
     passedMinimum: result.eligibleCases >= args.minCases,
     baselineMetricsAt10: evaluateSearch(result.evaluationCases, 10),

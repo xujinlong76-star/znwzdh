@@ -46,7 +46,7 @@ export function selectStratifiedCrawlCandidates<T extends { category: string; so
     const bucket = buckets.get(key) ?? []; bucket.push(item); buckets.set(key,bucket);
   }
   for (const bucket of buckets.values()) bucket.sort((a,b) => b.score-a.score);
-  const keys = [...buckets.keys()].sort((a,b) => (buckets.get(b)?.length ?? 0) - (buckets.get(a)?.length ?? 0) || a.localeCompare(b));
+  const keys = [...buckets.keys()].sort((a,b) => (buckets.get(a)?.length ?? 0) - (buckets.get(b)?.length ?? 0) || a.localeCompare(b));
   const selected: T[] = [];
   while (selected.length < Math.max(0,Math.min(100,Math.floor(limit)))) {
     let progressed = false;

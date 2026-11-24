@@ -68,10 +68,10 @@ function candidateDetailsFromBlock(block: string, baseUrl: string, kind: CrawlSo
   if (kind === "sitemap") {
     rawUrl = xmlText(block, "loc") ?? undefined;
   } else {
+    const guid = xmlText(block, "guid");
     rawUrl = block.match(/<link\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*\/?\s*>/i)?.[1]
       ?? xmlText(block, "link")
-      ?? xmlText(block, "guid")
-      ?? undefined;
+      ?? (guid && /^https?:\/\//i.test(guid) ? guid : undefined);
   }
   if (!rawUrl) return null;
   const url = canonicalCandidateUrl(rawUrl, baseUrl);

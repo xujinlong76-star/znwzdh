@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Activity, RefreshCw, ShieldCheck, ClipboardCheck, Globe2, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
+import { Activity, RefreshCw, ShieldCheck, ClipboardCheck, Globe2, AlertTriangle, CheckCircle2, XCircle, Plus, Pause, Play, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { hubGet, hubSend } from '@/lib/navhub-api'
@@ -22,6 +22,7 @@ type Candidate = {
   quality:{score:number;reasons:string[]}
 }
 type CandidatePage = {ok:boolean;items:Candidate[];total:number;limit:number;offset:number}
+type Source = {id:string;url:string;kind:'sitemap'|'rss'|'page';enabled:boolean;priority:number;intervalMs:number;nextRunAt:number;lastRunAt:number|null;lastStatus:string|null;lastError:string|null}
 
 function Stat({label,value,detail}:{label:string;value:string|number;detail?:string}) {
   return <Card><CardHeader className="pb-2"><CardDescription>{label}</CardDescription><CardTitle className="text-2xl tabular-nums">{value}</CardTitle></CardHeader>{detail&&<CardContent className="pt-0 text-xs text-muted-foreground">{detail}</CardContent>}</Card>
@@ -31,6 +32,10 @@ function time(value:number){return new Date(value).toLocaleString('zh-CN',{hour1
 export default function CrawlOperationsPage(){
   const [overview,setOverview]=useState<Overview|null>(null)
   const [page,setPage]=useState<CandidatePage|null>(null)
+  const [sources,setSources]=useState<Source[]>([])
+  const [sourceUrl,setSourceUrl]=useState('')
+  const [sourceKind,setSourceKind]=useState<Source['kind']>('sitemap')
+  const [sourceBusy,setSourceBusy]=useState<string|null>(null)
   const [loading,setLoading]=useState(true)
   const [busy,setBusy]=useState<string|null>(null)
   const [error,setError]=useState<string|null>(null)
@@ -38,15 +43,33 @@ export default function CrawlOperationsPage(){
   const load=useCallback(async()=>{
     setLoading(true);setError(null)
     try{
-      const [stats,queue]=await Promise.all([
+      const [stats,queue,registry]=await Promise.all([
         hubGet<Overview>('/api/hub/admin/crawl/overview'),
-        hubGet<CandidatePage>('/api/hub/admin/crawl/candidates?status=pending&limit=50&offset=0')
+        hubGet<CandidatePage>('/api/hub/admin/crawl/candidates?status=pending&limit=50&offset=0'),
+        hubGet<{ok:boolean;items:Source[]}>('/api/hub/admin/crawl-sources?limit=100')
       ])
-      setOverview(stats);setPage(queue)
+      setOverview(stats);setPage(queue);setSources(registry.items)
     }catch(e){setError(e instanceof Error?e.message:'采集运营数据加载失败')}
     finally{setLoading(false)}
   },[])
   useEffect(()=>{void load()},[load])
+  const addSource=async()=>{
+    const url=sourceUrl.trim();if(!url||sourceBusy)return
+    setSourceBusy('new');setError(null)
+    try{await hubSend('/api/hub/admin/crawl-sources','POST',{url,kind:sourceKind});setSourceUrl('');await load()}
+    catch(e){setError(e instanceof Error?e.message:'添加采集来源失败')}finally{setSourceBusy(null)}
+  }
+  const updateSource=async(source:Source,patch:Partial<Source>)=>{
+    if(sourceBusy)return;setSourceBusy(source.id);setError(null)
+    try{await hubSend('/api/hub/admin/crawl-sources/'+encodeURIComponent(source.id),'PATCH',patch);await load()}
+    catch(e){setError(e instanceof Error?e.message:'更新采集来源失败')}finally{setSourceBusy(null)}
+  }
+  const removeSource=async(source:Source)=>{
+    if(sourceBusy||!window.confirm('确定删除这个采集来源？'))return
+    setSourceBusy(source.id);setError(null)
+    try{await hubSend('/api/hub/admin/crawl-sources/'+encodeURIComponent(source.id),'DELETE',{});await load()}
+    catch(e){setError(e instanceof Error?e.message:'删除采集来源失败')}finally{setSourceBusy(null)}
+  }
   const review=async(item:Candidate,decision:'approve'|'reject')=>{
     if(busy)return
     const reason=(reasons[item.id]??'').trim()
@@ -80,6 +103,18 @@ export default function CrawlOperationsPage(){
         <Stat label="已驳回候选" value={overview?.candidates.rejected??0}/>
         <Stat label="近 24 小时处理" value={Object.values(overview?.last24Hours??{}).reduce((a,b)=>a+b,0)}/>
       </div>
+      <Card><CardHeader><CardTitle className="text-base">采集来源管理</CardTitle><CardDescription>维护 Sitemap、RSS/Atom 和普通网页来源；来源仍受 robots.txt 与 SSRF 安全策略约束。</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input value={sourceUrl} onChange={e=>setSourceUrl(e.target.value)} placeholder="https://example.com/sitemap.xml" aria-label="采集来源 URL" className="h-10 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm"/>
+            <select value={sourceKind} onChange={e=>setSourceKind(e.target.value as Source['kind'])} aria-label="采集来源类型" className="h-10 rounded-md border bg-background px-3 text-sm"><option value="sitemap">Sitemap</option><option value="rss">RSS / Atom</option><option value="page">普通网页</option></select>
+            <Button onClick={()=>void addSource()} disabled={!sourceUrl.trim()||sourceBusy!==null}><Plus className="mr-1.5 h-4 w-4"/>添加来源</Button>
+          </div>
+          {!sources.length?<p className="text-sm text-muted-foreground">尚未登记数据库采集来源。</p>:<div className="divide-y rounded-lg border">{sources.map(source=><div key={source.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
+            <div className="min-w-0 flex-1"><div className="break-all text-sm font-medium">{source.url}</div><div className="mt-1 text-xs text-muted-foreground">{source.kind.toUpperCase()} · 优先级 {source.priority} · 间隔 {Math.round(source.intervalMs/60000)} 分钟 · {source.lastStatus||'尚未调度'}</div>{source.lastError&&<div className="mt-1 break-all text-xs text-destructive">{source.lastError}</div>}</div>
+            <div className="flex gap-2"><Button size="sm" variant="outline" disabled={sourceBusy!==null} onClick={()=>void updateSource(source,{enabled:!source.enabled})}>{source.enabled?<><Pause className="mr-1 h-3.5 w-3.5"/>暂停</>:<><Play className="mr-1 h-3.5 w-3.5"/>启用</>}</Button><Button size="sm" variant="ghost" disabled={sourceBusy!==null} onClick={()=>void removeSource(source)} aria-label="删除来源"><Trash2 className="h-4 w-4"/></Button></div>
+          </div>)}</div>}
+        </CardContent></Card>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Globe2 className="h-4 w-4"/>活跃域名分布</CardTitle><CardDescription>按采集任务主机名统计；此处不将相似域名误判为同一企业或产品生态。</CardDescription></CardHeader>
           <CardContent className="space-y-3">{(overview?.busiestHosts??[]).length?overview!.busiestHosts.map(item=><div key={item.host} className="flex items-center justify-between gap-3 text-sm"><span className="min-w-0 truncate">{item.host}</span><span className="tabular-nums text-muted-foreground">{item.tasks} 项任务</span></div>):<p className="text-sm text-muted-foreground">暂无域名数据</p>}</CardContent></Card>

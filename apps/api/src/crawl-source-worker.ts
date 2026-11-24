@@ -45,164 +45,93 @@ function canonicalCandidateUrl(raw: string, base: string): string | null {
   }
 }
 
-function extractHtmlMetadata(body: string): { title: string | null; description: string | null } {
-  const title = body.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i)?.[1]
-    ?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300) ?? null;
-  const description = body.match(/<meta\b[^>]*name\s*=\s*["']description["'][^>]*content\s*=\s*["']([^"']*)["'][^>]*>/i)?.[1]
-    ?.replace(/\s+/g, " ").trim().slice(0, 600) ?? null;
-  return { title: title ? decodeEntities(title) : null, description: description ? decodeEntities(description) : null };
+function cleanMarkupText(value: string, max: number): string | null {
+  const cleaned = decodeEntities(value.replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script\\s*>/gi, " ")
+    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style\\s*>/gi, " ")
+    .replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ").trim()).slice(0, max);
+  return cleaned || null;
 }
 
-/** 只解析候选链接，不在解析阶段发起任何二次网络请求。 */
-export function extractCrawlCandidateUrls(body: string, kind: CrawlSource["kind"], baseUrl: string): string[] {
-  const rawLinks: string[] = [];
+export interface CrawlCandidateDetail {
+  url: string;
+  title: string | null;
+  description: string | null;
+}
+
+function xmlText(block: string, tag: string): string | null {
+  const match = block.match(new RegExp("<" + tag + "\\b[^>]*>([\\s\\S]*?)<\\/" + tag + "\\s*>", "i"));
+  return match?.[1] ? cleanMarkupText(match[1], 600) : null;
+}
+
+function candidateDetailsFromBlock(block: string, baseUrl: string, kind: CrawlSource["kind"]): CrawlCandidateDetail | null {
+  let rawUrl: string | undefined;
   if (kind === "sitemap") {
-    for (const match of body.matchAll(/<loc\b[^>]*>([\s\S]*?)<\/loc\s*>/gi)) rawLinks.push(match[1]!.replace(/<[^>]+>/g, "").trim());
-  } else if (kind === "rss") {
-    for (const match of body.matchAll(/<link\b[^>]*>([\s\S]*?)<\/link\s*>/gi)) rawLinks.push(match[1]!.replace(/<[^>]+>/g, "").trim());
-    for (const match of body.matchAll(/<link\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*\/?\s*>/gi)) rawLinks.push(match[1]!);
-    for (const match of body.matchAll(/<guid\b[^>]*>([\s\S]*?)<\/guid\s*>/gi)) rawLinks.push(match[1]!.replace(/<[^>]+>/g, "").trim());
+    rawUrl = xmlText(block, "loc") ?? undefined;
   } else {
-    for (const match of body.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi)) rawLinks.push(match[1]!);
+    rawUrl = block.match(/<link\\b[^>]*href\\s*=\\s*["']([^"']+)["'][^>]*\\/?\\s*>/i)?.[1]
+      ?? xmlText(block, "link")
+      ?? xmlText(block, "guid")
+      ?? undefined;
   }
-  const unique = new Set<string>();
-  for (const raw of rawLinks) {
-    const url = canonicalCandidateUrl(raw, baseUrl);
-    if (url) unique.add(url);
+  if (!rawUrl) return null;
+  const url = canonicalCandidateUrl(rawUrl, baseUrl);
+  if (!url) return null;
+  const title = xmlText(block, kind === "sitemap" ? "news:title" : "title");
+  const description = kind === "sitemap" ? xmlText(block, "news:description")
+    : xmlText(block, "description") ?? xmlText(block, "summary") ?? xmlText(block, "content");
+  return { url, title, description };
+}
+
+/** 解析候选 URL 与候选自身的标题/描述；不在解析阶段发起二次网络请求。 */
+export function extractCrawlCandidateDetails(body: string, kind: CrawlSource["kind"], baseUrl: string): CrawlCandidateDetail[] {
+  const raw: CrawlCandidateDetail[] = [];
+  if (kind === "sitemap") {
+    const blocks = [...body.matchAll(/<url\\b[^>]*>([\\s\\S]*?)<\\/url\\s*>/gi)];
+    for (const match of blocks) {
+      const detail = candidateDetailsFromBlock(match[1]!, baseUrl, kind);
+      if (detail) raw.push(detail);
+    }
+    if (!raw.length) {
+      for (const match of body.matchAll(/<loc\\b[^>]*>([\\s\\S]*?)<\\/loc\\s*>/gi)) {
+        const detail = candidateDetailsFromBlock("<loc>" + match[1] + "</loc>", baseUrl, kind);
+        if (detail) raw.push(detail);
+      }
+    }
+  } else if (kind === "rss") {
+    const blocks = [...body.matchAll(/<(?:item|entry)\\b[^>]*>([\\s\\S]*?)<\\/(?:item|entry)\\s*>/gi)];
+    for (const match of blocks) {
+      const detail = candidateDetailsFromBlock(match[1]!, baseUrl, kind);
+      if (detail) raw.push(detail);
+    }
+    if (!raw.length) {
+      for (const match of body.matchAll(/<link\\b[^>]*href\\s*=\\s*["']([^"']+)["'][^>]*\\/?\\s*>/gi)) {
+        const url = canonicalCandidateUrl(match[1]!, baseUrl);
+        if (url) raw.push({ url, title: null, description: null });
+      }
+    }
+  } else {
+    for (const match of body.matchAll(/<a\\b([^>]*)href\\s*=\\s*["']([^"']+)["']([^>]*)>([\\s\\S]*?)<\\/a\\s*>/gi)) {
+      const url = canonicalCandidateUrl(match[2]!, baseUrl);
+      if (url) raw.push({ url, title: cleanMarkupText(match[4]!, 300), description: null });
+    }
+  }
+
+  const unique = new Map<string, CrawlCandidateDetail>();
+  for (const item of raw) {
+    const existing = unique.get(item.url);
+    if (!existing) unique.set(item.url, item);
+    else unique.set(item.url, {
+      url: item.url,
+      title: existing.title ?? item.title,
+      description: existing.description ?? item.description,
+    });
     if (unique.size >= MAX_CANDIDATES_PER_SOURCE) break;
   }
-  return [...unique];
+  return [...unique.values()];
 }
 
-type CrawlShadowModerationRuntime = {
-  policy: CrawlAiModerationPolicy;
-  resolved: Awaited<ReturnType<typeof resolveLlm>>;
-  reviewed: number;
-};
-
-/** AI 结果只写入追加式 Shadow 账本，不修改候选状态、不触发自动发布。 */
-async function moderateCandidateShadow(
-  ctx: AppContext,
-  candidate: Awaited<ReturnType<typeof upsertSiteDiscoveryCandidate>>,
-  runtime: CrawlShadowModerationRuntime,
-): Promise<void> {
-  if (runtime.reviewed >= runtime.policy.maxAiReviewsPerRun) return;
-  const recent = await ctx.repo.raw(
-    "SELECT id FROM crawl_ai_moderation_decisions WHERE candidate_id=? AND decision_source='ai' AND mode='shadow' AND status='completed' AND created_at>=? LIMIT 1",
-    [candidate.id, Date.now() - 24 * 60 * 60_000],
-  );
-  if (recent.length) return;
-  runtime.reviewed++;
-
-  const record = async (input: {
-    status: "completed" | "error" | "quota_blocked";
-    verdict?: string | null;
-    confidence?: number | null;
-    qualityScore?: number | null;
-    risks?: string[];
-    reasons?: string[];
-    model?: string | null;
-    policyVersion?: string | null;
-  }) => recordCrawlAiModerationDecision(ctx.repo, {
-    id: randomUUID(), candidateId: candidate.id, decisionSource: "ai", mode: "shadow",
-    status: input.status, verdict: input.verdict, confidence: input.confidence,
-    qualityScore: input.qualityScore, risks: input.risks, reasons: input.reasons,
-    model: input.model, policyVersion: input.policyVersion, actor: "crawl-worker",
-  });
-
-  const providers = [runtime.resolved.provider, ...runtime.resolved.fallbacks];
-  if (!providers.some(llmProviderReady)) {
-    await record({ status: "error", reasons: ["未配置可用的大模型，候选保持待审核"] });
-    return;
-  }
-  const quota = await reserveLlmQuota(ctx, null, {
-    source: runtime.resolved.source, estimatedTokens: 1800,
-  });
-  if (!quota.ok) {
-    await record({ status: "quota_blocked", reasons: [quota.error.message.slice(0, 240)] });
-    return;
-  }
-  try {
-    const result = await moderateSiteWithAi(runtime.resolved.provider, {
-      url: candidate.url,
-      title: candidate.title,
-      description: candidate.description,
-      // 当前抓取阶段尚未抓取候选页面正文；证据不足时审核模型应降低置信度并建议人工复核。
-      evidence: { provenance: "crawl_source_metadata_only", warnings: ["尚无候选页面正文"] },
-    }, {
-      autoApproveConfidence: runtime.policy.autoApproveConfidence,
-      rejectConfidence: runtime.policy.rejectConfidence,
-      minQualityScore: runtime.policy.minQualityScore,
-      maxExcerptChars: runtime.policy.maxExcerptChars,
-      requireHttps: runtime.policy.requireHttps,
-    }, {
-      deadlineAt: Date.now() + 30_000,
-      complete: async (_provider, request) => {
-        const response = await callLlm(ctx, runtime.resolved, {
-          scenario: "crawl_moderation_shadow",
-          identity: candidate.id,
-          messages: request.messages,
-          temperature: request.temperature,
-          maxTokens: request.maxTokens,
-          json: request.json,
-          thinking: false,
-          signal: request.signal,
-          deadlineAt: request.deadlineAt,
-          fetchImpl: request.fetchImpl,
-        });
-        return { content: response.content, model: response.model };
-      },
-    });
-    await record({
-      status: "completed", verdict: result.verdict, confidence: result.confidence,
-      qualityScore: result.qualityScore, risks: result.risks, reasons: result.reasons,
-      model: result.model, policyVersion: result.policyVersion,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await record({ status: "error", reasons: [message.slice(0, 240)] });
-  } finally {
-    await settleLlmQuota(ctx, quota.hold);
-  }
-}
-
-async function processSource(ctx: AppContext, source: CrawlSource, now: number): Promise<SiteDiscoveryCandidate[]> {
-  const response = await guardedFetch(source.url, {
-    timeoutMs: 8_000,
-    maxBytes: MAX_SOURCE_BODY_BYTES,
-    maxRedirects: 3,
-    allowPrivateNetworks: false,
-  }, { accept: source.kind === "sitemap" ? "application/xml,text/xml,*/*" : "application/rss+xml,application/atom+xml,text/html,*/*" });
-
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error("来源返回 HTTP " + response.status);
-  }
-  const baseUrl = response.finalUrl || source.url;
-  const candidates = extractCrawlCandidateUrls(response.body, source.kind, baseUrl);
-  const metadata = extractHtmlMetadata(response.body);
-  const discovered: SiteDiscoveryCandidate[] = [];
-  for (const url of candidates) {
-    const candidate = await upsertSiteDiscoveryCandidate(ctx.repo, {
-      id: randomUUID(),
-      url,
-      canonicalUrl: url,
-      title: metadata.title,
-      description: metadata.description,
-      source: "crawl:" + source.kind + ":" + new URL(source.url).hostname,
-      confidence: 0.5,
-      evidence: {
-        sourceId: source.id,
-        sourceKind: source.kind,
-        fetchedAt: now,
-        httpStatus: response.status,
-        responseTruncated: response.truncated,
-        sourceFinalUrl: baseUrl,
-      },
-      now,
-    });
-    discovered.push(candidate);
-  }
-  return discovered;
+export function extractCrawlCandidateUrls(body: string, kind: CrawlSource["kind"], baseUrl: string): string[] {
+  return extractCrawlCandidateDetails(body, kind, baseUrl).map(item => item.url);
 }
 
 /**

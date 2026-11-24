@@ -20,7 +20,8 @@ describe("buildSiteQualityAssessments", () => {
     expect(result.accessibility.score).toBe(50);
     expect(result.accessibility.evidence.join(" ")).toContain("2 次非 WAF 阻断巡检");
     expect(result.contentCompleteness.score).toBe(100);
-    expect(result.uniqueness.score).toBe(100);
+    expect(result.uniqueness.score).toBeNull();
+    expect(result.uniqueness.evidence[0]).toContain("尚未执行");
     expect(result.sourceTrust.score).toBeNull();
     expect(result.relevance.score).toBeNull();
     expect(result.freshness.score).toBeNull();

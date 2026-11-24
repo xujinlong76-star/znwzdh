@@ -10,6 +10,7 @@ export * from "./search.ts";
 export * from "./plugin-ops.ts";
 export * from "./vector/index.ts";
 export * from "./repository.ts";
+export * from "./repository/crawl-ai-moderation.ts";
 export { listSiteDiscoveryCandidates, countSiteDiscoveryCandidates, getSiteDiscoveryCandidateForUpdate, reviewSiteDiscoveryCandidate, getSiteDiscoveryCandidate, upsertSiteDiscoveryCandidate } from "./repository/discovery-candidates.ts";
 export type { SiteDiscoveryCandidate, DiscoveryCandidateStatus, UpsertSiteDiscoveryCandidateInput } from "./repository/discovery-candidates.ts";
 export { pluginOwnerKey, normalizePluginReviewSort, type PluginReviewSort } from "./repository/plugins.ts";

@@ -186,10 +186,10 @@ describe("账号生命周期 API", () => {
       expect(blocked.statusCode).toBe(429);
 
       const audit = await ctx.repo.raw(
-        "SELECT target FROM audit_logs WHERE action = ? AND target LIKE 'sha256:%' ORDER BY created_at DESC LIMIT 1",
+        "SELECT target FROM audit_logs WHERE action = ? AND target LIKE 'hmac-sha256:%' ORDER BY created_at DESC LIMIT 1",
         ["account.login_locked"],
       );
-      expect(String(audit[0]?.target ?? "")).toMatch(/^sha256:[a-f0-9]{64}$/);
+      expect(String(audit[0]?.target ?? "")).toMatch(/^hmac-sha256:[a-f0-9]{64}$/);
       expect(String(audit[0]?.target ?? "")).not.toContain(identifier);
     } finally {
       await replicaApp.close();

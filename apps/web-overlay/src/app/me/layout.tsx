@@ -7,6 +7,12 @@ import { UserCenterNav } from '@/components/user-center/user-center-nav'
  * 布局（美化批次）：子导航 sticky 吸顶——历史/数据这类长页面滚动时入口常驻；
  * 吸顶层用「实底渐隐」背景 + 下缘留白，内容从导航下方滑过时不会从缝隙里透出。
  */
+// 自愈周期（ISR 3600s）：本页是静态外壳（数据都在客户端）。缺 NAVHUB_SITE_URL 的
+// 构建会把 http://localhost:3000 兜底地址（canonical/og:url/og:image/JSON-LD）烤进
+// revalidate=false 的永久快照，被 check-isr-routes.mjs 判红；按门禁提示「给它 revalidate」
+// 补一份自愈周期即可。生产配置了 NAVHUB_SITE_URL 时地址本就正确，行为不变。
+export const revalidate = 3600
+
 export const metadata: Metadata = {
   title: '用户中心',
   description: '账号、收藏、搜索历史、个性化偏好与数据管理',

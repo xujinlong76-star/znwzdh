@@ -218,7 +218,7 @@ interface NavigationContentProps {
    */
   initialCategoryLimit?: number
   /**
-   * 服务端从 `nav_view_mode` Cookie 解析出的初始网址展示模式（Zero-CLS SSR 渲染）。
+   * 可选服务端初始展示模式；未提供时由客户端 hydrateHomeDiy() 恢复 Cookie 偏好。
    */
   initialCardDisplayMode?: CanonicalCardDisplayMode
   /**

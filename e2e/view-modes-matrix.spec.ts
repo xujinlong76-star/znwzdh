@@ -75,7 +75,7 @@ async function waitForHomeReady(page: Page) {
     state: 'visible',
     timeout: 60_000,
   })
-  await page.waitForSelector('input[placeholder*="搜索"]', {
+  await page.waitForSelector('input[placeholder*="搜索"]:visible', {
     state: 'visible',
     timeout: 60_000,
   })

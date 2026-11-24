@@ -4,8 +4,8 @@
  * 作用：解决仅靠 localStorage 持久化导致 SSR 首帧只能按默认 standard 渲染、
  * 客户端水合后瞬间跳变目标模式引发 CLS / 闪烁的问题。
  * - 写侧：每次经 `home-diy-storage` 提交或水合配置时同步写入 `nav_view_mode` Cookie；
- * - 读侧：Next.js 首页 RSC（`app/page.tsx`）直接读 Cookie 渲染目标模式 HTML，
- *   客户端首帧经 `InitialViewModeContext` 消费同一初始值，实现 0 水合警告 + 0 CLS。
+ * - 读侧：首页为保留 ISR 不在服务端读取 Cookie；`hydrateHomeDiy()` 在客户端挂载时
+ *   读取 `document.cookie` 并恢复模式偏好，SSR 与首次水合均使用标准模式。
  */
 import {
   normalizeCardDisplayMode,

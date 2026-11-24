@@ -3,6 +3,11 @@ import Link from "next/link"
 import { ArrowLeft, Compass, Download, MousePointerClick, Search, Star } from "lucide-react"
 
 /** Google Chrome mark（Simple Icons 官方路径）：lucide v1 已删全部品牌图标，改用内联 SVG。 */
+// 自愈周期（ISR 3600s）：缺 NAVHUB_SITE_URL 的构建会把 http://localhost:3000 兜底地址
+// 烤进 revalidate=false 的永久快照（check-isr-routes.mjs 判红）；按门禁提示「给它
+// revalidate」补一份自愈周期。生产配了 NAVHUB_SITE_URL 时地址本就正确，行为不变。
+export const revalidate = 3600
+
 function ChromeIcon({ className, ...props }: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true" {...props}>

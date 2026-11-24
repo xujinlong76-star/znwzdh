@@ -24,7 +24,7 @@ Docker lite 与 standard 的 API 服务均透传该变量。未配置时默认�
 - 每轮先回收过期 Worker 租约，再最多处理 25 条（手动默认 10 条）；每次抓取最多 10 秒、512 KiB、5 次重定向。
 - Sitemap 解析 `<loc>`；RSS 解析 `<item><link>`；Atom 解析 `<entry><link href>`。每个 feed 最多分发 50 个 URL。
 - 页面抽取 title / meta description / 可读文本，计算 SHA-256 与 SimHash64，写入页面指纹表。
-- 精确内容哈希重复会写入候选证据 `exactDuplicateOf`，但不会自动合并或删除候选。
+- 精确 SHA-256 重复通过全量索引查询；最近 500 条页面指纹做 SimHash 汉明距离近重复扫描，结果写入 `exactDuplicateOf` / `nearDuplicateCandidates` 审核证据，不自动合并或删除候选。
 - 候选写入 `site_discovery_candidates`，状态始终为 `pending`；不会直接创建 active 站点或上架。
 - 对 401 / 403 / 451 的任务挂起人工复核；429 与 5xx 遵循指数退避，并尊重最多 6 小时的 Retry-After；SSRF 拦截进入人工复核；不可重试 HTTP 错误进入死信。
 - 仅周期性可信种子与 feed 子项允许把 `done` 任务重新排队；`dead_letter` 与 `hold_for_review` 不会因重复发现自动复活。

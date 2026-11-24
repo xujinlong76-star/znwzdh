@@ -99,9 +99,6 @@ describe("持久化采集治理队列", () => {
 
   it("队列健康快照能区分积压、过期租约、死信与人工复核", async () => {
     const now = Date.now();
-    const pending = await enqueueCrawlTask(repo, {
-      url: "https://pending-health.example/page", source: "seed", now: now - 30_000,
-    });
     const expired = await enqueueCrawlTask(repo, {
       url: "https://expired-health.example/page", source: "seed", now,
     });
@@ -129,6 +126,9 @@ describe("持久化采集治理队列", () => {
       id: held.id, workerId: "worker-held-health", outcome: "hold_for_review", now: now + 3,
     })).toBe(true);
 
+    const pending = await enqueueCrawlTask(repo, {
+      url: "https://pending-health.example/page", source: "seed", now: now - 30_000,
+    });
     const rows = await repo.raw(
       "SELECT SUM(CASE WHEN status IN ('queued','retry') THEN 1 ELSE 0 END) AS pending, MIN(CASE WHEN status IN ('queued','retry') THEN created_at ELSE NULL END) AS oldest_pending_at, SUM(CASE WHEN status = 'leased' AND lease_expires_at <= ? THEN 1 ELSE 0 END) AS expired_leases, SUM(CASE WHEN status = 'dead_letter' THEN 1 ELSE 0 END) AS dead_letter, SUM(CASE WHEN status = 'hold_for_review' THEN 1 ELSE 0 END) AS hold_for_review FROM crawl_tasks",
       [now + 4],

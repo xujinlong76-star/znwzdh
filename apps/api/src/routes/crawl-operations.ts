@@ -46,7 +46,7 @@ export function selectStratifiedCrawlCandidates<T extends { category: string; so
     const bucket = buckets.get(key) ?? []; bucket.push(item); buckets.set(key,bucket);
   }
   for (const bucket of buckets.values()) bucket.sort((a,b) => b.score-a.score);
-  const keys = [...buckets.keys()].sort((a,b) => (buckets.get(a)?.length ?? 0) - (buckets.get(b)?.length ?? 0) || a.localeCompare(b));
+  const keys = [...buckets.keys()].sort((a,b) => (buckets.get(b)?.length ?? 0) - (buckets.get(a)?.length ?? 0) || a.localeCompare(b));
   const selected: T[] = [];
   while (selected.length < Math.max(0,Math.min(100,Math.floor(limit)))) {
     let progressed = false;
@@ -279,8 +279,11 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       let malformed = 0;
       for (const row of rows) {
         let evidence: Record<string, unknown>;
-        try { evidence = JSON.parse(String(row.evidence_json ?? "{}")) as Record<string, unknown>; }
-        catch { malformed++; continue; }
+        try {
+          const parsedEvidence = JSON.parse(String(row.evidence_json ?? "{}")) as unknown;
+          if (!parsedEvidence || typeof parsedEvidence !== "object" || Array.isArray(parsedEvidence)) { malformed++; continue; }
+          evidence = parsedEvidence as Record<string, unknown>;
+        } catch { malformed++; continue; }
         const fingerprint = "candidate:" + createHash("sha256").update(String(row.id)).digest("hex");
         if (imported.has(fingerprint)) continue;
         const category = String(row.category_id ?? "").trim() || "未分类";

@@ -76,6 +76,7 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "crawl_sources", column: "canonical_url", sqlite: "TEXT", pg: "TEXT" },
   { table: "crawl_sources", column: "lease_owner", sqlite: "TEXT", pg: "TEXT" },
   { table: "crawl_sources", column: "lease_expires_at", sqlite: "INTEGER", pg: "BIGINT" },
+  { table: "crawl_sources", column: "consecutive_failures", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   // 任务退避：失败后延迟到 next_run_at 才重新可被认领（见 jobs.ts 的指数退避）
   { table: "jobs", column: "next_run_at", sqlite: "INTEGER", pg: "BIGINT" },
   // API 凭据治理：

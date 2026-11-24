@@ -31,7 +31,30 @@ export function moderationVerdictToPrediction(result: { verdict: "auto_approve" 
     actualRisk: result.risks.some(risk => risk !== "none"),
   };
 }
-/** 输出不含网页正文/URL 的错分摘要，便于审核员定位模型错误样本。 */\nexport function buildModerationErrorAnalysis(cases: Array<{id:string;expected:"approve"|"reject"|"review";actual:"approve"|"reject"|"review";expectedRisk?:boolean;actualRisk?:boolean}>) {\n  const groups = new Map<string,{expected:string;actual:string;count:number;sampleIds:string[]}>();\n  const riskFalseNegativeIds:string[] = [];\n  const riskFalsePositiveIds:string[] = [];\n  let labelMismatchCount = 0, riskMismatchCount = 0;\n  for (const item of cases) {\n    if (item.expected !== item.actual) {\n      labelMismatchCount++;\n      const key = item.expected + "->" + item.actual;\n      const group = groups.get(key) ?? {expected:item.expected,actual:item.actual,count:0,sampleIds:[]};\n      group.count++; if (group.sampleIds.length < 20) group.sampleIds.push(item.id);\n      groups.set(key,group);\n    }\n    if (item.expectedRisk !== undefined && item.actualRisk !== undefined && item.expectedRisk !== item.actualRisk) {\n      riskMismatchCount++;\n      if (item.expectedRisk && !item.actualRisk && riskFalseNegativeIds.length < 50) riskFalseNegativeIds.push(item.id);\n      if (!item.expectedRisk && item.actualRisk && riskFalsePositiveIds.length < 50) riskFalsePositiveIds.push(item.id);\n    }\n  }\n  return { labelMismatchCount, riskMismatchCount, confusionGroups:[...groups.values()].sort((a,b)=>b.count-a.count||a.expected.localeCompare(b.expected)||a.actual.localeCompare(b.actual)),\n    riskFalseNegativeIds, riskFalsePositiveIds, samplesTruncated: labelMismatchCount > 20 || riskMismatchCount > 100 };\n}\n/** 透明、可解释的初筛分数；只用于排序辅助，不自动批准或拒绝。 */
+/** 输出不含网页正文/URL 的错分摘要，便于审核员定位模型错误样本。 */
+export function buildModerationErrorAnalysis(cases: Array<{id:string;expected:"approve"|"reject"|"review";actual:"approve"|"reject"|"review";expectedRisk?:boolean;actualRisk?:boolean}>) {
+  const groups = new Map<string,{expected:string;actual:string;count:number;sampleIds:string[]}>();
+  const riskFalseNegativeIds:string[] = [];
+  const riskFalsePositiveIds:string[] = [];
+  let labelMismatchCount = 0, riskMismatchCount = 0;
+  for (const item of cases) {
+    if (item.expected !== item.actual) {
+      labelMismatchCount++;
+      const key = item.expected + "->" + item.actual;
+      const group = groups.get(key) ?? {expected:item.expected,actual:item.actual,count:0,sampleIds:[]};
+      group.count++; if (group.sampleIds.length < 20) group.sampleIds.push(item.id);
+      groups.set(key,group);
+    }
+    if (item.expectedRisk !== undefined && item.actualRisk !== undefined && item.expectedRisk !== item.actualRisk) {
+      riskMismatchCount++;
+      if (item.expectedRisk && !item.actualRisk && riskFalseNegativeIds.length < 50) riskFalseNegativeIds.push(item.id);
+      if (!item.expectedRisk && item.actualRisk && riskFalsePositiveIds.length < 50) riskFalsePositiveIds.push(item.id);
+    }
+  }
+  return { labelMismatchCount, riskMismatchCount, confusionGroups:[...groups.values()].sort((a,b)=>b.count-a.count||a.expected.localeCompare(b.expected)||a.actual.localeCompare(b.actual)),
+    riskFalseNegativeIds, riskFalsePositiveIds, samplesTruncated: labelMismatchCount > 20 || riskMismatchCount > 100 };
+}
+/** 透明、可解释的初筛分数；只用于排序辅助，不自动批准或拒绝。 */
 export function scoreCrawlCandidate(input: {
   url: string; title?: string | null; description?: string | null;
   evidence?: Record<string, unknown>;
@@ -646,7 +669,18 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         reply.code(502); return { ok: false, error: "自动评测未完整完成，未保存不完整指标", selected: selected.length, completed: predictions.length, failed };
       }
       if (actualModels.size !== 1) { reply.code(409); return { ok: false, error: "本轮模型标识不一致，已阻止混合模型评测", models: [...actualModels] }; }
-      // 用 evaluationId 作为 llm_usage.identity 关联键，精确隔离并发评测的真实成本。\n      const usageRows = await ctx.repo.raw(\n        "SELECT COUNT(*) AS calls, SUM(prompt_tokens) AS prompt_tokens, SUM(completion_tokens) AS completion_tokens, SUM(cost_rmb) AS cost_rmb, SUM(CASE WHEN cost_rmb IS NOT NULL THEN 1 ELSE 0 END) AS priced_calls, SUM(CASE WHEN ok THEN 0 ELSE 1 END) AS failed_calls FROM llm_usage WHERE scenario=? AND identity=?",\n        ["crawl_moderation_gold_eval", evaluationId],\n      );\n      const usageRow = usageRows[0] ?? {};\n      const usage = { calls:Number(usageRow.calls ?? 0), promptTokens:Number(usageRow.prompt_tokens ?? 0),\n        completionTokens:Number(usageRow.completion_tokens ?? 0), totalTokens:Number(usageRow.prompt_tokens ?? 0)+Number(usageRow.completion_tokens ?? 0),\n        costRmb:usageRow.cost_rmb == null ? null : Number(usageRow.cost_rmb),\n        pricedCalls:Number(usageRow.priced_calls ?? 0), unpricedCalls:Math.max(0,Number(usageRow.calls ?? 0)-Number(usageRow.priced_calls ?? 0)),\n        failedCalls:Number(usageRow.failed_calls ?? 0) };\n      const predictionMap = new Map(predictions.map(item => [item.id,item]));
+      // 用 evaluationId 作为 llm_usage.identity 关联键，精确隔离并发评测的真实成本。
+      const usageRows = await ctx.repo.raw(
+        "SELECT COUNT(*) AS calls, SUM(prompt_tokens) AS prompt_tokens, SUM(completion_tokens) AS completion_tokens, SUM(cost_rmb) AS cost_rmb, SUM(CASE WHEN cost_rmb IS NOT NULL THEN 1 ELSE 0 END) AS priced_calls, SUM(CASE WHEN ok THEN 0 ELSE 1 END) AS failed_calls FROM llm_usage WHERE scenario=? AND identity=?",
+        ["crawl_moderation_gold_eval", evaluationId],
+      );
+      const usageRow = usageRows[0] ?? {};
+      const usage = { calls:Number(usageRow.calls ?? 0), promptTokens:Number(usageRow.prompt_tokens ?? 0),
+        completionTokens:Number(usageRow.completion_tokens ?? 0), totalTokens:Number(usageRow.prompt_tokens ?? 0)+Number(usageRow.completion_tokens ?? 0),
+        costRmb:usageRow.cost_rmb == null ? null : Number(usageRow.cost_rmb),
+        pricedCalls:Number(usageRow.priced_calls ?? 0), unpricedCalls:Math.max(0,Number(usageRow.calls ?? 0)-Number(usageRow.priced_calls ?? 0)),
+        failedCalls:Number(usageRow.failed_calls ?? 0) };
+      const predictionMap = new Map(predictions.map(item => [item.id,item]));
       const cases = selected.map(row => {
         const prediction = predictionMap.get(String(row.id));
         if (!prediction) throw new Error("自动评测预测样本缺失");

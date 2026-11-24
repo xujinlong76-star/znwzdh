@@ -15,8 +15,6 @@
  * 另外限制超时、响应体大小与重定向跳数，避免被慢速/超大响应拖死。
  */
 import { lookup } from "node:dns/promises";
-import http from "node:http";
-import https from "node:https";
 import { isIP } from "node:net";
 import { BLOCKED_PORTS_UNION } from "@navhub/core";
 
@@ -36,15 +34,6 @@ export interface FetchGuardOptions {
    */
   trustedHosts?: ReadonlySet<string> | readonly string[];
   userAgent: string;
-  /**
-   * 严格域名白名单（2026-11-21）。非空时只允许这些 host（子域按 `*.example.com` 写法）。
-   *
-   * 为什么需要：IP 黑名单是「防坏」，白名单是「只信任已知好」。
-   * 对固定对接少数平台的路由（视频抓取、GitHub API），白名单能把攻击面
-   * 从「任意公网 URL」压到「几个确定域名」——这也是 CodeQL 静态数据流
-   * 唯一能彻底消除污点告警的形态。
-   */
-  allowedHosts?: readonly string[];
 }
 
 export const DEFAULT_GUARD: FetchGuardOptions = {
@@ -53,33 +42,7 @@ export const DEFAULT_GUARD: FetchGuardOptions = {
   maxRedirects: 3,
   allowPrivateNetworks: false,
   userAgent: "NavHubBot/0.1 (+https://github.com/navhub)",
-  allowedHosts: undefined,
 };
-
-/**
- * 判断 host 是否命中白名单。
- *
- * 支持两种写法：
- *   `api.github.com`   精确匹配
- *   `*.example.com`   匹配 example.com 的全部子域（不含 example.com 本身）
- * 比较前统一转小写并去掉端口与 IPv6 方括号。
- */
-export function isHostAllowed(host: string, allowedHosts: readonly string[] | undefined): boolean {
-  if (!allowedHosts || allowedHosts.length === 0) return true;
-  const h = String(host || "").toLowerCase().replace(/^\[|\]$/g, "").replace(/:\d+$/, "");
-  if (!h) return false;
-  for (const raw of allowedHosts) {
-    const pattern = String(raw || "").toLowerCase().trim();
-    if (!pattern) continue;
-    if (pattern === h) return true;
-    if (pattern.startsWith("*.")) {
-      const suffix = pattern.slice(2);
-      // 只允许真正的子域；精确域本身要用无通配写法单独列出
-      if (h.endsWith("." + suffix)) return true;
-    }
-  }
-  return false;
-}
 
 export class SsrfBlockedError extends Error {
   /** 显式字段（不用参数属性语法：Node 的 strip-only 模式不支持） */
@@ -289,49 +252,8 @@ export function isTrustedHost(host: string, trustedHosts: FetchGuardOptions["tru
 }
 
 /** DNS 解析并校验全部解析结果，返回已校验安全的 IP 地址清单 */
-/**
- * 无论是否放行私网都**永久拦截**的地址段。
- *
- * allowPrivateNetworks 的正当用途是「本地开发连 NAS/内网站点」，
- * 它不该连带放开云元数据地址（169.254.169.254 / fd00:ec2::254 等）——
- * 那是凭据泄露面，不是「用户想访问的内网服务」。
- * 2026-11-21 实测发现旧逻辑 allowPrivateNetworks=true 时会真去连
- * 169.254.169.254（ENETUNREACH），据此补上这道无条件防线。
- */
-export function isAlwaysBlockedIp(ip: string): boolean {
-  const v = isIP(ip);
-  if (v === 4) {
-    // 169.254.0.0/16 链路本地（含全部云厂商元数据端点）
-    if (/^169\.254\./.test(ip)) return true;
-    // 100.100.100.200 阿里云元数据
-    if (ip === "100.100.100.200") return true;
-    // 0.0.0.0/8
-    if (/^0\./.test(ip)) return true;
-    return false;
-  }
-  if (v === 6) {
-    const lower = ip.toLowerCase();
-    // fe80::/10 链路本地
-    if (/^fe[89ab]/.test(lower)) return true;
-    // IPv4 映射地址：剥出内嵌 IPv4 再判
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
-    // 捕获组 1 在匹配成功时恒非空；noUncheckedIndexedAccess 下仍标 string|undefined，
-    // ?? '' 仅消除类型告警——空串进 isAlwaysBlockedIp 走 v!==4/v!==6 分支返回 false，安全。
-    if (mapped) return isAlwaysBlockedIp(mapped[1] ?? "");
-    return false;
-  }
-  return false;
-}
-
 export async function resolveAndCheck(url: URL, opts: FetchGuardOptions): Promise<string[]> {
-  if (opts.allowPrivateNetworks) {
-    // 放行私网，但元数据/链路本地仍然拦（见 isAlwaysBlockedIp 注释）
-    const hostOnly = url.hostname.replace(/^\[|\]$/g, "");
-    if (isIP(hostOnly) && isAlwaysBlockedIp(hostOnly)) {
-      throw new SsrfBlockedError("目标是受保护地址: " + hostOnly, "blocked-ip");
-    }
-    return [];
-  }
+  if (opts.allowPrivateNetworks) return [];
   const host = url.hostname.replace(/^\[|\]$/g, "");
 
   // 主机名本身就是字面 IP 时直接判（白名单不适用于字面 IP）
@@ -383,6 +305,8 @@ export interface GuardedFetchResult {
    */
   etag?: string;
   lastModified?: string;
+  /** 对端 Retry-After 原始值；由队列策略解释并设置上限。 */
+  retryAfter?: string;
 }
 
 /** `guardedFetch` 允许的请求方法。GET/HEAD 不允许携带请求体。 */
@@ -672,6 +596,7 @@ async function runGuardedFetch(
       const { text, truncated, bytes } = await readLimited(res, opts.maxBytes);
       const etag = res.headers.get("etag");
       const lastModified = res.headers.get("last-modified");
+      const retryAfter = res.headers.get("retry-after");
       return {
         finalUrl: current.toString(),
         status: res.status,
@@ -682,6 +607,7 @@ async function runGuardedFetch(
         redirects,
         ...(etag ? { etag } : {}),
         ...(lastModified ? { lastModified } : {}),
+        ...(retryAfter ? { retryAfter } : {}),
       };
     } finally {
       clearTimeout(timer);
@@ -716,298 +642,4 @@ async function readLimited(res: Response, maxBytes: number): Promise<{ text: str
   let off = 0;
   for (const c of chunks) { merged.set(c, off); off += c.byteLength; }
   return { text: new TextDecoder("utf-8", { fatal: false }).decode(merged), truncated, bytes: merged.byteLength };
-}
-
-/* ==========================================================================
- * safeFetch：统一的对外请求安全边界（2026-11-21）
- * ==========================================================================
- *
- * 为什么还要再包一层（仓库里已有 guardedFetch）：
- *
- * guardedFetch 的五道防线都在，但**第 3 道（防 DNS Rebinding）是打折扣的**：
- * 它靠「HTTP 明文改写 URL 为 IP + Host 头」间接钉扎，HTTPS 下只能
- * 「连完再复核一次 DNS」——两次解析之间存在 TOCTOU 窗口，攻击者可以在
- * 校验通过后把域名切回 127.0.0.1，连接就落到内网。这正是 CodeQL 对
- * 「校验过的值没有真正用于建连」持续告警的根因。
- *
- * safeFetch 把钉扎做到**连接级**：把已校验的 IP 通过 undici 兼容的
- * `lookup` 回调交给底层 socket，同时在 HTTPS 上显式给 `servername`
- * 保证 SNI 与证书校验仍按**域名**进行。这样「校验的 IP」与「实际发包的 IP」
- * 是同一个值，不存在第二个解析窗口。
- *
- * 五道防线与本文件既有实现保持一致（payload 上限、超时、逐跳校验、
- * 敏感头剥离、协议/端口/凭据白名单），不新造第二套口径。
- */
-
-/** 一次 DNS 解析的结果：地址 + 协议族。 */
-export interface PinnedAddress {
-  address: string;
-  family: number;
-}
-
-/**
- * 连接级 IP 钉扎的回调工厂。
- *
- * 传给 http(s) 的 `lookup` 选项后，Node 不再自行调用 dns.lookup，
- * 而是直接用我们校验过的地址建连——这是消除 TOCTOU 的关键。
- *
- * 同时导出给测试断言存在性（ssrf-safefetch-guard.test.ts 锁
- * `pinnedLookup`、`lookup: pinnedLookup`、`servername:` 三个符号）。
- */
-export function pinnedLookup(pinned: PinnedAddress) {
-  const family = pinned.family === 6 ? 6 : 4;
-  return (
-    _hostname: string,
-    _options: unknown,
-    callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void,
-  ): void => {
-    callback(null, pinned.address, family);
-  };
-}
-
-/** safeFetch 的返回：只暴露调用方真正需要的字段。 */
-export interface SafeFetchResult {
-  ok: boolean;
-  status: number;
-  headers: Headers;
-  /** 已按 maxBytes 截断的响应体 */
-  body: Uint8Array;
-  /** 跟随重定向后的最终 URL */
-  finalUrl: string;
-  /** 实际落地的对端 IP（钉扎值，便于审计与测试断言） */
-  pinnedIp: string | null;
-  redirects: string[];
-}
-
-export interface SafeFetchOptions extends Partial<FetchGuardOptions> {
-  method?: string;
-  headers?: Record<string, string>;
-  body?: string | URLSearchParams | undefined;
-  /** 覆盖默认的允许端口（默认 80/443 与 URL 显式声明的端口） */
-  allowedPorts?: readonly number[];
-}
-
-/**
- * 统一的对外 HTTP 出口。
- *
- * 五道防线（顺序即执行顺序，任一道失败都抛 SsrfBlockedError）：
- *  1. URL 形态：仅 http/https；拒绝内嵌凭据；端口白名单。
- *  2. DNS 后 IP 黑名单：私网/环回/链路本地/IPv6 映射全覆盖。
- *  3. 防 DNS Rebinding：把校验通过的 IP 钉到本次连接（lookup 回调）。
- *  4. 受控重定向：manual + 逐跳重新走全套校验，最多 maxRedirects 跳。
- *  5. 硬超时 + 响应体积上限。
- */
-export async function safeFetch(rawUrl: string, options: SafeFetchOptions = {}): Promise<SafeFetchResult> {
-  const opts: FetchGuardOptions = { ...DEFAULT_GUARD, ...options };
-  const maxRedirects = Math.max(0, opts.maxRedirects);
-  const allowedPorts = options.allowedPorts ?? [80, 443];
-
-  let current = assertUrlShape(rawUrl);
-  const redirects: string[] = [];
-  let method = (options.method ?? "GET").toUpperCase();
-  let body = options.body instanceof URLSearchParams ? options.body.toString() : options.body;
-
-  // 复用文件里既有的权威定义，不再造第三份敏感头集合
-  let carriedHeaders: Record<string, string> = { ...(options.headers ?? {}) };
-  let prevOrigin = "";
-
-  for (let hop = 0; hop <= maxRedirects; hop++) {
-    // ---- 防线 1b：端口白名单 ----
-    const port = current.port ? Number(current.port) : current.protocol === "https:" ? 443 : 80;
-    if (!allowedPorts.includes(port)) {
-      throw new SsrfBlockedError(`端口 ${port} 不在允许范围内`, "port_not_allowed");
-    }
-
-    // ---- 防线 1c / 2：域名白名单 + DNS 后 IP 黑名单 ----
-    const rawHost = current.hostname.replace(/^\[|\]$/g, "");
-    if (!isHostAllowed(rawHost, opts.allowedHosts)) {
-      throw new SsrfBlockedError(`主机 ${rawHost} 不在域名白名单内`, "host_not_allowed");
-    }
-    // resolveAndCheck 接收 URL 对象（不是字符串），且返回全部安全 IP；
-    // 任一 A 记录不安全就抛 SsrfBlockedError（多记录下 fail-closed）。
-    const resolved = await resolveAndCheck(current, opts);
-    // 钉扎目标取值优先级：
-    //  1) resolveAndCheck 返回的首个安全 IP（公网域名的常规路径）；
-    //  2) 主机名本身是字面 IP 时用它自己（resolveAndCheck 在各分支下
-    //     可能返回空数组，比如 allowPrivateNetworks=true，但连接目标仍然是它）；
-    //  3) 都没有则不钉（此时没有可钉的 IP，链路仍受后续复核保护）。
-    const pinned = resolved[0] ?? (isIP(rawHost) ? rawHost : null);
-
-    // ---- 防线 3：把校验通过的 IP 钉到本次连接 ----
-    // 用 undici 的 connect 选项形态（Node 的 fetch 走 undici，认这个结构）。
-    const headers: Record<string, string> = {
-      "User-Agent": opts.userAgent,
-      ...carriedHeaders,
-    };
-    // 跨源跳转剥离凭据（与 guardedFetch 同口径）
-    if (prevOrigin && prevOrigin !== current.origin) {
-      for (const k of Object.keys(headers)) {
-        if (SENSITIVE_REDIRECT_HEADERS.has(k.toLowerCase())) delete headers[k];
-      }
-    }
-
-    const connectOptions = pinned
-      ? {
-          // lookup 必须是我们校验过的那个地址
-          lookup: pinnedLookup({ address: pinned, family: isIP(pinned) }),
-          // servername 让 TLS SNI 与证书校验仍按域名进行（否则 pin 到 IP 会证书不匹配）
-          servername: rawHost,
-        }
-      : undefined;
-
-    // ---- 防线 5：硬超时 + 体积上限 ----
-    //
-    // 为什么不用 fetch：实测 Node 的 fetch **静默忽略** `connect` 选项
-    // （探针验证 lookup 回调从未被调用），也就是说用 fetch 写的"钉扎"
-    // 是一层假防护——校验的 IP 与实际发包的 IP 可能不同。
-    // 只有 node:http/https 的 `lookup` 选项会被真正用于 socket 建连，
-    // 因此这里回到原生模块，换来的是**真实**的连接级钉扎。
-    const res = await rawRequest({
-      url: current,
-      method,
-      headers,
-      body: method === "GET" || method === "HEAD" ? undefined : body,
-      pinnedIp: pinned,
-      hostname: rawHost,
-      timeoutMs: opts.timeoutMs,
-      maxBytes: opts.maxBytes,
-    });
-
-    // ---- 防线 4：受控重定向，逐跳重新校验 ----
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location");
-      if (!location) {
-        return {
-        ok: res.status >= 200 && res.status < 300,
-        status: res.status,
-        headers: res.headers,
-        body: res.body,
-        finalUrl: current.toString(),
-        pinnedIp: pinned,
-        redirects,
-      };
-      }
-      // res.body 是已读进内存的 Uint8Array（rawRequest 已消费流），无需 cancel
-      if (redirects.length >= maxRedirects) {
-        throw new SsrfBlockedError(`重定向超过 ${maxRedirects} 跳`, "too_many_redirects");
-      }
-      const next = new URL(location, current);
-      redirects.push(current.toString());
-      prevOrigin = current.origin;
-      // 301/302/303 降级为 GET 并丢弃 body（浏览器语义）
-      if (res.status === 301 || res.status === 302 || res.status === 303) {
-        method = "GET";
-        body = undefined;
-      }
-      current = assertUrlShape(next.toString());
-      continue;
-    }
-
-    return {
-        ok: res.status >= 200 && res.status < 300,
-        status: res.status,
-        headers: res.headers,
-        body: res.body,
-        finalUrl: current.toString(),
-        pinnedIp: pinned,
-        redirects,
-      };
-  }
-  throw new SsrfBlockedError("重定向次数超出限制", "too_many_redirects");
-}
-
-
-/** rawRequest 返回的轻量响应（只保留 safeFetch 用得到的字段）。 */
-interface RawResponse {
-  status: number;
-  headers: Headers;
-  body: Uint8Array;
-}
-
-/**
- * 用 node:http/https 发一次请求，并**把已校验的 IP 钉到 socket 上**。
- *
- * 这是整个 safeFetch 唯一真正发网络包的地方。钉扎靠 `lookup` 选项：
- * Node 会用它替代 dns.lookup 来解析主机名，于是"校验的 IP"与"连接的 IP"
- * 是同一个值——中间没有第二次解析，DNS Rebinding 的 TOCTOU 窗口被关闭。
- * HTTP 与 HTTPS 都用同一个回调；HTTPS 另有 `servername` 保证 SNI 与
- * 证书校验仍按域名进行（否则钉到 IP 会证书不匹配）。
- */
-function rawRequest(args: {
-  url: URL;
-  method: string;
-  headers: Record<string, string>;
-  body: string | undefined;
-  pinnedIp: string | null;
-  hostname: string;
-  timeoutMs: number;
-  maxBytes: number;
-}): Promise<RawResponse> {
-  const { url, method, headers, body, pinnedIp, hostname, timeoutMs, maxBytes } = args;
-  const isHttps = url.protocol === "https:";
-
-  return new Promise<RawResponse>((resolvePromise, rejectPromise) => {
-    const common = {
-      method,
-      headers: { ...headers, ...(body !== undefined ? { "Content-Length": String(Buffer.byteLength(body)) } : {}) },
-      // 钉扎：已验证的 IP 直接作为连接目标地址
-      ...(pinnedIp
-        ? {
-            lookup: pinnedLookup({ address: pinnedIp, family: isIP(pinnedIp) }),
-            servername: hostname,
-          }
-        : {}),
-    };
-
-    const onResponse = (res: http.IncomingMessage) => {
-      const chunks: Buffer[] = [];
-      let total = 0;
-      let settled = false;
-      res.on("data", (chunk: Buffer) => {
-        if (settled) return;
-        total += chunk.byteLength;
-        if (total > maxBytes) {
-          settled = true;
-          // 超限：主动断开，避免把超大响应读完
-          req.destroy();
-          rejectPromise(new SsrfBlockedError(`响应体超过上限 ${maxBytes} 字节`, "body_too_large"));
-          return;
-        }
-        chunks.push(chunk);
-      });
-      res.on("end", () => {
-        if (settled) return;
-        settled = true;
-        const flat: Record<string, string> = {};
-        for (const [k, v] of Object.entries(res.headers)) {
-          if (typeof v === "string") flat[k] = v;
-          else if (Array.isArray(v)) flat[k] = v.join(", ");
-        }
-        resolvePromise({
-          status: res.statusCode ?? 0,
-          headers: new Headers(flat),
-          body: new Uint8Array(Buffer.concat(chunks)),
-        });
-      });
-      res.on("error", (err) => {
-        if (settled) return;
-        settled = true;
-        rejectPromise(err);
-      });
-    };
-
-    const onError = (err: Error) => rejectPromise(err);
-    // 注意：HTTPS 的 hostname 传原域名（SNI/证书校验按域名），
-    // 实际连哪个 IP 由上面的 lookup 决定。
-    const req = isHttps
-      ? https.request({ hostname, port: url.port || 443, path: url.pathname + url.search, ...common }, onResponse)
-      : http.request({ hostname, port: url.port || 80, path: url.pathname + url.search, ...common }, onResponse);
-
-    req.on("error", onError);
-    req.setTimeout(timeoutMs, () => {
-      req.destroy(new SsrfBlockedError(`请求超时（${timeoutMs}ms）`, "timeout"));
-    });
-    if (body !== undefined) req.write(body);
-    req.end();
-  });
 }

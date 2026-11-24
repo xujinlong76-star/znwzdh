@@ -3,6 +3,7 @@ import { finalSearchGoldLabels, validateSearchGoldCase, validateSearchGoldSet, t
 
 const validCase = (queryId: string): SearchGoldCase => ({
   queryId, queryText: "脱敏后的真实查询文本", locale: "zh-CN", intent: "task",
+  sampledAt: 1, privacyReviewed: true,
   snapshotId: "snapshot-2026-11-24-001",
   candidates: [{ siteId: "site-a", baselineRank: 1 }, { siteId: "site-b", baselineRank: 2 }],
   annotations: [
@@ -35,6 +36,27 @@ describe("human search gold-set protocol", () => {
     };
     expect(finalSearchGoldLabels(item)).toEqual({ "site-a": 3, "site-b": 2 });
   });
+  it("requires a privacy-reviewed query and an adjudicator distinct from both annotators", () => {
+    const unreviewed = validCase("query_000004");
+    unreviewed.privacyReviewed = false;
+    expect(validateSearchGoldCase(unreviewed).errors.join(" ")).toContain("privacyReviewed");
+
+    const disputed = validCase("query_000005");
+    disputed.annotations[1]!.judgments[1]!.label = 2;
+    disputed.adjudication = {
+      adjudicatorId: "annotator-a",
+      rationale: "仲裁理由",
+      adjudicatedAt: 3,
+      judgments: [{ siteId: "site-b", label: 2, rationaleCode: "related" }],
+    };
+    expect(validateSearchGoldCase(disputed).errors.join(" ")).toContain("仲裁人必须独立于两名标注员");
+  });
+
+  it("rejects malformed runtime values without throwing", () => {
+    expect(validateSearchGoldCase(null).valid).toBe(false);
+    expect(validateSearchGoldCase({ queryId: 7, candidates: [null], annotations: [] }).valid).toBe(false);
+  });
+
   it("requires every frozen candidate to be annotated", () => {
     const item = validCase("query_000003");
     item.annotations[0]!.judgments.pop();

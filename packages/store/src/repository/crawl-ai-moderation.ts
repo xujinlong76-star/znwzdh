@@ -4,7 +4,7 @@ export interface CrawlAiModerationDecisionInput {
   id: string;
   candidateId: string;
   decisionSource: "ai" | "human";
-  mode: "shadow" | "manual";
+  mode: "shadow" | "manual" | "auto_approve";
   status: "completed" | "error" | "quota_blocked" | "reviewed";
   verdict?: string | null;
   confidence?: number | null;

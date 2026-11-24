@@ -90,6 +90,33 @@ describe("site quality governance API", () => {
     expect(await ctx.repo.getSiteQualityAssessment(site.id)).not.toBeNull();
   });
 
+  it("excludes soft-deleted sites from the visible list and pagination total", async () => {
+    const category = await ctx.repo.createCategory({ title: "软删除质量测试" });
+    const site = await ctx.repo.createSite({
+      title: "Deleted Quality Fixture",
+      url: "https://deleted-quality-fixture.example/",
+      categoryId: category.id,
+      status: "active",
+      tags: ["quality"],
+    });
+    const dimensions: SiteQualityAssessments = {
+      accessibility: { score: 80, evidence: ["verified health sample"] },
+      contentCompleteness: { score: 80, evidence: ["catalog fields present"] },
+      sourceTrust: { score: null, evidence: [] },
+      relevance: { score: null, evidence: [] },
+      uniqueness: { score: null, evidence: [] },
+      freshness: { score: null, evidence: [] },
+      risk: { score: null, evidence: [] },
+    };
+    await ctx.repo.saveSiteQualityAssessment(site.id, evaluateSiteQuality(dimensions));
+    expect(await ctx.repo.deleteSite(site.id)).toBe(true);
+
+    const response = await app.inject({ method: "GET", url: "/api/admin/quality/report" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().total).toBe(1);
+    expect(response.json().items.map((item: { siteId: string }) => item.siteId)).not.toContain(site.id);
+  });
+
   it("filters by band and paginates with a stable total", async () => {
     const response = await app.inject({ method: "GET", url: "/api/admin/quality/report?band=high&limit=1&offset=0" });
     expect(response.statusCode).toBe(200);

@@ -141,7 +141,15 @@ async function verifyAdminMfa(ctx: AppContext, supplied: string): Promise<boolea
   const required = process.env.NAVHUB_ADMIN_MFA_REQUIRED === "1" || process.env.NAVHUB_ADMIN_MFA_REQUIRED === "true";
   if (!state?.enabled) return !required;
   const secret = decryptMfaSecret(state);
-  const matchedCounter = matchingTotpCounter(secret, supplied);\n  if (matchedCounter !== null) {\n    // TOTP 时间步只可消费一次；共享 DB 原子占坑防止跨副本重放同一验证码。\n    return ctx.repo.claimSystemState(\n      "auth:admin-mfa:totp:" + state.recoveryVersion + ":" + matchedCounter,\n      true,\n      5 * 60 * 1000,\n    );\n  }
+  const matchedCounter = matchingTotpCounter(secret, supplied);
+  if (matchedCounter !== null) {
+    // TOTP 时间步只可消费一次；共享 DB 原子占坑防止跨副本重放同一验证码。
+    return ctx.repo.claimSystemState(
+      "auth:admin-mfa:totp:" + state.recoveryVersion + ":" + matchedCounter,
+      true,
+      5 * 60 * 1000,
+    );
+  }
   const normalized = supplied.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (!normalized) return false;
   const recoveryHash = hashApiToken(normalized);

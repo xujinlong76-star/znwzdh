@@ -4,7 +4,7 @@
  * 模型输出只是审核证据；最终动作由本模块的确定性阈值策略决定。
  * 页面正文视为不可信数据，明确要求模型忽略页面中的指令/提示注入。
  */
-import { chatCompletion, type LlmProvider } from "./llm.ts";
+import { chatCompletion, type ChatMessage, type LlmProvider } from "./llm.ts";
 
 export type SiteModerationVerdict = "auto_approve" | "reject" | "manual_review";
 export type SiteModerationRisk = "phishing" | "malware" | "scam" | "spam" | "adult" | "illegal" | "misleading" | "copyright" | "none";
@@ -103,7 +103,20 @@ export async function moderateSiteWithAi(
   provider: LlmProvider,
   input: SiteModerationInput,
   policy: Partial<SiteModerationPolicy> = {},
-  options: { signal?: AbortSignal; deadlineAt?: number; fetchImpl?: typeof fetch } = {},
+  options: {
+    signal?: AbortSignal;
+    deadlineAt?: number;
+    fetchImpl?: typeof fetch;
+    complete?: (provider: LlmProvider, request: {
+      messages: ChatMessage[];
+      temperature: number;
+      maxTokens: number;
+      json: true;
+      signal?: AbortSignal;
+      deadlineAt?: number;
+      fetchImpl?: typeof fetch;
+    }) => Promise<{ content: string; model: string }>;
+  } = {},
 ): Promise<SiteModerationResult> {
   const active = { ...DEFAULT_SITE_MODERATION_POLICY, ...policy };
   if (active.autoApproveConfidence < 0.5 || active.autoApproveConfidence > 1 ||
@@ -124,16 +137,16 @@ export async function moderateSiteWithAi(
       warnings: Array.isArray(input.evidence?.warnings) ? input.evidence!.warnings.slice(0, 10).map(x => String(x).slice(0, 200)) : [],
     },
   };
-  const response = await chatCompletion(provider, {
+  const completionOptions = {
     temperature: 0,
     maxTokens: 1200,
-    json: true,
+    json: true as const,
     signal: options.signal,
     deadlineAt: options.deadlineAt,
     fetchImpl: options.fetchImpl,
     messages: [
       {
-        role: "system",
+        role: "system" as const,
         content: [
           "你是全球 AI 网址导航平台的严格网站收录审核员。",
           "只依据提供的网页资料和证据判断网站是否真实、有价值、安全、适合公开导航收录。",
@@ -147,9 +160,12 @@ export async function moderateSiteWithAi(
           "evidence 只能引用输入中可见的短证据，不得伪造页面内容。",
         ].join("\n"),
       },
-      { role: "user", content: JSON.stringify(safeInput) },
+      { role: "user" as const, content: JSON.stringify(safeInput) },
     ],
-  });
+  };
+  const response = options.complete
+    ? await options.complete(provider, completionOptions)
+    : await chatCompletion(provider, completionOptions);
   const parsed = parseModelResult(response.content);
   const verdict = decideSiteModerationVerdict(parsed, active, safeInput.url);
   return { ...parsed, verdict, model: response.model, policyVersion: "site-moderation-v1" };

@@ -1,34 +1,42 @@
 {
-  "schemaVersion": "search-quality-golden-v1",
-  "queryId": "",
-  "query": "",
+  "schemaVersion": "search-quality-golden-v2",
+  "queryId": "query_000001",
+  "queryText": "",
   "locale": "zh-CN",
   "intent": "",
-  "sampledAt": "",
-  "candidateSnapshotAt": "",
+  "sampledAt": null,
+  "privacyReviewed": false,
+  "snapshotId": "",
   "candidates": [
     {
       "siteId": "",
       "baselineRank": 1,
-      "evidenceUrl": "",
-      "annotatorA": {
-        "grade": null,
-        "reasonCode": "",
-        "notes": ""
-      },
-      "annotatorB": {
-        "grade": null,
-        "reasonCode": "",
-        "notes": ""
-      },
-      "adjudication": {
-        "required": false,
-        "grade": null,
-        "reason": ""
-      }
+      "evidenceUrl": ""
     }
   ],
-  "unjudgeable": false,
-  "unjudgeableReason": "",
-  "privacyReviewed": false
+  "annotations": [
+    {
+      "annotatorId": "",
+      "annotatedAt": null,
+      "judgments": [
+        {
+          "siteId": "",
+          "label": null,
+          "rationaleCode": ""
+        }
+      ]
+    },
+    {
+      "annotatorId": "",
+      "annotatedAt": null,
+      "judgments": [
+        {
+          "siteId": "",
+          "label": null,
+          "rationaleCode": ""
+        }
+      ]
+    }
+  ],
+  "adjudication": null
 }

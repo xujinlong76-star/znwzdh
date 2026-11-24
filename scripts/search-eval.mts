@@ -21,6 +21,7 @@ import {
   ndcgAtK,
   recallAtK,
   type SearchEvalCase,
+  validateSearchEvalCase,
 } from "../packages/core/src/search-eval.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -45,36 +46,13 @@ function parseArgs(argv: string[]) {
       process.exit(1);
     }
   }
-  if (explicitK && (!Number.isFinite(args.k) || args.k <= 0)) {
-    console.error("--k 必须是正数");
+  if (explicitK && (!Number.isInteger(args.k) || args.k <= 0)) {
+    console.error("--k 必须是正整数");
     process.exit(1);
   }
   return args;
 }
 
-function validateCase(value: unknown, index: number): SearchEvalCase {
-  const record = value as Partial<SearchEvalCase> | null;
-  if (!record || typeof record !== "object") throw new Error("第 " + index + " 条样本不是对象");
-  if (typeof record.query !== "string" || record.query.trim() === "") {
-    throw new Error("第 " + index + " 条样本缺少 query");
-  }
-  if (!Array.isArray(record.hits) || record.hits.some((h) => typeof h !== "string")) {
-    throw new Error("第 " + index + " 条样本的 hits 必须是字符串数组");
-  }
-  if (!record.relevance || typeof record.relevance !== "object" || Array.isArray(record.relevance)) {
-    throw new Error("第 " + index + " 条样本缺少 relevance 对象");
-  }
-  for (const [siteId, grade] of Object.entries(record.relevance)) {
-    if (typeof grade !== "number" || !Number.isFinite(grade) || grade < 0) {
-      throw new Error("第 " + index + " 条样本 relevance['" + siteId + "'] 必须是非负数");
-    }
-  }
-  return {
-    query: record.query,
-    hits: record.hits,
-    relevance: record.relevance,
-  };
-}
 
 const args = parseArgs(process.argv);
 const fullPath = path.resolve(ROOT, args.file);
@@ -95,13 +73,18 @@ if (!Array.isArray(casesRaw) || casesRaw.length === 0) {
 
 let cases: SearchEvalCase[];
 try {
-  cases = casesRaw.map((c, i) => validateCase(c, i));
+  cases = casesRaw.map((c, i) => validateSearchEvalCase(c, i));
 } catch (err) {
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
 }
 
-const k = args.k ?? (!Array.isArray(container) ? container?.k : undefined) ?? 10;
+const fixtureK = !Array.isArray(container) ? container.k : undefined;
+if (fixtureK !== undefined && (!Number.isInteger(fixtureK) || fixtureK <= 0)) {
+  console.error("fixture.k 必须是正整数");
+  process.exit(1);
+}
+const k = explicitK ? args.k : fixtureK ?? args.k;
 const aggregate = evaluateSearch(cases, k);
 
 if (args.json) {

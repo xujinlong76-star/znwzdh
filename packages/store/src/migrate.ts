@@ -72,6 +72,8 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   // 邮箱验证状态（注册/找回密码流程用）：0=未验证/待验证，1=已验证。
   // 老库补列默认 0：既有 OAuth/管理员行不会因为新流程被误判成「未验证」而无法登录。
   { table: "users", column: "email_verified", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
+  // 认证令牌绑定发放时的邮箱，避免旧邮箱链接在地址变更后验证/重置新邮箱。
+  { table: "auth_tokens", column: "target_email", sqlite: "TEXT", pg: "TEXT" },
   // 任务退避：失败后延迟到 next_run_at 才重新可被认领（见 jobs.ts 的指数退避）
   { table: "jobs", column: "next_run_at", sqlite: "INTEGER", pg: "BIGINT" },
   // API 凭据治理：
@@ -650,7 +652,7 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     `CREATE TABLE IF NOT EXISTS auth_tokens (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
       purpose TEXT NOT NULL CHECK (purpose IN ('email_verification', 'password_reset')),
-      token_hash TEXT NOT NULL,
+      token_hash TEXT NOT NULL, target_email TEXT,
       expires_at BIGINT NOT NULL, consumed_at BIGINT, created_at BIGINT NOT NULL
     )`,
     "CREATE INDEX IF NOT EXISTS auth_tokens_user_purpose_idx ON auth_tokens(user_id, purpose, created_at)",

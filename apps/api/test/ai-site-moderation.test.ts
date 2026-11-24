@@ -35,6 +35,10 @@ describe("AI website moderation policy", () => {
     }, { requireHttps: true }, "http://example.com")).toBe("manual_review");
   });
 
+  it("honors the configured minimum quality threshold", () => {
+    expect(decideSiteModerationVerdict({ confidence: 0.99, qualityScore: 75, risks: ["none"] }, { minQualityScore: 80 })).toBe("manual_review");
+  });
+
   it("keeps borderline and unknown risk categories in manual review", () => {
     expect(decideSiteModerationVerdict({
       confidence: 0.96, qualityScore: 90, risks: ["copyright"],

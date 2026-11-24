@@ -648,3 +648,28 @@ describe('tablist A-3：drama 榜单面板补 role="tabpanel" + aria-labelledby�
     expect(count(src, 'id="drama-tabpanel"')).toBe(1)
   })
 })
+
+describe('tablist A-3：site-reports 筛选列表面板补 role="tabpanel" + aria-labelledby（2026-11-24 19:22 轮）', () => {
+  // 模板：plugin-detail-view + detail-tab-panels.tsx 6/6 完整 wiring。
+  // site-reports 为单面板五 tab 共用（drama / quick-dock 同款结构，W6 坑 2）：
+  // 五 tab 的 aria-controls 均指同一面板 id，面板 aria-labelledby 须随当前
+  // status 动取，写死则读屏恒报同一状态。面板内为筛选后列表区（加载 / 空态 /
+  // 列表 / 加载更多同源于 status），无悬空引用。B-3 已裁决：不加 inline-flex。
+
+  it('五 tab 各有唯一 id 且 aria-controls 均指 site-reports-tabpanel，面板 aria-labelledby 随当前 status 动取', () => {
+    const src = read('src/app/admin/site-reports/page.tsx')
+    // tab 由 STATUS_TABS.map 渲染：id 模板一处文本，五状态运行时各得唯一 id
+    expect(src).toContain('id={`site-reports-tab-${tab.key}`}')
+    expect(count(src, 'id={`site-reports-tab-${tab.key}`}')).toBe(1)
+    expect(src).toContain('aria-controls="site-reports-tabpanel"')
+    expect(count(src, 'aria-controls="site-reports-tabpanel"')).toBe(1)
+    // 面板：role + id 各一处，aria-labelledby 动取当前 status
+    expect(src).toContain('role="tabpanel"')
+    expect(count(src, 'role="tabpanel"')).toBe(1)
+    expect(src).toContain('id="site-reports-tabpanel"')
+    expect(count(src, 'id="site-reports-tabpanel"')).toBe(1)
+    expect(src).toContain('aria-labelledby={`site-reports-tab-${status}`}')
+    // 面板 id 全仓唯一：site-reports-tabpanel 作为 id 值只出现一次
+    expect(count(src, 'id="site-reports-tabpanel"')).toBe(1)
+  })
+})

@@ -169,6 +169,8 @@ export default function SiteReportsAdminPage() {
             key={tab.key}
             type="button"
             role="tab"
+            id={`site-reports-tab-${tab.key}`}
+            aria-controls="site-reports-tabpanel"
             aria-selected={status === tab.key}
             tabIndex={status === tab.key ? 0 : -1}
             variant={status === tab.key ? 'default' : 'outline'}
@@ -181,6 +183,14 @@ export default function SiteReportsAdminPage() {
         ))}
       </div>
 
+      {/* A-3：五 tab 共用一个面板（drama / quick-dock 同款单面板结构）：
+          aria-labelledby 须随当前 status 动取，不写死，否则读屏恒报同一状态。
+          面板内为筛选后列表区（加载 / 空态 / 列表 / 加载更多同源于 status）。 */}
+      <div
+        role="tabpanel"
+        id="site-reports-tabpanel"
+        aria-labelledby={`site-reports-tab-${status}`}
+      >
       {notice && <HubDegradedNotice notice={notice} onRetry={retry} />}
 
       {loading ? (
@@ -291,6 +301,7 @@ export default function SiteReportsAdminPage() {
           </Button>
         </div>
       )}
+      </div>
     </div>
   )
 }

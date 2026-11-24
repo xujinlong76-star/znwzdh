@@ -17,10 +17,12 @@ import { fileURLToPath } from "node:url";
 
 import {
   evaluateSearch,
+  evaluateSearchDiagnostics,
   mrrAtK,
   ndcgAtK,
   recallAtK,
   type SearchEvalCase,
+  validateSearchEvalCase,
 } from "../packages/core/src/search-eval.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -45,36 +47,13 @@ function parseArgs(argv: string[]) {
       process.exit(1);
     }
   }
-  if (explicitK && (!Number.isFinite(args.k) || args.k <= 0)) {
-    console.error("--k 必须是正数");
+  if (explicitK && (!Number.isInteger(args.k) || args.k <= 0)) {
+    console.error("--k 必须是正整数");
     process.exit(1);
   }
   return args;
 }
 
-function validateCase(value: unknown, index: number): SearchEvalCase {
-  const record = value as Partial<SearchEvalCase> | null;
-  if (!record || typeof record !== "object") throw new Error("第 " + index + " 条样本不是对象");
-  if (typeof record.query !== "string" || record.query.trim() === "") {
-    throw new Error("第 " + index + " 条样本缺少 query");
-  }
-  if (!Array.isArray(record.hits) || record.hits.some((h) => typeof h !== "string")) {
-    throw new Error("第 " + index + " 条样本的 hits 必须是字符串数组");
-  }
-  if (!record.relevance || typeof record.relevance !== "object" || Array.isArray(record.relevance)) {
-    throw new Error("第 " + index + " 条样本缺少 relevance 对象");
-  }
-  for (const [siteId, grade] of Object.entries(record.relevance)) {
-    if (typeof grade !== "number" || !Number.isFinite(grade) || grade < 0) {
-      throw new Error("第 " + index + " 条样本 relevance['" + siteId + "'] 必须是非负数");
-    }
-  }
-  return {
-    query: record.query,
-    hits: record.hits,
-    relevance: record.relevance,
-  };
-}
 
 const args = parseArgs(process.argv);
 const fullPath = path.resolve(ROOT, args.file);
@@ -95,22 +74,34 @@ if (!Array.isArray(casesRaw) || casesRaw.length === 0) {
 
 let cases: SearchEvalCase[];
 try {
-  cases = casesRaw.map((c, i) => validateCase(c, i));
+  cases = casesRaw.map((c, i) => validateSearchEvalCase(c, i));
 } catch (err) {
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
 }
 
-const k = args.k ?? (!Array.isArray(container) ? container?.k : undefined) ?? 10;
+const fixtureK = !Array.isArray(container) ? container.k : undefined;
+if (fixtureK !== undefined && (!Number.isInteger(fixtureK) || fixtureK <= 0)) {
+  console.error("fixture.k 必须是正整数");
+  process.exit(1);
+}
+const k = explicitK ? args.k : fixtureK ?? args.k;
 const aggregate = evaluateSearch(cases, k);
+const diagnostics = evaluateSearchDiagnostics(cases, k);
 
 if (args.json) {
-  console.log(JSON.stringify({ file: args.file, k, aggregate, cases: cases.map((c) => ({
-    query: c.query,
-    ndcgAtK: ndcgAtK(c, k),
-    mrrAtK: mrrAtK(c, k),
-    recallAtK: recallAtK(c, k),
-  })) }, null, 2));
+  console.log(JSON.stringify({
+    file: args.file,
+    k,
+    aggregate,
+    diagnostics,
+    cases: cases.map((c, index) => ({
+      queryIndex: index + 1,
+      ndcgAtK: ndcgAtK(c, k),
+      mrrAtK: mrrAtK(c, k),
+      recallAtK: recallAtK(c, k),
+    })),
+  }, null, 2));
   process.exit(0);
 }
 
@@ -118,11 +109,15 @@ console.log("检索离线评测  file=" + args.file + "  k=" + k + "  queries=" 
 console.log("宏平均  NDCG@" + k + "=" + aggregate.ndcgAtK.toFixed(4) +
   "  MRR@" + k + "=" + aggregate.mrrAtK.toFixed(4) +
   "  Recall@" + k + "=" + aggregate.recallAtK.toFixed(4));
-for (const testCase of cases) {
+console.log("诊断  零结果=" + diagnostics.zeroResultQueries +
+  "  无正相关标注=" + diagnostics.queriesWithoutPositiveJudgments +
+  "  已找回相关候选=" + diagnostics.relevantRetrievedAtK + "/" + diagnostics.relevantCandidates +
+  "  微平均覆盖率=" + diagnostics.relevantCandidateCoverage.toFixed(4));
+cases.forEach((testCase, index) => {
   console.log(
-    "  " + testCase.query.padEnd(18) +
+    "  query#" + String(index + 1).padStart(3, "0") +
     " nDCG=" + ndcgAtK(testCase, k).toFixed(4) +
     " mrr=" + mrrAtK(testCase, k).toFixed(4) +
     " recall=" + recallAtK(testCase, k).toFixed(4),
   );
-}
+});

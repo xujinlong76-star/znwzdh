@@ -58,9 +58,15 @@ const runner = jobsEnabled
   : null;
 if (runner) runner.start();
 
-// 采集 Worker 与通用巡检任务隔离：默认关闭，完成灰度配置后显式开启。
-// 多实例通过数据库来源租约避免重复认领；抓取实现只允许 guardedFetch。
-const crawlWorker = process.env.NAVHUB_CRAWL_SOURCE_WORKER_ENABLED === "1"
+// 采集 Worker 与通用巡检任务隔离：两种模式默认关闭。
+// 持久化 JobRunner 是生产推荐模式；若两种开关同时打开，优先持久化模式，
+// 不启动简化轮询器，避免同一来源在两个队列中重复采集。
+const durableCrawlWorkerEnabled = jobsEnabled && process.env.NAVHUB_CRAWL_WORKER_ENABLED === "true";
+const sourceCrawlWorkerEnabled = process.env.NAVHUB_CRAWL_SOURCE_WORKER_ENABLED === "1";
+if (durableCrawlWorkerEnabled && sourceCrawlWorkerEnabled) {
+  app.log.warn("检测到两种采集 Worker 同时启用；已跳过简化来源轮询器，仅运行持久化 JobRunner 模式");
+}
+const crawlWorker = sourceCrawlWorkerEnabled && !durableCrawlWorkerEnabled
   ? startCrawlSourceWorker(ctx, { workerId: "api-" + process.pid + "-" + randomUUID(), limit: 5 })
   : null;
 

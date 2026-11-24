@@ -155,3 +155,5 @@
 - MFA 初始化流程与部署环境变量见 `.env.example`。启用强制模式前必须完成 setup/confirm 并离线保存恢复码。
 
 - TOTP 验证码按 30 秒时间步记录共享消费标记，同一时间步验证码只能成功一次；待确认的 MFA enrollment 仅在 10 分钟内有效。恢复码使用记录进入审计日志。
+
+- 管理员 TOTP 目前保护 Web NextAuth Credentials 管理员登录与 GitHub 管理员 OAuth 的 MFA 绕过路径；直接调用管理 API 的 admin Bearer Token 仍是独立的 bearer 凭据，不会自动要求 TOTP，必须按高权限密钥管理并定期轮换。

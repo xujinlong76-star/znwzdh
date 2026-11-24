@@ -3,118 +3,77 @@
   "updatedAt": "2026-11-18",
   "dramas": [
     {
-      "title": "十八岁太奶奶驾到，重整家族荣耀 第五部",
+      "title": "穿越八零，我把娘俩宠成宝",
       "platformSiteId": "nav-557388e01d50",
       "platformTitle": "红果短剧",
-      "url": "https://zh.wikipedia.org/wiki/%E5%8D%81%E5%85%AB%E6%AD%B2%E5%A4%AA%E5%A5%B6%E5%A5%B6%E9%A7%95%E5%88%B0%EF%BC%8C%E9%87%8D%E6%95%B4%E5%AE%B6%E6%97%8F%E6%A6%AE%E8%80%80",
-      "linkNote": "百科页",
-      "episodesKnown": 102,
-      "totalEpisodes": 102,
+      "url": "https://www.soduanju.com/manju/chuanyuebalingwobaniangliachongchengbao.html",
+      "linkNote": "剧目页",
+      "episodesKnown": 317,
+      "totalEpisodes": 317,
       "check": {
         "kind": "none",
-        "reason": "已完结全 102 集（搜短剧 2026-11-17），无新集可等"
+        "reason": "抖音热播榜第 1（搜短剧 2026-11-19 文章，数据日期 2026-11-18），已完结全 317 集；抖音标 AI 短剧，红果站内标漫剧"
       },
       "genres": [
-        "家族"
+        "年代爱情"
       ]
+    },
+    {
+      "title": "持械入宋：第十一季",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.soduanju.com/manju/chixierusongdishiyiji.html",
+      "linkNote": "剧目页",
+      "episodesKnown": 113,
+      "totalEpisodes": 113,
+      "check": {
+        "kind": "none",
+        "reason": "抖音热播榜第 2（搜短剧 2026-11-19 文章，数据日期 2026-11-18），已完结全 113 集；抖音标 AI 短剧，红果站内标漫剧"
+      },
+      "genres": [
+        "古风权谋"
+      ]
+    },
+    {
+      "title": "全球死考：刚下刑场你让我去考试一季",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.soduanju.com/article/2026-11-19-douyin-vs-rebo.html",
+      "linkNote": "榜单页",
+      "episodesKnown": 785,
+      "totalEpisodes": 785,
+      "check": {
+        "kind": "none",
+        "reason": "抖音热播榜第 3（搜短剧 2026-11-19 文章，数据日期 2026-11-18），已完结全 785 集；抖音与红果站内都标漫剧"
+      },
+      "genres": [
+        "都市脑洞"
+      ]
+    },
+    {
+      "title": "帐中香第二季",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.soduanju.com/article/2026-11-19-douyin-vs-rebo.html",
+      "linkNote": "榜单页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "抖音热播榜第 4（搜短剧 2026-11-19 文章，数据日期 2026-11-18），集数未核实"
+      }
     },
     {
       "title": "和离后我带女儿横扫魔域",
       "platformSiteId": "nav-557388e01d50",
       "platformTitle": "红果短剧",
-      "url": "https://www.soduanju.com/manju/helihouwodainverhengsaomoyu.html",
-      "linkNote": "剧目页",
-      "episodesKnown": 1000,
-      "totalEpisodes": 1000,
+      "url": "https://www.soduanju.com/article/2026-11-19-douyin-vs-rebo.html",
+      "linkNote": "榜单页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
       "check": {
         "kind": "none",
-        "reason": "已完结全 1000 集，无新集可等"
-      },
-      "genres": [
-        "玄幻"
-      ]
-    },
-    {
-      "title": "重生！丑小鸭逆袭成了万人迷 第五季",
-      "platformSiteId": "nav-557388e01d50",
-      "platformTitle": "红果短剧",
-      "url": "https://www.duanjugongcheng.com/cn/bangdan/ju/chong-sheng-chou-xiao-ya-ni-xi-cheng-le-wan-ren-mi-di-wu-ji",
-      "linkNote": "榜单页",
-      "episodesKnown": null,
-      "totalEpisodes": null,
-      "check": {
-        "kind": "zongyimi-subject",
-        "url": "https://www.zongyimi.com/drama/subject/253252418421/",
-        "titleMatch": "丑小鸭"
-      }
-    },
-    {
-      "title": "聚宝仙盆之杂灵根才是真BOSS 第十五季",
-      "platformSiteId": "nav-557388e01d50",
-      "platformTitle": "红果短剧",
-      "url": "https://www.tahou.com/article/222010451290608645",
-      "linkNote": "榜单页",
-      "episodesKnown": null,
-      "totalEpisodes": null,
-      "check": {
-        "kind": "zongyimi-subject",
-        "url": "https://www.zongyimi.com/drama/subject/173694925686/",
-        "titleMatch": "聚宝仙盆"
-      }
-    },
-    {
-      "title": "退役归来，这个保镖不好惹",
-      "platformSiteId": "nav-557388e01d50",
-      "platformTitle": "红果短剧",
-      "url": "https://www.tahou.com/article/221836171434552325",
-      "linkNote": "榜单页",
-      "episodesKnown": 100,
-      "totalEpisodes": 100,
-      "check": {
-        "kind": "none",
-        "reason": "已完结全 100 集（搜短剧 2026-11-17），无新集可等"
-      }
-    },
-    {
-      "title": "漂亮的恶意",
-      "platformSiteId": "nav-e85ffe7e04f6",
-      "platformTitle": "抖音",
-      "url": "https://finance.sina.cn/2026-10-20/detail-inivvnpv5862925.d.html",
-      "linkNote": "报道页",
-      "episodesKnown": null,
-      "totalEpisodes": null,
-      "check": {
-        "kind": "zongyimi-subject",
-        "url": "https://www.zongyimi.com/drama/subject/282268810232/",
-        "titleMatch": "漂亮的恶意"
-      }
-    },
-    {
-      "title": "为白月光弃我，孟小姐离婚不回头",
-      "platformSiteId": "nav-536bfabaa406",
-      "platformTitle": "快手",
-      "url": "https://www.zongyimi.com/drama/subject/438522362760/",
-      "linkNote": "剧目页",
-      "episodesKnown": 70,
-      "totalEpisodes": null,
-      "check": {
-        "kind": "zongyimi-subject",
-        "url": "https://www.zongyimi.com/drama/subject/438522362760/",
-        "titleMatch": "为白月光弃我"
-      }
-    },
-    {
-      "title": "病弱千金往地一躺，全家慌了",
-      "platformSiteId": "nav-536bfabaa406",
-      "platformTitle": "快手",
-      "url": "https://www.zongyimi.com/drama/subject/117244640035/",
-      "linkNote": "剧目页",
-      "episodesKnown": 65,
-      "totalEpisodes": null,
-      "check": {
-        "kind": "zongyimi-subject",
-        "url": "https://www.zongyimi.com/drama/subject/117244640035/",
-        "titleMatch": "病弱千金"
+        "reason": "抖音热播榜第 5（搜短剧 2026-11-19 文章，数据日期 2026-11-18），榜单未写季数与集数，集数未核实"
       }
     },
     {
@@ -127,144 +86,178 @@
       "totalEpisodes": 96,
       "check": {
         "kind": "none",
-        "reason": "已完结全 96 集（红果详情页 2026-11-17，选集 1–96 可数）"
+        "reason": "已完结全 96 集；抖音热播榜第 6、红果真人新剧榜第 1（搜短剧 2026-11-19 文章，数据日期 2026-11-18；新剧榜 8752 万热度为 2026-11-16 版）"
       },
       "genres": [
-        "家族"
+        "家庭伦理"
       ]
     },
     {
-      "title": "我隐藏身份，找到一个好儿媳",
-      "platformSiteId": "nav-536bfabaa406",
-      "platformTitle": "快手",
-      "url": "https://www.zongyimi.com/drama/subject/396695190416/",
-      "linkNote": "剧目页",
-      "episodesKnown": 80,
-      "totalEpisodes": null,
-      "check": {
-        "kind": "zongyimi-subject",
-        "url": "https://www.zongyimi.com/drama/subject/396695190416/",
-        "titleMatch": "我隐藏身份"
-      }
-    },
-    {
-      "title": "悍妻当家，靠美食扶起一家软骨头",
+      "title": "聚宝仙盆之杂灵根才是真BOSS 第十六季",
       "platformSiteId": "nav-557388e01d50",
       "platformTitle": "红果短剧",
-      "url": "https://www.zongyimi.com/drama/subject/375671438259/",
+      "url": "https://www.soduanju.com/manju/jubaoxianpenzhizalinggencaishizhendishiliuji.html",
       "linkNote": "剧目页",
-      "episodesKnown": 177,
-      "totalEpisodes": 177,
-      "check": {
-        "kind": "none",
-        "reason": "已完结全 177 集，无新集可等"
-      },
-      "genres": [
-        "种田"
-      ]
-    },
-    {
-      "title": "仿生迷踪",
-      "platformSiteId": "nav-8652182b18e7",
-      "platformTitle": "腾讯视频",
-      "url": "https://k.sina.cn/article_1893892941_70e2834d020024niw.html?from=society",
-      "linkNote": "报道页",
       "episodesKnown": null,
       "totalEpisodes": null,
       "check": {
         "kind": "none",
-        "reason": "报道页仅有档期信息，无集数"
+        "reason": "抖音热播榜第 7（搜短剧 2026-11-19 文章，数据日期 2026-11-18），集数未核实；季数为第十六季，勿与旧清单第十五季混淆"
       }
     },
     {
-      "title": "万妖图录传 第十四季",
+      "title": "烛九阴第九季",
       "platformSiteId": "nav-557388e01d50",
       "platformTitle": "红果短剧",
-      "url": "https://hongguoduanju.com/detail?series_id=7702763145030290457",
-      "linkNote": "剧目页",
-      "episodesKnown": 202,
-      "totalEpisodes": 202,
-      "check": {
-        "kind": "none",
-        "reason": "已完结全 202 集（搜短剧 2026-11-17），无新集可等"
-      },
-      "genres": [
-        "玄幻"
-      ]
-    },
-    {
-      "title": "魔神人生：弃子问天 第二季",
-      "platformSiteId": "nav-557388e01d50",
-      "platformTitle": "红果短剧",
-      "url": "https://hongguoduanju.com/detail?series_id=7703101760809749528",
-      "linkNote": "剧目页",
-      "episodesKnown": 586,
-      "totalEpisodes": 586,
-      "check": {
-        "kind": "none",
-        "reason": "已完结全 586 集（搜短剧 2026-11-17），无新集可等"
-      },
-      "genres": [
-        "玄幻"
-      ]
-    },
-    {
-      "title": "满院亲戚全是上古大妖 第七季",
-      "platformSiteId": "nav-557388e01d50",
-      "platformTitle": "红果短剧",
-      "url": "https://hongguoduanju.com/detail?series_id=7705413803088825369",
-      "linkNote": "剧目页",
-      "episodesKnown": 188,
-      "totalEpisodes": 188,
-      "check": {
-        "kind": "none",
-        "reason": "已完结全 188 集（搜短剧 2026-11-17），无新集可等"
-      },
-      "genres": [
-        "奇幻"
-      ]
-    },
-    {
-      "title": "装穷提亲，娶到全家嫌弃的她",
-      "platformSiteId": "nav-557388e01d50",
-      "platformTitle": "红果短剧",
-      "url": "https://hongguoduanju.com/detail?series_id=7701328280862854168",
-      "linkNote": "剧目页",
-      "episodesKnown": 80,
-      "totalEpisodes": 80,
-      "check": {
-        "kind": "none",
-        "reason": "已完结全 80 集（搜短剧 2026-11-17），无新集可等"
-      },
-      "genres": [
-        "恋爱"
-      ]
-    },
-    {
-      "title": "和离后我带女儿横扫魔域 第二季",
-      "platformSiteId": "nav-557388e01d50",
-      "platformTitle": "红果短剧",
-      "url": "https://hongguoduanju.com/detail?series_id=7704261228037671998",
-      "linkNote": "剧目页",
-      "episodesKnown": 521,
-      "totalEpisodes": 521,
-      "check": {
-        "kind": "none",
-        "reason": "已完结全 521 集，无新集可等"
-      }
-    },
-    {
-      "title": "满院亲戚全是上古大妖 第六季",
-      "platformSiteId": "nav-557388e01d50",
-      "platformTitle": "红果短剧",
-      "url": "https://www.duanjugongcheng.com/cn/bangdan/ju/man-yuan-qin-qi-quan-shi-shang-gu-da-yao-di-liu-ji",
+      "url": "https://www.soduanju.com/article/2026-11-19-douyin-vs-rebo.html",
       "linkNote": "榜单页",
-      "episodesKnown": 272,
-      "totalEpisodes": 272,
+      "episodesKnown": null,
+      "totalEpisodes": null,
       "check": {
         "kind": "none",
-        "reason": "已完结全 272 集，无新集可等；红果直链未找回，暂用榜单页"
+        "reason": "抖音热播榜第 8（搜短剧 2026-11-19 文章，数据日期 2026-11-18），集数未核实"
       }
+    },
+    {
+      "title": "嫌疑人的秘密2藏金生死线",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.soduanju.com/duanju/xianyirendemimi2cangjinshengsixian.html",
+      "linkNote": "剧目页",
+      "episodesKnown": 88,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "抖音热播榜第 9、红果真人新剧榜第 3（搜短剧 2026-11-19 文章，数据日期 2026-11-18；新剧榜 5888 万热度为 2026-11-16 版），88 集，是否完结未核实"
+      },
+      "genres": [
+        "犯罪"
+      ]
+    },
+    {
+      "title": "莞城人生",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.soduanju.com/manju/guanchengrensheng.html",
+      "linkNote": "剧目页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "抖音热播榜第 10（搜短剧 2026-11-19 文章，数据日期 2026-11-18），集数未核实"
+      }
+    },
+    {
+      "title": "王妈在顾家当保姆后全家只会搞笑了",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.soduanju.com/duanju/wangmazaigujiadangbaomuhouquanjiazhihuigaoxiaole.html",
+      "linkNote": "剧目页",
+      "episodesKnown": 86,
+      "totalEpisodes": 86,
+      "check": {
+        "kind": "none",
+        "reason": "搜短剧热播榜第 1（搜短剧 2026-11-19 文章，数据日期 2026-11-18），已完结全 86 集；抖音榜第 95"
+      },
+      "genres": [
+        "喜剧"
+      ]
+    },
+    {
+      "title": "认下混混老爹，我一路青云",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.soduanju.com/duanju/renxiahunhunlaodiewoyiluqingyun.html",
+      "linkNote": "剧目页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "搜短剧热播榜第 2（搜短剧 2026-11-19 文章，数据日期 2026-11-18），集数未核实"
+      },
+      "genres": [
+        "家庭"
+      ]
+    },
+    {
+      "title": "卖掉养老房那天，我重获新生",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.soduanju.com/duanju/maidiaoyanglaofangnatianwochonghuoxinsheng.html",
+      "linkNote": "剧目页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "搜短剧热播榜第 3（搜短剧 2026-11-19 文章，数据日期 2026-11-18），集数未核实"
+      },
+      "genres": [
+        "家庭"
+      ]
+    },
+    {
+      "title": "迟来的情缘，董事长的暖心妻",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.soduanju.com/duanju/chilaideqingyuandongshizhangdenuanxinqi.html",
+      "linkNote": "剧目页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "搜短剧热播榜第 4（搜短剧 2026-11-19 文章，数据日期 2026-11-18），集数未核实"
+      },
+      "genres": [
+        "爱情"
+      ]
+    },
+    {
+      "title": "高考出分后女儿劝我离婚",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.soduanju.com/duanju/gaokaochufenhounverquanwolihun.html",
+      "linkNote": "剧目页",
+      "episodesKnown": null,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "搜短剧热播榜第 5（搜短剧 2026-11-19 文章，数据日期 2026-11-18），集数未核实"
+      },
+      "genres": [
+        "成长"
+      ]
+    },
+    {
+      "title": "小镇是非多之同床异梦",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://www.dianyingjie.com.cn/2026/1116/413058.shtml",
+      "linkNote": "报道页",
+      "episodesKnown": 63,
+      "totalEpisodes": null,
+      "check": {
+        "kind": "none",
+        "reason": "红果真人新剧榜第 2（电影界 2026-11-16，数据日期 2026-11-16），63 集，是否完结未核实"
+      },
+      "genres": [
+        "家庭"
+      ]
+    },
+    {
+      "title": "十八岁太奶奶驾到，重整家族荣耀 第五部",
+      "platformSiteId": "nav-557388e01d50",
+      "platformTitle": "红果短剧",
+      "url": "https://zh.wikipedia.org/wiki/%E5%8D%81%E5%85%AB%E6%AD%B2%E5%A4%AA%E5%A5%B6%E5%A5%B6%E9%A9%95%E5%88%B0%EF%BC%8C%E9%87%8D%E6%95%B4%E5%AE%B6%E6%97%8F%E6%A6%AE%E8%80%80",
+      "linkNote": "百科页",
+      "episodesKnown": 102,
+      "totalEpisodes": 102,
+      "check": {
+        "kind": "none",
+        "reason": "红果真人新剧榜第 4（电影界 2026-11-16，数据日期 2026-11-16），已完结全 102 集（搜短剧 2026-11-17）"
+      },
+      "genres": [
+        "家族"
+      ]
     }
   ]
 }

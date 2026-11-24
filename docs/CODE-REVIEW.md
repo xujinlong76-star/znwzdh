@@ -6,7 +6,7 @@
 > [`TESTING-STRATEGY.md`](TESTING-STRATEGY.md)；CI 红了怎么查、发版前查什么见
 > [`GATES-OPERATIONS.md`](GATES-OPERATIONS.md)。
 >
-> 一页速览（入口）见 [`REVIEW-TESTING-PROCESS.md`](REVIEW-TESTING-PROCESS.md)。
+> 一页速览（入口）见 [`REVIEW-TESTING-PROCESS.md`](../deliverables/engineering-assurance/design-review-testing-process-2026-10-25.md)。
 
 ---
 

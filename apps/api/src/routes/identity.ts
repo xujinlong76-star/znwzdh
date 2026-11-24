@@ -99,7 +99,7 @@ export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     }
     // 没有 owner 绑定的调用方（匿名 / 实例令牌）配了签名密钥就必须证明目标身份
     if (!auth?.ownerIdentity && ctx.config.identitySecret) {
-      const verdict = verifyIdentityHeaders({
+      const verdict = await verifyIdentityHeaders({
         secret: ctx.config.identitySecret,
         identity: targetId,
         headers: req.headers as Record<string, unknown>,

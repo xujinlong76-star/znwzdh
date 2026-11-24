@@ -148,9 +148,10 @@ export default function CrawlOperationsPage(){
       await hubSend('/api/hub/admin/crawl/moderation-gold-cases/'+encodeURIComponent(activeGoldCase.id)+'/annotations','POST',
         {label:goldLabel,risk:goldRisk,evidence:goldEvidence.trim()})
       setGoldEvidence('');setGoldMessage('人工标注已提交');await load()
-      const updated=goldCases.find(item=>item.id===activeGoldCase.id)
-      if(updated)await openGoldCase({...updated,annotationCount:updated.annotationCount+1})
-      else {const latest=await hubGet<{ok:boolean;items:GoldCase[]}>('/api/hub/admin/crawl/moderation-gold-cases?limit=100&offset=0');const item=latest.items.find(x=>x.id===activeGoldCase.id);if(item)await openGoldCase(item)}
+      const latest=await hubGet<{ok:boolean;items:GoldCase[]}>('/api/hub/admin/crawl/moderation-gold-cases?limit=100&offset=0')
+      setGoldCases(latest.items)
+      const updated=latest.items.find(item=>item.id===activeGoldCase.id)
+      if(updated)await openGoldCase(updated)
     }catch(e){setGoldMessage(e instanceof Error?e.message:'提交标注失败')}
     finally{setGoldBusy(false)}
   }
@@ -170,7 +171,7 @@ export default function CrawlOperationsPage(){
     if(goldBusy)return
     setGoldBusy(true);setGoldMessage(null)
     try{
-      const result=await hubGet<{ok:boolean;datasetVersion:string;generatedAt:number;count:number;truncated:boolean;items:unknown[]}>('/api/hub/admin/crawl/moderation-gold-export?limit=5000')
+      const result=await hubGet<{ok:boolean;datasetVersion:string;generatedAt:number;count:number;truncated:boolean;items:unknown[]}>('/api/hub/admin/crawl/moderation-gold-export?limit=4999')
       const blob=new Blob([JSON.stringify(result,null,2)],{type:'application/json;charset=utf-8'})
       const url=URL.createObjectURL(blob);const anchor=document.createElement('a')
       anchor.href=url;anchor.download='moderation-gold-set-'+new Date().toISOString().slice(0,10)+'.json'

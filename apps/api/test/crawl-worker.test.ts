@@ -3,6 +3,7 @@ import {
   extractFeedUrls,
   isRobotsAllowed,
   extractHtmlMetadata,
+  hasUsableCrawlFingerprintText,
   parseCrawlSeeds,
   parseRetryAfterMs,
   rankNearDuplicateFingerprints,
@@ -109,6 +110,12 @@ Disallow: /internal
     expect(parseRetryAfterMs("999999", now)).toBe(6 * 60 * 60_000);
     expect(parseRetryAfterMs("invalid", now)).toBe(0);
     expect(parseRetryAfterMs("-5", now)).toBe(0);
+  });
+
+  it("does not fingerprint title-only or very short pages", () => {
+    expect(hasUsableCrawlFingerprintText("x".repeat(79))).toBe(false);
+    expect(hasUsableCrawlFingerprintText("x".repeat(80))).toBe(true);
+    expect(hasUsableCrawlFingerprintText("   " + "x".repeat(80) + "   ")).toBe(true);
   });
 
   it("extracts title, description and readable text without script/style noise", () => {

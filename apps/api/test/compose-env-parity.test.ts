@@ -82,6 +82,7 @@ const SECURITY_KEYS_BY_SERVICE: Record<string, string[]> = {
     "NAVHUB_BOOTSTRAP_TOKEN",
     "NAVHUB_ADMIN_TOKEN",
     "NAVHUB_IDENTITY_SECRET",
+    "NAVHUB_IDENTITY_SIGNATURE_STRICT",
     // 限流豁免凭据：中枢这一侧没有它，web 侧发了头也换不到豁免（收录页照样刷成 noindex 壳）
     "NAVHUB_INTERNAL_TOKEN",
     "NAVHUB_SESSION_SECRET",
@@ -95,6 +96,7 @@ const SECURITY_KEYS_BY_SERVICE: Record<string, string[]> = {
     "NAVHUB_BOOTSTRAP_TOKEN",
     "NAVHUB_ADMIN_TOKEN",
     "NAVHUB_IDENTITY_SECRET",
+    "NAVHUB_IDENTITY_SIGNATURE_STRICT",
     // 限流豁免凭据：中枢这一侧没有它，web 侧发了头也换不到豁免（收录页照样刷成 noindex 壳）
     "NAVHUB_INTERNAL_TOKEN",
     "NAVHUB_SESSION_SECRET",
@@ -106,6 +108,7 @@ const SECURITY_KEYS_BY_SERVICE: Record<string, string[]> = {
   web: [
     "NAVHUB_SESSION_SECRET",
     "NAVHUB_IDENTITY_SECRET",
+    "NAVHUB_IDENTITY_SIGNATURE_STRICT",
     "NAVHUB_INTERNAL_TOKEN",
     // B 站高清解析：不透传则「面板上能填 key」这件事在容器里永远兑现不了，
     // 而 FORWARD_USER_KEY 是唯一能改变「访客凭据会不会出站」的开关。
@@ -130,7 +133,7 @@ describe("docker compose 安全变量透传契约", () => {
     }
   });
 
-  it("身份签名密钥同时给到中枢与 Web：只配一侧会让所有带身份请求 401", () => {
+  it("所有生产 Compose 服务默认启用严格 v2 身份签名", () => {\n    // 不能依赖应用代码默认值：Compose 显式注入环境变量，必须自身也采用安全默认。\n    for (const service of ["api", "api-standard", "web"]) {\n      expect(\n        envBlocks.get(service)?.get("NAVHUB_IDENTITY_SIGNATURE_STRICT"),\n        `${service} 未将身份签名默认设为严格模式`\n      ).toBe("${NAVHUB_IDENTITY_SIGNATURE_STRICT:-1}");\n    }\n  });\n\n  it("身份签名密钥同时给到中枢与 Web：只配一侧会让所有带身份请求 401", () => {
     expect(envBlocks.get("api")?.has("NAVHUB_IDENTITY_SECRET")).toBe(true);
     expect(envBlocks.get("web")?.has("NAVHUB_IDENTITY_SECRET")).toBe(true);
   });

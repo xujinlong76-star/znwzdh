@@ -92,10 +92,10 @@ describe("版本化数据库迁移台账（DB-01）", () => {
   it("建立双人标注与仲裁金标表，并限制每人每样本只能标注一次", async () => {
     const cases = await db.sqlite!.prepare("PRAGMA table_info(crawl_moderation_gold_cases)").all() as Array<{name:string}>;
     const annotations = await db.sqlite!.prepare("PRAGMA table_info(crawl_moderation_gold_annotations)").all() as Array<{name:string}>;
-    expect(new Set(cases.map(row=>row.name))).toEqual(expect.objectContaining(new Set([
-      "id","source_fingerprint","title","description","category","sanitized_excerpt","status",
-      "final_label","final_risk","adjudicator_id","adjudication_reason","created_by","created_at","updated_at","adjudicated_at"
-    ])));
+    for (const name of ["id","source_fingerprint","title","description","category","sanitized_excerpt","status",
+      "final_label","final_risk","adjudicator_id","adjudication_reason","created_by","created_at","updated_at","adjudicated_at"]) {
+      expect(cases.some(row=>row.name===name)).toBe(true);
+    }
     for (const name of ["id","case_id","annotator_id","label","risk","evidence","created_at"]) {
       expect(annotations.some(row=>row.name===name)).toBe(true);
     }

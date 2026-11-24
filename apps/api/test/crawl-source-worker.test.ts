@@ -18,6 +18,11 @@ describe("crawl source URL extraction", () => {
       "https://example.com/feed.xml",
     );
     expect(result).toEqual(["https://example.com/feed/2", "https://example.com/post/1"]);
+    expect(extractCrawlCandidateUrls(
+      '<feed><link href="https://example.com/feed.xml" rel="self"/></feed>',
+      "rss",
+      "https://example.com/feed.xml",
+    )).toEqual([]);
   });
 
   it("keeps RSS item metadata and HTML anchor labels attached to their own candidate", () => {

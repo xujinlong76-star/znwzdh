@@ -674,4 +674,14 @@ describe('tablist A-3：tablist 面板补 role="tabpanel" / aria-labelledby（20
     expect(src).not.toContain('role="tabpanel"')
     expect(src).not.toContain('aria-controls')
   })
+
+  it('#4 home-capsule-row：无面板（tab 切整页内容），A-3 跳过登记', () => {
+    const src = read('src/components/home-capsule-row.tsx')
+    // 文件内无任何面板元素；唯一挂载点 navigation-content.tsx:1413，tab 切的是
+    // 调用方整页分类内容（filterNavigationByWorkspace），不是本文件内的任何区块。
+    // 整页内容区作共享 tabpanel 会把各分类的 #5 子分类 tablist 包进面板内，
+    // 且窄屏被 CSS 藏起的 tab 仍在 DOM 中，故不在本文件补。
+    expect(src).not.toContain('role="tabpanel"')
+    expect(src).not.toContain('aria-controls')
+  })
 })

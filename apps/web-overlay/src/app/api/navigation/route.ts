@@ -86,7 +86,10 @@ async function validateAndSaveNavigationData(data: NavigationData, accessToken?:
   // 后台多点几次保存就把容器日志盘撑满，而这份文档里全是用户可见的标题与描述。
   // 计数与字节数足够回答运维真正会问的问题（是不是空包？比上一版瘦了多少？）。
   const summary = summarizeNavigation(data)
-  console.error(
+  // 成功路径的运维摘要走 console.log（navigation-save-log.test.ts 逐字钉住通道与格式）；
+  // 错误路径仍走 console.error。2026-11-24 订正：log→error 的清扫把这行一起改了，
+  // 导致「摘要一行」三件套失守——成功日志不是错误日志，改回来。
+  console.log(
     `Navigation save: ${summary.categories} 类目 / ${summary.subCategories} 子类 / ` +
       `${summary.items} 条站点, ${summary.bytes} bytes`,
   )

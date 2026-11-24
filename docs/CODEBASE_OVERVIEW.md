@@ -312,7 +312,7 @@ JobRunner.tick()（定时）
 | `enrich.ts` | LLM 结构化输出 + zod 校验 + 一次重试，失败降级 heuristic |
 | `with-timeout.ts` | Promise 超时，落地即清定时器 |
 
-### 5.4 `apps/api`：359 个端点 / 57 个路由插件
+### 5.4 `apps/api`：380 个端点 / 57 个路由插件
 
 按路由文件分组（`apps/api/src/routes/*.ts`，`routes/plugins/*` 五个市场子文件合并为一行；计数口径与 `docs/metrics.json` 的 `restRoutes` 同源：`app.<verb>(` 字面量注册数，2026-11-14 实测；另有 `/api/openapi.json`、`/api/docs` 由 `server.ts` 提供）：
 
@@ -375,7 +375,7 @@ JobRunner.tick()（定时）
 | `identity.ts` | 1 | `/api/users/sync` |
 | `plugin-overlap.ts` | 1 | `/api/plugins/:slug/overlap` |
 | `compare.ts` | 1 | GET `/api/compare` |
-| **合计** | **359** | 另有 `/api/openapi.json`、`/api/docs` 由 `server.ts` 提供 |
+| **合计** | **380** | 另有 `/api/openapi.json`、`/api/docs` 由 `server.ts` 提供 |
 
 横切关注点全部在 `server.ts`（384 行）：`onRoute` 收集 OpenAPI、`onRequest` 做请求 ID + 分级鉴权、`onSend` 做安全头 + 路由级缓存/ETag、`onResponse` 记指标、`setErrorHandler` 兜底。
 
@@ -477,7 +477,7 @@ JobRunner.tick()（定时）
 
 | 文档说法 | 实际代码 | 位置 |
 | :--- | :--- | :--- |
-| 「62 条 REST 路由」 | **359 个端点**（57 个路由插件，见 `docs/metrics.json` 的 `restRoutes`） | `wiki.md` §2.2（`README.md` 无此说法） |
+| 「62 条 REST 路由」 | **380 个端点**（57 个路由插件，见 `docs/metrics.json` 的 `restRoutes`） | `wiki.md` §2.2（`README.md` 无此说法） |
 | MCP「15 个 / 17 个工具」 | **45 个**（32 read / 12 write / 1 admin） | `wiki.md` §7（`README.md` 无此说法） |
 | 「19 张核心表」 | **54 张** | `wiki.md` §5.2 |
 | 「洛伦兹双曲超曲面 / 闵可夫斯基内积」 | **双模型并存，非术语不一致**：`core/src/hyperbolic.ts`（284 行）同时实现庞加莱球（`poincareDistance`、`mobiusAdd`、`expMap0`，供算法实验室面板经 `findTopAlternativesInHyperbolicSpace` 调用）与洛伦兹（`lorentzInnerProduct`、`lorentzDistance`，附双向换算 `poincareToLorentz`/`lorentzToPoincare`）；线上排序 `api/src/routes/rank.ts` 用洛伦兹距离重排并回 `manifold: "lorentz-hyperboloid"`。README §5 与 wiki §4.2 的洛伦兹说法属实（2026-11-11 核对，原行「仅庞加莱实现」为误判） | `README.md` §5、`wiki.md` §4.2 vs `core/src/hyperbolic.ts`、`api/src/routes/rank.ts` |

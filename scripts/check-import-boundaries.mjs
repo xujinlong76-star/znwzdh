@@ -84,6 +84,27 @@ const EXCEPTIONS = [
     spec: "../apps/web-overlay/src/lib/seo/thresholds.ts",
     reason: "压测必须与线上用同一组 SEO 阈值，否则量出来的规模没有意义；阈值模块是纯常量，无运行时依赖",
   },
+  // 国考回流卡一次性核对脚本（2026-11-24 登记）：对照 exam-calendar 数据生成
+  // 文案/分值核对清单，只读纯数据模块（exam-calendar.ts 无运行时依赖）。
+  // 待作者把核对逻辑并入 test/ 后移除这两条例外。
+  {
+    file: "scripts/verify-guokao-return-card-labels.mts",
+    rule: "scripts-no-app-src",
+    spec: "../apps/web-overlay/src/lib/exam-calendar.ts",
+    reason: "国考回流卡文案核对脚本，需与前端同一份 exam-calendar 数据源；纯常量数据模块，无运行时依赖（2026-11-24 登记，待并入 test/）",
+  },
+  {
+    file: "scripts/verify-guokao-return-card-points.mts",
+    rule: "scripts-no-app-src",
+    spec: "../apps/web-overlay/src/lib/exam-calendar.ts",
+    reason: "国考回流卡分值核对脚本，需与前端同一份 exam-calendar 数据源；纯常量数据模块，无运行时依赖（2026-11-24 登记，待并入 test/）",
+  },
+  {
+    file: "scripts/check-hub-id.mjs",
+    rule: "scripts-no-app-src",
+    spec: "../apps/web-overlay/src/lib/wayback-resolver.ts",
+    reason: "hubId 校验的 URL 归一化必须与前端同源（脚本头部明确「不另写一套」防两套归一化漂移）；wayback-resolver 是纯函数模块，无运行时依赖",
+  },
   // packages/mcp 历史包袱：stdio/http 启动器作为常驻进程直连 Fastify AppContext。
   // 显式登记技术债，防止破坏性反向蔓延至 packages/core 或 packages/store
 ];

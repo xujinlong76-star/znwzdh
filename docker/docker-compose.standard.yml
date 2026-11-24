@@ -114,7 +114,7 @@ services:
       NAVHUB_PUBLIC_URL: ${NAVHUB_PUBLIC_URL:-http://localhost:8788}
       NAVHUB_SESSION_SECRET_PREV: ${NAVHUB_SESSION_SECRET_PREV:-}
       NAVHUB_ALERT_WEBHOOK: ${NAVHUB_ALERT_WEBHOOK:-}
-      NAVHUB_CRAWL_SEEDS: ${NAVHUB_CRAWL_SEEDS:-[]}
+      NAVHUB_CRAWL_SEEDS: ${NAVHUB_CRAWL_SEEDS:-}
       # 默认仅本地前端（http://localhost:3000 / http://127.0.0.1:3000）：
       # 浏览器侧调用全部走 Next.js BFF 同源代理，不直连 8787。
       # 生产请显式写白名单，例如 NAVHUB_CORS_ORIGINS=https://nav.example.com

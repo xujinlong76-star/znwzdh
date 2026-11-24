@@ -126,3 +126,13 @@ export async function listCrawlAiModerationDecisions(
   );
   return rows.map(rowToDecision);
 }
+
+export async function countCrawlAiModerationDecisions(repo: Repository, candidateId: string): Promise<number> {
+  const id = candidateId.trim().slice(0, 64);
+  if (!id) throw new TypeError("candidateId 不能为空");
+  const rows = await repo.raw(
+    "SELECT COUNT(*) AS total FROM crawl_ai_moderation_decisions WHERE candidate_id = ?",
+    [id],
+  );
+  return Number(rows[0]?.total ?? 0);
+}

@@ -37,6 +37,18 @@ export interface UpsertSiteDiscoveryCandidateInput {
   now?: number;
 }
 
+function parseCandidateTags(value: unknown): string[] {
+  try {
+    const parsed = JSON.parse(String(value ?? "[]")) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string").slice(0, 100) : [];
+  } catch { return []; }
+}
+function parseCandidateEvidence(value: unknown): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(String(value ?? "{}")) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch { return {}; }
+}
 function rowToCandidate(row: Record<string, unknown>): SiteDiscoveryCandidate {
   return {
     id: String(row.id),
@@ -45,10 +57,10 @@ function rowToCandidate(row: Record<string, unknown>): SiteDiscoveryCandidate {
     title: row.title == null ? null : String(row.title),
     description: row.description == null ? null : String(row.description),
     categoryId: row.category_id == null ? null : String(row.category_id),
-    tags: JSON.parse(String(row.tags_json ?? "[]")) as string[],
+    tags: parseCandidateTags(row.tags_json),
     source: String(row.source),
     confidence: row.confidence == null ? null : Number(row.confidence),
-    evidence: JSON.parse(String(row.evidence_json ?? "{}")) as Record<string, unknown>,
+    evidence: parseCandidateEvidence(row.evidence_json),
     status: String(row.status) as DiscoveryCandidateStatus,
     siteId: row.site_id == null ? null : String(row.site_id),
     discoveredAt: Number(row.discovered_at),

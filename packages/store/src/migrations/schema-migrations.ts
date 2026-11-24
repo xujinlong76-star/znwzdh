@@ -269,6 +269,224 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     },
     checksum: "v1_user_sync_state",
   },
+  {
+    version: "20261124_durable_crawl_governance",
+    name: "持久化采集任务队列、域名租约与页面指纹",
+    up: async (db: Db) => {
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS crawl_tasks (
+          id TEXT PRIMARY KEY, url TEXT NOT NULL, canonical_url TEXT NOT NULL UNIQUE,
+          host TEXT NOT NULL, source TEXT NOT NULL, payload_json TEXT,
+          status TEXT NOT NULL DEFAULT 'queued', priority INTEGER NOT NULL DEFAULT 0,
+          attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 6,
+          next_run_at BIGINT NOT NULL, lease_owner TEXT, lease_expires_at BIGINT,
+          last_error TEXT, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL
+        )`,
+        "CREATE INDEX IF NOT EXISTS crawl_tasks_due_idx ON crawl_tasks(status, next_run_at, priority, created_at)",
+        "CREATE INDEX IF NOT EXISTS crawl_tasks_host_idx ON crawl_tasks(host, status)",
+        `CREATE TABLE IF NOT EXISTS crawl_domain_state (
+          host TEXT PRIMARY KEY, next_allowed_at BIGINT NOT NULL DEFAULT 0,
+          lease_task_id TEXT, lease_expires_at BIGINT, updated_at BIGINT NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS crawl_page_fingerprints (
+          canonical_url TEXT PRIMARY KEY, site_id TEXT, content_hash TEXT NOT NULL,
+          simhash64 TEXT NOT NULL, language TEXT, fetched_at BIGINT NOT NULL,
+          updated_at BIGINT NOT NULL
+        )`,
+        "CREATE INDEX IF NOT EXISTS crawl_fingerprints_site_idx ON crawl_page_fingerprints(site_id)",
+        "CREATE INDEX IF NOT EXISTS crawl_fingerprints_hash_idx ON crawl_page_fingerprints(content_hash)",
+      ];
+      if (db.dialect === "pg" && db.pg) {
+        for (const statement of statements) await db.pg.query(statement);
+      } else if (db.sqlite) {
+        db.sqlite.exec(statements.join(";"));
+      }
+    },
+    checksum: "v1_durable_crawl_governance",
+  },
+  {
+    version: "20261124_crawl_fingerprint_recent_idx",
+    name: "采集页面指纹最近记录索引",
+    up: async (db: Db) => {
+      const statement = "CREATE INDEX IF NOT EXISTS crawl_fingerprints_recent_idx ON crawl_page_fingerprints(fetched_at DESC)";
+      if (db.dialect === "pg" && db.pg) await db.pg.query(statement);
+      else if (db.sqlite) db.sqlite.exec(statement);
+    },
+    checksum: "v1_crawl_fingerprint_recent_idx",
+  },
+  {
+    version: "20261124_crawl_source_registry",
+    name: "持久化采集来源注册表与调度租约",
+    up: async (db: Db) => {
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS crawl_sources (
+          id TEXT PRIMARY KEY,
+          url TEXT NOT NULL,
+          canonical_url TEXT NOT NULL UNIQUE,
+          kind TEXT NOT NULL CHECK (kind IN ('sitemap','rss','page')),
+          enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          priority INTEGER NOT NULL DEFAULT 0,
+          interval_ms BIGINT NOT NULL DEFAULT 1800000,
+          next_run_at BIGINT NOT NULL,
+          last_run_at BIGINT,
+          last_status TEXT,
+          last_error TEXT,
+          lease_owner TEXT,
+          lease_expires_at BIGINT,
+          created_at BIGINT NOT NULL,
+          updated_at BIGINT NOT NULL
+        )`,
+        "CREATE INDEX IF NOT EXISTS crawl_sources_due_idx ON crawl_sources(enabled, next_run_at, priority)",
+      ];
+      if (db.dialect === "pg" && db.pg) {
+        for (const statement of statements) await db.pg.query(statement);
+      } else if (db.sqlite) {
+        db.sqlite.exec(statements.join(";"));
+      }
+    },
+    checksum: "v1_crawl_source_registry",
+  },
+
+  {
+    version: "20261124_crawl_ai_decision_ledger",
+    name: "AI 采集审核追加式决策历史",
+    up: async (db: Db) => {
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS crawl_ai_moderation_decisions (
+          id TEXT PRIMARY KEY,
+          candidate_id TEXT NOT NULL,
+          decision_source TEXT NOT NULL CHECK (decision_source IN ('ai','human')),
+          mode TEXT NOT NULL,
+          status TEXT NOT NULL,
+          verdict TEXT,
+          confidence DOUBLE PRECISION,
+          quality_score INTEGER,
+          risks_json TEXT NOT NULL DEFAULT '[]',
+          reasons_json TEXT NOT NULL DEFAULT '[]',
+          model TEXT,
+          policy_version TEXT,
+          actor TEXT,
+          created_at BIGINT NOT NULL
+        )`,
+        "CREATE INDEX IF NOT EXISTS crawl_ai_decisions_candidate_idx ON crawl_ai_moderation_decisions(candidate_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS crawl_ai_decisions_time_idx ON crawl_ai_moderation_decisions(created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS crawl_ai_decisions_source_idx ON crawl_ai_moderation_decisions(decision_source, created_at DESC)"
+      ];
+      if (db.dialect === "pg" && db.pg) {
+        for (const statement of statements) await db.pg.query(statement);
+      } else if (db.sqlite) {
+        db.sqlite.exec(statements.join(";"));
+      }
+    },
+    checksum: "v1_crawl_ai_decision_ledger",
+  },
+  {
+    version: "20261124_crawl_moderation_gold_annotation",
+    name: "审核金标样本双人标注与仲裁",
+    up: async (db: Db) => {
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS crawl_moderation_gold_cases (
+          id TEXT PRIMARY KEY,
+          source_fingerprint TEXT NOT NULL,
+          title TEXT,
+          description TEXT,
+          category TEXT,
+          sanitized_excerpt TEXT,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','annotating','needs_adjudication','gold_ready')),
+          final_label TEXT CHECK (final_label IS NULL OR final_label IN ('approve','reject','review')),
+          final_risk BOOLEAN,
+          adjudicator_id TEXT,
+          adjudication_reason TEXT,
+          created_by TEXT NOT NULL,
+          created_at BIGINT NOT NULL,
+          updated_at BIGINT NOT NULL,
+          adjudicated_at BIGINT
+        )`,
+        `CREATE TABLE IF NOT EXISTS crawl_moderation_gold_annotations (
+          id TEXT PRIMARY KEY,
+          case_id TEXT NOT NULL REFERENCES crawl_moderation_gold_cases(id) ON DELETE CASCADE,
+          annotator_id TEXT NOT NULL,
+          label TEXT NOT NULL CHECK (label IN ('approve','reject','review')),
+          risk BOOLEAN NOT NULL,
+          evidence TEXT NOT NULL,
+          created_at BIGINT NOT NULL,
+          UNIQUE(case_id, annotator_id)
+        )`,
+        "CREATE INDEX IF NOT EXISTS crawl_gold_cases_status_idx ON crawl_moderation_gold_cases(status, created_at)",
+        "CREATE INDEX IF NOT EXISTS crawl_gold_annotations_case_idx ON crawl_moderation_gold_annotations(case_id, created_at)"
+      ];
+      if (db.dialect === "pg" && db.pg) {
+        for (const statement of statements) await db.pg.query(statement);
+      } else if (db.sqlite) {
+        db.sqlite.exec(statements.join(";"));
+      }
+    },
+    checksum: "v1_crawl_moderation_gold_annotation",
+  },
+  {
+    version: "20261124_crawl_gold_candidate_source_unique",
+    name: "金标采集候选来源指纹并发唯一约束",
+    up: async (db: Db) => {
+      const statement = "CREATE UNIQUE INDEX IF NOT EXISTS crawl_gold_candidate_source_unique_idx ON crawl_moderation_gold_cases(source_fingerprint) WHERE source_fingerprint LIKE 'candidate:%'";
+      if (db.dialect === "pg" && db.pg) await db.pg.query(statement);
+      else if (db.sqlite) db.sqlite.exec(statement);
+    },
+    checksum: "v1_crawl_gold_candidate_source_unique",
+  },
+  {
+    version: "20261124_crawl_moderation_gold_task_claims",
+    name: "金标双盲标注任务领取与租约",
+    up: async (db: Db) => {
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS crawl_moderation_gold_assignments (
+          id TEXT PRIMARY KEY,
+          case_id TEXT NOT NULL REFERENCES crawl_moderation_gold_cases(id) ON DELETE CASCADE,
+          annotator_id TEXT NOT NULL,
+          slot INTEGER NOT NULL CHECK (slot IN (1,2)),
+          status TEXT NOT NULL CHECK (status IN ('claimed','completed','expired')),
+          lease_expires_at BIGINT NOT NULL,
+          created_at BIGINT NOT NULL,
+          claimed_at BIGINT NOT NULL,
+          completed_at BIGINT
+        )`,
+        "CREATE INDEX IF NOT EXISTS crawl_gold_assignments_annotator_idx ON crawl_moderation_gold_assignments(annotator_id,status,lease_expires_at)",
+        "CREATE INDEX IF NOT EXISTS crawl_gold_assignments_case_idx ON crawl_moderation_gold_assignments(case_id,status,slot)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS crawl_gold_assignments_active_slot_idx ON crawl_moderation_gold_assignments(case_id,slot) WHERE status='claimed'",
+        "CREATE UNIQUE INDEX IF NOT EXISTS crawl_gold_assignments_active_annotator_idx ON crawl_moderation_gold_assignments(case_id,annotator_id) WHERE status='claimed'"
+      ];
+      if (db.dialect === "pg" && db.pg) {
+        for (const statement of statements) await db.pg.query(statement);
+      } else if (db.sqlite) {
+        db.sqlite.exec(statements.join(";"));
+      }
+    },
+    checksum: "v1_crawl_moderation_gold_task_claims",
+  },
+  {
+    version: "20261124_crawl_moderation_model_evaluations",
+    name: "审核模型离线金标评测历史",
+    up: async (db: Db) => {
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS crawl_moderation_model_evaluations (
+          id TEXT PRIMARY KEY,
+          model TEXT NOT NULL,
+          dataset_version TEXT NOT NULL,
+          sample_size INTEGER NOT NULL,
+          metrics_json TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          created_at BIGINT NOT NULL
+        )`,
+        "CREATE INDEX IF NOT EXISTS crawl_moderation_model_eval_model_idx ON crawl_moderation_model_evaluations(model,created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS crawl_moderation_model_eval_dataset_idx ON crawl_moderation_model_evaluations(dataset_version,created_at DESC)"
+      ];
+      if (db.dialect === "pg" && db.pg) {
+        for (const statement of statements) await db.pg.query(statement);
+      } else if (db.sqlite) {
+        db.sqlite.exec(statements.join(";"));
+      }
+    },
+    checksum: "v1_crawl_moderation_model_evaluations",
+  },
 ];
 
 /**

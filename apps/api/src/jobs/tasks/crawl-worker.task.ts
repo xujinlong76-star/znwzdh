@@ -10,6 +10,7 @@ import {
   reapExpiredCrawlLeases,
   settleCrawlTask,
   upsertSiteDiscoveryCandidate,
+  recordCrawlAiModerationDecision,
 } from "@navhub/store";
 import { llmProviderReadyAny, resolveLlm } from "../../llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../../llm-quota.ts";
@@ -596,6 +597,13 @@ export async function handleCrawlWorker(
                     }),
                   });
                   summary.aiModerationSucceeded++;
+                  await recordCrawlAiModerationDecision(ctx.repo, {
+                    id: randomUUID(), candidateId: candidate.id, decisionSource: "ai",
+                    mode: "shadow", status: "completed", verdict: decision.verdict,
+                    confidence: decision.confidence, qualityScore: decision.qualityScore,
+                    risks: decision.risks, reasons: decision.reasons, model: decision.model,
+                    policyVersion: decision.policyVersion, createdAt: Date.now(),
+                  });
                   await upsertSiteDiscoveryCandidate(ctx.repo, {
                     id: candidate.id, url: candidate.url, canonicalUrl: candidate.canonicalUrl,
                     source: candidate.source,
@@ -611,6 +619,12 @@ export async function handleCrawlWorker(
                   });
                 } catch (moderationError) {
                   summary.aiModerationFailed++;
+                  await recordCrawlAiModerationDecision(ctx.repo, {
+                    id: randomUUID(), candidateId: candidate.id, decisionSource: "ai",
+                    mode: "shadow", status: "error",
+                    reasons: [moderationError instanceof Error ? moderationError.name : "UnknownError"],
+                    createdAt: Date.now(),
+                  });
                   await upsertSiteDiscoveryCandidate(ctx.repo, {
                     id: candidate.id, url: candidate.url, canonicalUrl: candidate.canonicalUrl,
                     source: candidate.source,

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { fingerprintPageContent } from "@navhub/core";
-import { guardedFetch } from "@navhub/ai";
+import { guardedFetch, SsrfBlockedError } from "@navhub/ai";
 import {
   claimCrawlTask,
   enqueueCrawlTask,
@@ -275,6 +275,9 @@ async function checkRobotsPolicy(url: string, signal?: AbortSignal): Promise<Rob
       : { kind: "blocked", reason: "robots.txt Disallow 规则禁止抓取该 URL" };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
+    if (error instanceof SsrfBlockedError) {
+      return { kind: "blocked", reason: "robots.txt 地址触发 SSRF 安全拦截，禁止继续抓取：" + reason };
+    }
     return { kind: "retry", reason: "robots.txt 检查失败，按 fail-closed 策略稍后重试：" + reason, retryAfterMs: 0 };
   }
 }

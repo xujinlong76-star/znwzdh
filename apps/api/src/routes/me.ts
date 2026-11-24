@@ -249,7 +249,8 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       .object({
         username: z.string().trim().min(1).max(40).regex(/^[^\u0000-\u001f<>]+$/, "昵称包含非法字符").optional(),
         avatar: z.string().max(500).nullable().optional(),
-        // 邮箱绑定（T3）：null = 解绑。当前部署不内置邮件服务，不做验证回执——
+        // 邮箱绑定：null = 解绑；更换为新邮箱后仓储层会将 email_verified 重置为 false，
+        // 用户需通过 /api/account/resend-verification 重新验证后才能再次使用密码登录。
         // 唯一性仍要保证（库里有部分唯一索引，先查后写给出 409 而不是裸撞索引）。
         email: z.email().nullable().optional(),
       })

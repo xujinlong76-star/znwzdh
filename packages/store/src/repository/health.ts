@@ -1,5 +1,5 @@
 import type { Repository } from "../repository.ts";
-import { computeConsecutiveFailures, isBotBlockedHealthRecord } from "@navhub/core";
+import { computeConsecutiveFailures, isBotBlockedHealthRecord, type SiteQualityResult } from "@navhub/core";
 
 export async function updateSiteHealth(repo: Repository, siteId: string, health: {
     httpStatus: number | null
@@ -150,4 +150,66 @@ export async function setTrendScores(repo: Repository, scores: Array<{ id: strin
       );
     }
   });
+}
+
+
+/** 最新站点质量快照。保留完整维度证据，供后续审核工作台与离线评测读取。 */
+export interface SiteQualityAssessmentRecord extends SiteQualityResult {
+  siteId: string;
+  updatedAt: number;
+}
+
+/** 幂等写入当前规则版本的最新影子评分；不触碰 sites.status / 搜索排序字段。 */
+export async function saveSiteQualityAssessment(
+  repo: Repository,
+  siteId: string,
+  assessment: SiteQualityResult,
+): Promise<void> {
+  const updatedAt = Date.now();
+  await repo.run(
+    `INSERT INTO site_quality_assessments
+      (site_id, version, evaluated_at, overall_score, evidence_coverage, observed_dimensions,
+       risk_score, band, dimensions_json, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(site_id) DO UPDATE SET
+       version = excluded.version,
+       evaluated_at = excluded.evaluated_at,
+       overall_score = excluded.overall_score,
+       evidence_coverage = excluded.evidence_coverage,
+       observed_dimensions = excluded.observed_dimensions,
+       risk_score = excluded.risk_score,
+       band = excluded.band,
+       dimensions_json = excluded.dimensions_json,
+       updated_at = excluded.updated_at`,
+    [
+      siteId, assessment.version, assessment.evaluatedAt, assessment.score,
+      assessment.evidenceCoverage, assessment.observedDimensions, assessment.riskScore,
+      assessment.band, JSON.stringify(assessment.dimensions), updatedAt,
+    ],
+  );
+}
+
+/** 读取一站点的最新质量快照；无快照返回 null。 */
+export async function getSiteQualityAssessment(
+  repo: Repository,
+  siteId: string,
+): Promise<SiteQualityAssessmentRecord | null> {
+  const rows = await repo.raw(
+    "SELECT * FROM site_quality_assessments WHERE site_id = ?",
+    [siteId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    siteId: String(row.site_id),
+    version: String(row.version) as SiteQualityResult["version"],
+    evaluatedAt: Number(row.evaluated_at),
+    score: row.overall_score == null ? null : Number(row.overall_score),
+    evidenceCoverage: Number(row.evidence_coverage),
+    observedDimensions: Number(row.observed_dimensions),
+    riskScore: row.risk_score == null ? null : Number(row.risk_score),
+    band: String(row.band) as SiteQualityResult["band"],
+    dimensions: JSON.parse(String(row.dimensions_json)) as SiteQualityResult["dimensions"],
+    updatedAt: Number(row.updated_at),
+  };
 }

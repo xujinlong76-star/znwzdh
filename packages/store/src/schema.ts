@@ -433,6 +433,19 @@ export const healthChecks = sqliteTable("health_checks", {
   error: text("error"),
 }, (t) => [index("health_checks_site_idx").on(t.siteId)]);
 
+export const siteQualityAssessments = sqliteTable("site_quality_assessments", {
+  siteId: text("site_id").primaryKey(),
+  version: text("version").notNull(),
+  evaluatedAt: integer("evaluated_at").notNull(),
+  overallScore: real("overall_score"),
+  evidenceCoverage: real("evidence_coverage").notNull(),
+  observedDimensions: integer("observed_dimensions").notNull(),
+  riskScore: real("risk_score"),
+  band: text("band").notNull(),
+  dimensionsJson: text("dimensions_json").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (t) => [index("site_quality_assessments_band_idx").on(t.band)]);
+
 export const auditLogs = sqliteTable("audit_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   actor: text("actor").notNull(),

@@ -8,7 +8,8 @@
  * 4. 协作式限时退出（run.shouldStop()）与顺延。
  */
 
-import { auditPageHealth, BOT_BLOCKED_ERROR_PREFIX, classifyCorporateTerminalRedirect, classifyProbeStatus } from "@navhub/core";
+import { auditPageHealth, BOT_BLOCKED_ERROR_PREFIX, classifyCorporateTerminalRedirect, classifyProbeStatus, evaluateSiteQuality } from "@navhub/core";
+import { buildSiteQualityAssessments } from "../../site-quality-assessment.ts";
 import type { AppContext } from "../../context.ts";
 import {
   HEALTH_FAIL_THRESHOLD,
@@ -46,6 +47,24 @@ export const DESKTOP_RETRY_HEADERS: Record<string, string> = {
  * 唯一事实源）；这里再导出一次，只为兼容既有测试的导入路径。
  */
 export { BOT_BLOCKED_ERROR_PREFIX, isBotBlockedHealthRecord } from "@navhub/core";
+
+/**
+ * 健康巡检完成后做质量评分影子写入。
+ * 评分失败不能中断健康巡检；影子结果不会改变站点状态或用户可见排序。
+ */
+async function persistSiteQualityShadow(ctx: AppContext, site: SiteRow): Promise<void> {
+  try {
+    const samples = await ctx.repo.recentHealthChecks(site.id, 5);
+    const dimensions = buildSiteQualityAssessments(site, samples);
+    const assessment = evaluateSiteQuality(dimensions);
+    await ctx.repo.saveSiteQualityAssessment(site.id, assessment);
+  } catch (error) {
+    console.warn("[navhub-job] site quality shadow assessment failed", {
+      siteId: site.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
 
 /**
  * 第一层状态码是否值得发第二层（桌面 UA）重试。
@@ -233,6 +252,7 @@ export async function handleHealthCheck(
             currentStatus: site.status,
             markBroken: false,
           });
+          await persistSiteQualityShadow(ctx, site);
           continue;
         }
         if (!healthy && outcome?.kind === "server-error" && item.retried) {
@@ -249,6 +269,7 @@ export async function handleHealthCheck(
           currentStatus: nextStatus,
           markBroken: healthy ? undefined : await shouldBreak(ctx, site.id),
         });
+        await persistSiteQualityShadow(ctx, site);
       } else {
         await ctx.repo.updateSiteHealth(site.id, {
           httpStatus: null,
@@ -259,6 +280,7 @@ export async function handleHealthCheck(
           currentStatus: site.status,
           markBroken: await shouldBreak(ctx, site.id),
         });
+        await persistSiteQualityShadow(ctx, site);
       }
     }
   }

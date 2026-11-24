@@ -1,6 +1,7 @@
 /**
  * Deterministic page fingerprinting and conservative duplicate classification.
- * Domain families are curated aliases; never infer ownership from similar host strings.
+ * CJK text is tokenized into character bigrams; whitespace-only tokenization would collapse
+ * an entire Chinese paragraph into one token and incorrectly mark every page insufficient.
  */
 export interface PageFingerprint {
   algorithm: "simhash64-v1";
@@ -10,9 +11,17 @@ export interface PageFingerprint {
 }
 
 function tokensOf(text: string): string[] {
-  return text.normalize("NFKC").toLocaleLowerCase()
-    .replace(/https?:\/\/\S+/g, " ")
-    .replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(/\s+/u).filter(Boolean);
+  const normalized = text.normalize("NFKC").toLocaleLowerCase().replace(/https?:\/\/\S+/g, " ");
+  const chunks = normalized.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+|[\p{L}\p{N}]+/gu) ?? [];
+  const tokens: string[] = [];
+  for (const chunk of chunks) {
+    if (/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+$/u.test(chunk)) {
+      const chars = Array.from(chunk);
+      if (chars.length === 1) tokens.push(chars[0]!);
+      else for (let i = 0; i < chars.length - 1; i++) tokens.push(chars.slice(i, i + 2).join(""));
+    } else tokens.push(chunk);
+  }
+  return tokens;
 }
 
 function hash64(value: string): bigint {
@@ -89,7 +98,7 @@ export function normalizeDomainHost(value: string): string {
   return hostname.replace(/^www\./, "").replace(/\.$/, "");
 }
 
-/** Explicit verified alias groups only; public-suffix-aware registrable-domain parsing belongs to the URL adapter. */
+/** Explicit verified alias groups only; registrable-domain parsing belongs to the URL adapter. */
 export function resolveDomainFamily(host: string, aliasGroups: readonly (readonly string[])[] = []): string {
   const normalized = normalizeDomainHost(host);
   for (const group of aliasGroups) {

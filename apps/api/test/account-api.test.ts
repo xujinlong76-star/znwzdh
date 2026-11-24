@@ -342,6 +342,12 @@ describe("账号生命周期 API", () => {
     });
     expect(ok.statusCode).toBe(200);
     expect(ok.json().user.email).toBe("dave@example.com");
+    const successfulAudit = await ctx.repo.raw(
+      "SELECT target FROM audit_logs WHERE action = ? AND target = ? LIMIT 1",
+      ["account.login", ok.json().user.id],
+    );
+    expect(successfulAudit).toHaveLength(1);
+    expect(String(successfulAudit[0]?.target ?? "")).not.toBe("dave@example.com");
 
     const bad = await post("/api/account/login", {
       identifier: "dave@example.com",
@@ -354,6 +360,36 @@ describe("账号生命周期 API", () => {
       password: "x",
     });
     expect(missing.statusCode).toBe(401);
+  });
+
+  it("普通登录失败计数跨两个 API 实例共享且审计只存 HMAC 摘要", async () => {
+    const replicaCtx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "account.db") }));
+    const replica = await buildServer(replicaCtx);
+    await replica.ready();
+    const identifier = "shared-login-lock@example.com";
+    const send = (target: typeof app) => target.inject({
+      method: "POST",
+      url: "/api/account/login",
+      payload: { identifier, password: "wrong-password" },
+    });
+    try {
+      for (let i = 0; i < 5; i += 1) {
+        const response = await send(i % 2 === 0 ? app : replica);
+        expect(response.statusCode).toBe(401);
+      }
+      const blocked = await send(replica);
+      expect(blocked.statusCode).toBe(429);
+      const audit = await ctx.repo.raw(
+        "SELECT target FROM audit_logs WHERE action = ? AND target LIKE 'hmac-sha256:%' ORDER BY created_at DESC LIMIT 1",
+        ["account.login_locked"],
+      );
+      const target = String(audit[0]?.target ?? "");
+      expect(target).toMatch(/^hmac-sha256:[a-f0-9]{64}$/);
+      expect(target).not.toContain(identifier);
+    } finally {
+      await replica.close();
+      await replicaCtx.close();
+    }
   });
 
   it("忘记密码：无论邮箱是否存在都返回同一文案", async () => {

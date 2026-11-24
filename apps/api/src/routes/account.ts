@@ -278,11 +278,18 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     if (!state || state.enabled || Date.now() - state.updatedAt > 10 * 60 * 1000) { reply.code(409); return { error: "请先生成有效期 10 分钟内的待确认 MFA 密钥" }; }
     let secret: string;
     try { secret = decryptMfaSecret(state); } catch { reply.code(503); return { error: "MFA 密钥解密失败，请重新初始化" }; }
-    if (!verifyTotp(secret, body.data.code)) { reply.code(401); return { error: "验证码无效或已过期" }; }
+    const matchedCounter = matchingTotpCounter(secret, body.data.code);
+    if (matchedCounter === null) { reply.code(401); return { error: "验证码无效或已过期" }; }
+    const consumed = await ctx.repo.claimSystemState(
+      "auth:admin-mfa:totp:" + state.recoveryVersion + ":" + matchedCounter,
+      true,
+      5 * 60 * 1000,
+    );
+    if (!consumed) { reply.code(401); return { error: "验证码已使用，请等待下一组验证码" }; }
     const codes = newRecoveryCodes();
     await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, {
       ...state, enabled: true, recoveryHashes: codes.map((code) => hashApiToken(code.replace(/-/g, ""))),
-      recoveryVersion: randomBytes(12).toString("hex"), updatedAt: Date.now(),
+      updatedAt: Date.now(),
     } satisfies AdminMfaState);
     await ctx.repo.audit({ actor: req.auth.actor, actorKind: req.auth.kind, action: "account.admin_mfa_enabled" });
     reply.header("cache-control", "no-store");

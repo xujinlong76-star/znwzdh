@@ -188,6 +188,7 @@ export function validateSearchGoldSet(cases: readonly SearchGoldCase[], minimumC
 
 /** Returns consensus grades plus adjudicated replacements; unresolved disagreements are omitted. */
 export function finalSearchGoldLabels(item: SearchGoldCase): Record<string, AnnotationLabel> {
+  if (!validateSearchGoldCase(item).valid) return {};
   if (!Array.isArray(item.annotations) || item.annotations.length !== 2) return {};
   const left = new Map(item.annotations[0]!.judgments.map(j => [j.siteId, j.label]));
   const right = new Map(item.annotations[1]!.judgments.map(j => [j.siteId, j.label]));

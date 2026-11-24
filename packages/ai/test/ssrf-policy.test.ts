@@ -8,7 +8,7 @@
  *   - `http://169.254.169.254` 云元数据 → 链路本地必须拦；
  *   - `http://host:6379` 打内网 Redis → 危险端口必须拦。
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, afterAll, vi } from "vitest";
 import {
   DEFAULT_GUARD,
   SsrfBlockedError,
@@ -34,6 +34,12 @@ vi.mock("node:dns/promises", async (importOriginal) => {
         ? Promise.reject(Object.assign(new Error("ENOTFOUND"), { code: "ENOTFOUND" }))
         : actual.lookup(hostname, options as never),
   };
+});
+
+// mock 卫生（mock-hygiene 门禁）：isolate:false 下 vi.mock 会跨文件泄漏，
+// afterAll 里 resetModules 还原模块注册表，不把 node:dns 桩带给后续测试文件。
+afterAll(() => {
+  vi.resetModules();
 });
 
 describe("IPv4 网段", () => {

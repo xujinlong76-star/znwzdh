@@ -57,7 +57,10 @@ export const similarRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
    */
   async function loadCatalogSnapshot(): Promise<CatalogSnapshot> {
     const now = Date.now();
-    const version = await ctx.repo.readNavDataVersion().catch(() => null);
+    const version = await ctx.repo.readNavDataVersion().catch(() => {
+      // 候选库不可用时召回降级到词元路径即可，失败无需上报（loadVectorSimilaritiesForText 本身有兜底）。
+      return null;
+    });
     if (
       snapshotCache &&
       now - snapshotCache.loadedAt < SNAPSHOT_TTL_MS &&
@@ -238,6 +241,7 @@ export const similarRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
           categoryId: typeof q.categoryId === "string" ? q.categoryId : undefined,
           openSourceOnly: parseBoolFlag(q.openSource),
           healthyOnly: parseBoolFlag(q.healthyOnly),
+          excludeSameBrand: parseBoolFlag(q.excludeSameBrand),
           tag: typeof q.tag === "string" ? q.tag : undefined,
           sort: parseSort(q.sort),
           vectorSimilarityById: vectorSim,

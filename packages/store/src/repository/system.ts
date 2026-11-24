@@ -56,3 +56,38 @@ export async function claimSystemState(
   const changes = await repo.runCount(sql, [key, serialized, now, threshold]);
   return changes > 0;
 }
+
+
+/**
+ * 登录失败计数：使用 system_states 的单条 UPSERT 原子递增，跨 SQLite/PostgreSQL 副本共享。
+ * updated_at 固定为当前窗口的 firstAt；窗口过期后首次失败会原子重置计数。
+ */
+export async function recordLoginFailure(
+  repo: Repository,
+  key: string,
+  now: number,
+  windowMs: number,
+): Promise<{ count: number; firstAt: number }> {
+  const threshold = now - Math.max(0, windowMs);
+  const sql = repo.db.dialect === "pg"
+    ? "INSERT INTO system_states (key, value, updated_at) VALUES (?, '1', ?) ON CONFLICT (key) DO UPDATE SET value = CASE WHEN system_states.updated_at < ? THEN '1' ELSE CAST(CAST(system_states.value AS BIGINT) + 1 AS TEXT) END, updated_at = CASE WHEN system_states.updated_at < ? THEN EXCLUDED.updated_at ELSE system_states.updated_at END RETURNING value, updated_at"
+    : "INSERT INTO system_states (key, value, updated_at) VALUES (?, '1', ?) ON CONFLICT(key) DO UPDATE SET value = CASE WHEN system_states.updated_at < ? THEN '1' ELSE CAST(CAST(system_states.value AS INTEGER) + 1 AS TEXT) END, updated_at = CASE WHEN system_states.updated_at < ? THEN excluded.updated_at ELSE system_states.updated_at END RETURNING value, updated_at";
+  const rows = await repo.raw(sql, [key, now, threshold, threshold]);
+  const row = rows[0];
+  return { count: Math.max(1, Number(row?.value) || 1), firstAt: Number(row?.updated_at ?? now) };
+}
+
+export async function getLoginFailureState(
+  repo: Repository,
+  key: string,
+): Promise<{ count: number; firstAt: number } | null> {
+  const row = (await repo.raw("SELECT value, updated_at FROM system_states WHERE key = ? LIMIT 1", [key]))[0];
+  if (!row) return null;
+  const count = Number(row.value);
+  const firstAt = Number(row.updated_at);
+  return Number.isFinite(count) && Number.isFinite(firstAt) ? { count, firstAt } : null;
+}
+
+export async function clearLoginFailure(repo: Repository, key: string): Promise<void> {
+  await repo.run("DELETE FROM system_states WHERE key = ?", [key]);
+}

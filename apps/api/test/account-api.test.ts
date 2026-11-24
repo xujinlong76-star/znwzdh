@@ -254,6 +254,12 @@ describe("账号生命周期 API", () => {
     });
     expect(ok.statusCode).toBe(200);
     expect(ok.json().user.email).toBe("dave@example.com");
+    const loginAudit = await ctx.repo.raw(
+      "SELECT target FROM audit_logs WHERE action = ? AND target = ? LIMIT 1",
+      ["account.login", ok.json().user.id],
+    );
+    expect(loginAudit).toHaveLength(1);
+    expect(String(loginAudit[0]?.target ?? "")).not.toBe("dave@example.com");
 
     const bad = await post("/api/account/login", {
       identifier: "dave@example.com",

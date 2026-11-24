@@ -142,7 +142,17 @@ async function getSubmissionsFromHub(status: string): Promise<NextResponse> {
         if (!body.success || !Array.isArray(body.submissions)) {
             return NextResponse.json({ success: false, message: '获取投稿列表失败' }, { status: 502 })
         }
-        return NextResponse.json({ success: true, submissions: body.submissions })
+        // 边界归一（2026-11-24）：中枢老进程的映射可能缺 labels（管理台 getStatusBadge 直接
+        // labels.some 崩过）。按 _label 补出 GitHub 通道同形状 labels，两条通道对调用方同形。
+        const normalized = (body.submissions as Array<Record<string, unknown>>).map((s) => {
+          if (Array.isArray(s.labels)) return s;
+          const label = typeof s._label === "string" && s._label ? s._label : "pending";
+          return {
+            ...s,
+            labels: [{ name: `submission:${label}`, color: label === "approved" ? "0e8a16" : label === "rejected" ? "d73a4a" : "fbca04" }],
+          };
+        });
+        return NextResponse.json({ success: true, submissions: normalized })
     } catch {
         return NextResponse.json({ success: false, message: '获取投稿列表失败' }, { status: 502 })
     }

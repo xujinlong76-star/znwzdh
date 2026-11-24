@@ -478,8 +478,8 @@ export function DramaContent({
               <div className="mt-6">
                 <h3 className="text-base font-semibold">榜单与日历里的相关剧</h3>
                 <ul className="mt-3 space-y-2">
-                  {extraResults.ranking.map((r) => (
-                    <li key={`${r.label}-${r.title}`} className="text-sm">
+                  {extraResults.ranking.map((r, idx) => (
+                    <li key={`${r.label}-${r.title}-${idx}`} className="text-sm">
                       <a
                         href={safeHref(r.detailUrl)}
                         target="_blank"
@@ -494,8 +494,8 @@ export function DramaContent({
                       </span>
                     </li>
                   ))}
-                  {extraResults.calendar.map((c) => (
-                    <li key={`cal-${c.title}`} className="text-sm">
+                  {extraResults.calendar.map((c, idx) => (
+                    <li key={`cal-${c.title}-${idx}`} className="text-sm">
                       <span className="font-medium text-zinc-900 dark:text-zinc-100">{c.title}</span>
                       <span className="ml-2 text-xs text-zinc-500 dark:text-zinc-400">
                         开播日历 · {c.label}

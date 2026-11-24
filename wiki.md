@@ -35,7 +35,7 @@
 ┌──────────────▼───────────────────────────────────────────▼────────────┐
 │                         Fastify 5 API 服务中枢                        │
 │  ┌──────────────────────┐  ┌──────────────────┐  ┌─────────────────┐  │
-│  │ 359 个 REST 路由声明  │  │ 兼容存储接缝 API  │  │ JobRunner 队列  │  │
+│  │ 380 个 REST 路由声明  │  │ 兼容存储接缝 API  │  │ JobRunner 队列  │  │
 │  │ /api/sites, search.. │  │ /api/storage/*   │  │ 可用性/权重重算 │  │
 │  └──────────┬───────────┘  └────────┬─────────┘  └────────┬────────┘  │
 │             └─────────── AppContext (全局注入) ───────────┘           │
@@ -68,7 +68,7 @@
 * `STORAGE_ADAPTER=github`：兼容原版行为，数据直接提交到用户自己的私有 GitHub 仓库。
 
 ### 2.2 核心路由分布
-中枢共挂载 359 个 REST 路由声明（57 个路由插件，数字以 `docs/metrics.json` 为准），涵盖：
+中枢共挂载 380 个 REST 路由声明（57 个路由插件，数字以 `docs/metrics.json` 为准），涵盖：
 * **公开只读**：`GET /api/sites`（支持按 source 过滤）、`GET /api/categories`、`GET /api/tags`、`GET /api/collections`、`GET /api/search`。
 * **管理写操作**：`POST /api/sites`、`POST /api/sites/batch`（批量导入）、`POST /api/sites/auto`（URL 自动抓取富化）、`DELETE /api/sites/:id`。
 * **Token 治理**：`GET /api/tokens`、`POST /api/tokens`、`DELETE /api/tokens/:id`。

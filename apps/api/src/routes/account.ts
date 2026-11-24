@@ -13,7 +13,7 @@
  *  - 每个写端点都有路由级限流，防刷邮件（邮件是真实成本）。
  */
 import type { FastifyPluginAsync } from "fastify";
-import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { hashToken, secureEqual } from "../auth.ts";
 import { z } from "zod";
 import { generateToken, hashPassword, hashToken, validatePassword } from "@navhub/core";

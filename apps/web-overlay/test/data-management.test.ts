@@ -143,6 +143,76 @@ describe('基线数字钉住仓库事实源', () => {
   })
 })
 
+describe('W3 分类错配修正（进化轮 2026-11-24 23:22）', () => {
+  // 依据：evolution-round-2026-11-24-2322-i2-analysis.md §4–§5（I2 结论）。
+  // I2 裁决：5 处原方案中只有排污移动与滴滴改描述是正确的；支付宝、哔哩哔哩、
+  // 维基百科 3 处在现有结构内无合法落点，已撤回、恢复基线值，故此处只断言
+  // 2 处正确修正 + 数字图书馆门槛。只断言分类归属与描述，不碰链接存活
+  // （存活由每周 lychee 巡检覆盖）。
+  type NavItem = { title?: unknown; href?: unknown; description?: unknown; tags?: unknown }
+  type NavSub = { title?: unknown; items?: NavItem[] }
+  type NavCat = { title?: unknown; subCategories?: NavSub[] }
+
+  function locate(nav: { navigationItems: NavCat[] }, title: string) {
+    const hits: Array<{ l1: string; l2: string; item: NavItem }> = []
+    for (const c of nav.navigationItems) {
+      for (const s of c.subCategories ?? []) {
+        for (const item of s.items ?? []) {
+          if (item.title === title) hits.push({ l1: String(c.title), l2: String(s.title), item })
+        }
+      }
+    }
+    return hits
+  }
+
+  function expectPlaced(
+    nav: { navigationItems: NavCat[] },
+    title: string,
+    l1: string,
+    l2: string,
+  ): NavItem {
+    const hits = locate(nav, title)
+    expect(hits).toHaveLength(1)
+    expect(hits[0]?.l1).toBe(l1)
+    expect(hits[0]?.l2).toBe(l2)
+    return hits[0]?.item as NavItem
+  }
+
+  it('排污许可平台不在气象与环境：政务申办入口归政务办事', () => {
+    const nav = overlayJson('src/navsphere/content/navigation.json') as {
+      navigationItems: NavCat[]
+    }
+    const item = expectPlaced(nav, '全国排污许可证管理信息平台', '公共服务', '政务办事')
+    expect(item.href).toBe('https://permit.mee.gov.cn')
+    expect(item.description).toContain('排污许可申请')
+  })
+
+  it('滴滴出行：链接仍是企业官网，描述不再写成打车入口', () => {
+    const nav = overlayJson('src/navsphere/content/navigation.json') as {
+      navigationItems: NavCat[]
+    }
+    const item = expectPlaced(nav, '滴滴出行', '消费生活', '交通与出行')
+    expect(item.href).toBe('https://www.didiglobal.com')
+    // 落点实测标题“首页-滴滴官网”（W3 §2.4）：描述须与落点一致
+    expect(item.description).toBe('滴滴全球企业官网，出行服务与企业信息介绍')
+    expect(item.description).not.toContain('打车')
+    expect(item.description).not.toContain('快车')
+  })
+
+  it('数字图书馆不少于 5 站（MIN_SITES_FOR_CATEGORY_INDEX 门槛，防分类页 404）', () => {
+    const nav = overlayJson('src/navsphere/content/navigation.json') as {
+      navigationItems: NavCat[]
+    }
+    const lib = nav.navigationItems
+      .find((c) => c.title === '学习成长')
+      ?.subCategories?.find((s) => s.title === '数字图书馆')
+    expect(lib).toBeDefined()
+    expect((lib?.items ?? []).length).toBeGreaterThanOrEqual(5)
+    // 维基百科仍在数字图书馆（I2：registry 内无更优落点，移出会致该分类 404）
+    expectPlaced(nav, '维基百科', '学习成长', '数字图书馆')
+  })
+})
+
 describe('数据管理页：结构与端点契约', () => {
   it('是客户端组件，恰好一个 h1「数据管理」', () => {
     expect(PAGE.startsWith("'use client'")).toBe(true)

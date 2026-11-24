@@ -26,7 +26,8 @@ describe("coverage-patch", () => {
   it("uses Istanbul line counters and computes patch coverage", () => {
     const result = evaluatePatchCoverage(diff, {
       "/workspace/packages/core/src/demo.ts": {
-        l: { "1": 1, "2": 1, "3": 1, "4": 1, "5": 1, "6": 1, "7": 1, "8": 1, "9": 1, "10": 0 },
+        statementMap: Object.fromEntries(Array.from({ length: 10 }, (_, index) => [String(index), { start: { line: index + 1 }, end: { line: index + 1 } }])),
+        s: { "0": 1, "1": 1, "2": 1, "3": 1, "4": 1, "5": 1, "6": 1, "7": 1, "8": 1, "9": 0 },
       },
     });
     expect(result.total).toBe(10);
@@ -45,7 +46,7 @@ describe("coverage-patch", () => {
 
   it("skips only when executable changed lines are below the configured minimum", () => {
     const result = evaluatePatchCoverage(diff, {
-      "/workspace/packages/core/src/demo.ts": { l: { "1": 1 } },
+      "/workspace/packages/core/src/demo.ts": { statementMap: { "0": { start: { line: 1 }, end: { line: 1 } } }, s: { "0": 1 } },
     }, 10);
     expect(result.total).toBe(1);
     expect(result.skipped).toBe(true);

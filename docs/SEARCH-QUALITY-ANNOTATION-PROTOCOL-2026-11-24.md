@@ -107,7 +107,7 @@ node scripts/search-quality-shadow-eval.mts path/to/shadow-fixture.json --json
 - `query`：来自真实搜索遥测、已脱敏的查询文本；必须由数据负责人确认 `privacyReviewed=true` 与 `queryRedacted=true`。
 - `sourceType`：必须为 `search_telemetry`；合成查询、模型生成查询不能冒充真实样本。
 - `sampledAt`、`snapshotAt`：抽样时间与候选结果快照时间。
-- `hits`：冻结快照中的站点 ID 与严格递增 rank。
+- `hits`：冻结快照中的站点 ID 与严格递增 rank；真实零结果查询允许 `hits=[]` 且 `judgments=[]`，不得人为补造候选。
 - `judgments`：每个 hit 必须由两名不同标注员独立判断，包含证据 URL、0–3 等级或 `unjudgeable` 状态及理由码。
 - 两人结论不同必须由第三名仲裁员给出最终等级/不可判断状态；不能把不可判断自动记为 0。
 

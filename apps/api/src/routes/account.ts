@@ -278,8 +278,8 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       }
       const verified = await ctx.repo.setUserEmailVerifiedForEmail(String(row.user_id), String(row.target_email));
       if (!verified) {
-        reply.code(500);
-        return { error: "验证状态更新失败" };
+        reply.code(400);
+        return { error: "验证链接已失效，请重新发送验证邮件" };
       }
       await ctx.repo.audit({
         actor: String(row.user_id),
@@ -426,7 +426,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(400);
         return { error: "重置链接无效或已使用" };
       }
-      const updated = await ctx.repo.updateUserPassword(String(row.user_id), body.data.password);
+      const updated = await ctx.repo.updateUserPasswordForEmail(String(row.user_id), body.data.password, String(row.target_email));
       if (!updated) {
         reply.code(400);
         return { error: "密码不符合要求" };

@@ -21,7 +21,7 @@ Docker lite 与 standard 的 API 服务均透传该变量。未配置时默认�
 ## 调度与处理
 
 - 新增 `crawl_worker` JobKind，每 30 分钟由现有 Cron 入队；也可通过既有 `POST /api/jobs` 手动触发。
-- 每轮最多处理 25 条，默认 10 条；每次抓取最多 10 秒、512 KiB、5 次重定向。
+- 每轮先回收过期 Worker 租约，再最多处理 25 条（手动默认 10 条）；每次抓取最多 10 秒、512 KiB、5 次重定向。
 - Sitemap 解析 `<loc>`；RSS 解析 `<item><link>`；Atom 解析 `<entry><link href>`。每个 feed 最多分发 50 个 URL。
 - 页面抽取 title / meta description / 可读文本，计算 SHA-256 与 SimHash64，写入页面指纹表。
 - 精确内容哈希重复会写入候选证据 `exactDuplicateOf`，但不会自动合并或删除候选。

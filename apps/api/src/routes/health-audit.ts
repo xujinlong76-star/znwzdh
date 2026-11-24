@@ -75,7 +75,7 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
   });
 
   /** 管理端只读候选队列；分页总数与状态筛选保持一致。 */
-  app.get("/api/admin/discovery/candidates", { config: { scope: "read" } }, async (req, reply) => {
+  app.get("/api/admin/discovery/candidates", { config: { scope: "admin" } }, async (req, reply) => {
     const query = z.object({
       status: z.enum(["pending", "approved", "rejected"]).optional(),
       limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -92,9 +92,9 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
     return { ok: true, items, total, limit: query.data.limit, offset: query.data.offset, status: query.data.status ?? "all" };
   });
 
-  /** 审核是唯一进入站点目录的入口；采集候选本身永远不自动发布。 */
+  /** 审核在单个事务内锁定候选、写入站点并更新审核状态；索引写入在提交后执行。 */
   app.post("/api/admin/discovery/candidates/:id/review", {
-    config: { scope: "write", rateLimit: { max: 30, timeWindow: "1 minute" } },
+    config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } },
   }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const body = z.object({
@@ -106,83 +106,95 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       reply.code(400);
       return { ok: false, error: "审核参数无效", details: body.error.issues };
     }
-    const candidate = await ctx.repo.getSiteDiscoveryCandidate(id);
-    if (!candidate) {
-      reply.code(404);
-      return { ok: false, error: "采集候选不存在" };
-    }
-    if (candidate.status !== "pending") {
-      reply.code(409);
-      return { ok: false, error: "该候选已完成审核，不能重复处理", status: candidate.status };
-    }
 
-    if (body.data.action === "reject") {
+    const result = await ctx.repo.withTransaction(async () => {
+      const candidate = await ctx.repo.getSiteDiscoveryCandidateForUpdate(id);
+      if (!candidate) return { kind: "not_found" as const };
+      if (candidate.status !== "pending") {
+        return { kind: "conflict" as const, status: candidate.status };
+      }
+
+      if (body.data.action === "reject") {
+        const reviewed = await ctx.repo.reviewSiteDiscoveryCandidate({
+          id,
+          status: "rejected",
+          reviewer: req.auth.actor,
+          rejectionReason: body.data.rejectionReason || "人工审核未通过",
+        });
+        if (!reviewed || reviewed.status !== "rejected" || reviewed.reviewedBy !== req.auth.actor) {
+          throw new Error("候选审核状态更新失败");
+        }
+        await ctx.repo.audit({
+          ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
+          action: "discovery.candidate_rejected", target: id,
+          diff: { source: candidate.source, reason: reviewed.rejectionReason },
+        });
+        return { kind: "rejected" as const, candidate: reviewed };
+      }
+
+      let categoryId: string | null = body.data.categoryId ?? candidate.categoryId;
+      if (categoryId) {
+        const categoryCheck = await ctx.repo.checkSiteCategoryAttachment(categoryId);
+        if (!categoryCheck.ok) return { kind: "invalid_category" as const, error: categoryCheck.error };
+        categoryId = categoryCheck.categoryId;
+      }
+      const resolvedCategoryId = categoryId ?? await ctx.repo.ensureUncategorized();
+
+      let site = await ctx.repo.findSiteByUrl(candidate.url);
+      let created = false;
+      if (!site) {
+        site = await ctx.repo.createSite({
+          url: candidate.url,
+          title: candidate.title || new URL(candidate.url).hostname,
+          description: candidate.description,
+          categoryId: resolvedCategoryId,
+          tags: candidate.tags,
+          source: candidate.source,
+          status: "active",
+        });
+        created = true;
+      }
       const reviewed = await ctx.repo.reviewSiteDiscoveryCandidate({
         id,
-        status: "rejected",
+        status: "approved",
         reviewer: req.auth.actor,
-        rejectionReason: body.data.rejectionReason || "人工审核未通过",
+        siteId: site.id,
       });
-      if (!reviewed || reviewed.status !== "rejected") {
-        reply.code(409);
-        return { ok: false, error: "候选状态已变化，请刷新后重试" };
+      if (!reviewed || reviewed.status !== "approved" || reviewed.siteId !== site.id) {
+        throw new Error("候选审核状态更新失败");
       }
       await ctx.repo.audit({
         ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
-        action: "discovery.candidate_rejected", target: id,
-        diff: { source: candidate.source, reason: reviewed.rejectionReason },
+        action: "discovery.candidate_approved", target: id,
+        diff: { siteId: site.id, created, source: candidate.source },
       });
-      return { ok: true, candidate: reviewed };
-    }
-
-    let categoryId: string | null = body.data.categoryId ?? candidate.categoryId;
-    if (categoryId) {
-      const categoryCheck = await ctx.repo.checkSiteCategoryAttachment(categoryId);
-      if (!categoryCheck.ok) {
-        reply.code(400);
-        return { ok: false, error: "分类不可用于站点入库", detail: categoryCheck.error };
-      }
-      categoryId = categoryCheck.categoryId;
-    }
-    const resolvedCategoryId = categoryId ?? await ctx.repo.ensureUncategorized();
-
-    let site = await ctx.repo.findSiteByUrl(candidate.url);
-    let created = false;
-    if (!site) {
-      site = await ctx.repo.createSite({
-        url: candidate.url,
-        title: candidate.title || new URL(candidate.url).hostname,
-        description: candidate.description,
-        categoryId: resolvedCategoryId,
-        tags: candidate.tags,
-        source: candidate.source,
-        status: "active",
-      });
-      await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
-      created = true;
-    }
-    const reviewed = await ctx.repo.reviewSiteDiscoveryCandidate({
-      id,
-      status: "approved",
-      reviewer: req.auth.actor,
-      siteId: site.id,
+      return { kind: "approved" as const, candidate: reviewed, site, created };
     });
-    if (!reviewed || reviewed.status !== "approved") {
+
+    if (result.kind === "not_found") {
+      reply.code(404);
+      return { ok: false, error: "采集候选不存在" };
+    }
+    if (result.kind === "conflict") {
       reply.code(409);
-      return { ok: false, error: "候选状态已变化；站点可能已存在，请刷新队列后复核", siteId: site.id };
+      return { ok: false, error: "该候选已完成审核，不能重复处理", status: result.status };
     }
-    await ctx.repo.audit({
-      ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
-      action: "discovery.candidate_approved", target: id,
-      diff: { siteId: site.id, created, source: candidate.source },
-    });
-    return { ok: true, created, site, candidate: reviewed };
+    if (result.kind === "invalid_category") {
+      reply.code(400);
+      return { ok: false, error: "分类不可用于站点入库", detail: result.error };
+    }
+    if (result.kind === "rejected") return { ok: true, candidate: result.candidate };
+
+    if (result.created) {
+      await indexSite(ctx, result.site.id, result.site.title, result.site.description ?? null, result.site.url);
+    }
+    return { ok: true, created: result.created, site: result.site, candidate: result.candidate };
   });
 
   /**
    * 分批补算既有站点质量快照。只读取现有目录字段与巡检历史，不发起外网请求。
    */
-  app.post("/api/admin/quality/rebuild", { config: { scope: "write", rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+  app.post("/api/admin/quality/rebuild", { config: { scope: "admin", rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
     const body = z.object({
       offset: z.coerce.number().int().min(0).max(100_000).default(0),
       limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -213,7 +225,7 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
    * 站点质量治理工作台数据。
    * 只读最新影子评分，不触发重算、不执行自动下架或自动排序。
    */
-  app.get("/api/admin/quality/report", { config: { scope: "read" } }, async (req, reply) => {
+  app.get("/api/admin/quality/report", { config: { scope: "admin" } }, async (req, reply) => {
     const query = (req.query ?? {}) as Record<string, unknown>;
     const allowedBands = ["high", "medium", "low", "high_risk", "insufficient_evidence"] as const;
     const band = typeof query.band === "string" && (allowedBands as readonly string[]).includes(query.band)

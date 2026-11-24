@@ -1439,6 +1439,10 @@ async revokeAllSessions(userId: string): Promise<number> {
     return authTokensRepo.consumeAuthToken(this, input);
   }
 
+  async revokeAuthTokens(userId: string, purpose: authTokensRepo.AuthTokenPurpose, now?: number): Promise<number> {
+    return authTokensRepo.revokeAuthTokens(this, userId, purpose, now);
+  }
+
   async hasActiveAuthToken(userId: string, purpose: authTokensRepo.AuthTokenPurpose, now?: number): Promise<boolean> {
     return authTokensRepo.hasActiveAuthToken(this, userId, purpose, now);
   }

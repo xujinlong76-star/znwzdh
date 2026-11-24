@@ -109,6 +109,30 @@ describe("staged discovery candidate pipeline", () => {
     expect(repeat.statusCode).toBe(409);
   });
 
+  it("serializes concurrent approval so only one request publishes the candidate", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/discovery/candidates",
+      payload: {
+        url: "https://candidate-concurrent.example/",
+        source: "import",
+        title: "Concurrent Candidate",
+      },
+    });
+    const candidateId = created.json().candidate.id;
+    const url = `/api/admin/discovery/candidates/${candidateId}/review`;
+    const responses = await Promise.all([
+      app.inject({ method: "POST", url, payload: { action: "approve" } }),
+      app.inject({ method: "POST", url, payload: { action: "approve" } }),
+    ]);
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 409]);
+    const sites = await ctx.repo.findSiteByUrl("https://candidate-concurrent.example/");
+    expect(sites).not.toBeNull();
+    const candidate = await ctx.repo.getSiteDiscoveryCandidate(candidateId);
+    expect(candidate?.status).toBe("approved");
+    expect(candidate?.siteId).toBe(sites?.id);
+  });
+
   it("records rejection without creating a site", async () => {
     const created = await app.inject({
       method: "POST",

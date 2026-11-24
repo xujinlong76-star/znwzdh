@@ -62,6 +62,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       ctx.repo.raw("SELECT status, COUNT(*) AS total FROM site_discovery_candidates GROUP BY status"),
       ctx.repo.raw("SELECT host, COUNT(*) AS total FROM crawl_tasks GROUP BY host ORDER BY total DESC LIMIT 20"),
       ctx.repo.raw("SELECT status, COUNT(*) AS total FROM crawl_tasks WHERE updated_at >= ? GROUP BY status", [Date.now()-24*60*60_000]),
+      ctx.repo.raw("SELECT evidence_json FROM site_discovery_candidates WHERE updated_at >= ? ORDER BY updated_at DESC LIMIT 1000", [Date.now()-24*60*60_000]),
     ]);
     const countMap = (rows: Array<Record<string, unknown>>, key: string) =>
       Object.fromEntries(rows.map(row => [String(row[key]), Number(row.total ?? 0)]));
@@ -69,6 +70,23 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     const sourceCounts = countMap(sources, "enabled");
     const candidateCounts = countMap(candidates, "status");
     const recentCounts = countMap(recent, "status");
+    const aiModeration = { windowHours: 24, sampleSize: moderationRows.length, completed: 0, errors: 0, quotaBlocked: 0,
+      verdicts: { auto_approve: 0, reject: 0, manual_review: 0 } };
+    for (const row of moderationRows) {
+      try {
+        const evidence = JSON.parse(String(row.evidence_json ?? "{}")) as Record<string, unknown>;
+        const ai = evidence.aiModeration && typeof evidence.aiModeration === "object"
+          ? evidence.aiModeration as Record<string, unknown> : null;
+        if (!ai) continue;
+        if (ai.status === "completed") {
+          aiModeration.completed++;
+          if (ai.verdict === "auto_approve" || ai.verdict === "reject" || ai.verdict === "manual_review") {
+            aiModeration.verdicts[ai.verdict]++;
+          }
+        } else if (ai.status === "error") aiModeration.errors++;
+        else if (ai.status === "quota_blocked") aiModeration.quotaBlocked++;
+      } catch { /* 坏证据不影响运营总览 */ }
+    }
     const totalTasks = Object.values(taskCounts).reduce((a,b)=>a+b,0);
     const finished = (taskCounts.done ?? 0) + (taskCounts.dead_letter ?? 0) + (taskCounts.hold_for_review ?? 0);
     return {
@@ -77,6 +95,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       sources: { enabled: sourceCounts.true ?? 0, disabled: sourceCounts.false ?? 0 },
       candidates: candidateCounts,
       last24Hours: recentCounts,
+      aiModeration,
       busiestHosts: hosts.map(row => ({ host: String(row.host), tasks: Number(row.total) })),
     };
   });

@@ -72,6 +72,10 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   // 邮箱验证状态（注册/找回密码流程用）：0=未验证/待验证，1=已验证。
   // 老库补列默认 0：既有 OAuth/管理员行不会因为新流程被误判成「未验证」而无法登录。
   { table: "users", column: "email_verified", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
+  // Durable crawl source worker fields added after the legacy source registry migration.
+  { table: "crawl_sources", column: "canonical_url", sqlite: "TEXT", pg: "TEXT" },
+  { table: "crawl_sources", column: "lease_owner", sqlite: "TEXT", pg: "TEXT" },
+  { table: "crawl_sources", column: "lease_expires_at", sqlite: "INTEGER", pg: "BIGINT" },
   // 任务退避：失败后延迟到 next_run_at 才重新可被认领（见 jobs.ts 的指数退避）
   { table: "jobs", column: "next_run_at", sqlite: "INTEGER", pg: "BIGINT" },
   // API 凭据治理：
@@ -358,6 +362,174 @@ export async function migrateUserSyncState(db: { dialect: string; sqlite?: any; 
   for (const sql of stmts) await execSql(db, sql);
 }
 
+/**
+ * 采集来源注册表（采集运营页的来源管理）：新库由 driver.ts 建，
+ * 旧库由此版本化迁移补，与 driver 的 SQLite/PG DDL 同构且全部幂等。
+ * 字段与前端 Source 类型逐项对应（snake_case 存、camelCase 出）。
+ */
+export async function migrateCrawlSources(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  const time = db.dialect === "pg" ? "BIGINT" : "INTEGER";
+  const stmts = [
+    `CREATE TABLE IF NOT EXISTS crawl_sources (
+      id TEXT PRIMARY KEY,
+      url TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'sitemap',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      priority INTEGER NOT NULL DEFAULT 0,
+      interval_ms ${time} NOT NULL DEFAULT 3600000,
+      next_run_at ${time} NOT NULL,
+      last_run_at ${time},
+      last_status TEXT,
+      last_error TEXT,
+      created_at ${time} NOT NULL,
+      updated_at ${time} NOT NULL
+    )`,
+    "CREATE UNIQUE INDEX IF NOT EXISTS crawl_sources_url_idx ON crawl_sources(url)",
+    "CREATE INDEX IF NOT EXISTS crawl_sources_enabled_next_idx ON crawl_sources(enabled, next_run_at)",
+  ];
+  for (const sql of stmts) await execSql(db, sql);
+}
+
+/**
+ * 将旧版 crawl_sources 升级为持久化 Worker 所需的来源注册表。
+ * 旧迁移可能已经创建了同名表，因此 CREATE TABLE IF NOT EXISTS 不足以补齐列；
+ * 本迁移通过 COLUMN_ALTERS 逐列检查并安全补齐，再回填 canonical_url 和唯一索引。
+ */
+export async function migrateCrawlSourceRegistryUpgrade(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  await migrateColumns(db);
+  await execSql(
+    db,
+    "UPDATE crawl_sources SET canonical_url = url WHERE canonical_url IS NULL OR canonical_url = ''",
+  );
+  await execSql(
+    db,
+    "CREATE UNIQUE INDEX IF NOT EXISTS crawl_sources_canonical_url_idx ON crawl_sources(canonical_url)",
+  );
+}
+
+/**
+ * 采集治理（候选队列 / AI 审核账本 / 双人金标）建表。
+ * 对应历史版本 bc9bf4bf / 8bf7b5a2 的 DDL，因仓储模块回归而重新接入；
+ * crawl_sources 已由 migrateCrawlSources 单独建表，此处不重复。
+ * 全部 IF NOT EXISTS + 版本台账，重复启动安全。
+ */
+export async function migrateCrawlGovernanceTables(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  const stmts = [
+    `CREATE TABLE IF NOT EXISTS crawl_tasks (
+      id TEXT PRIMARY KEY, url TEXT NOT NULL, canonical_url TEXT NOT NULL UNIQUE,
+      host TEXT NOT NULL, source TEXT NOT NULL, payload_json TEXT,
+      status TEXT NOT NULL DEFAULT 'queued', priority INTEGER NOT NULL DEFAULT 0,
+      attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 6,
+      next_run_at BIGINT NOT NULL, lease_owner TEXT, lease_expires_at BIGINT,
+      last_error TEXT, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL
+    )`,
+    "CREATE INDEX IF NOT EXISTS crawl_tasks_due_idx ON crawl_tasks(status, next_run_at, priority, created_at)",
+    "CREATE INDEX IF NOT EXISTS crawl_tasks_host_idx ON crawl_tasks(host, status)",
+    `CREATE TABLE IF NOT EXISTS site_discovery_candidates (
+      id TEXT PRIMARY KEY, url TEXT NOT NULL, canonical_url TEXT NOT NULL UNIQUE,
+      title TEXT, description TEXT, category_id TEXT, tags_json TEXT NOT NULL DEFAULT '[]',
+      source TEXT NOT NULL, confidence DOUBLE PRECISION, evidence_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+      site_id TEXT, discovered_at BIGINT NOT NULL, last_seen_at BIGINT NOT NULL,
+      reviewed_at BIGINT, reviewed_by TEXT, rejection_reason TEXT, updated_at BIGINT NOT NULL
+    )`,
+    "CREATE INDEX IF NOT EXISTS site_discovery_candidates_status_idx ON site_discovery_candidates(status, discovered_at)",
+    "CREATE INDEX IF NOT EXISTS site_discovery_candidates_site_idx ON site_discovery_candidates(site_id)",
+    `CREATE TABLE IF NOT EXISTS crawl_ai_moderation_decisions (
+      id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL,
+      decision_source TEXT NOT NULL CHECK (decision_source IN ('ai','human')),
+      mode TEXT NOT NULL, status TEXT NOT NULL, verdict TEXT,
+      confidence DOUBLE PRECISION, quality_score INTEGER,
+      risks_json TEXT NOT NULL DEFAULT '[]', reasons_json TEXT NOT NULL DEFAULT '[]',
+      model TEXT, policy_version TEXT, actor TEXT, created_at BIGINT NOT NULL
+    )`,
+    "CREATE INDEX IF NOT EXISTS crawl_ai_decisions_candidate_idx ON crawl_ai_moderation_decisions(candidate_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS crawl_ai_decisions_time_idx ON crawl_ai_moderation_decisions(created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS crawl_ai_decisions_source_idx ON crawl_ai_moderation_decisions(decision_source, created_at DESC)",
+    `CREATE TABLE IF NOT EXISTS crawl_moderation_gold_cases (
+      id TEXT PRIMARY KEY, source_fingerprint TEXT NOT NULL,
+      title TEXT, description TEXT, category TEXT, sanitized_excerpt TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','annotating','needs_adjudication','gold_ready')),
+      final_label TEXT CHECK (final_label IS NULL OR final_label IN ('approve','reject','review')),
+      final_risk BOOLEAN, adjudicator_id TEXT, adjudication_reason TEXT,
+      created_by TEXT NOT NULL, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL, adjudicated_at BIGINT
+    )`,
+    `CREATE TABLE IF NOT EXISTS crawl_moderation_gold_annotations (
+      id TEXT PRIMARY KEY,
+      case_id TEXT NOT NULL REFERENCES crawl_moderation_gold_cases(id) ON DELETE CASCADE,
+      annotator_id TEXT NOT NULL, label TEXT NOT NULL CHECK (label IN ('approve','reject','review')),
+      risk BOOLEAN NOT NULL, evidence TEXT NOT NULL, created_at BIGINT NOT NULL,
+      UNIQUE(case_id, annotator_id)
+    )`,
+    "CREATE INDEX IF NOT EXISTS crawl_gold_cases_status_idx ON crawl_moderation_gold_cases(status, created_at)",
+    "CREATE INDEX IF NOT EXISTS crawl_gold_annotations_case_idx ON crawl_moderation_gold_annotations(case_id, created_at)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS crawl_gold_candidate_source_unique_idx ON crawl_moderation_gold_cases(source_fingerprint) WHERE source_fingerprint LIKE 'candidate:%'",
+    `CREATE TABLE IF NOT EXISTS crawl_moderation_gold_assignments (
+      id TEXT PRIMARY KEY,
+      case_id TEXT NOT NULL REFERENCES crawl_moderation_gold_cases(id) ON DELETE CASCADE,
+      annotator_id TEXT NOT NULL, slot INTEGER NOT NULL CHECK (slot IN (1,2)),
+      status TEXT NOT NULL CHECK (status IN ('claimed','completed','expired')),
+      lease_expires_at BIGINT NOT NULL, created_at BIGINT NOT NULL, claimed_at BIGINT NOT NULL, completed_at BIGINT
+    )`,
+    "CREATE INDEX IF NOT EXISTS crawl_gold_assignments_annotator_idx ON crawl_moderation_gold_assignments(annotator_id,status,lease_expires_at)",
+    "CREATE INDEX IF NOT EXISTS crawl_gold_assignments_case_idx ON crawl_moderation_gold_assignments(case_id,status,slot)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS crawl_gold_assignments_active_slot_idx ON crawl_moderation_gold_assignments(case_id,slot) WHERE status='claimed'",
+    "CREATE UNIQUE INDEX IF NOT EXISTS crawl_gold_assignments_active_annotator_idx ON crawl_moderation_gold_assignments(case_id,annotator_id) WHERE status='claimed'",
+    `CREATE TABLE IF NOT EXISTS crawl_moderation_model_evaluations (
+      id TEXT PRIMARY KEY, model TEXT NOT NULL, dataset_version TEXT NOT NULL,
+      sample_size INTEGER NOT NULL, metrics_json TEXT NOT NULL,
+      created_by TEXT NOT NULL, created_at BIGINT NOT NULL
+    )`,
+    "CREATE INDEX IF NOT EXISTS crawl_moderation_model_eval_model_idx ON crawl_moderation_model_evaluations(model,created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS crawl_moderation_model_eval_dataset_idx ON crawl_moderation_model_evaluations(dataset_version,created_at DESC)",
+  ];
+  for (const sql of stmts) await execSql(db, sql);
+}
+
+/**
+ * 站点纠错上报（site_reports）与投稿收录汇报（submission_reviews）建表 DDL。
+ *
+ * 为什么抽出来单独版本化（2026-11-24）：这两张表的 DDL 曾被**追加**进
+ * 20261015_site_indexes 的语句表——该版本在存量库上早已记账完成，追加的语句
+ * 永远不会执行。实测 data/navhub.db 缺这两张表，/api/admin/site-reports 直接 500、
+ * 投稿汇报读写全挂。版本化迁移只认「新版本号」，所以这里一表一码：
+ * 语句表里只留展开引用，真相在本常量，由 20261124_site_reports_and_reviews 执行。
+ */
+export const SITE_REPORTS_AND_REVIEWS_DDL: string[] = [
+  // 投稿收录汇报（提交后网址收录情况）：审核通过/未通过都留一条「状态 + AI 原因
+  // 说明」，用户在反馈目录看自己的投稿结果。reason 是 AI 生成的面向投稿人的说明
+  // （通过=亮点与收录理由，未通过=具体改进建议），reviewer_note 是管理员原始备注。
+  // 审核可复审（先拒后过），本表按 site_id 一行、每次审核覆盖写（最新结果即汇报）。
+  "CREATE TABLE IF NOT EXISTS submission_reviews (site_id TEXT PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE, review_status TEXT NOT NULL CHECK (review_status IN ('approved', 'rejected')), reason TEXT NOT NULL DEFAULT '', reviewer_note TEXT, reviewed_at BIGINT NOT NULL, created_at BIGINT NOT NULL)",
+  "CREATE INDEX IF NOT EXISTS submission_reviews_reviewed_at_idx ON submission_reviews(reviewed_at DESC)",
+  // 站点纠错上报（升级第 10 条）：匿名可报，不设登录门槛；上报只进复核队列，
+  // 绝不直接改数据。kinds 存 JSON 字符串（与 jobs.payload 同口径，TEXT 双库通用）；
+  // status 流转 open → in_progress → resolved / rejected，只走管理员 PATCH。
+  `CREATE TABLE IF NOT EXISTS site_reports (
+    id TEXT PRIMARY KEY,
+    site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    kinds TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    contact TEXT,
+    source TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'resolved', 'rejected')),
+    created_at BIGINT NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS site_reports_site_idx ON site_reports(site_id)",
+  "CREATE INDEX IF NOT EXISTS site_reports_status_created_idx ON site_reports(status, created_at DESC, id DESC)",
+];
+
+/** 补建 site_reports / submission_reviews（存量库追加过 DDL 的救场迁移）。 */
+export async function migrateSiteReportsAndReviews(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  for (const sqlText of SITE_REPORTS_AND_REVIEWS_DDL) {
+    try {
+      await execSql(db, sqlText);
+    } catch (err) {
+      await recordMigrationFailure(db, sqlText, err);
+    }
+  }
+}
+
 export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
   await ensureMigrationFailures(db);
   /**
@@ -506,27 +678,7 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE INDEX IF NOT EXISTS auth_tokens_hash_idx ON auth_tokens(token_hash)",
     "CREATE TABLE IF NOT EXISTS submission_owners (site_id TEXT PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE, identity TEXT NOT NULL, created_at BIGINT NOT NULL)",
     "CREATE INDEX IF NOT EXISTS submission_owners_identity_idx ON submission_owners(identity)",
-    // 投稿收录汇报（提交后网址收录情况）：审核通过/未通过都留一条「状态 + AI 原因
-    // 说明」，用户在反馈目录看自己的投稿结果。reason 是 AI 生成的面向投稿人的说明
-    // （通过=亮点与收录理由，未通过=具体改进建议），reviewer_note 是管理员原始备注。
-    // 审核可复审（先拒后过），本表按 site_id 一行、每次审核覆盖写（最新结果即汇报）。
-    "CREATE TABLE IF NOT EXISTS submission_reviews (site_id TEXT PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE, review_status TEXT NOT NULL CHECK (review_status IN ('approved', 'rejected')), reason TEXT NOT NULL DEFAULT '', reviewer_note TEXT, reviewed_at BIGINT NOT NULL, created_at BIGINT NOT NULL)",
-    "CREATE INDEX IF NOT EXISTS submission_reviews_reviewed_at_idx ON submission_reviews(reviewed_at DESC)",
-    // 站点纠错上报（升级第 10 条）：匿名可报，不设登录门槛；上报只进复核队列，
-    // 绝不直接改数据。kinds 存 JSON 字符串（与 jobs.payload 同口径，TEXT 双库通用）；
-    // status 流转 open → in_progress → resolved / rejected，只走管理员 PATCH。
-    `CREATE TABLE IF NOT EXISTS site_reports (
-      id TEXT PRIMARY KEY,
-      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
-      kinds TEXT NOT NULL,
-      detail TEXT NOT NULL,
-      contact TEXT,
-      source TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'resolved', 'rejected')),
-      created_at BIGINT NOT NULL
-    )`,
-    "CREATE INDEX IF NOT EXISTS site_reports_site_idx ON site_reports(site_id)",
-    "CREATE INDEX IF NOT EXISTS site_reports_status_created_idx ON site_reports(status, created_at DESC, id DESC)",
+    ...SITE_REPORTS_AND_REVIEWS_DDL,
     "CREATE INDEX IF NOT EXISTS api_tokens_owner_idx ON api_tokens(owner_identity)",
     // 收藏域补索引：`WHERE site_id = ?`（站点详情/清理）与 `WHERE user_id=? AND folder_id=?`
     // （收藏夹视图）此前只能走 user_id 单列索引或全表扫。

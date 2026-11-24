@@ -56,7 +56,7 @@ function moderationEvidenceOf(evidence: Record<string, unknown>): Record<string,
 export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
   app.get("/api/admin/crawl/overview", { config: { scope: "admin", cache: { maxAge: 0 } } }, async () => {
-    const [tasks, sources, candidates, hosts, recent] = await Promise.all([
+    const [tasks, sources, candidates, hosts, recent, moderationRows] = await Promise.all([
       ctx.repo.raw("SELECT status, COUNT(*) AS total FROM crawl_tasks GROUP BY status"),
       ctx.repo.raw("SELECT enabled, COUNT(*) AS total FROM crawl_sources GROUP BY enabled"),
       ctx.repo.raw("SELECT status, COUNT(*) AS total FROM site_discovery_candidates GROUP BY status"),

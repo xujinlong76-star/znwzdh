@@ -79,7 +79,7 @@ export async function enqueueCrawlTask(repo: Repository, input: EnqueueCrawlTask
      ON CONFLICT(canonical_url) DO UPDATE SET
        url = CASE WHEN crawl_tasks.status IN ('queued','retry') THEN excluded.url ELSE crawl_tasks.url END,
        source = CASE WHEN crawl_tasks.status IN ('queued','retry') THEN excluded.source ELSE crawl_tasks.source END,
-       priority = CASE WHEN crawl_tasks.status IN ('queued','retry') THEN MAX(crawl_tasks.priority, excluded.priority) ELSE crawl_tasks.priority END,
+       priority = CASE WHEN crawl_tasks.status IN ('queued','retry') THEN CASE WHEN crawl_tasks.priority > excluded.priority THEN crawl_tasks.priority ELSE excluded.priority END ELSE crawl_tasks.priority END,
        payload_json = CASE WHEN crawl_tasks.status IN ('queued','retry') THEN excluded.payload_json ELSE crawl_tasks.payload_json END,
        updated_at = excluded.updated_at`,
     [id, normalized.url, normalized.url, normalized.host, input.source.slice(0, 120),

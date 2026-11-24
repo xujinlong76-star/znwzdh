@@ -324,7 +324,7 @@ async function checkRobotsPolicy(
       });
       return { kind: "blocked", reason: "robots.txt 不允许自动抓取" };
     }
-    if (response.truncated || /text\\/html/i.test(response.contentType ?? "") || /<html\\b/i.test(response.body)) {
+    if (response.truncated || /text\/html/i.test(response.contentType ?? "") || /<html\b/i.test(response.body)) {
       await upsertCrawlRobotsCache(repo, {
         origin, body: null, blocked: true, status: response.status, fetchedAt: now,
         ttlMs: ROBOTS_CACHE_TTL_MS,

@@ -31,6 +31,23 @@ export function moderationVerdictToPrediction(result: { verdict: "auto_approve" 
     actualRisk: result.risks.some(risk => risk !== "none"),
   };
 }
+
+/** 保存逐样本差异证据，便于管理员定位标签错分与风险漏报；不包含任何网页原文。 */
+export function buildGoldEvaluationCaseDiagnostics(cases: readonly {
+  id: string; expected: "approve" | "reject" | "review"; actual: "approve" | "reject" | "review";
+  expectedRisk: boolean; actualRisk: boolean;
+}[]) {
+  return cases.map(item => ({
+    id: item.id,
+    expected: item.expected,
+    actual: item.actual,
+    expectedRisk: item.expectedRisk,
+    actualRisk: item.actualRisk,
+    labelMismatch: item.expected !== item.actual,
+    riskFalseNegative: item.expectedRisk && !item.actualRisk,
+    riskFalsePositive: !item.expectedRisk && item.actualRisk,
+  }));
+}
 /** 透明、可解释的初筛分数；只用于排序辅助，不自动批准或拒绝。 */
 export function scoreCrawlCandidate(input: {
   url: string; title?: string | null; description?: string | null;
@@ -664,7 +681,8 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       if (metrics.riskDetection.falseNegatives > 0) alerts.push({severity:"critical",code:"risk_false_negative",message:"本轮出现 "+metrics.riskDetection.falseNegatives+" 条风险漏报，必须复核对应样本"});
       if (previous?.exactMatchRate != null && metrics.exactMatchRate !== null && previous.exactMatchRate-metrics.exactMatchRate > 0.05) alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次同快照评测，标签精确匹配率下降超过 5 个百分点"});
       if (previous?.riskDetection?.recall != null && metrics.riskDetection.recall !== null && previous.riskDetection.recall-metrics.riskDetection.recall > 0.05) alerts.push({severity:"critical",code:"risk_recall_regression",message:"相较该模型上一次同快照评测，风险召回率下降超过 5 个百分点"});
-      const evaluation = { ...metrics, alerts, execution: { mode: "automatic", requested: body.data.limit, selected: selected.length, source: resolved.source } };
+      const caseDiagnostics = buildGoldEvaluationCaseDiagnostics(cases);
+      const evaluation = { ...metrics, alerts, caseDiagnostics, execution: { mode: "automatic", requested: body.data.limit, selected: selected.length, source: resolved.source } };
       const id = randomUUID(), actor = String(req.auth.actor ?? "admin"), createdAt = Date.now();
       await ctx.repo.run("INSERT INTO crawl_moderation_model_evaluations (id,model,dataset_version,sample_size,metrics_json,created_by,created_at) VALUES (?,?,?,?,?,?,?)",
         [id,model,datasetVersion,metrics.sampleSize,JSON.stringify(evaluation),actor,createdAt]);
@@ -715,7 +733,8 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     if(metrics.riskDetection.falseNegatives>0)alerts.push({severity:"critical",code:"risk_false_negative",message:"本轮出现 "+metrics.riskDetection.falseNegatives+" 条风险漏报，必须复核对应样本"});
     if(previous?.exactMatchRate!=null&&metrics.exactMatchRate!==null&&previous.exactMatchRate-metrics.exactMatchRate>0.05)alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次评测，标签精确匹配率下降超过 5 个百分点"});
     if(previous?.riskDetection?.recall!=null&&metrics.riskDetection.recall!==null&&previous.riskDetection.recall-metrics.riskDetection.recall>0.05)alerts.push({severity:"critical",code:"risk_recall_regression",message:"相较该模型上一次评测，风险召回率下降超过 5 个百分点"});
-    const evaluation={...metrics,alerts};
+    const caseDiagnostics=buildGoldEvaluationCaseDiagnostics(cases);
+    const evaluation={...metrics,alerts,caseDiagnostics};
     const id=randomUUID(),actor=String(req.auth.actor??"admin"),createdAt=Date.now();
     await ctx.repo.run("INSERT INTO crawl_moderation_model_evaluations (id,model,dataset_version,sample_size,metrics_json,created_by,created_at) VALUES (?,?,?,?,?,?,?)",
       [id,body.data.model,datasetVersion,metrics.sampleSize,JSON.stringify(evaluation),actor,createdAt]);

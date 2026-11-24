@@ -28,6 +28,8 @@
  * 退出码：0 = 通过（或本轮无阈值）；1 = 未达传入的阈值；2 = 找不到覆盖率产物。
  */
 import { readFileSync, existsSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { evaluatePatchCoverage } from "./coverage-patch.mjs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -60,6 +62,9 @@ const maxFunctions = flag("--max-functions") === undefined ? null : Number(flag(
 const zeroLimit = flag("--zero") === undefined ? 0 : Number(flag("--zero"));
 const thresholdsPath = flag("--thresholds");
 const maxAgeMin = flag("--max-age") === undefined ? null : Number(flag("--max-age"));
+const patchEnabled = has("--patch");
+const patchBase = flag("--base");
+const minPatchLines = flag("--min-patch-lines") === undefined ? null : Number(flag("--min-patch-lines"));
 
 if (!existsSync(SUMMARY_FILE)) {
   console.error(`[coverage] 找不到覆盖率产物：${SUMMARY_FILE}`);
@@ -211,6 +216,51 @@ check("functions", maxFunctions, "functions");
 
 // --thresholds：外置阈值文件（全局 floor + 分区域 floor）。
 // 分区域是文档 §3.2 的 B 层：高覆盖区域不能掩盖低覆盖区域。
+
+if (patchEnabled) {
+  if (!thresholdsPath || !patchBase) {
+    console.error("[coverage] --patch 必须同时提供 --thresholds 与 --base");
+    process.exit(2);
+  }
+  if (minPatchLines === null || !Number.isFinite(minPatchLines) || minPatchLines < 0 || minPatchLines > 100) {
+    console.error("[coverage] --min-patch-lines 必须是 0–100 的百分比");
+    process.exit(2);
+  }
+  const thresholdFile = resolve(REPO_ROOT, thresholdsPath);
+  const thresholdConfig = JSON.parse(readFileSync(thresholdFile, "utf8"));
+  if (thresholdConfig.patch?.enabled !== true) {
+    console.error("[coverage] 阈值配置未启用 patch 覆盖率门禁");
+    process.exit(2);
+  }
+  const finalFile = resolve(COVERAGE_DIR, "coverage-final.json");
+  if (!existsSync(finalFile)) {
+    console.error("[coverage] 找不到逐行覆盖率产物 coverage-final.json");
+    process.exit(2);
+  }
+  let diff;
+  try {
+    diff = execFileSync("git", [
+      "diff", "--unified=0", patchBase + "...HEAD", "--",
+      "apps/api/src", "packages/core/src", "packages/store/src", "packages/ai/src", "packages/mcp/src",
+    ], { cwd: REPO_ROOT, encoding: "utf8", maxBuffer: 20 * 1024 * 1024 });
+  } catch (error) {
+    console.error("[coverage] 无法读取 patch diff（请确认 base ref 存在）： " + (error instanceof Error ? error.message : String(error)));
+    process.exit(2);
+  }
+  const coverageFinal = JSON.parse(readFileSync(finalFile, "utf8"));
+  const patch = evaluatePatchCoverage(diff, coverageFinal, thresholdConfig.patch.minExecutableLines ?? 10);
+  console.log("[coverage] Patch 行覆盖：" + patch.covered + "/" + patch.total +
+    " executable lines (" + patch.percent.toFixed(2) + "%)");
+  for (const file of patch.files) {
+    console.log("  " + file.file + ": " + file.coveredLines + "/" + file.executableLines +
+      " executable lines; added=" + file.addedLines + (file.coverageEntryMissing ? "; coverage entry missing" : ""));
+  }
+  if (patch.skipped) {
+    console.log("[coverage] Patch executable lines 少于 " + patch.minExecutableLines + "，按策略跳过本次 patch 阈值判定");
+  } else if (patch.percent < minPatchLines) {
+    failures.push("Patch lines " + pct(patch.percent) + " < floor " + pct(minPatchLines));
+  }
+}
 if (thresholdsPath) {
   const full = resolve(REPO_ROOT, thresholdsPath);
   if (!existsSync(full)) {

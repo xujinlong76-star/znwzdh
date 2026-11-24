@@ -43,6 +43,8 @@ export * from "./autonomous-healing.ts";
 export * from "./url-deep-diagnose.ts";
 export * from "./knowledge-graph.ts";
 export * from "./visual-fingerprint.ts";
+export * from "./content-deduplication.ts";
+export * from "./crawl-scheduler.ts";
 export * from "./webmcp-bridge.ts";
 export * from "./authz.ts";
 export * from "./route-policy.ts";

@@ -31,6 +31,28 @@ export function scoreCrawlCandidate(input: {
   return { score: Math.max(0, Math.min(100, score)), reasons };
 }
 
+function moderationEvidenceOf(evidence: Record<string, unknown>): Record<string, unknown> | null {
+  const raw = evidence.aiModeration;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const value = raw as Record<string, unknown>;
+  const status = ["completed", "error", "quota_blocked"].includes(String(value.status)) ? String(value.status) : "unknown";
+  const verdict = ["auto_approve", "reject", "manual_review"].includes(String(value.verdict)) ? String(value.verdict) : null;
+  const confidence = Number(value.confidence);
+  const qualityScore = Number(value.qualityScore);
+  return {
+    mode: value.mode === "shadow" ? "shadow" : "unknown",
+    status,
+    verdict,
+    confidence: Number.isFinite(confidence) && confidence >= 0 && confidence <= 1 ? confidence : null,
+    qualityScore: Number.isFinite(qualityScore) && qualityScore >= 0 && qualityScore <= 100 ? qualityScore : null,
+    risks: Array.isArray(value.risks) ? value.risks.filter((x): x is string => typeof x === "string").slice(0, 12) : [],
+    reasons: Array.isArray(value.reasons) ? value.reasons.filter((x): x is string => typeof x === "string").map(x => x.slice(0, 240)).slice(0, 8) : [],
+    model: typeof value.model === "string" ? value.model.slice(0, 120) : null,
+    policyVersion: typeof value.policyVersion === "string" ? value.policyVersion.slice(0, 80) : null,
+    reviewedAt: Number.isFinite(Number(value.reviewedAt)) ? Number(value.reviewedAt) : null,
+  };
+}
+
 export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
   app.get("/api/admin/crawl/overview", { config: { scope: "admin", cache: { maxAge: 0 } } }, async () => {
@@ -73,7 +95,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       return { id:item.id,url:item.url,title:item.title,description:item.description,source:item.source,
         status:item.status,discoveredAt:item.discoveredAt,lastSeenAt:item.lastSeenAt,
         duplicateEvidence:{ exact: Boolean(item.evidence.exactDuplicateOf), near: Array.isArray(item.evidence.nearDuplicateCandidates) ? item.evidence.nearDuplicateCandidates.length : 0 },
-        quality };
+        quality, aiModeration: moderationEvidenceOf(item.evidence) };
     }), total, limit: parsed.data.limit, offset: parsed.data.offset };
   });
 

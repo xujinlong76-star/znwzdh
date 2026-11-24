@@ -7,12 +7,16 @@ export const crawlModerationPolicyRoutes: FastifyPluginAsync<{ ctx: AppContext }
 
   app.get("/api/admin/crawl-moderation/policy", { config: { scope: "admin", cache: { maxAge: 0 } } }, async () => {
     const stored = await ctx.repo.getSystemState<unknown>(CRAWL_AI_MODERATION_POLICY_KEY);
-    const parsed = stored == null ? DEFAULT_CRAWL_AI_MODERATION_POLICY : CrawlAiModerationPolicySchema.safeParse(stored);
-    return {
-      ok: true,
-      policy: parsed === DEFAULT_CRAWL_AI_MODERATION_POLICY ? parsed : parsed.success ? parsed.data : DEFAULT_CRAWL_AI_MODERATION_POLICY,
-      configured: stored != null && parsed !== DEFAULT_CRAWL_AI_MODERATION_POLICY && parsed.success,
-    };
+    let policy = DEFAULT_CRAWL_AI_MODERATION_POLICY;
+    let configured = false;
+    if (stored != null) {
+      const parsed = CrawlAiModerationPolicySchema.safeParse(stored);
+      if (parsed.success) {
+        policy = parsed.data;
+        configured = true;
+      }
+    }
+    return { ok: true, policy, configured };
   });
 
   app.put("/api/admin/crawl-moderation/policy", { config: { scope: "admin", rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {

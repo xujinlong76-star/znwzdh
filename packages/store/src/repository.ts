@@ -2036,6 +2036,10 @@ async revokeAllSessions(userId: string): Promise<number> {
     return systemRepo.clearLoginFailure(this, key);
   }
 
+  async pruneSystemStatePrefix(prefix: string, olderThan: number): Promise<number> {
+    return systemRepo.pruneSystemStatePrefix(this, prefix, olderThan);
+  }
+
 
   /* ------------------------- 任务队列 ------------------------- */
 

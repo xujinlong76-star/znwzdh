@@ -193,6 +193,8 @@ export const HomeQuickDock = memo(function HomeQuickDock({
             <button
               type="button"
               role="tab"
+              id="quick-dock-tab-speed"
+              aria-controls="quick-dock-panel"
               aria-selected={activeTab === 'speed'}
               onClick={() => chooseTab('speed')}
               className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer ${
@@ -207,6 +209,8 @@ export const HomeQuickDock = memo(function HomeQuickDock({
             <button
               type="button"
               role="tab"
+              id="quick-dock-tab-frequent"
+              aria-controls="quick-dock-panel"
               aria-selected={activeTab === 'frequent'}
               disabled={!mounted || frequentVisits.length === 0}
               onClick={() => chooseTab('frequent')}
@@ -222,6 +226,8 @@ export const HomeQuickDock = memo(function HomeQuickDock({
             <button
               type="button"
               role="tab"
+              id="quick-dock-tab-recent"
+              aria-controls="quick-dock-panel"
               aria-selected={activeTab === 'recent'}
               disabled={!mounted || recentVisits.length === 0}
               onClick={() => chooseTab('recent')}

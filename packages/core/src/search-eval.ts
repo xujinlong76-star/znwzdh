@@ -17,6 +17,38 @@ export interface SearchEvalCase {
   relevance: Record<string, number>;
 }
 
+/**
+ * 校验人工金标评测样本。相关性等级严格限定为整数 0–3，避免越界值
+ * 在指数型 DCG 中放大分数，造成评测结果虚高。
+ */
+export function validateSearchEvalCase(value: unknown, index = 0): SearchEvalCase {
+  const prefix = "第 " + index + " 条样本";
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(prefix + "不是对象");
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.query !== "string" || record.query.trim() === "") {
+    throw new Error(prefix + "缺少 query");
+  }
+  if (!Array.isArray(record.hits) || record.hits.some((hit) => typeof hit !== "string" || hit.trim() === "")) {
+    throw new Error(prefix + "的 hits 必须是非空字符串组成的数组");
+  }
+  if (!record.relevance || typeof record.relevance !== "object" || Array.isArray(record.relevance)) {
+    throw new Error(prefix + "缺少 relevance 对象");
+  }
+  for (const [siteId, grade] of Object.entries(record.relevance)) {
+    if (!siteId.trim()) throw new Error(prefix + "包含空 siteId");
+    if (typeof grade !== "number" || !Number.isInteger(grade) || grade < 0 || grade > 3) {
+      throw new Error(prefix + " relevance['" + siteId + "'] 必须是 0–3 的整数");
+    }
+  }
+  return {
+    query: record.query,
+    hits: record.hits as string[],
+    relevance: record.relevance as Record<string, number>,
+  };
+}
+
 export interface SearchEvalMetrics {
   queries: number;
   ndcgAtK: number;

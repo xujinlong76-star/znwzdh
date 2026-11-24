@@ -26,6 +26,29 @@ describe("持久化采集来源注册表", () => {
     const after = (await listCrawlSources(repo))[0];
     expect(after.lastStatus).toBe("ok"); expect(after.nextRunAt).toBe(11_000 + after.intervalMs);
   });
+  it("失败按连续次数指数退避，成功后重置计数", async () => {
+    const source = await upsertCrawlSource(repo, { url: "https://retry.example/sitemap.xml", kind: "sitemap" }, 1_000);
+    const [claimed] = await claimDueCrawlSources(repo, "retry-worker", { now: 1_000 });
+    expect(claimed?.id).toBe(source.id);
+    expect(await settleCrawlSource(repo, { id: source.id, workerId: "retry-worker", status: "error", error: "temporary", now: 2_000 })).toBe(true);
+    let current = (await listCrawlSources(repo))[0]!;
+    expect(current.consecutiveFailures).toBe(1);
+    expect(current.nextRunAt).toBe(2_000 + 5 * 60_000);
+
+    const [retry] = await claimDueCrawlSources(repo, "retry-worker", { now: current.nextRunAt });
+    expect(retry?.id).toBe(source.id);
+    await settleCrawlSource(repo, { id: source.id, workerId: "retry-worker", status: "error", error: "still failing", now: current.nextRunAt + 1 });
+    current = (await listCrawlSources(repo))[0]!;
+    expect(current.consecutiveFailures).toBe(2);
+    expect(current.nextRunAt).toBe(current.lastRunAt! + 10 * 60_000);
+
+    const [lastRetry] = await claimDueCrawlSources(repo, "retry-worker", { now: current.nextRunAt });
+    expect(lastRetry?.id).toBe(source.id);
+    await settleCrawlSource(repo, { id: source.id, workerId: "retry-worker", status: "ok", now: current.nextRunAt + 1 });
+    current = (await listCrawlSources(repo))[0]!;
+    expect(current.consecutiveFailures).toBe(0);
+    expect(current.nextRunAt).toBe(current.lastRunAt! + current.intervalMs);
+  });
   it("更新、禁用与删除来源", async () => {
     const source = await upsertCrawlSource(repo, { url: "https://manage.example/", kind: "page" });
     const updated = await updateCrawlSource(repo, source.id, { enabled: false, priority: 9 });

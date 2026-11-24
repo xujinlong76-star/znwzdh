@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   evaluateSearch,
+  evaluateSearchDiagnostics,
   mrrAtK,
   ndcgAtK,
   recallAtK,
@@ -102,6 +103,35 @@ describe("search-eval：离线检索指标", () => {
     expect(result.recallAtK).toBeCloseTo(0.5, 10);
 
     expect(evaluateSearch([], 10)).toEqual({ queries: 0, ndcgAtK: 0, mrrAtK: 0, recallAtK: 0 });
+  });
+
+  it("reports zero-result and missing-positive-judgment diagnostics without exposing query text", () => {
+    const cases: SearchEvalCase[] = [
+      { query: "private query alpha", hits: ["a", "b"], relevance: { a: 3, b: 0, c: 2 } },
+      { query: "private query beta", hits: [], relevance: { x: 2 } },
+      { query: "private query gamma", hits: ["z"], relevance: {} },
+    ];
+    const result = evaluateSearchDiagnostics(cases, 2);
+    expect(result.metrics.queries).toBe(3);
+    expect(result.zeroResultQueries).toBe(1);
+    expect(result.queriesWithoutPositiveJudgments).toBe(1);
+    expect(result.relevantCandidates).toBe(3);
+    expect(result.relevantRetrievedAtK).toBe(1);
+    expect(result.relevantCandidateCoverage).toBeCloseTo(1 / 3, 10);
+    expect(result.cases).toEqual([
+      { queryIndex: 1, zeroResult: false, hasPositiveJudgment: true, relevantCandidates: 2, relevantRetrievedAtK: 1 },
+      { queryIndex: 2, zeroResult: true, hasPositiveJudgment: true, relevantCandidates: 1, relevantRetrievedAtK: 0 },
+      { queryIndex: 3, zeroResult: false, hasPositiveJudgment: false, relevantCandidates: 0, relevantRetrievedAtK: 0 },
+    ]);
+    expect(JSON.stringify(result)).not.toContain("private query");
+  });
+
+  it("returns zero coverage when there are no positive relevance labels", () => {
+    const result = evaluateSearchDiagnostics([
+      { query: "unjudged", hits: ["a"], relevance: { a: 0 } },
+    ]);
+    expect(result.relevantCandidateCoverage).toBe(0);
+    expect(result.queriesWithoutPositiveJudgments).toBe(1);
   });
 
   it("非法 k（0 / 负数 / NaN）按 0 处理", () => {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { guardedFetch } from "@navhub/ai";
+import { guardedFetch, moderateSiteWithAi } from "@navhub/ai";
 import {
   claimDueCrawlSources,
   claimCrawlDomain,
@@ -7,9 +7,14 @@ import {
   deferCrawlSource,
   settleCrawlSource,
   upsertSiteDiscoveryCandidate,
+  recordCrawlAiModerationDecision,
   type CrawlSource,
 } from "@navhub/store";
 import type { AppContext } from "./context.ts";
+import { resolveLlm, llmProviderReady } from "./llm-config.ts";
+import { reserveLlmQuota, settleLlmQuota } from "./llm-quota.ts";
+import { callLlm } from "./llm-usage.ts";
+import { loadCrawlAiModerationPolicy, type CrawlAiModerationPolicy } from "./crawl-moderation-policy.ts";
 
 const MAX_CANDIDATES_PER_SOURCE = 100;
 const MAX_SOURCE_BODY_BYTES = 1024 * 1024;
@@ -68,7 +73,99 @@ export function extractCrawlCandidateUrls(body: string, kind: CrawlSource["kind"
   return [...unique];
 }
 
-async function processSource(ctx: AppContext, source: CrawlSource, now: number): Promise<number> {
+type CrawlShadowModerationRuntime = {
+  policy: CrawlAiModerationPolicy;
+  resolved: Awaited<ReturnType<typeof resolveLlm>>;
+  reviewed: number;
+};
+
+/** AI 结果只写入追加式 Shadow 账本，不修改候选状态、不触发自动发布。 */
+async function moderateCandidateShadow(
+  ctx: AppContext,
+  candidate: Awaited<ReturnType<typeof upsertSiteDiscoveryCandidate>>,
+  runtime: CrawlShadowModerationRuntime,
+): Promise<void> {
+  if (runtime.reviewed >= runtime.policy.maxAiReviewsPerRun) return;
+  const recent = await ctx.repo.raw(
+    "SELECT id FROM crawl_ai_moderation_decisions WHERE candidate_id=? AND decision_source='ai' AND mode='shadow' AND status='completed' AND created_at>=? LIMIT 1",
+    [candidate.id, Date.now() - 24 * 60 * 60_000],
+  );
+  if (recent.length) return;
+  runtime.reviewed++;
+
+  const record = async (input: {
+    status: "completed" | "error" | "quota_blocked";
+    verdict?: string | null;
+    confidence?: number | null;
+    qualityScore?: number | null;
+    risks?: string[];
+    reasons?: string[];
+    model?: string | null;
+    policyVersion?: string | null;
+  }) => recordCrawlAiModerationDecision(ctx.repo, {
+    id: randomUUID(), candidateId: candidate.id, decisionSource: "ai", mode: "shadow",
+    status: input.status, verdict: input.verdict, confidence: input.confidence,
+    qualityScore: input.qualityScore, risks: input.risks, reasons: input.reasons,
+    model: input.model, policyVersion: input.policyVersion, actor: "crawl-worker",
+  });
+
+  const providers = [runtime.resolved.provider, ...runtime.resolved.fallbacks];
+  if (!providers.some(llmProviderReady)) {
+    await record({ status: "error", reasons: ["未配置可用的大模型，候选保持待审核"] });
+    return;
+  }
+  const quota = await reserveLlmQuota(ctx, null, {
+    source: runtime.resolved.source, estimatedTokens: 1800,
+  });
+  if (!quota.ok) {
+    await record({ status: "quota_blocked", reasons: [quota.error.message.slice(0, 240)] });
+    return;
+  }
+  try {
+    const result = await moderateSiteWithAi(runtime.resolved.provider, {
+      url: candidate.url,
+      title: candidate.title,
+      description: candidate.description,
+      // 当前抓取阶段尚未抓取候选页面正文；证据不足时审核模型应降低置信度并建议人工复核。
+      evidence: { httpStatus: 200, provenance: "crawl_source_metadata_only", warnings: ["尚无候选页面正文"] },
+    }, {
+      autoApproveConfidence: runtime.policy.autoApproveConfidence,
+      rejectConfidence: runtime.policy.rejectConfidence,
+      minQualityScore: runtime.policy.minQualityScore,
+      maxExcerptChars: runtime.policy.maxExcerptChars,
+      requireHttps: runtime.policy.requireHttps,
+    }, {
+      deadlineAt: Date.now() + 30_000,
+      complete: async (_provider, request) => {
+        const response = await callLlm(ctx, runtime.resolved, {
+          scenario: "crawl_moderation_shadow",
+          identity: candidate.id,
+          messages: request.messages,
+          temperature: request.temperature,
+          maxTokens: request.maxTokens,
+          json: request.json,
+          thinking: false,
+          signal: request.signal,
+          deadlineAt: request.deadlineAt,
+          fetchImpl: request.fetchImpl,
+        });
+        return { content: response.content, model: response.model };
+      },
+    });
+    await record({
+      status: "completed", verdict: result.verdict, confidence: result.confidence,
+      qualityScore: result.qualityScore, risks: result.risks, reasons: result.reasons,
+      model: result.model, policyVersion: result.policyVersion,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await record({ status: "error", reasons: [message.slice(0, 240)] });
+  } finally {
+    await settleLlmQuota(ctx, quota.hold);
+  }
+}
+
+async function processSource(ctx: AppContext, source: CrawlSource, now: number, moderation: CrawlShadowModerationRuntime | null): Promise<number> {
   const response = await guardedFetch(source.url, {
     timeoutMs: 8_000,
     maxBytes: MAX_SOURCE_BODY_BYTES,
@@ -84,7 +181,7 @@ async function processSource(ctx: AppContext, source: CrawlSource, now: number):
   const metadata = extractHtmlMetadata(response.body);
   let inserted = 0;
   for (const url of candidates) {
-    await upsertSiteDiscoveryCandidate(ctx.repo, {
+    const candidate = await upsertSiteDiscoveryCandidate(ctx.repo, {
       id: randomUUID(),
       url,
       canonicalUrl: url,
@@ -103,6 +200,7 @@ async function processSource(ctx: AppContext, source: CrawlSource, now: number):
       now,
     });
     inserted++;
+    if (moderation) await moderateCandidateShadow(ctx, candidate, moderation);
   }
   return inserted;
 }
@@ -119,6 +217,15 @@ export async function runCrawlSourceWorkerBatch(
   const sources = await claimDueCrawlSources(ctx.repo, options.workerId, {
     now, limit: options.limit ?? 5, leaseMs: options.leaseMs ?? 90_000,
   });
+  let moderation: CrawlShadowModerationRuntime | null = null;
+  try {
+    const policy = await loadCrawlAiModerationPolicy(ctx);
+    if (policy.enabled && policy.mode === "shadow") {
+      moderation = { policy, resolved: await resolveLlm(ctx), reviewed: 0 };
+    }
+  } catch (error) {
+    console.error("[crawl-worker] AI moderation policy unavailable; candidates remain pending:", error);
+  }
   let succeeded = 0, failed = 0, candidates = 0;
   for (const source of sources) {
     const host = new URL(source.url).hostname.toLowerCase();
@@ -128,7 +235,7 @@ export async function runCrawlSourceWorkerBatch(
       continue;
     }
     try {
-      candidates += await processSource(ctx, source, now);
+      candidates += await processSource(ctx, source, now, moderation);
       await settleCrawlSource(ctx.repo, { id: source.id, workerId: options.workerId, status: "ok", now });
       succeeded++;
     } catch (error) {

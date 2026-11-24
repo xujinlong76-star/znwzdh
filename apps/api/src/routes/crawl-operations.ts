@@ -16,10 +16,10 @@ import { callLlm } from "../llm-usage.ts";
 import { loadCrawlAiModerationPolicy } from "../crawl-moderation-policy.ts";
 
 /** 对正式金标集做稳定抽样：相同数据集重复运行时选中相同样本。 */
-export function selectGoldEvaluationSample<T extends { id: string }>(rows: readonly T[], limit = 20): T[] {
+export function selectGoldEvaluationSample<T extends { id: unknown }>(rows: readonly T[], limit = 20): T[] {
   const bounded = Math.max(1, Math.min(20, Math.floor(limit)));
-  return rows.map(row => ({ row, key: createHash("sha256").update(row.id).digest("hex") }))
-    .sort((a,b) => a.key.localeCompare(b.key) || a.row.id.localeCompare(b.row.id))
+  return rows.map(row => ({ row, key: createHash("sha256").update(String(row.id)).digest("hex") }))
+    .sort((a,b) => a.key.localeCompare(b.key) || String(a.row.id).localeCompare(String(b.row.id)))
     .slice(0,bounded).map(item => item.row);
 }
 
@@ -607,10 +607,10 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       const policy = await loadCrawlAiModerationPolicy(ctx);
       const predictions: Array<{ id: string; actual: "approve" | "reject" | "review"; actualRisk: boolean }> = [];
       const actualModels = new Set<string>();
-      let failed = 0, quotaBlocked = 0;
+      let failed = 0;
       for (const row of selected) {
         const quota = await reserveLlmQuota(ctx, null, { source: resolved.source, estimatedTokens: 1800 });
-        if (!quota.ok) { quotaBlocked++; return replyQuotaBlocked(reply, quota.error); }
+        if (!quota.ok) return replyQuotaBlocked(reply, quota.error);
         try {
           const decision = await moderateSiteWithAi(provider, {
             // 金标表不保存原始 URL；评测时使用固定脱敏占位 URL，不反查候选原始地址。

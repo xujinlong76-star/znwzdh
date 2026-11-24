@@ -469,7 +469,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(400);
         return { error: "参数无效" };
       }
-      // 返回 null = 用户不存在或密码错误（不区分，防账号枚举）；
+      // 返回 null = 用户不存在、密码错误或邮箱未验证（不区分，防账号枚举）；
       // next-auth 的 authorize 收到 null 即登录失败。
       // 失败计数先查：已锁定的标识不再查密码（M15），避免锁定期间继续烧 scrypt。
       const identifier = body.data.identifier.trim();

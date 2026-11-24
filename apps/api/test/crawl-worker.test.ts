@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractFeedUrls,
+  isRobotsAllowed,
   extractHtmlMetadata,
   parseCrawlSeeds,
   parseRetryAfterMs,
@@ -55,6 +56,22 @@ describe("crawl worker source parsing", () => {
     expect(extractFeedUrls(atom, "https://news.example/feed.xml", "rss")).toEqual([
       "https://news.example/c",
     ]);
+  });
+
+  it("遵守 robots.txt 的用户代理分组、最长匹配与 Allow 优先规则", () => {
+    const rules = `User-agent: *
+Disallow: /private
+Allow: /private/public
+Disallow: /search?
+User-agent: NavHubDiscoveryBot
+Disallow: /internal
+`;
+    expect(isRobotsAllowed(rules, "https://example.com/private/account")).toBe(false);
+    expect(isRobotsAllowed(rules, "https://example.com/private/public/page")).toBe(true);
+    // 站点对本 Worker 的专属规则优先于通配组。
+    expect(isRobotsAllowed(rules, "https://example.com/private/account", "NavHubDiscoveryBot/1.0")).toBe(true);
+    expect(isRobotsAllowed(rules, "https://example.com/internal/admin", "NavHubDiscoveryBot/1.0")).toBe(false);
+    expect(isRobotsAllowed(rules, "https://example.com/open")).toBe(true);
   });
 
   it("parses Retry-After seconds and HTTP-date with a six-hour ceiling", () => {

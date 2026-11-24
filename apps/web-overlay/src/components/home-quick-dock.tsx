@@ -193,6 +193,8 @@ export const HomeQuickDock = memo(function HomeQuickDock({
             <button
               type="button"
               role="tab"
+              id="quick-dock-tab-speed"
+              aria-controls="quick-dock-panel"
               aria-selected={activeTab === 'speed'}
               onClick={() => chooseTab('speed')}
               className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer ${
@@ -207,6 +209,8 @@ export const HomeQuickDock = memo(function HomeQuickDock({
             <button
               type="button"
               role="tab"
+              id="quick-dock-tab-frequent"
+              aria-controls="quick-dock-panel"
               aria-selected={activeTab === 'frequent'}
               disabled={!mounted || frequentVisits.length === 0}
               onClick={() => chooseTab('frequent')}
@@ -222,6 +226,8 @@ export const HomeQuickDock = memo(function HomeQuickDock({
             <button
               type="button"
               role="tab"
+              id="quick-dock-tab-recent"
+              aria-controls="quick-dock-panel"
               aria-selected={activeTab === 'recent'}
               disabled={!mounted || recentVisits.length === 0}
               onClick={() => chooseTab('recent')}
@@ -237,6 +243,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
           </div>
 
         <HorizontalScrollFade
+          id="quick-dock-panel"
           className="order-3 w-full basis-full min-w-0 sm:order-none sm:w-auto sm:basis-auto sm:flex-1"
           scrollClassName="flex items-center gap-1.5"
           ariaLabel="高频直达站点列表"

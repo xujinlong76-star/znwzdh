@@ -416,6 +416,8 @@ export interface GuardedFetchRequest {
   accept?: string;
   /** 外部传入的取消信号（如任务队列超时或主动中止） */
   signal?: AbortSignal;
+  /** 在每次重定向的目标请求发出前执行策略检查；抛错即可阻止该跳请求。 */
+  onRedirect?: (fromUrl: string, toUrl: string, status: number) => void | Promise<void>;
 }
 
 function normalizeMethod(input?: string): string {
@@ -649,8 +651,10 @@ async function runGuardedFetch(
       const next = new URL(loc, current);
       // 下一跳同样要过协议检查；IP 检查在循环头部进行
       assertUrlShape(next.toString());
-      // 释放中间响应体，避免连接一直挂着
+      // 释放中间响应体，避免连接一直挂着。
+      // 回调在下一跳发出前执行，供 robots 等目标站策略阻断跨 origin 重定向。
       await res.body?.cancel().catch(() => undefined);
+      await request.onRedirect?.(current.toString(), next.toString(), res.status);
       if (next.origin !== current.origin) {
         for (const key of Object.keys(headers)) {
           if (SENSITIVE_REDIRECT_HEADERS.has(key.toLowerCase())) delete headers[key];

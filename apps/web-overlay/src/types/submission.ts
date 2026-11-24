@@ -15,7 +15,8 @@ export interface SubmissionIssue {
     title: string
     body: string
     state: 'open' | 'closed'
-    labels: Array<{ name: string; color: string }>
+    /** GitHub 通道恒有；中枢通道 2026-11-24 起补齐，读方仍须容错（?? []） */
+    labels?: Array<{ name: string; color: string }>
     created_at: string
     updated_at: string
     html_url: string

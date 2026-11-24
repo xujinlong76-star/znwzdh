@@ -551,6 +551,10 @@ candidates 给第二、第三可能的分类（最多 2 条，不含已选的 ca
           title: site.title,
           body: site.description ?? "",
           state: isPending ? "open" : "closed",
+          // GitHub 通道同形状的 labels（管理台 getStatusBadge 只认 name）。
+          // 2026-11-24 前漏发 labels，导致 /admin/submissions 在中枢通道上
+          // submission.labels.some(...) 崩（Cannot read properties of undefined）。
+          labels: [{ name: `submission:${label}`, color: isPending ? "fbca04" : (site.status === "active" ? "0e8a16" : "d73a4a") }],
           created_at: new Date(site.createdAt).toISOString(),
           updated_at: new Date(site.updatedAt).toISOString(),
           html_url: site.url,

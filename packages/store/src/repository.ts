@@ -1424,6 +1424,10 @@ async revokeAllSessions(userId: string): Promise<number> {
     return usersRepo.updateUserPassword(this, userId, newPassword);
   }
 
+  async updateUserPasswordForEmail(userId: string, newPassword: string, email: string): Promise<boolean> {
+    return usersRepo.updateUserPasswordForEmail(this, userId, newPassword, email);
+  }
+
   async setUserEmailVerified(userId: string): Promise<boolean> {
     return usersRepo.setUserEmailVerified(this, userId);
   }

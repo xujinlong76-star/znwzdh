@@ -569,7 +569,7 @@ export async function handleCrawlWorker(
             fetchedAt: Date.now(),
           });
         }
-        if (metadata.title || metadata.description || metadata.text.length >= 80) {
+        if (metadata.title || metadata.description || hasFingerprintText) {
           const candidateEvidence = {
             fetchedStatus: response.status, finalUrl: response.finalUrl,
             fetchedAt: Date.now(), fingerprintStatus: hasFingerprintText ? "recorded" : "insufficient_text",

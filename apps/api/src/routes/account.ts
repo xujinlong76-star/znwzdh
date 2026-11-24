@@ -98,15 +98,21 @@ function totpAt(secret: string, timeMs: number): string {
   return String(binary % 1_000_000).padStart(6, "0");
 }
 
-function verifyTotp(secret: string, supplied: string, now = Date.now()): boolean {
+function matchingTotpCounter(secret: string, supplied: string, now = Date.now()): number | null {
   const code = supplied.replace(/\s+/g, "");
-  if (!/^\d{6}$/.test(code)) return false;
+  if (!/^\d{6}$/.test(code)) return null;
   const actual = Buffer.from(code);
-  for (const offset of [-30_000, 0, 30_000]) {
-    const expected = Buffer.from(totpAt(secret, now + offset));
-    if (actual.length === expected.length && timingSafeEqual(actual, expected)) return true;
+  const currentCounter = Math.floor(now / 30_000);
+  for (const offset of [-1, 0, 1]) {
+    const counter = currentCounter + offset;
+    const expected = Buffer.from(totpAt(secret, counter * 30_000));
+    if (actual.length === expected.length && timingSafeEqual(actual, expected)) return counter;
   }
-  return false;
+  return null;
+}
+
+function verifyTotp(secret: string, supplied: string, now = Date.now()): boolean {
+  return matchingTotpCounter(secret, supplied, now) !== null;
 }
 
 function encryptMfaSecret(secret: string): Pick<AdminMfaState, "iv" | "ciphertext" | "tag"> {
@@ -138,7 +144,7 @@ async function verifyAdminMfa(ctx: AppContext, supplied: string): Promise<boolea
   const required = process.env.NAVHUB_ADMIN_MFA_REQUIRED === "1" || process.env.NAVHUB_ADMIN_MFA_REQUIRED === "true";
   if (!state?.enabled) return !required;
   const secret = decryptMfaSecret(state);
-  if (verifyTotp(secret, supplied)) return true;
+  const matchedCounter = matchingTotpCounter(secret, supplied);\n  if (matchedCounter !== null) {\n    // TOTP 时间步只可消费一次；共享 DB 原子占坑防止跨副本重放同一验证码。\n    return ctx.repo.claimSystemState(\n      "auth:admin-mfa:totp:" + state.recoveryVersion + ":" + matchedCounter,\n      true,\n      5 * 60 * 1000,\n    );\n  }
   const normalized = supplied.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (!normalized) return false;
   const recoveryHash = hashApiToken(normalized);
@@ -269,7 +275,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     const body = z.object({ code: z.string().regex(/^\d{6}$/) }).safeParse(req.body);
     if (!body.success) { reply.code(400); return { error: "请输入 6 位验证码" }; }
     const state = await readAdminMfa(ctx);
-    if (!state || state.enabled) { reply.code(409); return { error: "请先生成待确认的 MFA 密钥" }; }
+    if (!state || state.enabled || Date.now() - state.updatedAt > 10 * 60 * 1000) { reply.code(409); return { error: "请先生成有效期 10 分钟内的待确认 MFA 密钥" }; }
     let secret: string;
     try { secret = decryptMfaSecret(state); } catch { reply.code(503); return { error: "MFA 密钥解密失败，请重新初始化" }; }
     if (!verifyTotp(secret, body.data.code)) { reply.code(401); return { error: "验证码无效或已过期" }; }
@@ -291,6 +297,14 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     const ok = await verifyAdminMfa(ctx, body.data.code);
     reply.header("cache-control", "no-store");
     if (!ok) { reply.code(401); return { ok: false }; }
+    if (!/^\d{6}$/.test(body.data.code.trim())) {
+      await ctx.repo.audit({
+        actor: "admin-mfa-bff",
+        actorKind: "system",
+        action: "account.admin_mfa_recovery_used",
+        ip: req.ip,
+      }).catch(() => { /* MFA result must not depend on audit availability */ });
+    }
     return { ok: true };
   });
 

@@ -185,7 +185,7 @@ export function CategoryQuickJumpBar({
                 {cat.count !== undefined && cat.count > 0 && (
                   <span
                     className={cn(
-                      "text-[10px] px-1 py-0.2 rounded-full font-mono",
+                      "text-[0.625rem] px-1 py-0.2 rounded-full font-mono",
                       isActive
                         ? "bg-primary-foreground/20 text-primary-foreground"
                         : "bg-background/80 text-muted-foreground"
@@ -205,7 +205,7 @@ export function CategoryQuickJumpBar({
           >
             <MonitorPlay className="h-3 w-3" />
             <span>精选视频</span>
-            <span className="text-[10px] px-1 rounded-full bg-rose-500/20">6k+</span>
+            <span className="text-[0.625rem] px-1 rounded-full bg-rose-500/20">6k+</span>
           </Link>
         </HorizontalScrollFade>
       </div>

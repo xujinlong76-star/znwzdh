@@ -168,8 +168,9 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     }
 
     const candidateUrl = enriched.url || body.data.url;
+    const candidateId = randomUUID();
     const candidate = await ctx.repo.upsertSiteDiscoveryCandidate({
-      id: randomUUID(),
+      id: candidateId,
       url: candidateUrl,
       canonicalUrl: canonicalizeUrl(candidateUrl),
       title,
@@ -197,8 +198,8 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     reply.code(202);
     return {
       created: false,
-      queuedForReview: true,
-      duplicate: candidate.status !== "pending" || candidate.url !== candidateUrl,
+      queuedForReview: candidate.status === "pending",
+      duplicate: candidate.id !== candidateId,
       candidate,
       enrichment: enriched,
       appliedFields: selection.appliedFields,

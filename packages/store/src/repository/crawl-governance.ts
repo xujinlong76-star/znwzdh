@@ -93,7 +93,7 @@ export async function enqueueCrawlTask(repo: Repository, input: EnqueueCrawlTask
        max_attempts = CASE WHEN crawl_tasks.status='done' AND ? THEN excluded.max_attempts ELSE crawl_tasks.max_attempts END,
        next_run_at = CASE WHEN crawl_tasks.status='done' AND ? THEN excluded.next_run_at ELSE crawl_tasks.next_run_at END,
        last_error = CASE WHEN crawl_tasks.status='done' AND ? THEN NULL ELSE crawl_tasks.last_error END,
-       updated_at = excluded.updated_at
+       updated_at = excluded.updated_at`,
     [id, normalized.url, normalized.url, normalized.host, source,
       payloadJson, priority, maxAttempts, now, now, now,
       input.requeueCompleted === true, input.requeueCompleted === true,

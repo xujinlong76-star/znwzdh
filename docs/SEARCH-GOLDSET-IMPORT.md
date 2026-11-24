@@ -31,10 +31,10 @@
 - intent：exact_site / task / category / pinyin / mixed_language / zero_result / ambiguous / long_tail / other
 - privacyReviewed：必须为 true
 - hits：冻结候选快照的 siteId 列表，按实际搜索名次排序
-- annotations：恰好两份独立标注；annotatorId 不同，independent=true；judgments 必须覆盖 hits 中全部 siteId
-- adjudication：仅当重大分歧/不可判断项出现时需要；reviewerId 必须不同于两名标注员，judgments 只覆盖待仲裁的 siteId
+- annotations：恰好两份独立标注；annotatorId 不同，independent=true，submittedAt 为 ISO 时间；judgments、evidenceUrls、reasonCodes 必须覆盖 hits 中全部 siteId。证据 URL 仅允许不含凭据、查询参数和片段的 HTTP(S) URL；reasonCode 使用 exact_match / task_fit / category_fit / partial_fit / unrelated / unavailable / insufficient_evidence / safety_risk / other
+- adjudication：仅当重大分歧/不可判断项出现时需要；reviewerId 必须不同于两名标注员，reviewedAt 为 ISO 时间，rationale 为 1–500 字，judgments 与 reasonCodes 只覆盖待仲裁的 siteId
 
-相关性等级为 0–3；unjudgeable 不是 0 分。两名标注员分差为 1 时，导出采用较低等级，避免评测过度乐观；分差大于 1、任何一方标记 unjudgeable 或双方均无法判断时，必须由第三人仲裁。仲裁后仍 unjudgeable 的整条查询样本会被排除，并计入 excludedUnjudgeableCases。
+相关性等级为 0–3；unjudgeable 不是 0 分。两名标注员分差为 1 时，导出采用较低等级，避免评测过度乐观；分差大于 1、任何一方标记 unjudgeable 或双方均无法判断时，必须由第三人仲裁。标为 unjudgeable 时必须使用 unavailable 或 insufficient_evidence reasonCode。仲裁后仍 unjudgeable 的整条查询样本会被排除，并计入 excludedUnjudgeableCases。
 
 ## 执行
 

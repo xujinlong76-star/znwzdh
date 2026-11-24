@@ -134,6 +134,7 @@ async function waitForDomainWindow(ms: number, signal: AbortSignal): Promise<voi
     };
     timer = setTimeout(finish, ms);
     signal.addEventListener("abort", finish, { once: true });
+    if (signal.aborted) finish();
   });
 }
 

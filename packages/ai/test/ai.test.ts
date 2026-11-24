@@ -382,8 +382,21 @@ describe("AI 网站审核金标评测（纯离线）", () => {
     expect(result.perLabel.reject.recall).toBe(0.5);
     expect(result.riskDetection.falseNegatives).toBe(1);
     expect(result.riskDetection.falsePositives).toBe(1);
+    expect(result.riskDetection.support).toBe(4);
+    expect(result.riskDetection.positiveSupport).toBe(2);
+    expect(result.riskDetection.negativeSupport).toBe(2);
   });
 
+  it("区分风险标注总量与风险正样本数量", () => {
+    const result = evaluateSiteModerationGoldSet([
+      {id:"n1",expected:"approve",actual:"approve",expectedRisk:false,actualRisk:false},
+      {id:"n2",expected:"review",actual:"review",expectedRisk:false,actualRisk:false},
+    ]);
+    expect(result.riskDetection.support).toBe(2);
+    expect(result.riskDetection.positiveSupport).toBe(0);
+    expect(result.riskDetection.negativeSupport).toBe(2);
+    expect(result.riskDetection.recall).toBeNull();
+  });
   it("空样本返回 null 比率，不伪造 0% 准确率", () => {
     const result = evaluateSiteModerationGoldSet([]);
     expect(result.sampleSize).toBe(0);

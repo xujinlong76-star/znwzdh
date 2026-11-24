@@ -146,7 +146,20 @@ export default function CrawlOperationsPage(){
     }catch(e){setGoldMessage(e instanceof Error?e.message:'创建金标样本失败')}
     finally{setGoldBusy(false)}
   }
-  const claimGoldTask=async()=>{\n    if(goldBusy)return\n    setGoldBusy(true);setGoldMessage(null)\n    try{\n      const result=await hubSend<{ok:boolean;assignmentId:string;case:{id:string};slot:number;expiresAt:number}>('/api/hub/admin/crawl/moderation-gold-cases/claim','POST',activeGoldCase?{caseId:activeGoldCase.id}:{})\n      setGoldClaimedCaseId(result.case.id);setGoldClaimExpiresAt(result.expiresAt)\n      const item=goldCases.find(x=>x.id===result.case.id)\n      if(item)await openGoldCase(item)\n      setGoldMessage('已领取第 '+result.slot+' 个独立标注席位，任务有效期至 '+time(result.expiresAt))\n      await load()\n    }catch(e){setGoldMessage(e instanceof Error?e.message:'领取标注任务失败')}\n    finally{setGoldBusy(false)}\n  }\n  const submitGoldAnnotation=async()=>{
+  const claimGoldTask=async()=>{
+    if(goldBusy)return
+    setGoldBusy(true);setGoldMessage(null)
+    try{
+      const result=await hubSend<{ok:boolean;assignmentId:string;case:{id:string};slot:number;expiresAt:number}>('/api/hub/admin/crawl/moderation-gold-cases/claim','POST',activeGoldCase?{caseId:activeGoldCase.id}:{})
+      setGoldClaimedCaseId(result.case.id);setGoldClaimExpiresAt(result.expiresAt)
+      const item=goldCases.find(x=>x.id===result.case.id)
+      if(item)await openGoldCase(item)
+      setGoldMessage('已领取第 '+result.slot+' 个独立标注席位，任务有效期至 '+time(result.expiresAt))
+      await load()
+    }catch(e){setGoldMessage(e instanceof Error?e.message:'领取标注任务失败')}
+    finally{setGoldBusy(false)}
+  }
+  const submitGoldAnnotation=async()=>{
     if(!activeGoldCase||goldBusy)return
     if(goldClaimedCaseId!==activeGoldCase.id){setGoldMessage('请先领取当前样本的标注任务');return}
     setGoldBusy(true);setGoldMessage(null)

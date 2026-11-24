@@ -308,7 +308,7 @@ compose 也透传了该变量，因此无网络限制的环境无需任何额外
 
 | 项 | 状态 |
 | --- | --- |
-| vendoring NavSphere 底座（commit `6ba74fa`） | ✅ [scripts/vendor-web.mjs](scripts/vendor-web.mjs) |
+| vendoring NavSphere 底座（commit `6ba74fa`） | ✅ [scripts/vendor-web.mjs](../scripts/vendor-web.mjs) |
 | `StorageAdapter` 三后端（http / github / sqlite 实现） | ✅ |
 | `src/lib/github.ts` 替换为门面（签名不变，69 处调用点零改动） | ✅ |
 | **首页读路径改为异步读中枢** | ✅ `page.tsx` 已改 |

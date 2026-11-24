@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   evaluateSearch,
+  evaluateSearchDiagnostics,
   mrrAtK,
   ndcgAtK,
   recallAtK,
+  validateSearchEvalCase,
   type SearchEvalCase,
 } from "../src/search-eval.ts";
 
@@ -13,6 +15,31 @@ const perfect: SearchEvalCase = {
   hits: ["a", "b", "c"],
   relevance: { a: 3, b: 2, c: 1 },
 };
+
+describe("search-eval：金标样本契约", () => {
+  it("接受 0–3 整数等级并保留原始样本", () => {
+    const sample = { query: "AI 编程助手", hits: ["cursor"], relevance: { cursor: 3, other: 0 } };
+    expect(validateSearchEvalCase(sample)).toEqual(sample);
+  });
+
+  it.each([-1, 4, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "3"])(
+    "拒绝越界或非整数相关性等级：%s",
+    (grade) => {
+      expect(() => validateSearchEvalCase({
+        query: "query",
+        hits: ["site-a"],
+        relevance: { "site-a": grade },
+      })).toThrow("必须是 0–3 的整数");
+    },
+  );
+
+  it("拒绝缺失 query、空 siteId、空命中 ID 和错误结构", () => {
+    expect(() => validateSearchEvalCase({ hits: [], relevance: {} })).toThrow("缺少 query");
+    expect(() => validateSearchEvalCase({ query: "q", hits: [""], relevance: {} })).toThrow("hits");
+    expect(() => validateSearchEvalCase({ query: "q", hits: [], relevance: { "": 1 } })).toThrow("空 siteId");
+    expect(() => validateSearchEvalCase(null)).toThrow("不是对象");
+  });
+});
 
 describe("search-eval：离线检索指标", () => {
   it("完美排序的 NDCG / MRR / Recall 都是 1", () => {
@@ -76,6 +103,35 @@ describe("search-eval：离线检索指标", () => {
     expect(result.recallAtK).toBeCloseTo(0.5, 10);
 
     expect(evaluateSearch([], 10)).toEqual({ queries: 0, ndcgAtK: 0, mrrAtK: 0, recallAtK: 0 });
+  });
+
+  it("reports zero-result and missing-positive-judgment diagnostics without exposing query text", () => {
+    const cases: SearchEvalCase[] = [
+      { query: "private query alpha", hits: ["a", "b"], relevance: { a: 3, b: 0, c: 2 } },
+      { query: "private query beta", hits: [], relevance: { x: 2 } },
+      { query: "private query gamma", hits: ["z"], relevance: {} },
+    ];
+    const result = evaluateSearchDiagnostics(cases, 2);
+    expect(result.metrics.queries).toBe(3);
+    expect(result.zeroResultQueries).toBe(1);
+    expect(result.queriesWithoutPositiveJudgments).toBe(1);
+    expect(result.relevantCandidates).toBe(3);
+    expect(result.relevantRetrievedAtK).toBe(1);
+    expect(result.relevantCandidateCoverage).toBeCloseTo(1 / 3, 10);
+    expect(result.cases).toEqual([
+      { queryIndex: 1, zeroResult: false, hasPositiveJudgment: true, relevantCandidates: 2, relevantRetrievedAtK: 1 },
+      { queryIndex: 2, zeroResult: true, hasPositiveJudgment: true, relevantCandidates: 1, relevantRetrievedAtK: 0 },
+      { queryIndex: 3, zeroResult: false, hasPositiveJudgment: false, relevantCandidates: 0, relevantRetrievedAtK: 0 },
+    ]);
+    expect(JSON.stringify(result)).not.toContain("private query");
+  });
+
+  it("returns zero coverage when there are no positive relevance labels", () => {
+    const result = evaluateSearchDiagnostics([
+      { query: "unjudged", hits: ["a"], relevance: { a: 0 } },
+    ]);
+    expect(result.relevantCandidateCoverage).toBe(0);
+    expect(result.queriesWithoutPositiveJudgments).toBe(1);
   });
 
   it("非法 k（0 / 负数 / NaN）按 0 处理", () => {

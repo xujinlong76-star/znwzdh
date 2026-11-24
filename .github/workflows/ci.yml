@@ -1034,12 +1034,12 @@ jobs:
   #   「执行到的文件」计，分片产物各缺另外 2/3 的覆盖面；`all: true` 又会把
   #   未执行文件计 0% —— 分片内阈值必然失真。合并产物要跨作业传 json 再聚合，
   #   复杂度远高于单作业全量跑一次（本地实测 ~9 分钟）。
-  #   阈值不写在 YAML：单一事实源是仓库根 coverage-thresholds.json（W1 = 实测 − 2pp），
+  #   阈值不写在 YAML：单一事实源是仓库根 coverage-thresholds.json（W1 floor + W3 patch 70%），
   #   全局 + 分区域 floor 都由它给；收紧只改那一份文件并走独立 PR（TESTING-STRATEGY §3.3）。
   #   --max-age 防 clean:false 的陈旧产物假绿（TESTING-STRATEGY §3.5）。
   coverage:
     timeout-minutes: 30
-    name: 覆盖率门禁（W1 ratchet · coverage-thresholds.json）
+    name: 覆盖率门禁（W1 floor + W3 patch · coverage-thresholds.json）
     runs-on: ubuntu-latest
     steps:
       # U-385: scripts/count-precommit-bypasses.test.ts 要读 06429843 起的 git 历史(--to 锚点)，depth-1 下锚点对象不存在、12 例全灭；有界 depth 会随 HEAD 前进而过期，故用 0。
@@ -1058,10 +1058,12 @@ jobs:
       - name: 全量测试（含覆盖率插桩）
         id: vitest-coverage
         run: pnpm vitest run --coverage --reporter=default
-      - name: 覆盖率阈值判定
+      - name: 覆盖率阈值判定（W1 floor + W3 patch）
         id: coverage-threshold
         if: ${{ !cancelled() && steps.vitest-coverage.outcome != 'skipped' }}
-        run: node scripts/check-coverage.mjs --thresholds coverage-thresholds.json --max-age 60
+        env:
+          NAVHUB_COVERAGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}
+        run: node scripts/check-coverage.mjs --thresholds coverage-thresholds.json --max-age 60 --patch --base "$NAVHUB_COVERAGE_BASE" --min-patch-lines 70
       - name: 撤防账（没跑成的门禁要点名）
         id: defused-gates
         if: ${{ always() }}

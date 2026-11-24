@@ -10,3 +10,7 @@
 - 系统每日 Token/调用额度继续复用现有 LLM quota；每轮审核数上限用于限制单次 Worker 批量费用。
 
 自动通过/拒绝阈值在 Shadow 中只生成建议，不会改变候选状态。
+
+## 不可变审核历史
+
+每次模型审核完成、失败或因额度跳过，都会追加写入 `crawl_ai_moderation_decisions`。历史不依赖候选当前 evidence 字段，因此后续采集刷新覆盖最新证据时不会抹掉旧模型判断。管理员可通过 `/api/admin/crawl/candidates/:id/moderation-history` 分页读取历史。

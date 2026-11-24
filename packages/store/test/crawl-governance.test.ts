@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "../src/driver.ts";
 import { Repository } from "../src/repository.ts";
 import {
@@ -18,6 +18,12 @@ describe("持久化采集治理队列", () => {
   beforeAll(async () => {
     db = await openDb({ dialect: "sqlite", sqlitePath: ":memory:" });
     repo = new Repository(db);
+  });
+
+  beforeEach(async () => {
+    await repo.run("DELETE FROM crawl_page_fingerprints");
+    await repo.run("DELETE FROM crawl_domain_state");
+    await repo.run("DELETE FROM crawl_tasks");
   });
 
   afterAll(async () => { await db.close(); });

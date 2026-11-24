@@ -3906,20 +3906,6 @@
           "enabled": true,
           "items": [
             {
-              "id": "nav-851b8e2cbc38",
-              "hubId": "nav-851b8e2cbc38",
-              "title": "哔哩哔哩",
-              "href": "https://www.bilibili.com",
-              "description": "国内视频社区，技术课程与学习资源丰富，学习内容需站内搜索",
-              "icon": "https://bilibili.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "免费额度",
-                "视频",
-                "课程"
-              ]
-            },
-            {
               "id": "nav-c32ae6fc9d92",
               "hubId": "nav-c32ae6fc9d92",
               "title": "Coursera",
@@ -4064,20 +4050,6 @@
           "parentId": "reg-learning-growth",
           "enabled": true,
           "items": [
-            {
-              "id": "nav-f8c966c919a4",
-              "hubId": "nav-f8c966c919a4",
-              "title": "维基百科",
-              "href": "https://zh.wikipedia.org",
-              "description": "自由的百科全书",
-              "icon": "https://zh.wikipedia.org/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "免费",
-                "知识",
-                "百科"
-              ]
-            },
             {
               "id": "nav-541673d083aa",
               "hubId": "nav-541673d083aa",
@@ -4582,6 +4554,20 @@
                 "学术",
                 "论文"
               ]
+            },
+            {
+              "id": "nav-f8c966c919a4",
+              "hubId": "nav-f8c966c919a4",
+              "title": "维基百科",
+              "href": "https://zh.wikipedia.org",
+              "description": "自由的百科全书",
+              "icon": "https://zh.wikipedia.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "免费",
+                "知识",
+                "百科"
+              ]
             }
           ]
         }
@@ -5035,20 +5021,6 @@
                 "批发源头",
                 "商家进货"
               ]
-            },
-            {
-              "id": "nav-8ee7dd8ec36a",
-              "hubId": "nav-8ee7dd8ec36a",
-              "title": "支付宝",
-              "href": "https://www.alipay.com/",
-              "description": "国民级支付工具，支付与缴费需登录账号、建议使用 App",
-              "icon": "https://www.alipay.com/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "免费",
-                "支付",
-                "生活缴费"
-              ]
             }
           ]
         },
@@ -5120,7 +5092,7 @@
               "hubId": "nav-79558c4e0514",
               "title": "滴滴出行",
               "href": "https://www.didiglobal.com",
-              "description": "领先的出行平台，提供打车、快车等",
+              "description": "滴滴全球企业官网，出行服务与企业信息介绍",
               "icon": "https://www.didiglobal.com/favicon.ico",
               "enabled": true,
               "tags": [
@@ -5540,6 +5512,34 @@
                 "社保",
                 "政务"
               ]
+            },
+            {
+              "id": "nav-8ee7dd8ec36a",
+              "hubId": "nav-8ee7dd8ec36a",
+              "title": "支付宝",
+              "href": "https://www.alipay.com/",
+              "description": "国民级支付工具，生活缴费与政务服务入口，支付需登录账号、建议使用 App",
+              "icon": "https://www.alipay.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "免费",
+                "支付",
+                "生活缴费"
+              ]
+            },
+            {
+              "id": "nav-04935b9c3b6a",
+              "hubId": "nav-04935b9c3b6a",
+              "title": "全国排污许可证管理信息平台",
+              "href": "https://permit.mee.gov.cn",
+              "description": "企业排污许可申请与信息公开平台",
+              "icon": "https://permit.mee.gov.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "免费",
+                "排污",
+                "许可"
+              ]
             }
           ]
         },
@@ -5590,20 +5590,6 @@
                 "免费",
                 "环保",
                 "生态"
-              ]
-            },
-            {
-              "id": "nav-04935b9c3b6a",
-              "hubId": "nav-04935b9c3b6a",
-              "title": "全国排污许可证管理信息平台",
-              "href": "https://permit.mee.gov.cn",
-              "description": "企业排污许可申请与信息公开平台",
-              "icon": "https://permit.mee.gov.cn/favicon.ico",
-              "enabled": true,
-              "tags": [
-                "免费",
-                "排污",
-                "许可"
               ]
             },
             {
@@ -5894,6 +5880,20 @@
                 "免费额度",
                 "海外",
                 "付费"
+              ]
+            },
+            {
+              "id": "nav-851b8e2cbc38",
+              "hubId": "nav-851b8e2cbc38",
+              "title": "哔哩哔哩",
+              "href": "https://www.bilibili.com",
+              "description": "国内视频社区，技术课程与学习资源丰富，学习内容需站内搜索",
+              "icon": "https://bilibili.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "免费额度",
+                "视频",
+                "社区"
               ]
             }
           ]

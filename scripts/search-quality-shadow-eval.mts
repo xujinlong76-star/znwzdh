@@ -152,7 +152,7 @@ try {
     const candidates: SiteQualityShadowCandidate[] = item.baselineHits.map((siteId) => {
       const quality = item.qualityBySite[siteId];
       return quality
-        ? { siteId, ...quality }
+        ? { siteId, qualityScore: quality.score, evidenceCoverage: quality.evidenceCoverage, band: quality.band }
         : { siteId, qualityScore: null, evidenceCoverage: 0, band: "insufficient_evidence" };
     });
     const shadow = rerankBySiteQualityShadow(candidates, {

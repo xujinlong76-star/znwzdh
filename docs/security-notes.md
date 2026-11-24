@@ -144,3 +144,12 @@
 ### 尚需独立实施的安全能力
 
 本轮没有虚构以下基础设施已经存在：跨实例共享 nonce/登录失败计数的 Redis 或数据库后端、管理员 TOTP 与恢复码、API Token 自助轮换工作流。这些涉及数据迁移、密钥恢复和部署依赖，应作为后续独立变更设计并测试，不能仅靠改环境变量宣称完成。
+
+
+## 2026-11-24 第二阶段认证加固（数据库共享）
+
+- 身份签名 v2 重放防护从进程内 Map 改为 `system_states` 原子 UPSERT 占坑；SQLite/PostgreSQL 多个 API 副本共享同一账本。过期重放行定时清理，避免长期累积。
+- 登录失败计数以归一化标识的 SHA-256 作为键，使用 `system_states` 单条 UPSERT 固定窗口原子递增；跨副本共用 5 次 / 15 分钟锁定状态，成功登录清零，并定时清理过期行。
+- 管理员 MFA：TOTP（RFC 6238 / SHA-1 / 6 位 / 30 秒，±1 时间步容差），密钥以 AES-256-GCM 加密存储；10 个恢复码只存哈希、每个仅可原子消费一次。Web BFF 通过 `NAVHUB_INTERNAL_TOKEN` 调用内部核验接口；设置 `NAVHUB_ADMIN_MFA_REQUIRED=1` 强制管理员二次验证。需配置 `NAVHUB_MFA_ENCRYPTION_KEY`（32 字节）与 Web/API 共享的内部令牌。
+- 用户个人 API Token 新增 `/api/me/tokens/:id/rotate`；SQL 同时校验 owner、未吊销、未过期，轮换立即替换哈希，旧明文立即失效，新明文只返回一次。
+- MFA 初始化流程与部署环境变量见 `.env.example`。启用强制模式前必须完成 setup/confirm 并离线保存恢复码。

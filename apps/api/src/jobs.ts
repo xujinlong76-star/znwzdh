@@ -212,7 +212,7 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   // 全部外部检索 URL 探活一次，只记事件与审计，不自动下架（见 tasks/plugin-url-health.task.ts）。
   { kind: "plugin_url_health", intervalMs: 86_400_000 },
   // 自动发现 Worker：每 30 分钟处理一次公开 Sitemap / RSS / page seeds；所有新站仅进入待审核候选。
-  { kind: "crawl_worker", intervalMs: 30 * 60_000, payload: { maxTasks: 10 } },
+  { kind: "crawl_worker", intervalMs: 30 * 60_000, payload: { maxTasks: 25 } },
   // 数据治理默认只做 rollup 的 dry-run：自动化可以先"看见"，不该先"动手"。
   // 确认过输出后再把 payload 改成 { mode: "rollup", apply: true }（或手动触发一次）。
   { kind: "data_retention", intervalMs: 86_400_000, payload: { mode: "rollup", apply: false, maxDays: 30, telemetryDays: 90 } },

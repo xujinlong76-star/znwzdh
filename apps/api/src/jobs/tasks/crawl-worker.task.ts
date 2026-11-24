@@ -8,6 +8,7 @@ import {
   enqueueCrawlTask,
   recordCrawlFingerprint,
   reapExpiredCrawlLeases,
+  renewCrawlLease,
   settleCrawlTask,
   upsertSiteDiscoveryCandidate,
   recordCrawlAiModerationDecision,
@@ -134,6 +135,45 @@ function childSource(parent: string): string {
 function retryDelay(attempts: number): number {
   const base = 60_000 * 2 ** Math.max(0, attempts - 1);
   return Math.min(base, 60 * 60_000);
+}
+
+/**
+ * 长任务租约心跳：每 40 秒续租一次（120 秒租约留出故障余量）。
+ * 续租失败即中止本任务信号；所有网络/模型调用必须使用该信号，
+ * 最终 settle 仍由 repository 的 owner + lease CAS 兜底。
+ */
+function startCrawlLeaseHeartbeat(
+  repo: AppContext["repo"],
+  taskId: string,
+  workerId: string,
+  parentSignal: AbortSignal,
+): { signal: AbortSignal; stop: () => Promise<void> } {
+  const controller = new AbortController();
+  const abortFromParent = () => controller.abort(parentSignal.reason);
+  if (parentSignal.aborted) abortFromParent();
+  else parentSignal.addEventListener("abort", abortFromParent, { once: true });
+
+  let inFlight: Promise<void> | null = null;
+  const timer = setInterval(() => {
+    if (controller.signal.aborted || inFlight) return;
+    inFlight = renewCrawlLease(repo, { id: taskId, workerId, leaseMs: 120_000 })
+      .then((renewed) => {
+        if (!renewed) controller.abort(new Error("采集任务租约已丢失，停止继续处理"));
+      })
+      .catch(() => {
+        controller.abort(new Error("采集任务租约续期失败，停止继续处理"));
+      })
+      .finally(() => { inFlight = null; });
+  }, 40_000);
+
+  return {
+    signal: controller.signal,
+    stop: async () => {
+      clearInterval(timer);
+      parentSignal.removeEventListener("abort", abortFromParent);
+      if (inFlight) await inFlight;
+    },
+  };
 }
 
 async function waitForDomainWindow(ms: number, signal: AbortSignal): Promise<void> {
@@ -437,8 +477,9 @@ export async function handleCrawlWorker(
     }
     if (!task) break;
     summary.tasksClaimed++;
+    const leaseHeartbeat = startCrawlLeaseHeartbeat(ctx.repo, task.id, workerId, leaseHeartbeat.signal);
     try {
-      const robots = await checkRobotsPolicy(task.url, run.signal);
+      const robots = await checkRobotsPolicy(task.url, leaseHeartbeat.signal);
       if (robots.kind === "blocked") {
         await settleCrawlTask(ctx.repo, {
           id: task.id, workerId, outcome: "hold_for_review", error: robots.reason, now: Date.now(),
@@ -460,11 +501,11 @@ export async function handleCrawlWorker(
         maxRedirects: 5,
         userAgent: "NavHubDiscoveryBot/1.0 (+https://github.com/xujinlong76-star/znwzdh)",
       }, {
-        signal: run.signal,
+        signal: leaseHeartbeat.signal,
         onRedirect: async (fromUrl, toUrl) => {
           // 必须在目标 URL 请求发出前检查目标 origin 的 robots，而不是等页面已抓取后补查。
           if (new URL(fromUrl).origin === new URL(toUrl).origin) return;
-          const redirectedRobots = await checkRobotsPolicy(toUrl, run.signal);
+          const redirectedRobots = await checkRobotsPolicy(toUrl, leaseHeartbeat.signal);
           if (redirectedRobots.kind === "blocked") {
             throw new CrawlRobotsBlockedError("重定向目标 robots.txt 不允许抓取：" + redirectedRobots.reason);
           }
@@ -642,7 +683,7 @@ export async function handleCrawlWorker(
                   for (const provider of providers) {
                     try {
                       decision = await moderateSiteWithAi(provider, moderationInput, moderationOptions, {
-                        signal: run.signal,
+                        signal: leaseHeartbeat.signal,
                         deadlineAt: Date.now() + 45_000,
                         complete: (_provider, request) => callLlm(ctx, { ...resolved, provider: _provider }, {
                           scenario: "crawl_moderation",
@@ -745,7 +786,9 @@ export async function handleCrawlWorker(
       if (outcome === "hold_for_review") summary.heldForReview++;
       else if (outcome === "dead_letter") summary.deadLettered++;
       else summary.retried++;
-      if (run.signal.aborted) { summary.stopped = true; break; }
+      if (leaseHeartbeat.signal.aborted) { summary.stopped = true; break; }
+    } finally {
+      await leaseHeartbeat.stop();
     }
   }
 

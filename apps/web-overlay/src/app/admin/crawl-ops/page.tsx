@@ -29,6 +29,7 @@ type ModerationPolicy = {enabled:boolean;mode:'shadow';autoApproveConfidence:num
 type ModelAnalytics = {ok:boolean;days:number;models:Array<{model:string;total:number;completed:number;errors:number;quotaBlocked:number;successRate:number|null;averageConfidence:number|null;verdicts:{autoApprove:number;reject:number;manualReview:number}}>}
 type GoldCase = {id:string;sourceFingerprint:string;title:string|null;description:string|null;category:string|null;sanitizedExcerpt:string|null;status:'pending'|'annotating'|'needs_adjudication'|'gold_ready';annotationCount:number;finalLabel:string|null;finalRisk:boolean|null;createdAt:number;updatedAt:number}
 type GoldAnnotation = {id:string;annotatorId:string;label:'approve'|'reject'|'review';risk:boolean;evidence:string;createdAt:number}
+type GoldAssignmentMetrics = {ok:boolean;claimed:number;completed:number;expired:number;myActive:number}
 const DEFAULT_POLICY:ModerationPolicy={enabled:false,mode:'shadow',autoApproveConfidence:0.93,rejectConfidence:0.97,minQualityScore:70,maxExcerptChars:6000,maxAiReviewsPerRun:5,requireHttps:false}
 
 function Stat({label,value,detail}:{label:string;value:string|number;detail?:string}) {
@@ -46,6 +47,9 @@ export default function CrawlOperationsPage(){
   const [goldCases,setGoldCases]=useState<GoldCase[]>([])
   const [activeGoldId,setActiveGoldId]=useState<string|null>(null)
   const [goldAnnotations,setGoldAnnotations]=useState<GoldAnnotation[]>([])
+  const [goldAssignmentMetrics,setGoldAssignmentMetrics]=useState<GoldAssignmentMetrics|null>(null)
+  const [goldClaimedCaseId,setGoldClaimedCaseId]=useState<string|null>(null)
+  const [goldClaimExpiresAt,setGoldClaimExpiresAt]=useState<number|null>(null)
   const [goldBusy,setGoldBusy]=useState(false)
   const [goldMessage,setGoldMessage]=useState<string|null>(null)
   const [goldTitle,setGoldTitle]=useState('')
@@ -69,16 +73,17 @@ export default function CrawlOperationsPage(){
   const load=useCallback(async()=>{
     setLoading(true);setError(null)
     try{
-      const [stats,queue,registry,moderation,history,analytics,goldQueue]=await Promise.all([
+      const [stats,queue,registry,moderation,history,analytics,goldQueue,assignmentMetrics]=await Promise.all([
         hubGet<Overview>('/api/hub/admin/crawl/overview'),
         hubGet<CandidatePage>('/api/hub/admin/crawl/candidates?status=pending&limit=50&offset=0'),
         hubGet<{ok:boolean;items:Source[]}>('/api/hub/admin/crawl-sources?limit=100'),
         hubGet<{ok:boolean;policy:ModerationPolicy}>('/api/hub/admin/crawl-moderation/policy'),
         hubGet<{ok:boolean;items:Array<{id:string;candidateId:string;decisionSource:string;verdict:string|null;status:string;createdAt:number;actor:string|null}>}>('/api/hub/admin/crawl/moderation-decisions?limit=10'),
         hubGet<ModelAnalytics>('/api/hub/admin/crawl/moderation-analytics?days=30'),
-        hubGet<{ok:boolean;items:GoldCase[]}>('/api/hub/admin/crawl/moderation-gold-cases?limit=100&offset=0')
+        hubGet<{ok:boolean;items:GoldCase[]}>('/api/hub/admin/crawl/moderation-gold-cases?limit=100&offset=0'),
+        hubGet<GoldAssignmentMetrics>('/api/hub/admin/crawl/moderation-gold-assignments/metrics')
       ])
-      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setDecisionHistory(history.items);setModelAnalytics(analytics);setGoldCases(goldQueue.items)
+      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setDecisionHistory(history.items);setModelAnalytics(analytics);setGoldCases(goldQueue.items);setGoldAssignmentMetrics(assignmentMetrics)
     }catch(e){setError(e instanceof Error?e.message:'采集运营数据加载失败')}
     finally{setLoading(false)}
   },[])
@@ -141,8 +146,22 @@ export default function CrawlOperationsPage(){
     }catch(e){setGoldMessage(e instanceof Error?e.message:'创建金标样本失败')}
     finally{setGoldBusy(false)}
   }
+  const claimGoldTask=async()=>{
+    if(goldBusy)return
+    setGoldBusy(true);setGoldMessage(null)
+    try{
+      const result=await hubSend<{ok:boolean;assignmentId:string;case:{id:string};slot:number;expiresAt:number}>('/api/hub/admin/crawl/moderation-gold-cases/claim','POST',activeGoldCase?{caseId:activeGoldCase.id}:{})
+      setGoldClaimedCaseId(result.case.id);setGoldClaimExpiresAt(result.expiresAt)
+      const item=goldCases.find(x=>x.id===result.case.id)
+      if(item)await openGoldCase(item)
+      setGoldMessage('已领取第 '+result.slot+' 个独立标注席位，任务有效期至 '+time(result.expiresAt))
+      await load()
+    }catch(e){setGoldMessage(e instanceof Error?e.message:'领取标注任务失败')}
+    finally{setGoldBusy(false)}
+  }
   const submitGoldAnnotation=async()=>{
     if(!activeGoldCase||goldBusy)return
+    if(goldClaimedCaseId!==activeGoldCase.id){setGoldMessage('请先领取当前样本的标注任务');return}
     setGoldBusy(true);setGoldMessage(null)
     try{
       await hubSend('/api/hub/admin/crawl/moderation-gold-cases/'+encodeURIComponent(activeGoldCase.id)+'/annotations','POST',
@@ -244,7 +263,7 @@ export default function CrawlOperationsPage(){
             <label className="space-y-1 text-sm md:col-span-2"><span className="text-muted-foreground">脱敏内容摘要（不得包含 URL、邮箱、电话或个人信息）</span><textarea value={goldExcerpt} onChange={e=>setGoldExcerpt(e.target.value)} maxLength={3000} rows={3} className="w-full rounded-md border bg-background p-3 text-sm"/></label>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-muted-foreground">系统会根据已填写的脱敏内容生成 SHA-256 样本指纹。</p><Button size="sm" onClick={()=>void createGoldCase()} disabled={goldBusy}>加入双人标注队列</Button></div>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4"><div><h3 className="font-medium">金标样本队列</h3><p className="text-xs text-muted-foreground">待标注 {goldCases.filter(x=>x.status==='pending'||x.status==='annotating').length} · 待仲裁 {goldCases.filter(x=>x.status==='needs_adjudication').length} · 已形成金标 {goldCases.filter(x=>x.status==='gold_ready').length}</p></div><Button size="sm" variant="outline" onClick={()=>void exportGoldSet()} disabled={goldBusy}>导出正式金标 JSON</Button></div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4"><div><h3 className="font-medium">金标样本队列</h3><p className="text-xs text-muted-foreground">待标注 {goldCases.filter(x=>x.status==='pending'||x.status==='annotating').length} · 待仲裁 {goldCases.filter(x=>x.status==='needs_adjudication').length} · 已形成金标 {goldCases.filter(x=>x.status==='gold_ready').length}</p><p className="mt-1 text-xs text-muted-foreground">领取中 {goldAssignmentMetrics?.claimed??0} · 已完成 {goldAssignmentMetrics?.completed??0} · 已过期 {goldAssignmentMetrics?.expired??0} · 我的有效任务 {goldAssignmentMetrics?.myActive??0}</p></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={()=>void claimGoldTask()} disabled={goldBusy}>领取任务</Button><Button size="sm" variant="outline" onClick={()=>void exportGoldSet()} disabled={goldBusy}>导出正式金标 JSON</Button></div></div>
           {!goldCases.length?<p className="rounded-lg border p-5 text-center text-sm text-muted-foreground">暂无金标样本。请先添加完成脱敏的真实网站样本。</p>:<div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
             <div className="max-h-[520px] space-y-2 overflow-y-auto">{goldCases.map(item=><button type="button" key={item.id} onClick={()=>void openGoldCase(item)} className={'w-full rounded-lg border p-3 text-left transition-colors '+(activeGoldId===item.id?'border-primary bg-primary/5':'hover:bg-muted/50')}>
               <div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-medium">{item.title||item.id}</span><span className="shrink-0 rounded bg-muted px-2 py-1 text-[11px]">{item.status==='pending'?'待标注':item.status==='annotating'?'标注中':item.status==='needs_adjudication'?'待仲裁':'已形成金标'}</span></div>
@@ -254,7 +273,7 @@ export default function CrawlOperationsPage(){
               {!activeGoldCase?<p className="py-8 text-center text-sm text-muted-foreground">选择左侧样本开始标注或仲裁。</p>:<>
                 <div><h3 className="font-semibold">{activeGoldCase.title||'未命名样本'}</h3>{activeGoldCase.description&&<p className="mt-1 text-sm text-muted-foreground">{activeGoldCase.description}</p>}{activeGoldCase.sanitizedExcerpt&&<p className="mt-2 whitespace-pre-wrap rounded bg-muted/50 p-3 text-sm">{activeGoldCase.sanitizedExcerpt}</p>}</div>
                 <div className="space-y-2 border-t pt-3"><h4 className="text-sm font-medium">独立人工标注记录</h4>{goldAnnotations.length?goldAnnotations.map(item=><div key={item.id} className="rounded-lg bg-muted/50 p-3 text-xs"><div className="flex flex-wrap justify-between gap-2"><span className="font-medium">{item.label} · {item.risk?'存在风险':'未标记风险'}</span><span className="text-muted-foreground">{item.annotatorId} · {time(item.createdAt)}</span></div><p className="mt-1 whitespace-pre-wrap">{item.evidence}</p></div>):<p className="text-xs text-muted-foreground">双人提交完成前，标注标签与证据会隐藏，以保护独立判断。</p>}</div>
-                {activeGoldCase.status==='pending'||activeGoldCase.status==='annotating'?<div className="space-y-2 border-t pt-3"><h4 className="text-sm font-medium">提交我的独立判断</h4><div className="grid gap-2 sm:grid-cols-2"><select value={goldLabel} onChange={e=>setGoldLabel(e.target.value as 'approve'|'reject'|'review')} className="h-9 rounded-md border bg-background px-3 text-sm"><option value="approve">适合收录</option><option value="reject">不适合收录</option><option value="review">证据不足/需复核</option></select><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={goldRisk} onChange={e=>setGoldRisk(e.target.checked)}/>存在明确风险</label></div><textarea value={goldEvidence} onChange={e=>setGoldEvidence(e.target.value)} rows={3} maxLength={2000} placeholder="填写判断依据（至少 10 个字符）" className="w-full rounded-md border bg-background p-3 text-sm"/><Button size="sm" onClick={()=>void submitGoldAnnotation()} disabled={goldBusy||goldEvidence.trim().length<10}>提交独立标注</Button></div>:null}
+                {activeGoldCase.status==='pending'||activeGoldCase.status==='annotating'?<div className="space-y-2 border-t pt-3"><h4 className="text-sm font-medium">提交我的独立判断</h4><p className="text-xs text-muted-foreground">{goldClaimedCaseId===activeGoldCase.id&&goldClaimExpiresAt&&goldClaimExpiresAt>Date.now()?('已领取任务，有效期至 '+time(goldClaimExpiresAt)):'请先领取当前样本的标注任务。'}</p><Button size="sm" variant="outline" onClick={()=>void claimGoldTask()} disabled={goldBusy||goldClaimedCaseId===activeGoldCase.id}>领取当前样本</Button><div className="grid gap-2 sm:grid-cols-2"><select value={goldLabel} onChange={e=>setGoldLabel(e.target.value as 'approve'|'reject'|'review')} className="h-9 rounded-md border bg-background px-3 text-sm"><option value="approve">适合收录</option><option value="reject">不适合收录</option><option value="review">证据不足/需复核</option></select><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={goldRisk} onChange={e=>setGoldRisk(e.target.checked)}/>存在明确风险</label></div><textarea value={goldEvidence} onChange={e=>setGoldEvidence(e.target.value)} rows={3} maxLength={2000} placeholder="填写判断依据（至少 10 个字符）" className="w-full rounded-md border bg-background p-3 text-sm"/><Button size="sm" onClick={()=>void submitGoldAnnotation()} disabled={goldBusy||goldClaimedCaseId!==activeGoldCase.id||goldEvidence.trim().length<10}>提交独立标注</Button></div>:null}
                 {activeGoldCase.status==='needs_adjudication'?<div className="space-y-2 border-t pt-3"><h4 className="text-sm font-medium">分歧仲裁（必须由未参与本样本标注的管理员执行）</h4><div className="grid gap-2 sm:grid-cols-2"><select value={adjudicateLabel} onChange={e=>setAdjudicateLabel(e.target.value as 'approve'|'reject'|'review')} className="h-9 rounded-md border bg-background px-3 text-sm"><option value="approve">仲裁：适合收录</option><option value="reject">仲裁：不适合收录</option><option value="review">仲裁：证据不足</option></select><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={adjudicateRisk} onChange={e=>setAdjudicateRisk(e.target.checked)}/>最终判定存在风险</label></div><textarea value={adjudicateReason} onChange={e=>setAdjudicateReason(e.target.value)} rows={3} maxLength={2000} placeholder="填写仲裁理由（至少 10 个字符）" className="w-full rounded-md border bg-background p-3 text-sm"/><Button size="sm" onClick={()=>void adjudicateGoldCase()} disabled={goldBusy||adjudicateReason.trim().length<10}>提交仲裁</Button></div>:null}
                 {activeGoldCase.status==='gold_ready'?<div className="rounded-lg border border-green-600/30 bg-green-600/5 p-3 text-sm"><strong>正式金标：</strong>{activeGoldCase.finalLabel} · {activeGoldCase.finalRisk?'存在风险':'未标记风险'}</div>:null}
               </>}

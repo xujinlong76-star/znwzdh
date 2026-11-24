@@ -433,6 +433,35 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     },
     checksum: "v1_crawl_gold_candidate_source_unique",
   },
+  {
+    version: "20261124_crawl_moderation_gold_task_claims",
+    name: "金标双盲标注任务领取与租约",
+    up: async (db: Db) => {
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS crawl_moderation_gold_assignments (
+          id TEXT PRIMARY KEY,
+          case_id TEXT NOT NULL REFERENCES crawl_moderation_gold_cases(id) ON DELETE CASCADE,
+          annotator_id TEXT NOT NULL,
+          slot INTEGER NOT NULL CHECK (slot IN (1,2)),
+          status TEXT NOT NULL CHECK (status IN ('claimed','completed','expired')),
+          lease_expires_at BIGINT NOT NULL,
+          created_at BIGINT NOT NULL,
+          claimed_at BIGINT NOT NULL,
+          completed_at BIGINT
+        )`,
+        "CREATE INDEX IF NOT EXISTS crawl_gold_assignments_annotator_idx ON crawl_moderation_gold_assignments(annotator_id,status,lease_expires_at)",
+        "CREATE INDEX IF NOT EXISTS crawl_gold_assignments_case_idx ON crawl_moderation_gold_assignments(case_id,status,slot)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS crawl_gold_assignments_active_slot_idx ON crawl_moderation_gold_assignments(case_id,slot) WHERE status='claimed'",
+        "CREATE UNIQUE INDEX IF NOT EXISTS crawl_gold_assignments_active_annotator_idx ON crawl_moderation_gold_assignments(case_id,annotator_id) WHERE status='claimed'"
+      ];
+      if (db.dialect === "pg" && db.pg) {
+        for (const statement of statements) await db.pg.query(statement);
+      } else if (db.sqlite) {
+        db.sqlite.exec(statements.join(";"));
+      }
+    },
+    checksum: "v1_crawl_moderation_gold_task_claims",
+  },
 ];
 
 /**

@@ -63,6 +63,47 @@ describe("人工金标双人标注与仲裁", () => {
     expect(rows[0].id).toBe("gold-candidate-first");
   });
 
+  it("标注任务双席位互斥，过期租约可回收且保留历史", async () => {
+    const repo = await setup();
+    await createCrawlModerationGoldCase(repo, {
+      id: "gold-task-claims", sourceFingerprint: "d".repeat(64),
+      title: "任务领取测试", createdBy: "admin-creator",
+    });
+    const now = Date.now();
+    await repo.run(
+      "INSERT INTO crawl_moderation_gold_assignments (id,case_id,annotator_id,slot,status,lease_expires_at,created_at,claimed_at) VALUES (?,?,?,?,?,?,?,?)",
+      ["claim-a", "gold-task-claims", "reviewer-a", 1, "claimed", now + 60_000, now, now],
+    );
+    await repo.run(
+      "INSERT INTO crawl_moderation_gold_assignments (id,case_id,annotator_id,slot,status,lease_expires_at,created_at,claimed_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+      ["claim-a-duplicate", "gold-task-claims", "reviewer-b", 1, "claimed", now + 60_000, now, now],
+    );
+    await repo.run(
+      "INSERT INTO crawl_moderation_gold_assignments (id,case_id,annotator_id,slot,status,lease_expires_at,created_at,claimed_at) VALUES (?,?,?,?,?,?,?,?)",
+      ["claim-b", "gold-task-claims", "reviewer-b", 2, "claimed", now + 60_000, now, now],
+    );
+    const activeBefore = await repo.raw(
+      "SELECT id FROM crawl_moderation_gold_assignments WHERE case_id=? AND status='claimed'",
+      ["gold-task-claims"],
+    );
+    expect(activeBefore).toHaveLength(2);
+    await repo.run(
+      "UPDATE crawl_moderation_gold_assignments SET status='expired' WHERE id='claim-a'",
+      [],
+    );
+    await repo.run(
+      "INSERT INTO crawl_moderation_gold_assignments (id,case_id,annotator_id,slot,status,lease_expires_at,created_at,claimed_at) VALUES (?,?,?,?,?,?,?,?)",
+      ["claim-c", "gold-task-claims", "reviewer-c", 1, "claimed", now + 60_000, now, now],
+    );
+    const history = await repo.raw(
+      "SELECT status FROM crawl_moderation_gold_assignments WHERE case_id=? ORDER BY id",
+      ["gold-task-claims"],
+    );
+    expect(history).toHaveLength(3);
+    expect(history.filter(row => row.status === "claimed")).toHaveLength(2);
+    expect(history.filter(row => row.status === "expired")).toHaveLength(1);
+  });
+
   it("标签或风险意见不一致时进入仲裁，且独立仲裁人才能完成金标", async () => {
     const repo = await setup();
     await createCrawlModerationGoldCase(repo, {

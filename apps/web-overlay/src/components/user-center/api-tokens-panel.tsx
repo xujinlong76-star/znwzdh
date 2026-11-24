@@ -3,7 +3,7 @@
 /**
  * 个人 API 令牌面板（T20）：自建令牌供扩展 / Raycast / MCP 等外部客户端
  * 以「你的身份」访问收藏 / 历史 / 画像 / 金库。三档：只读 / 收藏写入 / 完整写入。
- * 明文只在创建响应里出现一次。
+ * 明文只在创建 / 轮换响应里出现一次。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'

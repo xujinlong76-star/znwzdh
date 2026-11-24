@@ -24,7 +24,9 @@ type Candidate = {
   aiModeration?:{mode:string;status:string;verdict:string|null;confidence:number|null;qualityScore:number|null;risks:string[];reasons:string[];model:string|null;policyVersion:string|null;reviewedAt:number|null}|null
 }
 type CandidatePage = {ok:boolean;items:Candidate[];total:number;limit:number;offset:number}
-type Source = {id:string;url:string;kind:'sitemap'|'rss'|'page';enabled:boolean;priority:number;intervalMs:number;nextRunAt:number;lastRunAt:number|null;lastStatus:string|null;lastError:string|null}\ntype ModerationPolicy = {enabled:boolean;mode:'shadow';autoApproveConfidence:number;rejectConfidence:number;minQualityScore:number;maxExcerptChars:number;maxAiReviewsPerRun:number;requireHttps:boolean}\nconst DEFAULT_POLICY:ModerationPolicy={enabled:false,mode:'shadow',autoApproveConfidence:0.93,rejectConfidence:0.97,minQualityScore:70,maxExcerptChars:6000,maxAiReviewsPerRun:5,requireHttps:false}
+type Source = {id:string;url:string;kind:'sitemap'|'rss'|'page';enabled:boolean;priority:number;intervalMs:number;nextRunAt:number;lastRunAt:number|null;lastStatus:string|null;lastError:string|null}
+type ModerationPolicy = {enabled:boolean;mode:'shadow';autoApproveConfidence:number;rejectConfidence:number;minQualityScore:number;maxExcerptChars:number;maxAiReviewsPerRun:number;requireHttps:boolean}
+const DEFAULT_POLICY:ModerationPolicy={enabled:false,mode:'shadow',autoApproveConfidence:0.93,rejectConfidence:0.97,minQualityScore:70,maxExcerptChars:6000,maxAiReviewsPerRun:5,requireHttps:false}
 
 function Stat({label,value,detail}:{label:string;value:string|number;detail?:string}) {
   return <Card><CardHeader className="pb-2"><CardDescription>{label}</CardDescription><CardTitle className="text-2xl tabular-nums">{value}</CardTitle></CardHeader>{detail&&<CardContent className="pt-0 text-xs text-muted-foreground">{detail}</CardContent>}</Card>
@@ -34,7 +36,9 @@ function time(value:number){return new Date(value).toLocaleString('zh-CN',{hour1
 export default function CrawlOperationsPage(){
   const [overview,setOverview]=useState<Overview|null>(null)
   const [page,setPage]=useState<CandidatePage|null>(null)
-  const [sources,setSources]=useState<Source[]>([])\n  const [policy,setPolicy]=useState<ModerationPolicy>(DEFAULT_POLICY)\n  const [policyBusy,setPolicyBusy]=useState(false)
+  const [sources,setSources]=useState<Source[]>([])
+  const [policy,setPolicy]=useState<ModerationPolicy>(DEFAULT_POLICY)
+  const [policyBusy,setPolicyBusy]=useState(false)
   const [sourceUrl,setSourceUrl]=useState('')
   const [sourceKind,setSourceKind]=useState<Source['kind']>('sitemap')
   const [sourceBusy,setSourceBusy]=useState<string|null>(null)
@@ -48,9 +52,10 @@ export default function CrawlOperationsPage(){
       const [stats,queue,registry,moderation]=await Promise.all([
         hubGet<Overview>('/api/hub/admin/crawl/overview'),
         hubGet<CandidatePage>('/api/hub/admin/crawl/candidates?status=pending&limit=50&offset=0'),
-        hubGet<{ok:boolean;items:Source[]}>('/api/hub/admin/crawl-sources?limit=100')
+        hubGet<{ok:boolean;items:Source[]}>('/api/hub/admin/crawl-sources?limit=100'),
+        hubGet<{ok:boolean;policy:ModerationPolicy}>('/api/hub/admin/crawl-moderation/policy')
       ])
-      setOverview(stats);setPage(queue);setSources(registry.items)
+      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy)
     }catch(e){setError(e instanceof Error?e.message:'采集运营数据加载失败')}
     finally{setLoading(false)}
   },[])
@@ -72,7 +77,12 @@ export default function CrawlOperationsPage(){
     try{await hubSend('/api/hub/admin/crawl-sources/'+encodeURIComponent(source.id),'DELETE',{});await load()}
     catch(e){setError(e instanceof Error?e.message:'删除采集来源失败')}finally{setSourceBusy(null)}
   }
-  const savePolicy=async()=>{\n    if(policyBusy)return;setPolicyBusy(true);setError(null)\n    try{const result=await hubSend<{ok:boolean;policy:ModerationPolicy}>('/api/hub/admin/crawl-moderation/policy','PUT',policy);setPolicy(result.policy)}\n    catch(e){setError(e instanceof Error?e.message:'保存 AI 审核规则失败')}finally{setPolicyBusy(false)}\n  }\n  const review=async(item:Candidate,decision:'approve'|'reject')=>{
+  const savePolicy=async()=>{
+    if(policyBusy)return;setPolicyBusy(true);setError(null)
+    try{const result=await hubSend<{ok:boolean;policy:ModerationPolicy}>('/api/hub/admin/crawl-moderation/policy','PUT',policy);setPolicy(result.policy)}
+    catch(e){setError(e instanceof Error?e.message:'保存 AI 审核规则失败')}finally{setPolicyBusy(false)}
+  }
+  const review=async(item:Candidate,decision:'approve'|'reject')=>{
     if(busy)return
     const reason=(reasons[item.id]??'').trim()
     if(decision==='reject'&&!reason){setError('驳回候选必须填写原因');return}
@@ -103,7 +113,8 @@ export default function CrawlOperationsPage(){
         <Stat label="待审核候选" value={overview?.candidates.pending??0}/>
         <Stat label="已通过候选" value={overview?.candidates.approved??0}/>
         <Stat label="已驳回候选" value={overview?.candidates.rejected??0}/>
-        <Stat label="近 24 小时处理" value={Object.values(overview?.last24Hours??{}).reduce((a,b)=>a+b,0)}/>\n        <Stat label="近 24 小时 AI 审核" value={overview?.aiModeration.completed??0} detail={`错误 ${overview?.aiModeration.errors??0} · 额度跳过 ${overview?.aiModeration.quotaBlocked??0} · 样本上限 1000`}/>
+        <Stat label="近 24 小时处理" value={Object.values(overview?.last24Hours??{}).reduce((a,b)=>a+b,0)}/>
+        <Stat label="近 24 小时 AI 审核" value={overview?.aiModeration.completed??0} detail={`错误 ${overview?.aiModeration.errors??0} · 额度跳过 ${overview?.aiModeration.quotaBlocked??0} · 样本上限 1000`}/>
       </div>
       <Card><CardHeader><CardTitle className="text-base">采集来源管理</CardTitle><CardDescription>维护 Sitemap、RSS/Atom 和普通网页来源；来源仍受 robots.txt 与 SSRF 安全策略约束。</CardDescription></CardHeader>
         <CardContent className="space-y-4">

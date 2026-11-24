@@ -563,7 +563,7 @@ export async function handleCrawlWorker(
                     url: finalUrl,
                     title: metadata.title,
                     description: metadata.description,
-                    contentExcerpt: metadata.text.slice(0, 6000),
+                    contentExcerpt: metadata.text.slice(0, moderationPolicy.maxExcerptChars),
                     evidence: {
                       httpStatus: response.status,
                       provenance: task.source,

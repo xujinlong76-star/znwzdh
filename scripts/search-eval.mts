@@ -87,6 +87,7 @@ if (fixtureK !== undefined && (!Number.isInteger(fixtureK) || fixtureK <= 0)) {
 }
 const k = explicitK ? args.k : fixtureK ?? args.k;
 const aggregate = evaluateSearch(cases, k);
+const diagnostics = evaluateSearchDiagnostics(cases, k);
 
 if (args.json) {
   console.log(JSON.stringify({

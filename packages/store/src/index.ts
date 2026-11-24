@@ -34,3 +34,5 @@ export type { NavVersionProbe } from "./repository/nav-version.ts";
 // 收藏写路径的归属越界信号（BOLA）：apps/api 的 POST /api/favorites 需要 instanceof 它
 // 才能把「别人的文件夹」映射成 400，而不是笼统的 500。
 export { FavoriteFolderNotOwnedError } from "./repository/favorites.ts";
+
+export { recordCrawlAiModerationDecision, listCrawlAiModerationDecisions } from "./repository/crawl-ai-moderation.ts";

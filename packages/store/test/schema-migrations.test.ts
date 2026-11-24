@@ -33,6 +33,20 @@ describe("版本化数据库迁移台账（DB-01）", () => {
     expect(res.skipped.length).toBeGreaterThanOrEqual(BUILTIN_MIGRATIONS.length);
   });
 
+  it("建立 AI 采集审核追加式决策历史表及候选/时间索引", async () => {
+    const rows = await db.sqlite!.prepare(
+      "PRAGMA table_info(crawl_ai_moderation_decisions)"
+    ).all() as Array<{ name: string }>;
+    const columns = new Set(rows.map((row) => row.name));
+    for (const name of ["id","candidate_id","decision_source","mode","status","verdict","confidence","quality_score","risks_json","reasons_json","model","policy_version","actor","created_at"]) {
+      expect(columns.has(name)).toBe(true);
+    }
+    const indexes = await db.sqlite!.prepare(
+      "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'crawl_ai_decisions_%'"
+    ).all() as Array<{ name: string }>;
+    expect(indexes.length).toBeGreaterThanOrEqual(3);
+  });
+
   it("台账记录包含 version, name, applied_at, checksum", async () => {
     const ledger = await getMigrationLedger(db);
     expect(ledger.length).toBeGreaterThanOrEqual(BUILTIN_MIGRATIONS.length);

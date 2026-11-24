@@ -14,7 +14,7 @@ type Overview = {
   candidates:Record<string,number>;
   last24Hours:Record<string,number>;
   busiestHosts:Array<{host:string;tasks:number}>;
-  aiModeration:{windowHours:number;sampleSize:number;completed:number;errors:number;quotaBlocked:number;verdicts:Record<string,number>}
+  aiModeration:{windowHours:number;sampleSize:number;completed:number;errors:number;quotaBlocked:number;verdicts:Record<string,number>;ledger24h?:Record<string,number>;humanOverturns30d?:number}
 }
 type Candidate = {
   id:string;url:string;title:string|null;description:string|null;source:string;status:string;
@@ -38,6 +38,7 @@ export default function CrawlOperationsPage(){
   const [page,setPage]=useState<CandidatePage|null>(null)
   const [sources,setSources]=useState<Source[]>([])
   const [policy,setPolicy]=useState<ModerationPolicy>(DEFAULT_POLICY)
+  const [decisionHistory,setDecisionHistory]=useState<Array<{id:string;candidateId:string;decisionSource:string;verdict:string|null;status:string;createdAt:number;actor:string|null}>>([])
   const [policyBusy,setPolicyBusy]=useState(false)
   const [sourceUrl,setSourceUrl]=useState('')
   const [sourceKind,setSourceKind]=useState<Source['kind']>('sitemap')
@@ -49,13 +50,14 @@ export default function CrawlOperationsPage(){
   const load=useCallback(async()=>{
     setLoading(true);setError(null)
     try{
-      const [stats,queue,registry,moderation]=await Promise.all([
+      const [stats,queue,registry,moderation,history]=await Promise.all([
         hubGet<Overview>('/api/hub/admin/crawl/overview'),
         hubGet<CandidatePage>('/api/hub/admin/crawl/candidates?status=pending&limit=50&offset=0'),
         hubGet<{ok:boolean;items:Source[]}>('/api/hub/admin/crawl-sources?limit=100'),
-        hubGet<{ok:boolean;policy:ModerationPolicy}>('/api/hub/admin/crawl-moderation/policy')
+        hubGet<{ok:boolean;policy:ModerationPolicy}>('/api/hub/admin/crawl-moderation/policy'),
+        hubGet<{ok:boolean;items:Array<{id:string;candidateId:string;decisionSource:string;verdict:string|null;status:string;createdAt:number;actor:string|null}>}>('/api/hub/admin/crawl/moderation-decisions?limit=10')
       ])
-      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy)
+      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setDecisionHistory(history.items)
     }catch(e){setError(e instanceof Error?e.message:'采集运营数据加载失败')}
     finally{setLoading(false)}
   },[])
@@ -115,7 +117,10 @@ export default function CrawlOperationsPage(){
         <Stat label="已驳回候选" value={overview?.candidates.rejected??0}/>
         <Stat label="近 24 小时处理" value={Object.values(overview?.last24Hours??{}).reduce((a,b)=>a+b,0)}/>
         <Stat label="近 24 小时 AI 审核" value={overview?.aiModeration.completed??0} detail={`错误 ${overview?.aiModeration.errors??0} · 额度跳过 ${overview?.aiModeration.quotaBlocked??0} · 样本上限 1000`}/>
+        <Stat label="近 24 小时审核留档" value={Object.values(overview?.aiModeration.ledger24h??{}).reduce((a,b)=>a+b,0)} detail={`AI ${overview?.aiModeration.ledger24h?.ai??0} · 人工 ${overview?.aiModeration.ledger24h?.human??0}`}/>
+        <Stat label="近 30 天人工推翻" value={overview?.aiModeration.humanOverturns30d??0} detail="AI 建议与后续人工结论不一致的次数"/>
       </div>
+      <Card><CardHeader><CardTitle className="text-base">最近审核决策历史</CardTitle><CardDescription>AI 判断与人工最终决定分别追加留档；历史记录不可被新结果覆盖。</CardDescription></CardHeader><CardContent className="space-y-2">{decisionHistory.length?decisionHistory.map(item=><div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm"><div><span className="font-medium">{item.decisionSource==='ai'?'AI 判断':'人工决定'}</span><span className="ml-2 text-muted-foreground">{item.verdict||item.status}</span><div className="text-xs text-muted-foreground">候选 {item.candidateId} · {item.actor||'系统模型'}</div></div><span className="text-xs text-muted-foreground">{time(item.createdAt)}</span></div>):<p className="text-sm text-muted-foreground">暂无审核历史记录</p>}</CardContent></Card>
       <Card><CardHeader><CardTitle className="text-base">采集来源管理</CardTitle><CardDescription>维护 Sitemap、RSS/Atom 和普通网页来源；来源仍受 robots.txt 与 SSRF 安全策略约束。</CardDescription></CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row">

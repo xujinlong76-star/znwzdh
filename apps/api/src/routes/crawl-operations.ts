@@ -1,7 +1,9 @@
 import type { FastifyPluginAsync } from "fastify";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   countSiteDiscoveryCandidates, getSiteDiscoveryCandidateForUpdate,
+  recordCrawlAiModerationDecision, listCrawlAiModerationDecisions,
   listSiteDiscoveryCandidates, reviewSiteDiscoveryCandidate,
 } from "@navhub/store";
 import type { AppContext } from "../context.ts";
@@ -56,13 +58,15 @@ function moderationEvidenceOf(evidence: Record<string, unknown>): Record<string,
 export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
   app.get("/api/admin/crawl/overview", { config: { scope: "admin", cache: { maxAge: 0 } } }, async () => {
-    const [tasks, sources, candidates, hosts, recent, moderationRows] = await Promise.all([
+    const [tasks, sources, candidates, hosts, recent, moderationRows, ledgerCounts, overturnedRows] = await Promise.all([
       ctx.repo.raw("SELECT status, COUNT(*) AS total FROM crawl_tasks GROUP BY status"),
       ctx.repo.raw("SELECT enabled, COUNT(*) AS total FROM crawl_sources GROUP BY enabled"),
       ctx.repo.raw("SELECT status, COUNT(*) AS total FROM site_discovery_candidates GROUP BY status"),
       ctx.repo.raw("SELECT host, COUNT(*) AS total FROM crawl_tasks GROUP BY host ORDER BY total DESC LIMIT 20"),
       ctx.repo.raw("SELECT status, COUNT(*) AS total FROM crawl_tasks WHERE updated_at >= ? GROUP BY status", [Date.now()-24*60*60_000]),
       ctx.repo.raw("SELECT evidence_json FROM site_discovery_candidates WHERE updated_at >= ? ORDER BY updated_at DESC LIMIT 1000", [Date.now()-24*60*60_000]),
+      ctx.repo.raw("SELECT decision_source, COUNT(*) AS total FROM crawl_ai_moderation_decisions WHERE created_at >= ? GROUP BY decision_source", [Date.now()-24*60*60_000]),
+      ctx.repo.raw("SELECT COUNT(DISTINCT ai.candidate_id) AS total FROM crawl_ai_moderation_decisions ai JOIN crawl_ai_moderation_decisions human ON human.candidate_id = ai.candidate_id AND human.decision_source = 'human' AND human.created_at > ai.created_at WHERE ai.decision_source = 'ai' AND ai.verdict IS NOT NULL AND ((ai.verdict = 'auto_approve' AND human.verdict <> 'approve') OR (ai.verdict = 'reject' AND human.verdict <> 'reject')) AND ai.created_at >= ?", [Date.now()-30*24*60*60_000]),
     ]);
     const countMap = (rows: Array<Record<string, unknown>>, key: string) =>
       Object.fromEntries(rows.map(row => [String(row[key]), Number(row.total ?? 0)]));
@@ -87,6 +91,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         else if (ai.status === "quota_blocked") aiModeration.quotaBlocked++;
       } catch { /* 坏证据不影响运营总览 */ }
     }
+    const ledger = Object.fromEntries(ledgerCounts.map(row => [String(row.decision_source), Number(row.total ?? 0)]));
     const totalTasks = Object.values(taskCounts).reduce((a,b)=>a+b,0);
     const finished = (taskCounts.done ?? 0) + (taskCounts.dead_letter ?? 0) + (taskCounts.hold_for_review ?? 0);
     return {
@@ -95,7 +100,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       sources: { enabled: sourceCounts.true ?? 0, disabled: sourceCounts.false ?? 0 },
       candidates: candidateCounts,
       last24Hours: recentCounts,
-      aiModeration,
+      aiModeration: { ...aiModeration, ledger24h: ledger, humanOverturns30d: Number(overturnedRows[0]?.total ?? 0) },
       busiestHosts: hosts.map(row => ({ host: String(row.host), tasks: Number(row.total) })),
     };
   });
@@ -118,6 +123,29 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     }), total, limit: parsed.data.limit, offset: parsed.data.offset };
   });
 
+
+  app.get("/api/admin/crawl/moderation-decisions", { config: { scope: "admin", cache: { maxAge: 0 } } }, async (req, reply) => {
+    const parsed = z.object({
+      candidateId: z.string().min(1).max(64).optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(50),
+      offset: z.coerce.number().int().min(0).max(100_000).default(0),
+    }).safeParse(req.query ?? {});
+    if (!parsed.success) { reply.code(400); return { ok: false, error: "审核历史筛选参数无效" }; }
+    const items = await listCrawlAiModerationDecisions(ctx.repo, parsed.data);
+    return { ok: true, items: items.map(row => ({
+      id: String(row.id), candidateId: String(row.candidate_id),
+      decisionSource: String(row.decision_source), mode: String(row.mode),
+      status: String(row.status), verdict: row.verdict == null ? null : String(row.verdict),
+      confidence: row.confidence == null ? null : Number(row.confidence),
+      qualityScore: row.quality_score == null ? null : Number(row.quality_score),
+      risks: JSON.parse(String(row.risks_json ?? "[]")),
+      reasons: JSON.parse(String(row.reasons_json ?? "[]")),
+      model: row.model == null ? null : String(row.model),
+      policyVersion: row.policy_version == null ? null : String(row.policy_version),
+      actor: row.actor == null ? null : String(row.actor), createdAt: Number(row.created_at),
+    })) };
+  });
+
   app.post("/api/admin/crawl/candidates/:id/review", { config: { scope: "admin", rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req, reply) => {
     const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params ?? {});
     const body = z.object({ decision: z.enum(["approve","reject"]), reason: z.string().trim().max(1000).optional() })
@@ -136,6 +164,11 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     });
     if (result.kind === "missing") { reply.code(404); return {ok:false,error:"候选不存在"}; }
     if (result.kind === "conflict") { reply.code(409); return {ok:false,error:"候选已被其他审核操作处理",status:result.status}; }
+    await recordCrawlAiModerationDecision(ctx.repo, {
+      id: randomUUID(), candidateId: result.candidate.id, decisionSource: "human",
+      mode: "manual", status: "reviewed", verdict: body.data.decision,
+      actor: reviewer, reasons: body.data.reason ? [body.data.reason] : [],
+    });
     await ctx.repo.audit({ ip:req.ip,actor:reviewer,actorKind:req.auth.kind,action:"crawl.candidate_review",target:result.candidate.id,
       diff:{decision:body.data.decision,reason:body.data.reason ?? null,previousStatus:"pending"} });
     return {ok:true,candidate:{id:result.candidate.id,status:result.candidate.status,reviewedAt:result.candidate.reviewedAt}};

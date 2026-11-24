@@ -117,7 +117,8 @@ function assertJudgments(value: unknown, hitIds: Set<string>, field: string): Re
 
 /**
  * Validate a privacy-reviewed, double-blind production search gold set.
- * Query text is never included in thrown errors or returned diagnostics.
+ * Errors and aggregate diagnostics never include query text; evaluationCases retain it
+ * only for an explicit, caller-controlled export to restricted storage.
  */
 export function validateSearchGoldSet(input: unknown): SearchGoldValidationResult {
   if (!isRecord(input) || input.schema !== "navhub-search-gold-v1") {

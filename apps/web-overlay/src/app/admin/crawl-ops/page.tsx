@@ -19,7 +19,8 @@ type Candidate = {
   id:string;url:string;title:string|null;description:string|null;source:string;status:string;
   discoveredAt:number;lastSeenAt:number;
   duplicateEvidence:{exact:boolean;near:number};
-  quality:{score:number;reasons:string[]}
+  quality:{score:number;reasons:string[]};
+  aiModeration?:{mode:string;status:string;verdict:string|null;confidence:number|null;qualityScore:number|null;risks:string[];reasons:string[];model:string|null;policyVersion:string|null;reviewedAt:number|null}|null
 }
 type CandidatePage = {ok:boolean;items:Candidate[];total:number;limit:number;offset:number}
 type Source = {id:string;url:string;kind:'sitemap'|'rss'|'page';enabled:boolean;priority:number;intervalMs:number;nextRunAt:number;lastRunAt:number|null;lastStatus:string|null;lastError:string|null}\ntype ModerationPolicy = {enabled:boolean;mode:'shadow';autoApproveConfidence:number;rejectConfidence:number;minQualityScore:number;maxExcerptChars:number;maxAiReviewsPerRun:number;requireHttps:boolean}\nconst DEFAULT_POLICY:ModerationPolicy={enabled:false,mode:'shadow',autoApproveConfidence:0.93,rejectConfidence:0.97,minQualityScore:70,maxExcerptChars:6000,maxAiReviewsPerRun:5,requireHttps:false}
@@ -139,6 +140,15 @@ export default function CrawlOperationsPage(){
           {!page?.items.length?<p className="py-8 text-center text-sm text-muted-foreground">当前没有待审核候选</p>:page.items.map(item=><div key={item.id} className="space-y-3 rounded-xl border p-4">
             <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h3 className="font-semibold">{item.title||'未命名网站'}</h3><a href={safeHref(item.url)} target="_blank" rel="noopener noreferrer" className="break-all text-sm text-muted-foreground underline">{item.url}</a></div><div className="rounded-lg bg-muted px-3 py-2 text-center"><div className="text-xl font-bold tabular-nums">{item.quality.score}</div><div className="text-[11px] text-muted-foreground">质量参考分</div></div></div>
             {item.description&&<p className="text-sm text-muted-foreground">{item.description}</p>}
+            {item.aiModeration?.status==='completed'&&<div className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="font-semibold">AI 影子审核意见</span><span className="rounded bg-background px-2 py-1 text-xs">{item.aiModeration.verdict==='auto_approve'?'建议通过':item.aiModeration.verdict==='reject'?'建议驳回':'建议人工复核'}</span></div>
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground"><span>置信度：{item.aiModeration.confidence===null?'—':Math.round(item.aiModeration.confidence*100)+'%'}</span><span>质量分：{item.aiModeration.qualityScore??'—'}</span><span>模型：{item.aiModeration.model||'—'}</span></div>
+              {!!item.aiModeration.risks.length&&<div className="text-xs">风险标记：{item.aiModeration.risks.join('、')}</div>}
+              {!!item.aiModeration.reasons.length&&<ul className="list-disc pl-5 text-xs text-muted-foreground">{item.aiModeration.reasons.slice(0,4).map((reason,i)=><li key={i}>{reason}</li>)}</ul>}
+              <p className="text-[11px] text-muted-foreground">仅供参考；当前不会替代人工审核。</p>
+            </div>}
+            {item.aiModeration?.status==='error'&&<p className="text-xs text-amber-600">AI 审核暂未完成：模型调用失败，候选仍保持待审核。</p>}
+            {item.aiModeration?.status==='quota_blocked'&&<p className="text-xs text-amber-600">AI 审核因额度限制跳过，候选仍保持待审核。</p>}
             <div className="flex flex-wrap gap-2 text-xs"><span className="rounded bg-muted px-2 py-1">来源：{item.source}</span><span className="rounded bg-muted px-2 py-1">完全重复：{item.duplicateEvidence.exact?'是':'否'}</span><span className="rounded bg-muted px-2 py-1">近重复候选：{item.duplicateEvidence.near}</span><span className="rounded bg-muted px-2 py-1">发现：{time(item.discoveredAt)}</span></div>
             <ul className="list-disc pl-5 text-xs text-muted-foreground">{item.quality.reasons.map((reason,i)=><li key={i}>{reason}</li>)}</ul>
             <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row"><Button size="sm" disabled={busy!==null} onClick={()=>void review(item,'approve')}><CheckCircle2 className="mr-1.5 h-4 w-4"/>{busy===item.id?'处理中…':'标记通过'}</Button><input value={reasons[item.id]??''} onChange={e=>setReasons(old=>({...old,[item.id]:e.target.value}))} placeholder="驳回原因（必填）" className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm"/><Button size="sm" variant="outline" disabled={busy!==null} onClick={()=>void review(item,'reject')}><XCircle className="mr-1.5 h-4 w-4"/>驳回</Button></div>

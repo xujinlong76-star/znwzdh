@@ -2019,6 +2019,19 @@ async revokeAllSessions(userId: string): Promise<number> {
     return systemRepo.claimSystemState(this, key, value, windowMs, now);
   }
 
+  /** 多实例共享登录失败计数：原子递增并返回固定窗口起点。 */
+  async recordLoginFailure(key: string, now: number, windowMs: number): Promise<{ count: number; firstAt: number }> {
+    return systemRepo.recordLoginFailure(this, key, now, windowMs);
+  }
+
+  async getLoginFailureState(key: string): Promise<{ count: number; firstAt: number } | null> {
+    return systemRepo.getLoginFailureState(this, key);
+  }
+
+  async clearLoginFailure(key: string): Promise<void> {
+    return systemRepo.clearLoginFailure(this, key);
+  }
+
 
   /* ------------------------- 任务队列 ------------------------- */
 

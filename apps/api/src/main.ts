@@ -60,7 +60,7 @@ if (runner) runner.start();
 
 // 采集 Worker 与通用巡检任务隔离：默认关闭，完成灰度配置后显式开启。
 // 多实例通过数据库来源租约避免重复认领；抓取实现只允许 guardedFetch。
-const crawlWorker = process.env.NAVHUB_CRAWL_WORKER_ENABLED === "1"
+const crawlWorker = process.env.NAVHUB_CRAWL_SOURCE_WORKER_ENABLED === "1"
   ? startCrawlSourceWorker(ctx, { workerId: "api-" + process.pid + "-" + randomUUID(), limit: 5 })
   : null;
 
@@ -97,7 +97,7 @@ console.info("  语义检索 " + (ctx.capabilities.semantic ? "可用" : "不可
 console.info("  全文检索 " + (ctx.capabilities.fts ? "可用" : "不可用"));
 console.info("  LLM 富化 " + (ctx.capabilities.llm ? "可用" : "不可用（降级为启发式）"));
 console.info("  任务队列 " + (runner ? "已启动（" + Math.round(runner.interval / 1000) + "s 轮询，单实例锁；失败指数退避重试 " + MAX_JOB_ATTEMPTS + " 次）" : "已关闭（NAVHUB_JOBS_ENABLED=0）"));
-console.info("  采集 Worker " + (crawlWorker ? "已启动（60s 轮询，单轮最多 5 个来源；guardedFetch）" : "已关闭（NAVHUB_CRAWL_WORKER_ENABLED=1 才启用）"));
+console.info("  采集 Worker " + (crawlWorker ? "已启动（60s 轮询，单轮最多 5 个来源；guardedFetch）" : "已关闭（NAVHUB_CRAWL_SOURCE_WORKER_ENABLED=1 才启用）"));
 console.info("  任务告警 " + (config.alertWebhook ? "webhook 已配置" : "未配置（仅 console.error）"));
 // 身份签名默认关闭，且关掉之后没有任何提示：收藏/历史/画像/私有草稿这些
 // 「按身份隔离」的数据，实际隔离强度只是一个可自报的字符串。横幅把它显式化。

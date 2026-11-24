@@ -696,4 +696,22 @@ describe('tablist A-3：tablist 面板补 role="tabpanel" / aria-labelledby（20
     expect(src).not.toContain('role="tabpanel"')
     expect(src).toContain('aria-controls={categoryContentId}')
   })
+
+  it('#6 growth-panel：4 个 tab 有 id/aria-controls，4 个面板有 role/id/aria-labelledby', () => {
+    const src = read('src/components/user-center/growth-panel.tsx')
+    // tab 由 tabs.map 单模板渲染：id/aria-controls 各一处模板
+    expect(src).toContain('id={`growth-tab-${id}`}')
+    expect(count(src, 'id={`growth-tab-${id}`}')).toBe(1)
+    expect(src).toContain('aria-controls={`growth-tabpanel-${id}`}')
+    expect(count(src, 'aria-controls={`growth-tabpanel-${id}`}')).toBe(1)
+    // 4 个面板：tasks/season 在调用处包 wrapper（不进子组件改根），
+    // badges 行内 section、guide 裸 div 直接加属性
+    for (const key of ['tasks', 'season', 'badges', 'guide']) {
+      expect(src).toContain(`id="growth-tabpanel-${key}"`)
+      expect(count(src, `id="growth-tabpanel-${key}"`)).toBe(1)
+      expect(src).toContain(`aria-labelledby="growth-tab-${key}"`)
+      expect(count(src, `aria-labelledby="growth-tab-${key}"`)).toBe(1)
+    }
+    expect(count(src, 'role="tabpanel"')).toBe(4)
+  })
 })

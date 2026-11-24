@@ -502,6 +502,8 @@ export function GrowthPanel() {
               type="button"
               role="tab"
               data-growth-tab={id}
+              id={`growth-tab-${id}`}
+              aria-controls={`growth-tabpanel-${id}`}
               aria-selected={selected}
               tabIndex={selected ? 0 : -1}
               onClick={() => setActiveTab(id)}
@@ -534,17 +536,23 @@ export function GrowthPanel() {
 
       {/* 标签内容区 */}
       {activeTab === 'tasks' && (
-        <GrowthTasks
-          profile={profile}
-          onGoToGuide={() => setActiveTab('guide')}
-          autoOpenChestToken={autoOpenChestToken}
-        />
+        <div role="tabpanel" id="growth-tabpanel-tasks" aria-labelledby="growth-tab-tasks">
+          <GrowthTasks
+            profile={profile}
+            onGoToGuide={() => setActiveTab('guide')}
+            autoOpenChestToken={autoOpenChestToken}
+          />
+        </div>
       )}
 
-      {activeTab === 'season' && <GrowthSeasonPanel profile={profile} />}
+      {activeTab === 'season' && (
+        <div role="tabpanel" id="growth-tabpanel-season" aria-labelledby="growth-tab-season">
+          <GrowthSeasonPanel profile={profile} />
+        </div>
+      )}
 
       {activeTab === 'badges' && (
-        <section className="rounded-2xl border border-border/70 bg-card/85 p-4 shadow-xs sm:p-5" aria-label="成就徽章">
+        <section role="tabpanel" id="growth-tabpanel-badges" aria-labelledby="growth-tab-badges" className="rounded-2xl border border-border/70 bg-card/85 p-4 shadow-xs sm:p-5" aria-label="成就徽章">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <span className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400">
@@ -614,7 +622,7 @@ export function GrowthPanel() {
       )}
 
       {activeTab === 'guide' && (
-        <div className="space-y-4">
+        <div role="tabpanel" id="growth-tabpanel-guide" aria-labelledby="growth-tab-guide" className="space-y-4">
           <section className="rounded-2xl border border-border/70 bg-card/85 p-4 shadow-xs sm:p-5" aria-label="功能图鉴">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="flex items-center gap-2 text-sm font-semibold">

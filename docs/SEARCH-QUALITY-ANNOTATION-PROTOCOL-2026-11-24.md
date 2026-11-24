@@ -77,11 +77,27 @@
 4. 对 P95 延迟、证据覆盖率、高风险误提升做单独审查。
 5. 通过后再考虑小流量 A/B；不允许自动把影子结果切换为线上排序。
 
-## 7. JSONL 标注记录格式
+## 7. 影子重排离线评测
+
+已有人工标注与冻结候选快照后，可使用新增 CLI 对比原始排序与质量影子排序：
+
+```bash
+node scripts/search-quality-shadow-eval.mts path/to/shadow-fixture.json --json
+```
+
+输入 schema 为 `search-quality-shadow-v1`，每条 case 包含：
+- `query`：脱敏后的真实查询；
+- `baselineHits`：同一候选快照下，生产融合排序的 siteId 顺序；
+- `relevance`：人工审核的 0–3 相关性等级；
+- `qualityBySite`：同一快照时点的质量分、证据覆盖率和质量分档。
+
+缺少质量快照的候选会按“未知/证据不足”处理，不会被质量分提升。脚本输出 baseline/shadow 的 NDCG、MRR、Recall 和差值，并统计移动数量、实际应用质量分数量及被排除数量。该 CLI 只读本地文件，不访问生产数据库，也不会更改线上搜索排序。
+
+## 8. JSONL 标注记录格式
 
 每行一条 query，字段参考 `search-quality-annotation-template.json`。正式数据必须包含真实 query、候选 siteId、两名独立标注和仲裁状态。模板中的空字段不是有效样本。
 
-## 8. 本轮禁止事项
+## 9. 本轮禁止事项
 
 - 不用 LLM 自动生成 relevance 作为最终金标。
 - 不把一次 HTTP 200 当作高相关或高质量。

@@ -53,7 +53,7 @@ export * from "./facets.ts";
 export * from "./pricing.ts";
 export * from "./search-limits.ts";
 export * from "./search-eval.ts";
-export * from "./search-goldset.ts";
+export * from "./search-gold.ts";
 export * from "./relations.ts";
 export * from "./taxonomy-governance.ts";
 export * from "./taxonomy-rules.ts";

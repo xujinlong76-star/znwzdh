@@ -26,7 +26,7 @@ const HUB_BASE = (
 ).replace(/\/+$/, '')
 
 const TIMEOUT_MS = 15_000
-/** 会话核对连续失败计数（P0-2）：读请求 fail-open 时仍要让连续失败可观测。 */
+/** 会话核对连续失败计数：任何读写请求核对失败均 fail-closed，并保留连续故障观测。 */
 let sessionCheckFailStreak = 0
 /** body 上限 ~1MB，防止代理被超大请求体耗尽进程内存 */
 const MAX_BODY_BYTES = 1024 * 1024

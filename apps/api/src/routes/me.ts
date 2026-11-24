@@ -1720,7 +1720,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
 
     if (ctx.config.identitySecret) {
       // 匿名签名与登录身份签名是两组独立凭据：nonce 各自独立，重放缓存按签名去重
-      const verdict = verifyIdentityHeaders({
+      const verdict = await verifyIdentityHeaders({
         secret: ctx.config.identitySecret,
         identity: parsed.data.anonId,
         headers: req.headers,

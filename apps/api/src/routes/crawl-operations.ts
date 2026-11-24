@@ -610,7 +610,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       let failed = 0, quotaBlocked = 0;
       for (const row of selected) {
         const quota = await reserveLlmQuota(ctx, null, { source: resolved.source, estimatedTokens: 1800 });
-        if (!quota.ok) { quotaBlocked++; break; }
+        if (!quota.ok) { quotaBlocked++; return replyQuotaBlocked(reply, quota.error); }
         try {
           const decision = await moderateSiteWithAi(provider, {
             // 金标表不保存原始 URL；评测时使用固定脱敏占位 URL，不反查候选原始地址。
@@ -641,9 +641,6 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         } catch { failed++; }
         finally { await settleLlmQuota(ctx, quota.hold); }
       }
-      if (quotaBlocked) return replyQuotaBlocked(reply, (await reserveLlmQuota(ctx, null, { source: resolved.source, estimatedTokens: 0 })).ok
-        ? ({ scope: "system", metric: "tokens", limit: 0, used: 0, blockedBy: "usage", retryAfterMs: 60_000 } as never)
-        : (await reserveLlmQuota(ctx, null, { source: resolved.source, estimatedTokens: 0 })).error);
       if (failed || predictions.length !== selected.length) {
         reply.code(502); return { ok: false, error: "自动评测未完整完成，未保存不完整指标", selected: selected.length, completed: predictions.length, failed };
       }

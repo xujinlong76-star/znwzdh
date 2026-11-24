@@ -76,6 +76,26 @@ describe("出站观测：结果分类", () => {
     }
   });
 
+  it("重定向策略回调在下一跳请求前执行，回调拒绝时不访问目标", async () => {
+    const { server, base } = await startServer();
+    try {
+      const visited: Array<{ from: string; to: string; status: number }> = [];
+      await expect(guardedFetch(base + "/redirect-a", guard, {
+        onRedirect: async (fromUrl, toUrl, status) => {
+          visited.push({ from: fromUrl, to: toUrl, status });
+          throw new Error("redirect policy blocked");
+        },
+      })).rejects.toThrow("redirect policy blocked");
+      expect(visited).toEqual([{
+        from: base + "/redirect-a",
+        to: base + "/final",
+        status: 302,
+      }]);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
   it("4xx/5xx：outcome=http_error（对端应答了，是目标站的问题），不是 network_error", async () => {
     const { server, base } = await startServer();
     try {

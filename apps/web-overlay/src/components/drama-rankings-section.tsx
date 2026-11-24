@@ -202,7 +202,9 @@ function RankingsBody({
               <ol className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {list.entries.map((entry) => (
                   <RankingRow
-                    key={entry.key}
+                    // entry.key 是归一化剧名：源榜单同一剧名可出现多次，
+                    // 裸 key 会撞车；rank 在榜内唯一，后缀保证唯一。
+                    key={`${entry.key}-${entry.rank}`}
                     entry={entry}
                     watching={watchingTitles.has(entry.key)}
                   />

@@ -14,7 +14,23 @@ import { VIEW_MODE_IDS } from "@/lib/modular/card-display-modes";
  * - 页面实现只有 `app/page.tsx` 一份（default/generateMetadata 从这里重导出）；
  * - `initialCardDisplayMode` 取路由参数，standard 变体就是 `/` 本页。
  */
-export { default, generateMetadata } from "../../page";
+import type { Metadata } from "next";
+import { generateMetadata as homeGenerateMetadata } from "../../page";
+
+export { default } from "../../page";
+
+/**
+ * 标题与首页同源（route-titles 守卫要求每个路由有**可见的**标题来源，
+ * 重导出 generateMetadata 它扫不到）：显式包装一层，
+ * 返回对象的 title/description 都是运行时字段（站点配置决定）。
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const base = await homeGenerateMetadata();
+  return {
+    title: base.title,
+    description: base.description,
+  };
+}
 
 /** 与 `/` 同款 ISR 节拍；变体快照同样 60s 自愈。 */
 export const revalidate = 60;

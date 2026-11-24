@@ -1277,6 +1277,10 @@ describe("投稿审核收编中枢（GET/PATCH /api/submissions）", () => {
     expect(item.submissionData.url).toBe("https://example.com/queue-item");
     // 每条都有数值 number（GitHub Issue 语义形状）
     expect(body.submissions.every((s: any) => typeof s.number === "number")).toBe(true);
+    // labels 必须在（GitHub 通道同形状）：/admin/submissions 的 getStatusBadge 直接 labels.some，
+    // 漏发就是管理台白屏（2026-11-24 运行时 TypeError 回归）
+    expect(item.labels).toEqual([{ name: "submission:pending", color: "fbca04" }]);
+    expect(body.submissions.every((s: any) => Array.isArray(s.labels))).toBe(true);
     // all 档不该把全库带出来（只留投稿）
     const all = await app.inject({ method: "GET", url: "/api/submissions?status=all" });
     expect(all.statusCode).toBe(200);

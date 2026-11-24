@@ -7,7 +7,7 @@
  * 工作区过滤已迁至 HomeCapsuleRow（本文件不再接收 activeWorkspace /
  * onWorkspaceChange，2026-11-21 U-358 门禁修复：两者曾声明却从未使用）。
  */
-import { memo } from 'react'
+import { memo, type ReactNode } from 'react'
 import Link from 'next/link'
 import { Button } from '@/registry/new-york/ui/button'
 import {
@@ -45,6 +45,7 @@ import {
   SlidersHorizontal,
   Sun,
   Moon,
+  Radar,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { GithubIcon } from '@/components/icons'
@@ -54,9 +55,33 @@ import { ModeToggle } from '@/components/mode-toggle'
 import { FontSizeToggle } from '@/components/font-size-toggle'
 import { HighContrastToggle } from '@/components/high-contrast-toggle'
 import { SiteDisplayModeSwitcher } from '@/components/site-display-mode-switcher'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { trackDiyEvent } from '@/lib/navhub-api'
 import { summarizeSelection } from '@/lib/selection'
+
+/**
+ * 带 Tooltip 的图标按钮包装（顶栏收敛 2026-11-21）：用 Radix Tooltip 而不是裸 title，
+ * title 有约 1s 系统延迟、键盘聚焦不显示。快捷键提示精简为「（M）」短写法。
+ */
+function IconTip({
+  label,
+  children,
+  side = 'bottom',
+}: {
+  label: string
+  children: ReactNode
+  side?: 'top' | 'bottom'
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side={side} sideOffset={6}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 /**
  * 搜索面板按需加载（与 not-found.tsx 同一范式）：SearchPalette 本体约 1,500 行、
@@ -126,8 +151,8 @@ export const NavigationToolbar = memo(function NavigationToolbar({
   const { resolvedTheme, setTheme } = useTheme()
   return (
         <header className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 shadow-2xs">
-          <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 md:h-14 md:flex-nowrap">
-            <div className="flex flex-1 min-w-[260px] max-w-[620px] items-center gap-1.5 transition-all duration-300 ease-out">
+          <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-3 gap-y-1 md:h-14 lg:flex-nowrap">
+            <div className="flex flex-1 min-w-[260px] max-w-[880px] items-center gap-1.5 transition-all duration-300 ease-out">
               <div className="flex-1 min-w-0">
                 {/* 山羊胡混合检索引擎：placeholder 保持精炼，`/` 快捷键改由独立 <kbd>/</kbd> 徽标提示，避免中窄屏被 [AI] 按钮劈断 */}
                 <SearchPalette siteConfig={siteConfig} placeholder="搜索站点、标签或拼音…" />
@@ -152,7 +177,8 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                 （data-testid）；旧探针 closest('div.overflow-hidden') 在 8ebc4b08
                 重构后恒为 null。布局本身不改：gap-1.5 保留，窄屏溢出由
                 d28b4b84（多选按钮 <sm 收进探索菜单）解决。 */}
-            <div data-testid="toolbar-button-row" className="shrink-0 flex items-center gap-1.5">
+            <div data-testid="nav-toolbar-actions" className="flex shrink-0 flex-wrap items-center justify-end">
+            <div data-testid="toolbar-button-row" className="shrink-0 flex items-center gap-0.5 sm:gap-1.5">
               {/* 📅 今日中心小窗入口（A2：专注、考试提醒、简报、接力连胜统一收纳） */}
               {onOpenTodayCenter ? (
                 <Button
@@ -307,6 +333,15 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                   <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1">
                     认知与前沿矩阵
                   </DropdownMenuLabel>
+                  <DropdownMenuItem asChild>
+                    <Link href="/similar" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
+                      <Radar className="h-4 w-4 text-primary shrink-0" />
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">相似网站发现</span>
+                        <span className="text-xs text-muted-foreground">输入网址秒查高相似平替</span>
+                      </div>
+                    </Link>
+                  </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link href="/graph" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
                       <Network className="h-4 w-4 text-pink-500 shrink-0" />
@@ -474,6 +509,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
               {/* 多选：批量导出 / 复制 / 置顶的入口（此前只有孤立的操作坞，没有任何入口）。
                   C-W7-5（2026-11-21，待雷达落号）：<sm 时按钮收进探索菜单（同文件上方「多选模式」
                   条目），行宽 344px → 294px ≤ 336px；≥sm 按钮恢复显示。 */}
+              <IconTip label={selectionMode ? '退出多选模式（M）' : '多选模式：批量导出 / 复制 / 置顶（M）'}>
               <Button
                 variant="ghost"
                 size="icon"
@@ -485,7 +521,6 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                 )}
                 onClick={onToggleSelectMode}
                 aria-pressed={selectionMode}
-                title={selectionMode ? '退出多选模式（快捷键 M）' : '多选模式：批量导出 / 复制 / 置顶（快捷键 M）'}
                 aria-label="多选模式"
               >
                 <CheckSquare className="h-4 w-4" />
@@ -495,6 +530,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                   </span>
                 )}
               </Button>
+              </IconTip>
 
               {/* C-W7-5（2026-11-21，待雷达落号）：全选按钮 <sm 隐藏（否则多选态下 360px
                   行宽仍为 344px）；全选入口保留在多选操作坞（BatchOperationDock「全选 (N)」）。 */}
@@ -502,7 +538,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="hidden h-9 w-auto rounded-lg gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground sm:inline-flex"
+                  className="hidden h-9 w-auto gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground sm:inline-flex"
                   onClick={onSelectAllVisible}
                   title={summarizeSelection(selectedIds, visibleSiteCount) + '（点击全选当前可见站点）'}
                 >
@@ -585,6 +621,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
               >
                 <Menu className="h-4 w-4" />
               </Button>
+            </div>
             </div>
           </div>
         </header>

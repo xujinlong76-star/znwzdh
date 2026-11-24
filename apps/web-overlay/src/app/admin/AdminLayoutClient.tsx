@@ -90,6 +90,10 @@ const menuItems = [
       {
         title: "站点管理",
         href: "/admin/sitelist"
+      },
+      {
+        title: "采集运营",
+        href: "/admin/crawl-ops"
       }
     ]
   },

@@ -57,6 +57,8 @@ function listPageFiles(dir: string): string[] {
  */
 const LANDMARK_ELSEWHERE: Record<string, string> = {
   "src/app/page.tsx": "首页主体在 components/navigation-content.tsx",
+  "src/app/vm/[mode]/page.tsx":
+    "展示模式预渲染变体与首页同一主体（default 重导出，地标同样由 components/navigation-content.tsx 提供）",
   "src/app/videos/page.tsx": "视频页主体在 components/video-content.tsx",
   "src/app/graph/page.tsx": "图谱页主体在 components/ecosystem-graph.tsx",
   "src/app/site/[id]/page.tsx": "站点详情主体在 components/site-detail-view.tsx",

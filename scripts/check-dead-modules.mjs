@@ -79,6 +79,19 @@ let BASELINE = [
   // 它的消费者 home-micro-strip.tsx 已失去渲染入口，本 store 因此也 0 引用；
   // 若决定彻底移除旧胶囊行，这两项应一并删除（连同 drama-continue-watch-time-meta 测试）。
   "apps/web-overlay/src/lib/home-announcement.ts",
+  // --- 2026-11-24 仓库合并（2aa451fe）后的登记（远程 favorites 架构接管渲染位置）---
+  // 前四项是「已备好、刻意未接线」的组件：守卫测试按源码路径 import/读取，
+  // 且负空间断言明确锁住「导航/简报不得引用它们」的未接线状态（删了测试先红）。
+  // 后四项是合并孤儿：Local-First 同步 UI（六态徽标/同步点/冲突抽屉/适配器）
+  // 因远程 favorites 页改用 FavoritesSyncStatus 状态条而失去接线，详见 BASELINE_NOTES。
+  "apps/web-overlay/src/components/guangdong-zikao-signup-card.tsx",
+  "apps/web-overlay/src/components/guokao-checklist-return-card.tsx",
+  "apps/web-overlay/src/components/user-center/favorites-quickstart.tsx",
+  "apps/web-overlay/src/hooks/useFavoritesSyncBridge.ts",
+  "apps/web-overlay/src/components/favorites/conflict-drawer.tsx",
+  "apps/web-overlay/src/components/favorites/favorite-sync-dot.tsx",
+  "apps/web-overlay/src/components/favorites/favorites-sync-badge.tsx",
+  "apps/web-overlay/src/lib/favorites-sync-adapter.ts",
 ];
 
 /**
@@ -162,6 +175,22 @@ let BASELINE_NOTES = {
     "delete（真死）：除基线与文档索引外无任何引用（含字符串/测试/别名）",
   "apps/web-overlay/src/components/notification-badge.tsx":
     "delete（真死）：组件级死代码；勿与活跃的 lib/notification-badge.ts（unreadBadgeText）混淆",
+  "apps/web-overlay/src/components/guangdong-zikao-signup-card.tsx":
+    "keep（C 守卫测试 + 刻意未接线）：test/guangdong-zikao-signup-card.test.ts 直接 import 并读源码断言；负空间断言（:447/:450）明确锁住「导航/简报不得引用」的未接线状态，是作者备好待上线的报名卡，删了测试先红",
+  "apps/web-overlay/src/components/guokao-checklist-return-card.tsx":
+    "keep（C 守卫测试 + 刻意未接线）：test/guokao-checklist-return-card.test.ts 直接 import；负空间断言（:268/:272）锁住 brief/layout 不得引用的未接线状态，国考清单回流卡待作者接线",
+  "apps/web-overlay/src/components/user-center/favorites-quickstart.tsx":
+    "keep（C 守卫测试）：test/favorites-filter.test.ts 与 test/favorites-onboarding.test.ts 按源码路径读取断言（overlaySource）；用户中心收藏引导卡，删了测试先红",
+  "apps/web-overlay/src/hooks/useFavoritesSyncBridge.ts":
+    "keep（C 守卫测试）：test/favorites-sync-bridge.test.ts 直接 import diffFavoritesToMutations 并断言增量计算行为；模块是 Local-First 同步桥，页面接线待适配（见下组）",
+  "apps/web-overlay/src/components/favorites/conflict-drawer.tsx":
+    "keep（E 产品欠账·合并孤儿）：合并 2aa451fe 采纳远程 favorites 架构（FavoritesSyncStatus 状态条）后失去接线（补回尝试因 SyncEngineSnapshot 类型不兼容撤销）。这是同步数据冲突（SyncConflictItem）的逐条解决抽屉——当前远程页只有同步状态条、没有冲突 UI；待把 FavoritesSyncStatus 适配到 SyncEngineSnapshot 后接回或与作者一并裁撤（2026-11-24 复核）",
+  "apps/web-overlay/src/components/favorites/favorite-sync-dot.tsx":
+    "keep（E 产品欠账·合并孤儿）：同 conflict-drawer——卡片同步微点（favoriteSyncRing）随合并失去 favorites 页接线；引擎侧 conflictItemIds/dirtyItemIds 仍在产出，UI 无兜底（2026-11-24 复核）",
+  "apps/web-overlay/src/components/favorites/favorites-sync-badge.tsx":
+    "keep（E 产品欠账·合并孤儿）：Local-First 同步六态徽标（SyncBadgeState），合并后远程页改用 FavoritesSyncStatus 状态条而未接线；待类型适配后接回或裁撤（2026-11-24 复核）",
+  "apps/web-overlay/src/lib/favorites-sync-adapter.ts":
+    "keep（E 产品欠账·合并孤儿）：SyncEngineSnapshot ↔ 页面同步状态的适配层，正是补回上述三项所需的桥；合并后无消费方，随上组一并处置（2026-11-24 复核）",
 };
 
 // ---------- 形状校验（退出码 2） ----------

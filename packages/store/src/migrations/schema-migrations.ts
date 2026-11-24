@@ -19,8 +19,11 @@ import {
   migrateWorkspaceBlobs,
   migrateWantedSearches,
   migrateUserSyncState,
+  migrateCrawlSources,
+  migrateCrawlGovernanceTables,
   cleanTaxonomyAndDuplicates,
   normalizeSiteCreatedAt,
+  migrateSiteReportsAndReviews,
 } from "../migrate.ts";
 
 export interface MigrationRecord {
@@ -268,6 +271,35 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
       await migrateUserSyncState(db);
     },
     checksum: "v1_user_sync_state",
+  },
+  {
+    // 2026-11-24：采集运营页来源管理接口的存储底座。
+    version: "20261124_crawl_sources",
+    name: "采集来源注册表 crawl_sources 建表",
+    up: async (db: Db) => {
+      await migrateCrawlSources(db);
+    },
+    checksum: "v1_crawl_sources",
+  },
+  {
+    // 2026-11-24：采集治理仓储模块回归，补回候选队列 / AI 账本 / 双人金标表。
+    version: "20261124_crawl_governance_tables",
+    name: "采集候选、AI 审核账本与金标标注表建表",
+    up: async (db: Db) => {
+      await migrateCrawlGovernanceTables(db);
+    },
+    checksum: "v1_crawl_governance_tables",
+  },
+  {
+    // 2026-11-24：site_reports / submission_reviews 曾被追加进 20261015_site_indexes
+    // 的语句表（已记账版本不会再跑）→ 存量库缺表、/api/admin/site-reports 500。
+    // 单独版本补建；DDL 真相见 migrate.ts 的 SITE_REPORTS_AND_REVIEWS_DDL。
+    version: "20261124_site_reports_and_reviews",
+    name: "站点纠错上报 site_reports 与投稿汇报 submission_reviews 补建",
+    up: async (db: Db) => {
+      await migrateSiteReportsAndReviews(db);
+    },
+    checksum: "v1_site_reports_and_reviews",
   },
 ];
 

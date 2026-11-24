@@ -19,7 +19,7 @@ export interface CreateAuthTokenInput {
   /** 明文令牌的 sha256（hex） */
   tokenHash: string;
   /** 发放时绑定的邮箱（邮箱验证/密码重置）；防止地址变更后旧链接作用于新邮箱 */
-  targetEmail?: string | null;
+  targetEmail: string;
   /** 过期时刻（毫秒） */
   expiresAt: number;
 }
@@ -47,23 +47,18 @@ export async function createAuthToken(
  */
 export async function consumeAuthToken(
   repo: Repository,
-  input: { userId: string; purpose: AuthTokenPurpose; tokenHash: string; targetEmail?: string | null; now?: number },
+  input: { userId: string; purpose: AuthTokenPurpose; tokenHash: string; targetEmail: string; now?: number },
 ): Promise<boolean> {
   const now = input.now ?? Date.now();
-  let sql =
+  const targetEmail = input.targetEmail.trim().toLowerCase();
+  // 原子校验发放邮箱仍是当前邮箱；地址变更与消费并发时，只有一个顺序能成功。
+  const changes = await repo.runCount(
     "UPDATE auth_tokens SET consumed_at = ? " +
-    "WHERE token_hash = ? AND user_id = ? AND purpose = ? " +
-    "AND consumed_at IS NULL AND expires_at > ?";
-  const params: unknown[] = [now, input.tokenHash, input.userId, input.purpose, now];
-  if (input.targetEmail !== undefined && input.targetEmail !== null) {
-    const targetEmail = input.targetEmail.trim().toLowerCase();
-    // 原子校验发放邮箱仍是当前邮箱；地址变更与消费并发时，只有一个顺序能成功。
-    sql += " AND target_email = ? AND EXISTS (SELECT 1 FROM users WHERE users.id = auth_tokens.user_id AND LOWER(users.email) = ?)";
-    params.push(targetEmail, targetEmail);
-  } else if (input.targetEmail === null) {
-    sql += " AND target_email IS NULL";
-  }
-  const changes = await repo.runCount(sql, params);
+      "WHERE token_hash = ? AND user_id = ? AND purpose = ? " +
+      "AND consumed_at IS NULL AND expires_at > ? AND target_email = ? " +
+      "AND EXISTS (SELECT 1 FROM users WHERE users.id = auth_tokens.user_id AND LOWER(users.email) = ?)",
+    [now, input.tokenHash, input.userId, input.purpose, now, targetEmail, targetEmail],
+  );
   return changes > 0;
 }
 

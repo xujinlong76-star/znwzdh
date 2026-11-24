@@ -110,10 +110,8 @@ export interface AppConfig {
    */
   identitySecret: string | null;
   /**
-   * 关闭身份签名的 v1 兼容回退（默认 false = 兼容窗口）。
-   *
-   * v1 签名是恒定值，可被无限重放；v2 引入时间戳 + nonce。代理已全部升级后
-   * 置 1，仅接受 v2 三件套——否则攻击者可剥掉 v2 头退回 v1，重放防护形同虚设。
+   * 关闭身份签名的 v1 兼容回退。生产环境默认严格，仅接受 v2（时间戳 + nonce）；
+   * 非生产默认保留兼容。生产如需临时兼容旧代理，必须显式设为 0 并尽快迁移。
    */
   identitySignatureStrict: boolean;
   /**
@@ -677,7 +675,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
     authRequired: bool("NAVHUB_AUTH_REQUIRED", isProd),
     bootstrapToken: process.env.NAVHUB_BOOTSTRAP_TOKEN || null,
     identitySecret: process.env.NAVHUB_IDENTITY_SECRET || null,
-    identitySignatureStrict: bool("NAVHUB_IDENTITY_SIGNATURE_STRICT", false),
+    identitySignatureStrict: bool("NAVHUB_IDENTITY_SIGNATURE_STRICT", isProd),
     allowUnsignedIdentity: bool("NAVHUB_ALLOW_UNSIGNED_IDENTITY", false),
     internalToken: process.env.NAVHUB_INTERNAL_TOKEN?.trim() || null,
     // 默认值刻意保持历史口径：只有显式配置才改变限流强度

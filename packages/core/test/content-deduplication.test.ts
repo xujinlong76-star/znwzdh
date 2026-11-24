@@ -17,6 +17,11 @@ describe("content duplicate signals", () => {
     expect(classifyContentSimilarity({ left: a, right: { ...b, simhash: "0000000000000000" }, semanticSimilarity: 0.96 })).toBe("near_duplicate");
     expect(classifyContentSimilarity({ left: fingerprintPageContent("short text"), right: fingerprintPageContent("short text") })).toBe("insufficient_content");
   });
+  it("tokenizes CJK pages instead of treating a whole paragraph as one token", () => {
+    const chinese = fingerprintPageContent("人工智能工具可以帮助用户创建图像视频文档并提升工作效率。".repeat(8));
+    expect(chinese.tokenCount).toBeGreaterThan(30);
+    expect(classifyContentSimilarity({ left: chinese, right: chinese })).toBe("near_duplicate");
+  });
   it("calculates Jaccard and normalizes host names", () => {
     expect(jaccardSimilarity(["a", "b"], ["b", "c"])).toBeCloseTo(1 / 3);
     expect(normalizeDomainHost("https://www.Example.com/abc")).toBe("example.com");

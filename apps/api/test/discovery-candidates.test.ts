@@ -63,6 +63,26 @@ describe("staged discovery candidate pipeline", () => {
     expect(await ctx.repo.findSiteByUrl(discoveryUrl)).toBeNull();
   });
 
+  it("fails closed for private-network targets in AI auto-publish and AI candidate intake", async () => {
+    const url = "http://127.0.0.1:8765/private-target";
+    const legacyAuto = await app.inject({
+      method: "POST",
+      url: "/api/sites/auto",
+      payload: { url, title: "Must Not Publish" },
+    });
+    expect(legacyAuto.statusCode).toBe(422);
+    expect(await ctx.repo.findSiteByUrl(url)).toBeNull();
+
+    const staged = await app.inject({
+      method: "POST",
+      url: "/api/discovery/enrich-candidate",
+      payload: { url, title: "Must Not Queue" },
+    });
+    expect(staged.statusCode).toBe(422);
+    const pending = await ctx.repo.listSiteDiscoveryCandidates({ status: "pending", limit: 100 });
+    expect(pending.some((candidate) => candidate.url === url)).toBe(false);
+  });
+
   it("deduplicates canonical URLs and keeps new candidates pending", async () => {
     const first = await app.inject({
       method: "POST",

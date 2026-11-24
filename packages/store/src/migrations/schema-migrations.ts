@@ -301,6 +301,32 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     },
     checksum: "v1_site_reports_and_reviews",
   },
+  {
+    version: "20261125_shared_login_failure_counters",
+    name: "跨 API 实例共享的登录失败计数",
+    up: async (db: Db) => {
+      if (db.dialect === "pg" && db.pg) {
+        await db.pg.query(
+          "CREATE TABLE IF NOT EXISTS account_login_failures (" +
+            "identifier_hash TEXT PRIMARY KEY, failure_count INTEGER NOT NULL, " +
+            "first_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)",
+        );
+        await db.pg.query(
+          "CREATE INDEX IF NOT EXISTS account_login_failures_updated_idx ON account_login_failures(updated_at)",
+        );
+      } else if (db.sqlite) {
+        db.sqlite.exec(
+          "CREATE TABLE IF NOT EXISTS account_login_failures (" +
+            "identifier_hash TEXT PRIMARY KEY, failure_count INTEGER NOT NULL, " +
+            "first_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+        );
+        db.sqlite.exec(
+          "CREATE INDEX IF NOT EXISTS account_login_failures_updated_idx ON account_login_failures(updated_at)",
+        );
+      }
+    },
+    checksum: "v1_shared_login_failure_counters",
+  },
 ];
 
 /**

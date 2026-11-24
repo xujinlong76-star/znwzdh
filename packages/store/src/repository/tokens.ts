@@ -64,15 +64,15 @@ export async function rotateApiTokenByOwner(
   id: string,
   tokenHash: string,
   tokenPrefix: string,
+  expectedRotatedAt: number | null,
 ): Promise<ApiTokenRecord | null> {
   const now = Date.now();
-  const changes = await repo.runCount(
-    "UPDATE api_tokens SET token_hash = ?, token_prefix = ?, last_used_at = NULL, rotated_at = ? WHERE id = ? AND owner_identity = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)",
-    [tokenHash, tokenPrefix, now, id, ownerIdentity, now],
+  // Compare-and-swap：客户端必须带上列表中的 rotatedAt 版本；同一旧版本的并发轮换只允许一个成功。
+  const rows = await repo.raw(
+    "UPDATE api_tokens SET token_hash = ?, token_prefix = ?, last_used_at = NULL, rotated_at = ? WHERE id = ? AND owner_identity = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?) AND COALESCE(rotated_at, 0) = COALESCE(?, 0) RETURNING *",
+    [tokenHash, tokenPrefix, now, id, ownerIdentity, now, expectedRotatedAt],
   );
-  if (changes === 0) return null;
-  const row = (await repo.raw("SELECT * FROM api_tokens WHERE id = ? AND owner_identity = ? LIMIT 1", [id, ownerIdentity]))[0];
-  return row ? rowToApiToken(row) : null;
+  return rows[0] ? rowToApiToken(rows[0]) : null;
 }
 
 export async function revokeApiTokenByOwner(repo: Repository, ownerIdentity: string, id: string): Promise<boolean> {

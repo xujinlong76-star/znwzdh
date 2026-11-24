@@ -122,7 +122,7 @@ export function CategoryIndexFilterableList({
               type="button"
               onClick={() => setFilterQuery('')}
               aria-label="清空筛选输入"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 rounded-sm cursor-pointer"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 rounded-sm cursor-pointer after:absolute after:-inset-3.5 after:content-['']"
             >
               <X className="w-3.5 h-3.5" />
             </button>

@@ -313,6 +313,20 @@ describe('P1 #10 触控目标：热榜页', () => {
   })
 })
 
+describe('P1 #10 触控目标：分类页筛选清除钮（2026-11-24 08:22 轮 W3）', () => {
+  it('分类详情页筛选框清除 ×：视觉 18px，::after 扩到 46px（照抄 /hot 清除 × 模式）', () => {
+    const src = read('src/components/category-site-filter-bar.tsx')
+    expect(src).toContain('aria-label="清除关键词"')
+    expect(src).toContain("after:absolute after:-inset-3.5 after:content-['']")
+  })
+
+  it('分类总览页筛选框清空 ×：视觉 22px，::after 扩到 50px（同模式）', () => {
+    const src = read('src/components/category-index-filterable-list.tsx')
+    expect(src).toContain('aria-label="清空筛选输入"')
+    expect(src).toContain("after:absolute after:-inset-3.5 after:content-['']")
+  })
+})
+
 describe('P1 #10 跟进：wayback-resolver 的 isPotentialBrokenHttpCode 不删', () => {
   it('仍在 overlay 镜像里导出——事实源在 packages/core，且 core 单测在用', () => {
     // 父轮 grep 称它在 overlay src 无调用方，属实；但它不是死代码：

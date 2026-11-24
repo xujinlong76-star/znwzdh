@@ -136,7 +136,7 @@ export function CategorySiteFilterBar({
             <button
               type="button"
               onClick={() => handleQueryChange('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer after:absolute after:-inset-3.5 after:content-['']"
               title="清除关键词"
               aria-label="清除关键词"
             >

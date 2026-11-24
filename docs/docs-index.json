@@ -4,7 +4,7 @@
   "generatedAt": "2026-11-06",
   "generator": "scripts/gen-docs-index.mjs",
   "counts": {
-    "docsMdDisk": 104,
+    "docsMdDisk": 105,
     "docsMdGitTracked": 87,
     "docsMdUntrackedAdr": 4,
     "deliverablesTopLevelDirs": 15,
@@ -120,6 +120,12 @@
       "tracked": true,
       "source": "git-tracked",
       "status": "current"
+    },
+    {
+      "path": "COMPREHENSIVE-COMMERCIAL-UPGRADE-AUDIT-2026-11-24.md",
+      "tracked": false,
+      "source": "disk-extra",
+      "status": "historical"
     },
     {
       "path": "CSP-ROLLOUT.md",

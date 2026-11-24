@@ -127,9 +127,9 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     const body = z.object({
       url: httpUrl(),
       categoryId: z.string().optional(),
-      tags: z.array(z.string()).max(50).optional(),
+      tags: z.array(z.string().trim().min(1).max(32)).max(20).optional(),
       title: z.string().min(1).max(120).optional(),
-      description: z.string().optional(),
+      description: z.string().trim().max(500).optional(),
       enrichFields: z.array(z.string()).max(10).optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) {
@@ -152,10 +152,18 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       deadlineAt: Date.now() + INTERACTIVE_LLM_BUDGET_MS,
     }).finally(() => settleLlmQuota(ctx, budget.hold));
 
+    if (enriched.warnings.some((warning) => warning.startsWith("抓取失败："))) {
+      reply.code(422);
+      return { ok: false, error: "目标站点未通过安全抓取校验或暂时无法访问，未创建站点/采集候选", warnings: enriched.warnings };
+    }
+
     const selection = selectEnrichmentFields(enriched, body.data.enrichFields);
     const title = body.data.title ?? selection.applied.title ?? null;
-    const description = body.data.description ?? selection.applied.description ?? null;
-    const tags = body.data.tags ?? selection.applied.tags;
+    const description = (body.data.description ?? selection.applied.description ?? "").trim().slice(0, 500) || null;
+    const tags = (body.data.tags ?? selection.applied.tags ?? [])
+      .filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+      .slice(0, 20)
+      .map((tag) => tag.trim().slice(0, 32));
 
     let categoryId = body.data.categoryId ?? null;
     let categoryResolution: string | null = null;
@@ -183,32 +191,54 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
     const candidateUrl = enriched.url || body.data.url;
     const candidateId = randomUUID();
+    const evidence = {
+      requestedUrl: body.data.url,
+      finalUrl: candidateUrl,
+      provenance: enriched.provenance,
+      httpStatus: enriched.httpStatus,
+      warnings: enriched.warnings,
+      fields: enriched.fields,
+      categorySuggestion: selection.applied.category ?? null,
+      categoryResolution,
+      ambiguousCategoryIds,
+      appliedFields: selection.appliedFields,
+      skippedFields: selection.skipped,
+      ignoredFields: selection.ignoredFields,
+      aiSkipped: budget.llmBlocked ? "quota" : null,
+    };
+    if (containsSensitiveDiscoveryKey(evidence)) {
+      reply.code(400);
+      return { ok: false, error: "富化来源证据包含敏感凭据字段，已拒绝入队" };
+    }
+    if (JSON.stringify(evidence).length > 16_384) {
+      reply.code(413);
+      return { ok: false, error: "富化来源证据超过 16KB 限制" };
+    }
     const candidate = await ctx.repo.upsertSiteDiscoveryCandidate({
       id: candidateId,
       url: candidateUrl,
       canonicalUrl: canonicalizeUrl(candidateUrl),
-      title,
+      title: title?.trim().slice(0, 120) ?? null,
       description,
       categoryId,
       tags,
       source: "ai",
-      evidence: {
-        requestedUrl: body.data.url,
-        finalUrl: candidateUrl,
-        provenance: enriched.provenance,
-        httpStatus: enriched.httpStatus,
-        warnings: enriched.warnings,
-        fields: enriched.fields,
-        categorySuggestion: selection.applied.category ?? null,
-        categoryResolution,
-        ambiguousCategoryIds,
-        appliedFields: selection.appliedFields,
-        skippedFields: selection.skipped,
-        ignoredFields: selection.ignoredFields,
+      evidence,
+    });
+
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: req.auth.actor,
+      actorKind: req.auth.kind,
+      action: "discovery.candidate_submitted",
+      target: candidate.id,
+      diff: {
+        source: "ai",
+        canonicalUrl: candidate.canonicalUrl,
+        duplicate: candidate.id !== candidateId,
         aiSkipped: budget.llmBlocked ? "quota" : null,
       },
     });
-
     reply.code(202);
     return {
       created: false,
@@ -319,125 +349,6 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    * AI 富化后先进入人工审核队列。与兼容旧行为的 /api/sites/auto 不同，
    * 本入口不会创建正式站点，也不会写搜索索引。
    */
-  app.post("/api/discovery/enrich-candidate", {
-    config: { rateLimit: { max: 15, timeWindow: "1 minute" }, scope: "write" },
-  }, async (req, reply) => {
-    const body = z.object({
-      url: httpUrl(),
-      categoryId: z.string().max(64).optional(),
-      tags: z.array(z.string().trim().min(1).max(32)).max(20).optional(),
-      title: z.string().trim().min(1).max(120).optional(),
-      description: z.string().trim().max(500).optional(),
-      enrichFields: z.array(z.string()).max(10).optional(),
-    }).safeParse(req.body ?? {});
-    if (!body.success) {
-      reply.code(400);
-      return { ok: false, error: "参数无效", detail: body.error.issues };
-    }
 
-    const existing = await ctx.repo.findSiteByUrl(body.data.url);
-    if (existing) {
-      reply.code(409);
-      return { ok: false, error: "站点已在正式目录中", siteId: existing.id };
-    }
-
-    const categories = await ctx.repo.listCategories();
-    const budget = await enrichBudget(req as never);
-    const resolved = await resolveLlm(ctx, budget.identity);
-    const enriched = await enrichUrl(body.data.url, {
-      llm: enrichLlmOf(resolved),
-      guard: ctx.config.fetch,
-      knownCategories: categories.map((category) => category.title),
-      heuristicOnly: budget.llmBlocked,
-      onLlmCall: createEnrichUsageCallback(ctx, resolved.source, budget.identity),
-      deadlineAt: Date.now() + INTERACTIVE_LLM_BUDGET_MS,
-    }).finally(() => settleLlmQuota(ctx, budget.hold));
-
-    if (enriched.warnings.some((warning) => warning.startsWith("抓取失败："))) {
-      reply.code(422);
-      return { ok: false, error: "目标站点未通过安全抓取校验或暂时无法访问，未创建站点/采集候选", warnings: enriched.warnings };
-    }
-    const selection = selectEnrichmentFields(enriched, body.data.enrichFields);
-    const title = body.data.title ?? selection.applied.title;
-    if (!title) {
-      reply.code(400);
-      return {
-        ok: false,
-        error: "富化结果没有可用标题，请显式提供 title",
-        appliedFields: selection.appliedFields,
-        skippedFields: selection.skipped,
-      };
-    }
-
-    let categoryId = body.data.categoryId ?? null;
-    if (!categoryId && selection.applied.category) {
-      const resolution = resolveCategoryTitleSuggestion(
-        selection.applied.category,
-        categories.map((category) => ({
-          id: category.id,
-          title: category.title,
-          altLabels: category.altLabels,
-        })),
-      );
-      if (resolution.status === "unique") categoryId = resolution.categoryId;
-    }
-
-    const url = enriched.url;
-    const id = randomUUID();
-    const tags = (body.data.tags ?? selection.applied.tags ?? [])
-      .filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
-      .slice(0, 20)
-      .map((tag) => tag.trim().slice(0, 32));
-    const evidence = {
-      provenance: enriched.provenance,
-      appliedFields: selection.appliedFields,
-      skippedFields: selection.skipped,
-      ignoredFields: selection.ignoredFields,
-      heuristicOnly: budget.llmBlocked,
-    };
-    if (containsSensitiveDiscoveryKey(evidence)) {
-      reply.code(400);
-      return { ok: false, error: "富化来源证据包含敏感凭据字段，已拒绝入队" };
-    }
-    if (JSON.stringify(evidence).length > 16_384) {
-      reply.code(413);
-      return { ok: false, error: "富化来源证据超过 16KB 限制" };
-    }
-    const candidate = await ctx.repo.upsertSiteDiscoveryCandidate({
-      id,
-      url,
-      canonicalUrl: canonicalizeUrl(url),
-      title: title.trim().slice(0, 120),
-      description: (body.data.description ?? selection.applied.description ?? "").trim().slice(0, 500) || null,
-      categoryId,
-      tags,
-      source: "ai",
-      evidence,
-    });
-    await ctx.repo.audit({
-      ip: req.ip,
-      actor: req.auth.actor,
-      actorKind: req.auth.kind,
-      action: "discovery.candidate_submitted",
-      target: candidate.id,
-      diff: {
-        source: "ai",
-        canonicalUrl: candidate.canonicalUrl,
-        duplicate: candidate.id !== id,
-        aiSkipped: budget.llmBlocked ? "quota" : null,
-      },
-    });
-    reply.code(202);
-    return {
-      ok: true,
-      queued: true,
-      duplicate: candidate.id !== id,
-      candidate,
-      appliedFields: selection.appliedFields,
-      skippedFields: selection.skipped,
-      ignoredFields: selection.ignoredFields,
-      ...(budget.llmBlocked ? { aiSkipped: "quota" as const, quota: budget.quotaInfo } : {}),
-    };
-  });
 
 };

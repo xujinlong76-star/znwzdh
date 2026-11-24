@@ -46,9 +46,9 @@ function canonicalCandidateUrl(raw: string, base: string): string | null {
 }
 
 function cleanMarkupText(value: string, max: number): string | null {
-  const cleaned = decodeEntities(value.replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script\\s*>/gi, " ")
-    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style\\s*>/gi, " ")
-    .replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ").trim()).slice(0, max);
+  const cleaned = decodeEntities(value.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, " ")
+    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()).slice(0, max);
   return cleaned || null;
 }
 
@@ -68,7 +68,7 @@ function candidateDetailsFromBlock(block: string, baseUrl: string, kind: CrawlSo
   if (kind === "sitemap") {
     rawUrl = xmlText(block, "loc") ?? undefined;
   } else {
-    rawUrl = block.match(/<link\\b[^>]*href\\s*=\\s*["']([^"']+)["'][^>]*\\/?\\s*>/i)?.[1]
+    rawUrl = block.match(/<link\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*\/?\s*>/i)?.[1]
       ?? xmlText(block, "link")
       ?? xmlText(block, "guid")
       ?? undefined;
@@ -86,31 +86,31 @@ function candidateDetailsFromBlock(block: string, baseUrl: string, kind: CrawlSo
 export function extractCrawlCandidateDetails(body: string, kind: CrawlSource["kind"], baseUrl: string): CrawlCandidateDetail[] {
   const raw: CrawlCandidateDetail[] = [];
   if (kind === "sitemap") {
-    const blocks = [...body.matchAll(/<url\\b[^>]*>([\\s\\S]*?)<\\/url\\s*>/gi)];
+    const blocks = [...body.matchAll(/<url\b[^>]*>([\s\S]*?)<\/url\s*>/gi)];
     for (const match of blocks) {
       const detail = candidateDetailsFromBlock(match[1]!, baseUrl, kind);
       if (detail) raw.push(detail);
     }
     if (!raw.length) {
-      for (const match of body.matchAll(/<loc\\b[^>]*>([\\s\\S]*?)<\\/loc\\s*>/gi)) {
+      for (const match of body.matchAll(/<loc\b[^>]*>([\s\S]*?)<\/loc\s*>/gi)) {
         const detail = candidateDetailsFromBlock("<loc>" + match[1] + "</loc>", baseUrl, kind);
         if (detail) raw.push(detail);
       }
     }
   } else if (kind === "rss") {
-    const blocks = [...body.matchAll(/<(?:item|entry)\\b[^>]*>([\\s\\S]*?)<\\/(?:item|entry)\\s*>/gi)];
+    const blocks = [...body.matchAll(/<(?:item|entry)\b[^>]*>([\s\S]*?)<\/(?:item|entry)\s*>/gi)];
     for (const match of blocks) {
       const detail = candidateDetailsFromBlock(match[1]!, baseUrl, kind);
       if (detail) raw.push(detail);
     }
     if (!raw.length) {
-      for (const match of body.matchAll(/<link\\b[^>]*href\\s*=\\s*["']([^"']+)["'][^>]*\\/?\\s*>/gi)) {
+      for (const match of body.matchAll(/<link\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*\/?\s*>/gi)) {
         const url = canonicalCandidateUrl(match[1]!, baseUrl);
         if (url) raw.push({ url, title: null, description: null });
       }
     }
   } else {
-    for (const match of body.matchAll(/<a\\b([^>]*)href\\s*=\\s*["']([^"']+)["']([^>]*)>([\\s\\S]*?)<\\/a\\s*>/gi)) {
+    for (const match of body.matchAll(/<a\b([^>]*)href\s*=\s*["']([^"']+)["']([^>]*)>([\s\S]*?)<\/a\s*>/gi)) {
       const url = canonicalCandidateUrl(match[2]!, baseUrl);
       if (url) raw.push({ url, title: cleanMarkupText(match[4]!, 300), description: null });
     }

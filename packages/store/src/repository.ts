@@ -1443,7 +1443,7 @@ async revokeAllSessions(userId: string): Promise<number> {
   }
 
   /** 原子消费一次性令牌；成功 true，失败（不存在/已用/过期/用途不符）false */
-  async consumeAuthToken(input: { userId: string; purpose: authTokensRepo.AuthTokenPurpose; tokenHash: string; targetEmail?: string | null; now?: number }): Promise<boolean> {
+  async consumeAuthToken(input: { userId: string; purpose: authTokensRepo.AuthTokenPurpose; tokenHash: string; targetEmail: string; now?: number }): Promise<boolean> {
     return authTokensRepo.consumeAuthToken(this, input);
   }
 

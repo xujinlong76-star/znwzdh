@@ -111,9 +111,6 @@ function matchingTotpCounter(secret: string, supplied: string, now = Date.now())
   return null;
 }
 
-function verifyTotp(secret: string, supplied: string, now = Date.now()): boolean {
-  return matchingTotpCounter(secret, supplied, now) !== null;
-}
 
 function encryptMfaSecret(secret: string): Pick<AdminMfaState, "iv" | "ciphertext" | "tag"> {
   const iv = randomBytes(12);

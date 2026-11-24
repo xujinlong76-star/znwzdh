@@ -48,7 +48,7 @@ export default function CrawlOperationsPage(){
   const [modelAnalytics,setModelAnalytics]=useState<ModelAnalytics|null>(null)
   const [evaluationProviders,setEvaluationProviders]=useState<EvaluationProvider[]>([])
   const [evaluationProviderIndex,setEvaluationProviderIndex]=useState(0)
-  const [evaluationLimit,setEvaluationLimit]=useState(100)
+  const [evaluationLimit,setEvaluationLimit]=useState(20)
   const [evaluationBusy,setEvaluationBusy]=useState(false)
   const [evaluationMessage,setEvaluationMessage]=useState<string|null>(null)
   const [goldCases,setGoldCases]=useState<GoldCase[]>([])

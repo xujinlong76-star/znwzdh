@@ -190,15 +190,10 @@ const providers: NextAuthConfig['providers'] = [
         }
       }
 
-      // 3. API Token / Master Token 静态凭证比对
-      const validTokens = [
-        process.env.NAVHUB_ADMIN_TOKEN,
-        process.env.NAVHUB_STORAGE_TOKEN,
-        process.env.NAVHUB_BOOTSTRAP_TOKEN,
-        process.env.NAVHUB_MCP_TOKEN,
-      ].filter(Boolean) as string[]
-
-      if (rawPassword && validTokens.some((t) => timingSafeEq(rawPassword, t))) {
+      // 3. 专用管理员静态凭据。Storage / Bootstrap / MCP 凭据有各自的服务边界，
+      // 不得被复用为浏览器管理员登录凭据，避免低信任服务凭据横向提升为后台会话。
+      const adminToken = process.env.NAVHUB_ADMIN_TOKEN
+      if (rawPassword && adminToken && timingSafeEq(rawPassword, adminToken)) {
         return {
           id: 'admin',
           name: username || 'Token 管理员',
@@ -245,7 +240,7 @@ const providers: NextAuthConfig['providers'] = [
       }
 
       // 5. 默认口令开箱即用支持——同样受 allowInsecureLogin 总闸管辖
-      if (!envAdminPassword && validTokens.length === 0) {
+      if (!envAdminPassword && !adminToken) {
         if (allowInsecureLogin) {
           const allowedDefaults = ['admin', 'admin123', 'navhub', '123456']
           if (allowedDefaults.includes(rawPassword) || (!rawPassword && (isDev || !authRequired))) {
@@ -357,7 +352,7 @@ export async function verifyAdminSession() {
     const issuedAt = (session as { sessionIssuedAt?: number }).sessionIssuedAt
     const revoked = identity ? await hubSessionRevoked(sessionSid, identity, issuedAt).catch(() => { /* 核对失败按不可用处理，fail-open */ return null }) : null
     if (revoked === true) return { ok: false as const, error: 'Unauthorized', status: 401 }
-    if (revoked === null && identity) console.warn('[admin-session] sessions/check unavailable, fail-open')
+    if (revoked === null && identity) return { ok: false as const, error: 'Session verification unavailable', status: 503 }
   }
   const githubToken = getServerGithubToken(user.id) || process.env.GITHUB_PAT || ''
   return { ok: true as const, session, user, githubToken }

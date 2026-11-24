@@ -57,6 +57,24 @@ export async function listApiTokensByOwner(repo: Repository, ownerIdentity: stri
 }
 
 /** 用户吊销自己的令牌：ownership 校验在 SQL 条件里，跨用户 id 无效返回 false */
+/** 用户轮换自己的令牌：ownership 与未吊销条件在同一 UPDATE 中校验。 */
+export async function rotateApiTokenByOwner(
+  repo: Repository,
+  ownerIdentity: string,
+  id: string,
+  tokenHash: string,
+  tokenPrefix: string,
+): Promise<ApiTokenRecord | null> {
+  const now = Date.now();
+  const changes = await repo.runCount(
+    "UPDATE api_tokens SET token_hash = ?, token_prefix = ?, last_used_at = NULL, rotated_at = ? WHERE id = ? AND owner_identity = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)",
+    [tokenHash, tokenPrefix, now, id, ownerIdentity, now],
+  );
+  if (changes === 0) return null;
+  const row = (await repo.raw("SELECT * FROM api_tokens WHERE id = ? AND owner_identity = ? LIMIT 1", [id, ownerIdentity]))[0];
+  return row ? rowToApiToken(row) : null;
+}
+
 export async function revokeApiTokenByOwner(repo: Repository, ownerIdentity: string, id: string): Promise<boolean> {
   const changes = await repo.runCount(
     "UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND owner_identity = ? AND revoked_at IS NULL",

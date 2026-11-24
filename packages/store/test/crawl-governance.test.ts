@@ -41,6 +41,42 @@ describe("持久化采集治理队列", () => {
     expect(duplicate.status).toBe("queued");
   });
 
+  it("仅显式 requeueCompleted 才重新排队已完成任务，且不复活死信", async () => {
+    const first = await enqueueCrawlTask(repo, {
+      url: "https://repeat.example/page", source: "seed", maxAttempts: 4, now: 15_000,
+    });
+    const leased = await claimCrawlTask(repo, "worker-repeat", { now: 15_000, minDomainIntervalMs: 0 });
+    expect(leased?.id).toBe(first.id);
+    expect(await settleCrawlTask(repo, {
+      id: first.id, workerId: "worker-repeat", outcome: "done", now: 15_100,
+    })).toBe(true);
+
+    const unchanged = await enqueueCrawlTask(repo, {
+      url: first.url, source: "seed", now: 16_000,
+    });
+    expect(unchanged.status).toBe("done");
+
+    const requeued = await enqueueCrawlTask(repo, {
+      url: first.url, source: "scheduled_source", maxAttempts: 5,
+      requeueCompleted: true, now: 17_000,
+    });
+    expect(requeued.id).toBe(first.id);
+    expect(requeued.status).toBe("queued");
+    expect(requeued.attempts).toBe(0);
+    expect(requeued.maxAttempts).toBe(5);
+    expect(requeued.nextRunAt).toBe(17_000);
+
+    const retryTask = await claimCrawlTask(repo, "worker-repeat-2", { now: 17_000, minDomainIntervalMs: 0 });
+    expect(retryTask?.id).toBe(first.id);
+    expect(await settleCrawlTask(repo, {
+      id: first.id, workerId: "worker-repeat-2", outcome: "dead_letter", error: "terminal", now: 17_100,
+    })).toBe(true);
+    const terminal = await enqueueCrawlTask(repo, {
+      url: first.url, source: "seed", requeueCompleted: true, now: 18_000,
+    });
+    expect(terminal.status).toBe("dead_letter");
+  });
+
   it("域名频控阻止同 host 并发，但不会阻塞其他 host", async () => {
     await enqueueCrawlTask(repo, { url: "https://one.example/a", source: "seed", now: 20_000 });
     const first = await claimCrawlTask(repo, "worker-a", {

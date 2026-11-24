@@ -36,6 +36,31 @@ export function scoreCrawlCandidate(input: {
   return { score: Math.max(0, Math.min(100, score)), reasons };
 }
 
+/** 按类别、风险线索、来源和质量区间做轮转抽样，避免单一分层占满整批。 */
+export function selectStratifiedCrawlCandidates<T extends { category: string; source: string; riskBand: string; qualityBand: string; score: number }>(
+  items: T[], limit: number,
+): T[] {
+  const buckets = new Map<string, T[]>();
+  for (const item of items) {
+    const key = [item.category,item.riskBand,item.source,item.qualityBand].join("|");
+    const bucket = buckets.get(key) ?? []; bucket.push(item); buckets.set(key,bucket);
+  }
+  for (const bucket of buckets.values()) bucket.sort((a,b) => b.score-a.score);
+  const keys = [...buckets.keys()].sort((a,b) => (buckets.get(a)?.length ?? 0) - (buckets.get(b)?.length ?? 0) || a.localeCompare(b));
+  const selected: T[] = [];
+  while (selected.length < Math.max(0,Math.min(100,Math.floor(limit)))) {
+    let progressed = false;
+    for (const key of keys) {
+      const item = buckets.get(key)?.shift();
+      if (!item) continue;
+      selected.push(item); progressed = true;
+      if (selected.length >= Math.max(0,Math.min(100,Math.floor(limit)))) break;
+    }
+    if (!progressed) break;
+  }
+  return selected;
+}
+
 function moderationEvidenceOf(evidence: Record<string, unknown>): Record<string, unknown> | null {
   const raw = evidence.aiModeration;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -250,7 +275,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       );
       const importedRows = await ctx.repo.raw("SELECT source_fingerprint FROM crawl_moderation_gold_cases WHERE source_fingerprint LIKE 'candidate:%'");
       const imported = new Set(importedRows.map(row => String(row.source_fingerprint)));
-      const buckets = new Map<string, Array<{ row: Record<string, unknown>; evidence: Record<string, unknown>; score: number; category: string; source: string; riskBand: string; qualityBand: string }>>();
+      const eligibleCandidates: Array<{ row: Record<string, unknown>; evidence: Record<string, unknown>; score: number; category: string; source: string; riskBand: string; qualityBand: string }> = [];
       let malformed = 0;
       for (const row of rows) {
         let evidence: Record<string, unknown>;
@@ -268,23 +293,9 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         const quality = scoreCrawlCandidate({ url: String(row.url ?? ""), title: row.title == null ? null : String(row.title),
           description: row.description == null ? null : String(row.description), evidence });
         const qualityBand = quality.score < 40 ? "low" : quality.score < 70 ? "medium" : "high";
-        const bucketKey = [category, riskBand, source, qualityBand].join("|");
-        const item = { row, evidence, score: quality.score, category, source, riskBand, qualityBand };
-        const bucket = buckets.get(bucketKey) ?? []; bucket.push(item); buckets.set(bucketKey, bucket);
+        eligibleCandidates.push({ row, evidence, score: quality.score, category, source, riskBand, qualityBand });
       }
-      for (const bucket of buckets.values()) bucket.sort((a,b) => b.score - a.score || Number(b.row.discovered_at ?? 0) - Number(a.row.discovered_at ?? 0));
-      const bucketKeys = [...buckets.keys()].sort((a,b) => (buckets.get(a)?.length ?? 0) - (buckets.get(b)?.length ?? 0) || a.localeCompare(b));
-      const selected: Array<{ row: Record<string, unknown>; evidence: Record<string, unknown>; score: number; category: string; source: string; riskBand: string; qualityBand: string }> = [];
-      while (selected.length < body.data.limit) {
-        let progressed = false;
-        for (const key of bucketKeys) {
-          const item = buckets.get(key)?.shift();
-          if (!item) continue;
-          selected.push(item); progressed = true;
-          if (selected.length >= body.data.limit) break;
-        }
-        if (!progressed) break;
-      }
+      const selected = selectStratifiedCrawlCandidates(eligibleCandidates, body.data.limit);
       const actor = String(req.auth.actor ?? "admin");
       let created = 0, existing = 0, failed = 0;
       const createdIds: string[] = [];
@@ -317,7 +328,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       if (createdIds.length) await ctx.repo.audit({ ip: req.ip, actor, actorKind: req.auth.kind,
         action: "crawl.moderation_gold_stratified_import", target: "batch",
         diff: { created: createdIds.length, candidateIds: createdIds.slice(0,100), requested: body.data.limit } });
-      return { ok: true, requested: body.data.limit, scanned: rows.length, eligible: [...buckets.values()].reduce((sum,bucket) => sum + bucket.length,0) + selected.length,
+      return { ok: true, requested: body.data.limit, scanned: rows.length, eligible: eligibleCandidates.length,
         selected: selected.length, created, existing, failed, malformed, distribution: { categories: countBy("category"),
           riskHints: countBy("riskBand"), sources: countBy("source"), qualityBands: countBy("qualityBand") } };
     },

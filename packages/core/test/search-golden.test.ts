@@ -57,6 +57,12 @@ describe("search golden record validation", () => {
     expect(toSearchEvalCase(validateSearchGoldenRecord(value)).relevance).toEqual({ "site-b": 1 });
   });
 
+  it("accepts genuine zero-result queries without inventing candidate labels", () => {
+    const value = record({ hits: [], judgments: [] });
+    const validated = validateSearchGoldenRecord(value);
+    expect(toSearchEvalCase(validated)).toEqual({ query: "q-0001", hits: [], relevance: {} });
+  });
+
   it("rejects same annotator, missing arbitration, incomplete coverage and unreviewed privacy", () => {
     const sameAnnotator = record();
     (sameAnnotator.judgments[0] as any).annotatorB.annotatorId = "reviewer-a";

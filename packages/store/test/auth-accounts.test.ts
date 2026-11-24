@@ -114,6 +114,30 @@ describe("账号生命周期仓储", () => {
     expect(missing).toBeNull();
   });
 
+  it("修改绑定邮箱后必须重新验证才能密码登录", async () => {
+    const user = await repo.createUserWithPassword({
+      username: "emailchange",
+      email: "emailchange-old@example.com",
+      password: "S3cret-Passw0rd!",
+    });
+    expect(user.ok).toBe(true);
+    if (!user.ok) return;
+
+    expect(await repo.setUserEmailVerified(user.user.id)).toBe(true);
+    expect(await repo.verifyUserPassword("emailchange-old@example.com", "S3cret-Passw0rd!")).not.toBeNull();
+
+    const changed = await repo.updateUserProfileInfo(user.user.id, {
+      email: "emailchange-new@example.com",
+    });
+    expect(changed.ok).toBe(true);
+    if (!changed.ok) return;
+    expect(changed.user.emailVerified).toBe(false);
+    expect(await repo.verifyUserPassword("emailchange-new@example.com", "S3cret-Passw0rd!")).toBeNull();
+
+    expect(await repo.setUserEmailVerified(user.user.id)).toBe(true);
+    expect(await repo.verifyUserPassword("emailchange-new@example.com", "S3cret-Passw0rd!")).not.toBeNull();
+  });
+
   it("邮箱验证令牌一次性消费：首次成功，重复使用失败", async () => {
     const user = await repo.createUserWithPassword({
       username: "dave",

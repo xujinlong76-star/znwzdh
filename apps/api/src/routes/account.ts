@@ -239,6 +239,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
   });
 
   app.post("/api/account/admin-mfa/setup", { config: { scope: "admin" } }, async (_req, reply) => {
+    if (!ctx.config.internalToken) { reply.code(503); return { error: "启用管理员 MFA 前必须配置 Web/API 共享的 NAVHUB_INTERNAL_TOKEN" }; }
     let encrypted: Pick<AdminMfaState, "iv" | "ciphertext" | "tag">;
     let secret: string;
     try {

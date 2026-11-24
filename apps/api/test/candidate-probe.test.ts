@@ -13,7 +13,7 @@
  * 探活器是注入的假函数，因此档位、耗时、排序全部离线可复现。
  */
 import { describe, expect, it } from "vitest";
-import { probeCandidates, type CandidateProbe, type StructuredReplacementCandidate } from "../src/candidate-probe.ts";
+import { probeCandidates, rankCandidate, type CandidateProbe, type StructuredReplacementCandidate } from "../src/candidate-probe.ts";
 
 function candidate(url: string, extra: Partial<StructuredReplacementCandidate> = {}): StructuredReplacementCandidate {
   return { title: url, url, reason: "测试候选", ...extra };
@@ -80,6 +80,23 @@ describe("候选批量探活：排序、标注与读数", () => {
     // 对外只有一个 qualityScore，必须等于合成出来的可信度，不能是模型自评分
     expect(ok.qualityScore).toBe(ok.confidence!.total);
     expect(gone.qualityScore).toBe(gone.confidence!.total);
+  });
+
+  it("uses verified catalog quality only to break ties within the same probe grade and confidence", () => {
+    const baseline = candidate("https://baseline.example/");
+    const enriched = candidate("https://enriched.example/", {
+      catalogQuality: { score: 95, evidenceCoverage: 70, band: "high" },
+    });
+    const risky = candidate("https://risky.example/", {
+      catalogQuality: { score: 100, evidenceCoverage: 90, band: "high_risk" },
+    });
+    const thin = candidate("https://thin.example/", {
+      catalogQuality: { score: 100, evidenceCoverage: 10, band: "high" },
+    });
+    const baseRank = rankCandidate(baseline);
+    expect(rankCandidate(enriched)).toBeGreaterThan(baseRank);
+    expect(rankCandidate(risky)).toBe(baseRank);
+    expect(rankCandidate(thin)).toBe(baseRank);
   });
 
   it("预算用尽的候选按「没测准」标注，并且接口不无限期挂着", async () => {

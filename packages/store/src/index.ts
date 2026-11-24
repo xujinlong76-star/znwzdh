@@ -10,6 +10,10 @@ export * from "./search.ts";
 export * from "./plugin-ops.ts";
 export * from "./vector/index.ts";
 export * from "./repository.ts";
+export * from "./repository/crawl-governance.ts";
+export * from "./repository/crawl-sources.ts";
+export { upsertSiteDiscoveryCandidate, getSiteDiscoveryCandidateForUpdate, getSiteDiscoveryCandidate, listSiteDiscoveryCandidates, countSiteDiscoveryCandidates, reviewSiteDiscoveryCandidate } from "./repository/discovery-candidates.ts";
+export type { SiteDiscoveryCandidate, DiscoveryCandidateStatus } from "./repository/discovery-candidates.ts";
 export { pluginOwnerKey, normalizePluginReviewSort, type PluginReviewSort } from "./repository/plugins.ts";
 export * from "./repository/videos.ts";
 export { computeTagLongTailStats, type TagLongTailStats } from "./repository/taxonomy-governance.ts";
@@ -30,3 +34,12 @@ export type { NavVersionProbe } from "./repository/nav-version.ts";
 // 收藏写路径的归属越界信号（BOLA）：apps/api 的 POST /api/favorites 需要 instanceof 它
 // 才能把「别人的文件夹」映射成 400，而不是笼统的 500。
 export { FavoriteFolderNotOwnedError } from "./repository/favorites.ts";
+
+export { recordCrawlAiModerationDecision, listCrawlAiModerationDecisions } from "./repository/crawl-ai-moderation.ts";
+export {
+  createCrawlModerationGoldCase, listCrawlModerationGoldCases, getCrawlModerationGoldCase,
+  annotateCrawlModerationGoldCase, adjudicateCrawlModerationGoldCase, listCrawlModerationGoldAnnotations,
+} from "./repository/crawl-ai-moderation.ts";
+export type {
+  CreateCrawlModerationGoldCaseInput, CrawlModerationGoldAnnotationInput, CrawlModerationGoldLabel,
+} from "./repository/crawl-ai-moderation.ts";

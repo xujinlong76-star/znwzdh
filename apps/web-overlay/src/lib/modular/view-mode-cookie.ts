@@ -1,11 +1,11 @@
 /**
  * 网址展示模式 Cookie 读写契约（前后端同构，零 React / next/headers 依赖）。
  *
- * 作用：解决仅靠 localStorage 持久化导致 SSR 首帧只能按默认 standard 渲染、
- * 客户端水合后瞬间跳变目标模式引发 CLS / 闪烁的问题。
+ * 作用：在首页保持 ISR 静态缓存的前提下，持久化用户的卡片展示模式。
  * - 写侧：每次经 `home-diy-storage` 提交或水合配置时同步写入 `nav_view_mode` Cookie；
- * - 读侧：Next.js 首页 RSC（`app/page.tsx`）直接读 Cookie 渲染目标模式 HTML，
- *   客户端首帧经 `InitialViewModeContext` 消费同一初始值，实现 0 水合警告 + 0 CLS。
+ * - 读侧：客户端 `useHomeDIY` 的同构 layout effect 在首次绘制前读取 Cookie/localStorage，
+ *   与 SSR 的 standard 默认快照先匹配完成 hydration，再同步应用用户偏好，避免普通 effect 的可见闪烁。
+ * - Server Component 不读取 Cookie，避免 `cookies()` 将首页从 ISR 变成动态渲染。
  */
 import {
   normalizeCardDisplayMode,

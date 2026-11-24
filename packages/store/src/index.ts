@@ -36,3 +36,10 @@ export type { NavVersionProbe } from "./repository/nav-version.ts";
 export { FavoriteFolderNotOwnedError } from "./repository/favorites.ts";
 
 export { recordCrawlAiModerationDecision, listCrawlAiModerationDecisions } from "./repository/crawl-ai-moderation.ts";
+export {
+  createCrawlModerationGoldCase, listCrawlModerationGoldCases, getCrawlModerationGoldCase,
+  annotateCrawlModerationGoldCase, adjudicateCrawlModerationGoldCase, listCrawlModerationGoldAnnotations,
+} from "./repository/crawl-ai-moderation.ts";
+export type {
+  CreateCrawlModerationGoldCaseInput, CrawlModerationGoldAnnotationInput, CrawlModerationGoldLabel,
+} from "./repository/crawl-ai-moderation.ts";

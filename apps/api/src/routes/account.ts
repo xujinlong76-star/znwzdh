@@ -112,6 +112,22 @@ function matchingTotpCounter(secret: string, supplied: string, now = Date.now())
 }
 
 
+let lastTotpReplayPruneAt = 0;
+
+async function claimTotpStep(ctx: AppContext, version: string, counter: number): Promise<boolean> {
+  const now = Date.now();
+  if (now - lastTotpReplayPruneAt > 60_000) {
+    lastTotpReplayPruneAt = now;
+    await ctx.repo.pruneSystemStatePrefix("auth:admin-mfa:totp:", now - 5 * 60 * 1000).catch(() => 0);
+  }
+  return ctx.repo.claimSystemState(
+    "auth:admin-mfa:totp:" + version + ":" + counter,
+    true,
+    5 * 60 * 1000,
+    now,
+  );
+}
+
 function encryptMfaSecret(secret: string): Pick<AdminMfaState, "iv" | "ciphertext" | "tag"> {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", mfaEncryptionKey(), iv);
@@ -144,11 +160,7 @@ async function verifyAdminMfa(ctx: AppContext, supplied: string): Promise<boolea
   const matchedCounter = matchingTotpCounter(secret, supplied);
   if (matchedCounter !== null) {
     // TOTP 时间步只可消费一次；共享 DB 原子占坑防止跨副本重放同一验证码。
-    return ctx.repo.claimSystemState(
-      "auth:admin-mfa:totp:" + state.recoveryVersion + ":" + matchedCounter,
-      true,
-      5 * 60 * 1000,
-    );
+    return claimTotpStep(ctx, state.recoveryVersion, matchedCounter);
   }
   const normalized = supplied.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (!normalized) return false;
@@ -287,11 +299,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     try { secret = decryptMfaSecret(state); } catch { reply.code(503); return { error: "MFA 密钥解密失败，请重新初始化" }; }
     const matchedCounter = matchingTotpCounter(secret, body.data.code);
     if (matchedCounter === null) { reply.code(401); return { error: "验证码无效或已过期" }; }
-    const consumed = await ctx.repo.claimSystemState(
-      "auth:admin-mfa:totp:" + state.recoveryVersion + ":" + matchedCounter,
-      true,
-      5 * 60 * 1000,
-    );
+    const consumed = await claimTotpStep(ctx, state.recoveryVersion, matchedCounter);
     if (!consumed) { reply.code(401); return { error: "验证码已使用，请等待下一组验证码" }; }
     const codes = newRecoveryCodes();
     await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, {

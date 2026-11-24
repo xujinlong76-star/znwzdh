@@ -46,6 +46,7 @@ pnpm eval:search /secure/path/search-eval.json --json
 ```
 
 - 默认要求至少 100 条可评估样本；不足时命令以非零状态退出。
+- 报告包含可评估样本按 intent 与 locale 的分布，便于发现只覆盖单一语言或意图的样本偏差；样本分层比例仍需按标注协议人工验收。
 - --export 只在达到最小样本数时写出 SearchEvalCase fixture；输出文件包含查询文本，必须继续保存在受控位置。
 - 导出文件使用独占创建（已存在时拒绝覆盖），避免误覆盖历史评测快照。
 - 终端报告不包含原始 query，只包含样本数量、不可判断排除数和 NDCG@10 / MRR@10 / Recall@10。

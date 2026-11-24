@@ -706,11 +706,17 @@ export async function buildServer(ctx: AppContext) {
     if ((req as { auth?: { ownerIdentity?: string | null } }).auth?.ownerIdentity) return;
     const identity = identityOf(req as never);
     if (!identity) return;
-    const verdict = verifyIdentityHeaders({
+    const verdict = await verifyIdentityHeaders({
       secret: ctx.config.identitySecret,
       identity,
       headers: req.headers as Record<string, unknown>,
       strict: ctx.config.identitySignatureStrict,
+      acceptReplay: (signature, nowMs, ttlMs) => ctx.repo.claimSystemState(
+        "identity-replay:" + createHash("sha256").update(signature).digest("hex"),
+        true,
+        ttlMs,
+        nowMs,
+      ),
     });
     if (!verdict.ok) {
       return reply.code(401).send({ error: "身份签名缺失或无效" });

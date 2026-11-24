@@ -4,7 +4,11 @@
  * 首页 DIY hook：只保留 React 状态编排。共享状态/本地存储在同目录
  * home-diy-storage.ts，导入导出/云金库在 home-diy-io.ts（2026-10-19 P1-1 拆分）。
  */
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react'
+
+// SSR 使用 useEffect（避免服务端 layout-effect 警告），浏览器使用 useLayoutEffect，
+// 让 cookie/localStorage 偏好在首次绘制前落位，同时不让 Server Component 读取 Cookie。
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 import {
   BUILTIN_DIY_PRESETS,
   clampCardOpacity,
@@ -157,7 +161,7 @@ export function useHomeDIY(initialCardDisplayMode?: CanonicalCardDisplayMode) {
   // 1. 客户端挂载时读本地存储（v3 / v2 / v1 迁移 + #diy 分享链接）并填充共享状态。
   //    只让第一个挂载的组件去读：共享状态只有一份，后挂载的组件
   //    （例如切到 hybrid 才动态加载的 HomeHeroDeck）再读一遍会把撤销栈冲掉。
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     hydrateHomeDiy(initialCardDisplayMode)
     setMounted(true)
   }, [initialCardDisplayMode])

@@ -487,6 +487,26 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     },
     checksum: "v1_crawl_source_retry_backoff",
   },
+  {
+    version: "20261124_crawl_robots_shared_cache",
+    name: "跨实例共享 robots.txt 策略缓存",
+    up: async (db: Db) => {
+      const statement = `CREATE TABLE IF NOT EXISTS crawl_robots_cache (
+        origin TEXT PRIMARY KEY,
+        body TEXT,
+        blocked INTEGER NOT NULL DEFAULT 0,
+        status INTEGER NOT NULL,
+        etag TEXT,
+        last_modified TEXT,
+        fetched_at BIGINT NOT NULL,
+        expires_at BIGINT NOT NULL
+      )`;
+      const index = "CREATE INDEX IF NOT EXISTS crawl_robots_cache_expiry_idx ON crawl_robots_cache(expires_at)";
+      if (db.dialect === "pg" && db.pg) { await db.pg.query(statement); await db.pg.query(index); }
+      else if (db.sqlite) { db.sqlite.exec(statement); db.sqlite.exec(index); }
+    },
+    checksum: "v1_crawl_robots_shared_cache",
+  },
 ];
 
 /**

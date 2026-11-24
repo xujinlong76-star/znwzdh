@@ -4,9 +4,11 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
-import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
+import { createHash } from "node:crypto";
+import { MAX_SEARCH_QUERY_LENGTH, rerankBySiteQualityShadow } from "@navhub/core";
 import { recordSearchChannels, recordSearchSuggestionsDegraded, recordSearchWriteFailure } from "../metrics.ts";
 import { refreshUserProfile } from "../profile-service.ts";
+import { recordRecommendationQualityShadow } from "../recommendation-quality-shadow.ts";
 import { badRequest, clampFacets, FACET_MAX_JSON_LENGTH, identityTrusted, requestIdentityOf } from "./shared.ts";
 
 import { z } from "zod";
@@ -99,6 +101,64 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     const zeroSet = new Set(zero.map((z) => z.query));
     const hotwords = top.filter((t) => !zeroSet.has(t.query)).slice(0, 8).map((t) => t.query);
     return { hotwords, ...(degraded ? { suggestionsDegraded: true } : {}) };
+  });
+
+  /**
+   * 管理端真实搜索质量影子预览。
+   * 同一条生产搜索结果作为 baseline，额外计算 shadow 顺序；绝不覆盖 /api/search 的用户排序。
+   */
+  app.get("/api/admin/search/quality-shadow-preview", {
+    config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } },
+  }, async (req, reply) => {
+    const parsed = z.object({
+      q: z.string().trim().min(1).max(MAX_SEARCH_QUERY_LENGTH),
+      limit: z.coerce.number().int().min(1).max(20).default(10),
+    }).safeParse(req.query ?? {});
+    if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);
+
+    const result = await ctx.search.search({ q: parsed.data.q, limit: parsed.data.limit });
+    const siteIds = result.hits.map((hit) => hit.siteId);
+    const [siteMap, assessments] = await Promise.all([
+      ctx.repo.getSitesByIds(siteIds),
+      Promise.all(siteIds.map((siteId) => ctx.repo.getSiteQualityAssessment(siteId))),
+    ]);
+    const qualityBySite = new Map(
+      siteIds.map((siteId, index) => [siteId, assessments[index] ?? null]),
+    );
+    const shadow = rerankBySiteQualityShadow(result.hits.map((hit) => {
+      const quality = qualityBySite.get(hit.siteId);
+      return {
+        siteId: hit.siteId,
+        qualityScore: quality?.score ?? null,
+        evidenceCoverage: quality?.evidenceCoverage ?? 0,
+        band: quality?.band ?? "insufficient_evidence",
+      };
+    }));
+
+    return {
+      ok: true,
+      query: parsed.data.q,
+      limit: parsed.data.limit,
+      baseline: result.hits.map((hit, index) => ({
+        rank: index + 1,
+        siteId: hit.siteId,
+        score: hit.score,
+        site: siteMap.get(hit.siteId) ?? null,
+      })),
+      shadow: shadow.map((candidate) => ({
+        rank: candidate.shadowRank,
+        baselineRank: candidate.baselineRank,
+        siteId: candidate.siteId,
+        site: siteMap.get(candidate.siteId) ?? null,
+        qualityScore: candidate.qualityScore,
+        evidenceCoverage: candidate.evidenceCoverage,
+        band: candidate.band,
+        applied: candidate.applied,
+        excludedReason: candidate.excludedReason,
+      })),
+      productionOrderChanged: shadow.some((candidate) => candidate.shadowRank !== candidate.baselineRank),
+      note: "仅供管理员观察；线上 /api/search 仍使用原始融合排序。",
+    };
   });
 
   app.get("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 20, etag: true, vary: SEARCH_VARY } } }, async (req, reply) => {
@@ -223,6 +283,59 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
     const q = input.q.trim();
     const isFirstPage = (input.offset ?? 0) === 0;
+
+    if (personalize && isFirstPage && !isProbe && hits.length > 0) {
+      const personalizedHits = hits.filter((hit): hit is typeof hit & { site: NonNullable<typeof hit.site> } => Boolean(hit.site)).slice(0, 20);
+      const scores = personalizedHits.map(hit => hit.score);
+      const minScore = Math.min(...scores), maxScore = Math.max(...scores), range = maxScore - minScore;
+      await recordRecommendationQualityShadow(ctx, {
+        surface: "personalized",
+        sites: personalizedHits.map(hit => hit.site),
+        relevanceBySiteId: new Map(personalizedHits.map(hit => [hit.siteId, range === 0 ? 100 : ((hit.score - minScore) / range) * 100])),
+      });
+    }
+
+    // 10% 确定性采样：计算质量影子名次并记录对照，不改写 result.hits 或响应缓存。
+    // 使用查询字符 hash 而不是随机数，保证同一 query 在回归中采样稳定。
+    const queryHash = createHash("sha256").update(q).digest("hex");
+    const shadowSampled = q.length > 0 && Number.parseInt(queryHash.slice(0, 8), 16) % 10 === 0;
+    if (shadowSampled && isFirstPage && !isProbe && result.hits.length > 0) {
+      try {
+        const topHits = result.hits.slice(0, 20);
+        const qualityRows = await ctx.repo.getSiteQualityAssessmentsBySiteIds(topHits.map((hit) => hit.siteId));
+        const qualityBySiteId = new Map(qualityRows.map((row) => [row.siteId, row]));
+        const shadow = rerankBySiteQualityShadow(topHits.map((hit) => {
+          const quality = qualityBySiteId.get(hit.siteId);
+          return {
+            siteId: hit.siteId,
+            qualityScore: quality?.score ?? null,
+            evidenceCoverage: quality?.evidenceCoverage ?? 0,
+            band: quality?.band ?? "insufficient_evidence",
+          };
+        }));
+        const baselineSiteIds = [...shadow]
+          .sort((a, b) => a.baselineRank - b.baselineRank)
+          .map((item) => item.siteId);
+        await ctx.repo.recordEvent("search_quality_shadow", {
+          meta: {
+            version: "site-quality-v1",
+            queryHash,
+            queryLength: q.length,
+            sampleRate: 0.1,
+            qualityWeight: 0.12,
+            minEvidenceCoverage: 40,
+            baselineSiteIds,
+            shadowSiteIds: shadow.map((item) => item.siteId),
+            appliedCount: shadow.filter((item) => item.applied).length,
+            excludedHighRiskCount: shadow.filter((item) => item.excludedReason === "high_risk").length,
+            excludedUnknownCount: shadow.filter((item) => item.excludedReason === "unknown_score").length,
+            excludedLowCoverageCount: shadow.filter((item) => item.excludedReason === "insufficient_coverage").length,
+          },
+        });
+      } catch {
+        // 影子评测是附加遥测：失败绝不影响搜索主链路，也不污染主搜索写失败计数。
+      }
+    }
     let suggestions: string[] = [];
     let popular: string[] = [];
     let relationHits: unknown[] = [];

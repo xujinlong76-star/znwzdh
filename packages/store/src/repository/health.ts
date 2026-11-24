@@ -1,5 +1,5 @@
 import type { Repository } from "../repository.ts";
-import { computeConsecutiveFailures, isBotBlockedHealthRecord } from "@navhub/core";
+import { computeConsecutiveFailures, isBotBlockedHealthRecord, type SiteQualityResult } from "@navhub/core";
 
 export async function updateSiteHealth(repo: Repository, siteId: string, health: {
     httpStatus: number | null
@@ -150,4 +150,227 @@ export async function setTrendScores(repo: Repository, scores: Array<{ id: strin
       );
     }
   });
+}
+
+
+/** 最新站点质量快照。保留完整维度证据，供后续审核工作台与离线评测读取。 */
+export interface SiteQualityAssessmentRecord extends SiteQualityResult {
+  siteId: string;
+  updatedAt: number;
+}
+
+/** 幂等写入当前规则版本的最新影子评分；不触碰 sites.status / 搜索排序字段。 */
+export async function saveSiteQualityAssessment(
+  repo: Repository,
+  siteId: string,
+  assessment: SiteQualityResult,
+): Promise<void> {
+  const updatedAt = Date.now();
+  await repo.run(
+    `INSERT INTO site_quality_assessments
+      (site_id, version, evaluated_at, overall_score, evidence_coverage, observed_dimensions,
+       risk_score, band, dimensions_json, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(site_id) DO UPDATE SET
+       version = excluded.version,
+       evaluated_at = excluded.evaluated_at,
+       overall_score = excluded.overall_score,
+       evidence_coverage = excluded.evidence_coverage,
+       observed_dimensions = excluded.observed_dimensions,
+       risk_score = excluded.risk_score,
+       band = excluded.band,
+       dimensions_json = excluded.dimensions_json,
+       updated_at = excluded.updated_at`,
+    [
+      siteId, assessment.version, assessment.evaluatedAt, assessment.score,
+      assessment.evidenceCoverage, assessment.observedDimensions, assessment.riskScore,
+      assessment.band, JSON.stringify(assessment.dimensions), updatedAt,
+    ],
+  );
+}
+
+/** 读取一站点的最新质量快照；无快照返回 null。 */
+export async function getSiteQualityAssessment(
+  repo: Repository,
+  siteId: string,
+): Promise<SiteQualityAssessmentRecord | null> {
+  const rows = await repo.raw(
+    "SELECT * FROM site_quality_assessments WHERE site_id = ?",
+    [siteId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    siteId: String(row.site_id),
+    version: String(row.version) as SiteQualityResult["version"],
+    evaluatedAt: Number(row.evaluated_at),
+    score: row.overall_score == null ? null : Number(row.overall_score),
+    evidenceCoverage: Number(row.evidence_coverage),
+    observedDimensions: Number(row.observed_dimensions),
+    riskScore: row.risk_score == null ? null : Number(row.risk_score),
+    band: String(row.band) as SiteQualityResult["band"],
+    dimensions: JSON.parse(String(row.dimensions_json)) as SiteQualityResult["dimensions"],
+    updatedAt: Number(row.updated_at),
+  };
+}
+
+
+export interface SiteQualityOverview {
+  totalSites: number;
+  assessedSites: number;
+  unassessedSites: number;
+  highRiskCount: number;
+  insufficientEvidenceCount: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  averageScore: number | null;
+  averageEvidenceCoverage: number | null;
+  lastEvaluatedAt: number | null;
+}
+
+export interface SiteQualityListItem extends SiteQualityAssessmentRecord {
+  title: string;
+  url: string;
+  categoryId: string;
+  status: string;
+}
+
+function qualityRecordFromRow(row: Record<string, unknown>): SiteQualityAssessmentRecord {
+  return {
+    siteId: String(row.site_id),
+    version: String(row.version) as SiteQualityResult["version"],
+    evaluatedAt: Number(row.evaluated_at),
+    score: row.overall_score == null ? null : Number(row.overall_score),
+    evidenceCoverage: Number(row.evidence_coverage),
+    observedDimensions: Number(row.observed_dimensions),
+    riskScore: row.risk_score == null ? null : Number(row.risk_score),
+    band: String(row.band) as SiteQualityResult["band"],
+    dimensions: JSON.parse(String(row.dimensions_json)) as SiteQualityResult["dimensions"],
+    updatedAt: Number(row.updated_at),
+  };
+}
+
+/** 质量治理列表：风险优先、证据不足次之；不包含软删除站点。 */
+export async function listSiteQualityAssessments(
+  repo: Repository,
+  options: { band?: SiteQualityResult["band"]; limit?: number; offset?: number } = {},
+): Promise<SiteQualityListItem[]> {
+  const where = ["s.deleted_at IS NULL", "s.status <> 'archived'"];
+  const params: unknown[] = [];
+  if (options.band) {
+    where.push("q.band = ?");
+    params.push(options.band);
+  }
+  const limit = Math.min(100, Math.max(1, Math.floor(options.limit ?? 50)));
+  const offset = Math.max(0, Math.floor(options.offset ?? 0));
+  const rows = await repo.raw(
+    `SELECT q.*, s.title, s.url, s.category_id, s.status
+       FROM site_quality_assessments q
+       JOIN sites s ON s.id = q.site_id
+      WHERE ${where.join(" AND ")}
+      ORDER BY CASE q.band
+        WHEN 'high_risk' THEN 0
+        WHEN 'insufficient_evidence' THEN 1
+        WHEN 'low' THEN 2
+        WHEN 'medium' THEN 3
+        ELSE 4 END,
+        q.overall_score ASC, q.updated_at DESC, q.site_id ASC
+      LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  );
+  return rows.map((row) => ({
+    ...qualityRecordFromRow(row),
+    title: String(row.title ?? ""),
+    url: String(row.url ?? ""),
+    categoryId: String(row.category_id ?? ""),
+    status: String(row.status ?? ""),
+  }));
+}
+
+/** 质量总览把「尚未评估」单独列出，不把缺少快照的站点当作零分。 */
+export async function siteQualityOverview(repo: Repository): Promise<SiteQualityOverview> {
+  const [siteRows, rows] = await Promise.all([
+    repo.raw("SELECT COUNT(*) AS total FROM sites WHERE deleted_at IS NULL AND status <> 'archived'"),
+    repo.raw(`SELECT
+      COUNT(*) AS assessed,
+      SUM(CASE WHEN band = 'high_risk' THEN 1 ELSE 0 END) AS high_risk,
+      SUM(CASE WHEN band = 'insufficient_evidence' THEN 1 ELSE 0 END) AS insufficient,
+      SUM(CASE WHEN band = 'high' THEN 1 ELSE 0 END) AS high_count,
+      SUM(CASE WHEN band = 'medium' THEN 1 ELSE 0 END) AS medium_count,
+      SUM(CASE WHEN band = 'low' THEN 1 ELSE 0 END) AS low_count,
+      AVG(overall_score) AS average_score,
+      AVG(evidence_coverage) AS average_coverage,
+      MAX(evaluated_at) AS last_evaluated_at
+      FROM site_quality_assessments q
+      JOIN sites s ON s.id = q.site_id
+      WHERE s.deleted_at IS NULL AND s.status <> 'archived'`),
+  ]);
+  const totalSites = Number(siteRows[0]?.total ?? 0);
+  const row = rows[0] ?? {};
+  const assessedSites = Number(row.assessed ?? 0);
+  return {
+    totalSites,
+    assessedSites,
+    unassessedSites: Math.max(0, totalSites - assessedSites),
+    highRiskCount: Number(row.high_risk ?? 0),
+    insufficientEvidenceCount: Number(row.insufficient ?? 0),
+    highCount: Number(row.high_count ?? 0),
+    mediumCount: Number(row.medium_count ?? 0),
+    lowCount: Number(row.low_count ?? 0),
+    averageScore: row.average_score == null ? null : Number(Number(row.average_score).toFixed(2)),
+    averageEvidenceCoverage: row.average_coverage == null ? null : Number(Number(row.average_coverage).toFixed(2)),
+    lastEvaluatedAt: row.last_evaluated_at == null ? null : Number(row.last_evaluated_at),
+  };
+}
+
+
+export async function countSiteQualityAssessments(
+  repo: Repository,
+  band?: SiteQualityResult["band"],
+): Promise<number> {
+  const where = ["s.deleted_at IS NULL"];
+  const params: unknown[] = [];
+  if (band) {
+    where.push("q.band = ?");
+    params.push(band);
+  }
+  const rows = await repo.raw(
+    `SELECT COUNT(*) AS total
+       FROM site_quality_assessments q
+       JOIN sites s ON s.id = q.site_id
+      WHERE ${where.join(" AND ")}`,
+    params,
+  );
+  return Number(rows[0]?.total ?? 0);
+}
+
+
+export interface SiteQualityLookupRecord {
+  siteId: string;
+  score: number | null;
+  evidenceCoverage: number;
+  band: SiteQualityResult["band"];
+}
+
+/** 一次批量读取搜索候选的质量快照，避免逐站点 N+1 查询。 */
+export async function getSiteQualityAssessmentsBySiteIds(
+  repo: Repository,
+  siteIds: readonly string[],
+): Promise<SiteQualityLookupRecord[]> {
+  const ids = [...new Set(siteIds.filter((id) => typeof id === "string" && id.length > 0))].slice(0, 100);
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(", ");
+  const rows = await repo.raw(
+    `SELECT site_id, overall_score, evidence_coverage, band
+       FROM site_quality_assessments
+      WHERE site_id IN (${placeholders})`,
+    ids,
+  );
+  return rows.map((row) => ({
+    siteId: String(row.site_id),
+    score: row.overall_score == null ? null : Number(row.overall_score),
+    evidenceCoverage: Number(row.evidence_coverage),
+    band: String(row.band) as SiteQualityResult["band"],
+  }));
 }

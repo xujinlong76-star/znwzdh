@@ -12,6 +12,7 @@ import {
   type TaxonomyProposal,
   type TaxonomyProposalKind,
   type SiteOfflineArchive,
+  type SiteQualityResult,
 } from "@navhub/core";
 import type { Db } from "./driver.ts";
 import { collectionInPredicate } from "./sql-in.ts";
@@ -49,6 +50,8 @@ import * as llmPriceRepo from "./repository/llm-prices.ts";
 import * as llmQuotaRepo from "./repository/llm-quota.ts";
 import * as navVersionRepo from "./repository/nav-version.ts";
 import * as healthRepo from "./repository/health.ts";
+import * as discoveryCandidatesRepo from "./repository/discovery-candidates.ts";
+export type { DiscoveryCandidateStatus, SiteDiscoveryCandidate, UpsertSiteDiscoveryCandidateInput } from "./repository/discovery-candidates.ts";
 import * as tagsRepo from "./repository/tags.ts";
 import * as favoritesRepo from "./repository/favorites.ts";
 import * as watchlistRepo from "./repository/watchlist.ts";
@@ -820,6 +823,55 @@ async savedPluginEmbeddings(filter?: {
   /** 某站点持久连续失败计数（sites.consecutive_failures，事实源） */
   async getConsecutiveFailures(siteId: string): Promise<number> {
     return healthRepo.getSiteConsecutiveFailures(this, siteId);
+  }
+
+  /** 站点质量影子评分：保存/读取最新版本，不参与线上排序。 */
+  async saveSiteQualityAssessment(siteId: string, assessment: SiteQualityResult): Promise<void> {
+    return healthRepo.saveSiteQualityAssessment(this, siteId, assessment);
+  }
+
+  async getSiteQualityAssessment(siteId: string): Promise<healthRepo.SiteQualityAssessmentRecord | null> {
+    return healthRepo.getSiteQualityAssessment(this, siteId);
+  }
+
+  async listSiteQualityAssessments(options: { band?: SiteQualityResult["band"]; limit?: number; offset?: number } = {}) {
+    return healthRepo.listSiteQualityAssessments(this, options);
+  }
+
+  async siteQualityOverview() {
+    return healthRepo.siteQualityOverview(this);
+  }
+
+  async countSiteQualityAssessments(band?: SiteQualityResult["band"]): Promise<number> {
+    return healthRepo.countSiteQualityAssessments(this, band);
+  }
+
+  async getSiteQualityAssessmentsBySiteIds(siteIds: readonly string[]) {
+    return healthRepo.getSiteQualityAssessmentsBySiteIds(this, siteIds);
+  }
+
+  async upsertSiteDiscoveryCandidate(input: discoveryCandidatesRepo.UpsertSiteDiscoveryCandidateInput) {
+    return discoveryCandidatesRepo.upsertSiteDiscoveryCandidate(this, input);
+  }
+
+  async getSiteDiscoveryCandidate(id: string) {
+    return discoveryCandidatesRepo.getSiteDiscoveryCandidate(this, id);
+  }
+
+  async getSiteDiscoveryCandidateForUpdate(id: string) {
+    return discoveryCandidatesRepo.getSiteDiscoveryCandidateForUpdate(this, id);
+  }
+
+  async listSiteDiscoveryCandidates(options: { status?: discoveryCandidatesRepo.DiscoveryCandidateStatus; limit?: number; offset?: number } = {}) {
+    return discoveryCandidatesRepo.listSiteDiscoveryCandidates(this, options);
+  }
+
+  async countSiteDiscoveryCandidates(status?: discoveryCandidatesRepo.DiscoveryCandidateStatus) {
+    return discoveryCandidatesRepo.countSiteDiscoveryCandidates(this, status);
+  }
+
+  async reviewSiteDiscoveryCandidate(input: Parameters<typeof discoveryCandidatesRepo.reviewSiteDiscoveryCandidate>[1]) {
+    return discoveryCandidatesRepo.reviewSiteDiscoveryCandidate(this, input);
   }
 
   /* ------------------------------ LLM 用量 ------------------------------ */

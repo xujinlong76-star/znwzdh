@@ -14,6 +14,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { Site as NavSite } from "@navhub/core";
 import type { AppContext } from "../context.ts";
+import { recordRecommendationQualityShadow } from "../recommendation-quality-shadow.ts";
 import { llmProviderReadyAny, resolveLlm } from "../llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../llm-quota.ts";
 import { callLlm, INTERACTIVE_LLM_BUDGET_MS } from "../llm-usage.ts";
@@ -189,6 +190,14 @@ export const aiFindRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         } else {
           recommendations = allSites.slice(0, FLAT_LIMIT).map(toFinder);
         }
+
+        const bySiteId = new Map(allSites.map(site => [site.id, site]));
+        const finderSites = recommendations.map(item => bySiteId.get(item.siteId)).filter((site): site is NavSite => Boolean(site));
+        await recordRecommendationQualityShadow(ctx, {
+          surface: "ai_finder",
+          sites: finderSites,
+          relevanceBySiteId: new Map(finderSites.map((site, index) => [site.id, Math.max(0, 100 - index * (100 / Math.max(1, finderSites.length)))])),
+        });
 
         const notice =
           mode === "ai"

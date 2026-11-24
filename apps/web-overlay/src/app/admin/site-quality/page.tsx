@@ -1,0 +1,408 @@
+'use client'
+
+import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
+import { RefreshCw, ShieldCheck, AlertTriangle, SearchCheck } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { hubGet, hubSend } from '@/lib/navhub-api'
+
+type QualityBand = 'high' | 'medium' | 'low' | 'high_risk' | 'insufficient_evidence'
+type Dimension = {
+  score: number | null
+  evidence: string[]
+}
+type Dimensions = {
+  accessibility: Dimension
+  contentCompleteness: Dimension
+  sourceTrust: Dimension
+  relevance: Dimension
+  uniqueness: Dimension
+  freshness: Dimension
+  risk: Dimension
+}
+interface QualityItem {
+  siteId: string
+  title: string
+  url: string
+  categoryId: string
+  status: string
+  version: string
+  evaluatedAt: number
+  score: number | null
+  evidenceCoverage: number
+  observedDimensions: number
+  riskScore: number | null
+  band: QualityBand
+  dimensions: Dimensions
+  updatedAt: number
+}
+interface QualitySummary {
+  totalSites: number
+  assessedSites: number
+  unassessedSites: number
+  highRiskCount: number
+  insufficientEvidenceCount: number
+  highCount: number
+  mediumCount: number
+  lowCount: number
+  averageScore: number | null
+  averageEvidenceCoverage: number | null
+  lastEvaluatedAt: number | null
+}
+interface QualityResponse {
+  ok: boolean
+  summary: QualitySummary
+  items: QualityItem[]
+  total: number
+  limit: number
+  offset: number
+  band: string
+}
+
+interface QualityShadowPreview {
+  ok: boolean
+  query: string
+  productionOrderChanged: boolean
+  baseline: Array<{
+    rank: number
+    siteId: string
+    site: { title: string; url: string } | null
+  }>
+  shadow: Array<{
+    rank: number
+    baselineRank: number
+    siteId: string
+    site: { title: string; url: string } | null
+    qualityScore: number | null
+    evidenceCoverage: number
+    band: QualityBand
+    applied: boolean
+    excludedReason?: string
+  }>
+  note: string
+}
+
+const PAGE_SIZE = 50
+const BAND_LABEL: Record<QualityBand, string> = {
+  high: '高质量候选',
+  medium: '中等',
+  low: '待改进',
+  high_risk: '高风险待复核',
+  insufficient_evidence: '证据不足',
+}
+const DIMENSION_LABEL: Record<keyof Dimensions, string> = {
+  accessibility: '可访问性',
+  contentCompleteness: '内容完整度',
+  sourceTrust: '来源可信度',
+  relevance: '内容相关性',
+  uniqueness: '独特性',
+  freshness: '时效性',
+  risk: '风险严重度',
+}
+const FILTERS: Array<{ value: string; label: string }> = [
+  { value: 'all', label: '全部站点' },
+  { value: 'high_risk', label: '高风险待复核' },
+  { value: 'insufficient_evidence', label: '证据不足' },
+  { value: 'low', label: '待改进' },
+  { value: 'medium', label: '中等' },
+  { value: 'high', label: '高质量候选' },
+]
+
+function formatTime(value: number | null): string {
+  return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '暂无'
+}
+
+function scoreLabel(value: number | null): string {
+  return value === null ? '—' : value.toFixed(1)
+}
+
+export default function SiteQualityAdminPage() {
+  const [data, setData] = useState<QualityResponse | null>(null)
+  const [filter, setFilter] = useState('all')
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [rebuilding, setRebuilding] = useState(false)
+  const [rebuildOffset, setRebuildOffset] = useState(0)
+  const [rebuildNotice, setRebuildNotice] = useState<string | null>(null)
+  const [previewQuery, setPreviewQuery] = useState('')
+  const [preview, setPreview] = useState<QualityShadowPreview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+
+  const load = useCallback(async (offset = 0, append = false) => {
+    if (append) setLoadingMore(true)
+    else setLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) })
+      if (filter !== 'all') params.set('band', filter)
+      const response = await hubGet<QualityResponse>('/api/hub/admin/quality/report?' + params.toString())
+      setData((previous) => append && previous
+        ? { ...response, items: [...previous.items, ...response.items] }
+        : response)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '质量数据加载失败')
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+    }
+  }, [filter])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const summary = data?.summary
+  const hasMore = Boolean(data && data.items.length < data.total)
+
+  const runQualityShadowPreview = async () => {
+    const query = previewQuery.trim()
+    if (!query || previewLoading) return
+    setPreviewLoading(true)
+    setPreviewError(null)
+    try {
+      const params = new URLSearchParams({ q: query, limit: '10' })
+      const result = await hubGet<QualityShadowPreview>(
+        '/api/hub/admin/search/quality-shadow-preview?' + params.toString(),
+      )
+      setPreview(result)
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : '搜索影子预览失败')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  const rebuildBatch = async () => {
+    if (rebuilding) return
+    setRebuilding(true)
+    setRebuildNotice(null)
+    try {
+      const result = await hubSend<{ saved: number; nextOffset: number | null; done: boolean }>(
+        '/api/hub/admin/quality/rebuild',
+        'POST',
+        { offset: rebuildOffset, limit: 50 },
+      )
+      if (result.done) {
+        setRebuildOffset(0)
+        setRebuildNotice(`全量补算完成，本批处理 ${result.saved} 个站点`)
+      } else {
+        setRebuildOffset(result.nextOffset ?? 0)
+        setRebuildNotice(`本批已补算 ${result.saved} 个站点；点击继续处理下一批`)
+      }
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '质量补算失败')
+    } finally {
+      setRebuilding(false)
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-6 p-3 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-bold">
+            <ShieldCheck className="h-6 w-6" aria-hidden />
+            站点质量治理
+          </h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            基于巡检记录与目录证据生成的影子评分。当前仅用于观察和人工复核，不会自动下架站点，也不会改变搜索与推荐排序。
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+            <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden />
+            刷新
+          </Button>
+          <Button size="sm" onClick={() => void rebuildBatch()} disabled={rebuilding}>
+            {rebuilding ? '补算中…' : `补算既有站点（批次偏移 ${rebuildOffset}）`}
+          </Button>
+        </div>
+      </div>
+
+      {rebuildNotice && <p className="text-sm text-muted-foreground">{rebuildNotice}</p>}
+
+      {error && (
+        <Card className="border-destructive/50">
+          <CardContent className="flex items-center gap-2 py-4 text-sm text-destructive">
+            <AlertTriangle className="h-4 w-4" aria-hidden />
+            {error}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">搜索质量影子预览</CardTitle>
+          <CardDescription>输入真实查询词，对比当前搜索排序与质量证据重排；仅管理员可见，不会改变线上搜索结果。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <input
+              aria-label="搜索质量预览查询词"
+              value={previewQuery}
+              onChange={(event) => setPreviewQuery(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter') void runQualityShadowPreview() }}
+              placeholder="例如：AI 视频生成工具"
+              maxLength={120}
+              className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+            />
+            <Button onClick={() => void runQualityShadowPreview()} disabled={previewLoading || !previewQuery.trim()}>
+              {previewLoading ? '计算中…' : '预览排序'}
+            </Button>
+          </div>
+          {previewError && <p className="text-sm text-destructive">{previewError}</p>}
+          {preview && (
+            <>
+              <p className="text-xs text-muted-foreground">
+                查询：{preview.query} · {preview.productionOrderChanged ? '影子顺序与当前顺序不同' : '影子顺序未改变'}
+              </p>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-lg border p-3">
+                  <h3 className="mb-2 text-sm font-semibold">当前排序（Baseline）</h3>
+                  <ol className="space-y-2">
+                    {preview.baseline.map((item) => (
+                      <li key={item.siteId} className="flex gap-2 text-sm">
+                        <span className="w-6 shrink-0 text-muted-foreground tabular-nums">{item.rank}.</span>
+                        <span className="min-w-0 break-words">{item.site?.title ?? item.siteId}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <h3 className="mb-2 text-sm font-semibold">质量影子排序（Shadow）</h3>
+                  <ol className="space-y-2">
+                    {preview.shadow.map((item) => (
+                      <li key={item.siteId} className="flex gap-2 text-sm">
+                        <span className="w-6 shrink-0 text-muted-foreground tabular-nums">{item.rank}.</span>
+                        <div className="min-w-0">
+                          <p className="break-words">{item.site?.title ?? item.siteId}</p>
+                          <p className="text-xs text-muted-foreground">
+                            原名次 {item.baselineRank} · 质量分 {scoreLabel(item.qualityScore)} · 证据 {item.evidenceCoverage}%
+                            {item.applied ? ' · 已应用' : item.excludedReason ? ` · ${item.excludedReason}` : ' · 未应用'}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">{preview.note}</p>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {summary && (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+          {[
+            ['站点总数', summary.totalSites],
+            ['已评估', summary.assessedSites],
+            ['未评估', summary.unassessedSites],
+            ['高风险', summary.highRiskCount],
+            ['证据不足', summary.insufficientEvidenceCount],
+            ['平均分', scoreLabel(summary.averageScore)],
+            ['平均证据覆盖', summary.averageEvidenceCoverage === null ? '—' : summary.averageEvidenceCoverage + '%'],
+          ].map(([label, value]) => (
+            <Card key={String(label)}>
+              <CardHeader className="pb-2">
+                <CardDescription>{label}</CardDescription>
+                <CardTitle className="text-2xl">{value}</CardTitle>
+              </CardHeader>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">质量证据清单</CardTitle>
+            <CardDescription>风险与证据缺口优先显示；未知分数不会被当成 0 分。</CardDescription>
+          </div>
+          <select
+            aria-label="质量分档筛选"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            {FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {loading ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">正在读取质量证据…</p>
+          ) : !data || data.items.length === 0 ? (
+            <div className="py-10 text-center">
+              <SearchCheck className="mx-auto mb-2 h-8 w-8 text-muted-foreground" aria-hidden />
+              <p className="text-sm font-medium">暂无质量快照</p>
+              <p className="mt-1 text-xs text-muted-foreground">站点完成健康巡检后，会在这里生成第一版证据评分。</p>
+            </div>
+          ) : (
+            data.items.map((item) => (
+              <article key={item.siteId} className="rounded-xl border border-border/70 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link href={`/site/${encodeURIComponent(item.siteId)}`} className="break-all text-sm font-semibold hover:text-primary">
+                      {item.title}
+                    </Link>
+                    <p className="mt-1 break-all text-xs text-muted-foreground">{item.url}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      类目：{item.categoryId} · 站点状态：{item.status} · 规则：{item.version}
+                    </p>
+                  </div>
+                  <div className="min-w-32 text-right">
+                    <div className="text-2xl font-semibold tabular-nums">{scoreLabel(item.score)}</div>
+                    <div className="text-xs text-muted-foreground">{BAND_LABEL[item.band]}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">证据覆盖 {item.evidenceCoverage}%</div>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span className="rounded-full border px-2 py-1">已观测 {item.observedDimensions}/7 维</span>
+                  {item.riskScore !== null && <span className="rounded-full border px-2 py-1">风险严重度 {item.riskScore}</span>}
+                  <span className="rounded-full border px-2 py-1">评估于 {formatTime(item.evaluatedAt)}</span>
+                </div>
+                <details className="mt-3 rounded-lg bg-muted/30 p-3">
+                  <summary className="cursor-pointer text-sm font-medium">查看七维证据明细</summary>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    {(Object.keys(DIMENSION_LABEL) as Array<keyof Dimensions>).map((key) => {
+                      const dimension = item.dimensions[key]
+                      return (
+                        <div key={key} className="rounded-md border border-border/60 p-3">
+                          <div className="flex justify-between gap-2 text-sm font-medium">
+                            <span>{DIMENSION_LABEL[key]}</span>
+                            <span className="tabular-nums">{dimension.score === null ? '未知' : dimension.score + (key === 'risk' ? ' 严重度' : ' 分')}</span>
+                          </div>
+                          {dimension.evidence.length > 0 ? (
+                            <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+                              {dimension.evidence.map((evidence, index) => <li key={index}>{evidence}</li>)}
+                            </ul>
+                          ) : (
+                            <p className="mt-2 text-xs text-muted-foreground">暂无可用证据</p>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </details>
+              </article>
+            ))
+          )}
+          {data && data.items.length > 0 && hasMore && (
+            <div className="pt-2 text-center">
+              <Button variant="outline" onClick={() => void load(data.offset + data.limit, true)} disabled={loadingMore}>
+                {loadingMore ? '加载中…' : '加载更多'}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      <p className="text-xs text-muted-foreground">
+        最近一次评分更新时间：{formatTime(summary?.lastEvaluatedAt ?? null)}。分数权重与证据口径仍处于 v1 校准阶段。
+      </p>
+    </div>
+  )
+}

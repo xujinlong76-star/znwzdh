@@ -8,24 +8,272 @@
  * 4. POST /api/sites/:id/recommend-alternative - 用当前配置的大模型生成精选替代品（模型名以响应 model 字段为准）
  */
 import type { FastifyPluginAsync } from "fastify";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   runAutonomousHealing,
   httpUrl,
+  canonicalizeUrl,
+  evaluateSiteQuality,
   SiteAuditApplyInput,
   type SiteHealthAuditSummary,
   type SiteHealthAuditIssue,
 } from "@navhub/core";
 import { indexSite } from "../index-site.ts";
+import { buildSiteQualityAssessments } from "../site-quality-assessment.ts";
 import { llmProviderReady, resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../llm-quota.ts";
-import { probeCandidates, type StructuredReplacementCandidate } from "../candidate-probe.ts";
+import { probeCandidates, rankCandidate, type StructuredReplacementCandidate } from "../candidate-probe.ts";
 import { requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
+const SENSITIVE_EVIDENCE_KEY = /^(?:password|passwd|secret|token|authorization|cookie|set-cookie|api[_-]?key|access[_-]?key|private[_-]?key|__proto__|prototype|constructor)$/i;
+
+function containsSensitiveEvidenceKey(value: unknown, depth = 0): boolean {
+  if (depth > 8) return true;
+  if (Array.isArray(value)) return value.some((item) => containsSensitiveEvidenceKey(item, depth + 1));
+  if (value && typeof value === "object") {
+    return Object.entries(value).some(([key, nested]) =>
+      SENSITIVE_EVIDENCE_KEY.test(key) || containsSensitiveEvidenceKey(nested, depth + 1),
+    );
+  }
+  return false;
+}
+
 export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
+
+  /**
+   * 自动采集候选进入隔离队列；采集端永远不能直接把站点发布到导航目录。
+   */
+  app.post("/api/discovery/candidates", {
+    config: { scope: "write", rateLimit: { max: 60, timeWindow: "1 minute" } },
+  }, async (req, reply) => {
+    const body = z.object({
+      url: httpUrl(),
+      source: z.enum(["manual", "import", "submission", "ai", "seed", "navsphere", "api", "mcp"]),
+      title: z.string().trim().min(1).max(120).optional(),
+      description: z.string().trim().max(500).optional(),
+      categoryId: z.string().max(64).optional(),
+      tags: z.array(z.string().trim().min(1).max(32)).max(20).optional(),
+      confidence: z.number().min(0).max(1).optional(),
+      evidence: z.record(z.string(), z.unknown()).optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) {
+      reply.code(400);
+      return { ok: false, error: "采集候选参数无效", details: body.error.issues };
+    }
+    const evidence = body.data.evidence ?? {};
+    if (containsSensitiveEvidenceKey(evidence)) {
+      reply.code(400);
+      return { ok: false, error: "采集证据不能包含密码、令牌、Cookie 或密钥字段" };
+    }
+    if (JSON.stringify(evidence).length > 16_384) {
+      reply.code(413);
+      return { ok: false, error: "采集证据超过 16KB 限制" };
+    }
+    const canonicalUrl = canonicalizeUrl(body.data.url);
+    const id = randomUUID();
+    const candidate = await ctx.repo.upsertSiteDiscoveryCandidate({
+      id,
+      url: body.data.url,
+      canonicalUrl,
+      title: body.data.title ?? null,
+      description: body.data.description ?? null,
+      categoryId: body.data.categoryId ?? null,
+      tags: body.data.tags ?? [],
+      source: body.data.source,
+      confidence: body.data.confidence ?? null,
+      evidence,
+    });
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: req.auth.actor,
+      actorKind: req.auth.kind,
+      action: "discovery.candidate_submitted",
+      target: candidate.id,
+      diff: { source: candidate.source, canonicalUrl: candidate.canonicalUrl, duplicate: candidate.id !== id },
+    });
+    reply.code(202);
+    return { ok: true, duplicate: candidate.id !== id, candidate };
+  });
+
+  /** 管理端只读候选队列；分页总数与状态筛选保持一致。 */
+  app.get("/api/admin/discovery/candidates", { config: { scope: "admin" } }, async (req, reply) => {
+    const query = z.object({
+      status: z.enum(["pending", "approved", "rejected"]).optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(50),
+      offset: z.coerce.number().int().min(0).max(100_000).default(0),
+    }).safeParse(req.query ?? {});
+    if (!query.success) {
+      reply.code(400);
+      return { ok: false, error: "筛选参数无效", details: query.error.issues };
+    }
+    const [items, total] = await Promise.all([
+      ctx.repo.listSiteDiscoveryCandidates(query.data),
+      ctx.repo.countSiteDiscoveryCandidates(query.data.status),
+    ]);
+    return { ok: true, items, total, limit: query.data.limit, offset: query.data.offset, status: query.data.status ?? "all" };
+  });
+
+  /** 审核在单个事务内锁定候选、写入站点并更新审核状态；索引写入在提交后执行。 */
+  app.post("/api/admin/discovery/candidates/:id/review", {
+    config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } },
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z.object({
+      action: z.enum(["approve", "reject"]),
+      categoryId: z.string().max(64).optional(),
+      rejectionReason: z.string().trim().max(500).optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) {
+      reply.code(400);
+      return { ok: false, error: "审核参数无效", details: body.error.issues };
+    }
+
+    const result = await ctx.repo.withTransaction(async () => {
+      const candidate = await ctx.repo.getSiteDiscoveryCandidateForUpdate(id);
+      if (!candidate) return { kind: "not_found" as const };
+      if (candidate.status !== "pending") {
+        return { kind: "conflict" as const, status: candidate.status };
+      }
+
+      if (body.data.action === "reject") {
+        const reviewed = await ctx.repo.reviewSiteDiscoveryCandidate({
+          id,
+          status: "rejected",
+          reviewer: req.auth.actor,
+          rejectionReason: body.data.rejectionReason || "人工审核未通过",
+        });
+        if (!reviewed || reviewed.status !== "rejected" || reviewed.reviewedBy !== req.auth.actor) {
+          throw new Error("候选审核状态更新失败");
+        }
+        await ctx.repo.audit({
+          ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
+          action: "discovery.candidate_rejected", target: id,
+          diff: { source: candidate.source, reason: reviewed.rejectionReason },
+        });
+        return { kind: "rejected" as const, candidate: reviewed };
+      }
+
+      let categoryId: string | null = body.data.categoryId ?? candidate.categoryId;
+      let categoryFallback = false;
+      if (categoryId) {
+        const categoryCheck = await ctx.repo.checkSiteCategoryAttachment(categoryId);
+        if (!categoryCheck.ok && body.data.categoryId) {
+          return { kind: "invalid_category" as const, error: categoryCheck.error };
+        }
+        if (!categoryCheck.ok) {
+          // 采集器的类目建议失效时，人工通过仍可入库到「未分类」，避免候选永久卡死。
+          categoryId = null;
+          categoryFallback = true;
+        } else {
+          categoryId = categoryCheck.categoryId;
+        }
+      }
+      const resolvedCategoryId = categoryId ?? await ctx.repo.ensureUncategorized();
+
+      let site = await ctx.repo.findSiteByUrl(candidate.url);
+      let created = false;
+      if (!site) {
+        site = await ctx.repo.createSite({
+          url: candidate.url,
+          title: candidate.title || new URL(candidate.url).hostname,
+          description: candidate.description,
+          categoryId: resolvedCategoryId,
+          tags: candidate.tags,
+          source: candidate.source,
+          status: "active",
+        });
+        created = true;
+      }
+      const reviewed = await ctx.repo.reviewSiteDiscoveryCandidate({
+        id,
+        status: "approved",
+        reviewer: req.auth.actor,
+        siteId: site.id,
+      });
+      if (!reviewed || reviewed.status !== "approved" || reviewed.siteId !== site.id) {
+        throw new Error("候选审核状态更新失败");
+      }
+      await ctx.repo.audit({
+        ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
+        action: "discovery.candidate_approved", target: id,
+        diff: { siteId: site.id, created, source: candidate.source, categoryFallback },
+      });
+      return { kind: "approved" as const, candidate: reviewed, site, created, categoryFallback };
+    });
+
+    if (result.kind === "not_found") {
+      reply.code(404);
+      return { ok: false, error: "采集候选不存在" };
+    }
+    if (result.kind === "conflict") {
+      reply.code(409);
+      return { ok: false, error: "该候选已完成审核，不能重复处理", status: result.status };
+    }
+    if (result.kind === "invalid_category") {
+      reply.code(400);
+      return { ok: false, error: "分类不可用于站点入库", detail: result.error };
+    }
+    if (result.kind === "rejected") return { ok: true, candidate: result.candidate };
+
+    if (result.created) {
+      await indexSite(ctx, result.site.id, result.site.title, result.site.description ?? null, result.site.url);
+    }
+    return { ok: true, created: result.created, categoryFallback: result.categoryFallback, site: result.site, candidate: result.candidate };
+  });
+
+  /**
+   * 分批补算既有站点质量快照。只读取现有目录字段与巡检历史，不发起外网请求。
+   */
+  app.post("/api/admin/quality/rebuild", { config: { scope: "admin", rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const body = z.object({
+      offset: z.coerce.number().int().min(0).max(100_000).default(0),
+      limit: z.coerce.number().int().min(1).max(100).default(50),
+    }).safeParse(req.body ?? {});
+    if (!body.success) {
+      reply.code(400);
+      return { ok: false, error: "补算参数无效", details: body.error.issues };
+    }
+    const sites = await ctx.repo.listSites({ limit: body.data.limit, offset: body.data.offset });
+    let saved = 0;
+    for (const site of sites) {
+      const samples = await ctx.repo.recentHealthChecks(site.id, 5);
+      const dimensions = buildSiteQualityAssessments(site, samples);
+      const assessment = evaluateSiteQuality(dimensions);
+      await ctx.repo.saveSiteQualityAssessment(site.id, assessment);
+      saved += 1;
+    }
+    const nextOffset = sites.length === body.data.limit ? body.data.offset + sites.length : null;
+    await ctx.repo.audit({
+      ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
+      action: "quality.shadow_rebuild",
+      diff: { offset: body.data.offset, requested: body.data.limit, saved, nextOffset },
+    });
+    return { ok: true, saved, offset: body.data.offset, nextOffset, done: nextOffset === null };
+  });
+
+  /**
+   * 站点质量治理工作台数据。
+   * 只读最新影子评分，不触发重算、不执行自动下架或自动排序。
+   */
+  app.get("/api/admin/quality/report", { config: { scope: "admin" } }, async (req, reply) => {
+    const query = (req.query ?? {}) as Record<string, unknown>;
+    const allowedBands = ["high", "medium", "low", "high_risk", "insufficient_evidence"] as const;
+    const band = typeof query.band === "string" && (allowedBands as readonly string[]).includes(query.band)
+      ? query.band as (typeof allowedBands)[number]
+      : undefined;
+    const limit = Math.min(100, Math.max(1, Math.floor(Number(query.limit) || 50)));
+    const offset = Math.max(0, Math.floor(Number(query.offset) || 0));
+    const [summary, items, total] = await Promise.all([
+      ctx.repo.siteQualityOverview(),
+      ctx.repo.listSiteQualityAssessments({ band, limit, offset }),
+      ctx.repo.countSiteQualityAssessments(band),
+    ]);
+    return { ok: true, summary, items, total, limit, offset, band: band ?? "all" };
+  });
 
   /**
    * 1. 获取全站健康度评分与自愈提案
@@ -276,6 +524,7 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       reason: `同属于分类【${site.categoryId}】的高活跃度替代站点`,
       source: "catalog" as const,
       domainFit: 85,
+      siteId: p.id,
     }));
 
     /**
@@ -289,10 +538,30 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       extra: Record<string, unknown>,
     ) => {
       const probed = await probeCandidates(candidates);
+      // 目录中已收录的候选可附加质量快照；未知/高风险/低覆盖证据只展示，不影响排序。
+      const qualityEnriched = await Promise.all(probed.candidates.map(async (candidate) => {
+        const matchedSite = candidate.siteId
+          ? null
+          : await ctx.repo.findSiteByUrl(candidate.url);
+        const candidateSiteId = candidate.siteId ?? matchedSite?.id;
+        if (!candidateSiteId) return candidate;
+        const quality = await ctx.repo.getSiteQualityAssessment(candidateSiteId);
+        if (!quality) return { ...candidate, siteId: candidateSiteId };
+        return {
+          ...candidate,
+          siteId: candidateSiteId,
+          catalogQuality: {
+            score: quality.score,
+            evidenceCoverage: quality.evidenceCoverage,
+            band: quality.band,
+          },
+        };
+      }));
+      qualityEnriched.sort((a, b) => rankCandidate(b) - rankCandidate(a));
       return {
         ok: true,
         siteId: site.id,
-        recommendations: probed.candidates,
+        recommendations: qualityEnriched,
         probe: probed.summary,
         ...extra,
       };

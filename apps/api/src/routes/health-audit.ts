@@ -28,6 +28,19 @@ import { probeCandidates, rankCandidate, type StructuredReplacementCandidate } f
 import { requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
+const SENSITIVE_EVIDENCE_KEY = /^(?:password|passwd|secret|token|authorization|cookie|set-cookie|api[_-]?key|access[_-]?key|private[_-]?key|__proto__|prototype|constructor)$/i;
+
+function containsSensitiveEvidenceKey(value: unknown, depth = 0): boolean {
+  if (depth > 8) return true;
+  if (Array.isArray(value)) return value.some((item) => containsSensitiveEvidenceKey(item, depth + 1));
+  if (value && typeof value === "object") {
+    return Object.entries(value).some(([key, nested]) =>
+      SENSITIVE_EVIDENCE_KEY.test(key) || containsSensitiveEvidenceKey(nested, depth + 1),
+    );
+  }
+  return false;
+}
+
 export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
@@ -52,6 +65,10 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       return { ok: false, error: "采集候选参数无效", details: body.error.issues };
     }
     const evidence = body.data.evidence ?? {};
+    if (containsSensitiveEvidenceKey(evidence)) {
+      reply.code(400);
+      return { ok: false, error: "采集证据不能包含密码、令牌、Cookie 或密钥字段" };
+    }
     if (JSON.stringify(evidence).length > 16_384) {
       reply.code(413);
       return { ok: false, error: "采集证据超过 16KB 限制" };

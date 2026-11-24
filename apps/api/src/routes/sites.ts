@@ -27,6 +27,7 @@ import { sendError } from "../error-envelope.ts";
 import { encodeKeysetCursor, siteKeysetValues } from "@navhub/store";
 import { isPubliclyVisibleSite } from "../storage.ts";
 import type { AppContext } from "../context.ts";
+import { recordRecommendationQualityShadow } from "../recommendation-quality-shadow.ts";
 
 export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -118,7 +119,13 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     const limit = Math.min(Math.max(Number(q.limit) || 6, 1), 24);
     const site = await ctx.repo.getSite(id);
     if (!site) return sendError(reply, 404, "NOT_FOUND", "站点不存在");
-    return ctx.repo.listSimilarSitesByTags(site.id, limit);
+    const similar = await ctx.repo.listSimilarSitesByTags(site.id, limit);
+    await recordRecommendationQualityShadow(ctx, {
+      surface: "similar_sites",
+      sites: similar,
+      relevanceBySiteId: new Map(similar.map((candidate, index) => [candidate.id, Math.max(0, 100 - index * (100 / Math.max(1, similar.length)))])),
+    });
+    return similar;
   });
 
   /**

@@ -62,6 +62,8 @@ describe("search gold set：双盲人工金标校验", () => {
       totalCases: 1,
       eligibleCases: 1,
       excludedUnjudgeableCases: 0,
+      eligibleIntentCounts: { task: 1 },
+      eligibleLocaleCounts: { "zh-CN": 1 },
       evaluationCases: [{
         query: "AI 图片编辑工具",
         hits: ["site-a", "site-b"],

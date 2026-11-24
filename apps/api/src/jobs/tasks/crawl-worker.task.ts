@@ -216,9 +216,24 @@ type RobotsResult =
   | { kind: "retry"; reason: string; retryAfterMs: number };
 
 const ROBOTS_CACHE_TTL_MS = 60 * 60_000;
+const ROBOTS_CACHE_MAX_ENTRIES = 5_000;
 const robotsCache = new Map<string, { expiresAt: number; body: string | null; blocked: boolean }>();
 
-async function checkRobotsPolicy(url: string): Promise<RobotsResult> {
+function cacheRobots(origin: string, value: { expiresAt: number; body: string | null; blocked: boolean }): void {
+  if (!robotsCache.has(origin) && robotsCache.size >= ROBOTS_CACHE_MAX_ENTRIES) {
+    const now = Date.now();
+    for (const [key, cached] of robotsCache) {
+      if (cached.expiresAt <= now) robotsCache.delete(key);
+    }
+    if (robotsCache.size >= ROBOTS_CACHE_MAX_ENTRIES) {
+      const oldest = robotsCache.keys().next().value;
+      if (oldest) robotsCache.delete(oldest);
+    }
+  }
+  robotsCache.set(origin, value);
+}
+
+async function checkRobotsPolicy(url: string, signal?: AbortSignal): Promise<RobotsResult> {
   const target = new URL(url);
   const origin = target.origin;
   const now = Date.now();
@@ -234,13 +249,13 @@ async function checkRobotsPolicy(url: string): Promise<RobotsResult> {
     const response = await guardedFetch(new URL("/robots.txt", origin).toString(), {
       timeoutMs: 5_000, maxBytes: 64 * 1024, maxRedirects: 3,
       userAgent: "NavHubDiscoveryBot/1.0 (+https://github.com/xujinlong76-star/znwzdh)",
-    });
+    }, { signal });
     if (response.status === 404 || response.status === 410) {
-      robotsCache.set(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: "", blocked: false });
+      cacheRobots(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: "", blocked: false });
       return { kind: "allowed" };
     }
     if (response.status === 401 || response.status === 403 || response.status === 451) {
-      robotsCache.set(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: null, blocked: true });
+      cacheRobots(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: null, blocked: true });
       return { kind: "blocked", reason: "robots.txt 不允许自动抓取" };
     }
     if (response.truncated || /text\/html/i.test(response.contentType ?? "") || /<html\b/i.test(response.body)) {
@@ -253,7 +268,7 @@ async function checkRobotsPolicy(url: string): Promise<RobotsResult> {
         retryAfterMs: parseRetryAfterMs(response.retryAfter, now),
       };
     }
-    robotsCache.set(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: response.body, blocked: false });
+    cacheRobots(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: response.body, blocked: false });
     return isRobotsAllowed(response.body, url)
       ? { kind: "allowed" }
       : { kind: "blocked", reason: "robots.txt Disallow 规则禁止抓取该 URL" };
@@ -327,7 +342,7 @@ export async function handleCrawlWorker(
     if (!task) break;
     summary.tasksClaimed++;
     try {
-      const robots = await checkRobotsPolicy(task.url);
+      const robots = await checkRobotsPolicy(task.url, run.signal);
       if (robots.kind === "blocked") {
         await settleCrawlTask(ctx.repo, {
           id: task.id, workerId, outcome: "hold_for_review", error: robots.reason, now: Date.now(),

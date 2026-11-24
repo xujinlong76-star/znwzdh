@@ -118,6 +118,13 @@ describe("site quality governance API", () => {
     expect(response.json().items.map((item: { siteId: string }) => item.siteId)).not.toContain(site.id);
   });
 
+  it("batch-loads quality snapshots for search candidates without N+1 reads", async () => {
+    const rows = await ctx.repo.getSiteQualityAssessmentsBySiteIds([siteId, "missing-site-id", siteId]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.siteId).toBe(siteId);
+    expect(rows[0]?.score).toBe(80);
+  });
+
   it("filters by band and paginates with a stable total", async () => {
     const response = await app.inject({ method: "GET", url: "/api/admin/quality/report?band=high&limit=1&offset=0" });
     expect(response.statusCode).toBe(200);

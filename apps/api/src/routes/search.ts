@@ -102,6 +102,64 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     return { hotwords, ...(degraded ? { suggestionsDegraded: true } : {}) };
   });
 
+  /**
+   * 管理端真实搜索质量影子预览。
+   * 同一条生产搜索结果作为 baseline，额外计算 shadow 顺序；绝不覆盖 /api/search 的用户排序。
+   */
+  app.get("/api/admin/search/quality-shadow-preview", {
+    config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } },
+  }, async (req, reply) => {
+    const parsed = z.object({
+      q: z.string().trim().min(1).max(MAX_SEARCH_QUERY_LENGTH),
+      limit: z.coerce.number().int().min(1).max(20).default(10),
+    }).safeParse(req.query ?? {});
+    if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);
+
+    const result = await ctx.search.search({ q: parsed.data.q, limit: parsed.data.limit });
+    const siteIds = result.hits.map((hit) => hit.siteId);
+    const [siteMap, assessments] = await Promise.all([
+      ctx.repo.getSitesByIds(siteIds),
+      Promise.all(siteIds.map((siteId) => ctx.repo.getSiteQualityAssessment(siteId))),
+    ]);
+    const qualityBySite = new Map(
+      siteIds.map((siteId, index) => [siteId, assessments[index] ?? null]),
+    );
+    const shadow = rerankBySiteQualityShadow(result.hits.map((hit) => {
+      const quality = qualityBySite.get(hit.siteId);
+      return {
+        siteId: hit.siteId,
+        qualityScore: quality?.score ?? null,
+        evidenceCoverage: quality?.evidenceCoverage ?? 0,
+        band: quality?.band ?? "insufficient_evidence",
+      };
+    }));
+
+    return {
+      ok: true,
+      query: parsed.data.q,
+      limit: parsed.data.limit,
+      baseline: result.hits.map((hit, index) => ({
+        rank: index + 1,
+        siteId: hit.siteId,
+        score: hit.score,
+        site: siteMap.get(hit.siteId) ?? null,
+      })),
+      shadow: shadow.map((candidate) => ({
+        rank: candidate.shadowRank,
+        baselineRank: candidate.baselineRank,
+        siteId: candidate.siteId,
+        site: siteMap.get(candidate.siteId) ?? null,
+        qualityScore: candidate.qualityScore,
+        evidenceCoverage: candidate.evidenceCoverage,
+        band: candidate.band,
+        applied: candidate.applied,
+        excludedReason: candidate.excludedReason,
+      })),
+      productionOrderChanged: shadow.some((candidate) => candidate.shadowRank !== candidate.baselineRank),
+      note: "仅供管理员观察；线上 /api/search 仍使用原始融合排序。",
+    };
+  });
+
   app.get("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 20, etag: true, vary: SEARCH_VARY } } }, async (req, reply) => {
     const parsed = searchBody.safeParse(req.query ?? {});
     if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);

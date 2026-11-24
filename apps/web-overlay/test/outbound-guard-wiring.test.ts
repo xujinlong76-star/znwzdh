@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, afterAll } from 'vitest'
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { NavigationCard } from '../src/components/navigation-card'
@@ -81,6 +81,12 @@ function overlayHref(html: string): string {
   expect(m, overlay[0]).not.toBeNull()
   return (m?.[1] ?? '').replace(/&amp;/g, '&')
 }
+
+// mock 卫生兜底：isolate:false 下同 worker 的后续文件会看到本文件留下的
+// 跨模块 mock 与 process.env 改写，这里统一清掉。
+afterAll(() => {
+  vi.resetModules();
+});
 
 describe('出站守卫接线：lookalike 改跳 /verify，official/unknown 原样放行', () => {
   it('lookalike 域改写为 /verify?brand=<规范域名>&domain=<host>', () => {

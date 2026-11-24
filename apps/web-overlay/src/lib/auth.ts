@@ -133,7 +133,7 @@ export const hasGithubAuth = Boolean(
   process.env.GITHUB_CLIENT_SECRET !== 'your-github-client-secret'
 )
 
-async function verifyAdminSecondFactor(code: string): Promise<boolean> {
+async function verifyAdminSecondFactor(code: string, credentialValid = true): Promise<boolean> {
   const internalToken = process.env.NAVHUB_INTERNAL_TOKEN
   const required = process.env.NAVHUB_ADMIN_MFA_REQUIRED === '1' || process.env.NAVHUB_ADMIN_MFA_REQUIRED === 'true'
   if (!internalToken) return !required
@@ -145,7 +145,7 @@ async function verifyAdminSecondFactor(code: string): Promise<boolean> {
     const res = await fetch(`${apiBase.replace(/\/+$/, '')}/api/account/admin-mfa/verify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-navhub-internal-token': internalToken },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ code, credentialValid }),
       cache: 'no-store',
       signal: AbortSignal.timeout(5000),
     })
@@ -202,30 +202,42 @@ const providers: NextAuthConfig['providers'] = [
 
       // 2. 环境变量管理员密码校验 (NAVHUB_ADMIN_PASSWORD / ADMIN_PASSWORD)
       // P0-6：timingSafeEqual 替代裸 ===，防时序泄露（普通用户口令链路已做到，管理员通道此前是裸比较）
+      const isAdminUsername = username.toLowerCase() === 'admin'
+      const otp = typeof credentials?.otp === 'string' ? credentials.otp : ''
       const envAdminPassword = process.env.NAVHUB_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD
-      if (envAdminPassword && timingSafeEq(rawPassword, envAdminPassword)) {
-        if (!(await verifyAdminSecondFactor(typeof credentials?.otp === 'string' ? credentials.otp : ''))) return null;
-        return {
-          id: 'admin',
-          name: username,
-          email: 'admin@navhub.local',
-          image: '/icons/icon-192.png',
-          role: 'admin',
+      let adminCredentialFailed = false
+      if (isAdminUsername && envAdminPassword) {
+        if (rawPassword && timingSafeEq(rawPassword, envAdminPassword)) {
+          if (!(await verifyAdminSecondFactor(otp))) return null;
+          return {
+            id: 'admin',
+            name: username,
+            email: 'admin@navhub.local',
+            image: '/icons/icon-192.png',
+            role: 'admin',
+          }
         }
+        adminCredentialFailed = Boolean(rawPassword)
       }
 
       // 3. 专用管理员静态凭据。Storage / Bootstrap / MCP 凭据有各自的服务边界，
       // 不得被复用为浏览器管理员登录凭据，避免低信任服务凭据横向提升为后台会话。
       const adminToken = process.env.NAVHUB_ADMIN_TOKEN
-      if (rawPassword && adminToken && timingSafeEq(rawPassword, adminToken)) {
-        if (!(await verifyAdminSecondFactor(typeof credentials?.otp === 'string' ? credentials.otp : ''))) return null;
-        return {
-          id: 'admin',
-          name: username || 'Token 管理员',
-          email: 'admin@navhub.local',
-          image: '/icons/icon-192.png',
-          role: 'admin',
+      if (isAdminUsername && rawPassword && adminToken) {
+        if (timingSafeEq(rawPassword, adminToken)) {
+          if (!(await verifyAdminSecondFactor(otp))) return null;
+          return {
+            id: 'admin',
+            name: username || 'Token 管理员',
+            email: 'admin@navhub.local',
+            image: '/icons/icon-192.png',
+            role: 'admin',
+          }
         }
+        adminCredentialFailed = true
+      }
+      if (adminCredentialFailed) {
+        await verifyAdminSecondFactor('', false)
       }
 
       // 4. 真实用户凭证登录（邮箱/用户名 + 密码）

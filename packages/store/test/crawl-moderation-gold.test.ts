@@ -44,6 +44,25 @@ describe("人工金标双人标注与仲裁", () => {
     expect(Boolean(gold?.final_risk)).toBe(false);
   });
 
+  it("同一采集候选来源指纹不能并发重复进入金标队列", async () => {
+    const repo = await setup();
+    const fingerprint = "candidate:" + "c".repeat(64);
+    await createCrawlModerationGoldCase(repo, {
+      id: "gold-candidate-first", sourceFingerprint: fingerprint,
+      title: "真实采集候选", createdBy: "admin-a",
+    });
+    await expect(createCrawlModerationGoldCase(repo, {
+      id: "gold-candidate-duplicate", sourceFingerprint: fingerprint,
+      title: "重复候选", createdBy: "admin-b",
+    })).rejects.toThrow();
+    const rows = await repo.raw(
+      "SELECT id FROM crawl_moderation_gold_cases WHERE source_fingerprint = ?",
+      [fingerprint],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe("gold-candidate-first");
+  });
+
   it("标签或风险意见不一致时进入仲裁，且独立仲裁人才能完成金标", async () => {
     const repo = await setup();
     await createCrawlModerationGoldCase(repo, {

@@ -306,7 +306,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * 首页保持 ISR 静态缓存，不在 Server Component 读取 Cookie（cookies() 会将整页变为动态渲染）。
+ * 首页保持 ISR 静态缓存，不在 Server Component 读取 Cookie（读取请求 Cookie 会将整页变为动态渲染）。
  * 客户端在同构 layout effect 中读取 nav_view_mode Cookie + localStorage，水合后首帧前同步应用用户模式；
  * 这样既保留缓存 HTML 的 SEO/性能，也避免普通 useEffect 带来的首帧闪烁。
  */

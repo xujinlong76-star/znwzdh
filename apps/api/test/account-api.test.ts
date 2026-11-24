@@ -94,6 +94,8 @@ describe("账号生命周期 API", () => {
     process.env.NAVHUB_MFA_ENCRYPTION_KEY = "ab".repeat(32);
     process.env.NAVHUB_ADMIN_MFA_REQUIRED = "1";
     ctx.config.internalToken = "mfa-test-internal-token";
+    let replicaCtx: AppContext | null = null;
+    let replica: Awaited<ReturnType<typeof buildServer>> | null = null;
     const totp = (secret: string, timeMs = Date.now()) => {
       const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
       let bits = 0, value = 0;
@@ -120,20 +122,26 @@ describe("账号生命周期 API", () => {
       const recovery = confirmed.json().recoveryCodes as string[];
       expect(recovery).toHaveLength(10);
 
-      const verify = (value: string) => app.inject({
+      replicaCtx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "account.db") }));
+      replicaCtx.config.internalToken = "mfa-test-internal-token";
+      replica = await buildServer(replicaCtx);
+      await replica.ready();
+      const verify = (target: typeof app, value: string) => target.inject({
         method: "POST",
         url: "/api/account/admin-mfa/verify",
         headers: { "x-navhub-internal-token": "mfa-test-internal-token" },
         payload: { code: value },
       });
       const currentCode = totp(secret, (Math.floor(Date.now() / 30_000) + 1) * 30_000);
-      expect((await verify(currentCode)).statusCode).toBe(200);
-      expect((await verify(currentCode)).statusCode).toBe(401);
-      expect((await verify(recovery[0])).statusCode).toBe(200);
-      expect((await verify(recovery[0])).statusCode).toBe(401);
+      expect((await verify(app, currentCode)).statusCode).toBe(200);
+      expect((await verify(replica, currentCode)).statusCode).toBe(401);
+      expect((await verify(app, recovery[0])).statusCode).toBe(200);
+      expect((await verify(replica, recovery[0])).statusCode).toBe(401);
       expect((await post("/api/account/admin-mfa/disable", { code: recovery[1] })).statusCode).toBe(200);
-      expect((await verify(totp(secret))).statusCode).toBe(401);
+      expect((await verify(app, totp(secret))).statusCode).toBe(401);
     } finally {
+      if (replica) await replica.close();
+      if (replicaCtx) await replicaCtx.close();
       if (previousKey === undefined) delete process.env.NAVHUB_MFA_ENCRYPTION_KEY;
       else process.env.NAVHUB_MFA_ENCRYPTION_KEY = previousKey;
       if (previousRequired === undefined) delete process.env.NAVHUB_ADMIN_MFA_REQUIRED;

@@ -30,10 +30,12 @@ export async function createAuthToken(
   input: CreateAuthTokenInput,
 ): Promise<string> {
   const id = randomUUID();
+  const targetEmail = input.targetEmail.trim().toLowerCase();
+  if (!targetEmail) throw new Error("Auth tokens must be bound to a target email");
   await repo.run(
     "INSERT INTO auth_tokens (id, user_id, purpose, token_hash, target_email, expires_at, consumed_at, created_at) " +
       "VALUES (?,?,?,?,?,?,NULL,?)",
-    [id, input.userId, input.purpose, input.tokenHash, input.targetEmail?.trim().toLowerCase() ?? null, input.expiresAt, Date.now()],
+    [id, input.userId, input.purpose, input.tokenHash, targetEmail, input.expiresAt, Date.now()],
   );
   return id;
 }
@@ -51,6 +53,7 @@ export async function consumeAuthToken(
 ): Promise<boolean> {
   const now = input.now ?? Date.now();
   const targetEmail = input.targetEmail.trim().toLowerCase();
+  if (!targetEmail) return false;
   // 原子校验发放邮箱仍是当前邮箱；地址变更与消费并发时，只有一个顺序能成功。
   const changes = await repo.runCount(
     "UPDATE auth_tokens SET consumed_at = ? " +

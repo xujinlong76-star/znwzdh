@@ -673,3 +673,55 @@ describe('tablist A-3：site-reports 筛选列表面板补 role="tabpanel" + ari
     expect(count(src, 'id="site-reports-tabpanel"')).toBe(1)
   })
 })
+
+describe('tablist A-3：history 搜索/访问面板补 role="tabpanel" + aria-labelledby（2026-11-24 19:22 轮）', () => {
+  // 模板：plugin-detail-view + detail-tab-panels.tsx 6/6 完整 wiring。
+  // history 为单面板两 tab 共用（drama / quick-dock 同款结构，W6 坑 2）：
+  // 两 tab 的 aria-controls 均指同一面板 id，面板 aria-labelledby 须随当前
+  // tab 动取，写死则读屏恒报同一 tab。面板内各分支仍按 tab 条件渲染，
+  // 搜索 loading / 离线快照不进入访问面板（W8 P18）。wrapper 带 space-y-6
+  // 接替 Container 的直接子级间距，布局不变。B-3 已裁决：不加 inline-flex。
+
+  it('两 tab 各有唯一 id 且 aria-controls 均指 history-tabpanel，面板 aria-labelledby 随当前 tab 动取', () => {
+    const src = read('src/app/me/history/page.tsx')
+    // tab 由 [key, label] map 渲染：id 模板一处文本，两 tab 运行时各得唯一 id
+    expect(src).toContain('id={`history-tab-${key}`}')
+    expect(count(src, 'id={`history-tab-${key}`}')).toBe(1)
+    expect(src).toContain('aria-controls="history-tabpanel"')
+    expect(count(src, 'aria-controls="history-tabpanel"')).toBe(1)
+    // 面板：role + id 各一处，aria-labelledby 动取当前 tab；wrapper 带 space-y-6 保间距
+    expect(src).toContain('role="tabpanel"')
+    expect(count(src, 'role="tabpanel"')).toBe(1)
+    expect(src).toContain('id="history-tabpanel"')
+    expect(count(src, 'id="history-tabpanel"')).toBe(1)
+    expect(src).toContain('aria-labelledby={`history-tab-${tab}`}')
+    expect(src).toContain(`      <div
+        role="tabpanel"
+        id="history-tabpanel"
+        aria-labelledby={\`history-tab-\${tab}\`}
+        className="space-y-6"
+      >`)
+    // 面板 id 全仓唯一：history-tabpanel 作为 id 值只出现一次
+    expect(count(src, 'id="history-tabpanel"')).toBe(1)
+  })
+
+  it('R1 武装清理不变：switchHistoryTab 仍清四处武装，点击与键盘漫游共用同一函数', () => {
+    const src = read('src/app/me/history/page.tsx')
+    // 切 tab 清武装（U-145 / A2 / U-400 / 访问侧）：四处 setter 一个不少
+    expect(src).toContain('setConfirmDeleteId(null)')
+    expect(src).toContain('setConfirmClear(false)')
+    expect(src).toContain('setConfirmCleanZero(false)')
+    expect(src).toContain('setConfirmClearVisits(false)')
+    // 点击与键盘漫游都走 switchHistoryTab，不走裸 setTab（武装清理不被绕过）
+    expect(src).toContain('onClick={() => switchHistoryTab(key)}')
+    expect(src).toContain('switchHistoryTab(HISTORY_TABS[next])')
+    expect(src).not.toContain('onClick={() => setTab(key)}')
+  })
+
+  it('P18：搜索 loading / 离线快照仍只在搜索 tab 下渲染，不绑架访问面板', () => {
+    const src = read('src/app/me/history/page.tsx')
+    expect(src).toContain(`{tab === 'searches' && state === 'loading' && <SectionState variant="loading" rows={4} loadingLabel="正在加载搜索历史" />}`)
+    expect(src).toContain(`{tab === 'searches' && offlineSnapshotAt && state === 'ready' && (`)
+    expect(src).toContain(`{tab === 'visits' && (`)
+  })
+})

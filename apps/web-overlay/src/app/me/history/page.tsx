@@ -502,6 +502,8 @@ export default function SearchHistoryPage() {
           <button
             key={key}
             role="tab"
+            id={`history-tab-${key}`}
+            aria-controls="history-tabpanel"
             aria-selected={tab === key}
             tabIndex={tab === key ? 0 : -1}
             onClick={() => switchHistoryTab(key)}
@@ -516,6 +518,16 @@ export default function SearchHistoryPage() {
         ))}
       </div>
 
+      {/* A-3：搜索 / 访问两 tab 共用一个面板（drama / quick-dock 同款单面板结构）：
+          aria-labelledby 须随当前 tab 动取，不写死。面板内各分支仍按 tab 条件渲染，
+          搜索 loading / 离线快照不进入访问面板（W8 P18）。wrapper 带 space-y-6，
+          接替 Container 的直接子级间距，布局不变。 */}
+      <div
+        role="tabpanel"
+        id="history-tabpanel"
+        aria-labelledby={`history-tab-${tab}`}
+        className="space-y-6"
+      >
       {/* A4：搜索取数态不得绑架访问 tab——搜索 loading 时访问 tab
           不应显示「正在加载搜索历史」骨架，访问分支自有 visitState。 */}
       {tab === 'searches' && state === 'loading' && <SectionState variant="loading" rows={4} loadingLabel="正在加载搜索历史" />}
@@ -824,6 +836,7 @@ export default function SearchHistoryPage() {
           </Button>
         </div>
       )}
+      </div>
 
       <Footer />
     </Container>

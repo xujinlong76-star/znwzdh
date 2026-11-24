@@ -12,7 +12,7 @@ import {
   upsertSiteDiscoveryCandidate,
   recordCrawlAiModerationDecision,
 } from "@navhub/store";
-import { llmProviderReadyAny, resolveLlm } from "../../llm-config.ts";
+import { llmProviderReady, llmProviderReadyAny, resolveLlm } from "../../llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../../llm-quota.ts";
 import { callLlm } from "../../llm-usage.ts";
 import { DEFAULT_CRAWL_AI_MODERATION_POLICY, loadCrawlAiModerationPolicy } from "../../crawl-moderation-policy.ts";
@@ -594,7 +594,7 @@ export async function handleCrawlWorker(
                 summary.aiModerationAttempted++;
                 aiModerationCount++;
                 try {
-                  const decision = await moderateSiteWithAi(resolved.provider, {
+                  const moderationInput = {
                     url: finalUrl,
                     title: metadata.title,
                     description: metadata.description,
@@ -608,28 +608,45 @@ export async function handleCrawlWorker(
                         ...(nearDuplicates.length ? ["存在近重复内容候选"] : []),
                       ],
                     },
-                  }, {
+                  };
+                  const moderationOptions = {
                     autoApproveConfidence: moderationPolicy.autoApproveConfidence,
                     rejectConfidence: moderationPolicy.rejectConfidence,
                     minQualityScore: moderationPolicy.minQualityScore,
                     maxExcerptChars: moderationPolicy.maxExcerptChars,
                     requireHttps: moderationPolicy.requireHttps,
-                  }, {
-                    signal: run.signal,
-                    deadlineAt: Date.now() + 45_000,
-                    complete: (_provider, request) => callLlm(ctx, resolved, {
-                      scenario: "crawl_moderation",
-                      identity: null,
-                      messages: request.messages,
-                      temperature: request.temperature,
-                      maxTokens: request.maxTokens,
-                      json: request.json,
-                      thinking: false,
-                      signal: request.signal,
-                      deadlineAt: request.deadlineAt,
-                      fetchImpl: request.fetchImpl,
-                    }),
-                  });
+                  };
+                  let decision: Awaited<ReturnType<typeof moderateSiteWithAi>> | null = null;
+                  let lastProviderError: unknown = null;
+                  const providers = [resolved.provider, ...resolved.fallbacks].filter(llmProviderReady);
+                  for (const provider of providers) {
+                    try {
+                      decision = await moderateSiteWithAi(provider, moderationInput, moderationOptions, {
+                        signal: run.signal,
+                        deadlineAt: Date.now() + 45_000,
+                        complete: (_provider, request) => callLlm(ctx, { ...resolved, provider: _provider }, {
+                          scenario: "crawl_moderation",
+                          identity: null,
+                          messages: request.messages,
+                          temperature: request.temperature,
+                          maxTokens: request.maxTokens,
+                          json: request.json,
+                          thinking: false,
+                          signal: request.signal,
+                          deadlineAt: request.deadlineAt,
+                          fetchImpl: request.fetchImpl,
+                        }),
+                      });
+                      break;
+                    } catch (providerError) {
+                      lastProviderError = providerError;
+                    }
+                  }
+                  if (!decision) {
+                    throw lastProviderError instanceof Error
+                      ? lastProviderError
+                      : new Error("主模型及备用模型均不可用");
+                  }
                   summary.aiModerationSucceeded++;
                   await recordCrawlAiModerationDecision(ctx.repo, {
                     id: randomUUID(), candidateId: candidate.id, decisionSource: "ai",

@@ -99,7 +99,7 @@ describe("账号生命周期 API", () => {
       const bytes: number[] = [];
       for (const ch of secret) {
         value = (value << 5) | alphabet.indexOf(ch); bits += 5;
-        if (bits >= 8) { bytes.push((value >>> (bits - 8)) & 255); bits -= 8; }
+        if (bits >= 8) { bytes.push((value >>> (bits - 8)) & 255); bits -= 8; value &= (1 << bits) - 1; }
       }
       const counter = Buffer.alloc(8);
       counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));

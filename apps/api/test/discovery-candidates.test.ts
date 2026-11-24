@@ -109,6 +109,30 @@ describe("staged discovery candidate pipeline", () => {
     expect(repeat.statusCode).toBe(409);
   });
 
+  it("serializes concurrent approval so only one request publishes the candidate", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/discovery/candidates",
+      payload: {
+        url: "https://candidate-concurrent.example/",
+        source: "import",
+        title: "Concurrent Candidate",
+      },
+    });
+    const candidateId = created.json().candidate.id;
+    const url = `/api/admin/discovery/candidates/${candidateId}/review`;
+    const responses = await Promise.all([
+      app.inject({ method: "POST", url, payload: { action: "approve" } }),
+      app.inject({ method: "POST", url, payload: { action: "approve" } }),
+    ]);
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 409]);
+    const sites = await ctx.repo.findSiteByUrl("https://candidate-concurrent.example/");
+    expect(sites).not.toBeNull();
+    const candidate = await ctx.repo.getSiteDiscoveryCandidate(candidateId);
+    expect(candidate?.status).toBe("approved");
+    expect(candidate?.siteId).toBe(sites?.id);
+  });
+
   it("records rejection without creating a site", async () => {
     const created = await app.inject({
       method: "POST",
@@ -125,6 +149,42 @@ describe("staged discovery candidate pipeline", () => {
     expect(review.json().candidate.status).toBe("rejected");
     expect(review.json().candidate.rejectionReason).toBe("内容与目录定位不符");
     expect(await ctx.repo.findSiteByUrl("https://candidate-rejected.example/")).toBeNull();
+  });
+
+  it("rejects evidence objects containing credential-like keys", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/discovery/candidates",
+      payload: {
+        url: "https://candidate-secret.example/",
+        source: "api",
+        evidence: { crawler: { apiKey: "must-not-be-stored" } },
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toContain("不能包含");
+  });
+
+  it("falls back to the uncategorized bucket when a suggested category is stale", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/discovery/candidates",
+      payload: {
+        url: "https://candidate-stale-category.example/",
+        source: "ai",
+        title: "Stale Category Candidate",
+        categoryId: "category-no-longer-exists",
+      },
+    });
+    const candidateId = created.json().candidate.id;
+    const review = await app.inject({
+      method: "POST",
+      url: `/api/admin/discovery/candidates/${candidateId}/review`,
+      payload: { action: "approve" },
+    });
+    expect(review.statusCode).toBe(200);
+    expect(review.json().categoryFallback).toBe(true);
+    expect(review.json().candidate.status).toBe("approved");
   });
 
   it("rejects oversized evidence payloads", async () => {

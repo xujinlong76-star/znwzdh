@@ -20,10 +20,14 @@ import { resolveLogoTile, resolveSiteIcon } from '../src/components/site-favicon
  *   SHA-1 与 CDX 摘要一致，md5 685a01a27d7876273584052dd06f846e。
  * - 白底不透明 PNG 原样：全图 16,384/16,384 像素不透明，深色帆船标
  *   bbox x18–109 y19–96（深色像素 1,109 个）；浅/深主题下均显白底方块。
+ * - 2026-11-24（W6 透明化重出 95609ff2）：去白底透明化后 8,957 B
+ *   （128×128 不变）；2026-11-24（深色复核 W8 合流）：另配
+ *   'midjourney.com': 'light' 浅色底块（复核清单 §7 #22）——透明化
+ *   只去满幅白底，不解决深色下黑标不可见，两者缺一不可。
  *
  * 事实钉死（只记、不加占位、不擅自换图）：
- * - 无底块：本轮 resolveLogoTile('https://midjourney.com') 为 null，
- *   不配底块；白底方块在深色模式下的观感留待统一处理轮，不做单站补丁。
+ * - 底块：本轮 resolveLogoTile('https://midjourney.com') 为 'light'，
+ *   白底方块“无底块、留待统一处理轮”已解决（W8 合流）。
  * - 全库 373 站核对：'midjourney.com' map 键只命中 Midjourney 一站，
  *   无后缀串站、无子域站。
  * - 计划文件原写 midjourney.svg，实际落盘为 staging 交付的
@@ -52,10 +56,10 @@ describe('resolveSiteIcon（图标修复 C 类第 13 批续 Midjourney）', () =
     }
   })
 
-  it('PNG 原样钉死：128×128、9,084 B、白底不透明', () => {
+  it('PNG 透明化重出钉死：128×128、8,957 B（W6 去白底，9,084 B → 8,957 B）', () => {
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
     const buf = statSync(`${dir}midjourney.png`)
-    expect(buf.size).toBe(9084)
+    expect(buf.size).toBe(8957)
     // PNG 签名 + IHDR 宽高 128×128（大端 uint32，偏移 16/20）
     const bytes = readFileSync(`${dir}midjourney.png`)
     expect(bytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
@@ -63,8 +67,8 @@ describe('resolveSiteIcon（图标修复 C 类第 13 批续 Midjourney）', () =
     expect(bytes.readUInt32BE(20)).toBe(128)
   })
 
-  it('事实钉死：无底块，白底方块留待统一处理轮', () => {
-    expect(resolveLogoTile('https://midjourney.com')).toBeNull()
+  it('事实钉死：浅色底块（W8 合流），透明化重出后仍需 light 底块', () => {
+    expect(resolveLogoTile('https://midjourney.com')).toBe('light')
     expect(resolveSiteIcon('https://midjourney.com', 'Midjourney', 'https://midjourney.com/favicon.ico')).toBe('/brand-icons/midjourney.png')
   })
 

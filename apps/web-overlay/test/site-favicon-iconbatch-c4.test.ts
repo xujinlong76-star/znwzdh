@@ -55,11 +55,11 @@ import { resolveLogoTile, resolveSiteIcon } from '../src/components/site-favicon
  * - java-docs.png 为 120×120 原样（源 <128 不放大）；站方标是 Oracle O，
  *   不是 Java 咖啡杯——按“官网在用图标”原样接线，未擅自换标，只记录。
  * - iso.svg 为白字透明底（fill 仅 #fff、无底色），浅色主题下不可见；
- *   红色底块须用 ISO 品牌红，但 iso.org 站点头色未能核实具体色值
- *   （www.iso.org curl 空回复、官方品牌页无 hex；候选 #D22630 经查是
- *   Saudi Aramco 的 SA Red、与 ISO 无关），故本次不加底块分支、不猜 hex，
- *   记为未决点：resolveLogoTile('https://www.iso.org/standards.html')
- *   必须返回 null（未进 LOGO_TILE_MAP）。
+ *   2026-11-24 深色复核 W8 合流：按复核清单 §7 #29 建议 B，给
+ *   'iso.org': 'dark' 深色底块（CNKI/Haiper 同款 neutral-900 块）；
+ *   红色底块未决点就此关闭——不猜品牌红 hex（候选 #D22630 经查是
+ *   Saudi Aramco 的 SA Red、与 ISO 无关），resolveLogoTile(
+ *   'https://www.iso.org/standards.html') 现返回 'dark'。
  * - leetcode-cn.png 与 leetcode.png 同源字节、均为 48×48，但文件名不同、
  *   各自解析到各自路径，互不覆盖。
  * - 小尺寸原样站（源 <128 不放大）：32×32（Codeup / CSDN / 牛客 / 洛谷 /
@@ -183,14 +183,15 @@ describe('resolveSiteIcon（图标修复 C 类第 4 批）', () => {
     expect(resolveSiteIcon('https://docs.oracle.com/en/java/javase/', 'Java 官方文档', 'https://docs.oracle.com/favicon.ico')).toBe('/brand-icons/java-docs.png')
   })
 
-  it('事实钉死：iso.svg 为白字透明底、未进 LOGO_TILE_MAP（红底块为未决点）', () => {
+  it('事实钉死：iso.svg 为白字透明底、已进 LOGO_TILE_MAP（深色底块，复核 §7 #29 B）', () => {
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
     const text = readFileSync(`${dir}iso.svg`, 'utf8')
     expect(text.includes('<svg')).toBe(true)
     expect(text.includes('<title>isologo</title>')).toBe(true)
     expect(text.toLowerCase().includes('#fff')).toBe(true)
-    // ISO 品牌红未核实到具体色值（见文件头注释），本次不加底块分支、不猜 hex
-    expect(resolveLogoTile('https://www.iso.org/standards.html')).toBeNull()
+    // 2026-11-24 深色复核 W8 合流：红底块未决点关闭，改用 CNKI/Haiper
+    // 同款 neutral-900 深色底块，不猜品牌红 hex（见文件头注释）
+    expect(resolveLogoTile('https://www.iso.org/standards.html')).toBe('dark')
   })
 
   it('事实钉死：力扣与 LeetCode 国际版同源字节、各自解析、互不覆盖', () => {

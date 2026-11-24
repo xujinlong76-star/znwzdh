@@ -26,9 +26,8 @@ import { resolveLogoTile, resolveSiteIcon } from '../src/components/site-favicon
  * 事实钉死（只记、不加占位、不擅自换图）：
  * - 深色变体未决：Zeabur 另有官网 /logo-dark.svg（368 B，仅黑元素
  *   改为白色），未另行落盘——按统一规范 §9，只落默认浅色标、不做
- *   单站补丁，深色底块问题留待统一处理轮；接线/复审如需定夺深色
- *   变体，请裁决。本轮 resolveLogoTile('https://zeabur.com') 为 null，
- *   不配底块。
+ *   单站补丁；2026-11-24 深色复核 W8 合流：浅色标配 'zeabur.com':
+ *   'light' 浅色底块（复核清单 §7 #16）。深色变体是否另行落盘仍待裁决。
  * - 全库 371 站核对：'zeabur.com' map 键只命中 Zeabur 一站，无后缀串站。
  */
 
@@ -67,11 +66,11 @@ describe('resolveSiteIcon（图标修复 C 类第 13 批）', () => {
     expect(statSync(`${dir}zeabur.svg`).size).toBe(370)
   })
 
-  it('事实钉死：深色变体 /logo-dark.svg 未落盘、无底块，待裁决', () => {
+  it('事实钉死：深色变体 /logo-dark.svg 未落盘、已配浅色底块（W8 合流），变体仍待裁决', () => {
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
     expect(existsSync(`${dir}zeabur-dark.svg`), 'zeabur-dark.svg').toBe(false)
     expect(existsSync(`${dir}logo-dark.svg`), 'logo-dark.svg').toBe(false)
-    expect(resolveLogoTile('https://zeabur.com')).toBeNull()
+    expect(resolveLogoTile('https://zeabur.com')).toBe('light')
     expect(resolveSiteIcon('https://zeabur.com', 'Zeabur', 'https://zeabur.com/favicon.svg')).toBe('/brand-icons/zeabur.svg')
   })
 

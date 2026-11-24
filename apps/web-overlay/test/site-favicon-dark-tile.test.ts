@@ -25,6 +25,10 @@ import {
  * 2026-11-19（C 类第 10 批 C10）：中国知网追加——cnki.svg 为白色反白
  * 宽版标（viewBox 0 0 2941.51×685.5，白字/白标 + 一颗橙点），给深色块
  * （Haiper 同款机制）；底块色为 LOGO_TILE_CLASSES.dark 的 bg-neutral-900。
+ * 2026-11-24（深色复核 W8 合流，复核清单 §7 30 项）：22 个主机名键
+ * 全 'light'、ISO 'iso.org' 全 'dark'、SourceHut 由 'light' 改 'dark'
+ * （白环配白底块正是问题本身）；github.com 共域 5 站（#1/#2/#4/#5/#12）
+ * 走标题规则（LOGO_TILE_TITLE_RULES），不加 'github.com' 键。
  *
  * 这个测试直接执行 resolveLogoTile / resolveSiteIcon：map 键写错一个字符
  * 都不会报错，只会静默回落无底块——只有跑起来才看得见。
@@ -33,7 +37,6 @@ import {
 const LIGHT_CASES: Array<{ url: string; title: string }> = [
   { url: 'https://ollama.com', title: 'Ollama' },
   { url: 'https://www.ollama.com', title: 'Ollama' },
-  { url: 'https://sourcehut.org', title: 'SourceHut' },
   { url: 'https://www.notion.com', title: 'Notion' },
   { url: 'https://www.radix-ui.com', title: 'Radix UI' },
   { url: 'https://tianyin.163.com/', title: '网易天音' },
@@ -42,6 +45,35 @@ const LIGHT_CASES: Array<{ url: string; title: string }> = [
   // 相融，白底块是它在深色下可读的唯一保障（与 Ollama 黑标同款处理）。
   { url: 'https://www.geekpark.net', title: '极客公园' },
   { url: 'https://geekpark.net', title: '极客公园' },
+  // 2026-11-24（深色复核 W8 合流，§7 #3/#6–#11/#13–#22/#23–#28）：
+  // 22 个主机名键全 'light'。www 变体抽样：pinterest / sf-express /
+  // ncpssd / chinatax / w3 / huaweicloud / rust-lang 按 navigation.json
+  // 的 www href 各加一例；其余按 href 裸域。#18/#19 共用 yz.chsi.com.cn
+  // 一键（研招网 + 考研网上报名），'chsi.com.cn' 父域键绝不加。
+  { url: 'https://devin.ai/desktop', title: 'Devin Desktop' },
+  { url: 'https://helm.sh/', title: 'Helm' },
+  { url: 'https://moark.com', title: 'Gitee AI' },
+  { url: 'https://mubert.com', title: 'Mubert' },
+  { url: 'https://www.pinterest.com', title: 'Pinterest' },
+  { url: 'https://pinterest.com', title: 'Pinterest' },
+  { url: 'https://www.sf-express.com', title: '顺丰速运' },
+  { url: 'https://www.ncpssd.org', title: '国家哲学社会科学文献中心' },
+  { url: 'https://www.chinatax.gov.cn', title: '国家税务局' },
+  { url: 'https://dify.ai', title: 'Dify' },
+  { url: 'https://www.w3.org/standards/', title: 'W3C 标准' },
+  { url: 'https://zeabur.com', title: 'Zeabur' },
+  { url: 'https://atcoder.jp', title: 'AtCoder' },
+  { url: 'https://yz.chsi.com.cn', title: '研招网' },
+  { url: 'https://yz.chsi.com.cn/yzwb/', title: '考研网上报名' },
+  { url: 'https://coding.net', title: 'Coding' },
+  { url: 'https://www.huaweicloud.com/', title: '华为云' },
+  { url: 'https://midjourney.com', title: 'Midjourney' },
+  { url: 'https://www.rust-lang.org/', title: 'Rust' },
+  { url: 'https://developer.hashicorp.com/terraform', title: 'Terraform' },
+  { url: 'https://chatgpt.com', title: 'ChatGPT' },
+  { url: 'https://www.awwwards.com', title: 'Awwwards' },
+  { url: 'https://mobbin.com', title: 'Mobbin' },
+  { url: 'https://pika.art', title: 'Pika' },
 ]
 
 const DARK_CASES: Array<{ url: string; title: string }> = [
@@ -52,6 +84,15 @@ const DARK_CASES: Array<{ url: string; title: string }> = [
   // 白字不可见，故给深色块（Haiper 白字标同款机制）。
   { url: 'https://cnki.net', title: '中国知网' },
   { url: 'https://www.cnki.net', title: '中国知网' },
+  // 2026-11-24（深色复核 W8 合流，§7 #30）：SourceHut 由 'light' 改
+  // 'dark'——落盘为官网现用细灰环版（白环 + 灰细框），白环配白底块在
+  // 双主题下仅剩灰细框可见，白底块正是问题本身；改配深色底块。
+  { url: 'https://sourcehut.org', title: 'SourceHut' },
+  // 2026-11-24（深色复核 W8 合流，§7 #29）：ISO/IEC 标准 iso.svg 为
+  // 白字透明底（fill 仅 #fff），浅色主题下全不可见，给深色底块
+  // （CNKI/Haiper 同款 neutral-900 块，不猜品牌红 hex）。
+  { url: 'https://www.iso.org/standards.html', title: 'ISO/IEC 标准' },
+  { url: 'https://iso.org', title: 'ISO/IEC 标准' },
 ]
 
 const NO_TILE_CASES: Array<{ url: string | undefined; title: string }> = [
@@ -90,17 +131,74 @@ describe('resolveLogoTile（深色底块统一处理）', () => {
     expect(LOGO_TILE_CLASSES.dark).toContain('p-0.5')
   })
 
-  it('map 只含点名清单的 8 站：Luma（自带白底）不在内；极客公园 2026-11-17 由“暂缓”改为落地（见下）；中国知网 2026-11-19（C10）白字标追加深色块', () => {
+  it('map 只含点名清单的 31 站：Luma（自带白底）不在内；极客公园 2026-11-17 由“暂缓”改为落地（见下）；中国知网 2026-11-19（C10）白字标追加深色块；2026-11-24 深色复核 W8 合流追加 22 个 light 键 + iso.org dark，SourceHut 改 dark', () => {
     expect(Object.keys(LOGO_TILE_MAP).sort()).toEqual([
+      'atcoder.jp',
+      'awwwards.com',
+      'chatgpt.com',
+      'chinatax.gov.cn',
       'cnki.net',
+      'coding.net',
+      'developer.hashicorp.com',
+      'devin.ai',
+      'dify.ai',
       'geekpark.net',
       'haiper.ai',
+      'helm.sh',
+      'huaweicloud.com',
+      'iso.org',
+      'midjourney.com',
+      'moark.com',
+      'mobbin.com',
+      'mubert.com',
+      'ncpssd.org',
       'notion.com',
       'ollama.com',
+      'pika.art',
+      'pinterest.com',
       'radix-ui.com',
+      'rust-lang.org',
+      'sf-express.com',
       'sourcehut.org',
       'tianyin.163.com',
+      'w3.org',
+      'yz.chsi.com.cn',
+      'zeabur.com',
     ])
+  })
+})
+
+describe('resolveLogoTile（标题规则底块：github.com 共域 5 站）', () => {
+  // 2026-11-24（深色复核 W8 合流，§7 #1/#2/#4/#5/#12）：github.com 为
+  // 7 站共享域，'github.com' 键绝不加；这 5 站按标题区分。顺序重要：
+  // 'trending' 与 'copilot' 必须排在 'github' 之前（两标题都含 github）。
+  // 全库审计（2026-11-24，388 站）：标题含 cline/copilot/github/
+  // trending/langgraph 的只有这 5 站；Qwen 3 / vLLM 标题不含任一关键词。
+  it.each([
+    { url: 'https://github.com/cline/cline', title: 'Cline' },
+    { url: 'https://github.com/features/copilot', title: 'GitHub Copilot' },
+    { url: 'https://github.com/langchain-ai/langgraph', title: 'LangGraph' },
+    { url: 'https://github.com', title: 'GitHub' },
+    { url: 'https://github.com/trending', title: 'GitHub Trending' },
+  ])('$title（$url）按标题规则给浅色块', ({ url, title }) => {
+    expect(resolveLogoTile(url, title)).toBe('light')
+  })
+
+  it('顺序钉死：GitHub Trending 走 trending、GitHub Copilot 走 copilot（大小写不敏感）', () => {
+    expect(resolveLogoTile('https://github.com/trending', 'GITHUB TRENDING')).toBe('light')
+    expect(resolveLogoTile('https://github.com/features/copilot', 'github copilot')).toBe('light')
+  })
+
+  it('反例：github.com 配无关标题不给块（标题分支不误伤 Qwen 3 / vLLM）', () => {
+    expect(resolveLogoTile('https://github.com/QwenLM/Qwen3', 'Qwen 3')).toBeNull()
+    expect(resolveLogoTile('https://github.com/vllm-project/vllm', 'vLLM')).toBeNull()
+    expect(resolveLogoTile('https://github.com')).toBeNull()
+    expect(resolveLogoTile('https://github.com', '')).toBeNull()
+  })
+
+  it('标题表是全局规则：非 github.com 站标题含 github 也给块（库内无此站，见审计）', () => {
+    expect(resolveLogoTile('https://example.com', 'GitHub')).toBe('light')
+    expect(resolveLogoTile('https://example.com', 'Example')).toBeNull()
   })
 })
 

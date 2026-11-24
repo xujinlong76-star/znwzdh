@@ -57,10 +57,10 @@ import { resolveLogoTile, resolveSiteIcon } from '../src/components/site-favicon
  *   48px（dev.java favicon.ico，Oracle 品牌指南称 Duke 为开源推荐品牌
  *   形象）与咖啡杯不是同一图形，是否改用 Duke 或接受 16px，待用户裁决；
  *   设计轮与接线轮均未擅自替换。
- * - rust.svg（黑齿轮 R）与 terraform.svg（黑 HashiCorp 标，SVG 内含
- *   @media (prefers-color-scheme: dark) 白字规则）深色主题下对比度弱，
- *   属规范 §9 留待统一处理轮次；resolveLogoTile 对两站均返回 null
- *   （未进 LOGO_TILE_MAP）。
+ * - rust.svg（黑齿轮 R）与 terraform.svg（黑 HashiCorp 标）深色主题下
+ *   对比度弱；2026-11-24 深色复核 W7 已删两站 SVG 内 @media
+ *   (prefers-color-scheme: dark) 翻转（93a8d1eed）、W8 合流各配 'light'
+ *   浅色底块（复核清单 §7 #23/#24），resolveLogoTile 对两站现返回 'light'。
  * - express.svg / fastify.svg 自带黑底方块（#1a1a1a / #0a0b0d），
  *   双主题均可见，无问题。
  * - compose.png 取自官方 docker/compose 仓库 logo.png，非
@@ -179,17 +179,19 @@ describe('resolveSiteIcon（图标修复 C 类第 5 批）', () => {
     expect(resolveSiteIcon('https://www.java.com/', 'Java', 'https://www.java.com/favicon.ico')).toBe('/brand-icons/java.png')
   })
 
-  it('事实钉死：rust.svg / terraform.svg 纯黑标、未进 LOGO_TILE_MAP（统一处理轮）', () => {
+  it('事实钉死：rust.svg / terraform.svg 纯黑标、已进 LOGO_TILE_MAP（W8 合流浅色底块）', () => {
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
     const rust = readFileSync(`${dir}rust.svg`, 'utf8')
     expect(rust.includes('viewBox="0 0 32 32"')).toBe(true)
     const terraform = readFileSync(`${dir}terraform.svg`, 'utf8')
     expect(terraform.includes('viewBox="0 0 96 96"')).toBe(true)
-    expect(terraform.includes('@media (prefers-color-scheme: dark)')).toBe(true)
+    // W7 已删 @media 翻转（93a8d1eed）：此处原断言 toBe(true) 在 HEAD 已过期，
+    // 随本批 tile 更新一并修正为不存在；三 path 仍保留 fill="black"
+    expect(terraform.includes('@media (prefers-color-scheme: dark)')).toBe(false)
     expect(terraform.includes('fill="black"')).toBe(true)
-    // 纯黑标深色主题对比度弱，属规范 §9 留待统一处理轮次，本批不加底块
-    expect(resolveLogoTile('https://www.rust-lang.org/')).toBeNull()
-    expect(resolveLogoTile('https://developer.hashicorp.com/terraform')).toBeNull()
+    // 纯黑标深色主题对比度弱，W8 合流配浅色底块（复核清单 §7 #23/#24）
+    expect(resolveLogoTile('https://www.rust-lang.org/')).toBe('light')
+    expect(resolveLogoTile('https://developer.hashicorp.com/terraform')).toBe('light')
   })
 
   it('事实钉死：express.svg / fastify.svg 自带黑底方块，双主题可见', () => {

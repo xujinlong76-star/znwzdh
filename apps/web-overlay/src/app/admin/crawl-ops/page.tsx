@@ -243,6 +243,18 @@ export default function CrawlOperationsPage(){
     }catch(e){setGoldMessage(e instanceof Error?e.message:'智能分层抽样失败')}
     finally{setGoldBusy(false)}
   }
+  const runAutomaticModelEvaluation=async()=>{
+    if(goldBusy)return
+    setGoldBusy(true);setGoldMessage(null)
+    try{
+      const result=await hubSend<{ok:boolean;model:string;sampleSize:number;metrics:{exactMatchRate:number|null;riskDetection:{recall:number|null;falseNegatives:number}};alerts:Array<{message:string}>}>(
+        '/api/hub/admin/crawl/moderation-model-evaluations/auto','POST',{limit:20}
+      )
+      setGoldMessage('自动模型实测完成：'+result.model+'，样本 '+result.sampleSize+' 条，标签精确匹配率 '+(result.metrics.exactMatchRate===null?'—':(result.metrics.exactMatchRate*100).toFixed(1)+'%')+'，风险漏报 '+result.metrics.riskDetection.falseNegatives+' 条。预警：'+(result.alerts.length?result.alerts.map(item=>item.message).join('；'):'无'))
+      await load()
+    }catch(e){setGoldMessage(e instanceof Error?e.message:'自动模型实测失败')}
+    finally{setGoldBusy(false)}
+  }
   const submitModelEvaluation=async()=>{
     if(goldBusy)return
     let predictions:unknown
@@ -293,10 +305,10 @@ export default function CrawlOperationsPage(){
         <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{width:(goldProgress?.progress??0)+'%'}}/></div>
         <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">{(goldProgress?.distribution??[]).map((item,index)=><span key={item.label+'-'+item.risk+'-'+index} className="rounded-md border px-2 py-1">{item.label} · {item.risk?'有风险':'无风险'}：{item.count}</span>)}</div>
       </CardContent></Card>
-      <Card><CardHeader><CardTitle className="text-base">多模型离线横向评测</CardTitle><CardDescription>对同一批正式金标样本提交模型预测，比较精确匹配率、覆盖率和风险漏报。评测只记录结果，不调用模型，也不会触发审核动作。</CardDescription></CardHeader><CardContent className="space-y-3">
+      <Card><CardHeader><CardTitle className="text-base">多模型离线横向评测</CardTitle><CardDescription>支持自动调用已配置模型（每次最多 20 条）和手动提交其他模型预测。自动评测只读取脱敏金标文本、记录真实用量并受额度限制，不会触发审核、发布或改写金标。</CardDescription></CardHeader><CardContent className="space-y-3">
         <input value={evaluationModel} onChange={e=>setEvaluationModel(e.target.value)} maxLength={120} placeholder="模型名称 / 版本，例如 provider/model-v2" className="h-9 w-full rounded-md border bg-background px-3 text-sm"/>
         <textarea value={evaluationPredictions} onChange={e=>setEvaluationPredictions(e.target.value)} rows={4} placeholder={'粘贴覆盖全部正式金标 ID 的 JSON 数组：\\n[{"id":"金标ID","actual":"approve","actualRisk":false}]'} className="w-full rounded-md border bg-background p-3 font-mono text-xs"/>
-        <Button size="sm" onClick={()=>void submitModelEvaluation()} disabled={goldBusy||!evaluationModel.trim()||!evaluationPredictions.trim()}>提交离线评测</Button>
+        <div className="flex flex-wrap gap-2"><Button size="sm" onClick={()=>void runAutomaticModelEvaluation()} disabled={goldBusy}>自动实测已配置模型（最多20条）</Button><Button variant="outline" size="sm" onClick={()=>void submitModelEvaluation()} disabled={goldBusy||!evaluationModel.trim()||!evaluationPredictions.trim()}>手动提交离线评测</Button></div>
         {!modelEvaluationRuns.length?<p className="text-xs text-muted-foreground">暂无已保存的模型评测记录。</p>:<div className="overflow-x-auto"><table className="w-full min-w-[680px] text-xs"><thead><tr className="border-b text-left text-muted-foreground"><th className="p-2">模型</th><th className="p-2">样本</th><th className="p-2">精确匹配</th><th className="p-2">覆盖率</th><th className="p-2">风险召回</th><th className="p-2">风险漏报</th><th className="p-2">质量预警</th><th className="p-2">评测时间</th></tr></thead><tbody>{modelEvaluationRuns.map(item=><tr key={item.id} className="border-b"><td className="p-2 font-medium">{item.model}</td><td className="p-2">{item.sampleSize}</td><td className="p-2">{item.metrics.exactMatchRate===null?'—':(item.metrics.exactMatchRate*100).toFixed(1)+'%'}</td><td className="p-2">{item.metrics.coverage===null?'—':(item.metrics.coverage*100).toFixed(1)+'%'}</td><td className="p-2">{item.metrics.riskDetection.recall===null?'—':(item.metrics.riskDetection.recall*100).toFixed(1)+'%'}</td><td className="p-2">{item.metrics.riskDetection.falseNegatives}</td><td className="p-2">{item.metrics.alerts?.length?item.metrics.alerts.map(alert=>alert.message).join("；"):"无"}</td><td className="p-2">{time(item.createdAt)}</td></tr>)}</tbody></table></div>}
       </CardContent></Card>
       <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4"/>人工金标标注工作台</CardTitle><CardDescription>先提交完成脱敏的样本，再由两位不同管理员独立盲标；双人提交完成前互相看不到对方的标签和证据，结论不一致时交给第三位管理员仲裁。AI 输出不参与生成金标。</CardDescription></CardHeader>

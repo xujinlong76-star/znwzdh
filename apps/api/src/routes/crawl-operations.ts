@@ -16,11 +16,43 @@ import { callLlm } from "../llm-usage.ts";
 import { loadCrawlAiModerationPolicy } from "../crawl-moderation-policy.ts";
 
 /** 对正式金标集做稳定抽样：相同数据集重复运行时选中相同样本。 */
-export function selectGoldEvaluationSample<T extends { id: unknown }>(rows: readonly T[], limit = 20): T[] {
+export function selectGoldEvaluationSample<T extends { id: unknown; category?: unknown; final_risk?: unknown }>(rows: readonly T[], limit = 20): T[] {
   const bounded = Math.max(1, Math.min(20, Math.floor(limit)));
-  return rows.map(row => ({ row, key: createHash("sha256").update(String(row.id)).digest("hex") }))
-    .sort((a,b) => a.key.localeCompare(b.key) || String(a.row.id).localeCompare(String(b.row.id)))
-    .slice(0,bounded).map(item => item.row);
+  const keyed = rows.map(row => ({ row, hash:createHash("sha256").update(String(row.id)).digest("hex"),
+    risk:row.final_risk === true || row.final_risk === 1 ? "positive" : row.final_risk === false || row.final_risk === 0 ? "negative" : "unknown",
+    category:String(row.category ?? "unknown").trim().slice(0,80) || "unknown" }));
+  const selected:T[] = [];
+  const selectedIds = new Set<string>();
+  const take = (item:typeof keyed[number] | undefined) => {
+    if (!item || selected.length >= bounded || selectedIds.has(String(item.row.id))) return;
+    selected.push(item.row); selectedIds.add(String(item.row.id));
+  };
+  // 小样本也必须优先覆盖风险正样本；有空间时同时保留无风险对照。
+  const positive = keyed.filter(item=>item.risk === "positive").sort((a,b)=>a.hash.localeCompare(b.hash));
+  const negative = keyed.filter(item=>item.risk === "negative").sort((a,b)=>a.hash.localeCompare(b.hash));
+  take(positive[0]);
+  if (bounded > 1) take(negative[0]);
+  const buckets = new Map<string,typeof keyed>();
+  for (const item of keyed) {
+    const key = item.risk + "|" + item.category;
+    const bucket = buckets.get(key) ?? []; bucket.push(item); buckets.set(key,bucket);
+  }
+  for (const bucket of buckets.values()) bucket.sort((a,b)=>a.hash.localeCompare(b.hash));
+  const keys = [...buckets.keys()].sort((a,b)=>
+    (buckets.get(a)?.length ?? 0) - (buckets.get(b)?.length ?? 0) ||
+    (a.startsWith("positive|") ? -1 : b.startsWith("positive|") ? 1 : 0) || a.localeCompare(b));
+  while (selected.length < bounded) {
+    let progressed = false;
+    for (const key of keys) {
+      const bucket = buckets.get(key);
+      const next = bucket?.find(item=>!selectedIds.has(String(item.row.id)));
+      if (!next) continue;
+      take(next); progressed = true;
+      if (selected.length >= bounded) break;
+    }
+    if (!progressed) break;
+  }
+  return selected;
 }
 
 /** 把审核引擎输出映射为离线评测标签；风险字段只来自模型风险类别。 */

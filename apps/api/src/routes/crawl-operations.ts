@@ -260,6 +260,8 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     if(!parsed.success){reply.code(400);return {ok:false,error:"样本 ID 无效"};}
     const current=await getCrawlModerationGoldCase(ctx.repo,parsed.data.id);
     if(!current){reply.code(404);return {ok:false,error:"金标样本不存在"};}
+    // 盲标保护：第一位提交后，在第二位提交前不暴露标签或证据。
+    if(current.status==="pending"||current.status==="annotating")return {ok:true,items:[],withheld:true};
     const items=await listCrawlModerationGoldAnnotations(ctx.repo,parsed.data.id);
     return {ok:true,items:items.map(row=>({id:String(row.id),annotatorId:String(row.annotator_id),label:String(row.label),
       risk:Boolean(row.risk),evidence:String(row.evidence),createdAt:Number(row.created_at)}))};

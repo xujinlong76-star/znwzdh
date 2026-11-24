@@ -4,10 +4,11 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync } from "fastify";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { enrichUrl } from "@navhub/ai";
 import { INTERACTIVE_LLM_BUDGET_MS } from "../llm-usage.ts";
-import { httpUrl, resolveCategoryTitleSuggestion, sanitizeIconUrl } from "@navhub/core";
+import { httpUrl, canonicalizeUrl, resolveCategoryTitleSuggestion, sanitizeIconUrl } from "@navhub/core";
 import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
@@ -16,6 +17,19 @@ import { selectEnrichmentFields } from "../enrich-fields.ts";
 import { requestIdentityOf, identityTrusted } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
+
+const SENSITIVE_DISCOVERY_KEY = /^(?:password|passwd|secret|token|authorization|cookie|set-cookie|api[_-]?key|access[_-]?key|private[_-]?key|__proto__|prototype|constructor)$/i;
+
+function containsSensitiveDiscoveryKey(value: unknown, depth = 0): boolean {
+  if (depth > 8) return true;
+  if (Array.isArray(value)) return value.some((item) => containsSensitiveDiscoveryKey(item, depth + 1));
+  if (value && typeof value === "object") {
+    return Object.entries(value).some(([key, nested]) =>
+      SENSITIVE_DISCOVERY_KEY.test(key) || containsSensitiveDiscoveryKey(nested, depth + 1),
+    );
+  }
+  return false;
+}
 
 export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -102,6 +116,142 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     return budget.llmBlocked ? { ...result, aiSkipped: "quota" as const, quota: budget.quotaInfo } : result;
   });
 
+  /**
+   * AI 发现：抓取 + 富化 + 进入待审核队列。
+   * 与 /api/sites/auto 的旧行为并行保留；此新入口绝不直接创建/发布站点。
+   */
+  app.post("/api/sites/discover", {
+    config: { rateLimit: { max: 15, timeWindow: "1 minute" }, scope: "write" },
+  }, async (req, reply) => {
+    const body = z.object({
+      url: httpUrl(),
+      categoryId: z.string().optional(),
+      tags: z.array(z.string().trim().min(1).max(32)).max(20).optional(),
+      title: z.string().min(1).max(120).optional(),
+      description: z.string().trim().max(500).optional(),
+      enrichFields: z.array(z.string()).max(10).optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+
+    const existing = await ctx.repo.findSiteByUrl(body.data.url);
+    if (existing) return { created: false, reason: "已存在正式站点", site: existing };
+
+    const categories = await ctx.repo.listCategories();
+    const budget = await enrichBudget(req as never);
+    const resolved = await resolveLlm(ctx, budget.identity);
+    const enriched = await enrichUrl(body.data.url, {
+      llm: enrichLlmOf(resolved),
+      guard: ctx.config.fetch,
+      knownCategories: categories.map((category) => category.title),
+      heuristicOnly: budget.llmBlocked,
+      onLlmCall: createEnrichUsageCallback(ctx, resolved.source, budget.identity),
+      deadlineAt: Date.now() + INTERACTIVE_LLM_BUDGET_MS,
+    }).finally(() => settleLlmQuota(ctx, budget.hold));
+
+    if (enriched.warnings.some((warning) => warning.startsWith("抓取失败："))) {
+      reply.code(422);
+      return { ok: false, error: "目标站点未通过安全抓取校验或暂时无法访问，未创建站点/采集候选", warnings: enriched.warnings };
+    }
+
+    const selection = selectEnrichmentFields(enriched, body.data.enrichFields);
+    const title = body.data.title ?? selection.applied.title ?? null;
+    const description = (body.data.description ?? selection.applied.description ?? "").trim().slice(0, 500) || null;
+    const tags = (body.data.tags ?? selection.applied.tags ?? [])
+      .filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+      .slice(0, 20)
+      .map((tag) => tag.trim().slice(0, 32));
+
+    let categoryId = body.data.categoryId ?? null;
+    let categoryResolution: string | null = null;
+    let ambiguousCategoryIds: string[] = [];
+    if (categoryId) {
+      const check = await ctx.repo.checkSiteCategoryAttachment(categoryId);
+      if (!check.ok) {
+        reply.code(400);
+        return { error: "指定分类不可用于候选入库", detail: check.error };
+      }
+      categoryId = check.categoryId;
+    } else if (selection.applied.category) {
+      const resolution = resolveCategoryTitleSuggestion(
+        selection.applied.category,
+        categories.map((category) => ({
+          id: category.id,
+          title: category.title,
+          altLabels: category.altLabels,
+        })),
+      );
+      categoryResolution = resolution.status;
+      if (resolution.status === "unique") categoryId = resolution.categoryId;
+      else if (resolution.status === "ambiguous") ambiguousCategoryIds = resolution.categoryIds;
+    }
+
+    const candidateUrl = enriched.url || body.data.url;
+    const candidateId = randomUUID();
+    const evidence = {
+      requestedUrl: body.data.url,
+      finalUrl: candidateUrl,
+      provenance: enriched.provenance,
+      httpStatus: enriched.httpStatus,
+      warnings: enriched.warnings,
+      fields: enriched.fields,
+      categorySuggestion: selection.applied.category ?? null,
+      categoryResolution,
+      ambiguousCategoryIds,
+      appliedFields: selection.appliedFields,
+      skippedFields: selection.skipped,
+      ignoredFields: selection.ignoredFields,
+      aiSkipped: budget.llmBlocked ? "quota" : null,
+    };
+    if (containsSensitiveDiscoveryKey(evidence)) {
+      reply.code(400);
+      return { ok: false, error: "富化来源证据包含敏感凭据字段，已拒绝入队" };
+    }
+    if (JSON.stringify(evidence).length > 16_384) {
+      reply.code(413);
+      return { ok: false, error: "富化来源证据超过 16KB 限制" };
+    }
+    const candidate = await ctx.repo.upsertSiteDiscoveryCandidate({
+      id: candidateId,
+      url: candidateUrl,
+      canonicalUrl: canonicalizeUrl(candidateUrl),
+      title: title?.trim().slice(0, 120) ?? null,
+      description,
+      categoryId,
+      tags,
+      source: "ai",
+      evidence,
+    });
+
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: req.auth.actor,
+      actorKind: req.auth.kind,
+      action: "discovery.candidate_submitted",
+      target: candidate.id,
+      diff: {
+        source: "ai",
+        canonicalUrl: candidate.canonicalUrl,
+        duplicate: candidate.id !== candidateId,
+        aiSkipped: budget.llmBlocked ? "quota" : null,
+      },
+    });
+    reply.code(202);
+    return {
+      created: false,
+      queuedForReview: candidate.status === "pending",
+      duplicate: candidate.id !== candidateId,
+      candidate,
+      enrichment: enriched,
+      appliedFields: selection.appliedFields,
+      skippedFields: selection.skipped,
+      ignoredFields: selection.ignoredFields,
+      ...(budget.llmBlocked ? { aiSkipped: "quota" as const, quota: budget.quotaInfo } : {}),
+    };
+  });
+
   /** 一步到位：抓取 + 富化 + 入库（AI 自动入库的核心接口） */
   app.post("/api/sites/auto", { config: { rateLimit: { max: 15, timeWindow: "1 minute" }, scope: "write" } }, async (req, reply) => {
     const body = z.object({
@@ -132,6 +282,10 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       deadlineAt: Date.now() + INTERACTIVE_LLM_BUDGET_MS,
     }).finally(() => settleLlmQuota(ctx, budget.hold));
 
+    if (enriched.warnings.some((warning) => warning.startsWith("抓取失败："))) {
+      reply.code(422);
+      return { ok: false, error: "目标站点未通过安全抓取校验或暂时无法访问，未创建站点/采集候选", warnings: enriched.warnings };
+    }
     // 分类解析：调用方指定 -> 富化建议匹配已有类目 -> 落「未分类」并产类目缺口提案。
     // 「富化建议」只有在调用方把 category 选进 enrichFields 时才参与：取消该字段
     // 就是不想让模型碰类目，这时也不该再拿它的建议去记一条类目缺口提案。
@@ -189,5 +343,11 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       ...(budget.llmBlocked ? { aiSkipped: "quota" as const, quota: budget.quotaInfo } : {}),
     };
   });
+
+  /**
+   * AI 富化后先进入人工审核队列。与兼容旧行为的 /api/sites/auto 不同，
+   * 本入口不会创建正式站点，也不会写搜索索引。
+   */
+
 
 };

@@ -77,6 +77,26 @@ describe("AI website moderation policy", () => {
     expect(result.verdict).toBe("auto_approve");
   });
 
+  it("fails closed when the model omits or invents risk categories", async () => {
+    const provider = { baseUrl: "https://llm.example/v1", model: "test-model", apiKey: "test-key" };
+    for (const risks of [[], ["unverified-risk"]]) {
+      await expect(moderateSiteWithAi(provider, { url: "https://example.com" }, {}, {
+        complete: async () => ({
+          model: "test-model",
+          content: JSON.stringify({
+            confidence: 0.999,
+            qualityScore: 100,
+            category: null,
+            tags: [],
+            risks,
+            reasons: ["无"],
+            evidence: [],
+          }),
+        }),
+      })).rejects.toThrow(/风险类别/);
+    }
+  });
+
   it("fails closed when the metered gateway adapter fails", async () => {
     const provider = { baseUrl: "https://llm.example/v1", model: "test-model", apiKey: "test-key" };
     await expect(moderateSiteWithAi(provider, { url: "https://example.com" }, {}, {

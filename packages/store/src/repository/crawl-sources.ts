@@ -5,7 +5,7 @@ export type CrawlSourceKind = "sitemap" | "rss" | "page";
 export interface CrawlSource {
   id: string; url: string; canonicalUrl: string; kind: CrawlSourceKind;
   enabled: boolean; priority: number; intervalMs: number; nextRunAt: number;
-  lastRunAt: number | null; lastStatus: string | null; lastError: string | null;
+  lastRunAt: number | null; lastStatus: string | null; lastError: string | null; consecutiveFailures: number;
   leaseOwner: string | null; leaseExpiresAt: number | null;
   createdAt: number; updatedAt: number;
 }
@@ -34,6 +34,7 @@ function mapSource(row: Record<string, unknown>): CrawlSource {
     lastRunAt: row.last_run_at == null ? null : Number(row.last_run_at),
     lastStatus: row.last_status == null ? null : String(row.last_status),
     lastError: row.last_error == null ? null : String(row.last_error),
+    consecutiveFailures: Number(row.consecutive_failures ?? 0),
     leaseOwner: row.lease_owner == null ? null : String(row.lease_owner),
     leaseExpiresAt: row.lease_expires_at == null ? null : Number(row.lease_expires_at),
     createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
@@ -115,8 +116,20 @@ export async function claimDueCrawlSources(repo: Repository, workerId: string, o
 export async function settleCrawlSource(repo: Repository, input: { id: string; workerId: string; status: string; error?: string | null; now?: number }): Promise<boolean> {
   const now = input.now ?? Date.now();
   const rows = await repo.raw(
-    "UPDATE crawl_sources SET last_run_at=?,last_status=?,last_error=?,next_run_at=CASE WHEN enabled=TRUE THEN ? + interval_ms ELSE next_run_at END,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=? AND lease_owner=? AND lease_expires_at>? RETURNING id",
-    [now, input.status.slice(0, 40), input.error?.slice(0, 2000) ?? null, now, now, input.id, input.workerId, now],
+    `UPDATE crawl_sources
+        SET last_run_at=?, last_status=?, last_error=?,
+            consecutive_failures=CASE WHEN ?='error' THEN consecutive_failures+1 ELSE 0 END,
+            next_run_at=CASE WHEN enabled=TRUE THEN ? + CASE
+              WHEN ?='error' THEN CASE
+                WHEN consecutive_failures >= 9 THEN 86400000
+                ELSE 300000 * (1 << consecutive_failures)
+              END
+              ELSE interval_ms
+            END ELSE next_run_at END,
+            lease_owner=NULL, lease_expires_at=NULL, updated_at=?
+      WHERE id=? AND lease_owner=? AND lease_expires_at>? RETURNING id`,
+    [now, input.status.slice(0, 40), input.error?.slice(0, 2000) ?? null,
+      input.status, now, input.status, now, input.id, input.workerId, now],
   );
   return rows.length > 0;
 }

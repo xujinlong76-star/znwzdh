@@ -10,6 +10,7 @@ import {
   isBlockedIpv6,
 } from "../src/ssrf.ts";
 import { absolutize, extractMetadata } from "../src/metadata.ts";
+import { evaluateSiteModerationGoldSet } from "../src/moderation.ts";
 import {
   EnrichmentSchema,
   enrichUrl,
@@ -362,5 +363,42 @@ describe("SSRF: 敏感端口与重定向链", () => {
       await new Promise((r) => server.close(r));
       await new Promise((r) => crossServer.close(r));
     }
+  });
+});
+
+
+describe("AI 网站审核金标评测（纯离线）", () => {
+  it("计算分类混淆矩阵、逐类 precision/recall/F1 与覆盖率", () => {
+    const result = evaluateSiteModerationGoldSet([
+      { id: "a", expected: "approve", actual: "approve", expectedRisk: false, actualRisk: false },
+      { id: "b", expected: "reject", actual: "reject", expectedRisk: true, actualRisk: true },
+      { id: "c", expected: "reject", actual: "review", expectedRisk: true, actualRisk: false },
+      { id: "d", expected: "review", actual: "approve", expectedRisk: false, actualRisk: true },
+    ]);
+    expect(result.sampleSize).toBe(4);
+    expect(result.exactMatchRate).toBe(0.5);
+    expect(result.coverage).toBe(0.75);
+    expect(result.confusionMatrix.reject.review).toBe(1);
+    expect(result.perLabel.reject.recall).toBe(0.5);
+    expect(result.riskDetection.falseNegatives).toBe(1);
+    expect(result.riskDetection.falsePositives).toBe(1);
+  });
+
+  it("空样本返回 null 比率，不伪造 0% 准确率", () => {
+    const result = evaluateSiteModerationGoldSet([]);
+    expect(result.sampleSize).toBe(0);
+    expect(result.exactMatchRate).toBeNull();
+    expect(result.coverage).toBeNull();
+    expect(result.riskDetection.precision).toBeNull();
+  });
+
+  it("拒绝重复或空 ID，防止重复样本抬高评测权重", () => {
+    expect(() => evaluateSiteModerationGoldSet([
+      { id: "same", expected: "approve", actual: "approve" },
+      { id: "same", expected: "approve", actual: "approve" },
+    ])).toThrow(/唯一/);
+    expect(() => evaluateSiteModerationGoldSet([
+      { id: " ", expected: "approve", actual: "approve" },
+    ])).toThrow(/不能为空/);
   });
 });

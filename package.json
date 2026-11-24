@@ -75,6 +75,7 @@
     "backup:verify": "node scripts/db-backup-verify.mjs",
     "rehearse:db": "node scripts/db-rehearse.mjs",
     "eval:search": "node scripts/search-eval.mts",
+    "validate:search-goldset": "node scripts/validate-search-goldset.mts",
     "prepare": "node scripts/install-git-hooks.mjs",
     "check:tags": "node scripts/check-tag-data.mjs --strict",
     "tags:normalize": "node scripts/normalize-tags.mjs --dry-run",

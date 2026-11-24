@@ -218,7 +218,7 @@ interface NavigationContentProps {
    */
   initialCategoryLimit?: number
   /**
-   * 服务端从 `nav_view_mode` Cookie 解析出的初始网址展示模式（Zero-CLS SSR 渲染）。
+   * 可选服务端初始展示模式；未提供时由客户端 hydrateHomeDiy() 恢复 Cookie 偏好。
    */
   initialCardDisplayMode?: CanonicalCardDisplayMode
   /**
@@ -1608,7 +1608,7 @@ export function NavigationContent({
                     description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
                   })
                 }}
-                className="mb-1.5 ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-destructive-text bg-destructive/15 hover:bg-destructive/20 border border-destructive/30 transition-colors cursor-pointer"
+                className="mb-1.5 ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.625rem] font-medium text-destructive-text bg-destructive/15 hover:bg-destructive/20 border border-destructive/30 transition-colors cursor-pointer"
               >
                 <EyeOff className="w-3 h-3" />
                 <span>－ 移除站内目录</span>
@@ -1675,7 +1675,7 @@ export function NavigationContent({
                       description: '按 Ctrl/Cmd+Z 可立即撤销，或在回收站随时恢复。',
                     })
                   }}
-                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium text-destructive-text bg-destructive/15 hover:bg-destructive/20 border border-destructive/30 transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[0.625rem] font-medium text-destructive-text bg-destructive/15 hover:bg-destructive/20 border border-destructive/30 transition-colors cursor-pointer"
                 >
                   <EyeOff className="w-3 h-3" />
                   <span>－ 移除页脚与生态入口</span>

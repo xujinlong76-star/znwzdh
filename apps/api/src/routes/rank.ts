@@ -15,9 +15,17 @@ import {
 import { MAX_SEARCH_QUERY_LENGTH, privatizeVector, rankItemsWithPrivacy } from "@navhub/core";
 import { badRequest, parsePagination } from "./shared.ts";
 import type { AppContext } from "../context.ts";
+import { recordRecommendationQualityShadow } from "../recommendation-quality-shadow.ts";
 
 export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
+
+  const normalizedRelevance = (values: Array<{ id: string; value: number }>, higherIsBetter = true) => {
+    const finite = values.map(item => item.value).filter(Number.isFinite);
+    const min = Math.min(...finite), max = Math.max(...finite);
+    const range = max - min;
+    return new Map(values.map(item => [item.id, !Number.isFinite(item.value) ? 0 : range === 0 ? 100 : ((higherIsBetter ? item.value - min : max - item.value) / range) * 100]));
+  };
 
   /* ------------------------ 推荐排序 ------------------------ */
 
@@ -26,6 +34,11 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     const q = (req.query ?? {}) as Record<string, string>;
     const { limit } = parsePagination(q, { defaultLimit: 20, maxLimit: 100 });
     const sites = await ctx.repo.hotSites(limit);
+    await recordRecommendationQualityShadow(ctx, {
+      surface: "homepage",
+      sites,
+      relevanceBySiteId: normalizedRelevance(sites.map(site => ({ id: site.id, value: site.trendScore ?? 0 }))),
+    });
     return {
       hits: sites.map((s) => ({
         site: s,
@@ -41,7 +54,13 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   app.get("/api/rank/new", { config: { cache: { maxAge: 60, etag: true } } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
     const { limit } = parsePagination(q, { defaultLimit: 20, maxLimit: 100 });
-    return { hits: (await ctx.repo.newestSites(limit)).map((s) => ({ site: s })) };
+    const sites = await ctx.repo.newestSites(limit);
+    await recordRecommendationQualityShadow(ctx, {
+      surface: "homepage",
+      sites,
+      relevanceBySiteId: normalizedRelevance(sites.map(site => ({ id: site.id, value: site.createdAt }))),
+    });
+    return { hits: sites.map((s) => ({ site: s })) };
   });
 
   /**
@@ -65,7 +84,13 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       const wanted = matches.filter((m) => m.siteId !== siteId).slice(0, limit);
       const similarMap = await ctx.repo.getSitesByIds(wanted.map((m) => m.siteId));
       const hits = wanted.map((m) => ({ site: similarMap.get(m.siteId) ?? null, distance: m.distance }));
-      return { hits: hits.filter((h) => h.site), semanticAvailable: true };
+      const visibleHits = hits.filter((h): h is typeof h & { site: NonNullable<typeof h.site> } => Boolean(h.site));
+      await recordRecommendationQualityShadow(ctx, {
+        surface: "similar_sites",
+        sites: visibleHits.map(hit => hit.site),
+        relevanceBySiteId: normalizedRelevance(visibleHits.map(hit => ({ id: hit.site.id, value: hit.distance })), false),
+      });
+      return { hits: visibleHits, semanticAvailable: true };
     } catch {
       // 模型不可用不该让推荐端点 5xx
       return { hits: [], semanticAvailable: false, reason: "向量检索失败" };
@@ -127,6 +152,11 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
             });
           }
           scored.sort((a, b) => b.alternativeScore - a.alternativeScore);
+          await recordRecommendationQualityShadow(ctx, {
+            surface: "similar_sites",
+            sites: scored.slice(0, limit).map(item => item.site),
+            relevanceBySiteId: normalizedRelevance(scored.slice(0, limit).map(item => ({ id: item.site.id, value: item.alternativeScore }))),
+          });
           return {
             hits: scored.slice(0, limit),
             manifold: "lorentz-hyperboloid",
@@ -166,6 +196,11 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
         .sort((a, b) => b.alternativeScore - a.alternativeScore)
         .slice(0, limit);
 
+      await recordRecommendationQualityShadow(ctx, {
+        surface: "similar_sites",
+        sites: fallbackHits.map(item => item.site),
+        relevanceBySiteId: normalizedRelevance(fallbackHits.map(item => ({ id: item.site.id, value: item.alternativeScore }))),
+      });
       return {
         hits: fallbackHits,
         manifold: "lorentz-heuristic",

@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { MAX_SEARCH_QUERY_LENGTH, rerankBySiteQualityShadow } from "@navhub/core";
 import { recordSearchChannels, recordSearchSuggestionsDegraded, recordSearchWriteFailure } from "../metrics.ts";
 import { refreshUserProfile } from "../profile-service.ts";
+import { recordRecommendationQualityShadow } from "../recommendation-quality-shadow.ts";
 import { badRequest, clampFacets, FACET_MAX_JSON_LENGTH, identityTrusted, requestIdentityOf } from "./shared.ts";
 
 import { z } from "zod";
@@ -282,6 +283,17 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
     const q = input.q.trim();
     const isFirstPage = (input.offset ?? 0) === 0;
+
+    if (personalize && isFirstPage && !isProbe && hits.length > 0) {
+      const personalizedHits = hits.filter((hit): hit is typeof hit & { site: NonNullable<typeof hit.site> } => Boolean(hit.site)).slice(0, 20);
+      const scores = personalizedHits.map(hit => hit.score);
+      const minScore = Math.min(...scores), maxScore = Math.max(...scores), range = maxScore - minScore;
+      await recordRecommendationQualityShadow(ctx, {
+        surface: "personalized",
+        sites: personalizedHits.map(hit => hit.site),
+        relevanceBySiteId: new Map(personalizedHits.map(hit => [hit.siteId, range === 0 ? 100 : ((hit.score - minScore) / range) * 100])),
+      });
+    }
 
     // 10% 确定性采样：计算质量影子名次并记录对照，不改写 result.hits 或响应缓存。
     // 使用查询字符 hash 而不是随机数，保证同一 query 在回归中采样稳定。

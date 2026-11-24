@@ -65,8 +65,8 @@ function validateCase(value: unknown, index: number): SearchEvalCase {
     throw new Error("第 " + index + " 条样本缺少 relevance 对象");
   }
   for (const [siteId, grade] of Object.entries(record.relevance)) {
-    if (typeof grade !== "number" || !Number.isFinite(grade) || grade < 0) {
-      throw new Error("第 " + index + " 条样本 relevance['" + siteId + "'] 必须是非负数");
+    if (typeof grade !== "number" || !Number.isInteger(grade) || grade < 0 || grade > 3) {
+      throw new Error("第 " + index + " 条样本 relevance['" + siteId + "'] 必须是 0–3 整数");
     }
   }
   return {

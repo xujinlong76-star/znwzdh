@@ -542,8 +542,9 @@ export async function handleCrawlWorker(
           // 本阶段只写审核证据，绝不修改 pending/approved/rejected 状态。
           if (moderationPolicy.enabled && moderationPolicy.mode === "shadow" &&
               aiModerationCount < moderationPolicy.maxAiReviewsPerRun && candidate.status === "pending") {
-            const resolved = await resolveLlm(ctx);
-            if (llmProviderReadyAny(resolved)) {
+            try {
+              const resolved = await resolveLlm(ctx);
+              if (llmProviderReadyAny(resolved)) {
               const quota = await reserveLlmQuota(ctx, null, {
                 source: resolved.source,
                 estimatedTokens: 1800,
@@ -650,6 +651,26 @@ export async function handleCrawlWorker(
                   await settleLlmQuota(ctx, quota.hold);
                 }
               }
+              }
+            } catch (moderationSetupError) {
+              summary.aiModerationFailed++;
+              await upsertSiteDiscoveryCandidate(ctx.repo, {
+                id: candidate.id, url: candidate.url, canonicalUrl: candidate.canonicalUrl,
+                source: candidate.source,
+                evidence: { ...candidate.evidence, aiModeration: {
+                  mode: "shadow", status: "error",
+                  errorType: moderationSetupError instanceof Error ? moderationSetupError.name : "UnknownError",
+                  recordedAt: Date.now(),
+                } },
+              });
+              try {
+                await recordCrawlAiModerationDecision(ctx.repo, {
+                  candidateId: candidate.id, canonicalUrl: candidate.canonicalUrl,
+                  mode: "shadow", status: "error",
+                  errorType: moderationSetupError instanceof Error ? moderationSetupError.name : "UnknownError",
+                  policyVersion: "site-moderation-v1", createdAt: Date.now(),
+                });
+              } catch { summary.aiModerationHistoryWriteFailed++; }
             }
           }
         }

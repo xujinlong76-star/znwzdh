@@ -120,6 +120,14 @@ describe("search gold set：双盲人工金标校验", () => {
     piiCase.query = "联系 test@example.com";
     expect(() => validateSearchGoldSet(pii)).toThrow("必须先脱敏");
 
+    const phone = makeSet();
+    (phone.cases as Array<Record<string, unknown>>)[0]!.query = "+1 (415) 555-0123";
+    expect(() => validateSearchGoldSet(phone)).toThrow("必须先脱敏");
+
+    const token = makeSet();
+    (token.cases as Array<Record<string, unknown>>)[0]!.query = "sk-1234567890abcdefghijklmn";
+    expect(() => validateSearchGoldSet(token)).toThrow("必须先脱敏");
+
     const zero = makeSet({
       cases: [{
         id: "case_000002",

@@ -375,8 +375,19 @@ export async function handleCrawlWorker(
         continue;
       }
 
-      const isSitemap = task.source === "sitemap_seed" || /<urlset\b|<sitemapindex\b/i.test(response.body);
-      const isRss = task.source === "rss_seed" || /<rss\b|<feed\b/i.test(response.body);
+      const bodyLooksSitemap = /<urlset\b|<sitemapindex\b/i.test(response.body);
+      const bodyLooksRss = /<rss\b|<feed\b/i.test(response.body);
+      if ((task.source === "sitemap_seed" && !bodyLooksSitemap) || (task.source === "rss_seed" && !bodyLooksRss)) {
+        await settleCrawlTask(ctx.repo, {
+          id: task.id, workerId, outcome: "hold_for_review",
+          error: "种子地址未返回预期的 Sitemap / RSS / Atom 文档，可能是登录页或错误页",
+          now: Date.now(),
+        });
+        summary.heldForReview++;
+        continue;
+      }
+      const isSitemap = task.source === "sitemap_seed" || bodyLooksSitemap;
+      const isRss = task.source === "rss_seed" || bodyLooksRss;
       if ((isSitemap || isRss) && response.body) {
         const kind = isSitemap ? "sitemap" : "rss";
         const links = extractFeedUrls(response.body, response.finalUrl, kind);

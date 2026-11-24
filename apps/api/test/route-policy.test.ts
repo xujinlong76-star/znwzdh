@@ -125,7 +125,7 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "PATCH /api/me/settings",
   // 公开导航页（Batch 3 第 6 项）：上下线只改调用者自己的发布关系（见上 DELETE 处注释）。
   "PATCH /api/public-pages/:slug",
-  "POST /api/account/forgot-password",
+  // 管理员 MFA 核验：只有持有 Web/API 内部凭据的 BFF 能调用，不是匿名访客写面。\n  "POST /api/account/admin-mfa/verify",\n  "POST /api/account/forgot-password",
   "POST /api/account/login",
   "POST /api/account/register",
   "POST /api/account/resend-verification",

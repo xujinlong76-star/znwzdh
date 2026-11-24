@@ -476,7 +476,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
             actor: "anonymous",
             actorKind: "anonymous",
             action: attempt.count >= LOGIN_FAIL_MAX ? "account.login_locked" : "account.login_failed",
-            target: `sha256:${attempt.identifierHash}`,
+            target: `hmac-sha256:${attempt.identifierHash}`,
             diff: { failures: attempt.count },
           })
           .catch(() => {
@@ -490,7 +490,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         actor: user.id,
         actorKind: "user",
         action: "account.login",
-        target: user.email ?? undefined,
+        target: user.id,
       });
       return {
         ok: true,

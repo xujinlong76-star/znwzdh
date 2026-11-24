@@ -314,9 +314,9 @@ const config = {
         user &&
         account?.provider === 'github' &&
         isAdminAccessAllowed(user as { id?: string; email?: string | null; name?: string | null; role?: string }) &&
-        (process.env.NAVHUB_ADMIN_MFA_REQUIRED === '1' || process.env.NAVHUB_ADMIN_MFA_REQUIRED === 'true')
+        !(await verifyAdminSecondFactor(''))
       ) {
-        // OAuth 回调没有可交互的 OTP 输入阶段；强制 MFA 时管理员必须改走密码 + TOTP 凭证登录。
+        // OAuth 回调没有可交互的 OTP 输入阶段；MFA 已启用或被强制时，管理员必须改走密码 + TOTP 凭证登录。
         throw new Error('Administrator MFA is required; use credentials sign-in with a TOTP or recovery code')
       }
       if (user) {

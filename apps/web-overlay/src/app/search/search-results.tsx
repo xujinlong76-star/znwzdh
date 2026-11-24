@@ -25,6 +25,8 @@ import { SearchHistoryRecorder } from '@/components/search/search-history-record
 import { ZeroResultActions } from '@/components/search/zero-result-actions'
 import { AlgorithmHudBadge } from '@/components/algorithm-hud-badge'
 import { WantedActions } from '@/components/search/wanted-actions'
+import { VerifiedOfficialCard } from '@/components/verified-official-card'
+import { resolveOfficialCard } from '@/lib/official-card-rank'
 
 /**
  * /search 的视图（纯服务端组件）。
@@ -821,6 +823,18 @@ export function SearchResults({
         : Object.keys(facets).length > 0
           ? `分面筛选下的站点`
           : ''
+  // W1：查询命中 50 家已核实品牌时，官网卡片排在搜索结果第一位；
+  // 其余排序一律不动（hits 顺序原样，卡片是结果区顶部另起的一张卡，
+  // 不是重排）。判定与站内条目匹配见 lib/official-card-rank.ts
+  // （纯函数）；含糊查询返回 null，不显示；本模块不记搜索。
+  const officialCard = resolveOfficialCard({
+    query: q,
+    correctedQuery: correction?.corrected ?? null,
+    page,
+    failed,
+    hits,
+    unavailable,
+  })
 
   return (
     <>
@@ -1103,6 +1117,18 @@ export function SearchResults({
 
               {!failed && relatedTags.length > 0 ? (
                 <SearchRelatedTags tags={relatedTags} currentTag={tag} q={q} category={category} facets={facets} />
+              ) : null}
+
+              {/* W1：已核实官网卡片——结果区第一位，在 RelationBand / 结果列表 /
+                  EmptyResults 之前；零命中时仍展示（品牌已核实、站内未收录
+                  也不影响卡片本身）。其余排序一律不动。 */}
+              {officialCard ? (
+                <VerifiedOfficialCard
+                  brand={officialCard.brand}
+                  officialUrl={officialCard.officialUrl}
+                  siteEntry={officialCard.siteEntry}
+                  externalRel={externalRel}
+                />
               ) : null}
 
               {!failed && relations.length > 0 ? <RelationBand relations={relations} externalRel={externalRel} /> : null}

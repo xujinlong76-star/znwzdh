@@ -73,7 +73,7 @@ function validateFixture(value: unknown): Fixture {
   const input = value as Record<string, unknown>;
   if (input.schemaVersion !== "search-quality-shadow-v1") fail("schemaVersion 必须是 search-quality-shadow-v1");
   const k = input.k ?? 10;
-  if (!Number.isInteger(k) || Number(k) < 1 || Number(k) > 100) fail("k 必须是 1–100 的整数");
+  if (typeof k !== "number" || !Number.isInteger(k) || k < 1 || k > 100) fail("k 必须是 1–100 的整数");
   const qualityWeight = input.qualityWeight ?? 0.12;
   if (typeof qualityWeight !== "number" || !Number.isFinite(qualityWeight) || qualityWeight < 0 || qualityWeight > 0.25) {
     fail("qualityWeight 必须在 0–0.25 之间");

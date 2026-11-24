@@ -392,7 +392,7 @@ export async function handleCrawlWorker(
           await upsertSiteDiscoveryCandidate(ctx.repo, {
             id: randomUUID(), url: finalUrl, canonicalUrl: finalUrl,
             title: metadata.title, description: metadata.description,
-            source: task.source, confidence: existing.length ? 35 : 60,
+            source: task.source,
             evidence: {
               fetchedStatus: response.status, finalUrl: response.finalUrl,
               fetchedAt: Date.now(), contentHash, simhash64: fp.simhash,

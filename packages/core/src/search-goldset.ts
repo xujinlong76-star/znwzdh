@@ -104,8 +104,10 @@ export function validateSearchGoldSet(input: unknown): SearchGoldValidationResul
     if (typeof item.query !== "string" || !item.query.trim() || item.query.length > 240) {
       throw new Error(prefix + " query 必须为 1–240 字符");
     }
-    if (EMAIL_PATTERN.test(item.query) || CN_MOBILE_PATTERN.test(item.query) || IPV4_PATTERN.test(item.query)) {
-      throw new Error(prefix + " query 疑似包含邮箱、手机号或 IP，必须先脱敏");
+    if (EMAIL_PATTERN.test(item.query) || CN_MOBILE_PATTERN.test(item.query) ||
+        GLOBAL_PHONE_PATTERN.test(item.query) || SECRET_TOKEN_PATTERN.test(item.query) ||
+        IPV4_PATTERN.test(item.query)) {
+      throw new Error(prefix + " query 疑似包含邮箱、电话、访问令牌或 IP，必须先脱敏");
     }
     const queryKey = item.query.trim().replace(/\\s+/g, " ").toLowerCase();
     if (normalizedQueries.has(queryKey)) throw new Error(prefix + " query 与已有样本重复");

@@ -71,6 +71,25 @@ describe("site quality governance API", () => {
     expect((await ctx.repo.getSite(siteId))?.status).toBe("active");
   });
 
+  it("backfills existing sites in bounded batches without external probes", async () => {
+    const category = await ctx.repo.createCategory({ title: "补算类目" });
+    const site = await ctx.repo.createSite({
+      title: "Backfill Fixture",
+      url: "https://backfill-fixture.example/",
+      categoryId: category.id,
+      status: "active",
+      tags: ["backfill"],
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/admin/quality/rebuild",
+      payload: { offset: 0, limit: 10 },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().saved).toBeGreaterThanOrEqual(1);
+    expect(await ctx.repo.getSiteQualityAssessment(site.id)).not.toBeNull();
+  });
+
   it("filters by band and paginates with a stable total", async () => {
     const response = await app.inject({ method: "GET", url: "/api/admin/quality/report?band=high&limit=1&offset=0" });
     expect(response.statusCode).toBe(200);

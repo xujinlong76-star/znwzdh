@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { RefreshCw, ShieldCheck, AlertTriangle, SearchCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { hubGet } from '@/lib/navhub-api'
+import { hubGet, hubSend } from '@/lib/navhub-api'
 
 type QualityBand = 'high' | 'medium' | 'low' | 'high_risk' | 'insufficient_evidence'
 type Dimension = {
@@ -100,6 +100,9 @@ export default function SiteQualityAdminPage() {
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [rebuilding, setRebuilding] = useState(false)
+  const [rebuildOffset, setRebuildOffset] = useState(0)
+  const [rebuildNotice, setRebuildNotice] = useState<string | null>(null)
 
   const load = useCallback(async (offset = 0, append = false) => {
     if (append) setLoadingMore(true)
@@ -127,6 +130,31 @@ export default function SiteQualityAdminPage() {
   const summary = data?.summary
   const hasMore = Boolean(data && data.items.length < data.total)
 
+  const rebuildBatch = async () => {
+    if (rebuilding) return
+    setRebuilding(true)
+    setRebuildNotice(null)
+    try {
+      const result = await hubSend<{ saved: number; nextOffset: number | null; done: boolean }>(
+        '/api/hub/admin/quality/rebuild',
+        'POST',
+        { offset: rebuildOffset, limit: 50 },
+      )
+      if (result.done) {
+        setRebuildOffset(0)
+        setRebuildNotice(`全量补算完成，本批处理 ${result.saved} 个站点`)
+      } else {
+        setRebuildOffset(result.nextOffset ?? 0)
+        setRebuildNotice(`本批已补算 ${result.saved} 个站点；点击继续处理下一批`)
+      }
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '质量补算失败')
+    } finally {
+      setRebuilding(false)
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-3 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -139,11 +167,18 @@ export default function SiteQualityAdminPage() {
             基于巡检记录与目录证据生成的影子评分。当前仅用于观察和人工复核，不会自动下架站点，也不会改变搜索与推荐排序。
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-          <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden />
-          刷新
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+            <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden />
+            刷新
+          </Button>
+          <Button size="sm" onClick={() => void rebuildBatch()} disabled={rebuilding}>
+            {rebuilding ? '补算中…' : `补算既有站点（批次偏移 ${rebuildOffset}）`}
+          </Button>
+        </div>
       </div>
+
+      {rebuildNotice && <p className="text-sm text-muted-foreground">{rebuildNotice}</p>}
 
       {error && (
         <Card className="border-destructive/50">

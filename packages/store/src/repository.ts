@@ -50,6 +50,8 @@ import * as llmPriceRepo from "./repository/llm-prices.ts";
 import * as llmQuotaRepo from "./repository/llm-quota.ts";
 import * as navVersionRepo from "./repository/nav-version.ts";
 import * as healthRepo from "./repository/health.ts";
+import * as discoveryCandidatesRepo from "./repository/discovery-candidates.ts";
+export type { DiscoveryCandidateStatus, SiteDiscoveryCandidate, UpsertSiteDiscoveryCandidateInput } from "./repository/discovery-candidates.ts";
 import * as tagsRepo from "./repository/tags.ts";
 import * as favoritesRepo from "./repository/favorites.ts";
 import * as watchlistRepo from "./repository/watchlist.ts";
@@ -842,6 +844,30 @@ async savedPluginEmbeddings(filter?: {
 
   async countSiteQualityAssessments(band?: SiteQualityResult["band"]): Promise<number> {
     return healthRepo.countSiteQualityAssessments(this, band);
+  }
+
+  async upsertSiteDiscoveryCandidate(input: discoveryCandidatesRepo.UpsertSiteDiscoveryCandidateInput) {
+    return discoveryCandidatesRepo.upsertSiteDiscoveryCandidate(this, input);
+  }
+
+  async getSiteDiscoveryCandidate(id: string) {
+    return discoveryCandidatesRepo.getSiteDiscoveryCandidate(this, id);
+  }
+
+  async getSiteDiscoveryCandidateForUpdate(id: string) {
+    return discoveryCandidatesRepo.getSiteDiscoveryCandidateForUpdate(this, id);
+  }
+
+  async listSiteDiscoveryCandidates(options: { status?: discoveryCandidatesRepo.DiscoveryCandidateStatus; limit?: number; offset?: number } = {}) {
+    return discoveryCandidatesRepo.listSiteDiscoveryCandidates(this, options);
+  }
+
+  async countSiteDiscoveryCandidates(status?: discoveryCandidatesRepo.DiscoveryCandidateStatus) {
+    return discoveryCandidatesRepo.countSiteDiscoveryCandidates(this, status);
+  }
+
+  async reviewSiteDiscoveryCandidate(input: Parameters<typeof discoveryCandidatesRepo.reviewSiteDiscoveryCandidate>[1]) {
+    return discoveryCandidatesRepo.reviewSiteDiscoveryCandidate(this, input);
   }
 
   /* ------------------------------ LLM 用量 ------------------------------ */

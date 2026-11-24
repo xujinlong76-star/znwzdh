@@ -317,6 +317,18 @@ CREATE TABLE IF NOT EXISTS site_quality_assessments (
 );
 CREATE INDEX IF NOT EXISTS site_quality_assessments_band_idx ON site_quality_assessments(band);
 
+-- 待审核的站点发现候选：保留来源、抓取证据与审核轨迹，绝不直接公开。
+CREATE TABLE IF NOT EXISTS site_discovery_candidates (
+  id TEXT PRIMARY KEY, url TEXT NOT NULL, canonical_url TEXT NOT NULL UNIQUE,
+  title TEXT, description TEXT, category_id TEXT,
+  tags_json TEXT NOT NULL DEFAULT '[]', source TEXT NOT NULL, confidence REAL,
+  evidence_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'pending',
+  site_id TEXT, discovered_at INTEGER NOT NULL, last_seen_at INTEGER NOT NULL,
+  reviewed_at INTEGER, reviewed_by TEXT, rejection_reason TEXT, updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS site_discovery_candidates_status_idx ON site_discovery_candidates(status, discovered_at);
+CREATE INDEX IF NOT EXISTS site_discovery_candidates_site_idx ON site_discovery_candidates(site_id);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, actor_kind TEXT NOT NULL DEFAULT 'user',
   action TEXT NOT NULL, target TEXT, diff TEXT, ip TEXT, created_at INTEGER NOT NULL
@@ -1101,6 +1113,18 @@ CREATE TABLE IF NOT EXISTS site_quality_assessments (
   dimensions_json TEXT NOT NULL, updated_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS site_quality_assessments_band_idx ON site_quality_assessments(band);
+
+-- Staged discovery candidates with provenance and an explicit human review state.
+CREATE TABLE IF NOT EXISTS site_discovery_candidates (
+  id TEXT PRIMARY KEY, url TEXT NOT NULL, canonical_url TEXT NOT NULL UNIQUE,
+  title TEXT, description TEXT, category_id TEXT,
+  tags_json TEXT NOT NULL DEFAULT '[]', source TEXT NOT NULL, confidence DOUBLE PRECISION,
+  evidence_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'pending',
+  site_id TEXT, discovered_at BIGINT NOT NULL, last_seen_at BIGINT NOT NULL,
+  reviewed_at BIGINT, reviewed_by TEXT, rejection_reason TEXT, updated_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS site_discovery_candidates_status_idx ON site_discovery_candidates(status, discovered_at);
+CREATE INDEX IF NOT EXISTS site_discovery_candidates_site_idx ON site_discovery_candidates(site_id);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id BIGSERIAL PRIMARY KEY, actor TEXT NOT NULL, actor_kind TEXT NOT NULL DEFAULT 'user',

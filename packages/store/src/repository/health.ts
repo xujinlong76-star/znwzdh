@@ -302,7 +302,9 @@ export async function siteQualityOverview(repo: Repository): Promise<SiteQuality
       AVG(overall_score) AS average_score,
       AVG(evidence_coverage) AS average_coverage,
       MAX(evaluated_at) AS last_evaluated_at
-      FROM site_quality_assessments`),
+      FROM site_quality_assessments q
+      JOIN sites s ON s.id = q.site_id
+      WHERE s.deleted_at IS NULL`),
   ]);
   const totalSites = Number(siteRows[0]?.total ?? 0);
   const row = rows[0] ?? {};
@@ -327,9 +329,18 @@ export async function countSiteQualityAssessments(
   repo: Repository,
   band?: SiteQualityResult["band"],
 ): Promise<number> {
+  const where = ["s.deleted_at IS NULL"];
+  const params: unknown[] = [];
+  if (band) {
+    where.push("q.band = ?");
+    params.push(band);
+  }
   const rows = await repo.raw(
-    "SELECT COUNT(*) AS total FROM site_quality_assessments" + (band ? " WHERE band = ?" : ""),
-    band ? [band] : [],
+    `SELECT COUNT(*) AS total
+       FROM site_quality_assessments q
+       JOIN sites s ON s.id = q.site_id
+      WHERE ${where.join(" AND ")}`,
+    params,
   );
   return Number(rows[0]?.total ?? 0);
 }

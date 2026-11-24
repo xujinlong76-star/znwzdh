@@ -134,9 +134,9 @@ describe("账号生命周期 API", () => {
       });
       const currentCode = totp(secret, (Math.floor(Date.now() / 30_000) + 1) * 30_000);
       expect((await verify(app, currentCode)).statusCode).toBe(200);
-      expect((await verify(replica, currentCode)).statusCode).toBe(401);
+      expect((await verify(replica!, currentCode)).statusCode).toBe(401);
       expect((await verify(app, recovery[0])).statusCode).toBe(200);
-      expect((await verify(replica, recovery[0])).statusCode).toBe(401);
+      expect((await verify(replica!, recovery[0])).statusCode).toBe(401);
       expect((await post("/api/account/admin-mfa/disable", { code: recovery[1] })).statusCode).toBe(200);
       expect((await verify(app, totp(secret))).statusCode).toBe(401);
     } finally {

@@ -53,6 +53,20 @@ function browserStorage(): Storage | null {
 let cachedData: PersonalData | null = null
 let cachedCorrupt = false
 let cachedBlocked: string | null = null
+/**
+ * 服务端快照：必须缓存为同一引用。`defaultPersonalData()` 每次调用都返回
+ * 一个全新对象，直接把它当 `getServerSnapshot` 传，React 每次渲染都会拿到
+ * 不同引用，报 `getServerSnapshot should be cached` 警告（跟进轮实测 7 次），
+ * 且可能引发反复重渲染。与 useHibernationSettings 的 SERVER_SNAPSHOT 同款做法。
+ * 共享安全：全部写路径（persist/update）都生成新对象再整体替换快照，
+ * 从不原地修改；bumpCounter 与各 lib 函数同样返回新对象，因此这份默认
+ * 对象不会被任何一处写脏。
+ */
+const SERVER_SNAPSHOT: PersonalData = defaultPersonalData()
+
+function getServerSnapshot(): PersonalData {
+  return SERVER_SNAPSHOT
+}
 /** 客户端是否已挂载：挂载前快照一律返回默认空数据，与服务端渲染一致，
  *  避免水合错配（localStorage 只在挂载后读）。与 useFavorites 同款模型。 */
 let clientReady = false
@@ -71,12 +85,14 @@ function readSnapshot(): PersonalData {
   if (cachedData) return cachedData
   if (!clientReady) {
     // 未挂载：不碰 localStorage，返回缓存的默认空数据（与服务端一致）。
-    cachedData = defaultPersonalData()
+    // 用 SERVER_SNAPSHOT 而不是新调 defaultPersonalData()：首个客户端快照
+    // 必须与服务端快照同一引用，否则水合时 React 会丢弃服务端渲染重做。
+    cachedData = SERVER_SNAPSHOT
     return cachedData
   }
   const store = browserStorage()
   if (!store) {
-    cachedData = defaultPersonalData()
+    cachedData = SERVER_SNAPSHOT
     return cachedData
   }
   const { data, corrupt } = loadPersonalData(store)
@@ -144,7 +160,7 @@ export interface UsePersonalData {
 }
 
 export function usePersonalData(): UsePersonalData {
-  const data = useSyncExternalStore(subscribe, readSnapshot, defaultPersonalData)
+  const data = useSyncExternalStore(subscribe, readSnapshot, getServerSnapshot)
   const readyRef = useRef(false)
   const backupRef = useRef<PersonalData | null>(null)
 

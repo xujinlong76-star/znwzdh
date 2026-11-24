@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toSearchEvalCase, validateSearchGoldenRecord } from "../src/search-golden.ts";
+import { detectSearchGoldenQueryPrivacyRisk, toSearchEvalCase, validateSearchGoldenRecord } from "../src/search-golden.ts";
 
 function record(overrides: Record<string, unknown> = {}) {
   return {
@@ -77,6 +77,14 @@ describe("search golden record validation", () => {
     expect(() => validateSearchGoldenRecord(incomplete)).toThrow("每个命中站点");
 
     expect(() => validateSearchGoldenRecord(record({ privacyReviewed: false }))).toThrow("隐私审查");
+  });
+
+  it("blocks obvious PII and credential patterns even when privacy flags are asserted", () => {
+    expect(detectSearchGoldenQueryPrivacyRisk("联系 alice@example.com")).toContain("email");
+    expect(detectSearchGoldenQueryPrivacyRisk("拨打 +1 (415) 555-0123")).toContain("phone_like_number");
+    expect(detectSearchGoldenQueryPrivacyRisk("use sk-123456789012345678901234")).toContain("credential");
+    expect(detectSearchGoldenQueryPrivacyRisk("AI 工具 2026")).toEqual([]);
+    expect(() => validateSearchGoldenRecord(record({ query: "联系 alice@example.com" }))).toThrow("疑似包含未脱敏隐私");
   });
 
   it("rejects non-telemetry, invalid evidence URLs and invalid relevance grades", () => {

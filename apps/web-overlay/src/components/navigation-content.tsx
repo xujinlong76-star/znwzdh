@@ -218,7 +218,7 @@ interface NavigationContentProps {
    */
   initialCategoryLimit?: number
   /**
-   * 服务端从 `nav_view_mode` Cookie 解析出的初始网址展示模式（Zero-CLS SSR 渲染）。
+   * 可选的服务端初始模式；首页 ISR 不读 Cookie，客户端在 layout effect 中读取 Cookie/localStorage。
    */
   initialCardDisplayMode?: CanonicalCardDisplayMode
   /**
@@ -467,7 +467,7 @@ export function NavigationContent({
     unhideAllCategories,
     speedDialPinnedIds,
     quickDialSlots,
-  } = useHomeDIY(ssrCardDisplayMode)
+  } = useHomeDIY(initialCardDisplayMode)
 
   const activeCardDisplayMode = mounted
     ? normalizeCardDisplayMode(cardDisplayMode)
@@ -1173,7 +1173,7 @@ export function NavigationContent({
   }, [customSiteTitle, customSiteHref, customSiteDesc, sortedCategories])
 
   return (
-    <InitialViewModeProvider value={ssrCardDisplayMode}>
+    <InitialViewModeProvider value={activeCardDisplayMode}>
     <div className="flex flex-col md:flex-row min-h-screen">
       <nav aria-label="站点分类导航" className="hidden md:block">
         <Sidebar

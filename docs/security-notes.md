@@ -130,7 +130,7 @@
 | --- | --- | --- |
 | 注册账号在邮箱未验证时仍可使用正确密码登录 | 在仓储层完成 scrypt 校验后检查 `emailVerified`；未验证账号与错误密码统一返回 null/401，避免状态枚举 | `packages/store/test/auth-accounts.test.ts`、`apps/api/test/account-api.test.ts` |
 | 用户资料编辑更换邮箱后仍保留已验证状态 | 更换为新邮箱时将 `email_verified` 重置为 false；解绑邮箱允许用户名登录；重新验证后恢复密码登录 | `packages/store/test/auth-accounts.test.ts` |
-| Storage / Bootstrap / MCP 静态凭据可被输入到 Web 登录框并提升为管理员 Session | Web Credentials 登录只接受专用 `NAVHUB_ADMIN_TOKEN`；其它服务凭据保留各自服务边界 | 需在 Web 认证集成测试中持续锁定 |
+| Storage / Bootstrap / MCP 静态凭据可被输入到 Web 登录框并提升为管理员 Session | Web Credentials 登录只接受专用 `NAVHUB_ADMIN_TOKEN`；其它服务凭据保留各自服务边界 | 由 `apps/web-overlay/test/auth-guard.test.ts` 的凭据边界守卫锁定 |
 | 生产默认仍允许 v1 恒定身份签名兼容 | `identitySignatureStrict` 默认跟随 `NODE_ENV=production`；`.env.example` 改为严格模式；只有显式设 0 才进入迁移兼容窗口 | `apps/api/test/identity-replay.test.ts`、`apps/api/test/security-readiness.test.ts` |
 | 管理员与用户中心会话核对故障时读请求 fail-open | 管理员守卫返回 503；`/api/hub/*` 与 `/api/me/*` 在吊销状态无法确认时 fail-closed；生产登录会话登记失败时拒绝签发 | 需运行 Web 集成测试与生产构建验证 |
 

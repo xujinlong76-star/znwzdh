@@ -75,6 +75,7 @@ import { pluginOverlapRoutes } from "./routes/plugin-overlap.ts";
 import { jobRoutes } from "./routes/jobs.ts";
 import { enrichRoutes } from "./routes/enrich.ts";
 import { aiConfigRoutes } from "./routes/ai-config.ts";
+import { crawlOperationsRoutes } from "./routes/crawl-operations.ts";
 import { telemetryRoutes } from "./routes/telemetry.ts";
 import { clientErrorRoutes } from "./routes/errors.ts";
 import { navsphereRoutes } from "./routes/navsphere.ts";
@@ -750,6 +751,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(jobRoutes, { ctx });
   await app.register(enrichRoutes, { ctx });
   await app.register(aiConfigRoutes, { ctx });
+  await app.register(crawlOperationsRoutes, { ctx });
   await app.register(telemetryRoutes, { ctx });
   await app.register(clientErrorRoutes, { ctx });
   await app.register(navsphereRoutes, { ctx });

@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
-import { JobRunner, backoffMs, jobEventBus, previewDataRetention, type JobEventPayload } from "../src/jobs.ts";
+import { JobRunner, backoffMs, getActiveCronSchedules, jobEnqueueScope, jobEventBus, JOB_KINDS, previewDataRetention, type JobEventPayload } from "../src/jobs.ts";
 import { refreshUserProfile } from "../src/profile-service.ts";
 
 let dir: string;
@@ -36,6 +36,30 @@ beforeAll(async () => {
 afterAll(async () => {
   await ctx.close();
   rmSync(dir, { recursive: true, force: true });
+});
+
+describe("采集 Worker 排期环境开关", () => {
+  it("在运行时读取 .env 加载后的配置，而不是模块导入时的旧环境", () => {
+    const previous = process.env.NAVHUB_CRAWL_WORKER_ENABLED;
+    try {
+      delete process.env.NAVHUB_CRAWL_WORKER_ENABLED;
+      expect(getActiveCronSchedules().some(item => item.kind === "crawl_worker")).toBe(false);
+      process.env.NAVHUB_CRAWL_WORKER_ENABLED = "true";
+      expect(getActiveCronSchedules().some(item => item.kind === "crawl_worker")).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.NAVHUB_CRAWL_WORKER_ENABLED;
+      else process.env.NAVHUB_CRAWL_WORKER_ENABLED = previous;
+    }
+  });
+});
+
+describe("持久化采集 Worker 任务注册", () => {
+  it("worker 只允许管理员触发，且注册表覆盖 crawl_worker", () => {
+    const runner = new JobRunner(ctx);
+    expect(JOB_KINDS).toContain("crawl_worker");
+    expect(runner.taskRegistry.has("crawl_worker")).toBe(true);
+    expect(jobEnqueueScope("crawl_worker", {})).toBe("admin");
+  });
 });
 
 describe("recompute_rank 任务", () => {

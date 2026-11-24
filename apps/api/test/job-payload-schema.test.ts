@@ -26,6 +26,7 @@ const MINIMAL_PAYLOADS: Record<(typeof JOB_KINDS)[number], Record<string, unknow
   drama_calendar_refresh: {},
   drama_rankings_refresh: {},
   plugin_url_health: {},
+  crawl_worker: {},
 };
 
 describe("任务 payload 契约", () => {
@@ -39,6 +40,12 @@ describe("任务 payload 契约", () => {
         payload: MINIMAL_PAYLOADS[kind],
       });
     }
+  });
+
+  it("采集 Worker payload 限制任务数、URL 数量和种子字段", () => {
+    expect(validateJobPayload("crawl_worker", { maxTasks: 51 }).ok).toBe(false);
+    expect(validateJobPayload("crawl_worker", { seeds: [{ url: "ftp://example.com", kind: "page" }] }).ok).toBe(false);
+    expect(validateJobPayload("crawl_worker", { seeds: [{ url: "https://example.com", kind: "page", force: true }] }).ok).toBe(false);
   });
 
   it("缺必填参数时 fail-closed", () => {

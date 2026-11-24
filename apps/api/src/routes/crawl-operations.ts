@@ -1,22 +1,29 @@
 import type { FastifyPluginAsync } from "fastify";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { evaluateSiteModerationGoldSet, moderateSiteWithAi } from "@navhub/ai";
+import { DEFAULT_GUARD, assertUrlShape, evaluateSiteModerationGoldSet, moderateSiteWithAi, resolveAndCheck } from "@navhub/ai";
 import {
   countSiteDiscoveryCandidates, getSiteDiscoveryCandidateForUpdate,
   recordCrawlAiModerationDecision, listCrawlAiModerationDecisions,
   createCrawlModerationGoldCase, listCrawlModerationGoldCases, getCrawlModerationGoldCase,
   annotateCrawlModerationGoldCase, adjudicateCrawlModerationGoldCase, listCrawlModerationGoldAnnotations,
   listSiteDiscoveryCandidates, reviewSiteDiscoveryCandidate,
+  listCrawlSources, upsertCrawlSource, updateCrawlSource, deleteCrawlSource,
 } from "@navhub/store";
 import type { AppContext } from "../context.ts";
 import { resolveLlm, llmProviderReady } from "../llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota, replyQuotaBlocked } from "../llm-quota.ts";
 import { callLlm } from "../llm-usage.ts";
-import { loadCrawlAiModerationPolicy } from "../crawl-moderation-policy.ts";
+import { CRAWL_AI_MODERATION_POLICY_KEY, CrawlAiModerationPolicySchema, loadCrawlAiModerationPolicy } from "../crawl-moderation-policy.ts";
+
+/** 来源注册前做 DNS/IP 与危险端口校验；真正抓取时仍必须使用 guardedFetch 逐跳防护。 */
+export async function assertSafeCrawlSourceUrl(rawUrl: string): Promise<void> {
+  const url = assertUrlShape(rawUrl);
+  await resolveAndCheck(url, { ...DEFAULT_GUARD, timeoutMs: 5_000, maxRedirects: 0 });
+}
 
 /** 对正式金标集做稳定抽样：相同数据集重复运行时选中相同样本。 */
-export function selectGoldEvaluationSample<T extends { id: unknown; category?: unknown; final_risk?: unknown }>(rows: readonly T[], limit = 20): T[] {
+export function selectGoldEvaluationSample<T extends { id: unknown; title?: unknown; description?: unknown; category?: unknown; final_risk?: unknown; final_label?: unknown; sanitized_excerpt?: unknown }>(rows: readonly T[], limit = 20): T[] {
   const bounded = Math.max(1, Math.min(20, Math.floor(limit)));
   const keyed = rows.map(row => ({ row, hash:createHash("sha256").update(String(row.id)).digest("hex"),
     risk:row.final_risk === true || row.final_risk === 1 ? "positive" : row.final_risk === false || row.final_risk === 0 ? "negative" : "unknown",
@@ -171,7 +178,7 @@ function moderationEvidenceOf(evidence: Record<string, unknown>): Record<string,
 export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
   app.get("/api/admin/crawl/overview", { config: { scope: "admin", cache: { maxAge: 0 } } }, async () => {
-    const [tasks, sources, candidates, hosts, recent, moderationRows, ledgerCounts, overturnedRows] = await Promise.all([
+    const [tasks, sources, candidates, hosts, recent, moderationRows, ledgerCounts, overturnedRows, circuits, queueHealthRows] = await Promise.all([
       ctx.repo.raw("SELECT status, COUNT(*) AS total FROM crawl_tasks GROUP BY status"),
       ctx.repo.raw("SELECT enabled, COUNT(*) AS total FROM crawl_sources GROUP BY enabled"),
       ctx.repo.raw("SELECT status, COUNT(*) AS total FROM site_discovery_candidates GROUP BY status"),
@@ -180,6 +187,8 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       ctx.repo.raw("SELECT evidence_json FROM site_discovery_candidates WHERE updated_at >= ? ORDER BY updated_at DESC LIMIT 1000", [Date.now()-24*60*60_000]),
       ctx.repo.raw("SELECT decision_source, COUNT(*) AS total FROM crawl_ai_moderation_decisions WHERE created_at >= ? GROUP BY decision_source", [Date.now()-24*60*60_000]),
       ctx.repo.raw("SELECT COUNT(DISTINCT ai.candidate_id) AS total FROM crawl_ai_moderation_decisions ai JOIN crawl_ai_moderation_decisions human ON human.candidate_id = ai.candidate_id AND human.decision_source = 'human' AND human.created_at > ai.created_at WHERE ai.decision_source = 'ai' AND ai.verdict IS NOT NULL AND ((ai.verdict = 'auto_approve' AND human.verdict <> 'approve') OR (ai.verdict = 'reject' AND human.verdict <> 'reject')) AND ai.created_at >= ?", [Date.now()-30*24*60*60_000]),
+      ctx.repo.raw("SELECT COUNT(*) AS total, SUM(CASE WHEN opened_until > ? THEN 1 ELSE 0 END) AS open, MAX(consecutive_failures) AS max_failures FROM crawl_domain_circuit", [Date.now()]),
+      ctx.repo.raw("SELECT SUM(CASE WHEN status IN ('queued','retry') THEN 1 ELSE 0 END) AS pending, MIN(CASE WHEN status IN ('queued','retry') THEN created_at ELSE NULL END) AS oldest_pending_at, SUM(CASE WHEN status = 'leased' AND lease_expires_at <= ? THEN 1 ELSE 0 END) AS expired_leases, SUM(CASE WHEN status = 'dead_letter' THEN 1 ELSE 0 END) AS dead_letter, SUM(CASE WHEN status = 'hold_for_review' THEN 1 ELSE 0 END) AS hold_for_review FROM crawl_tasks", [Date.now()]),
     ]);
     const countMap = (rows: Array<Record<string, unknown>>, key: string) =>
       Object.fromEntries(rows.map(row => [String(row[key]), Number(row.total ?? 0)]));
@@ -214,6 +223,14 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       candidates: candidateCounts,
       last24Hours: recentCounts,
       aiModeration: { ...aiModeration, ledger24h: ledger, humanOverturns30d: Number(overturnedRows[0]?.total ?? 0) },
+      queueHealth: {
+        pending: Number(queueHealthRows[0]?.pending ?? 0),
+        oldestPendingAgeMs: queueHealthRows[0]?.oldest_pending_at == null ? null : Math.max(0, Date.now() - Number(queueHealthRows[0].oldest_pending_at)),
+        expiredLeases: Number(queueHealthRows[0]?.expired_leases ?? 0),
+        deadLetter: Number(queueHealthRows[0]?.dead_letter ?? 0),
+        holdForReview: Number(queueHealthRows[0]?.hold_for_review ?? 0),
+      },
+      domainCircuit: { trackedHosts: Number(circuits[0]?.total ?? 0), openHosts: Number(circuits[0]?.open ?? 0), maxConsecutiveFailures: Number(circuits[0]?.max_failures ?? 0), threshold: 5, baseCooldownMs: 5 * 60_000, maxCooldownMs: 60 * 60_000 },
       busiestHosts: hosts.map(row => ({ host: String(row.host), tasks: Number(row.total) })),
     };
   });
@@ -306,7 +323,8 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params ?? {});
     const body = z.object({ decision: z.enum(["approve","reject"]), reason: z.string().trim().max(1000).optional() })
       .refine(v => v.decision !== "reject" || Boolean(v.reason?.trim()), "驳回时必须填写原因").safeParse(req.body ?? {});
-    if (!params.success || !body.success) { reply.code(400); return { ok:false,error:"审核参数无效",details:!params.success?params.error.issues:body.error.issues }; }
+    if (!params.success) { reply.code(400); return { ok:false,error:"审核参数无效",details:params.error.issues }; }
+    if (!body.success) { reply.code(400); return { ok:false,error:"审核参数无效",details:body.error.issues }; }
     const reviewer = String(req.auth.actor ?? "admin");
     const result = await ctx.repo.withTransaction(async () => {
       const current = await getSiteDiscoveryCandidateForUpdate(ctx.repo, params.data.id);
@@ -679,7 +697,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       if (!selectedProvider) { reply.code(409); return { ok: false, error: "所选模型不可用或配置已变更，请刷新模型列表" }; }
       const provider = selectedProvider.provider;
       // 固定本轮实际模型和来源，避免同一评测集混入不同模型或错误计入备用池用量。
-      const evaluationResolved = { ...resolved, provider, source: selectedProvider.source, fallbacks: [] };
+      const evaluationResolved = { ...resolved, provider, fallbacks: [] };
       const policy = await loadCrawlAiModerationPolicy(ctx);
       const predictions: Array<{ id: string; actual: "approve" | "reject" | "review"; actualRisk: boolean }> = [];
       const actualModels = new Set<string>();
@@ -689,6 +707,15 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         const quota = await reserveLlmQuota(ctx, null, { source: selectedProvider.source, estimatedTokens: 1800 });
         if (!quota.ok) { quotaBlockedBody = replyQuotaBlocked(reply, quota.error); break; }
         try {
+          const completion: NonNullable<NonNullable<Parameters<typeof moderateSiteWithAi>[3]>["complete"]> =
+            async (_provider, request) => {
+              const result = await callLlm(ctx, evaluationResolved, {
+                scenario: "crawl_moderation_gold_eval", identity: evaluationId, messages: request.messages,
+                temperature: request.temperature, maxTokens: request.maxTokens, json: request.json,
+                thinking: false, signal: request.signal, deadlineAt: request.deadlineAt, fetchImpl: request.fetchImpl,
+              });
+              return { content: result.content, model: result.model };
+            };
           const decision = await moderateSiteWithAi(provider, {
             // 金标表不保存原始 URL；评测时使用固定脱敏占位 URL，不反查候选原始地址。
             url: "https://redacted.invalid/",
@@ -701,17 +728,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
           }, {
             autoApproveConfidence: policy.autoApproveConfidence, rejectConfidence: policy.rejectConfidence,
             minQualityScore: policy.minQualityScore, maxExcerptChars: policy.maxExcerptChars, requireHttps: policy.requireHttps,
-          }, {
-            deadlineAt: Date.now() + 45_000,
-            complete: async (_provider, request) => {
-              const result = await callLlm(ctx, evaluationResolved, {
-                scenario: "crawl_moderation_gold_eval", identity: evaluationId, messages: request.messages,
-                temperature: request.temperature, maxTokens: request.maxTokens, json: request.json,
-                thinking: false, signal: request.signal, deadlineAt: request.deadlineAt, fetchImpl: request.fetchImpl,
-              });
-              return { content: result.content, model: result.model };
-            },
-          });
+          }, { deadlineAt: Date.now() + 45_000, complete: completion });
           actualModels.add(decision.model);
           const prediction = moderationVerdictToPrediction(decision);
           predictions.push({ id: String(row.id), ...prediction });
@@ -743,7 +760,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       const previous = previousRows[0]?.metrics_json ? JSON.parse(String(previousRows[0].metrics_json)) as {exactMatchRate?:number|null;riskDetection?:{recall?:number|null}} : null;
       const alerts: Array<{severity:"warning"|"critical";code:string;message:string}> = [];
       if (metrics.exactMatchRate !== null && metrics.exactMatchRate < 0.9) alerts.push({severity:"warning",code:"low_exact_match",message:"标签精确匹配率低于 90%，建议保持 Shadow 并检查错分样本"});
-      if (metrics.riskDetection.positiveSupport === 0) alerts.push({severity:"warning",code:"risk_support_missing",message:"当前评测样本没有风险正样本，风险召回率无法评估"});
+      if (metrics.riskDetection.support === 0) alerts.push({severity:"warning",code:"risk_support_missing",message:"当前评测样本没有风险正样本，风险召回率无法评估"});
       else if (metrics.riskDetection.recall !== null && metrics.riskDetection.recall < 0.95) alerts.push({severity:"critical",code:"low_risk_recall",message:"风险召回率低于 95%，存在漏检风险，不应启用自动审核"});
       if (metrics.riskDetection.falseNegatives > 0) alerts.push({severity:"critical",code:"risk_false_negative",message:"本轮出现 "+metrics.riskDetection.falseNegatives+" 条风险漏报，必须复核对应样本"});
       if (previous?.exactMatchRate != null && metrics.exactMatchRate !== null && previous.exactMatchRate-metrics.exactMatchRate > 0.05) alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次同快照评测，标签精确匹配率下降超过 5 个百分点"});
@@ -795,7 +812,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     const previous=previousRows[0]?.metrics_json?JSON.parse(String(previousRows[0].metrics_json)) as {exactMatchRate?:number|null;riskDetection?:{recall?:number|null}}:null;
     const alerts:Array<{severity:"warning"|"critical";code:string;message:string}>=[];
     if(metrics.exactMatchRate!==null&&metrics.exactMatchRate<0.9)alerts.push({severity:"warning",code:"low_exact_match",message:"标签精确匹配率低于 90%，建议保持 Shadow 并检查错分样本"});
-    if(metrics.riskDetection.positiveSupport===0)alerts.push({severity:"warning",code:"risk_support_missing",message:"当前金标集没有正向风险样本，风险召回率无法评估"});
+    if(metrics.riskDetection.support===0)alerts.push({severity:"warning",code:"risk_support_missing",message:"当前金标集没有正向风险样本，风险召回率无法评估"});
     else if(metrics.riskDetection.recall!==null&&metrics.riskDetection.recall<0.95)alerts.push({severity:"critical",code:"low_risk_recall",message:"风险召回率低于 95%，存在漏检风险，不应启用自动审核"});
     if(metrics.riskDetection.falseNegatives>0)alerts.push({severity:"critical",code:"risk_false_negative",message:"本轮出现 "+metrics.riskDetection.falseNegatives+" 条风险漏报，必须复核对应样本"});
     if(previous?.exactMatchRate!=null&&metrics.exactMatchRate!==null&&previous.exactMatchRate-metrics.exactMatchRate>0.05)alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次评测，标签精确匹配率下降超过 5 个百分点"});
@@ -810,4 +827,56 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     return {ok:true,id,model:body.data.model,datasetVersion,sampleSize:metrics.sampleSize,metrics:evaluation,alerts,createdAt};
   });
 
+  // 采集来源注册表：所有写入均需管理员权限并留审计记录。
+  app.get("/api/admin/crawl-sources", { config: { scope: "admin", cache: { maxAge: 0 } } }, async (req, reply) => {
+    const parsed = z.object({ enabled: z.enum(["true", "false"]).optional(), limit: z.coerce.number().int().min(1).max(200).default(100), offset: z.coerce.number().int().min(0).max(100_000).default(0) }).safeParse(req.query ?? {});
+    if (!parsed.success) { reply.code(400); return { ok: false, error: "采集来源筛选参数无效" }; }
+    const items = await listCrawlSources(ctx.repo, { enabled: parsed.data.enabled === undefined ? undefined : parsed.data.enabled === "true", limit: parsed.data.limit, offset: parsed.data.offset });
+    return { ok: true, items };
+  });
+
+  app.post("/api/admin/crawl-sources", { config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const body = z.object({ url: z.string().trim().url().max(2048), kind: z.enum(["sitemap", "rss", "page"]), enabled: z.boolean().optional(), priority: z.number().int().min(-100).max(100).optional(), intervalMs: z.number().int().min(300_000).max(30 * 24 * 60 * 60_000).optional(), nextRunAt: z.number().int().min(0).optional() }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { ok: false, error: "采集来源参数无效", details: body.error.issues }; }
+    try {
+      await assertSafeCrawlSourceUrl(body.data.url);
+      const item = await upsertCrawlSource(ctx.repo, body.data);
+      await ctx.repo.audit({ ip: req.ip, actor: String(req.auth.actor ?? "admin"), actorKind: req.auth.kind, action: "crawl.source_upsert", target: item.id, diff: { kind: item.kind, enabled: item.enabled, priority: item.priority } });
+      return { ok: true, item };
+    } catch (error) { reply.code(400); return { ok: false, error: error instanceof Error ? error.message : "采集来源保存失败" }; }
+  });
+
+  app.patch("/api/admin/crawl-sources/:id", { config: { scope: "admin", rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params ?? {});
+    const body = z.object({ url: z.string().trim().url().max(2048).optional(), kind: z.enum(["sitemap", "rss", "page"]).optional(), enabled: z.boolean().optional(), priority: z.number().int().min(-100).max(100).optional(), intervalMs: z.number().int().min(300_000).max(30 * 24 * 60 * 60_000).optional(), nextRunAt: z.number().int().min(0).optional() }).refine(value => Object.keys(value).length > 0, "至少提供一个要更新的字段").safeParse(req.body ?? {});
+    if (!params.success) { reply.code(400); return { ok: false, error: "采集来源 ID 无效", details: params.error.issues }; }
+    if (!body.success) { reply.code(400); return { ok: false, error: "采集来源更新参数无效", details: body.error.issues }; }
+    try {
+      if (body.data.url) await assertSafeCrawlSourceUrl(body.data.url);
+      const item = await updateCrawlSource(ctx.repo, params.data.id, body.data);
+      if (!item) { reply.code(404); return { ok: false, error: "采集来源不存在" }; }
+      await ctx.repo.audit({ ip: req.ip, actor: String(req.auth.actor ?? "admin"), actorKind: req.auth.kind, action: "crawl.source_update", target: item.id, diff: { kind: item.kind, enabled: item.enabled, priority: item.priority } });
+      return { ok: true, item };
+    } catch (error) { reply.code(409); return { ok: false, error: error instanceof Error ? error.message : "采集来源更新冲突" }; }
+  });
+
+  app.delete("/api/admin/crawl-sources/:id", { config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params ?? {});
+    if (!params.success) { reply.code(400); return { ok: false, error: "采集来源 ID 无效", details: params.error.issues }; }
+    const deleted = await deleteCrawlSource(ctx.repo, params.data.id);
+    if (!deleted) { reply.code(404); return { ok: false, error: "采集来源不存在" }; }
+    await ctx.repo.audit({ ip: req.ip, actor: String(req.auth.actor ?? "admin"), actorKind: req.auth.kind, action: "crawl.source_delete", target: params.data.id, diff: {} });
+    return { ok: true, deleted: true };
+  });
+
+  app.get("/api/admin/crawl-moderation/policy", { config: { scope: "admin", cache: { maxAge: 0 } } }, async () => {
+    return { ok: true, policy: await loadCrawlAiModerationPolicy(ctx) };
+  });
+  app.put("/api/admin/crawl-moderation/policy", { config: { scope: "admin", rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const body = CrawlAiModerationPolicySchema.safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { ok: false, error: "AI 审核规则无效", details: body.error.issues }; }
+    await ctx.repo.setSystemState(CRAWL_AI_MODERATION_POLICY_KEY, body.data);
+    await ctx.repo.audit({ ip: req.ip, actor: String(req.auth.actor ?? "admin"), actorKind: req.auth.kind, action: "crawl.moderation_policy_update", target: CRAWL_AI_MODERATION_POLICY_KEY, diff: { enabled: body.data.enabled, mode: body.data.mode, autoApproveConfidence: body.data.autoApproveConfidence, rejectConfidence: body.data.rejectConfidence, minQualityScore: body.data.minQualityScore, maxAiReviewsPerRun: body.data.maxAiReviewsPerRun } });
+    return { ok: true, policy: body.data };
+  });
 };

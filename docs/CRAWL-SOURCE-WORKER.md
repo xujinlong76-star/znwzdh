@@ -1,0 +1,58 @@
+# 采集来源 Worker 运行边界
+
+## 当前实现
+
+- Worker 只认领已启用且到期的来源；认领由数据库租约完成，避免多实例同时处理同一来源。
+- 单轮默认最多认领 5 个来源，轮询间隔 60 秒；同一进程不允许轮次重入。
+- sitemap、RSS/Atom、普通页面分别解析 `loc`、条目级 `link/guid + title/description`、`a[href] + anchor text`，每个来源最多产生 100 个去重候选；候选元数据只绑定对应条目/链接，不把来源页的标题误当成候选站点标题。
+- 来源请求必须通过 `@navhub/ai` 的 `guardedFetch`，超时 8 秒、响应体上限 1 MiB、最多 3 次重定向；逐跳 DNS/IP 校验由 SSRF 层负责。
+- 解析阶段不对候选链接发起第二次网络请求。候选进入待审核队列；若管理端显式启用 AI 审核策略，Worker 可调用已配置模型生成 Shadow 评估并写入追加式决策账本，但不修改候选状态、不自动发布。
+- Worker 默认关闭。只有明确设置 `NAVHUB_CRAWL_SOURCE_WORKER_ENABLED=1` 才会启动；通用定时任务开关 `NAVHUB_JOBS_ENABLED` 不会隐式开启它。
+
+## 启用前检查
+
+1. 先完成数据库迁移并确认 `crawl_sources`、`site_discovery_candidates` 表存在。
+2. 先以少量、可信来源验证 sitemap/RSS/页面解析结果与候选去重。
+3. 观察 SSRF 出站观测、来源错误率、候选增长量及人工审核队列。
+4. 未完成抓取回归测试前，不要扩大来源数量或并发数。
+
+## 当前限制（明确记录，不视为已完成）
+
+- 失败按连续次数指数退避：首次 5 分钟、之后每次翻倍，最长 24 小时；成功后计数清零并恢复来源配置的 `interval_ms`。
+- 同一 host 使用数据库表 `crawl_domain_state` 共享租约，跨进程/实例最多一个抓取者；释放后保留 15 秒最小请求间隔。域名繁忙的来源延后 15 秒，不计入失败次数。
+- 简化来源轮询器没有死信队列；持久化 JobRunner 模式已有任务级 dead-letter / hold-for-review、Retry-After 退避，以及数据库共享的域名级熔断。熔断器在连续 5 次 retry 结算后打开，冷却从 5 分钟指数增加、上限 60 分钟；冷却后由域名租约保证最多一个任务试探，成功结算后清零。它不是完整令牌桶，也不替代对不同 HTTP 状态的精细策略。
+- AI 审核必须由管理员在 `/api/admin/crawl-moderation/policy` 显式启用；默认关闭，且策略模式被限制为 `shadow`。每轮审核数受 `maxAiReviewsPerRun` 限制，成功结果 24 小时内不重复计费；任何 AI 结论都不会自动批准或驳回候选。
+- 简化来源轮询器只提取来源文档中的链接和条目元数据；持久化 JobRunner 模式会进一步抓取候选页面正文并生成内容指纹。模型未配置、额度不足或审核异常时，候选仍保持 pending。
+- Worker 不会自动批准或拒绝候选；AI 审核仍保持 Shadow/人工决策边界。
+- 来源注册阶段的 DNS 检查不能代替请求时校验；任何新的抓取路径都不得绕过 `guardedFetch`。
+
+
+## 推荐生产模式：持久化 JobRunner 采集队列
+
+- 设置 `NAVHUB_CRAWL_WORKER_ENABLED=true`，并保持 `NAVHUB_JOBS_ENABLED` 开启；JobRunner 每 5 分钟调度一次 `crawl_worker`，默认单轮最多 10 个任务（任务上限 25）。
+- 可通过 `NAVHUB_CRAWL_SEEDS` 提供 JSON 数组种子：字符串默认按普通网页处理，也可用 `{"url":"https://example.org/feed.xml","kind":"rss"}` 指定 `sitemap` / `rss` / `page`。
+- 来源注册表到期项会先进入持久化 `crawl_tasks` 队列；任务使用数据库租约、域名间隔控制、有限重试、过期租约回收和 dead-letter / hold-for-review 状态。
+- 每个任务先检查 `robots.txt`；规则解析按 User-agent 专属组、最长匹配和 Allow 同长优先处理。robots 不可安全确认时 fail-closed；跨 origin 重定向后再次检查目标站 robots。
+- 页面请求统一经过 `guardedFetch`：10 秒超时、512 KiB 响应上限、最多 5 次重定向。对 429/5xx 等暂时错误读取 `Retry-After`，不提前于上游建议时间重试。
+- 页面正文会清理脚本/样式等非正文标记，生成 SHA-256 与 SimHash 指纹；近重复结果只作为审核证据，不自动隐藏或合并候选。
+- AI Shadow 审核可使用页面标题、描述和截断正文；模型结果追加写入审核账本及候选 evidence，不改变 pending 状态、不自动发布。模型额度不足或失败时保留候选并记录状态。
+
+## 域名熔断与运营监控
+
+- 持久化任务队列使用 `crawl_domain_circuit` 保存每个 host 的连续失败次数、打开截止时间和最近失败时间；所有 Worker 实例读取同一份状态。
+- 连续 5 次以 `retry` 结算会打开熔断，初始冷却 5 分钟，后续失败指数增加，最长 60 分钟。熔断期间该 host 的新任务不会被认领；其他 host 不受影响。
+- 冷却到期后允许一个任务探测恢复，仍由 `crawl_domain_state` 的域名租约和最小间隔保证同域名串行；任务成功结算后清零失败计数与打开状态。
+- 管理端 `GET /api/admin/crawl/overview` 增加 `domainCircuit` 指标：已跟踪域名数、当前打开熔断数、最大连续失败次数及阈值/冷却参数。接口仅 admin scope 可访问。
+- 同一总览增加 `queueHealth`：待处理（queued/retry）任务数、最老待处理任务年龄、已过期但尚未回收的租约数、死信数及人工复核暂存数。它用于区分“队列积压”“Worker 租约异常”和“需要人工处理”的不同运营问题；这些计数是当前快照，不应当作吞吐量或成功率时间序列。 认领 SQL 会在扫描窗口前排除仍处于域名频控/租约/熔断期的 host，避免大量高优先级阻塞域名任务长期占满有限扫描窗口，使健康域名任务饥饿；认领事务内仍会再次锁定并校验域名状态。
+- 熔断是保护性调度，不代表永久屏蔽站点；持续失败任务仍受任务自身最大尝试次数与 dead-letter 策略约束。
+
+## 两种 Worker 开关不要混用
+
+- `NAVHUB_CRAWL_WORKER_ENABLED=true`：推荐的持久化任务队列模式，依赖 JobRunner。
+- `NAVHUB_CRAWL_SOURCE_WORKER_ENABLED=1`：简化来源轮询器，只解析来源文档并写入候选，不抓取候选页正文；仅用于兼容/诊断。
+- 生产环境优先启用持久化任务队列模式。不要同时开启两种模式；若误将两种开关同时打开，API 启动时会优先保留持久化 JobRunner，并跳过简化轮询器。
+
+
+## 回滚
+
+将 `NAVHUB_CRAWL_SOURCE_WORKER_ENABLED` 设为 `0` 或移除该环境变量并重启 API。停止 Worker 不会删除来源或已收集候选。

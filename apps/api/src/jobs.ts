@@ -47,6 +47,8 @@ import {
   handleDramaCalendarRefresh,
   handleDramaRankingsRefresh,
   handlePluginUrlHealth,
+  handleCrawlWorker,
+  type CrawlSeed,
 } from "./jobs/index.ts";
 
 export {
@@ -63,6 +65,7 @@ export {
   handleDramaCalendarRefresh,
   handleDramaRankingsRefresh,
   handlePluginUrlHealth,
+  handleCrawlWorker,
 };
 
 /** 仓储返回的站点行类型：显式取一次，避免重构期返回类型退化时回调参数变成隐式 any */
@@ -147,9 +150,9 @@ export interface PatrolSelection {
   depth: { unchecked: number; checked: number };
 }
 
-export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit" | "backup_restore" | "hotlist_refresh" | "daily_brief" | "drama_update_check" | "drama_calendar_refresh" | "drama_rankings_refresh" | "plugin_url_health";
+export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit" | "backup_restore" | "hotlist_refresh" | "daily_brief" | "drama_update_check" | "drama_calendar_refresh" | "drama_rankings_refresh" | "plugin_url_health" | "crawl_worker";
 
-export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit", "backup_restore", "hotlist_refresh", "daily_brief", "drama_update_check", "drama_calendar_refresh", "drama_rankings_refresh", "plugin_url_health"];
+export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit", "backup_restore", "hotlist_refresh", "daily_brief", "drama_update_check", "drama_calendar_refresh", "drama_rankings_refresh", "plugin_url_health", "crawl_worker"];
 
 /** data_retention 任务的参数：mode 决定走哪条路，apply 决定是否真的动手 */
 export interface DataRetentionPayload {
@@ -227,6 +230,15 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   { kind: "drama_rankings_refresh", intervalMs: 86_400_000 },
 ];
 
+/** 在运行时读取开关：main.ts 先加载 .env，再创建/启动 JobRunner。 */
+export function getActiveCronSchedules(): CronScheduleConfig[] {
+  const schedules = [...DEFAULT_CRON_SCHEDULES];
+  if (process.env.NAVHUB_CRAWL_WORKER_ENABLED === "true") {
+    schedules.push({ kind: "crawl_worker", intervalMs: 5 * 60_000, payload: { maxTasks: 10 } });
+  }
+  return schedules;
+}
+
 /**
  * 只能手动触发、**绝不进 DEFAULT_CRON_SCHEDULES** 的 kind。
  *
@@ -250,7 +262,7 @@ export const MANUAL_ONLY_KINDS: JobKind[] = ["backup_restore"];
  * 因此这里不改变个人/NAS 部署的历史行为。
  */
 export function jobEnqueueScope(kind: JobKind, payload: unknown): "write" | "admin" {
-  if (kind === "backup_restore" || kind === "purge_trash") return "admin";
+  if (kind === "backup_restore" || kind === "purge_trash" || kind === "crawl_worker") return "admin";
   if (kind === "data_retention") {
     const apply =
       typeof payload === "object" && payload !== null && (payload as { apply?: unknown }).apply === true;
@@ -804,6 +816,9 @@ export class JobRunner {
     this.taskRegistry.register("plugin_url_health", async ({ run }) => {
       await this.runPluginUrlHealth(run);
     });
+    this.taskRegistry.register("crawl_worker", async ({ payload, run }) => {
+      await handleCrawlWorker(this.ctx, run, (payload ?? {}) as { seeds?: CrawlSeed[]; maxTasks?: number });
+    });
     this.taskRegistry.register("user_data_audit", async () => {
       await this.runUserDataAudit();
     });
@@ -1031,7 +1046,7 @@ export class JobRunner {
   /** 检查内置 Cron 定时计划并在到期时入队任务（tick 与独立排期定时器共用） */
   private async checkRecurringSchedules(): Promise<void> {
     const now = Date.now();
-    for (const schedule of DEFAULT_CRON_SCHEDULES) {
+    for (const schedule of getActiveCronSchedules()) {
       const stateKey = `cron:last_run:${schedule.kind}`;
       const lastRun = await this.ctx.repo.getSystemState<number>(stateKey);
       if (!lastRun || now - lastRun >= schedule.intervalMs) {

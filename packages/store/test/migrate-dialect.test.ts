@@ -15,7 +15,7 @@
  * 某天突然不对——所以必须用假 db 把分派行为钉住。
  */
 import { describe, expect, it } from "vitest";
-import { migrateColumns, migrateSiteIndexes } from "../src/migrate.ts";
+import { migrateColumns, migrateSiteIndexes, migrateCrawlSourceRegistryUpgrade } from "../src/migrate.ts";
 
 function pgRecorder() {
   const calls: string[] = [];
@@ -121,5 +121,52 @@ describe("migrateColumns：按方言分派", () => {
     const added = await migrateColumns(db);
     expect(added.length).toBeGreaterThan(0);
     expect(executed.every((s) => s.startsWith("ALTER TABLE"))).toBe(true);
+  });
+});
+
+
+describe("migrateCrawlSourceRegistryUpgrade：补齐旧版来源表", () => {
+  it("pg：为已存在的旧表补齐 canonical URL、租约与失败计数列", async () => {
+    const calls: string[] = [];
+    const db = {
+      dialect: "pg",
+      pg: {
+        query: async (sql: string) => {
+          calls.push(sql);
+          if (sql.includes("information_schema.columns")) return { rows: [], rowCount: 0 };
+          return { rows: [], rowCount: 0 };
+        },
+      },
+    };
+    await migrateCrawlSourceRegistryUpgrade(db);
+    expect(calls.some(sql => sql.includes("ALTER TABLE crawl_sources ADD COLUMN canonical_url TEXT"))).toBe(true);
+    expect(calls.some(sql => sql.includes("ALTER TABLE crawl_sources ADD COLUMN lease_owner TEXT"))).toBe(true);
+    expect(calls.some(sql => sql.includes("ALTER TABLE crawl_sources ADD COLUMN lease_expires_at BIGINT"))).toBe(true);
+    expect(calls.some(sql => sql.includes("ALTER TABLE crawl_sources ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0"))).toBe(true);
+    expect(calls.some(sql => sql.includes("UPDATE crawl_sources SET canonical_url = url"))).toBe(true);
+    expect(calls.some(sql => sql.includes("CREATE UNIQUE INDEX IF NOT EXISTS crawl_sources_canonical_url_idx"))).toBe(true);
+  });
+
+  it("sqlite/libsql：补齐同一组字段并回填 canonical URL", async () => {
+    const calls: string[] = [];
+    const existing = new Set(["id", "url", "kind", "enabled", "priority", "interval_ms", "next_run_at", "last_run_at", "last_status", "last_error", "created_at", "updated_at"]);
+    const db = {
+      dialect: "libsql",
+      sqlite: {
+        prepare: () => ({ all: () => [...existing].map(name => ({ name })) }),
+        exec: (sql: string) => {
+          calls.push(sql);
+          const match = /ALTER TABLE crawl_sources ADD COLUMN (\\w+)/.exec(sql);
+          if (match) existing.add(match[1]!);
+        },
+      },
+    };
+    await migrateCrawlSourceRegistryUpgrade(db);
+    expect(calls.some(sql => sql.includes("ADD COLUMN canonical_url TEXT"))).toBe(true);
+    expect(calls.some(sql => sql.includes("ADD COLUMN lease_owner TEXT"))).toBe(true);
+    expect(calls.some(sql => sql.includes("ADD COLUMN lease_expires_at INTEGER"))).toBe(true);
+    expect(calls.some(sql => sql.includes("ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0"))).toBe(true);
+    expect(calls.some(sql => sql.includes("UPDATE crawl_sources SET canonical_url = url"))).toBe(true);
+    expect(calls.some(sql => sql.includes("CREATE UNIQUE INDEX IF NOT EXISTS crawl_sources_canonical_url_idx"))).toBe(true);
   });
 });

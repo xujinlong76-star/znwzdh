@@ -72,6 +72,11 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   // 邮箱验证状态（注册/找回密码流程用）：0=未验证/待验证，1=已验证。
   // 老库补列默认 0：既有 OAuth/管理员行不会因为新流程被误判成「未验证」而无法登录。
   { table: "users", column: "email_verified", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
+  // Durable crawl source worker fields added after the legacy source registry migration.
+  { table: "crawl_sources", column: "canonical_url", sqlite: "TEXT", pg: "TEXT" },
+  { table: "crawl_sources", column: "lease_owner", sqlite: "TEXT", pg: "TEXT" },
+  { table: "crawl_sources", column: "lease_expires_at", sqlite: "INTEGER", pg: "BIGINT" },
+  { table: "crawl_sources", column: "consecutive_failures", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   // 任务退避：失败后延迟到 next_run_at 才重新可被认领（见 jobs.ts 的指数退避）
   { table: "jobs", column: "next_run_at", sqlite: "INTEGER", pg: "BIGINT" },
   // API 凭据治理：
@@ -384,6 +389,23 @@ export async function migrateCrawlSources(db: { dialect: string; sqlite?: any; p
     "CREATE INDEX IF NOT EXISTS crawl_sources_enabled_next_idx ON crawl_sources(enabled, next_run_at)",
   ];
   for (const sql of stmts) await execSql(db, sql);
+}
+
+/**
+ * 将旧版 crawl_sources 升级为持久化 Worker 所需的来源注册表。
+ * 旧迁移可能已经创建了同名表，因此 CREATE TABLE IF NOT EXISTS 不足以补齐列；
+ * 本迁移通过 COLUMN_ALTERS 逐列检查并安全补齐，再回填 canonical_url 和唯一索引。
+ */
+export async function migrateCrawlSourceRegistryUpgrade(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  await migrateColumns(db);
+  await execSql(
+    db,
+    "UPDATE crawl_sources SET canonical_url = url WHERE canonical_url IS NULL OR canonical_url = ''",
+  );
+  await execSql(
+    db,
+    "CREATE UNIQUE INDEX IF NOT EXISTS crawl_sources_canonical_url_idx ON crawl_sources(canonical_url)",
+  );
 }
 
 /**

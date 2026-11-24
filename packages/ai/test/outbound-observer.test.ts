@@ -20,11 +20,12 @@ import { SsrfBlockedError, guardedFetch, setOutboundObserver, type OutboundObser
  */
 afterAll(() => setOutboundObserver(null));
 
-function startServer(): Promise<{ server: Server; base: string; port: number }> {
+function startServer(): Promise<{ server: Server; base: string; port: number; finalHits: () => number }> {
+  let finalHits = 0;
   const server = createServer((req, res) => {
     const path = req.url ?? "";
     if (path === "/redirect-a") { res.writeHead(302, { location: "/final" }); res.end(); return; }
-    if (path === "/final") { res.writeHead(200, { "content-type": "text/plain" }); res.end("hello"); return; }
+    if (path === "/final") { finalHits++; res.writeHead(200, { "content-type": "text/plain" }); res.end("hello"); return; }
     if (path === "/gone") { res.writeHead(404, { "content-type": "text/plain" }); res.end("nope"); return; }
     if (path === "/big") { res.writeHead(200, { "content-type": "text/plain" }); res.end("x".repeat(4096)); return; }
     if (path === "/loop") { res.writeHead(302, { location: "/loop" }); res.end(); return; }
@@ -34,7 +35,7 @@ function startServer(): Promise<{ server: Server; base: string; port: number }> 
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
       const port = (server.address() as { port: number }).port;
-      resolve({ server, port, base: "http://127.0.0.1:" + port });
+      resolve({ server, port, base: "http://127.0.0.1:" + port, finalHits: () => finalHits });
     });
   });
 }
@@ -71,6 +72,27 @@ describe("出站观测：结果分类", () => {
       expect(o.method).toBe("GET");
       expect(o.host).toContain("127.0.0.1");
       expect(o.durationMs).toBeGreaterThanOrEqual(0);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  it("重定向策略回调在下一跳请求前执行，回调拒绝时不访问目标", async () => {
+    const { server, base, finalHits } = await startServer();
+    try {
+      const visited: Array<{ from: string; to: string; status: number }> = [];
+      await expect(guardedFetch(base + "/redirect-a", guard, {
+        onRedirect: async (fromUrl, toUrl, status) => {
+          visited.push({ from: fromUrl, to: toUrl, status });
+          throw new Error("redirect policy blocked");
+        },
+      })).rejects.toThrow("redirect policy blocked");
+      expect(visited).toEqual([{
+        from: base + "/redirect-a",
+        to: base + "/final",
+        status: 302,
+      }]);
+      expect(finalHits()).toBe(0);
     } finally {
       await new Promise((r) => server.close(r));
     }

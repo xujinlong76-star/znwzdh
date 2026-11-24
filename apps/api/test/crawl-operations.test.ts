@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scoreCrawlCandidate, selectStratifiedCrawlCandidates, selectGoldEvaluationSample, moderationVerdictToPrediction, buildModerationErrorAnalysis, summarizeModerationEvaluationUsage } from "../src/routes/crawl-operations.ts";
+import { scoreCrawlCandidate, selectStratifiedCrawlCandidates, selectGoldEvaluationSample, moderationVerdictToPrediction, buildModerationErrorAnalysis, summarizeModerationEvaluationUsage, assertSafeCrawlSourceUrl } from "../src/routes/crawl-operations.ts";
 
 describe("crawl candidate quality hints", () => {
   it("rewards complete, substantial HTTPS pages with explainable reasons", () => {
@@ -119,5 +119,25 @@ describe("moderation evaluation usage accounting", () => {
     expect(summarizeModerationEvaluationUsage({calls:2,prompt_tokens:1000,completion_tokens:500,priced_calls:3,cost_rmb:0.0123,failed_calls:5})).toEqual({
       calls:2,promptTokens:1000,completionTokens:500,totalTokens:1500,costRmb:0.0123,pricedCalls:2,unpricedCalls:0,failedCalls:2,
     });
+  });
+});
+
+
+describe("采集来源 SSRF 注册前校验", () => {
+  it("拒绝环回、云元数据和危险服务端口", async () => {
+    await expect(assertSafeCrawlSourceUrl("http://127.0.0.1/")).rejects.toThrow();
+    await expect(assertSafeCrawlSourceUrl("http://169.254.169.254/latest/meta-data/")).rejects.toThrow();
+    await expect(assertSafeCrawlSourceUrl("http://example.com:6379/")).rejects.toThrow();
+  });
+
+  it("拒绝 IPv6 环回、私网地址、非 HTTP 协议和 URL 凭证", async () => {
+    await expect(assertSafeCrawlSourceUrl("http://[::1]/")).rejects.toThrow();
+    await expect(assertSafeCrawlSourceUrl("http://10.0.0.8/")).rejects.toThrow();
+    await expect(assertSafeCrawlSourceUrl("ftp://example.com/file")).rejects.toThrow();
+    await expect(assertSafeCrawlSourceUrl("https://user:pass@example.com/")).rejects.toThrow();
+  });
+
+  it("拒绝 DNS 无法解析的主机，采用 fail-closed", async () => {
+    await expect(assertSafeCrawlSourceUrl("https://crawl-source.invalid/sitemap.xml")).rejects.toThrow();
   });
 });

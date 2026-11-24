@@ -28,6 +28,8 @@ import {
   topFrequentVisits,
   type RecentVisit,
 } from '@/lib/offline-recent'
+import { getIdentity } from '@/lib/identity'
+import { reportClick } from '@/lib/navhub-api'
 import { useExternalLinkTarget } from '@/lib/user-preferences'
 
 const QuickDockAllDialog = dynamic(
@@ -249,14 +251,15 @@ export const HomeQuickDock = memo(function HomeQuickDock({
               href={safeHref(item.href)}
               target={externalTarget}
               rel="noopener noreferrer"
-              onClick={() =>
+              onClick={() => {
                 recordOfflineVisit({
                   id: item.id,
                   title: item.title,
                   href: item.href,
                   icon: item.icon,
                 })
-              }
+                reportClick(item.id, getIdentity())
+              }}
               className="group relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border/50 bg-background/80 px-2.5 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent/50"
             >
               <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">

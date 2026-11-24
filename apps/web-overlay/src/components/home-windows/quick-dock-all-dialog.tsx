@@ -16,6 +16,8 @@ import {
 import { SiteFavicon } from '@/components/site-favicon'
 import { safeHref } from '@/lib/safe-url'
 import { recordOfflineVisit, type RecentVisit } from '@/lib/offline-recent'
+import { getIdentity } from '@/lib/identity'
+import { reportClick } from '@/lib/navhub-api'
 import type { SpeedDialSite } from '@/lib/speed-dial-order'
 
 export interface QuickDockAllDialogProps {
@@ -66,14 +68,15 @@ export function QuickDockAllDialog({
                       href={safeHref(site.href)}
                       target={externalTarget}
                       rel="noopener noreferrer"
-                      onClick={() =>
+                      onClick={() => {
                         recordOfflineVisit({
                           id: site.id,
                           title: site.title,
                           href: site.href,
                           icon: site.icon,
                         })
-                      }
+                        reportClick(site.id, getIdentity())
+                      }}
                       className="flex min-h-10 items-center gap-2 rounded-lg border border-border/60 bg-card/70 px-2.5 py-1.5 text-xs font-medium hover:border-primary/40 hover:bg-accent/50"
                     >
                       <SiteFavicon
@@ -109,7 +112,10 @@ export function QuickDockAllDialog({
                     href={safeHref(visit.href)}
                     target={externalTarget}
                     rel="noopener noreferrer"
-                    onClick={() => recordOfflineVisit(visit)}
+                    onClick={() => {
+                      recordOfflineVisit(visit)
+                      reportClick(visit.id, getIdentity())
+                    }}
                     className="flex min-h-10 items-center gap-2 rounded-lg border border-border/60 bg-card/70 px-2.5 py-1.5 text-xs font-medium hover:border-primary/40 hover:bg-accent/50"
                   >
                     <SiteFavicon
@@ -141,7 +147,10 @@ export function QuickDockAllDialog({
                     href={safeHref(visit.href)}
                     target={externalTarget}
                     rel="noopener noreferrer"
-                    onClick={() => recordOfflineVisit(visit)}
+                    onClick={() => {
+                      recordOfflineVisit(visit)
+                      reportClick(visit.id, getIdentity())
+                    }}
                     className="flex min-h-10 items-center gap-2 rounded-lg border border-border/60 bg-card/70 px-2.5 py-1.5 text-xs font-medium hover:border-primary/40 hover:bg-accent/50"
                   >
                     <SiteFavicon

@@ -28,6 +28,10 @@ import type { RecentVisit } from '../src/lib/offline-recent'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DOCK_SRC = readFileSync(join(HERE, '..', 'src', 'components', 'home-quick-dock.tsx'), 'utf8')
+const DIALOG_SRC = readFileSync(
+  join(HERE, '..', 'src', 'components', 'home-windows', 'quick-dock-all-dialog.tsx'),
+  'utf8',
+)
 
 const NOW = Date.now()
 const MIN = 60_000
@@ -141,5 +145,27 @@ describe('接线守卫：默认 tab 只做一次、手动选择不被覆盖、�
     expect(speedAt).toBeGreaterThan(0)
     expect(speedAt).toBeLessThan(frequentAt)
     expect(frequentAt).toBeLessThan(recentAt)
+  })
+})
+
+describe('接线守卫：坞内点击记快照 + 上报点击，与卡片/常用/最近同一路', () => {
+  it('主坞三 tab 共用同一 onClick：记快照后上报 reportClick(item.id)', () => {
+    expect(DOCK_SRC).toContain("import { getIdentity } from '@/lib/identity'")
+    expect(DOCK_SRC).toContain("import { reportClick } from '@/lib/navhub-api'")
+    expect(DOCK_SRC).toContain('recordOfflineVisit({')
+    expect(DOCK_SRC).toContain('reportClick(item.id, getIdentity())')
+    // 4 处漏报只此一处在主坞：reportClick 在主坞源码里恰好出现 1 次（import 行不含调用括号）
+    expect(DOCK_SRC.match(/reportClick\(item\.id, getIdentity\(\)\)/g)?.length).toBe(1)
+  })
+
+  it('全部弹窗三区各上报一次：极速置顶 site.id、常用/最近 visit.id', () => {
+    expect(DIALOG_SRC).toContain("import { getIdentity } from '@/lib/identity'")
+    expect(DIALOG_SRC).toContain("import { reportClick } from '@/lib/navhub-api'")
+    expect(DIALOG_SRC).toContain('reportClick(site.id, getIdentity())')
+    expect(DIALOG_SRC.match(/reportClick\(site\.id, getIdentity\(\)\)/g)?.length).toBe(1)
+    // 常用与最近两区共用 visit 变量：恰好 2 次
+    expect(DIALOG_SRC.match(/reportClick\(visit\.id, getIdentity\(\)\)/g)?.length).toBe(2)
+    // 每处上报都紧跟在记快照之后，不只记快照不上报
+    expect(DIALOG_SRC.match(/recordOfflineVisit\(visit\)\s*\n\s*reportClick\(visit\.id, getIdentity\(\)\)/g)?.length).toBe(2)
   })
 })

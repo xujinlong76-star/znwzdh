@@ -532,4 +532,38 @@ describe('tablist A-2：其余 tablist 按 plugin-detail-view 模板补 roving t
     expect(handler).toContain('tabs[next]?.focus()')
     expect(handler).not.toContain('.click()')
   })
+
+  it('bookmark-importer 三组 tablist：共用泛型 helper，三容器各挂 onKeyDown', () => {
+    const src = read('src/components/bookmark-importer.tsx')
+    expect(src).toContain('const handleTabListKeyDown = <K extends string,>(')
+    expect(src).toContain("const switchSourceKind = (key: 'browser' | 'social') => {")
+    // 三容器接线：导入目标 / 收藏来源 / 输入方式
+    expect(src).toContain('onKeyDown={(e) => handleTabListKeyDown(e, MODE_META.map((m) => m.key), changeMode)}')
+    expect(src).toContain("onKeyDown={(e) => handleTabListKeyDown(e, ['browser', 'social'] as const, switchSourceKind)}")
+    expect(src).toContain("onKeyDown={(e) => handleTabListKeyDown(e, ['file', 'paste'] as const, setInputTab)}")
+    // 点击与键盘共用：来源切换的失败/错误清理不丢
+    expect(src).toContain('onClick={() => switchSourceKind(key)}')
+    expect(src).toContain('setSocialFailures([])')
+    // roving tabIndex：目标与来源各一处模板（同用 active），输入方式一处
+    expect(count(src, 'tabIndex={active ? 0 : -1}')).toBe(2)
+    expect(count(src, 'tabIndex={inputTab === key ? 0 : -1}')).toBe(1)
+    const handler = src.slice(
+      src.indexOf('const handleTabListKeyDown'),
+      src.indexOf('\n  }', src.indexOf('const handleTabListKeyDown')),
+    )
+    expect(handler).toContain("target.getAttribute('role') !== 'tab'")
+    expect(handler).toContain("querySelectorAll<HTMLButtonElement>('[role=\"tab\"]')")
+    expect(handler).not.toContain('[role="tab"]:not([disabled])')
+    expect(handler).toContain('tabs.map((t) => !t.disabled)')
+    expect(handler).toContain('const step = (from: number, dir: 1 | -1): number => {')
+    expect(handler).toContain('const firstEnabled = enabled.findIndex(Boolean)')
+    expect(handler).toContain('const lastEnabled = enabled.lastIndexOf(true)')
+    for (const key of ["'ArrowRight'", "'ArrowLeft'", "'Home'", "'End'"]) {
+      expect(handler).toContain(`event.key === ${key}`)
+    }
+    expect(handler).toContain('event.preventDefault()')
+    expect(handler).toContain('select(keys[next])')
+    expect(handler).toContain('tabs[next]?.focus()')
+    expect(handler).not.toContain('.click()')
+  })
 })

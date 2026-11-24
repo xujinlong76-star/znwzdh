@@ -169,7 +169,7 @@ export function CategorySiteFilterBar({
       {/* 全局检索出口：本地即时筛选只覆盖当前页，跨分页必须走服务端 /search。
           不写清楚这一点，用户在大分类里搜不到第二页的站点会以为「本站没有」。 */}
       {categorySlug ? (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-[0.6875rem] text-muted-foreground">
           <span className="flex items-center gap-1.5 min-w-0">
             <Layers className="w-3.5 h-3.5 text-primary shrink-0" aria-hidden />
             <span className="truncate">
@@ -182,7 +182,7 @@ export function CategorySiteFilterBar({
           </span>
           <Link
             href={searchHref({ q: query.trim(), category: categorySlug })}
-            className="inline-flex items-center gap-1 shrink-0 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/20"
+            className="inline-flex items-center gap-1 shrink-0 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[0.6875rem] font-medium text-primary transition-colors hover:bg-primary/20"
           >
             {query.trim() ? `在全部「${categoryName}」站点中搜索「${query.trim()}」` : `在全部「${categoryName}」站点中检索`}
             <ArrowRight className="w-3 h-3" aria-hidden />
@@ -197,12 +197,12 @@ export function CategorySiteFilterBar({
           ariaLabel="分区筛选"
           showArrows={false}
         >
-          <span className="text-[11px] text-muted-foreground shrink-0">分区筛选:</span>
+          <span className="text-[0.6875rem] text-muted-foreground shrink-0">分区筛选:</span>
           <button
             type="button"
             onClick={() => handleSubcategoryClick(null)}
             className={cn(
-              'px-2.5 py-1 rounded-lg text-[11px] shrink-0 transition-colors cursor-pointer flex items-center gap-1 border',
+              'px-2.5 py-1 rounded-lg text-[0.6875rem] shrink-0 transition-colors cursor-pointer flex items-center gap-1 border',
               selectedSubcategoryId === null
                 ? 'bg-primary text-primary-foreground border-primary font-medium shadow-2xs'
                 : 'bg-muted/40 text-muted-foreground hover:text-foreground border-border/60 hover:bg-muted',
@@ -211,7 +211,7 @@ export function CategorySiteFilterBar({
             <span>全部</span>
             <span
               className={cn(
-                'text-[10px] font-mono',
+                'text-[0.625rem] font-mono',
                 selectedSubcategoryId === null ? 'text-primary-foreground/80' : 'text-muted-foreground',
               )}
             >
@@ -226,7 +226,7 @@ export function CategorySiteFilterBar({
                 type="button"
                 onClick={() => handleSubcategoryClick(sub.id)}
                 className={cn(
-                  'px-2.5 py-1 rounded-lg text-[11px] shrink-0 transition-colors cursor-pointer flex items-center gap-1 border',
+                  'px-2.5 py-1 rounded-lg text-[0.6875rem] shrink-0 transition-colors cursor-pointer flex items-center gap-1 border',
                   isSelected
                     ? 'bg-primary text-primary-foreground border-primary font-medium shadow-2xs'
                     : 'bg-muted/40 text-muted-foreground hover:text-foreground border-border/60 hover:bg-muted',
@@ -235,7 +235,7 @@ export function CategorySiteFilterBar({
                 <span>{sub.title}</span>
                 <span
                   className={cn(
-                    'text-[10px] font-mono',
+                    'text-[0.625rem] font-mono',
                     isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground',
                   )}
                 >
@@ -254,7 +254,7 @@ export function CategorySiteFilterBar({
           ariaLabel="标签精选"
           showArrows={false}
         >
-          <span className="text-[11px] text-muted-foreground shrink-0">标签精选:</span>
+          <span className="text-[0.6875rem] text-muted-foreground shrink-0">标签精选:</span>
           {topTags.map(([tag, count]) => {
             const isSelected = selectedTag === tag
             return (
@@ -263,14 +263,14 @@ export function CategorySiteFilterBar({
                 type="button"
                 onClick={() => handleTagClick(tag)}
                 className={cn(
-                  'px-2 py-0.5 rounded-md text-[11px] shrink-0 transition-colors cursor-pointer flex items-center gap-1 border',
+                  'px-2 py-0.5 rounded-md text-[0.6875rem] shrink-0 transition-colors cursor-pointer flex items-center gap-1 border',
                   isSelected
                     ? 'bg-primary text-primary-foreground border-primary font-medium shadow-2xs'
                     : 'bg-muted/40 text-muted-foreground hover:text-foreground border-border/60 hover:bg-muted'
                 )}
               >
                 <span>#{tag}</span>
-                <span className={cn('text-[10px] font-mono', isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground')}>
+                <span className={cn('text-[0.625rem] font-mono', isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground')}>
                   {count}
                 </span>
               </button>

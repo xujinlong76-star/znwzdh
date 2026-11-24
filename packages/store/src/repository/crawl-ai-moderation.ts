@@ -108,7 +108,7 @@ export async function annotateCrawlModerationGoldCase(
   await repo.run(
     `INSERT INTO crawl_moderation_gold_annotations
       (id,case_id,annotator_id,label,risk,evidence,created_at) VALUES (?,?,?,?,?,?,?)`,
-    [input.id,input.caseId,input.annotatorId,input.label,input.risk ? 1 : 0,
+    [input.id,input.caseId,input.annotatorId,input.label,input.risk,
      input.evidence.slice(0,2000),input.createdAt ?? Date.now()],
   );
   const rows = await repo.raw(
@@ -137,7 +137,9 @@ export async function annotateCrawlModerationGoldCase(
 export async function adjudicateCrawlModerationGoldCase(
   repo: Repository, input: { caseId: string; adjudicatorId: string; label: CrawlModerationGoldLabel; risk: boolean; reason: string },
 ): Promise<boolean> {
-  const result = await repo.run(
+  const rows = await repo.raw("SELECT status FROM crawl_moderation_gold_cases WHERE id = ? LIMIT 1", [input.caseId]);
+  if (rows.length !== 1 || String(rows[0].status) !== "needs_adjudication") return false;
+  await repo.run(
     `UPDATE crawl_moderation_gold_cases
      SET status='gold_ready',final_label=?,final_risk=?,adjudicator_id=?,adjudication_reason=?,
          adjudicated_at=?,updated_at=?
@@ -145,8 +147,7 @@ export async function adjudicateCrawlModerationGoldCase(
     [input.label,input.risk,input.adjudicatorId,input.reason.slice(0,2000),
      Date.now(),Date.now(),input.caseId],
   );
-  const rows = await repo.raw("SELECT status FROM crawl_moderation_gold_cases WHERE id = ? LIMIT 1", [input.caseId]);
-  return rows.length === 1 && String(rows[0].status) === "gold_ready";
+  return true;
 }
 
 export async function listCrawlModerationGoldAnnotations(

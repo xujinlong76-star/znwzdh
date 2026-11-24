@@ -4,6 +4,8 @@ import { z } from "zod";
 import {
   countSiteDiscoveryCandidates, getSiteDiscoveryCandidateForUpdate,
   recordCrawlAiModerationDecision, listCrawlAiModerationDecisions,
+  createCrawlModerationGoldCase, listCrawlModerationGoldCases, getCrawlModerationGoldCase,
+  annotateCrawlModerationGoldCase, adjudicateCrawlModerationGoldCase, listCrawlModerationGoldAnnotations,
   listSiteDiscoveryCandidates, reviewSiteDiscoveryCandidate,
 } from "@navhub/store";
 import type { AppContext } from "../context.ts";
@@ -218,4 +220,86 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       diff:{decision:body.data.decision,reason:body.data.reason ?? null,previousStatus:"pending"} });
     return {ok:true,candidate:{id:result.candidate.id,status:result.candidate.status,reviewedAt:result.candidate.reviewedAt}};
   });
+  const safeGoldText = (value: string | undefined, max: number) => {
+    if (value === undefined) return undefined;
+    const text = value.trim();
+    if (/(https?:\/\/|www\.)/i.test(text) || /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text) || /\b(?:\+?\d[\d -]{8,}\d)\b/.test(text)) {
+      throw new Error("金标文本疑似包含 URL、邮箱或电话号码，请先脱敏");
+    }
+    return text.slice(0,max);
+  };
+
+  app.get("/api/admin/crawl/moderation-gold-cases", { config: { scope: "admin", cache: { maxAge: 0 } } }, async (req, reply) => {
+    const parsed = z.object({status:z.enum(["pending","annotating","needs_adjudication","gold_ready"]).optional(),
+      limit:z.coerce.number().int().min(1).max(100).default(50),offset:z.coerce.number().int().min(0).max(100_000).default(0)}).safeParse(req.query ?? {});
+    if(!parsed.success){reply.code(400);return {ok:false,error:"金标队列筛选参数无效"};}
+    const items=await listCrawlModerationGoldCases(ctx.repo,parsed.data);
+    return {ok:true,items:items.map(row=>({id:String(row.id),sourceFingerprint:String(row.source_fingerprint),
+      title:row.title==null?null:String(row.title),description:row.description==null?null:String(row.description),
+      category:row.category==null?null:String(row.category),sanitizedExcerpt:row.sanitized_excerpt==null?null:String(row.sanitized_excerpt),
+      status:String(row.status),annotationCount:Number(row.annotation_count??0),finalLabel:row.final_label==null?null:String(row.final_label),
+      finalRisk:row.final_risk==null?null:Boolean(row.final_risk),createdAt:Number(row.created_at),updatedAt:Number(row.updated_at)}))};
+  });
+
+  app.post("/api/admin/crawl/moderation-gold-cases", {config:{scope:"admin",rateLimit:{max:30,timeWindow:"1 minute"}}}, async(req,reply)=>{
+    const parsed=z.object({sourceFingerprint:z.string().regex(/^[a-f0-9]{32,128}$/i),title:z.string().max(200).optional(),
+      description:z.string().max(1000).optional(),category:z.string().max(80).optional(),sanitizedExcerpt:z.string().max(3000).optional()}).safeParse(req.body??{});
+    if(!parsed.success){reply.code(400);return {ok:false,error:"金标样本参数无效",details:parsed.error.issues};}
+    let safe:{title?:string;description?:string;category?:string;sanitizedExcerpt?:string};
+    try{safe={title:safeGoldText(parsed.data.title,200),description:safeGoldText(parsed.data.description,1000),
+      category:safeGoldText(parsed.data.category,80),sanitizedExcerpt:safeGoldText(parsed.data.sanitizedExcerpt,3000)};}
+    catch(error){reply.code(400);return {ok:false,error:error instanceof Error?error.message:"脱敏校验失败"};}
+    const actor=String(req.auth.actor??"admin"),id=randomUUID(),now=Date.now();
+    await createCrawlModerationGoldCase(ctx.repo,{id,sourceFingerprint:parsed.data.sourceFingerprint,...safe,createdBy:actor,createdAt:now});
+    await ctx.repo.audit({ip:req.ip,actor,actorKind:req.auth.kind,action:"crawl.moderation_gold_case_create",target:id,diff:{sourceFingerprint:parsed.data.sourceFingerprint}});
+    reply.code(201);return {ok:true,id,status:"pending"};
+  });
+
+  app.get("/api/admin/crawl/moderation-gold-cases/:id/annotations", {config:{scope:"admin",cache:{maxAge:0}}}, async(req,reply)=>{
+    const parsed=z.object({id:z.string().uuid()}).safeParse(req.params??{});
+    if(!parsed.success){reply.code(400);return {ok:false,error:"样本 ID 无效"};}
+    const current=await getCrawlModerationGoldCase(ctx.repo,parsed.data.id);
+    if(!current){reply.code(404);return {ok:false,error:"金标样本不存在"};}
+    const items=await listCrawlModerationGoldAnnotations(ctx.repo,parsed.data.id);
+    return {ok:true,items:items.map(row=>({id:String(row.id),annotatorId:String(row.annotator_id),label:String(row.label),
+      risk:Boolean(row.risk),evidence:String(row.evidence),createdAt:Number(row.created_at)}))};
+  });
+
+  app.post("/api/admin/crawl/moderation-gold-cases/:id/annotations", {config:{scope:"admin",rateLimit:{max:60,timeWindow:"1 minute"}}}, async(req,reply)=>{
+    const params=z.object({id:z.string().uuid()}).safeParse(req.params??{});
+    const body=z.object({label:z.enum(["approve","reject","review"]),risk:z.boolean(),evidence:z.string().trim().min(10).max(2000)}).safeParse(req.body??{});
+    if(!params.success||!body.success){reply.code(400);return {ok:false,error:"标注参数无效"};}
+    const actor=String(req.auth.actor??"admin");
+    const result=await ctx.repo.withTransaction(async()=>{
+      const current=await getCrawlModerationGoldCase(ctx.repo,params.data.id);
+      if(!current)return {kind:"missing" as const};
+      if(current.status==="gold_ready"||current.status==="needs_adjudication")return {kind:"closed" as const};
+      const previous=await listCrawlModerationGoldAnnotations(ctx.repo,params.data.id);
+      if(previous.some(row=>String(row.annotator_id)===actor))return {kind:"duplicate" as const};
+      if(previous.length>=2)return {kind:"closed" as const};
+      const status=await annotateCrawlModerationGoldCase(ctx.repo,{id:randomUUID(),caseId:params.data.id,annotatorId:actor,
+        label:body.data.label,risk:body.data.risk,evidence:body.data.evidence});
+      return {kind:"ok" as const,status};
+    });
+    if(result.kind==="missing"){reply.code(404);return {ok:false,error:"金标样本不存在"};}
+    if(result.kind==="duplicate"){reply.code(409);return {ok:false,error:"同一管理员不能对同一样本重复标注"};}
+    if(result.kind==="closed"){reply.code(409);return {ok:false,error:"该样本已完成双标或等待仲裁"};}
+    await ctx.repo.audit({ip:req.ip,actor,actorKind:req.auth.kind,action:"crawl.moderation_gold_annotate",target:params.data.id,
+      diff:{label:body.data.label,risk:body.data.risk,status:result.status}});
+    return {ok:true,status:result.status};
+  });
+
+  app.post("/api/admin/crawl/moderation-gold-cases/:id/adjudicate", {config:{scope:"admin",rateLimit:{max:30,timeWindow:"1 minute"}}}, async(req,reply)=>{
+    const params=z.object({id:z.string().uuid()}).safeParse(req.params??{});
+    const body=z.object({label:z.enum(["approve","reject","review"]),risk:z.boolean(),reason:z.string().trim().min(10).max(2000)}).safeParse(req.body??{});
+    if(!params.success||!body.success){reply.code(400);return {ok:false,error:"仲裁参数无效"};}
+    const actor=String(req.auth.actor??"admin");
+    const adjudicated=await ctx.repo.withTransaction(()=>adjudicateCrawlModerationGoldCase(ctx.repo,{
+      caseId:params.data.id,adjudicatorId:actor,label:body.data.label,risk:body.data.risk,reason:body.data.reason}));
+    if(!adjudicated){reply.code(409);return {ok:false,error:"样本不存在或当前状态不允许仲裁"};}
+    await ctx.repo.audit({ip:req.ip,actor,actorKind:req.auth.kind,action:"crawl.moderation_gold_adjudicate",target:params.data.id,
+      diff:{label:body.data.label,risk:body.data.risk,reason:body.data.reason}});
+    return {ok:true,status:"gold_ready"};
+  });
+
 };

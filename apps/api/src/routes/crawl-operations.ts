@@ -24,7 +24,7 @@ export async function assertSafeCrawlSourceUrl(rawUrl: string): Promise<void> {
 
 /** 对正式金标集做稳定抽样：相同数据集重复运行时选中相同样本。 */
 export function selectGoldEvaluationSample<T extends { id: unknown; category?: unknown; final_risk?: unknown }>(rows: readonly T[], limit = 20): T[] {
-  const bounded = Math.max(1, Math.min(20, Math.floor(limit)));
+  const bounded = Math.max(1, Math.min(100, Math.floor(limit)));
   const keyed = rows.map(row => ({ row, hash:createHash("sha256").update(String(row.id)).digest("hex"),
     risk:row.final_risk === true || row.final_risk === 1 ? "positive" : row.final_risk === false || row.final_risk === 0 ? "negative" : "unknown",
     category:String(row.category ?? "unknown").trim().slice(0,80) || "unknown" }));
@@ -691,8 +691,8 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
   app.post("/api/admin/crawl/moderation-model-evaluations/auto",
     { config: { scope: "admin", rateLimit: { max: 2, timeWindow: "1 minute" } } },
     async (req, reply) => {
-      const body = z.object({ limit: z.coerce.number().int().min(1).max(20).default(20), providerIndex: z.coerce.number().int().min(0).max(5).default(0) }).safeParse(req.body ?? {});
-      if (!body.success) { reply.code(400); return { ok: false, error: "自动评测样本数必须为 1–20" }; }
+      const body = z.object({ limit: z.coerce.number().int().min(1).max(100).default(20), providerIndex: z.coerce.number().int().min(0).max(5).default(0) }).safeParse(req.body ?? {});
+      if (!body.success) { reply.code(400); return { ok: false, error: "自动评测样本数必须为 1–100" }; }
       const countRows = await ctx.repo.raw("SELECT COUNT(*) AS total FROM crawl_moderation_gold_cases WHERE status='gold_ready'");
       const total = Number(countRows[0]?.total ?? 0);
       if (!total) { reply.code(409); return { ok: false, error: "尚无正式金标样本，暂不能自动评测" }; }
@@ -766,7 +766,8 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
           actual: prediction.actual, expectedRisk: Boolean(row.final_risk), actualRisk: prediction.actualRisk };
       });
       const metrics = evaluateSiteModerationGoldSet(cases);
-      const datasetVersion = createHash("sha256").update(selected.map(row => String(row.id)+":"+String(row.final_label)+":"+String(Boolean(row.final_risk))).join("|")).digest("hex");
+      const fullDatasetVersion = createHash("sha256").update(gold.map(row => String(row.id)+":"+String(row.final_label)+":"+String(Boolean(row.final_risk))).join("|")).digest("hex");
+      const datasetVersion = selected.length === gold.length ? fullDatasetVersion : `${fullDatasetVersion}:sample:${selected.length}`;
       const model = [...actualModels][0] ?? provider.model;
       const previousRows = await ctx.repo.raw("SELECT metrics_json FROM crawl_moderation_model_evaluations WHERE model=? AND dataset_version=? ORDER BY created_at DESC,id DESC LIMIT 1",[model,datasetVersion]);
       const previous = previousRows[0]?.metrics_json ? JSON.parse(String(previousRows[0].metrics_json)) as {exactMatchRate?:number|null;riskDetection?:{recall?:number|null}} : null;

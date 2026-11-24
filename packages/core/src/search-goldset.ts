@@ -47,6 +47,8 @@ const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{5,63}$/;
 const LOCALE_PATTERN = /^(?:[a-z]{2,3}(?:-[a-zA-Z0-9]{2,8})*|mixed|unknown)$/i;
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
 const CN_MOBILE_PATTERN = /\b1[3-9]\d{9}\b/;
+const GLOBAL_PHONE_PATTERN = /(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-])\d{3,4}[\s.-]\d{3,4}\b/;
+const SECRET_TOKEN_PATTERN = /\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{12,})\b/;
 const IPV4_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

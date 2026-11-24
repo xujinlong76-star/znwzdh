@@ -91,3 +91,12 @@ export async function getLoginFailureState(
 export async function clearLoginFailure(repo: Repository, key: string): Promise<void> {
   await repo.run("DELETE FROM system_states WHERE key = ?", [key]);
 }
+
+
+/** 清理指定命名空间中过期的系统状态行，避免安全计数器/重放账本无限增长。 */
+export async function pruneSystemStatePrefix(repo: Repository, prefix: string, olderThan: number): Promise<number> {
+  return repo.runCount(
+    "DELETE FROM system_states WHERE key LIKE ? AND updated_at < ?",
+    [prefix.replace(/[\\%_]/g, (m) => "\\" + m) + "%", olderThan],
+  );
+}

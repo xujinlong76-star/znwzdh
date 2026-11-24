@@ -42,7 +42,7 @@ export async function createAuthToken(
  * 原子消费一条令牌。
  *
  * 成功返回 true 并把 consumed_at 置为当前时间；失败（不存在/已用/过期/用途不符/
- * 用户不符）返回 false 且不改任何行。**必须单条 UPDATE**——若拆成 SELECT+UPDATE，
+ * 用户/邮箱不符）返回 false 且不改任何行。**必须单条 UPDATE**——若拆成 SELECT+UPDATE，
  * 两个并发请求可能都读到「未消费」，从而用同一链接各重置一次密码。
  */
 export async function consumeAuthToken(

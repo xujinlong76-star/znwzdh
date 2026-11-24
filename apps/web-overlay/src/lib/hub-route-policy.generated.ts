@@ -11,6 +11,11 @@ export interface HubRouteEntry {
 }
 
 export const HUB_ROUTES: readonly HubRouteEntry[] = [
+  { method: "GET", path: "/api/account/admin-mfa/status", scope: "admin" },
+  { method: "POST", path: "/api/account/admin-mfa/confirm", scope: "admin" },
+  { method: "POST", path: "/api/account/admin-mfa/disable", scope: "admin" },
+  { method: "POST", path: "/api/account/admin-mfa/setup", scope: "admin" },
+  { method: "POST", path: "/api/account/admin-mfa/verify", scope: "public" },
   { method: "GET", path: "/api/account/email-status", scope: "public" },
   { method: "POST", path: "/api/account/forgot-password", scope: "public" },
   { method: "POST", path: "/api/account/login", scope: "public" },

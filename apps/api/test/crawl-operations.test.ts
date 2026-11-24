@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scoreCrawlCandidate, selectStratifiedCrawlCandidates, selectGoldEvaluationSample, moderationVerdictToPrediction } from "../src/routes/crawl-operations.ts";
+import { scoreCrawlCandidate, selectStratifiedCrawlCandidates, selectGoldEvaluationSample, moderationVerdictToPrediction, buildGoldEvaluationCaseDiagnostics } from "../src/routes/crawl-operations.ts";
 
 describe("crawl candidate quality hints", () => {
   it("rewards complete, substantial HTTPS pages with explainable reasons", () => {
@@ -71,5 +71,16 @@ describe("automatic moderation gold evaluation helpers", () => {
     expect(moderationVerdictToPrediction({verdict:"auto_approve",risks:["none"]})).toEqual({actual:"approve",actualRisk:false});
     expect(moderationVerdictToPrediction({verdict:"reject",risks:["phishing"]})).toEqual({actual:"reject",actualRisk:true});
     expect(moderationVerdictToPrediction({verdict:"manual_review",risks:["none","spam"]})).toEqual({actual:"review",actualRisk:true});
+  });
+  it("retains only per-case mismatch and risk error diagnostics without source text", () => {
+    const rows = buildGoldEvaluationCaseDiagnostics([
+      {id:"gold-1",expected:"reject",actual:"approve",expectedRisk:true,actualRisk:false},
+      {id:"gold-2",expected:"approve",actual:"approve",expectedRisk:false,actualRisk:true},
+      {id:"gold-3",expected:"review",actual:"review",expectedRisk:false,actualRisk:false},
+    ]);
+    expect(rows[0]).toMatchObject({labelMismatch:true,riskFalseNegative:true,riskFalsePositive:false});
+    expect(rows[1]).toMatchObject({labelMismatch:false,riskFalseNegative:false,riskFalsePositive:true});
+    expect(rows[2]).toMatchObject({labelMismatch:false,riskFalseNegative:false,riskFalsePositive:false});
+    expect(JSON.stringify(rows)).not.toContain("sanitizedExcerpt");
   });
 });

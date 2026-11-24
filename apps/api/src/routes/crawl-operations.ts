@@ -322,6 +322,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
 
   app.get("/api/admin/crawl/moderation-gold-assignments/metrics", {config:{scope:"admin",cache:{maxAge:0}}}, async(req) => {
     const actor=String(req.auth.actor??"admin");
+    await ctx.repo.run("UPDATE crawl_moderation_gold_assignments SET status='expired' WHERE status='claimed' AND lease_expires_at<=?",[Date.now()]);
     const rows=await ctx.repo.raw("SELECT status,COUNT(*) AS total FROM crawl_moderation_gold_assignments GROUP BY status");
     const mine=await ctx.repo.raw("SELECT COUNT(*) AS total FROM crawl_moderation_gold_assignments WHERE annotator_id=? AND status='claimed' AND lease_expires_at>?",[actor,Date.now()]);
     const counts=Object.fromEntries(rows.map(row=>[String(row.status),Number(row.total??0)]));
@@ -338,24 +339,26 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       const params:unknown[]=[actor];
       let caseFilter="";
       if(body.data.caseId){caseFilter=" AND c.id=?";params.push(body.data.caseId);}
+      else {caseFilter=" AND NOT EXISTS(SELECT 1 FROM crawl_moderation_gold_assignments own WHERE own.case_id=c.id AND own.annotator_id=? AND own.status='claimed' AND own.lease_expires_at>?)";params.push(actor,now);}
       const candidates=await ctx.repo.raw(
         "SELECT c.id,c.title,c.description,c.category,c.sanitized_excerpt,c.status FROM crawl_moderation_gold_cases c WHERE c.status IN ('pending','annotating') AND (SELECT COUNT(*) FROM crawl_moderation_gold_annotations a WHERE a.case_id=c.id)<2 AND NOT EXISTS(SELECT 1 FROM crawl_moderation_gold_annotations mine WHERE mine.case_id=c.id AND mine.annotator_id=?)"+caseFilter+" ORDER BY c.created_at ASC,c.id ASC LIMIT 50",
         params,
       );
       for(const candidate of candidates){
+        const mine=await ctx.repo.raw("SELECT id,slot,lease_expires_at FROM crawl_moderation_gold_assignments WHERE case_id=? AND annotator_id=? AND status='claimed' AND lease_expires_at>? LIMIT 1",[String(candidate.id),actor,now]);
+        if(mine[0])return {kind:"ok" as const,id:String(mine[0].id),caseId:String(candidate.id),slot:Number(mine[0].slot),expiresAt:Number(mine[0].lease_expires_at),title:candidate.title==null?null:String(candidate.title),description:candidate.description==null?null:String(candidate.description),category:candidate.category==null?null:String(candidate.category),sanitizedExcerpt:candidate.sanitized_excerpt==null?null:String(candidate.sanitized_excerpt)};
         const occupied=await ctx.repo.raw("SELECT slot FROM crawl_moderation_gold_assignments WHERE case_id=? AND status='claimed' AND lease_expires_at>? ORDER BY slot",[String(candidate.id),now]);
         const used=new Set(occupied.map(row=>Number(row.slot)));
         const slot=[1,2].find(value=>!used.has(value));
         if(!slot)continue;
         const id=randomUUID();
         await ctx.repo.run("INSERT INTO crawl_moderation_gold_assignments (id,case_id,annotator_id,slot,status,lease_expires_at,created_at,claimed_at) VALUES (?,?,?,?,'claimed',?,?,?) ON CONFLICT DO NOTHING",[id,String(candidate.id),actor,slot,expiresAt,now,now]);
-        const active=await ctx.repo.raw("SELECT id FROM crawl_moderation_gold_assignments WHERE case_id=? AND annotator_id=? AND status='claimed' AND lease_expires_at>? LIMIT 1",[String(candidate.id),actor,now]);
-        if(active[0])return {kind:"ok" as const,id:String(active[0].id),caseId:String(candidate.id),slot,expiresAt,title:candidate.title==null?null:String(candidate.title),description:candidate.description==null?null:String(candidate.description),category:candidate.category==null?null:String(candidate.category),sanitizedExcerpt:candidate.sanitized_excerpt==null?null:String(candidate.sanitized_excerpt)};
+        const active=await ctx.repo.raw("SELECT id,slot,lease_expires_at FROM crawl_moderation_gold_assignments WHERE case_id=? AND annotator_id=? AND status='claimed' AND lease_expires_at>? LIMIT 1",[String(candidate.id),actor,now]);
+        if(active[0])return {kind:"ok" as const,id:String(active[0].id),caseId:String(candidate.id),slot:Number(active[0].slot),expiresAt:Number(active[0].lease_expires_at),title:candidate.title==null?null:String(candidate.title),description:candidate.description==null?null:String(candidate.description),category:candidate.category==null?null:String(candidate.category),sanitizedExcerpt:candidate.sanitized_excerpt==null?null:String(candidate.sanitized_excerpt)};
       }
       return {kind:"empty" as const};
     });
     if(result.kind==="empty"){reply.code(404);return {ok:false,error:"当前没有可领取的标注任务"};}
-    if(result.kind==="already"){reply.code(409);return {ok:false,error:"你已领取该样本，请继续完成标注"};}
     await ctx.repo.audit({ip:req.ip,actor,actorKind:req.auth.kind,action:"crawl.moderation_gold_task_claim",target:result.caseId,diff:{assignmentId:result.id,slot:result.slot,expiresAt:result.expiresAt}});
     return {ok:true,assignmentId:result.id,case:{id:result.caseId,title:result.title,description:result.description,category:result.category,sanitizedExcerpt:result.sanitizedExcerpt},slot:result.slot,expiresAt:result.expiresAt};
   });

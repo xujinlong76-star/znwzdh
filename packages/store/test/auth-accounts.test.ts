@@ -131,6 +131,7 @@ describe("账号生命周期仓储", () => {
       userId: user.user.id,
       purpose: "email_verification",
       tokenHash: hashToken(staleVerificationToken),
+      targetEmail: "emailchange-old@example.com",
       expiresAt: Date.now() + 3_600_000,
     });
     expect(await repo.hasActiveAuthToken(user.user.id, "email_verification")).toBe(true);
@@ -156,6 +157,38 @@ describe("账号生命周期仓储", () => {
     const caseOnly = await repo.updateUserProfileInfo(user.user.id, { email: "EMAILCHANGE-NEW@example.com" });
     expect(caseOnly.ok).toBe(true);
     if (caseOnly.ok) expect(caseOnly.user.emailVerified).toBe(true);
+  });
+
+  it("邮箱绑定令牌在地址变更后不可消费，密码重置也必须匹配当前邮箱", async () => {
+    const user = await repo.createUserWithPassword({
+      username: "emailbound",
+      email: "emailbound-old@example.com",
+      password: "S3cret-Passw0rd!",
+    });
+    expect(user.ok).toBe(true);
+    if (!user.ok) return;
+
+    const token = generateToken(32);
+    await repo.createAuthToken({
+      userId: user.user.id,
+      purpose: "email_verification",
+      tokenHash: hashToken(token),
+      targetEmail: "emailbound-old@example.com",
+      expiresAt: Date.now() + 3_600_000,
+    });
+
+    // 模拟并发/旧部署路径：即使 token 行未及时撤销，消费语句仍必须校验当前 users.email。
+    await repo.run("UPDATE users SET email = ?, email_verified = 0 WHERE id = ?", ["emailbound-new@example.com", user.user.id]);
+    expect(await repo.consumeAuthToken({
+      userId: user.user.id,
+      purpose: "email_verification",
+      tokenHash: hashToken(token),
+      targetEmail: "emailbound-old@example.com",
+    })).toBe(false);
+    expect(await repo.setUserEmailVerifiedForEmail(user.user.id, "emailbound-old@example.com")).toBe(false);
+
+    expect(await repo.updateUserPasswordForEmail(user.user.id, "N3w-Secure-Passw0rd!", "emailbound-old@example.com")).toBe(false);
+    expect(await repo.updateUserPasswordForEmail(user.user.id, "N3w-Secure-Passw0rd!", "emailbound-new@example.com")).toBe(true);
   });
 
   it("邮箱验证令牌一次性消费：首次成功，重复使用失败", async () => {

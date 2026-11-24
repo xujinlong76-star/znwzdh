@@ -599,6 +599,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         (row.title != null || row.description != null || row.sanitized_excerpt != null));
       if (!gold.length) { reply.code(409); return { ok: false, error: "正式金标样本缺少可供模型判断的脱敏文本" }; }
       const selected = selectGoldEvaluationSample(gold, body.data.limit);
+      const evaluationId = randomUUID();
       const resolved = await resolveLlm(ctx);
       const provider = [resolved.provider, ...resolved.fallbacks].find(llmProviderReady);
       if (!provider) { reply.code(409); return { ok: false, error: "系统尚未配置可用的大模型或备用模型" }; }
@@ -628,7 +629,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
             deadlineAt: Date.now() + 45_000,
             complete: async (_provider, request) => {
               const result = await callLlm(ctx, evaluationResolved, {
-                scenario: "crawl_moderation_gold_eval", identity: null, messages: request.messages,
+                scenario: "crawl_moderation_gold_eval", identity: evaluationId, messages: request.messages,
                 temperature: request.temperature, maxTokens: request.maxTokens, json: request.json,
                 thinking: false, signal: request.signal, deadlineAt: request.deadlineAt, fetchImpl: request.fetchImpl,
               });
@@ -645,7 +646,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         reply.code(502); return { ok: false, error: "自动评测未完整完成，未保存不完整指标", selected: selected.length, completed: predictions.length, failed };
       }
       if (actualModels.size !== 1) { reply.code(409); return { ok: false, error: "本轮模型标识不一致，已阻止混合模型评测", models: [...actualModels] }; }
-      const predictionMap = new Map(predictions.map(item => [item.id,item]));
+      // 用 evaluationId 作为 llm_usage.identity 关联键，精确隔离并发评测的真实成本。\n      const usageRows = await ctx.repo.raw(\n        "SELECT COUNT(*) AS calls, SUM(prompt_tokens) AS prompt_tokens, SUM(completion_tokens) AS completion_tokens, SUM(cost_rmb) AS cost_rmb, SUM(CASE WHEN cost_rmb IS NOT NULL THEN 1 ELSE 0 END) AS priced_calls, SUM(CASE WHEN ok THEN 0 ELSE 1 END) AS failed_calls FROM llm_usage WHERE scenario=? AND identity=?",\n        ["crawl_moderation_gold_eval", evaluationId],\n      );\n      const usageRow = usageRows[0] ?? {};\n      const usage = { calls:Number(usageRow.calls ?? 0), promptTokens:Number(usageRow.prompt_tokens ?? 0),\n        completionTokens:Number(usageRow.completion_tokens ?? 0), totalTokens:Number(usageRow.prompt_tokens ?? 0)+Number(usageRow.completion_tokens ?? 0),\n        costRmb:usageRow.cost_rmb == null ? null : Number(usageRow.cost_rmb),\n        pricedCalls:Number(usageRow.priced_calls ?? 0), unpricedCalls:Math.max(0,Number(usageRow.calls ?? 0)-Number(usageRow.priced_calls ?? 0)),\n        failedCalls:Number(usageRow.failed_calls ?? 0) };\n      const predictionMap = new Map(predictions.map(item => [item.id,item]));
       const cases = selected.map(row => {
         const prediction = predictionMap.get(String(row.id));
         if (!prediction) throw new Error("自动评测预测样本缺失");
@@ -665,12 +666,12 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       if (previous?.exactMatchRate != null && metrics.exactMatchRate !== null && previous.exactMatchRate-metrics.exactMatchRate > 0.05) alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次同快照评测，标签精确匹配率下降超过 5 个百分点"});
       if (previous?.riskDetection?.recall != null && metrics.riskDetection.recall !== null && previous.riskDetection.recall-metrics.riskDetection.recall > 0.05) alerts.push({severity:"critical",code:"risk_recall_regression",message:"相较该模型上一次同快照评测，风险召回率下降超过 5 个百分点"});
       const errorAnalysis = buildModerationErrorAnalysis(cases);
-      const evaluation = { ...metrics, alerts, errorAnalysis, execution: { mode: "automatic", requested: body.data.limit, selected: selected.length, source: resolved.source } };
-      const id = randomUUID(), actor = String(req.auth.actor ?? "admin"), createdAt = Date.now();
+      const evaluation = { ...metrics, alerts, errorAnalysis, execution: { mode: "automatic", requested: body.data.limit, selected: selected.length, source: resolved.source, usage } };
+      const id = evaluationId, actor = String(req.auth.actor ?? "admin"), createdAt = Date.now();
       await ctx.repo.run("INSERT INTO crawl_moderation_model_evaluations (id,model,dataset_version,sample_size,metrics_json,created_by,created_at) VALUES (?,?,?,?,?,?,?)",
         [id,model,datasetVersion,metrics.sampleSize,JSON.stringify(evaluation),actor,createdAt]);
       await ctx.repo.audit({ ip:req.ip,actor,actorKind:req.auth.kind,action:"crawl.moderation_model_auto_evaluation",target:id,
-        diff:{ model,datasetVersion,sampleSize:metrics.sampleSize,exactMatchRate:metrics.exactMatchRate,alertCount:alerts.length,source:resolved.source } });
+        diff:{ model,datasetVersion,sampleSize:metrics.sampleSize,exactMatchRate:metrics.exactMatchRate,alertCount:alerts.length,source:resolved.source,usage } });
       return { ok:true,id,model,datasetVersion,sampleSize:metrics.sampleSize,metrics:evaluation,alerts,createdAt,source:resolved.source };
     },
   );

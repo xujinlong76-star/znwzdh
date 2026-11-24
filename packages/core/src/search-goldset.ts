@@ -84,6 +84,7 @@ export function validateSearchGoldSet(input: unknown): SearchGoldValidationResul
 
   const caseIds = new Set<string>();
   const sampleIds = new Set<string>();
+  const normalizedQueries = new Set<string>();
   const evaluationCases: SearchEvalCase[] = [];
   let excludedUnjudgeableCases = 0;
 
@@ -106,6 +107,9 @@ export function validateSearchGoldSet(input: unknown): SearchGoldValidationResul
     if (EMAIL_PATTERN.test(item.query) || CN_MOBILE_PATTERN.test(item.query) || IPV4_PATTERN.test(item.query)) {
       throw new Error(prefix + " query 疑似包含邮箱、手机号或 IP，必须先脱敏");
     }
+    const queryKey = item.query.trim().replace(/\\s+/g, " ").toLowerCase();
+    if (normalizedQueries.has(queryKey)) throw new Error(prefix + " query 与已有样本重复");
+    normalizedQueries.add(queryKey);
     if (item.privacyReviewed !== true) throw new Error(prefix + " 必须完成隐私复核");
     if (typeof item.locale !== "string" || !LOCALE_PATTERN.test(item.locale)) {
       throw new Error(prefix + " locale 格式无效");

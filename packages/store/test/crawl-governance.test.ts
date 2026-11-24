@@ -85,6 +85,12 @@ describe("持久化采集治理队列", () => {
     });
     const task = await claimCrawlTask(repo, "worker-crash", { now: 40_000, leaseMs: 5_000 });
     expect(task?.attempts).toBe(1);
+    expect(await settleCrawlTask(repo, {
+      id: task!.id, workerId: "worker-crash", outcome: "done", now: 45_001,
+    })).toBe(false);
+    expect(await renewCrawlLease(repo, {
+      id: task!.id, workerId: "worker-crash", now: 45_001,
+    })).toBe(false);
     const result = await reapExpiredCrawlLeases(repo, { now: 45_001 });
     expect(result).toEqual({ retried: 0, deadLettered: 1 });
     const rows = await repo.raw("SELECT status FROM crawl_tasks WHERE id = ?", [task!.id]);

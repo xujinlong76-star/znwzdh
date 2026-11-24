@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   countSiteDiscoveryCandidates, getSiteDiscoveryCandidateForUpdate,
@@ -228,6 +228,71 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     }
     return text.slice(0,max);
   };
+
+  const redactGoldText = (value: string | undefined, max: number) => {
+    if (!value) return undefined;
+    return value
+      .replace(/https?:\/\/[^\s<>"']+/gi, "[URL已脱敏]")
+      .replace(/\bwww\.[^\s<>"']+/gi, "[URL已脱敏]")
+      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[邮箱已脱敏]")
+      .replace(/\b(?:\+?\d[\d .()-]{7,}\d)\b/g, "[电话已脱敏]")
+      .replace(/\s+/g, " ").trim().slice(0, max);
+  };
+
+  app.post("/api/admin/crawl/moderation-gold-cases/from-candidate/:id",
+    { config: { scope: "admin", rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params ?? {});
+      if (!params.success) { reply.code(400); return { ok: false, error: "候选 ID 无效" }; }
+      const candidate = await getSiteDiscoveryCandidateForUpdate(ctx.repo, params.data.id);
+      if (!candidate) { reply.code(404); return { ok: false, error: "采集候选不存在" }; }
+      const evidence = candidate.evidence ?? {};
+      const excerptValue = [evidence.sanitizedExcerpt, evidence.excerpt, evidence.bodyExcerpt, evidence.contentExcerpt]
+        .find(value => typeof value === "string" && value.trim()) as string | undefined;
+      const title = redactGoldText(candidate.title ?? undefined, 200);
+      const description = redactGoldText(candidate.description ?? undefined, 1000);
+      const sanitizedExcerpt = redactGoldText(excerptValue, 3000);
+      if (!title && !description && !sanitizedExcerpt) {
+        reply.code(422); return { ok: false, error: "候选缺少可用于人工判断的标题、描述或摘要" };
+      }
+      const sourceFingerprint = "candidate:" + createHash("sha256").update(candidate.id).digest("hex");
+      const actor = String(req.auth.actor ?? "admin");
+      let result: { id: string; created: boolean };
+      try {
+        result = await ctx.repo.withTransaction(async () => {
+          const existing = await ctx.repo.raw(
+            "SELECT id FROM crawl_moderation_gold_cases WHERE source_fingerprint = ? LIMIT 1",
+            [sourceFingerprint],
+          );
+          if (existing[0]) return { id: String(existing[0].id), created: false };
+          const id = randomUUID();
+          await createCrawlModerationGoldCase(ctx.repo, {
+            id, sourceFingerprint, title, description,
+            category: candidate.categoryId ?? undefined, sanitizedExcerpt,
+            createdBy: actor,
+          });
+          return { id, created: true };
+        });
+      } catch (error) {
+        // 唯一索引兜底并发竞争：若另一请求已完成相同候选导入，则返回既有记录。
+        const existing = await ctx.repo.raw(
+          "SELECT id FROM crawl_moderation_gold_cases WHERE source_fingerprint = ? LIMIT 1",
+          [sourceFingerprint],
+        );
+        if (!existing[0]) throw error;
+        result = { id: String(existing[0].id), created: false };
+      }
+      if (result.created) {
+        await ctx.repo.audit({
+          ip: req.ip, actor, actorKind: req.auth.kind,
+          action: "crawl.moderation_gold_import_candidate", target: result.id,
+          diff: { candidateId: candidate.id, sourceFingerprint },
+        });
+      }
+      reply.code(result.created ? 201 : 200);
+      return { ok: true, id: result.id, status: result.created ? "pending" : "already_exists", created: result.created };
+    },
+  );
 
   app.get("/api/admin/crawl/moderation-gold-cases", { config: { scope: "admin", cache: { maxAge: 0 } } }, async (req, reply) => {
     const parsed = z.object({status:z.enum(["pending","annotating","needs_adjudication","gold_ready"]).optional(),

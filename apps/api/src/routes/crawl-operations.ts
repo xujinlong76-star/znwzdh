@@ -1,0 +1,102 @@
+import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
+import {
+  countSiteDiscoveryCandidates, getSiteDiscoveryCandidateForUpdate,
+  listSiteDiscoveryCandidates, reviewSiteDiscoveryCandidate,
+} from "@navhub/store";
+import type { AppContext } from "../context.ts";
+
+/** 透明、可解释的初筛分数；只用于排序辅助，不自动批准或拒绝。 */
+export function scoreCrawlCandidate(input: {
+  url: string; title?: string | null; description?: string | null;
+  evidence?: Record<string, unknown>;
+}): { score: number; reasons: string[] } {
+  let score = 35;
+  const reasons: string[] = [];
+  const evidence = input.evidence ?? {};
+  const tokenCount = Number(evidence.tokenCount ?? 0);
+  if (input.title?.trim()) { score += 15; reasons.push("存在页面标题"); }
+  else { score -= 12; reasons.push("缺少页面标题"); }
+  if (input.description?.trim()) { score += 10; reasons.push("存在页面描述"); }
+  else { score -= 5; reasons.push("缺少页面描述"); }
+  if (tokenCount >= 300) { score += 20; reasons.push("正文信息量较充分"); }
+  else if (tokenCount >= 80) { score += 10; reasons.push("正文达到最低信息量"); }
+  else { score -= 15; reasons.push("正文信息量偏低"); }
+  if (evidence.exactDuplicateOf) { score -= 30; reasons.push("存在完全重复页面证据"); }
+  const near = Array.isArray(evidence.nearDuplicateCandidates) ? evidence.nearDuplicateCandidates.length : 0;
+  if (near > 0) { score -= Math.min(15, near * 3); reasons.push("存在近重复页面候选"); }
+  try {
+    if (new URL(input.url).protocol === "https:") { score += 5; reasons.push("使用 HTTPS"); }
+  } catch { score -= 20; reasons.push("URL 格式异常"); }
+  return { score: Math.max(0, Math.min(100, score)), reasons };
+}
+
+export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
+  const ctx = opts.ctx;
+  app.get("/api/admin/crawl/overview", { config: { scope: "admin", cache: { maxAge: 0 } } }, async () => {
+    const [tasks, sources, candidates, hosts, recent] = await Promise.all([
+      ctx.repo.raw("SELECT status, COUNT(*) AS total FROM crawl_tasks GROUP BY status"),
+      ctx.repo.raw("SELECT enabled, COUNT(*) AS total FROM crawl_sources GROUP BY enabled"),
+      ctx.repo.raw("SELECT status, COUNT(*) AS total FROM site_discovery_candidates GROUP BY status"),
+      ctx.repo.raw("SELECT host, COUNT(*) AS total FROM crawl_tasks GROUP BY host ORDER BY total DESC LIMIT 20"),
+      ctx.repo.raw("SELECT status, COUNT(*) AS total FROM crawl_tasks WHERE updated_at >= ? GROUP BY status", [Date.now()-24*60*60_000]),
+    ]);
+    const countMap = (rows: Array<Record<string, unknown>>, key: string) =>
+      Object.fromEntries(rows.map(row => [String(row[key]), Number(row.total ?? 0)]));
+    const taskCounts = countMap(tasks, "status");
+    const sourceCounts = countMap(sources, "enabled");
+    const candidateCounts = countMap(candidates, "status");
+    const recentCounts = countMap(recent, "status");
+    const totalTasks = Object.values(taskCounts).reduce((a,b)=>a+b,0);
+    const finished = (taskCounts.done ?? 0) + (taskCounts.dead_letter ?? 0) + (taskCounts.hold_for_review ?? 0);
+    return {
+      ok: true, generatedAt: Date.now(),
+      tasks: { ...taskCounts, total: totalTasks, successRate: finished ? Math.round((taskCounts.done ?? 0)/finished*1000)/10 : null },
+      sources: { enabled: sourceCounts.true ?? 0, disabled: sourceCounts.false ?? 0 },
+      candidates: candidateCounts,
+      last24Hours: recentCounts,
+      busiestHosts: hosts.map(row => ({ host: String(row.host), tasks: Number(row.total) })),
+    };
+  });
+
+  app.get("/api/admin/crawl/candidates", { config: { scope: "admin", cache: { maxAge: 0 } } }, async (req, reply) => {
+    const parsed = z.object({
+      status: z.enum(["pending","approved","rejected"]).default("pending"),
+      limit: z.coerce.number().int().min(1).max(100).default(50),
+      offset: z.coerce.number().int().min(0).max(100_000).default(0),
+    }).safeParse(req.query ?? {});
+    if (!parsed.success) { reply.code(400); return { ok: false, error: "审核队列筛选参数无效" }; }
+    const items = await listSiteDiscoveryCandidates(ctx.repo, parsed.data);
+    const total = await countSiteDiscoveryCandidates(ctx.repo, parsed.data.status);
+    return { ok: true, items: items.map(item => {
+      const quality = scoreCrawlCandidate({ url: item.url, title: item.title, description: item.description, evidence: item.evidence });
+      return { id:item.id,url:item.url,title:item.title,description:item.description,source:item.source,
+        status:item.status,discoveredAt:item.discoveredAt,lastSeenAt:item.lastSeenAt,
+        duplicateEvidence:{ exact: Boolean(item.evidence.exactDuplicateOf), near: Array.isArray(item.evidence.nearDuplicateCandidates) ? item.evidence.nearDuplicateCandidates.length : 0 },
+        quality };
+    }), total, limit: parsed.data.limit, offset: parsed.data.offset };
+  });
+
+  app.post("/api/admin/crawl/candidates/:id/review", { config: { scope: "admin", rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params ?? {});
+    const body = z.object({ decision: z.enum(["approve","reject"]), reason: z.string().trim().max(1000).optional() })
+      .refine(v => v.decision !== "reject" || Boolean(v.reason?.trim()), "驳回时必须填写原因").safeParse(req.body ?? {});
+    if (!params.success || !body.success) { reply.code(400); return { ok:false,error:"审核参数无效",details:!params.success?params.error.issues:body.error.issues }; }
+    const reviewer = String(req.auth.actor ?? "admin");
+    const result = await ctx.repo.withTransaction(async () => {
+      const current = await getSiteDiscoveryCandidateForUpdate(ctx.repo, params.data.id);
+      if (!current) return { kind:"missing" as const };
+      if (current.status !== "pending") return { kind:"conflict" as const, status:current.status };
+      const updated = await reviewSiteDiscoveryCandidate(ctx.repo, {
+        id: current.id, status: body.data.decision === "approve" ? "approved" : "rejected",
+        reviewer, rejectionReason: body.data.decision === "reject" ? body.data.reason : null,
+      });
+      return updated ? { kind:"ok" as const, candidate:updated } : { kind:"conflict" as const, status:"changed" };
+    });
+    if (result.kind === "missing") { reply.code(404); return {ok:false,error:"候选不存在"}; }
+    if (result.kind === "conflict") { reply.code(409); return {ok:false,error:"候选已被其他审核操作处理",status:result.status}; }
+    await ctx.repo.audit({ ip:req.ip,actor:reviewer,actorKind:req.auth.kind,action:"crawl.candidate_review",target:result.candidate.id,
+      diff:{decision:body.data.decision,reason:body.data.reason ?? null,previousStatus:"pending"} });
+    return {ok:true,candidate:{id:result.candidate.id,status:result.candidate.status,reviewedAt:result.candidate.reviewedAt}};
+  });
+};

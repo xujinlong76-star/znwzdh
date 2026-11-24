@@ -36,6 +36,7 @@ import {
   HeartPulse,
   ShieldCheck,
   ClipboardCheck,
+  Activity,
 } from "lucide-react"
 import { cn } from '@/lib/utils'
 import {
@@ -134,6 +135,11 @@ const menuItems = [
     title: "采集审核",
     href: "/admin/discovery",
     icon: ClipboardCheck
+  },
+  {
+    title: "采集运营中心",
+    href: "/admin/crawl-ops",
+    icon: Activity
   },
   {
     title: "插件市场",

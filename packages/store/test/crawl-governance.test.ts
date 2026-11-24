@@ -97,6 +97,29 @@ describe("持久化采集治理队列", () => {
     expect(otherHost?.host).toBe("two.example");
   });
 
+  it("熔断域名的大量高优先级任务不会挤占扫描窗口或饿死健康域名", async () => {
+    const now = 25_000;
+    for (let index = 0; index < 35; index++) {
+      await enqueueCrawlTask(repo, {
+        url: `https://blocked.example/page-${index}`,
+        source: "seed", priority: 100, now,
+      });
+    }
+    await repo.run(
+      "INSERT INTO crawl_domain_circuit (host, consecutive_failures, opened_until, last_failure_at, updated_at) VALUES (?, 5, ?, ?, ?)",
+      ["blocked.example", now + 60_000, now, now],
+    );
+    const healthy = await enqueueCrawlTask(repo, {
+      url: "https://healthy.example/important",
+      source: "seed", priority: 1, now,
+    });
+    const claimed = await claimCrawlTask(repo, "worker-fairness", {
+      now, minDomainIntervalMs: 0, scanLimit: 25,
+    });
+    expect(claimed?.id).toBe(healthy.id);
+    expect(claimed?.host).toBe("healthy.example");
+  });
+
   it("租约 owner CAS 阻止旧 worker 写回，并支持续租和正常结算", async () => {
     await enqueueCrawlTask(repo, { url: "https://lease.example/page", source: "rss", now: 30_000 });
     const task = await claimCrawlTask(repo, "worker-a", { now: 30_000, leaseMs: 10_000 });

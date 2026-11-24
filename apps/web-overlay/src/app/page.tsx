@@ -1,8 +1,6 @@
 import { cache } from "react";
-import { cookies } from "next/headers";
 import { NavigationContent } from "@/components/navigation-content";
-import type { CanonicalCardDisplayMode } from "@/lib/modular/card-display-modes";
-import { NAV_VIEW_MODE_COOKIE, parseViewModeCookie } from "@/lib/modular/view-mode-cookie";
+import { normalizeCardDisplayMode, type CanonicalCardDisplayMode } from "@/lib/modular/card-display-modes";
 import { computeHomeTodayBadge } from "@/lib/home-today-summary";
 import { hubGet } from "@/lib/server/hub";
 import type { HubPluginItem } from "@/lib/navhub-api";
@@ -309,21 +307,13 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * 服务端首屏读取 `nav_view_mode` Cookie（Zero-CLS SSR 渲染）：
- * 客户端切换展示模式时同步写入该轻量 Cookie，刷新时 RSC 直接渲染对应模式 HTML，
- * 避免先出默认 standard 卡片再水合跳变引发的视觉闪烁与布局偏移。
+ * 展示模式的 Zero-CLS SSR 由「中间件 Cookie 重写 + /vm/[mode] 预渲染变体」实现：
+ * `src/proxy.ts` 在 `/` 读取 `nav_view_mode` Cookie，命中非 standard 合法模式时
+ * 透明重写到对应 `/vm/[mode]` 变体（构建期已按 revalidate=60 预渲染）；未命中则落
+ * 本页 standard 变体。两条路径都不读 cookies()——首页得以保持 ISR（revalidate=60
+ * 生效、不落 ƒ），Zero-CLS 与 ISR 契约（check-isr-routes.mjs 的 `/` 必须 ●）共存。
  */
-async function readInitialCardDisplayMode(): Promise<CanonicalCardDisplayMode> {
-  try {
-    const store = await cookies();
-    const raw = store.get(NAV_VIEW_MODE_COOKIE)?.value;
-    return parseViewModeCookie(raw) ?? "standard";
-  } catch {
-    return "standard";
-  }
-}
-
-export default async function HomePage() {
+export default async function HomePage({ params }: { params?: Promise<{ mode?: string }> }) {
   // WebSite 结构化数据：全站唯一入口页挂一份即可。
   // SearchAction 已接入：/search 结果页上线且 ?q= 端点经 2026-11-11 生产实测
   // 可达、结果真实（红线 1 的前置条件消失，见 lib/seo/json-ld.ts 文件头）。
@@ -335,14 +325,18 @@ export default async function HomePage() {
   // 导航数据与目录带互不依赖：串行 await 等于在白送一个中枢往返的 TTFB，
   // 而首页是爬虫面第一入口（getData 内部已并行，loadDirectoryLinks 内部也已并行）。
   // 影院首张海报的读取同样独立，并进同一批（升级第 1 条：LCP）。
-  const [{ navigationData, siteData }, directoryLinks, cinemaPoster, featuredRes, initialCardDisplayMode] = await Promise.all([
+  // 展示模式：中间件已按 Cookie 把请求重写到 /vm/[mode] 变体（见文件头注释），
+  // 这里把路由参数归一化为规范模式；直接命中本页（/）即 standard 变体。
+  const initialCardDisplayMode: CanonicalCardDisplayMode = normalizeCardDisplayMode(
+    (await params)?.mode,
+  );
+  const [{ navigationData, siteData }, directoryLinks, cinemaPoster, featuredRes] = await Promise.all([
     getData(),
     loadDirectoryLinks(),
     getFirstDramaPoster(),
     // P2-12：首页插件精选区（与市场页同款取数口径：featured + sort=featured + limit=6）。
     // 取不到（中枢抖动）返回 null，精选区只留入口、不编假插件名。
     hubGet<{ items: HubPluginItem[]; total: number }>('/api/plugins?featured=true&sort=featured&limit=6', 60),
-    readInitialCardDisplayMode(),
   ]);
   // 影院区首屏初始数据（升级第 1 条）：服务端用同一份导航数据算好榜单与横幅
   // 站数，随 RSC 一起下发，影院组件就不再请求 /api/home/navigation；首张海报

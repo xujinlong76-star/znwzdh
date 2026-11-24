@@ -6,6 +6,12 @@ import Link from 'next/link'
 import { ArrowLeft, LayoutGrid, Sparkles, Move, Maximize2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 
+// 自愈周期（ISR 3600s）：本页是静态外壳（数据都在客户端）。缺 NAVHUB_SITE_URL 的
+// 构建会把 http://localhost:3000 兜底地址（canonical/og:url/og:image/JSON-LD）烤进
+// revalidate=false 的永久快照，被 check-isr-routes.mjs 判红；按门禁提示「给它 revalidate」
+// 补一份自愈周期即可。生产配置了 NAVHUB_SITE_URL 时地址本就正确，行为不变。
+export const revalidate = 3600
+
 export const metadata: Metadata = {
   title: '模块化自定义工作台',
   description: '全响应式 12 栅格模块化页面系统，支持鼠标自由拖拽换位、双轴尺寸缩放、独立小组件即插即用与本地静止持久化。',

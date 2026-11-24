@@ -35,6 +35,12 @@ import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { DEFAULT_OG_IMAGE, normalizeBrandName } from '@/lib/seo/metadata'
 import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
+
+// 根段默认自愈周期（ISR 3600s）：`/_not-found` 没有可写路由段配置的文件，
+// 缺 NAVHUB_SITE_URL 的构建会把兜底地址烤进它的永久快照。各收录页自带更短的
+// revalidate（60/300s），这个默认值只兜到没有显式配置的段（当前就是 /_not-found）。
+export const revalidate = 3600
+
 /**
  * 字体配置：优雅回退至原生跨平台系统字体栈，解耦构建期对外部 Google Fonts 网络的脆弱依赖，
  * 避免因外部网络环境对 fonts.googleapis.com 的 TLS 握手断开导致构建挂起或失败。

@@ -113,6 +113,64 @@ export async function claimDueCrawlSources(repo: Repository, workerId: string, o
     return claimed;
   });
 }
+/**
+ * 数据库级域名租约：跨 API/Worker 实例限制同一 host 的并发抓取。
+ * crawl_domain_state 由 durable_crawl_governance 迁移创建。
+ */
+export async function claimCrawlDomain(
+  repo: Repository,
+  hostInput: string,
+  sourceId: string,
+  options: { now?: number; leaseMs?: number } = {},
+): Promise<boolean> {
+  const host = hostInput.trim().toLowerCase();
+  if (!host || host.length > 253) throw new TypeError("采集域名无效");
+  const now = options.now ?? Date.now();
+  const leaseMs = Math.max(10_000, Math.min(5 * 60_000, Math.floor(options.leaseMs ?? 60_000)));
+  return repo.withTransaction(async () => {
+    await repo.run(
+      "INSERT INTO crawl_domain_state (host,next_allowed_at,lease_task_id,lease_expires_at,updated_at) VALUES (?,0,NULL,NULL,?) ON CONFLICT(host) DO NOTHING",
+      [host, now],
+    );
+    const rows = await repo.raw(
+      "UPDATE crawl_domain_state SET lease_task_id=?,lease_expires_at=?,updated_at=? WHERE host=? AND next_allowed_at<=? AND (lease_expires_at IS NULL OR lease_expires_at<=?) RETURNING host",
+      [sourceId, now + leaseMs, now, host, now, now],
+    );
+    return rows.length > 0;
+  });
+}
+
+/** 释放域名租约，并为下一次请求保留最小间隔。 */
+export async function releaseCrawlDomain(
+  repo: Repository,
+  hostInput: string,
+  sourceId: string,
+  options: { now?: number; minIntervalMs?: number } = {},
+): Promise<boolean> {
+  const host = hostInput.trim().toLowerCase();
+  const now = options.now ?? Date.now();
+  const minIntervalMs = Math.max(0, Math.min(10 * 60_000, Math.floor(options.minIntervalMs ?? 15_000)));
+  const rows = await repo.raw(
+    "UPDATE crawl_domain_state SET next_allowed_at=CASE WHEN next_allowed_at<? THEN ? ELSE next_allowed_at END,lease_task_id=NULL,lease_expires_at=NULL,updated_at=? WHERE host=? AND lease_task_id=? RETURNING host",
+    [now + minIntervalMs, now + minIntervalMs, now, host, sourceId],
+  );
+  return rows.length > 0;
+}
+
+/** 域名繁忙时延后来源，不记作抓取失败，也不增加失败退避计数。 */
+export async function deferCrawlSource(
+  repo: Repository,
+  input: { id: string; workerId: string; now?: number; delayMs?: number },
+): Promise<boolean> {
+  const now = input.now ?? Date.now();
+  const delayMs = Math.max(1_000, Math.min(10 * 60_000, Math.floor(input.delayMs ?? 15_000)));
+  const rows = await repo.raw(
+    "UPDATE crawl_sources SET next_run_at=?,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=? AND lease_owner=? AND lease_expires_at>? RETURNING id",
+    [now + delayMs, now, input.id, input.workerId, now],
+  );
+  return rows.length > 0;
+}
+
 export async function settleCrawlSource(repo: Repository, input: { id: string; workerId: string; status: string; error?: string | null; now?: number }): Promise<boolean> {
   const now = input.now ?? Date.now();
   const rows = await repo.raw(

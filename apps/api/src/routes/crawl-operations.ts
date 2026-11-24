@@ -105,6 +105,49 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     };
   });
 
+  app.get("/api/admin/crawl/moderation-analytics", { config: { scope: "admin", cache: { maxAge: 0 } } }, async (req, reply) => {
+    const parsed = z.object({
+      days: z.coerce.number().int().min(1).max(90).default(30),
+    }).safeParse(req.query ?? {});
+    if (!parsed.success) { reply.code(400); return { ok: false, error: "审核分析时间范围无效" }; }
+    const since = Date.now() - parsed.data.days * 24 * 60 * 60_000;
+    const rows = await ctx.repo.raw(
+      `SELECT COALESCE(model, '(未标记模型)') AS model,
+        COUNT(*) AS total,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
+        SUM(CASE WHEN status = 'quota_blocked' THEN 1 ELSE 0 END) AS quota_blocked,
+        AVG(CASE WHEN status = 'completed' THEN confidence ELSE NULL END) AS avg_confidence,
+        SUM(CASE WHEN verdict = 'auto_approve' THEN 1 ELSE 0 END) AS auto_approve,
+        SUM(CASE WHEN verdict = 'reject' THEN 1 ELSE 0 END) AS reject,
+        SUM(CASE WHEN verdict = 'manual_review' THEN 1 ELSE 0 END) AS manual_review
+       FROM crawl_ai_moderation_decisions
+       WHERE decision_source = 'ai' AND created_at >= ?
+       GROUP BY COALESCE(model, '(未标记模型)')
+       ORDER BY completed DESC, total DESC
+       LIMIT 50`,
+      [since],
+    );
+    return {
+      ok: true, days: parsed.data.days, generatedAt: Date.now(),
+      models: rows.map(row => {
+        const total = Number(row.total ?? 0);
+        const completed = Number(row.completed ?? 0);
+        return {
+          model: String(row.model), total, completed,
+          errors: Number(row.errors ?? 0), quotaBlocked: Number(row.quota_blocked ?? 0),
+          successRate: total ? Math.round(completed / total * 1000) / 10 : null,
+          averageConfidence: row.avg_confidence == null ? null : Number(row.avg_confidence),
+          verdicts: {
+            autoApprove: Number(row.auto_approve ?? 0),
+            reject: Number(row.reject ?? 0),
+            manualReview: Number(row.manual_review ?? 0),
+          },
+        };
+      }),
+    };
+  });
+
   app.get("/api/admin/crawl/candidates", { config: { scope: "admin", cache: { maxAge: 0 } } }, async (req, reply) => {
     const parsed = z.object({
       status: z.enum(["pending","approved","rejected"]).default("pending"),

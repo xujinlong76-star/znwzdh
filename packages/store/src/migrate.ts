@@ -809,6 +809,8 @@ export async function migrateColumns(db: { dialect: string; sqlite?: any; pg?: a
     for (const a of alters) {
       try {
         if (!existing) existing = await tableColumns(db, table);
+        // DDL 会在列迁移后创建的新表不应提前执行 ALTER；该列由建表 DDL 提供。
+        if (existing.size === 0) break;
         if (existing.has(a.column)) continue;
         const ddl = db.dialect === "pg" ? a.pg : a.sqlite;
         const statement = "ALTER TABLE " + table + " ADD COLUMN " + a.column + " " + ddl;
@@ -1091,7 +1093,7 @@ export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?:
       const existing = await read("SELECT id FROM categories WHERE id = ? OR slug = ?", [cat.id, cat.slug]);
       if (existing.length === 0) {
         await write(
-          "INSERT INTO categories (id, anchor, parent_id, title, slug, description, sort, enabled, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'registry', ?, ?)",
+          `INSERT INTO categories (id, anchor, parent_id, title, slug, description, sort, enabled, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ${db.dialect === "pg" ? "TRUE" : "1"}, 'registry', ?, ?)`,
           [cat.id, cat.anchor, cat.parentId, cat.title, cat.slug, cat.description, cat.sort, now, now]
         );
         categoriesCreated++;

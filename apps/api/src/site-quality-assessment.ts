@@ -51,11 +51,11 @@ export function buildSiteQualityAssessments(
     evidence: fields.map((field) => `${field.name}字段：${field.present ? "已填写" : "缺失"}`),
   };
 
-  // sites.url 的活动行唯一索引只保证精确 URL 不重复；同域名不同路径的近似重复仍需后续治理。
+  // URL 唯一约束只防止完全相同的地址重复，不等价于内容唯一性或近似重复检测。
   if (site.url.trim()) {
     dimensions.uniqueness = {
-      score: 100,
-      evidence: ["站点 URL 受活动站点精确唯一索引约束；未评估同域名不同路径的近似重复"],
+      score: null,
+      evidence: ["数据库只约束精确 URL 唯一；尚未执行同域名路径、页面内容或语义近似重复检测"],
     };
   }
 

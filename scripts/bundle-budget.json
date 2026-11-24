@@ -7,7 +7,7 @@
     "/admin/navigation/[id]/categories/[categoryId]/items": 1024000,
     "/admin/navigation/[id]/items": 1022976,
     "/admin/navigation/[id]/categories": 1009664,
-    "/": 1394688,
+    "/": 1486848,
     "/admin/videos": 1271808,
     "/admin/videos/[id]/categories": 1236992,
     "/compare": 1157120,
@@ -101,9 +101,33 @@
     "/drama": 882688,
     "/videos/v/[id]": 927744,
     "/auth/verify-email": 879616,
-    "/admin/site-reports": 1003520
+    "/admin/site-reports": 1003520,
+    "/vm/[mode]": 1486848
   },
   "_raise_log": [
+    {
+      "at": "2026-11-24T06:30:32.313Z",
+      "sha": "a5fe2b3c",
+      "source": "local",
+      "distDir": ".next-verify4",
+      "bundler": "turbopack",
+      "builtAt": "2026-11-24T06:21:00.000Z",
+      "reason": "首页展示模式重构（2fed5811 起）+ /vm/[mode] 预渲染变体（a5fe2b3c：middleware Cookie 重写到同一页面实现的 6 个 ISR 变体，Zero-CLS 与 ISR 门禁共存）后，/ 与 /vm/[mode] 首屏 chunk 实测 1,415,505 B（turbopack 口径，.next-verify4 构建）。/ 上调 5% 至棘轮上限 1,486,848 B；/vm/[mode] 与 / 同构同量，补同值专属条目（默认 1,270,784 B 过不了）。数字来源：本地构建（构建时首屏源码仅含并发会话少量未提交文件，不进 / 的 chunk 图）；CI 干净树以同一份文件复测。后续仍走只降不升棘轮。",
+      "changes": [
+        {
+          "route": "/",
+          "from": 1394688,
+          "to": 1486848,
+          "measured": 1415505
+        },
+        {
+          "route": "/vm/[mode]",
+          "from": 1270784,
+          "to": 1486848,
+          "measured": 1415505
+        }
+      ]
+    },
     {
       "at": "2026-11-15T18:26:02.670Z",
       "sha": "7598441",

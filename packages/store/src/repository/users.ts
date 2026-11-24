@@ -283,7 +283,9 @@ export async function verifyUserPassword(
   const hash = row?.password_hash;
   if (!hash) return null;
   const ok = await verifyPassword(password, String(hash));
-  return ok ? user : null;
+  // 未完成邮箱验证的密码账号不得建立正式会话。仍先执行 scrypt 校验，
+  // 让「未验证」与「密码错误」保持近似成本，并统一返回 null 防止状态枚举。
+  return ok && user.emailVerified ? user : null;
 }
 
 /** 更新密码（找回密码流程用）：先哈希再写，明文不落库 */

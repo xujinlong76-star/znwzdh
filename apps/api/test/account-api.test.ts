@@ -161,6 +161,42 @@ describe("账号生命周期 API", () => {
     ).toBe(400);
   });
 
+  it("登录失败锁定跨两个 API 实例共享，且审计不保存原始标识", async () => {
+    const replicaCtx = await createContext(
+      loadConfig({ ...base, sqlitePath: join(dir, "account.db") }),
+    );
+    const replicaApp = await buildServer(replicaCtx);
+    await replicaApp.ready();
+    const identifier = "shared-lock@example.com";
+    try {
+      for (let i = 0; i < 5; i += 1) {
+        const target = i % 2 === 0 ? app : replicaApp;
+        const bad = await target.inject({
+          method: "POST",
+          url: "/api/account/login",
+          payload: { identifier, password: "wrong" },
+        });
+        expect(bad.statusCode).toBe(401);
+      }
+      const blocked = await replicaApp.inject({
+        method: "POST",
+        url: "/api/account/login",
+        payload: { identifier, password: "anything" },
+      });
+      expect(blocked.statusCode).toBe(429);
+
+      const audit = await ctx.repo.raw(
+        "SELECT target FROM audit_logs WHERE action = ? AND target LIKE 'sha256:%' ORDER BY created_at DESC LIMIT 1",
+        ["account.login_locked"],
+      );
+      expect(String(audit[0]?.target ?? "")).toMatch(/^sha256:[a-f0-9]{64}$/);
+      expect(String(audit[0]?.target ?? "")).not.toContain(identifier);
+    } finally {
+      await replicaApp.close();
+      await replicaCtx.close();
+    }
+  });
+
   it("注册：单字符 TLD 不是真实邮箱", async () => {
     const res = await post("/api/account/register", {
       username: "tld",
@@ -194,10 +230,6 @@ describe("账号生命周期 API", () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toContain("邮箱格式");
   });
-
-  // 注：锁定用例只保留一份。登录失败计数是进程内共享状态（见 routes/account.ts
-  // loginFailures），同一标识的第二份相同用例会在第一次错误登录时就拿到 429，
-  // 永远跑不绿——不是生产行为错了，是用例被粘贴重复了（2026-11-15 删重复）。
 
   it("登录：未验证邮箱拒绝；完成验证后正确口令通过", async () => {
     captured.length = 0;

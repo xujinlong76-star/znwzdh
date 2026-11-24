@@ -199,7 +199,7 @@ async function moderateCandidateShadow(
   }
 
   try {
-    const result = await moderateSiteWithAi(runtime.resolved.provider, {
+    const moderationInput = {
       url: candidate.url,
       title: candidate.title,
       description: candidate.description,
@@ -207,30 +207,44 @@ async function moderateCandidateShadow(
         provenance: "crawl_source_item_metadata",
         warnings: ["尚未安全抓取候选页面正文；审核证据仅包含来源条目元数据"],
       },
-    }, {
+    };
+    const moderationPolicy = {
       autoApproveConfidence: runtime.policy.autoApproveConfidence,
       rejectConfidence: runtime.policy.rejectConfidence,
       minQualityScore: runtime.policy.minQualityScore,
       maxExcerptChars: runtime.policy.maxExcerptChars,
       requireHttps: runtime.policy.requireHttps,
-    }, {
-      deadlineAt: Date.now() + 30_000,
-      complete: async (_provider, request) => {
-        const response = await callLlm(ctx, runtime.resolved, {
-          scenario: "crawl_moderation_shadow",
-          identity: null,
-          messages: request.messages,
-          temperature: request.temperature,
-          maxTokens: request.maxTokens,
-          json: request.json,
-          thinking: false,
-          signal: request.signal,
-          deadlineAt: request.deadlineAt,
-          fetchImpl: request.fetchImpl,
+    };
+    let result: Awaited<ReturnType<typeof moderateSiteWithAi>> | null = null;
+    let lastError: unknown = null;
+    // 备用模型按配置顺序逐个尝试；每次调用都把当前 provider 传给额度/用量层，
+    // 避免「检测到备用模型可用，却始终只调用主模型」的假降级。
+    for (const provider of readyProviders) {
+      try {
+        result = await moderateSiteWithAi(provider, moderationInput, moderationPolicy, {
+          deadlineAt: Date.now() + 30_000,
+          complete: async (_provider, request) => {
+            const response = await callLlm(ctx, { ...runtime.resolved, provider: _provider }, {
+              scenario: "crawl_moderation_shadow",
+              identity: null,
+              messages: request.messages,
+              temperature: request.temperature,
+              maxTokens: request.maxTokens,
+              json: request.json,
+              thinking: false,
+              signal: request.signal,
+              deadlineAt: request.deadlineAt,
+              fetchImpl: request.fetchImpl,
+            });
+            return { content: response.content, model: response.model };
+          },
         });
-        return { content: response.content, model: response.model };
-      },
-    });
+        break;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (!result) throw lastError instanceof Error ? lastError : new Error("主模型及备用模型均不可用");
     await record({
       status: "completed", verdict: result.verdict, confidence: result.confidence,
       qualityScore: result.qualityScore, risks: result.risks, reasons: result.reasons,

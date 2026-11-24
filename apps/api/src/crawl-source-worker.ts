@@ -9,6 +9,7 @@ import {
   upsertSiteDiscoveryCandidate,
   recordCrawlAiModerationDecision,
   type CrawlSource,
+  type SiteDiscoveryCandidate,
 } from "@navhub/store";
 import type { AppContext } from "./context.ts";
 import { resolveLlm, llmProviderReady } from "./llm-config.ts";
@@ -127,7 +128,7 @@ async function moderateCandidateShadow(
       title: candidate.title,
       description: candidate.description,
       // 当前抓取阶段尚未抓取候选页面正文；证据不足时审核模型应降低置信度并建议人工复核。
-      evidence: { httpStatus: 200, provenance: "crawl_source_metadata_only", warnings: ["尚无候选页面正文"] },
+      evidence: { provenance: "crawl_source_metadata_only", warnings: ["尚无候选页面正文"] },
     }, {
       autoApproveConfidence: runtime.policy.autoApproveConfidence,
       rejectConfidence: runtime.policy.rejectConfidence,
@@ -165,7 +166,7 @@ async function moderateCandidateShadow(
   }
 }
 
-async function processSource(ctx: AppContext, source: CrawlSource, now: number, moderation: CrawlShadowModerationRuntime | null): Promise<number> {
+async function processSource(ctx: AppContext, source: CrawlSource, now: number): Promise<SiteDiscoveryCandidate[]> {
   const response = await guardedFetch(source.url, {
     timeoutMs: 8_000,
     maxBytes: MAX_SOURCE_BODY_BYTES,
@@ -179,7 +180,7 @@ async function processSource(ctx: AppContext, source: CrawlSource, now: number, 
   const baseUrl = response.finalUrl || source.url;
   const candidates = extractCrawlCandidateUrls(response.body, source.kind, baseUrl);
   const metadata = extractHtmlMetadata(response.body);
-  let inserted = 0;
+  const discovered: SiteDiscoveryCandidate[] = [];
   for (const url of candidates) {
     const candidate = await upsertSiteDiscoveryCandidate(ctx.repo, {
       id: randomUUID(),
@@ -199,10 +200,9 @@ async function processSource(ctx: AppContext, source: CrawlSource, now: number, 
       },
       now,
     });
-    inserted++;
-    if (moderation) await moderateCandidateShadow(ctx, candidate, moderation);
+    discovered.push(candidate);
   }
-  return inserted;
+  return discovered;
 }
 
 /**
@@ -215,7 +215,7 @@ export async function runCrawlSourceWorkerBatch(
 ): Promise<{ claimed: number; succeeded: number; failed: number; candidates: number }> {
   const now = options.now ?? Date.now();
   const sources = await claimDueCrawlSources(ctx.repo, options.workerId, {
-    now, limit: options.limit ?? 5, leaseMs: options.leaseMs ?? 90_000,
+    now, limit: options.limit ?? 5, leaseMs: options.leaseMs ?? 5 * 60_000,
   });
   let moderation: CrawlShadowModerationRuntime | null = null;
   try {
@@ -229,13 +229,15 @@ export async function runCrawlSourceWorkerBatch(
   let succeeded = 0, failed = 0, candidates = 0;
   for (const source of sources) {
     const host = new URL(source.url).hostname.toLowerCase();
-    const domainClaimed = await claimCrawlDomain(ctx.repo, host, source.id, { now, leaseMs: 30_000 });
+    const domainClaimed = await claimCrawlDomain(ctx.repo, host, source.id, { now, leaseMs: 5 * 60_000 });
     if (!domainClaimed) {
       await deferCrawlSource(ctx.repo, { id: source.id, workerId: options.workerId, now, delayMs: 15_000 });
       continue;
     }
+    let discovered: SiteDiscoveryCandidate[] = [];
     try {
-      candidates += await processSource(ctx, source, now, moderation);
+      discovered = await processSource(ctx, source, now);
+      candidates += discovered.length;
       await settleCrawlSource(ctx.repo, { id: source.id, workerId: options.workerId, status: "ok", now });
       succeeded++;
     } catch (error) {
@@ -244,6 +246,14 @@ export async function runCrawlSourceWorkerBatch(
       failed++;
     } finally {
       await releaseCrawlDomain(ctx.repo, host, source.id, { now: Date.now(), minIntervalMs: 15_000 });
+    }
+    // AI 调用在抓取租约释放后执行，避免模型慢调用占住域名租约或让来源租约过期。
+    if (moderation) {
+      for (const candidate of discovered) {
+        try { await moderateCandidateShadow(ctx, candidate, moderation); }
+        catch (error) { console.error("[crawl-worker] shadow moderation failed:", error); }
+        if (moderation.reviewed >= moderation.policy.maxAiReviewsPerRun) break;
+      }
     }
   }
   return { claimed: sources.length, succeeded, failed, candidates };

@@ -488,6 +488,23 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     checksum: "v1_crawl_source_retry_backoff",
   },
   {
+    version: "20261124_crawl_domain_circuit",
+    name: "采集域名级持久化熔断状态",
+    up: async (db: Db) => {
+      const statement = `CREATE TABLE IF NOT EXISTS crawl_domain_circuit (
+        host TEXT PRIMARY KEY,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        opened_until BIGINT NOT NULL DEFAULT 0,
+        last_failure_at BIGINT,
+        updated_at BIGINT NOT NULL
+      )`;
+      const index = "CREATE INDEX IF NOT EXISTS crawl_domain_circuit_open_idx ON crawl_domain_circuit(opened_until)";
+      if (db.dialect === "pg" && db.pg) { await db.pg.query(statement); await db.pg.query(index); }
+      else if (db.sqlite) { db.sqlite.exec(statement); db.sqlite.exec(index); }
+    },
+    checksum: "v1_crawl_domain_circuit",
+  },
+  {
     version: "20261124_crawl_robots_shared_cache",
     name: "跨实例共享 robots.txt 策略缓存",
     up: async (db: Db) => {

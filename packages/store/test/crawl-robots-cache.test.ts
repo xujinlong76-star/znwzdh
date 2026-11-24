@@ -15,12 +15,12 @@ describe("跨实例共享 robots.txt 缓存", () => {
 
   it("持久化并读取仍在 TTL 内的允许规则", async () => {
     await upsertCrawlRobotsCache(repo, {
-      origin: "https://example.com", body: "User-agent: *\\nAllow: /",
+      origin: "https://example.com", body: "User-agent: *\nAllow: /",
       blocked: false, status: 200, etag: '"v1"', lastModified: "Tue, 24 Nov 2026 00:00:00 GMT",
       fetchedAt: 10_000, ttlMs: 120_000,
     });
     expect(await getCrawlRobotsCache(repo, "https://example.com", 20_000)).toMatchObject({
-      origin: "https://example.com", body: "User-agent: *\\nAllow: /",
+      origin: "https://example.com", body: "User-agent: *\nAllow: /",
       blocked: false, status: 200, etag: '"v1"', fetchedAt: 10_000, expiresAt: 130_000,
     });
   });

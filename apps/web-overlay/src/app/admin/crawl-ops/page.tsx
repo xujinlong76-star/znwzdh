@@ -222,7 +222,7 @@ export default function CrawlOperationsPage(){
   return <div className="mx-auto max-w-7xl space-y-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="flex items-center gap-2 text-2xl font-bold"><Activity className="h-6 w-6"/>采集运营中心</h1>
-        <p className="mt-1 text-sm text-muted-foreground">统一查看采集队列、来源运行、质量线索与人工审核。评分只用于辅助决策，不会自动发布或删除站点。</p></div>
+        <p className="mt-1 text-sm text-muted-foreground">统一查看采集队列、来源运行、质量线索与 AI/人工审核。AI 自动通过必须满足金标评测门槛，且不会自动发布或删除站点。</p></div>
       <Button variant="outline" size="sm" onClick={()=>void load()} disabled={loading}><RefreshCw className={'mr-2 h-4 w-4 '+(loading?'animate-spin':'')}/>刷新数据</Button>
     </div>
     {error&&<Card className="border-destructive/50"><CardContent className="flex items-center gap-2 py-4 text-sm text-destructive-text"><AlertTriangle className="h-4 w-4"/>{error}</CardContent></Card>}

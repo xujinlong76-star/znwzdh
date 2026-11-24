@@ -281,8 +281,8 @@ export function rankCandidate(c: StructuredReplacementCandidate): number {
     quality.score <= 100 &&
     Number.isFinite(quality.evidenceCoverage) &&
     quality.evidenceCoverage >= 40 &&
-    quality.band !== "high_risk" &&
-    quality.band !== "insufficient_evidence"
+    quality.evidenceCoverage <= 100 &&
+    (quality.band === "high" || quality.band === "medium" || quality.band === "low")
   ) {
     qualityBonus = quality.score / 101
   }

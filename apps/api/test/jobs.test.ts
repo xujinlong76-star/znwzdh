@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
-import { JobRunner, backoffMs, jobEventBus, previewDataRetention, type JobEventPayload } from "../src/jobs.ts";
+import { JobRunner, backoffMs, jobEnqueueScope, jobEventBus, JOB_KINDS, previewDataRetention, type JobEventPayload } from "../src/jobs.ts";
 import { refreshUserProfile } from "../src/profile-service.ts";
 
 let dir: string;
@@ -36,6 +36,15 @@ beforeAll(async () => {
 afterAll(async () => {
   await ctx.close();
   rmSync(dir, { recursive: true, force: true });
+});
+
+describe("持久化采集 Worker 任务注册", () => {
+  it("worker 只允许管理员触发，且注册表覆盖 crawl_worker", () => {
+    const runner = new JobRunner(ctx);
+    expect(JOB_KINDS).toContain("crawl_worker");
+    expect(runner.taskRegistry.has("crawl_worker")).toBe(true);
+    expect(jobEnqueueScope("crawl_worker", {})).toBe("admin");
+  });
 });
 
 describe("recompute_rank 任务", () => {

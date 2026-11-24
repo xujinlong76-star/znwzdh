@@ -8,12 +8,13 @@ import {
   createCrawlModerationGoldCase, listCrawlModerationGoldCases, getCrawlModerationGoldCase,
   annotateCrawlModerationGoldCase, adjudicateCrawlModerationGoldCase, listCrawlModerationGoldAnnotations,
   listSiteDiscoveryCandidates, reviewSiteDiscoveryCandidate,
+  listCrawlSources, upsertCrawlSource, updateCrawlSource, deleteCrawlSource,
 } from "@navhub/store";
 import type { AppContext } from "../context.ts";
 import { resolveLlm, llmProviderReady } from "../llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota, replyQuotaBlocked } from "../llm-quota.ts";
 import { callLlm } from "../llm-usage.ts";
-import { loadCrawlAiModerationPolicy } from "../crawl-moderation-policy.ts";
+import { CRAWL_AI_MODERATION_POLICY_KEY, CrawlAiModerationPolicySchema, loadCrawlAiModerationPolicy } from "../crawl-moderation-policy.ts";
 
 /** 对正式金标集做稳定抽样：相同数据集重复运行时选中相同样本。 */
 export function selectGoldEvaluationSample<T extends { id: unknown; category?: unknown; final_risk?: unknown }>(rows: readonly T[], limit = 20): T[] {
@@ -810,4 +811,54 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     return {ok:true,id,model:body.data.model,datasetVersion,sampleSize:metrics.sampleSize,metrics:evaluation,alerts,createdAt};
   });
 
+  // 采集来源注册表：所有写入均需管理员权限并留审计记录。
+  app.get("/api/admin/crawl-sources", { config: { scope: "admin", cache: { maxAge: 0 } } }, async (req, reply) => {
+    const parsed = z.object({ enabled: z.enum(["true", "false"]).optional(), limit: z.coerce.number().int().min(1).max(200).default(100), offset: z.coerce.number().int().min(0).max(100_000).default(0) }).safeParse(req.query ?? {});
+    if (!parsed.success) { reply.code(400); return { ok: false, error: "采集来源筛选参数无效" }; }
+    const items = await listCrawlSources(ctx.repo, { enabled: parsed.data.enabled === undefined ? undefined : parsed.data.enabled === "true", limit: parsed.data.limit, offset: parsed.data.offset });
+    return { ok: true, items };
+  });
+
+  app.post("/api/admin/crawl-sources", { config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const body = z.object({ url: z.string().trim().url().max(2048), kind: z.enum(["sitemap", "rss", "page"]), enabled: z.boolean().optional(), priority: z.number().int().min(-100).max(100).optional(), intervalMs: z.number().int().min(300_000).max(30 * 24 * 60 * 60_000).optional(), nextRunAt: z.number().int().min(0).optional() }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { ok: false, error: "采集来源参数无效", details: body.error.issues }; }
+    try {
+      const item = await upsertCrawlSource(ctx.repo, body.data);
+      await ctx.repo.audit({ ip: req.ip, actor: String(req.auth.actor ?? "admin"), actorKind: req.auth.kind, action: "crawl.source_upsert", target: item.id, diff: { kind: item.kind, enabled: item.enabled, priority: item.priority } });
+      return { ok: true, item };
+    } catch (error) { reply.code(400); return { ok: false, error: error instanceof Error ? error.message : "采集来源保存失败" }; }
+  });
+
+  app.patch("/api/admin/crawl-sources/:id", { config: { scope: "admin", rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params ?? {});
+    const body = z.object({ url: z.string().trim().url().max(2048).optional(), kind: z.enum(["sitemap", "rss", "page"]).optional(), enabled: z.boolean().optional(), priority: z.number().int().min(-100).max(100).optional(), intervalMs: z.number().int().min(300_000).max(30 * 24 * 60 * 60_000).optional(), nextRunAt: z.number().int().min(0).optional() }).refine(value => Object.keys(value).length > 0, "至少提供一个要更新的字段").safeParse(req.body ?? {});
+    if (!params.success) { reply.code(400); return { ok: false, error: "采集来源 ID 无效", details: params.error.issues }; }
+    if (!body.success) { reply.code(400); return { ok: false, error: "采集来源更新参数无效", details: body.error.issues }; }
+    try {
+      const item = await updateCrawlSource(ctx.repo, params.data.id, body.data);
+      if (!item) { reply.code(404); return { ok: false, error: "采集来源不存在" }; }
+      await ctx.repo.audit({ ip: req.ip, actor: String(req.auth.actor ?? "admin"), actorKind: req.auth.kind, action: "crawl.source_update", target: item.id, diff: { kind: item.kind, enabled: item.enabled, priority: item.priority } });
+      return { ok: true, item };
+    } catch (error) { reply.code(409); return { ok: false, error: error instanceof Error ? error.message : "采集来源更新冲突" }; }
+  });
+
+  app.delete("/api/admin/crawl-sources/:id", { config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params ?? {});
+    if (!params.success) { reply.code(400); return { ok: false, error: "采集来源 ID 无效", details: params.error.issues }; }
+    const deleted = await deleteCrawlSource(ctx.repo, params.data.id);
+    if (!deleted) { reply.code(404); return { ok: false, error: "采集来源不存在" }; }
+    await ctx.repo.audit({ ip: req.ip, actor: String(req.auth.actor ?? "admin"), actorKind: req.auth.kind, action: "crawl.source_delete", target: params.data.id, diff: {} });
+    return { ok: true, deleted: true };
+  });
+
+  app.get("/api/admin/crawl-moderation/policy", { config: { scope: "admin", cache: { maxAge: 0 } } }, async () => {
+    return { ok: true, policy: await loadCrawlAiModerationPolicy(ctx) };
+  });
+  app.put("/api/admin/crawl-moderation/policy", { config: { scope: "admin", rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const body = CrawlAiModerationPolicySchema.safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { ok: false, error: "AI 审核规则无效", details: body.error.issues }; }
+    await ctx.repo.setSystemState(CRAWL_AI_MODERATION_POLICY_KEY, body.data);
+    await ctx.repo.audit({ ip: req.ip, actor: String(req.auth.actor ?? "admin"), actorKind: req.auth.kind, action: "crawl.moderation_policy_update", target: CRAWL_AI_MODERATION_POLICY_KEY, diff: { enabled: body.data.enabled, mode: body.data.mode, autoApproveConfidence: body.data.autoApproveConfidence, rejectConfidence: body.data.rejectConfidence, minQualityScore: body.data.minQualityScore, maxAiReviewsPerRun: body.data.maxAiReviewsPerRun } });
+    return { ok: true, policy: body.data };
+  });
 };

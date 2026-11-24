@@ -212,8 +212,6 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   // 搜索包 URL 健康探活（P1-4 前缀引擎登录墙化）：每天对 5 个 search-pack 种子的
   // 全部外部检索 URL 探活一次，只记事件与审计，不自动下架（见 tasks/plugin-url-health.task.ts）。
   { kind: "plugin_url_health", intervalMs: 86_400_000 },
-  // 默认关闭；仅在显式配置 NAVHUB_CRAWL_WORKER_ENABLED=true 后启用持久化发现队列。
-  ...(process.env.NAVHUB_CRAWL_WORKER_ENABLED === "true" ? [{ kind: "crawl_worker" as const, intervalMs: 5 * 60_000, payload: { maxTasks: 10 } }] : []),
   // 数据治理默认只做 rollup 的 dry-run：自动化可以先"看见"，不该先"动手"。
   // 确认过输出后再把 payload 改成 { mode: "rollup", apply: true }（或手动触发一次）。
   { kind: "data_retention", intervalMs: 86_400_000, payload: { mode: "rollup", apply: false, maxDays: 30, telemetryDays: 90 } },
@@ -231,6 +229,15 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   // 短剧真榜单：每天拉一次搜短剧热播/热搜/收藏榜，解析存快照（与上条同频）
   { kind: "drama_rankings_refresh", intervalMs: 86_400_000 },
 ];
+
+/** 在运行时读取开关：main.ts 先加载 .env，再创建/启动 JobRunner。 */
+export function getActiveCronSchedules(): CronScheduleConfig[] {
+  const schedules = [...DEFAULT_CRON_SCHEDULES];
+  if (process.env.NAVHUB_CRAWL_WORKER_ENABLED === "true") {
+    schedules.push({ kind: "crawl_worker", intervalMs: 5 * 60_000, payload: { maxTasks: 10 } });
+  }
+  return schedules;
+}
 
 /**
  * 只能手动触发、**绝不进 DEFAULT_CRON_SCHEDULES** 的 kind。
@@ -1039,7 +1046,7 @@ export class JobRunner {
   /** 检查内置 Cron 定时计划并在到期时入队任务（tick 与独立排期定时器共用） */
   private async checkRecurringSchedules(): Promise<void> {
     const now = Date.now();
-    for (const schedule of DEFAULT_CRON_SCHEDULES) {
+    for (const schedule of getActiveCronSchedules()) {
       const stateKey = `cron:last_run:${schedule.kind}`;
       const lastRun = await this.ctx.repo.getSystemState<number>(stateKey);
       if (!lastRun || now - lastRun >= schedule.intervalMs) {

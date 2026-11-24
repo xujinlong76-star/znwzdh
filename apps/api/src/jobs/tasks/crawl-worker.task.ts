@@ -230,6 +230,18 @@ type RobotsResult =
   | { kind: "blocked"; reason: string }
   | { kind: "retry"; reason: string; retryAfterMs: number };
 
+class CrawlRobotsBlockedError extends Error {
+  constructor(message: string) { super(message); this.name = "CrawlRobotsBlockedError"; }
+}
+class CrawlRobotsRetryError extends Error {
+  readonly retryAfterMs: number;
+  constructor(message: string, retryAfterMs: number) {
+    super(message);
+    this.name = "CrawlRobotsRetryError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
 const ROBOTS_CACHE_TTL_MS = 60 * 60_000;
 const ROBOTS_CACHE_MAX_ENTRIES = 5_000;
 const robotsCache = new Map<string, { expiresAt: number; body: string | null; blocked: boolean }>();
@@ -443,29 +455,23 @@ export async function handleCrawlWorker(
         maxBytes: MAX_BODY_BYTES,
         maxRedirects: 5,
         userAgent: "NavHubDiscoveryBot/1.0 (+https://github.com/xujinlong76-star/znwzdh)",
-      }, { signal: run.signal });
-      // 跨 origin 重定向后再次检查目标 robots 策略；原站许可不能替代目标站许可。
-      if (new URL(response.finalUrl).origin !== new URL(task.url).origin) {
-        const redirectedRobots = await checkRobotsPolicy(response.finalUrl, run.signal);
-        if (redirectedRobots.kind === "blocked") {
-          await settleCrawlTask(ctx.repo, {
-            id: task.id, workerId, outcome: "hold_for_review",
-            error: "重定向目标 robots.txt 不允许抓取：" + redirectedRobots.reason, now: Date.now(),
-          });
-          summary.heldForReview++;
-          continue;
-        }
-        if (redirectedRobots.kind === "retry") {
-          await settleCrawlTask(ctx.repo, {
-            id: task.id, workerId, outcome: "retry",
-            error: "重定向目标 robots.txt 暂不可读取：" + redirectedRobots.reason,
-            nextRunAt: Date.now() + Math.max(retryDelay(task.attempts), redirectedRobots.retryAfterMs),
-            now: Date.now(),
-          });
-          summary.retried++;
-          continue;
-        }
-      }
+      }, {
+        signal: run.signal,
+        onRedirect: async (fromUrl, toUrl) => {
+          // 必须在目标 URL 请求发出前检查目标 origin 的 robots，而不是等页面已抓取后补查。
+          if (new URL(fromUrl).origin === new URL(toUrl).origin) return;
+          const redirectedRobots = await checkRobotsPolicy(toUrl, run.signal);
+          if (redirectedRobots.kind === "blocked") {
+            throw new CrawlRobotsBlockedError("重定向目标 robots.txt 不允许抓取：" + redirectedRobots.reason);
+          }
+          if (redirectedRobots.kind === "retry") {
+            throw new CrawlRobotsRetryError(
+              "重定向目标 robots.txt 暂不可读取：" + redirectedRobots.reason,
+              redirectedRobots.retryAfterMs,
+            );
+          }
+        },
+      });
       if (response.status === 401 || response.status === 403 || response.status === 451) {
         await settleCrawlTask(ctx.repo, {
           id: task.id, workerId, outcome: "hold_for_review",
@@ -699,6 +705,21 @@ export async function handleCrawlWorker(
       summary.completed++;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (error instanceof CrawlRobotsBlockedError) {
+        await settleCrawlTask(ctx.repo, {
+          id: task.id, workerId, outcome: "hold_for_review", error: message.slice(0, 1800), now: Date.now(),
+        });
+        summary.heldForReview++;
+        continue;
+      }
+      if (error instanceof CrawlRobotsRetryError) {
+        await settleCrawlTask(ctx.repo, {
+          id: task.id, workerId, outcome: "retry", error: message.slice(0, 1800),
+          nextRunAt: Date.now() + Math.max(retryDelay(task.attempts), error.retryAfterMs), now: Date.now(),
+        });
+        summary.retried++;
+        continue;
+      }
       const review = /SsrfBlockedError|SSRF|受保护网段|禁止访问该端口/i.test(message);
       const outcome = review ? "hold_for_review" : task.attempts >= task.maxAttempts ? "dead_letter" : "retry";
       await settleCrawlTask(ctx.repo, {

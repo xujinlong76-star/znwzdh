@@ -1102,6 +1102,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         createdAt: t.createdAt,
         expiresAt: t.expiresAt,
         lastUsedAt: t.lastUsedAt,
+        rotatedAt: t.rotatedAt,
       })),
     };
   });
@@ -1112,9 +1113,11 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     if (!identity || identity.startsWith("anon-")) { reply.code(403); return { error: "只有已登录用户可以轮换个人令牌" }; }
     const id = String((req.params as { id: string }).id || "");
     if (!id || id.length > 64) { reply.code(400); return { error: "id 无效" }; }
+    const body = z.object({ expectedRotatedAt: z.number().int().nonnegative().nullable() }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "缺少有效的 expectedRotatedAt 版本；请先刷新个人令牌列表" }; }
     const canonical = await ctx.repo.resolveIdentity(identity);
     const raw = generateToken();
-    const record = await ctx.repo.rotateApiTokenByOwner(canonical, id, hashToken(raw), tokenPrefixOf(raw));
+    const record = await ctx.repo.rotateApiTokenByOwner(canonical, id, hashToken(raw), tokenPrefixOf(raw), body.data.expectedRotatedAt);
     if (!record) { reply.code(404); return { error: "令牌不存在、已吊销或已过期" }; }
     await ctx.repo.audit({
       ip: req.ip,

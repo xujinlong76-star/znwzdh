@@ -21,6 +21,21 @@ import {
   resolveAndCheck,
 } from "../src/ssrf.ts";
 
+// 环境无关性（2026-11-24）：DNS 劫持环境（VPN/TUN 网关合成地址）会把 *.invalid
+// 也解析到假 IP（本机实测 198.20.2.x），RFC 2606「.invalid 永不解析」不成立——
+// 「解析失败 fail-closed」的断言会随环境翻转。这里用 lookup 桩把 .invalid 钉成
+// ENOTFOUND（等价不可解析），其余主机名照常走真实解析，断言不再依赖本机 DNS。
+vi.mock("node:dns/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:dns/promises")>();
+  return {
+    ...actual,
+    lookup: (hostname: string, options?: unknown) =>
+      hostname.endsWith(".invalid")
+        ? Promise.reject(Object.assign(new Error("ENOTFOUND"), { code: "ENOTFOUND" }))
+        : actual.lookup(hostname, options as never),
+  };
+});
+
 describe("IPv4 网段", () => {
   const blocked = [
     "0.0.0.0",
@@ -162,7 +177,8 @@ describe("trustedHosts 精确主机名白名单（U-284）", () => {
   });
 
   it("未列名主机：仍走 DNS 校验，解析失败也 fail-closed", async () => {
-    // .invalid 按 RFC 2606 保证不可解析，任何环境都应抛 SsrfBlockedError
+    // .invalid 在干净 DNS 下不可解析（RFC 2606）；被劫持环境由文件顶部的
+    // lookup 桩钉成 ENOTFOUND，两种环境都应抛 SsrfBlockedError（fail-closed）
     await expect(
       resolveAndCheck(new URL("https://nonexistent.invalid/"), {
         ...DEFAULT_GUARD,

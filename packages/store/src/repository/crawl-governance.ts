@@ -152,6 +152,11 @@ export async function claimCrawlTask(
       if (!domain) continue;
       if (Number(domain.next_allowed_at ?? 0) > now) continue;
       if (domain.lease_task_id && Number(domain.lease_expires_at ?? 0) > now) continue;
+      const circuitRows = await repo.raw(
+        "SELECT opened_until FROM crawl_domain_circuit WHERE host = ? LIMIT 1",
+        [host],
+      );
+      if (Number(circuitRows[0]?.opened_until ?? 0) > now) continue;
 
       const id = String(candidate.id);
       const expiresAt = now + leaseMs;
@@ -191,10 +196,31 @@ export async function settleCrawlTask(
         now, input.id, input.workerId, now],
     );
     if (!rows[0]) return false;
+    const host = String(rows[0].host);
     await repo.run(
       "UPDATE crawl_domain_state SET lease_task_id = NULL, lease_expires_at = NULL, updated_at = ? WHERE host = ? AND lease_task_id = ?",
-      [now, String(rows[0].host), input.id],
+      [now, host, input.id],
     );
+    if (input.outcome === "done") {
+      await repo.run(
+        "INSERT INTO crawl_domain_circuit (host, consecutive_failures, opened_until, last_failure_at, updated_at) VALUES (?, 0, 0, NULL, ?) ON CONFLICT(host) DO UPDATE SET consecutive_failures = 0, opened_until = 0, last_failure_at = NULL, updated_at = excluded.updated_at",
+        [host, now],
+      );
+    } else if (input.outcome === "retry") {
+      await repo.run(
+        "INSERT INTO crawl_domain_circuit (host, consecutive_failures, opened_until, last_failure_at, updated_at) VALUES (?, 1, 0, ?, ?) ON CONFLICT(host) DO UPDATE SET consecutive_failures = crawl_domain_circuit.consecutive_failures + 1, last_failure_at = excluded.last_failure_at, updated_at = excluded.updated_at",
+        [host, now, now],
+      );
+      const state = await repo.raw("SELECT consecutive_failures FROM crawl_domain_circuit WHERE host = ? LIMIT 1", [host]);
+      const failures = Number(state[0]?.consecutive_failures ?? 0);
+      if (failures >= 5) {
+        const cooldownMs = Math.min(60 * 60_000, 5 * 60_000 * 2 ** Math.min(4, failures - 5));
+        await repo.run(
+          "UPDATE crawl_domain_circuit SET opened_until = ?, updated_at = ? WHERE host = ?",
+          [now + cooldownMs, now, host],
+        );
+      }
+    }
     return true;
   });
 }

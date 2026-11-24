@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer, type Server } from "node:http";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
@@ -9,6 +10,8 @@ import { loadConfig } from "../src/config.ts";
 let dir: string;
 let ctx: AppContext;
 let app: Awaited<ReturnType<typeof buildServer>>;
+let discoveryServer: Server;
+let discoveryUrl: string;
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navhub-discovery-candidates-"));
@@ -20,22 +23,46 @@ beforeAll(async () => {
       timeoutMs: 2000,
       maxBytes: 262144,
       maxRedirects: 2,
-      allowPrivateNetworks: false,
+      allowPrivateNetworks: true,
       userAgent: "NavHubTest/0.1",
     },
     corsOrigins: ["*"],
   });
   ctx = await createContext(config);
   app = await buildServer(ctx);
+  discoveryServer = createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end('<html><head><title>AI Discovery Fixture</title><meta name="description" content="A local fixture for staged discovery testing." /></head><body>AI tools and workflow automation.</body></html>');
+  });
+  await new Promise<void>((resolve) => discoveryServer.listen(0, "127.0.0.1", resolve));
+  const address = discoveryServer.address();
+  if (!address || typeof address === "string") throw new Error("test server did not bind to a TCP port");
+  discoveryUrl = `http://127.0.0.1:${address.port}/`;
 });
 
 afterAll(async () => {
   await app.close();
+  await new Promise<void>((resolve, reject) => discoveryServer.close((error) => error ? reject(error) : resolve()));
   await ctx.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
 describe("staged discovery candidate pipeline", () => {
+  it("AI enrichment stages a real fetched URL without publishing it", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sites/discover",
+      payload: { url: discoveryUrl },
+    });
+    expect(response.statusCode).toBe(202);
+    const body = response.json();
+    expect(body.queuedForReview).toBe(true);
+    expect(body.candidate.status).toBe("pending");
+    expect(body.candidate.source).toBe("ai");
+    expect(body.candidate.evidence.httpStatus).toBe(200);
+    expect(await ctx.repo.findSiteByUrl(discoveryUrl)).toBeNull();
+  });
+
   it("deduplicates canonical URLs and keeps new candidates pending", async () => {
     const first = await app.inject({
       method: "POST",

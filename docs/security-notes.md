@@ -153,3 +153,5 @@
 - 管理员 MFA：TOTP（RFC 6238 / SHA-1 / 6 位 / 30 秒，±1 时间步容差），密钥以 AES-256-GCM 加密存储；10 个恢复码只存哈希、每个仅可原子消费一次。Web BFF 通过 `NAVHUB_INTERNAL_TOKEN` 调用内部核验接口；设置 `NAVHUB_ADMIN_MFA_REQUIRED=1` 强制管理员二次验证。需配置 `NAVHUB_MFA_ENCRYPTION_KEY`（32 字节）与 Web/API 共享的内部令牌。
 - 用户个人 API Token 新增 `/api/me/tokens/:id/rotate`；SQL 同时校验 owner、未吊销、未过期，轮换立即替换哈希，旧明文立即失效，新明文只返回一次。
 - MFA 初始化流程与部署环境变量见 `.env.example`。启用强制模式前必须完成 setup/confirm 并离线保存恢复码。
+
+- TOTP 验证码按 30 秒时间步记录共享消费标记，同一时间步验证码只能成功一次；待确认的 MFA enrollment 仅在 10 分钟内有效。恢复码使用记录进入审计日志。

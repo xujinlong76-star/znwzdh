@@ -251,6 +251,10 @@ export function createGuardedApiExecutor(options: GuardOptions = {}) {
         } else {
           requestInit.body = currentBody;
         }
+        // CodeQL js/request-forgery #149 误报说明：本跳之前已过 isSafeUrl 字符串级校验
+        // （协议/保留域名/等价本机 IP 写法/内嵌私网 IP）+ 逐跳重校验；生产 transport
+        //（agents.ts 的 guardedToolFetch → @navhub/ai guardedFetch）另做 DNS 解析 +
+        // 受保护 IP 校验。CodeQL stock 查询不识别自定义 guard 与注入的 transport，故仍报警。
         const response = await fetchImpl(currentUrl, requestInit);
         if (!REDIRECT_STATUS.has(response.status)) {
           res = response;

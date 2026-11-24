@@ -583,6 +583,9 @@ async function callOnce(
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (provider.apiKey) headers.Authorization = "Bearer " + provider.apiKey;
 
+    // CodeQL js/request-forgery #148 误报说明：url 在此之前已过 assertLlmEndpoint 的
+    // DNS 解析 + 真实 IP 校验，且本次请求 redirect: "error"（禁跟随）；CodeQL stock 查询
+    // 不识别自定义 guard，故仍报警（防护本身已做）。
     const res = await fetchImpl(url, {
       method: "POST",
       headers,

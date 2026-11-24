@@ -5,6 +5,7 @@ import {
   claimCrawlTask,
   enqueueCrawlTask,
   recordCrawlFingerprint,
+  reapExpiredCrawlLeases,
   settleCrawlTask,
   upsertSiteDiscoveryCandidate,
 } from "@navhub/store";
@@ -287,6 +288,8 @@ export interface CrawlWorkerSummary {
   heldForReview: number;
   candidatesUpserted: number;
   feedUrlsEnqueued: number;
+  expiredLeaseRetries: number;
+  expiredLeaseDeadLetters: number;
   stopped: boolean;
 }
 
@@ -296,6 +299,7 @@ export async function handleCrawlWorker(
   payload: { seeds?: CrawlSeed[]; maxTasks?: number } = {},
 ): Promise<CrawlWorkerSummary> {
   const now = Date.now();
+  const reaped = await reapExpiredCrawlLeases(ctx.repo, { retryDelayMs: 1_000, now });
   const seeds = [...(payload.seeds ?? []), ...parseCrawlSeeds(process.env.NAVHUB_CRAWL_SEEDS)];
   const uniqueSeeds = new Map<string, CrawlSeed>();
   for (const seed of seeds.slice(0, MAX_SEEDS)) {
@@ -319,7 +323,8 @@ export async function handleCrawlWorker(
 
   const summary: CrawlWorkerSummary = {
     seedsEnqueued, tasksClaimed: 0, completed: 0, retried: 0, deadLettered: 0,
-    heldForReview: 0, candidatesUpserted: 0, feedUrlsEnqueued: 0, stopped: false,
+    heldForReview: 0, candidatesUpserted: 0, feedUrlsEnqueued: 0,
+    expiredLeaseRetries: reaped.retried, expiredLeaseDeadLetters: reaped.deadLettered, stopped: false,
   };
   const maxTasks = Math.max(1, Math.min(25, Math.floor(payload.maxTasks ?? 10)));
   const workerId = "crawl-worker:" + randomUUID();

@@ -343,6 +343,9 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     if (candidate.status !== "approved" || !candidate.reviewedBy?.startsWith("ai:")) {
       reply.code(409); return { ok: false, error: "仅可复核由 AI 自动批准且尚未被人工修改的候选" };
     }
+    if (candidate.siteId) {
+      reply.code(409); return { ok: false, error: "候选已关联正式站点，请先在站点管理中处理发布状态" };
+    }
     const actor = String(req.auth.actor ?? "admin");
     const now = Date.now();
     const currentAi = candidate.evidence.aiModeration && typeof candidate.evidence.aiModeration === "object"

@@ -346,3 +346,46 @@ describe('P1 #10 跟进：wayback-resolver 的 isPotentialBrokenHttpCode 不删'
     expect(coreTest).toContain('isPotentialBrokenHttpCode')
   })
 })
+
+describe('tablist A-1：quick-dock 标准 ARIA Tabs 键盘交互（2026-11-24 14:22 轮）', () => {
+  const DOCK = 'src/components/home-quick-dock.tsx'
+
+  it('容器挂 onKeyDown，三 tab 顺序常量与 handler 接线齐全', () => {
+    const src = read(DOCK)
+    expect(src).toContain('onKeyDown={handleTabKeyDown}')
+    expect(src).toContain("const DOCK_TABS: DockTab[] = ['speed', 'frequent', 'recent']")
+    expect(src).toContain('const handleTabKeyDown')
+    // 三 tab roving tabIndex 各一
+    expect(count(src, "tabIndex={activeTab === '")).toBe(3)
+    expect(src).toContain("tabIndex={activeTab === 'speed' ? 0 : -1}")
+    expect(src).toContain("tabIndex={activeTab === 'frequent' ? 0 : -1}")
+    expect(src).toContain("tabIndex={activeTab === 'recent' ? 0 : -1}")
+  })
+
+  it('handler：全量 tab 列表保下标映射，步进跳过 disabled，禁用 :not([disabled]) 错位写法', () => {
+    const src = read(DOCK)
+    const handler = src.slice(
+      src.indexOf('const handleTabKeyDown'),
+      src.indexOf('\n  }\n', src.indexOf('const handleTabKeyDown')),
+    )
+    // 守卫 + 全量 querySelectorAll（不加 :not([disabled])）
+    expect(handler).toContain("target.getAttribute('role') !== 'tab'")
+    expect(handler).toContain("querySelectorAll<HTMLButtonElement>('[role=\"tab\"]')")
+    expect(handler).not.toContain('[role="tab"]:not([disabled])')
+    // disabled 跳过：enabled 数组 + step()，Home/End 取首/末 enabled 位
+    expect(handler).toContain('tabs.map((t) => !t.disabled)')
+    expect(handler).toContain('const step = (from: number, dir: 1 | -1): number => {')
+    expect(handler).toContain('const firstEnabled = enabled.findIndex(Boolean)')
+    expect(handler).toContain('const lastEnabled = enabled.lastIndexOf(true)')
+    // ←/→/Home/End 四键 + 先判键再 preventDefault
+    for (const key of ["'ArrowRight'", "'ArrowLeft'", "'Home'", "'End'"]) {
+      expect(handler).toContain(`event.key === ${key}`)
+    }
+    expect(handler).toContain('event.preventDefault()')
+    // 切 tab 走 chooseTab + focus，不用 .click()，不做 URL 同步
+    expect(handler).toContain('chooseTab(DOCK_TABS[next])')
+    expect(handler).toContain('tabs[next]?.focus()')
+    expect(handler).not.toContain('.click()')
+    expect(handler).not.toContain('selectTab')
+  })
+})

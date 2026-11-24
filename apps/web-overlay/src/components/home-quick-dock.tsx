@@ -100,6 +100,54 @@ export const HomeQuickDock = memo(function HomeQuickDock({
     setActiveTab(tab)
   }
 
+  // tab 在 DOM 里的固定顺序：极速置顶 / 常用 / 最近（与下方三按钮顺序一致）。
+  // handler 下标映射依赖此顺序，改按钮顺序必须同步改这里。
+  const DOCK_TABS: DockTab[] = ['speed', 'frequent', 'recent']
+
+  /**
+   * A-1：标准 ARIA Tabs 键盘交互。
+   * 照抄 plugin-detail-view.tsx:143-170 骨架（←/→ 循环、Home/End、
+   * 守卫 event.target 须为 role="tab"、先判键再 preventDefault），
+   * 两处有意不同：
+   *  (1) 不抄 selectTab 的 URL 同步，改调现有 chooseTab；
+   *  (2) 不用 .click()（capsule-row 的做法，R2 竞态根源），直接 chooseTab + focus()；
+   *  (3) 加 disabled 跳过：全量列表保下标映射，步进时跳过 disabled（
+   *      不得把 :not([disabled]) 直接写进 querySelectorAll，否则下标错位切错 tab）。
+   */
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement
+    if (target.getAttribute('role') !== 'tab') return
+    const tabs = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+    )
+    const index = tabs.indexOf(target as HTMLButtonElement)
+    if (index < 0) return
+
+    const enabled = tabs.map((t) => !t.disabled)
+    if (!enabled.some(Boolean)) return // 防御：speed 永不 disabled，正常走不到这里
+    const step = (from: number, dir: 1 | -1): number => {
+      let i = from
+      for (let n = 0; n < tabs.length; n++) {
+        i = (i + dir + tabs.length) % tabs.length
+        if (enabled[i]) return i
+      }
+      return from
+    }
+    const firstEnabled = enabled.findIndex(Boolean)
+    const lastEnabled = enabled.lastIndexOf(true)
+
+    let next = index
+    if (event.key === 'ArrowRight') next = step(index, 1)
+    else if (event.key === 'ArrowLeft') next = step(index, -1)
+    else if (event.key === 'Home') next = firstEnabled
+    else if (event.key === 'End') next = lastEnabled
+    else return
+
+    event.preventDefault()
+    chooseTab(DOCK_TABS[next])
+    tabs[next]?.focus()
+  }
+
   useEffect(() => {
     setMounted(true)
     let cancelled = false
@@ -189,11 +237,17 @@ export const HomeQuickDock = memo(function HomeQuickDock({
         {/* 首屏瘦身：单行 48px（h-12）——左紧凑 tab + 中间横向滚动胶囊区 +
             右「展开全部」。胶囊区已接入 HorizontalScrollFade 横向滚动渐隐
             （2026-11-20 合入合并：首屏单行布局 + 顶栏渐隐包装，两者都保留）。 */}
-        <div className="flex shrink-0 items-center gap-1" role="tablist" aria-label="高频直达分类">
+        <div
+          className="flex shrink-0 items-center gap-1"
+          role="tablist"
+          aria-label="高频直达分类"
+          onKeyDown={handleTabKeyDown}
+        >
             <button
               type="button"
               role="tab"
               aria-selected={activeTab === 'speed'}
+              tabIndex={activeTab === 'speed' ? 0 : -1}
               onClick={() => chooseTab('speed')}
               className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer ${
                 activeTab === 'speed'
@@ -208,6 +262,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
               type="button"
               role="tab"
               aria-selected={activeTab === 'frequent'}
+              tabIndex={activeTab === 'frequent' ? 0 : -1}
               disabled={!mounted || frequentVisits.length === 0}
               onClick={() => chooseTab('frequent')}
               className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
@@ -223,6 +278,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
               type="button"
               role="tab"
               aria-selected={activeTab === 'recent'}
+              tabIndex={activeTab === 'recent' ? 0 : -1}
               disabled={!mounted || recentVisits.length === 0}
               onClick={() => chooseTab('recent')}
               className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${

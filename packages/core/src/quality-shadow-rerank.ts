@@ -52,6 +52,9 @@ export function rerankBySiteQualityShadow(
     if (!Number.isFinite(candidate.evidenceCoverage) || candidate.evidenceCoverage < 0 || candidate.evidenceCoverage > 100) {
       throw new RangeError("evidenceCoverage 必须在 0–100 之间");
     }
+    if (!["high", "medium", "low", "high_risk", "insufficient_evidence"].includes(candidate.band)) {
+      throw new TypeError("质量分档无效");
+    }
     if (candidate.qualityScore !== null && (
       !Number.isFinite(candidate.qualityScore) || candidate.qualityScore < 0 || candidate.qualityScore > 100
     )) {

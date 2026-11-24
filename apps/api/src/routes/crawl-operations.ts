@@ -348,13 +348,9 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         const slot=[1,2].find(value=>!used.has(value));
         if(!slot)continue;
         const id=randomUUID();
-        try{
-          await ctx.repo.run("INSERT INTO crawl_moderation_gold_assignments (id,case_id,annotator_id,slot,status,lease_expires_at,created_at,claimed_at) VALUES (?,?,?,?,'claimed',?,?,?)",[id,String(candidate.id),actor,slot,expiresAt,now,now]);
-          return {kind:"ok" as const,id,caseId:String(candidate.id),slot,expiresAt,title:candidate.title==null?null:String(candidate.title),description:candidate.description==null?null:String(candidate.description),category:candidate.category==null?null:String(candidate.category),sanitizedExcerpt:candidate.sanitized_excerpt==null?null:String(candidate.sanitized_excerpt)};
-        }catch(error){
-          const active=await ctx.repo.raw("SELECT id FROM crawl_moderation_gold_assignments WHERE case_id=? AND annotator_id=? AND status='claimed' AND lease_expires_at>? LIMIT 1",[String(candidate.id),actor,now]);
-          if(active[0])return {kind:"already" as const,caseId:String(candidate.id)};
-        }
+        await ctx.repo.run("INSERT INTO crawl_moderation_gold_assignments (id,case_id,annotator_id,slot,status,lease_expires_at,created_at,claimed_at) VALUES (?,?,?,?,'claimed',?,?,?) ON CONFLICT DO NOTHING",[id,String(candidate.id),actor,slot,expiresAt,now,now]);
+        const active=await ctx.repo.raw("SELECT id FROM crawl_moderation_gold_assignments WHERE case_id=? AND annotator_id=? AND status='claimed' AND lease_expires_at>? LIMIT 1",[String(candidate.id),actor,now]);
+        if(active[0])return {kind:"ok" as const,id:String(active[0].id),caseId:String(candidate.id),slot,expiresAt,title:candidate.title==null?null:String(candidate.title),description:candidate.description==null?null:String(candidate.description),category:candidate.category==null?null:String(candidate.category),sanitizedExcerpt:candidate.sanitized_excerpt==null?null:String(candidate.sanitized_excerpt)};
       }
       return {kind:"empty" as const};
     });

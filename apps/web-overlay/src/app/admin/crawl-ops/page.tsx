@@ -95,11 +95,12 @@ export default function CrawlOperationsPage(){
         hubGet<{ok:boolean;items:ModelEvaluationRun[]}>('/api/hub/admin/crawl/moderation-model-evaluations'),
         hubGet<{ok:boolean;items:EvaluationProvider[]}>('/api/hub/admin/crawl/moderation-model-evaluations/providers')
       ])
-      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setDecisionHistory(history.items);setModelAnalytics(analytics);setGoldCases(goldQueue.items);setGoldAssignmentMetrics(assignmentMetrics);setGoldProgress(goldProgressData);setModelEvaluationRuns(evaluationData.items);setEvaluationProviders(evaluationProvidersData.items);if(!evaluationProvidersData.items.some(item=>item.index===evaluationProviderIndex))setEvaluationProviderIndex(evaluationProvidersData.items[0]?.index??0)
+      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setDecisionHistory(history.items);setModelAnalytics(analytics);setGoldCases(goldQueue.items);setGoldAssignmentMetrics(assignmentMetrics);setGoldProgress(goldProgressData);setModelEvaluationRuns(evaluationData.items);setEvaluationProviders(evaluationProvidersData.items)
     }catch(e){setError(e instanceof Error?e.message:'采集运营数据加载失败')}
     finally{setLoading(false)}
   },[])
   useEffect(()=>{void load()},[load])
+  useEffect(()=>{if(evaluationProviders.length&&!evaluationProviders.some(item=>item.index===evaluationProviderIndex))setEvaluationProviderIndex(evaluationProviders[0]?.index??0)},[evaluationProviders,evaluationProviderIndex])
   const addSource=async()=>{
     const url=sourceUrl.trim();if(!url||sourceBusy)return
     setSourceBusy('new');setError(null)

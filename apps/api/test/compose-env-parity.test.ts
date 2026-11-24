@@ -278,8 +278,8 @@ describe("crawl discovery 配置透传契约", () => {
   it("NAVHUB_CRAWL_SEEDS 同时进入 lite 与 standard 中枢容器", () => {
     for (const service of ["api", "api-standard"]) {
       expect(envBlocks.get(service)?.get("NAVHUB_CRAWL_SEEDS"), `${service} 未透传 NAVHUB_CRAWL_SEEDS`)
-        .toBe("${NAVHUB_CRAWL_SEEDS:-[]}");
+        .toBe("${NAVHUB_CRAWL_SEEDS:-}");
     }
-    expect(readFileSync(ENV_EXAMPLE, "utf8")).toContain("NAVHUB_CRAWL_SEEDS=[]");
+    expect(readFileSync(ENV_EXAMPLE, "utf8")).toContain("NAVHUB_CRAWL_SEEDS=";
   });
 });

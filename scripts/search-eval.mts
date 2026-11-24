@@ -112,11 +112,11 @@ console.log("诊断  零结果=" + diagnostics.zeroResultQueries +
   "  无正相关标注=" + diagnostics.queriesWithoutPositiveJudgments +
   "  已找回相关候选=" + diagnostics.relevantRetrievedAtK + "/" + diagnostics.relevantCandidates +
   "  微平均覆盖率=" + diagnostics.relevantCandidateCoverage.toFixed(4));
-for (const testCase of cases) {
+cases.forEach((testCase, index) => {
   console.log(
-    "  query#" + String(cases.indexOf(testCase) + 1).padStart(3, "0") +
+    "  query#" + String(index + 1).padStart(3, "0") +
     " nDCG=" + ndcgAtK(testCase, k).toFixed(4) +
     " mrr=" + mrrAtK(testCase, k).toFixed(4) +
     " recall=" + recallAtK(testCase, k).toFixed(4),
   );
-}
+});

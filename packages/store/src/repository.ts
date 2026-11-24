@@ -832,6 +832,18 @@ async savedPluginEmbeddings(filter?: {
     return healthRepo.getSiteQualityAssessment(this, siteId);
   }
 
+  async listSiteQualityAssessments(options: { band?: SiteQualityResult["band"]; limit?: number; offset?: number } = {}) {
+    return healthRepo.listSiteQualityAssessments(this, options);
+  }
+
+  async siteQualityOverview() {
+    return healthRepo.siteQualityOverview(this);
+  }
+
+  async countSiteQualityAssessments(band?: SiteQualityResult["band"]): Promise<number> {
+    return healthRepo.countSiteQualityAssessments(this, band);
+  }
+
   /* ------------------------------ LLM 用量 ------------------------------ */
 
   /** 记录一次模型调用（成功/失败都记；失败静默，不影响调用结果） */

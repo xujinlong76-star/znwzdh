@@ -28,6 +28,26 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
   const ctx = opts.ctx;
 
   /**
+   * 站点质量治理工作台数据。
+   * 只读最新影子评分，不触发重算、不执行自动下架或自动排序。
+   */
+  app.get("/api/admin/quality/report", { config: { scope: "admin" } }, async (req, reply) => {
+    const query = (req.query ?? {}) as Record<string, unknown>;
+    const allowedBands = ["high", "medium", "low", "high_risk", "insufficient_evidence"] as const;
+    const band = typeof query.band === "string" && (allowedBands as readonly string[]).includes(query.band)
+      ? query.band as (typeof allowedBands)[number]
+      : undefined;
+    const limit = Math.min(100, Math.max(1, Math.floor(Number(query.limit) || 50)));
+    const offset = Math.max(0, Math.floor(Number(query.offset) || 0));
+    const [summary, items, total] = await Promise.all([
+      ctx.repo.siteQualityOverview(),
+      ctx.repo.listSiteQualityAssessments({ band, limit, offset }),
+      ctx.repo.countSiteQualityAssessments(band),
+    ]);
+    return { ok: true, summary, items, total, limit, offset, band: band ?? "all" };
+  });
+
+  /**
    * 1. 获取全站健康度评分与自愈提案
    */
   app.get("/api/admin/audit/report", { config: { scope: "read" } }, async () => {

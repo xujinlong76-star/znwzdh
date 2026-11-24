@@ -12,7 +12,7 @@ describe("持久化采集来源注册表", () => {
     const second = await upsertCrawlSource(repo, { url: "https://example.com/map.xml", kind: "rss", enabled: false }, 2000);
     expect(second.id).toBe(first.id);
     expect(second.kind).toBe("rss"); expect(second.enabled).toBe(false);
-    expect(second.intervalMs).toBe(30*60_000); expect(second.priority).toBe(0);
+    expect(second.intervalMs).toBe(5*60_000); expect(second.priority).toBe(0);
     expect(await listCrawlSources(repo)).toHaveLength(1);
   });
   it("仅认领到期且启用的来源，并通过 owner 租约结算", async () => {

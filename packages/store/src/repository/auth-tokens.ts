@@ -90,7 +90,7 @@ export async function hasActiveAuthToken(
   const t = now ?? Date.now();
   const row = (
     await repo.raw(
-      "SELECT id FROM auth_tokens WHERE user_id = ? AND purpose = ? AND consumed_at IS NULL AND expires_at > ? AND target_email IS NOT NULL LIMIT 1",
+      "SELECT id FROM auth_tokens WHERE user_id = ? AND purpose = ? AND consumed_at IS NULL AND expires_at > ? AND target_email = (SELECT LOWER(email) FROM users WHERE users.id = auth_tokens.user_id) LIMIT 1",
       [userId, purpose, t],
     )
   )[0];

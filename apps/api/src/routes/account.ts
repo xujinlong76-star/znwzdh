@@ -462,7 +462,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       // 先原子预留一次尝试：所有 API 实例共享同一数据库计数，
       // 第 6 次请求在任何 scrypt 校验前即被拒绝，避免多副本绕过锁定。
       const identifier = body.data.identifier.trim();
-      const attempt = await ctx.repo.reserveLoginAttempt(identifier, Date.now(), LOGIN_FAIL_WINDOW_MS);
+      const attempt = await ctx.repo.reserveLoginAttempt(identifier, ctx.config.sessionSecret, Date.now(), LOGIN_FAIL_WINDOW_MS);
       if (attempt.count > LOGIN_FAIL_MAX) {
         reply.code(429);
         return { error: "登录失败次数过多，请 15 分钟后再试" };
@@ -485,7 +485,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(401);
         return { error: "邮箱/用户名或密码错误" };
       }
-      await ctx.repo.clearLoginAttempts(identifier);
+      await ctx.repo.clearLoginAttempts(identifier, ctx.config.sessionSecret);
       await ctx.repo.audit({
         actor: user.id,
         actorKind: "user",

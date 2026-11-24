@@ -760,7 +760,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       const previous = previousRows[0]?.metrics_json ? JSON.parse(String(previousRows[0].metrics_json)) as {exactMatchRate?:number|null;riskDetection?:{recall?:number|null}} : null;
       const alerts: Array<{severity:"warning"|"critical";code:string;message:string}> = [];
       if (metrics.exactMatchRate !== null && metrics.exactMatchRate < 0.9) alerts.push({severity:"warning",code:"low_exact_match",message:"标签精确匹配率低于 90%，建议保持 Shadow 并检查错分样本"});
-      if (metrics.riskDetection.positiveSupport === 0) alerts.push({severity:"warning",code:"risk_support_missing",message:"当前评测样本没有风险正样本，风险召回率无法评估"});
+      if (metrics.riskDetection.support === 0) alerts.push({severity:"warning",code:"risk_support_missing",message:"当前评测样本没有风险正样本，风险召回率无法评估"});
       else if (metrics.riskDetection.recall !== null && metrics.riskDetection.recall < 0.95) alerts.push({severity:"critical",code:"low_risk_recall",message:"风险召回率低于 95%，存在漏检风险，不应启用自动审核"});
       if (metrics.riskDetection.falseNegatives > 0) alerts.push({severity:"critical",code:"risk_false_negative",message:"本轮出现 "+metrics.riskDetection.falseNegatives+" 条风险漏报，必须复核对应样本"});
       if (previous?.exactMatchRate != null && metrics.exactMatchRate !== null && previous.exactMatchRate-metrics.exactMatchRate > 0.05) alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次同快照评测，标签精确匹配率下降超过 5 个百分点"});
@@ -812,7 +812,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     const previous=previousRows[0]?.metrics_json?JSON.parse(String(previousRows[0].metrics_json)) as {exactMatchRate?:number|null;riskDetection?:{recall?:number|null}}:null;
     const alerts:Array<{severity:"warning"|"critical";code:string;message:string}>=[];
     if(metrics.exactMatchRate!==null&&metrics.exactMatchRate<0.9)alerts.push({severity:"warning",code:"low_exact_match",message:"标签精确匹配率低于 90%，建议保持 Shadow 并检查错分样本"});
-    if(metrics.riskDetection.positiveSupport===0)alerts.push({severity:"warning",code:"risk_support_missing",message:"当前金标集没有正向风险样本，风险召回率无法评估"});
+    if(metrics.riskDetection.support===0)alerts.push({severity:"warning",code:"risk_support_missing",message:"当前金标集没有正向风险样本，风险召回率无法评估"});
     else if(metrics.riskDetection.recall!==null&&metrics.riskDetection.recall<0.95)alerts.push({severity:"critical",code:"low_risk_recall",message:"风险召回率低于 95%，存在漏检风险，不应启用自动审核"});
     if(metrics.riskDetection.falseNegatives>0)alerts.push({severity:"critical",code:"risk_false_negative",message:"本轮出现 "+metrics.riskDetection.falseNegatives+" 条风险漏报，必须复核对应样本"});
     if(previous?.exactMatchRate!=null&&metrics.exactMatchRate!==null&&previous.exactMatchRate-metrics.exactMatchRate>0.05)alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次评测，标签精确匹配率下降超过 5 个百分点"});

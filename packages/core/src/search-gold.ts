@@ -290,6 +290,9 @@ export function validateSearchGoldSet(input: readonly unknown[], minimumCases = 
     eligibleIntentCounts[intent] = (eligibleIntentCounts[intent] ?? 0) + 1;
     eligibleLocaleCounts[locale] = (eligibleLocaleCounts[locale] ?? 0) + 1;
   }
+  if (evaluationCases.length < minimumCases) {
+    errors.push("可评估金标样本不足：需要至少 " + minimumCases + " 条，当前 " + evaluationCases.length + " 条");
+  }
   if (datasetVersions.size > 1) errors.push("一个金标集不得混合不同 datasetVersion");
   return {
     totalCases: input.length,

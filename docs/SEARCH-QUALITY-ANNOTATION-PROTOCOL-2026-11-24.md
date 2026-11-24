@@ -118,7 +118,7 @@ node scripts/import-search-golden.mts private/search-golden.jsonl scripts/fixtur
 node scripts/search-eval.mts scripts/fixtures/search-eval.real-golden.json --k 10 --json
 ```
 
-导入器默认要求至少 100 条有效样本；`--allow-below-target` 仅用于开发预览，输出会明确标记未达标。输出 fixture 的 `query` 字段被替换为 `sampleId`，不包含原始查询文本；原始脱敏查询与标注记录应保存在受控数据目录，不要提交到公开仓库。导入器只验证人工记录，不调用 LLM、不推断相关性、不伪造样本。输出文件采用独占创建，避免意外覆盖已有金标资产。
+导入器默认要求至少 100 条有效样本；`--allow-below-target` 仅用于开发预览，输出会明确标记未达标。输出 fixture 的 `query` 字段被替换为 `sampleId`，不包含原始查询文本；原始脱敏查询与标注记录应保存在受控数据目录，不要提交到公开仓库。导入器只验证人工记录，不调用 LLM、不推断相关性、不伪造样本。输出文件采用独占创建，避免意外覆盖已有金标资产。 导入校验还会对 query 做高置信度启发式扫描，拦截明显邮箱、疑似电话号码和常见凭据格式，并限制字段长度；该扫描不能识别所有个人信息，不能替代数据负责人逐条人工隐私审查。
 
 ## 9. 本轮禁止事项
 

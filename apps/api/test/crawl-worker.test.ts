@@ -5,6 +5,7 @@ import {
   extractHtmlMetadata,
   parseCrawlSeeds,
   parseRetryAfterMs,
+  rankNearDuplicateFingerprints,
 } from "../src/jobs/tasks/crawl-worker.task.ts";
 
 describe("crawl worker source parsing", () => {
@@ -56,6 +57,23 @@ describe("crawl worker source parsing", () => {
     expect(extractFeedUrls(atom, "https://news.example/feed.xml", "rss")).toEqual([
       "https://news.example/c",
     ]);
+  });
+
+  it("只把最近的 SimHash 近重复作为审核证据，不自动隐藏候选", () => {
+    const rows = [
+      { canonical_url: "https://example.com/exact", content_hash: "sha256:current", simhash64: "0000000000000000" },
+      { canonical_url: "https://example.com/near-1", content_hash: "sha256:other-1", simhash64: "0000000000000001" },
+      { canonical_url: "https://example.com/near-3", content_hash: "sha256:other-3", simhash64: "0000000000000007" },
+      { canonical_url: "https://example.com/far", content_hash: "sha256:far", simhash64: "ffffffffffffffff" },
+      { canonical_url: "https://example.com/bad", content_hash: "sha256:bad", simhash64: "not-a-hash" },
+    ];
+    expect(rankNearDuplicateFingerprints(rows, "sha256:current", "0000000000000000")).toEqual([
+      { canonicalUrl: "https://example.com/near-1", distance: 1 },
+      { canonicalUrl: "https://example.com/near-3", distance: 3 },
+    ]);
+    expect(rankNearDuplicateFingerprints(rows, "sha256:current", "0000000000000000", {
+      maxDistance: 1, limit: 1,
+    })).toEqual([{ canonicalUrl: "https://example.com/near-1", distance: 1 }]);
   });
 
   it("遵守 robots.txt 的用户代理分组、最长匹配与 Allow 优先规则", () => {

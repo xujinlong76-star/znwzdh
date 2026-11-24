@@ -1415,7 +1415,7 @@ async revokeAllSessions(userId: string): Promise<number> {
     return usersRepo.createUserWithPassword(this, input);
   }
 
-  /** 校验口令登录；返回 null = 用户不存在或密码错误（不区分，防账号枚举） */
+  /** 校验口令登录；返回 null = 用户不存在、密码错误或邮箱未验证（不区分，防账号枚举） */
   async verifyUserPassword(identifier: string, password: string): Promise<UserRecord | null> {
     return usersRepo.verifyUserPassword(this, identifier, password);
   }

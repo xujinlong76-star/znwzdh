@@ -3,6 +3,12 @@ import Link from "next/link"
 import { ArrowLeft, CloudOff, WifiOff } from "lucide-react"
 import { OfflineContent } from "@/components/offline-content"
 
+// 自愈周期（ISR 3600s）：本页是静态外壳（数据都在客户端）。缺 NAVHUB_SITE_URL 的
+// 构建会把 http://localhost:3000 兜底地址（canonical/og:url/og:image/JSON-LD）烤进
+// revalidate=false 的永久快照，被 check-isr-routes.mjs 判红；按门禁提示「给它 revalidate」
+// 补一份自愈周期即可。生产配置了 NAVHUB_SITE_URL 时地址本就正确，行为不变。
+export const revalidate = 3600
+
 export const metadata: Metadata = {
   title: "离线阅读",
   description: "断网时也能打开最近访问的站点",

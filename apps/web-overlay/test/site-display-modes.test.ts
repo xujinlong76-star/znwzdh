@@ -168,11 +168,23 @@ describe('Cookie + localStorage 双写零闪烁 SSR 契约（view-mode-cookie）
     expect(parseViewModeCookie('%E0%A4%A')).toBeNull()
   })
 
-  it('首页 RSC 读取 nav_view_mode Cookie 并经 InitialViewModeProvider 注入客户端，实现 0 CLS', () => {
+  it('首页经「proxy Cookie 重写 + /vm/[mode] 预渲染变体」按 Cookie 出模式 HTML：0 CLS 且保持 ISR', () => {
+    // 展示模式已不在 app/page.tsx 读 Cookie（await cookies() 会把 / 落成 ƒ、
+    // revalidate=60 静默作废，破坏 check-isr-routes.mjs 的 ISR 契约）；
+    // 改为 src/proxy.ts 读 nav_view_mode Cookie 透明重写到预渲染变体 /vm/[mode]，
+    // 服务端直接吐该模式 HTML——Zero-CLS 契约（initialCardDisplayMode 注入）不变。
     const pageSrc = overlaySource('src/app/page.tsx')
-    expect(pageSrc).toContain('NAV_VIEW_MODE_COOKIE')
-    expect(pageSrc).toContain('parseViewModeCookie')
     expect(pageSrc).toContain('initialCardDisplayMode={initialCardDisplayMode}')
+    expect(pageSrc).not.toContain('await cookies()')
+
+    const proxySrc = overlaySource('src/proxy.ts')
+    expect(proxySrc).toContain('NAV_VIEW_MODE_COOKIE')
+    expect(proxySrc).toContain('parseViewModeCookie')
+    expect(proxySrc).toContain('NextResponse.rewrite')
+
+    const vmSrc = overlaySource('src/app/vm/[mode]/page.tsx')
+    expect(vmSrc).toContain('generateStaticParams')
+    expect(vmSrc).toContain('export { default, generateMetadata } from "../../page"')
 
     const storageSrc = overlaySource('src/lib/modular/home-diy-storage.ts')
     expect(storageSrc).toContain('writeViewModeCookie(next.cardDisplayMode)')

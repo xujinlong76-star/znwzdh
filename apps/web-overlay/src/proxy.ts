@@ -1,6 +1,7 @@
 import NextAuth from 'next-auth'
 import { authConfig, isAdminAccessAllowed, type AdminUserLike } from '@/lib/auth.config'
 import { NextResponse } from 'next/server'
+import { NAV_VIEW_MODE_COOKIE, parseViewModeCookie } from '@/lib/modular/view-mode-cookie'
 
 const { auth } = NextAuth(authConfig)
 
@@ -15,6 +16,15 @@ const { auth } = NextAuth(authConfig)
  * 已登录但不在白名单 → 回登录页并带 `error=AccessDenied`，由登录页给出明确文案。
  */
 export default auth((req) => {
+  // 首页展示模式：读 nav_view_mode Cookie，命中非 standard 规范模式就透明重写到
+  // 预渲染变体 /vm/[mode]（Zero-CLS：服务端直接出该模式 HTML）。standard / 无
+  // Cookie / 非法值都落到 app/page.tsx 的 standard 变体，首页得以保持 ISR。
+  if (req.nextUrl.pathname === '/') {
+    const mode = parseViewModeCookie(req.cookies.get(NAV_VIEW_MODE_COOKIE)?.value)
+    if (mode && mode !== 'standard') {
+      return NextResponse.rewrite(new URL(`/vm/${mode}`, req.nextUrl))
+    }
+  }
   if (req.nextUrl.pathname.startsWith('/admin')) {
     const user = req.auth?.user as AdminUserLike | undefined
 
@@ -39,5 +49,5 @@ export default auth((req) => {
 })
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/admin/:path*', '/'],
 }

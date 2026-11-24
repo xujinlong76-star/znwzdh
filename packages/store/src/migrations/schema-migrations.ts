@@ -380,21 +380,7 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     },
     checksum: "v1_crawl_ai_decision_ledger",
   },
-];
-
-/**
- * 执行所有尚未运行的版本化迁移
- */
-export async function runVersionedMigrations(
-  db: Db,
-  options?: { force?: boolean; migrations?: RegisteredMigration[] }
-): Promise<{ applied: string[]; skipped: string[] }> {
-  await initSchemaMigrationsTable(db);
-  const appliedSet = options?.force ? new Set<string>() : await getAppliedMigrations(db);
-  const migrationsToRun = options?.migrations ?? BUILTIN_MIGRATIONS;
-
-  const applied: string[] = [];
-  const skipped: string[] = [  {
+  {
     version: "20261124_crawl_moderation_gold_annotation",
     name: "审核金标样本双人标注与仲裁",
     up: async (db: Db) => {
@@ -438,6 +424,20 @@ export async function runVersionedMigrations(
     checksum: "v1_crawl_moderation_gold_annotation",
   },
 ];
+
+/**
+ * 执行所有尚未运行的版本化迁移
+ */
+export async function runVersionedMigrations(
+  db: Db,
+  options?: { force?: boolean; migrations?: RegisteredMigration[] }
+): Promise<{ applied: string[]; skipped: string[] }> {
+  await initSchemaMigrationsTable(db);
+  const appliedSet = options?.force ? new Set<string>() : await getAppliedMigrations(db);
+  const migrationsToRun = options?.migrations ?? BUILTIN_MIGRATIONS;
+
+  const applied: string[] = [];
+  const skipped: string[] = [];
 
   for (const m of migrationsToRun) {
     if (appliedSet.has(m.version)) {

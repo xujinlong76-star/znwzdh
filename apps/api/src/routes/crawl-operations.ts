@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { evaluateSiteModerationGoldSet } from "@navhub/ai";
+import { evaluateSiteModerationGoldSet, moderateSiteWithAi } from "@navhub/ai";
 import {
   countSiteDiscoveryCandidates, getSiteDiscoveryCandidateForUpdate,
   recordCrawlAiModerationDecision, listCrawlAiModerationDecisions,
@@ -10,7 +10,27 @@ import {
   listSiteDiscoveryCandidates, reviewSiteDiscoveryCandidate,
 } from "@navhub/store";
 import type { AppContext } from "../context.ts";
+import { resolveLlm, llmProviderReady } from "../llm-config.ts";
+import { reserveLlmQuota, settleLlmQuota, replyQuotaBlocked } from "../llm-quota.ts";
+import { callLlm } from "../llm-usage.ts";
+import { loadCrawlAiModerationPolicy } from "../crawl-moderation-policy.ts";
 
+/** 对正式金标集做稳定抽样：相同数据集重复运行时选中相同样本。 */
+export function selectGoldEvaluationSample<T extends { id: string }>(rows: readonly T[], limit = 20): T[] {
+  const bounded = Math.max(1, Math.min(20, Math.floor(limit)));
+  return rows.map(row => ({ row, key: createHash("sha256").update(row.id).digest("hex") }))
+    .sort((a,b) => a.key.localeCompare(b.key) || a.row.id.localeCompare(b.row.id))
+    .slice(0,bounded).map(item => item.row);
+}
+
+/** 把审核引擎输出映射为离线评测标签；风险字段只来自模型风险类别。 */
+export function moderationVerdictToPrediction(result: { verdict: "auto_approve" | "reject" | "manual_review"; risks: readonly string[] }):
+  { actual: "approve" | "reject" | "review"; actualRisk: boolean } {
+  return {
+    actual: result.verdict === "auto_approve" ? "approve" : result.verdict === "reject" ? "reject" : "review",
+    actualRisk: result.risks.some(risk => risk !== "none"),
+  };
+}
 /** 透明、可解释的初筛分数；只用于排序辅助，不自动批准或拒绝。 */
 export function scoreCrawlCandidate(input: {
   url: string; title?: string | null; description?: string | null;
@@ -565,6 +585,97 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       sampleSize:Number(row.sample_size),metrics:JSON.parse(String(row.metrics_json)),createdBy:String(row.created_by),createdAt:Number(row.created_at)}))};
   });
 
+  app.post("/api/admin/crawl/moderation-model-evaluations/auto",
+    { config: { scope: "admin", rateLimit: { max: 2, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const body = z.object({ limit: z.coerce.number().int().min(1).max(20).default(20) }).safeParse(req.body ?? {});
+      if (!body.success) { reply.code(400); return { ok: false, error: "自动评测样本数必须为 1–20" }; }
+      const countRows = await ctx.repo.raw("SELECT COUNT(*) AS total FROM crawl_moderation_gold_cases WHERE status='gold_ready'");
+      const total = Number(countRows[0]?.total ?? 0);
+      if (!total) { reply.code(409); return { ok: false, error: "尚无正式金标样本，暂不能自动评测" }; }
+      const goldRows = await listCrawlModerationGoldCases(ctx.repo, { status: "gold_ready", limit: 5000, offset: 0 });
+      const gold = goldRows.filter(row => ["approve","reject","review"].includes(String(row.final_label)) &&
+        (row.final_risk === true || row.final_risk === false || row.final_risk === 0 || row.final_risk === 1) &&
+        (row.title != null || row.description != null || row.sanitized_excerpt != null));
+      if (!gold.length) { reply.code(409); return { ok: false, error: "正式金标样本缺少可供模型判断的脱敏文本" }; }
+      const selected = selectGoldEvaluationSample(gold, body.data.limit);
+      const resolved = await resolveLlm(ctx);
+      const provider = [resolved.provider, ...resolved.fallbacks].find(llmProviderReady);
+      if (!provider) { reply.code(409); return { ok: false, error: "系统尚未配置可用的大模型或备用模型" }; }
+      // 固定本轮实际模型，避免同一评测集混入主模型与备用模型的预测结果。
+      const evaluationResolved = { ...resolved, provider, fallbacks: [] };
+      const policy = await loadCrawlAiModerationPolicy(ctx);
+      const predictions: Array<{ id: string; actual: "approve" | "reject" | "review"; actualRisk: boolean }> = [];
+      const actualModels = new Set<string>();
+      let failed = 0, quotaBlocked = 0;
+      for (const row of selected) {
+        const quota = await reserveLlmQuota(ctx, null, { source: resolved.source, estimatedTokens: 1800 });
+        if (!quota.ok) { quotaBlocked++; break; }
+        try {
+          const decision = await moderateSiteWithAi(provider, {
+            // 金标表不保存原始 URL；评测时使用固定脱敏占位 URL，不反查候选原始地址。
+            url: "https://redacted.invalid/",
+            title: row.title == null ? null : String(row.title),
+            description: row.description == null ? null : String(row.description),
+            contentExcerpt: row.sanitized_excerpt == null ? null : String(row.sanitized_excerpt),
+            declaredCategory: row.category == null ? null : String(row.category),
+            knownCategories: row.category == null ? [] : [String(row.category)],
+            evidence: { provenance: "moderation_gold_evaluation", warnings: [] },
+          }, {
+            autoApproveConfidence: policy.autoApproveConfidence, rejectConfidence: policy.rejectConfidence,
+            minQualityScore: policy.minQualityScore, maxExcerptChars: policy.maxExcerptChars, requireHttps: policy.requireHttps,
+          }, {
+            deadlineAt: Date.now() + 45_000,
+            complete: async (_provider, request) => {
+              const result = await callLlm(ctx, evaluationResolved, {
+                scenario: "crawl_moderation_gold_eval", identity: null, messages: request.messages,
+                temperature: request.temperature, maxTokens: request.maxTokens, json: request.json,
+                thinking: false, signal: request.signal, deadlineAt: request.deadlineAt, fetchImpl: request.fetchImpl,
+              });
+              return { content: result.content, model: result.model };
+            },
+          });
+          actualModels.add(decision.model);
+          const prediction = moderationVerdictToPrediction(decision);
+          predictions.push({ id: String(row.id), ...prediction });
+        } catch { failed++; }
+        finally { await settleLlmQuota(ctx, quota.hold); }
+      }
+      if (quotaBlocked) return replyQuotaBlocked(reply, (await reserveLlmQuota(ctx, null, { source: resolved.source, estimatedTokens: 0 })).ok
+        ? ({ scope: "system", metric: "tokens", limit: 0, used: 0, blockedBy: "usage", retryAfterMs: 60_000 } as never)
+        : (await reserveLlmQuota(ctx, null, { source: resolved.source, estimatedTokens: 0 })).error);
+      if (failed || predictions.length !== selected.length) {
+        reply.code(502); return { ok: false, error: "自动评测未完整完成，未保存不完整指标", selected: selected.length, completed: predictions.length, failed };
+      }
+      if (actualModels.size !== 1) { reply.code(409); return { ok: false, error: "本轮模型标识不一致，已阻止混合模型评测", models: [...actualModels] }; }
+      const predictionMap = new Map(predictions.map(item => [item.id,item]));
+      const cases = selected.map(row => {
+        const prediction = predictionMap.get(String(row.id));
+        if (!prediction) throw new Error("自动评测预测样本缺失");
+        return { id: String(row.id), expected: String(row.final_label) as "approve"|"reject"|"review",
+          actual: prediction.actual, expectedRisk: Boolean(row.final_risk), actualRisk: prediction.actualRisk };
+      });
+      const metrics = evaluateSiteModerationGoldSet(cases);
+      const datasetVersion = createHash("sha256").update(selected.map(row => String(row.id)+":"+String(row.final_label)+":"+String(Boolean(row.final_risk))).join("|")).digest("hex");
+      const model = [...actualModels][0] ?? provider.model;
+      const previousRows = await ctx.repo.raw("SELECT metrics_json FROM crawl_moderation_model_evaluations WHERE model=? AND dataset_version=? ORDER BY created_at DESC,id DESC LIMIT 1",[model,datasetVersion]);
+      const previous = previousRows[0]?.metrics_json ? JSON.parse(String(previousRows[0].metrics_json)) as {exactMatchRate?:number|null;riskDetection?:{recall?:number|null}} : null;
+      const alerts: Array<{severity:"warning"|"critical";code:string;message:string}> = [];
+      if (metrics.exactMatchRate !== null && metrics.exactMatchRate < 0.9) alerts.push({severity:"warning",code:"low_exact_match",message:"标签精确匹配率低于 90%，建议保持 Shadow 并检查错分样本"});
+      if (metrics.riskDetection.support === 0) alerts.push({severity:"warning",code:"risk_support_missing",message:"当前评测样本没有风险正样本，风险召回率无法评估"});
+      else if (metrics.riskDetection.recall !== null && metrics.riskDetection.recall < 0.95) alerts.push({severity:"critical",code:"low_risk_recall",message:"风险召回率低于 95%，存在漏检风险，不应启用自动审核"});
+      if (metrics.riskDetection.falseNegatives > 0) alerts.push({severity:"critical",code:"risk_false_negative",message:"本轮出现 "+metrics.riskDetection.falseNegatives+" 条风险漏报，必须复核对应样本"});
+      if (previous?.exactMatchRate != null && metrics.exactMatchRate !== null && previous.exactMatchRate-metrics.exactMatchRate > 0.05) alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次同快照评测，标签精确匹配率下降超过 5 个百分点"});
+      if (previous?.riskDetection?.recall != null && metrics.riskDetection.recall !== null && previous.riskDetection.recall-metrics.riskDetection.recall > 0.05) alerts.push({severity:"critical",code:"risk_recall_regression",message:"相较该模型上一次同快照评测，风险召回率下降超过 5 个百分点"});
+      const evaluation = { ...metrics, alerts, execution: { mode: "automatic", requested: body.data.limit, selected: selected.length, source: resolved.source } };
+      const id = randomUUID(), actor = String(req.auth.actor ?? "admin"), createdAt = Date.now();
+      await ctx.repo.run("INSERT INTO crawl_moderation_model_evaluations (id,model,dataset_version,sample_size,metrics_json,created_by,created_at) VALUES (?,?,?,?,?,?,?)",
+        [id,model,datasetVersion,metrics.sampleSize,JSON.stringify(evaluation),actor,createdAt]);
+      await ctx.repo.audit({ ip:req.ip,actor,actorKind:req.auth.kind,action:"crawl.moderation_model_auto_evaluation",target:id,
+        diff:{ model,datasetVersion,sampleSize:metrics.sampleSize,exactMatchRate:metrics.exactMatchRate,alertCount:alerts.length,source:resolved.source } });
+      return { ok:true,id,model,datasetVersion,sampleSize:metrics.sampleSize,metrics:evaluation,alerts,createdAt,source:resolved.source };
+    },
+  );
   app.post("/api/admin/crawl/moderation-model-evaluations", {config:{scope:"admin",rateLimit:{max:20,timeWindow:"1 minute"}}}, async(req,reply)=>{
     const body=z.object({
       model:z.string().trim().min(1).max(120),

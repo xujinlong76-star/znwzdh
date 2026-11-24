@@ -46,7 +46,7 @@ function findCoverageEntry(coverage, relativePath) {
 }
 
 /**
- * Counts only executable changed lines present in Istanbul's line map.
+ * Counts executable changed lines from Istanbul's line map or statementMap/counters.
  * Missing coverage entries are treated as uncovered rather than silently skipped.
  */
 export function evaluatePatchCoverage(diffText, coverage, minExecutableLines = 10) {
@@ -59,14 +59,24 @@ export function evaluatePatchCoverage(diffText, coverage, minExecutableLines = 1
     let fileTotal = 0;
     let fileCovered = 0;
     for (const line of lines) {
-      const count = entry?.l?.[String(line)];
       if (!entry) {
         fileTotal++;
         continue;
       }
-      if (count === undefined) continue;
+      const lineCounter = entry.l?.[String(line)];
+      if (lineCounter !== undefined) {
+        fileTotal++;
+        if (typeof lineCounter === "number" && lineCounter > 0) fileCovered++;
+        continue;
+      }
+      const statements = Object.entries(entry.statementMap ?? {}).filter(([, location]) =>
+        Number(location?.start?.line) <= line && Number(location?.end?.line) >= line,
+      );
+      if (statements.length === 0) continue;
       fileTotal++;
-      if (typeof count === "number" && count > 0) fileCovered++;
+      if (statements.some(([statementId]) => typeof entry.s?.[statementId] === "number" && entry.s[statementId] > 0)) {
+        fileCovered++;
+      }
     }
     total += fileTotal;
     covered += fileCovered;

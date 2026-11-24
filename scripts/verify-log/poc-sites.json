@@ -1,0 +1,30 @@
+{
+  "poc": "verification-log",
+  "version": 1,
+  "generatedAt": "2026-11-24",
+  "totalSites": 20,
+  "officialSource": "~/workspace/znwzdh-evolve/apps/web/src/lib/verified-brands.ts (50 家官方域名名单，用户 2026-11-24 已确认)",
+  "randomSource": "apps/web-overlay/src/navsphere/content/navigation.json (388 条，抽样框 329 条，种子 20261124)",
+  "sites": [
+    { "siteId": "nav-da02af4f6414", "title": "ChatGPT", "url": "https://chatgpt.com", "stratum": "official-50", "canonicalDomain": "chatgpt.com" },
+    { "siteId": "nav-9336ef9971b1", "title": "DeepSeek", "url": "https://chat.deepseek.com", "stratum": "official-50", "canonicalDomain": "deepseek.com" },
+    { "siteId": "nav-b6079f993ed2", "title": "Claude", "url": "https://claude.ai", "stratum": "official-50", "canonicalDomain": "claude.ai" },
+    { "siteId": "nav-8a13a0d53f1b", "title": "Kimi", "url": "https://www.kimi.com", "stratum": "official-50", "canonicalDomain": "www.kimi.com" },
+    { "siteId": "nav-3a7b360cd001", "title": "通义千问", "url": "https://qianwen.aliyun.com", "stratum": "official-50", "canonicalDomain": "qianwen.aliyun.com" },
+    { "siteId": "nav-2685c645b208", "title": "豆包", "url": "https://www.doubao.com", "stratum": "official-50", "canonicalDomain": "www.doubao.com" },
+    { "siteId": "nav-0bc5477b0ff7", "title": "Gemini", "url": "https://gemini.google.com", "stratum": "official-50", "canonicalDomain": "gemini.google.com" },
+    { "siteId": "nav-bf794ea816c3", "title": "Midjourney", "url": "https://midjourney.com", "stratum": "official-50", "canonicalDomain": "midjourney.com" },
+    { "siteId": "nav-6b7a84a89e85", "title": "GitHub", "url": "https://github.com", "stratum": "official-50", "canonicalDomain": "github.com" },
+    { "siteId": "nav-33126b9d8bd3", "title": "npm", "url": "https://npmjs.com", "stratum": "official-50", "canonicalDomain": "npmjs.com" },
+    { "siteId": "nav-97e35520cd1f", "title": "Ant Design", "url": "https://ant.design", "stratum": "random-sample" },
+    { "siteId": "nav-6599732737b8", "title": "智谱清言", "url": "https://chatglm.cn", "stratum": "random-sample" },
+    { "siteId": "nav-9e9db2e08ffe", "title": "Suno", "url": "https://suno.com", "stratum": "random-sample" },
+    { "siteId": "nav-152aee459038", "title": "Viggle AI", "url": "https://viggle.ai", "stratum": "random-sample" },
+    { "siteId": "nav-fcb48253fc41", "title": "中央气象台", "url": "https://www.nmc.cn", "stratum": "random-sample" },
+    { "siteId": "nav-508848075e00", "title": "Project Gutenberg", "url": "https://www.gutenberg.org", "stratum": "random-sample" },
+    { "siteId": "nav-0e97e3d46aa7", "title": "中央机关公开遴选和公开选调专题", "url": "http://subb.scs.gov.cn/lx2027", "stratum": "random-sample" },
+    { "siteId": "nav-1910b08f0746", "title": "Rollup", "url": "https://rollupjs.org", "stratum": "random-sample" },
+    { "siteId": "nav-5a28d33c0f9f", "title": "廖雪峰教程", "url": "https://www.liaoxuefeng.com", "stratum": "random-sample" },
+    { "siteId": "nav-76126d553f44", "title": "AFFiNE", "url": "https://affine.pro", "stratum": "random-sample" }
+  ]
+}

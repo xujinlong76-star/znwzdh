@@ -57,6 +57,23 @@ describe("站点发现候选仓储", () => {
     expect(repeated.lastSeenAt).toBe(500);
   });
 
+  it("AI 自动通过时在同一审核更新中持久化模型证据", async () => {
+    const candidate = await upsertSiteDiscoveryCandidate(repo, {
+      id: "candidate-ai-approved", url: "https://ai-approved.example",
+      canonicalUrl: "https://ai-approved.example/", source: "sitemap", now: 350,
+    });
+    const reviewed = await reviewSiteDiscoveryCandidate(repo, {
+      id: candidate.id, status: "approved", reviewer: "ai:model-x", siteId: null,
+      evidence: { aiModeration: { mode: "auto_approve", action: "auto_approved", model: "model-x" } },
+      now: 450,
+    });
+    expect(reviewed).toMatchObject({
+      status: "approved",
+      reviewedBy: "ai:model-x",
+      evidence: { aiModeration: { mode: "auto_approve", action: "auto_approved", model: "model-x" } },
+    });
+  });
+
   it("损坏的历史 JSON 不会让候选审核队列整体 500", async () => {
     await repo.run(
       "INSERT INTO site_discovery_candidates (id,url,canonical_url,tags_json,source,evidence_json,status,discovered_at,last_seen_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",

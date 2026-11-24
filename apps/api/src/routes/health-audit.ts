@@ -133,10 +133,19 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       }
 
       let categoryId: string | null = body.data.categoryId ?? candidate.categoryId;
+      let categoryFallback = false;
       if (categoryId) {
         const categoryCheck = await ctx.repo.checkSiteCategoryAttachment(categoryId);
-        if (!categoryCheck.ok) return { kind: "invalid_category" as const, error: categoryCheck.error };
-        categoryId = categoryCheck.categoryId;
+        if (!categoryCheck.ok && body.data.categoryId) {
+          return { kind: "invalid_category" as const, error: categoryCheck.error };
+        }
+        if (!categoryCheck.ok) {
+          // 采集器的类目建议失效时，人工通过仍可入库到「未分类」，避免候选永久卡死。
+          categoryId = null;
+          categoryFallback = true;
+        } else {
+          categoryId = categoryCheck.categoryId;
+        }
       }
       const resolvedCategoryId = categoryId ?? await ctx.repo.ensureUncategorized();
 
@@ -166,9 +175,9 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       await ctx.repo.audit({
         ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
         action: "discovery.candidate_approved", target: id,
-        diff: { siteId: site.id, created, source: candidate.source },
+        diff: { siteId: site.id, created, source: candidate.source, categoryFallback },
       });
-      return { kind: "approved" as const, candidate: reviewed, site, created };
+      return { kind: "approved" as const, candidate: reviewed, site, created, categoryFallback };
     });
 
     if (result.kind === "not_found") {
@@ -188,7 +197,7 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
     if (result.created) {
       await indexSite(ctx, result.site.id, result.site.title, result.site.description ?? null, result.site.url);
     }
-    return { ok: true, created: result.created, site: result.site, candidate: result.candidate };
+    return { ok: true, created: result.created, categoryFallback: result.categoryFallback, site: result.site, candidate: result.candidate };
   });
 
   /**

@@ -29,6 +29,7 @@ type ModerationPolicy = {enabled:boolean;mode:'shadow';autoApproveConfidence:num
 type ModelAnalytics = {ok:boolean;days:number;models:Array<{model:string;total:number;completed:number;errors:number;quotaBlocked:number;successRate:number|null;averageConfidence:number|null;verdicts:{autoApprove:number;reject:number;manualReview:number}}>}
 type GoldCase = {id:string;sourceFingerprint:string;title:string|null;description:string|null;category:string|null;sanitizedExcerpt:string|null;status:'pending'|'annotating'|'needs_adjudication'|'gold_ready';annotationCount:number;finalLabel:string|null;finalRisk:boolean|null;createdAt:number;updatedAt:number}
 type GoldAnnotation = {id:string;annotatorId:string;label:'approve'|'reject'|'review';risk:boolean;evidence:string;createdAt:number}
+type GoldAssignmentMetrics = {ok:boolean;claimed:number;completed:number;expired:number;myActive:number}
 const DEFAULT_POLICY:ModerationPolicy={enabled:false,mode:'shadow',autoApproveConfidence:0.93,rejectConfidence:0.97,minQualityScore:70,maxExcerptChars:6000,maxAiReviewsPerRun:5,requireHttps:false}
 
 function Stat({label,value,detail}:{label:string;value:string|number;detail?:string}) {
@@ -46,6 +47,9 @@ export default function CrawlOperationsPage(){
   const [goldCases,setGoldCases]=useState<GoldCase[]>([])
   const [activeGoldId,setActiveGoldId]=useState<string|null>(null)
   const [goldAnnotations,setGoldAnnotations]=useState<GoldAnnotation[]>([])
+  const [goldAssignmentMetrics,setGoldAssignmentMetrics]=useState<GoldAssignmentMetrics|null>(null)
+  const [goldClaimedCaseId,setGoldClaimedCaseId]=useState<string|null>(null)
+  const [goldClaimExpiresAt,setGoldClaimExpiresAt]=useState<number|null>(null)
   const [goldBusy,setGoldBusy]=useState(false)
   const [goldMessage,setGoldMessage]=useState<string|null>(null)
   const [goldTitle,setGoldTitle]=useState('')
@@ -69,16 +73,17 @@ export default function CrawlOperationsPage(){
   const load=useCallback(async()=>{
     setLoading(true);setError(null)
     try{
-      const [stats,queue,registry,moderation,history,analytics,goldQueue]=await Promise.all([
+      const [stats,queue,registry,moderation,history,analytics,goldQueue,assignmentMetrics]=await Promise.all([
         hubGet<Overview>('/api/hub/admin/crawl/overview'),
         hubGet<CandidatePage>('/api/hub/admin/crawl/candidates?status=pending&limit=50&offset=0'),
         hubGet<{ok:boolean;items:Source[]}>('/api/hub/admin/crawl-sources?limit=100'),
         hubGet<{ok:boolean;policy:ModerationPolicy}>('/api/hub/admin/crawl-moderation/policy'),
         hubGet<{ok:boolean;items:Array<{id:string;candidateId:string;decisionSource:string;verdict:string|null;status:string;createdAt:number;actor:string|null}>}>('/api/hub/admin/crawl/moderation-decisions?limit=10'),
         hubGet<ModelAnalytics>('/api/hub/admin/crawl/moderation-analytics?days=30'),
-        hubGet<{ok:boolean;items:GoldCase[]}>('/api/hub/admin/crawl/moderation-gold-cases?limit=100&offset=0')
+        hubGet<{ok:boolean;items:GoldCase[]}>('/api/hub/admin/crawl/moderation-gold-cases?limit=100&offset=0'),
+        hubGet<GoldAssignmentMetrics>('/api/hub/admin/crawl/moderation-gold-assignments/metrics')
       ])
-      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setDecisionHistory(history.items);setModelAnalytics(analytics);setGoldCases(goldQueue.items)
+      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setDecisionHistory(history.items);setModelAnalytics(analytics);setGoldCases(goldQueue.items);setGoldAssignmentMetrics(assignmentMetrics)
     }catch(e){setError(e instanceof Error?e.message:'采集运营数据加载失败')}
     finally{setLoading(false)}
   },[])
@@ -141,8 +146,9 @@ export default function CrawlOperationsPage(){
     }catch(e){setGoldMessage(e instanceof Error?e.message:'创建金标样本失败')}
     finally{setGoldBusy(false)}
   }
-  const submitGoldAnnotation=async()=>{
+  const claimGoldTask=async()=>{\n    if(goldBusy)return\n    setGoldBusy(true);setGoldMessage(null)\n    try{\n      const result=await hubSend<{ok:boolean;assignmentId:string;case:{id:string};slot:number;expiresAt:number}>('/api/hub/admin/crawl/moderation-gold-cases/claim','POST',activeGoldCase?{caseId:activeGoldCase.id}:{})\n      setGoldClaimedCaseId(result.case.id);setGoldClaimExpiresAt(result.expiresAt)\n      const item=goldCases.find(x=>x.id===result.case.id)\n      if(item)await openGoldCase(item)\n      setGoldMessage('已领取第 '+result.slot+' 个独立标注席位，任务有效期至 '+time(result.expiresAt))\n      await load()\n    }catch(e){setGoldMessage(e instanceof Error?e.message:'领取标注任务失败')}\n    finally{setGoldBusy(false)}\n  }\n  const submitGoldAnnotation=async()=>{
     if(!activeGoldCase||goldBusy)return
+    if(goldClaimedCaseId!==activeGoldCase.id){setGoldMessage('请先领取当前样本的标注任务');return}
     setGoldBusy(true);setGoldMessage(null)
     try{
       await hubSend('/api/hub/admin/crawl/moderation-gold-cases/'+encodeURIComponent(activeGoldCase.id)+'/annotations','POST',

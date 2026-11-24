@@ -6,7 +6,7 @@ function makeCase(index: number, datasetVersion = "search-gold-v1") {
     schemaVersion: "search-quality-golden-v2",
     datasetVersion,
     queryId: `query_${String(index).padStart(6, "0")}`,
-    queryText: "脱敏后的真实查询文本",
+    queryText: "脱敏查询示例文本",
     locale: "zh-CN",
     intent: "task",
     sampledAt: 1_700_000_000_000,
@@ -21,7 +21,7 @@ function makeCase(index: number, datasetVersion = "search-gold-v1") {
 }
 
 describe("validate-search-goldset JSONL", () => {
-  it("validates 100 real, privacy-reviewed cases without echoing query text", () => {
+  it("validates 100 structurally valid privacy-reviewed cases without echoing query text", () => {
     const input = Array.from({ length: 100 }, (_, index) => JSON.stringify(makeCase(index + 1))).join("\n");
     const result = validateSearchGoldJsonl(input);
     expect(result.count).toBe(100);

@@ -287,6 +287,9 @@ export async function guardedFetch(
       }
     }
 
+    // CodeQL js/request-forgery #35 误报说明：fetchTarget 在此之前已过
+    // resolveAndCheckAddresses 的 DNS 解析 + 受保护 IP 校验（http 还钉扎为已校验 IP），
+    // 重定向逐跳重校验；CodeQL stock 查询不识别自定义 guard，故仍报警（防护本身已做）。
     const response = await fetch(fetchTarget, {
       ...init,
       redirect: 'manual',

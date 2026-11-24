@@ -536,6 +536,9 @@ async function runGuardedFetch(
           extraHeaders.Host = current.host;
         }
       }
+      // CodeQL js/request-forgery #38 误报说明：本跳之前已做 DNS 解析 + 受保护 IP 校验，
+      // http 明文钉扎为已校验 IP、https 事后二次复核 DNS；CodeQL stock 查询不识别自定义
+      // guard，故仍报警（防护本身已做）。本函数也是动态工具生产 transport 背后的 guard。
       res = await fetch(fetchUrl, {
         method,
         body: method === "GET" || method === "HEAD" ? undefined : body,

@@ -166,7 +166,14 @@ function serveFakeWeb(apiBase: string, opts: WebOpts): Promise<{ base: string; c
       }
       if (url.pathname.startsWith("/api/hub/")) {
         // 代理：默认**不**带内部凭据（浏览器流量必须继续按 IP 受限）
-        const r = await fetch(`${apiBase}${url.pathname.replace("/api/hub", "/api")}`, {
+        // CodeQL #39：主机 apiBase 是测试自己拼的 `http://127.0.0.1:<port>` 字面量，
+        // 唯一请求侧输入是路径；按段 encodeURIComponent 后再拼，路径逃不出 /api/ 前缀。
+        const targetPath = url.pathname
+          .replace("/api/hub", "/api")
+          .split("/")
+          .map((seg) => encodeURIComponent(seg))
+          .join("/");
+        const r = await fetch(`${apiBase}${targetPath}`, {
           headers: opts.proxyLeak ? { "x-navhub-internal-token": TOKEN } : {},
         });
         res.writeHead(r.status, { "content-type": "application/json" });

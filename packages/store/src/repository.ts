@@ -854,6 +854,10 @@ async savedPluginEmbeddings(filter?: {
     return discoveryCandidatesRepo.getSiteDiscoveryCandidate(this, id);
   }
 
+  async getSiteDiscoveryCandidateForUpdate(id: string) {
+    return discoveryCandidatesRepo.getSiteDiscoveryCandidateForUpdate(this, id);
+  }
+
   async listSiteDiscoveryCandidates(options: { status?: discoveryCandidatesRepo.DiscoveryCandidateStatus; limit?: number; offset?: number } = {}) {
     return discoveryCandidatesRepo.listSiteDiscoveryCandidates(this, options);
   }

@@ -46,7 +46,7 @@
 - 只统计 `apps/api/src/**` 与 `packages/*/src/**`；`apps/web` 是 vendored 上游底座，不纳入。
 - `all` 开启：**没被任何测试 import 的文件也以 0% 计入**——这正是「整文件零覆盖的写端点」的信号。
 - 产物：`coverage/coverage-summary.json`（脚本读取）与 `coverage-final.json`（逐行明细）。
-- 当前阶段：**W1 钉住现状**（`coverage-thresholds.json` 的 `stage: "W1"`），CI 硬门禁已上线。
+- 当前阶段：**W3**（`coverage-thresholds.json` 的 `stage: "W3"`）；全局/分区域 floor 继续保持 W1 基线，新增 patch 可执行改动行覆盖率 ≥70% 门禁。
 
 历史实测（2026-10-23，仅供对照，以 W0 重新实测为准）：
 
@@ -68,7 +68,7 @@
 | A 全局 floor | lines / functions / branches / statements | W0 实测 − 2pp（lines 83.68 / functions 84.35 / branches 69.68） | ratchet，只升不降 |
 | B 分区域 floor | `apps/api`、`packages/store`、`packages/core`、`packages/ai`、`packages/mcp` 各自判定 | 各区域 W0 实测 − 2pp | 防止高覆盖区域掩盖低覆盖区域 |
 | C 关键文件 floor | `packages/store/src/repository.ts`、`apps/api/src/server.ts`、`apps/api/src/auth.ts`、`apps/api/src/config.ts`、`packages/ai/src/ssrf.ts`、`apps/api/src/routes/*.ts` | 未逐文件实测（W1 只登记清单，`enforced: false`，不阻断；W3 起按 +3/+6/+9/+12 抬） | 数据/安全边界必须高 |
-| D 改动行覆盖 | （计划值，W3/W5 上线后生效）patch 改动行 ≥70%；新增文件 ≥50%；新增文件 0% 直接 fail | W3/W5 分别上线（当前未启用） | 防「存量不动、新增裸奔」 |
+| D 改动行覆盖 | patch 可执行改动行 ≥70%；新增文件 ≥50%；新增文件 0% 直接 fail | W3 patch 已启用；W5 新增文件门禁待启用 | 防「存量不动、新增裸奔」 |
 
 **单一事实源 = 仓库根 `coverage-thresholds.json`**（纳入版本控制）。不使用 vitest 原生 `coverage.thresholds`：它只支持全局 + glob，覆盖不了 patch 覆盖与新增文件拦截，且两套阈值会打架。
 
@@ -84,7 +84,7 @@
 |---|---|---|---|---|---|
 | W0 基线 | 10/25–10/31 | 只出数不判定 | 只记录 | 跑 `pnpm coverage`，基线写入 `coverage-thresholds.json` | ✅ 2026-11-06 实测完成（lines 85.68 / functions 86.35 / branches 71.68） |
 | W1 钉住 | 11/03–11/14 | 基线 − 2（容差） | = 实测 | CI 硬门禁上线 | ✅ 2026-11-06 落地：独立 `coverage` 作业 + `coverage-thresholds.json` 单一事实源 + `--max-age` |
-| W3 | 11/17–11/28 | 基线 + 2 | 实测 + 3 | patch 覆盖 ≥70% 同步上线 |
+| W3 | 11/17–11/28 | 基线 + 2 | 实测 + 3 | ✅ 2026-11-24 启用 patch 可执行改动行覆盖 ≥70%（少于 10 行跳过） |
 | W5 | 12/01–12/12 | 基线 + 4 | 实测 + 6 | 新增零覆盖文件拦截上线 |
 | W7 | 12/15–12/26 | 基线 + 6 | 实测 + 9 | 分区域 floor 独立判定 |
 | W9 | 12/29–01/09 | 基线 + 8 | 实测 + 12 | 全局 ≥基线+8，关键文件 ≥实测+12 |
@@ -96,7 +96,7 @@
 
 ### 3.4 防退化四机制
 
-1. **patch 覆盖**：`node scripts/check-coverage.mjs --patch --base=origin/main --min-patch-lines 70`。用 `git diff --unified=0` 取改动行 + `coverage-final.json` 的 statementMap 映射；分母 <10 行跳过判定；删除行不计；纯 re-export / 类型文件进 ignore 清单（逐条列出，不许通配）。
+1. **patch 覆盖（W3 已启用）**：CI 执行 `node scripts/check-coverage.mjs --patch --base=origin/main --min-patch-lines 70`。用 `git diff --unified=0` 取新增行 + `coverage-final.json` 的 `statementMap`/`s` 语句覆盖映射；只统计可执行改动行，分母少于 10 行跳过判定；删除行不计。缺失覆盖率文件按未覆盖处理。
 2. **新增零覆盖文件拦截**：PR 新增的 `apps/api/src/**`、`packages/*/src/**` 文件 lines=0 直接 fail；例外仅 `*.d.ts`、纯类型、入口 re-export。
 3. **反「为过门禁写垃圾测试」**：新增测试需在 PR 附 fail-before-pass 证据（`node scripts/verify-guard.mjs`）；审查者每周抽查 1/3；每周随机抽 3 个新增测试检查断言强度；`/* v8 ignore */` 必须带理由 + 审查确认。
 4. **ratchet 本身是主防线**：垃圾测试不增加覆盖，加了也过不了「只升不降」。
@@ -112,14 +112,14 @@
 | `--thresholds coverage-thresholds.json` | ✅ 2026-11-06 新增 | 读外置阈值（全局 floor + 分区域 floor），低于阈值 exit 1 |
 | `::error::` 注解 | ✅ 2026-11-06 新增 | 每条失败一行，PR 文件页可见 |
 | `--max-age <minutes>` | ✅ 2026-11-06 新增 | 产物 mtime 超阈值 exit 2（`clean:false` 的假绿入口） |
-| `--patch --base=... --min-patch-lines 70` | ⏳ W3 上线 | 改动行覆盖，需 `coverage-final.json` 的 statementMap 映射 |
+| `--patch --base=... --min-patch-lines 70` | ✅ 2026-11-24 W3 上线 | `coverage-final.json` 的 `statementMap` + `s` 计数映射；仅统计可执行新增行，缺失覆盖条目按未覆盖处理 |
 | `--require-covered-new` | ⏳ W5 上线 | 新增零覆盖文件拦截（`git diff --diff-filter=A`） |
 | 关键文件 floor（`criticalFiles`） | ⏳ W3 起 | `coverage-thresholds.json` 已登记清单，当前 `enforced:false`（无逐文件基线，不做假门禁） |
 | `--per-area` / `--changed-files` / `--github-summary` / `--json` 增 `uncoveredLines` | P1 待做 | — |
 | `--list-zero` / PR 评论机器人 | P2 待做 | — |
 
-> 单一事实源 `coverage-thresholds.json` 的 `stage: W1` 表示「钉住现状、只升不降」；
-> `patch.enabled` / `requireCoveredNew.enabled` 当前为 `false`，与路线图 W3/W5 对齐，不是漏做。
+> 单一事实源 `coverage-thresholds.json` 的 `stage: W3` 表示「全局 floor 保持 W1、patch 改动行门禁启用」；
+> `patch.enabled=true`，`requireCoveredNew.enabled=false`（W5 计划启用），关键文件逐文件门禁仍等待独立实测基线。
 
 ### 3.6 CI 落点与失败呈现
 
@@ -127,7 +127,7 @@
 - **命令**（CI 与本地 `pnpm coverage` 同源）：
   ```bash
   pnpm vitest run --coverage --reporter=default
-  node scripts/check-coverage.mjs --thresholds coverage-thresholds.json --max-age 60
+  node scripts/check-coverage.mjs --thresholds coverage-thresholds.json --max-age 60 --patch --base=origin/main --min-patch-lines 70
   ```
 - **超时**：`coverage` 作业 `timeout-minutes: 30`；本机实测全量（含覆盖率）约 9–10 分钟。旧版本此处写「约 27 分钟」是 W0 首次冷启动的口径，已按实测更正。
 - **失败呈现三层**：① 每条阈值失败一个 `::error::` 注解；② 日志末尾表格（区域/文件数/零覆盖/lines/functions/branches/阈值/结果）；③ 上传 `coverage-summary.json` 为 artifact（14 天）。

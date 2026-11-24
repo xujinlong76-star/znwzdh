@@ -1106,6 +1106,28 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     };
   });
 
+  app.post("/api/me/tokens/:id/rotate", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+    const identity = requestIdentityOf(req as never);
+    if (!identity || identity.startsWith("anon-")) { reply.code(403); return { error: "只有已登录用户可以轮换个人令牌" }; }
+    const id = String((req.params as { id: string }).id || "");
+    if (!id || id.length > 64) { reply.code(400); return { error: "id 无效" }; }
+    const canonical = await ctx.repo.resolveIdentity(identity);
+    const raw = generateToken();
+    const record = await ctx.repo.rotateApiTokenByOwner(canonical, id, hashToken(raw), tokenPrefixOf(raw));
+    if (!record) { reply.code(404); return { error: "令牌不存在、已吊销或已过期" }; }
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: canonical,
+      actorKind: "user",
+      action: "user.token_rotate",
+      target: id,
+      diff: { name: record.name, scopes: record.scopes },
+    }).catch(() => { /* 审计失败不吞掉新令牌明文响应 */ });
+    reply.header("cache-control", "no-store");
+    return { ok: true, token: raw, record, note: "轮换成功：旧明文已立即失效，请立即保存新令牌。" };
+  });
+
   app.delete("/api/me/tokens/:id", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
     const identity = requestIdentityOf(req as never);

@@ -80,6 +80,21 @@ function parseModelResult(raw: string): Omit<SiteModerationResult, "verdict" | "
   };
 }
 
+/** 纯策略决策函数：方便测试和审计，绝不依赖模型或网络。 */
+export function decideSiteModerationVerdict(
+  result: Pick<SiteModerationResult, "confidence" | "qualityScore" | "risks">,
+  policy: Partial<SiteModerationPolicy> = {},
+  url = "https://example.invalid",
+): SiteModerationVerdict {
+  const active = { ...DEFAULT_SITE_MODERATION_POLICY, ...policy };
+  const riskOnly = result.risks.filter(risk => risk !== "none");
+  const hasCriticalRisk = riskOnly.some(risk => ["phishing", "malware", "scam", "illegal"].includes(risk));
+  if (hasCriticalRisk && result.confidence >= active.rejectConfidence) return "reject";
+  if (riskOnly.length === 0 && result.confidence >= active.autoApproveConfidence &&
+      result.qualityScore >= 70 && (!active.requireHttps || url.startsWith("https://"))) return "auto_approve";
+  return "manual_review";
+}
+
 /**
  * 对一个待收录网站进行模型审核。模型不可用、输出不合规或证据不足时抛错，
  * 调用方必须保持候选 pending，禁止把模型异常当成通过。
@@ -136,13 +151,6 @@ export async function moderateSiteWithAi(
     ],
   });
   const parsed = parseModelResult(response.content);
-  const riskOnly = parsed.risks.filter(risk => risk !== "none");
-  const hasCriticalRisk = riskOnly.some(risk => ["phishing", "malware", "scam", "illegal"].includes(risk));
-  let verdict: SiteModerationVerdict = "manual_review";
-  if (hasCriticalRisk && parsed.confidence >= active.rejectConfidence) verdict = "reject";
-  else if (riskOnly.length === 0 && parsed.confidence >= active.autoApproveConfidence &&
-      parsed.qualityScore >= 70 && (!active.requireHttps || safeInput.url.startsWith("https://"))) {
-    verdict = "auto_approve";
-  }
+  const verdict = decideSiteModerationVerdict(parsed, active, safeInput.url);
   return { ...parsed, verdict, model: response.model, policyVersion: "site-moderation-v1" };
 }

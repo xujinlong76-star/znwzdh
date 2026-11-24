@@ -12,6 +12,7 @@ export * from "./vector/index.ts";
 export * from "./repository.ts";
 export * from "./repository/crawl-governance.ts";
 export * from "./repository/crawl-sources.ts";
+export * from "./repository/crawl-ai-moderation.ts";
 export { upsertSiteDiscoveryCandidate, getSiteDiscoveryCandidateForUpdate, getSiteDiscoveryCandidate, listSiteDiscoveryCandidates, countSiteDiscoveryCandidates, reviewSiteDiscoveryCandidate } from "./repository/discovery-candidates.ts";
 export type { SiteDiscoveryCandidate, DiscoveryCandidateStatus } from "./repository/discovery-candidates.ts";
 export { pluginOwnerKey, normalizePluginReviewSort, type PluginReviewSort } from "./repository/plugins.ts";

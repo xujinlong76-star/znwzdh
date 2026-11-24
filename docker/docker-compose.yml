@@ -89,6 +89,9 @@ services:
       # 显式设置则优先生效。密钥文件默认 /data/.session-secret，这里指向
       # 独立的 navhub-secrets 卷（A14 密钥分离：备份库外流不连带丢密钥）。
       NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}
+      # 管理员凭证由 Web NextAuth CredentialsProvider 校验；仅服务端环境可见，不进入浏览器 bundle。
+      NAVHUB_ADMIN_PASSWORD: ${NAVHUB_ADMIN_PASSWORD:-}
+      NAVHUB_ADMIN_TOKEN: ${NAVHUB_ADMIN_TOKEN:-}
       NAVHUB_SESSION_SECRET_FILE: ${NAVHUB_SESSION_SECRET_FILE:-/secrets/.session-secret}
       # X-Forwarded-For 信任度。取值：0 不读（默认）/ 1 信任整条链 / 可信代理网段列表。
       # 默认关：本文件把 8787 直接 publish 到宿主机，前面没有必然存在的反向代理，

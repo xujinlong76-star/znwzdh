@@ -13,7 +13,8 @@ type Overview = {
   sources:{enabled:number;disabled:number};
   candidates:Record<string,number>;
   last24Hours:Record<string,number>;
-  busiestHosts:Array<{host:string;tasks:number}>;\n  aiModeration:{windowHours:number;sampleSize:number;completed:number;errors:number;quotaBlocked:number;verdicts:Record<string,number>}
+  busiestHosts:Array<{host:string;tasks:number}>;
+  aiModeration:{windowHours:number;sampleSize:number;completed:number;errors:number;quotaBlocked:number;verdicts:Record<string,number>}
 }
 type Candidate = {
   id:string;url:string;title:string|null;description:string|null;source:string;status:string;

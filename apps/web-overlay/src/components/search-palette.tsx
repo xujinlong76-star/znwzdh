@@ -246,7 +246,7 @@ export function NavDigitBadge({ index }: { index: number }) {
   return (
     <kbd
       aria-hidden="true"
-      className="px-1.5 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[10px] text-muted-foreground shrink-0"
+      className="px-1.5 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[0.625rem] text-muted-foreground shrink-0"
     >
       {digit}
     </kbd>
@@ -1645,7 +1645,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             <kbd
               aria-hidden="true"
               title="按 / 快速搜索"
-              className="hidden h-5 min-w-5 select-none items-center justify-center rounded border border-border/60 bg-muted/60 px-1.5 font-mono text-[11px] font-medium text-muted-foreground shadow-2xs xl:inline-flex pointer-coarse:hidden"
+              className="hidden h-5 min-w-5 select-none items-center justify-center rounded border border-border/60 bg-muted/60 px-1.5 font-mono text-[0.6875rem] font-medium text-muted-foreground shadow-2xs xl:inline-flex pointer-coarse:hidden"
             >
               /
             </kbd>
@@ -1657,7 +1657,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             aria-pressed={aiMode}
             aria-label={aiMode ? '退出 AI 模式' : '切换到 AI 模式'}
             title={aiMode ? 'AI 模式开：回车直接问 AI 找站' : 'AI 模式：回车直接问 AI 找站'}
-            className={`h-6 px-1.5 rounded-full text-[11px] font-semibold gap-0.5 ${aiMode ? 'bg-violet-500/15 text-violet-600 dark:text-violet-300 ring-1 ring-violet-400/60' : 'text-muted-foreground hover:bg-muted'}`}
+            className={`h-6 px-1.5 rounded-full text-[0.6875rem] font-semibold gap-0.5 ${aiMode ? 'bg-violet-500/15 text-violet-600 dark:text-violet-300 ring-1 ring-violet-400/60' : 'text-muted-foreground hover:bg-muted'}`}
           >
             <Sparkles className="h-3 w-3" />
             AI
@@ -1708,7 +1708,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         <div id="navhub-search-suggest-panel" className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-0 mt-0 sm:mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto divide-y divide-border/60 animate-in fade-in-50 zoom-in-95 duration-150">
           {/* DIY 排版快捷操作（8c）：空查询时直接展示全部操作；有查询词时改走匹配行 */}
           <div className="p-2.5">
-            <div className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1.5 mb-2 px-1">
+            <div className="text-[0.6875rem] font-semibold text-muted-foreground flex items-center gap-1.5 mb-2 px-1">
               <LayoutTemplate className="h-3 w-3 text-violet-500" />
               <span>DIY 排版快捷操作</span>
             </div>
@@ -1720,7 +1720,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               >
                 <PencilLine className="h-3.5 w-3.5 text-violet-500 shrink-0" />
                 <span className="flex-1 truncate">{isEditingLayout ? '退出编辑模式' : '进入编辑模式'}</span>
-                <kbd className="px-1 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[10px] text-muted-foreground shrink-0">
+                <kbd className="px-1 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[0.625rem] text-muted-foreground shrink-0">
                   {isEditingLayout ? 'Esc' : 'Ctrl/⌘+E'}
                 </kbd>
               </button>
@@ -1766,7 +1766,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
           {/* 快捷操作（P1 #8）：空查询时直接展示全部四项，点一下就执行（主题 / 长辈 / 密度即时生效，添加站点开弹窗） */}
           <div className="p-2.5">
-            <div className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1.5 mb-2 px-1">
+            <div className="text-[0.6875rem] font-semibold text-muted-foreground flex items-center gap-1.5 mb-2 px-1">
               <Zap className="h-3 w-3 text-amber-500" />
               <span>快捷操作</span>
             </div>
@@ -1792,12 +1792,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           {/* 我的收藏（P1 #8）：空查询时展示最近 8 条收藏，打字可在结果面板里筛选 */}
           {emptyPanelFavorites.length > 0 && (
             <div className="p-2.5 bg-muted/20">
-              <div className="text-[11px] font-semibold text-muted-foreground flex items-center justify-between mb-2 px-1">
+              <div className="text-[0.6875rem] font-semibold text-muted-foreground flex items-center justify-between mb-2 px-1">
                 <span className="flex items-center gap-1.5">
                   <Star className="h-3 w-3 text-amber-500 fill-amber-500" />
                   <span>我的收藏</span>
                 </span>
-                <span className="text-[10px] font-mono text-muted-foreground">打字可筛选</span>
+                <span className="text-[0.625rem] font-mono text-muted-foreground">打字可筛选</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                 {emptyPanelFavorites.map((fav) => {
@@ -1822,14 +1822,14 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           className="w-4 h-4 object-contain rounded"
                         />
                       </div>
-                      <span className="truncate font-medium text-foreground group-hover:text-primary transition-colors text-[11px]">
+                      <span className="truncate font-medium text-foreground group-hover:text-primary transition-colors text-[0.6875rem]">
                         {fav.title}
                       </span>
                       {(() => {
                         const ql = quicklinkBySiteId.get(fav.siteId)
                         if (!ql) return null
                         return (
-                          <span className="shrink-0 rounded bg-primary/10 px-1 py-0.5 font-mono text-[10px] font-bold text-primary">
+                          <span className="shrink-0 rounded bg-primary/10 px-1 py-0.5 font-mono text-[0.625rem] font-bold text-primary">
                             !{ql.quickPrefix}
                           </span>
                         )
@@ -1847,7 +1847,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   .filter((e): e is QuicklinkEntry => e != null)
                 if (chips.length === 0) return null
                 return (
-                  <p className="mt-2 px-1 text-[11px] text-muted-foreground">
+                  <p className="mt-2 px-1 text-[0.6875rem] text-muted-foreground">
                     输入 {chips.map((c) => `!${c.quickPrefix}`).join(' / ')} &lt;关键词&gt; 直达搜索
                   </p>
                 )
@@ -1858,12 +1858,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           {/* 常用与最近常去站点快捷直达 */}
           {orderedRecentVisits.length > 0 && (
             <div className="p-2.5 bg-muted/20">
-              <div className="text-[11px] font-semibold text-muted-foreground flex items-center justify-between mb-2 px-1">
+              <div className="text-[0.6875rem] font-semibold text-muted-foreground flex items-center justify-between mb-2 px-1">
                 <span className="flex items-center gap-1.5">
                   <Star className="h-3 w-3 text-amber-500 fill-amber-500" />
                   <span>常用与最近常去</span>
                 </span>
-                <span className="text-[10px] font-mono text-muted-foreground">一键直达</span>
+                <span className="text-[0.625rem] font-mono text-muted-foreground">一键直达</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                 {orderedRecentVisits.map((visit) => (
@@ -1887,7 +1887,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                         className="w-4 h-4 object-contain rounded"
                       />
                     </div>
-                    <span className="truncate font-medium text-foreground group-hover:text-primary transition-colors text-[11px]">
+                    <span className="truncate font-medium text-foreground group-hover:text-primary transition-colors text-[0.6875rem]">
                       {visit.title}
                     </span>
                   </a>
@@ -2069,7 +2069,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 }
                 className="flex items-center gap-2 text-xs font-medium text-primary min-w-0 text-left cursor-pointer"
               >
-                <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-mono text-[10px] font-bold shrink-0">
+                <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-mono text-[0.625rem] font-bold shrink-0">
                   !{quicklinkMatch.entry.quickPrefix}
                 </span>
                 <span className="truncate min-w-0">
@@ -2079,7 +2079,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   </strong>
                 </span>
               </button>
-              <span className="inline-flex items-center gap-1 text-[11px] text-primary shrink-0 font-medium">
+              <span className="inline-flex items-center gap-1 text-[0.6875rem] text-primary shrink-0 font-medium">
                 <span>回车直达</span>
                 <ExternalLink className="w-3 h-3" />
               </span>
@@ -2088,7 +2088,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           {quicklinkMatch.kind !== 'hit' && omniCommand && (
             <div className="px-3.5 py-2.5 bg-primary/10 border-b border-primary/20 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-xs font-medium text-primary min-w-0">
-                <span className="px-1.5 py-0.5 rounded bg-primary/20 font-mono text-[10px] uppercase font-bold shrink-0">
+                <span className="px-1.5 py-0.5 rounded bg-primary/20 font-mono text-[0.625rem] uppercase font-bold shrink-0">
                   {omniCommand.engineName}
                 </span>
                 <span className="truncate min-w-0">
@@ -2100,7 +2100,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 target={linkTarget}
                 rel="noopener noreferrer"
                 onClick={() => setIsFocused(false)}
-                className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline shrink-0 font-medium cursor-pointer"
+                className="inline-flex items-center gap-1 text-[0.6875rem] text-primary hover:underline shrink-0 font-medium cursor-pointer"
               >
                 <span>直达</span>
                 <ExternalLink className="w-3 h-3" />
@@ -2234,7 +2234,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           }`}
                         >
                           <NavDigitBadge index={idx} />
-                          <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-mono text-[10px] font-bold shrink-0">
+                          <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-mono text-[0.625rem] font-bold shrink-0">
                             !{item.entry.quickPrefix}
                           </span>
                           <span className="min-w-0 flex-1">
@@ -2287,7 +2287,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             </span>
                           </span>
                           {item.hint && (
-                            <kbd className="px-1.5 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[10px] text-muted-foreground shrink-0">
+                            <kbd className="px-1.5 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[0.625rem] text-muted-foreground shrink-0">
                               {item.hint}
                             </kbd>
                           )}
@@ -2429,7 +2429,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             </span>
                           </span>
                           {action.hint && (
-                            <kbd className="px-1.5 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[10px] text-muted-foreground shrink-0">
+                            <kbd className="px-1.5 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[0.625rem] text-muted-foreground shrink-0">
                               {action.hint}
                             </kbd>
                           )}
@@ -2474,7 +2474,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             </span>
                           </span>
                           <code
-                            className="max-w-[38%] truncate rounded border border-border/50 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground shrink-0"
+                            className="max-w-[38%] truncate rounded border border-border/50 bg-muted/60 px-1.5 py-0.5 font-mono text-[0.625rem] text-muted-foreground shrink-0"
                             title={tool.sampleQuery}
                           >
                             {tool.sampleQuery}
@@ -2526,7 +2526,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-6.5 px-2.5 text-[11px] gap-1 border-primary/30 text-primary hover:bg-primary/10 shrink-0"
+                    className="h-6.5 px-2.5 text-[0.6875rem] gap-1 border-primary/30 text-primary hover:bg-primary/10 shrink-0"
                     disabled={aiRecipeLoading}
                     onClick={triggerAiRecipe}
                   >
@@ -2547,24 +2547,24 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               {/* 自动识别的分面筛选与检索算子胶囊 */}
               {(Object.keys(inferredFacets).length > 0 || inferredTag || inferredCategory || excludedTerms.length > 0 || queryExpansion.length > 0) && (
                 <div className="px-3 py-1.5 bg-primary/5 border-b border-border/50 flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
-                  <span className="flex items-center gap-1 text-primary font-medium text-[11px]">
+                  <span className="flex items-center gap-1 text-primary font-medium text-[0.6875rem]">
                     <Sparkles className="w-3 h-3" />
                     <span>意图解析：</span>
                   </span>
                   {inferredTag && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-primary/10 text-primary border border-primary/20">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[0.6875rem] font-medium bg-primary/10 text-primary border border-primary/20">
                       <span>#{inferredTag}</span>
                     </span>
                   )}
                   {inferredCategory && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[0.6875rem] font-medium bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
                       <span>@{inferredCategory}</span>
                     </span>
                   )}
                   {excludedTerms.map((ex) => (
                     <span
                       key={ex}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[0.6875rem] font-medium bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20"
                     >
                       <span>-{ex}</span>
                     </span>
@@ -2572,7 +2572,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   {queryExpansion.map((exp) => (
                     <span
                       key={exp}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[0.6875rem] font-medium bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20"
                     >
                       <span>~{exp}</span>
                     </span>
@@ -2580,7 +2580,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   {Object.entries(inferredFacets).map(([fKey, vals]) => (
                     <span
                       key={fKey}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-secondary text-secondary-foreground border border-border/60"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[0.6875rem] font-medium bg-secondary text-secondary-foreground border border-border/60"
                     >
                       <span className="text-muted-foreground">{fKey}:</span>
                       <span className="font-semibold text-foreground">{vals.join(', ')}</span>
@@ -2607,11 +2607,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                               {rel.sourceSite?.title || '推荐站点'}
                             </span>
                             {rel.isFreeOrOpenSource && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-semibold border border-emerald-500/20 flex-shrink-0">
+                              <span className="text-[0.625rem] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-semibold border border-emerald-500/20 flex-shrink-0">
                                 开源/免费
                               </span>
                             )}
-                            <span className="text-[11px] text-muted-foreground truncate">
+                            <span className="text-[0.6875rem] text-muted-foreground truncate">
                               对标 {rel.targetTitle}
                             </span>
                           </div>
@@ -2654,7 +2654,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     <Link
                       href="/collections"
                       onClick={() => setIsFocused(false)}
-                      className="text-[11px] text-muted-foreground hover:text-primary transition-colors"
+                      className="text-[0.6875rem] text-muted-foreground hover:text-primary transition-colors"
                     >
                       查看全部专题 →
                     </Link>
@@ -2671,10 +2671,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                         <div className="min-w-0 flex-1">
                           <div className="text-xs font-semibold text-foreground truncate">{col.title}</div>
                           {col.description && (
-                            <div className="text-[10px] text-muted-foreground truncate">{col.description}</div>
+                            <div className="text-[0.625rem] text-muted-foreground truncate">{col.description}</div>
                           )}
                         </div>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-700 dark:text-violet-400 shrink-0 font-medium">
+                        <span className="text-[0.625rem] px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-700 dark:text-violet-400 shrink-0 font-medium">
                           {col.kind === 'roadmap' ? '路线图' : '专题'}
                         </span>
                       </Link>
@@ -2691,13 +2691,13 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       插件市场
                       {pluginLoading && <Loader2 className="h-3 w-3 animate-spin opacity-60" />}
                       {pluginSemanticFallback && (
-                        <span className="text-[10px] font-normal text-muted-foreground">语义未就绪 · 关键词匹配</span>
+                        <span className="text-[0.625rem] font-normal text-muted-foreground">语义未就绪 · 关键词匹配</span>
                       )}
                     </span>
                     <Link
                       href={`/marketplace?q=${encodeURIComponent(query.trim())}`}
                       onClick={() => setIsFocused(false)}
-                      className="text-[11px] text-primary/80 hover:text-primary hover:underline"
+                      className="text-[0.6875rem] text-primary/80 hover:text-primary hover:underline"
                     >
                       查看全部插件结果
                     </Link>
@@ -2725,7 +2725,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             <span className="text-sm font-medium truncate">
                               <Highlighted text={p.name} query={query} />
                             </span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground shrink-0">
+                            <span className="text-[0.625rem] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground shrink-0">
                               {pluginKindLabel(p.kind)}
                             </span>
                           </span>
@@ -2735,7 +2735,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             </span>
                           )}
                         </span>
-                        <span className="flex items-center gap-2 text-[10px] text-muted-foreground shrink-0 font-mono">
+                        <span className="flex items-center gap-2 text-[0.625rem] text-muted-foreground shrink-0 font-mono">
                           {(p.installCount ?? 0) > 0 && (
                             <span className="inline-flex items-center gap-0.5">
                               <Download className="h-3 w-3" />
@@ -2756,7 +2756,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 </div>
               )}
               {pluginFailed && pluginItems.length === 0 && (
-                <div className="px-3.5 py-2 text-[11px] text-amber-700 dark:text-amber-400 border-b flex items-center gap-1.5">
+                <div className="px-3.5 py-2 text-[0.6875rem] text-amber-700 dark:text-amber-400 border-b flex items-center gap-1.5">
                   <Store className="h-3.5 w-3.5 shrink-0" aria-hidden />
                   <span>插件结果本次没有取回（不是插件市场没有匹配），站点结果不受影响。</span>
                   <button
@@ -2880,11 +2880,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     </div>
                   )}
                   {wantedNote ? (
-                    <div className="mt-3 text-[11px] text-muted-foreground">{wantedNote}</div>
+                    <div className="mt-3 text-[0.6875rem] text-muted-foreground">{wantedNote}</div>
                   ) : null}
                   {query.trim() && (
                     <div className="mt-4 pt-3 border-t border-border/40 flex flex-col items-center gap-2">
-                      <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <div className="text-[0.6875rem] text-muted-foreground flex items-center gap-1">
                         <ExternalLink className="h-3 w-3 text-primary" />
                         <span>一键全网聚合搜索「{query.trim()}」：</span>
                       </div>
@@ -2943,7 +2943,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   return (
                     <Fragment key={hit.siteId}>
                       {displayIndex === relatedStartIndex && rankedHits.related.length > 0 && (
-                        <div className="px-3.5 pt-3 pb-1 flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                        <div className="px-3.5 pt-3 pb-1 flex items-center gap-1.5 text-[0.6875rem] font-semibold text-muted-foreground">
                           <Sparkles className="h-3 w-3 text-violet-500" />
                           <span>相关推荐</span>
                         </div>
@@ -3027,7 +3027,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               )}
               {/* 键盘提示：能力存在但没人知道，等于不存在（桌面端才显示） */}
               {(displayHits.length > 0 || pluginItems.length > 0 || matchedPaletteFavorites.length > 0 || matchedPaletteActions.length > 0 || matchedPaletteTools.length > 0) && (
-                <div className="hidden sm:flex sm:pointer-coarse:hidden items-center gap-3 border-t border-border/60 bg-muted/20 px-3 py-1.5 text-[10px] text-muted-foreground">
+                <div className="hidden sm:flex sm:pointer-coarse:hidden items-center gap-3 border-t border-border/60 bg-muted/20 px-3 py-1.5 text-[0.625rem] text-muted-foreground">
                   <PaletteFooterHint />
                 </div>
               )}
@@ -3045,7 +3045,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                         : `加载更多（已显示 ${displayHits.length} 条）`}
                   </button>
                   {moreFailed && (
-                    <p className="pt-1.5 text-[11px] text-amber-700 dark:text-amber-400">
+                    <p className="pt-1.5 text-[0.6875rem] text-amber-700 dark:text-amber-400">
                       下一页没加载成功（请求失败，不是没有更多了）。已显示的 {displayHits.length} 条仍然可用，点上面按钮可再试。
                     </p>
                   )}
@@ -3075,7 +3075,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           description: '已临时展现所有已删减分类与站点，您的精简掩码配置未丢失。',
                         })
                       }}
-                      className="px-2 py-0.5 rounded-md bg-background/80 hover:bg-background text-foreground border border-border/70 text-[11px] font-medium transition-colors cursor-pointer"
+                      className="px-2 py-0.5 rounded-md bg-background/80 hover:bg-background text-foreground border border-border/70 text-[0.6875rem] font-medium transition-colors cursor-pointer"
                     >
                       点击临时查看
                     </button>
@@ -3096,7 +3096,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           description: '对应模块与站点已无损还原至原位。',
                         })
                       }}
-                      className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-[11px] font-semibold transition-opacity cursor-pointer"
+                      className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-[0.6875rem] font-semibold transition-opacity cursor-pointer"
                     >
                       一键恢复
                     </button>
@@ -3105,7 +3105,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               )}
               {showResults && query.trim() && displayHits.length > 0 && (
                 <div className="border-t border-border/60 bg-muted/10 px-2 py-1.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                  <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
+                  <div className="flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground flex-wrap">
                     <span className="inline-flex items-center gap-1">
                       <ExternalLink className="h-3 w-3 text-primary shrink-0" />
                       <span>全网搜索：</span>
@@ -3115,7 +3115,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setIsFocused(false)}
-                      className="px-1.5 py-0.5 rounded text-[11px] bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 font-medium"
+                      className="px-1.5 py-0.5 rounded text-[0.6875rem] bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 font-medium"
                     >
                       Google
                     </a>
@@ -3124,7 +3124,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setIsFocused(false)}
-                      className="px-1.5 py-0.5 rounded text-[11px] bg-neutral-500/10 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-500/20 font-medium"
+                      className="px-1.5 py-0.5 rounded text-[0.6875rem] bg-neutral-500/10 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-500/20 font-medium"
                     >
                       GitHub
                     </a>
@@ -3133,7 +3133,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setIsFocused(false)}
-                      className="px-1.5 py-0.5 rounded text-[11px] bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 font-medium"
+                      className="px-1.5 py-0.5 rounded text-[0.6875rem] bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 font-medium"
                     >
                       百度
                     </a>
@@ -3142,7 +3142,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setIsFocused(false)}
-                      className="px-1.5 py-0.5 rounded text-[11px] bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-500/20 font-medium"
+                      className="px-1.5 py-0.5 rounded text-[0.6875rem] bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-500/20 font-medium"
                     >
                       Bing
                     </a>

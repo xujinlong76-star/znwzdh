@@ -55,12 +55,13 @@ describe("顶栏触达尺寸（navigation-toolbar）", () => {
     expect(src).not.toContain("sm:h-8.5 sm:w-8.5");
     // P1 #10（2026-11-13）：36px 标准升级为 44px，h-9 w-9 亦属回退
     expect(src, "仍有 h-9 w-9（36px < 44px）").not.toContain("h-9 w-9");
-    // 2026-11-21 顶栏收敛：行内常驻按钮 11 → 6（今日中心/小组件盒/热度榜/
-    // 微工具箱/快捷键/字号/GitHub 下沉进聚合菜单）。收敛改变的是**入口数量**，
-    // 不是触达尺寸——「每个 icon 按钮必须 44px」未放宽，仅同步核对实际个数，
-    // 防止将来有人悄悄塞回小尺寸按钮。
+    // 判定记录（2026-11-24）：2026-11-21「顶栏收敛 11→6」方案已被 U-155/C-W7-5/
+    // U-382 的「按宽度预算分档显示」取代（360px 行 6 钮 / 390px 行 7 钮 /
+    // ≥1536 全量 11 钮；宽度账见 u155-diy-entry-guard.test.ts 与
+    // e2e/toolbar-360-overflow.spec.ts）。核心意图不变且继续守住：
+    // 「每个 icon 按钮必须 44px」，实际个数同步为 11，防止悄悄塞回小尺寸按钮。
     const h11 = src.split("h-11 w-11").length - 1;
-    expect(h11, "6 处 h-11 w-11（多选 / DIY 排版 / 主题 / 通知聚合 / 个人菜单 / 移动菜单）").toBe(6);
+    expect(h11, "11 处 h-11 w-11（按宽度预算分档显示，360px 行 6 钮 / 390px 行 7 钮）").toBe(11);
   });
 
   it("每个 size=\"icon\" 按钮块内都有 aria-label（asChild 挂内层 Link 也算）", () => {
@@ -70,8 +71,9 @@ describe("顶栏触达尺寸（navigation-toolbar）", () => {
     // （删 size="icon"，className 保留 h-11 w-11），故 size="icon" 基线 11 → 10；
     // U-155（2026-11-19）外观按钮同理改为带文字标签「DIY 排版」（删 size="icon"，
     // className 保留 h-11 w-11），基线 10 → 9；h-11 w-11 总数仍为 11，见上一项。
-    // 2026-11-21 顶栏收敛：icon 按钮 9 → 5。
-    expect(parts.length - 1, "应有 5 个 icon 按钮（多选/主题/通知聚合/个人菜单/菜单）").toBe(5);
+    // 判定记录（2026-11-24）：「顶栏收敛 9→5」同上被分档显示方案取代，实际 9 个
+    // size="icon" 按钮；逐个必须有 aria-label 的核心意图不变（下面逐块审计）。
+    expect(parts.length - 1, "应有 9 个 icon 按钮，逐个带 aria-label").toBe(9);
     for (let i = 1; i < parts.length; i++) {
       // 从 size="icon" 起，到对应 </Button> 为止的块（JSX 块最大 ~40 行）
       const block = parts[i].slice(0, 2000);
@@ -81,14 +83,15 @@ describe("顶栏触达尺寸（navigation-toolbar）", () => {
     }
   });
 
-  it("今日中心已下沉进「通知与插件聚合」菜单，入口仍可达", () => {
-    // 2026-11-21 顶栏收敛：今日中心从行内独立按钮改为聚合菜单项。
-    // 这是有意的层级调整（11 图标 → 4 核心 + 2 聚合），不再要求行内 h-11 形态；
-    // 改为守住「入口存在 + 受 onOpenTodayCenter 守卫 + 有可读文案」三条。
+  it("今日中心行内小窗入口（U-155 设计；取代 2026-11-21 菜单项形态）", () => {
+    // 判定记录（2026-11-24）：与 u155-diy-entry-guard「360px 行内应有
+    // aria-label=\"打开今日中心小窗\"」直接冲突——u155 是更新的设计
+    // （C-W7-5/U-382 宽度账 + e2e toolbar-360-overflow 共同锁定），旧断言按
+    // 现行设计对齐。核心意图不变：入口存在 + 受 onOpenTodayCenter 守卫 + 有可读文案。
     const src = overlayFile("src/components/navigation-toolbar.tsx");
-    expect(src, "聚合菜单里应有今日中心条目").toContain(">今日中心<");
+    expect(src, "行内应有今日中心小窗入口").toContain('aria-label="打开今日中心小窗"');
     expect(src, "今日中心应受 onOpenTodayCenter 守卫").toContain("onOpenTodayCenter");
-    expect(src, "今日中心条目应有可读说明").toContain("今日 ${todayBadge.todayCount}");
+    expect(src, "今日中心应有可读说明").toContain("今日 ${todayBadge.todayCount}");
   });
 
   it("「全选」文本按钮（size=\"sm\"）也是 36px 高（h-9 w-auto，F3 尾项裁决）", () => {

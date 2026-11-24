@@ -647,4 +647,23 @@ describe('tablist A-3：tablist 面板补 role="tabpanel" / aria-labelledby（20
     }
     expect(count(panels, 'role="tabpanel"')).toBe(6)
   })
+
+  it('#2 quick-dock 共享面板：HSF 外包 plain div，aria-labelledby 随 activeTab 动态变', () => {
+    const src = read('src/components/home-quick-dock.tsx')
+    // 三 tab 各有静态 id，均指向同一面板
+    for (const key of ['speed', 'frequent', 'recent']) {
+      expect(src).toContain(`id="quick-dock-tab-${key}"`)
+    }
+    expect(count(src, 'aria-controls="quick-dock-panel"')).toBe(3)
+    // 面板是 HSF 外的 plain div：role 不经 HSF 的 role prop 透传到内层滚动容器
+    expect(src).toContain('role="tabpanel"')
+    expect(src).toContain('id="quick-dock-panel"')
+    expect(count(src, 'id="quick-dock-panel"')).toBe(1)
+    expect(count(src, 'quick-dock-panel')).toBe(4)
+    expect(src).toContain('aria-labelledby={`quick-dock-tab-${activeTab}`}')
+    expect(src.indexOf('role="tabpanel"')).toBeLessThan(src.indexOf('<HorizontalScrollFade'))
+    // id 已迁移到 wrapper：HSF 调用处不再传 id prop
+    const hsf = src.slice(src.indexOf('<HorizontalScrollFade'), src.indexOf('>', src.indexOf('<HorizontalScrollFade')))
+    expect(hsf).not.toContain('id=')
+  })
 })

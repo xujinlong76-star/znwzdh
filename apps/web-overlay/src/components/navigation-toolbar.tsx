@@ -195,7 +195,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                       1280px 档文字标签 49px 会把搜索容器压窄、输入框只剩 18px（复核
                       2026-11-20 实测）；≥1536px 横排，与「AI 找站」按钮同式。todayCount
                       为 0 时只写「今日」，不谎报计数。 */}
-                  <span className="hidden whitespace-nowrap text-[10px] leading-none sm:text-xs min-[1536px]:inline">
+                  <span className="hidden whitespace-nowrap text-[0.625rem] leading-none sm:text-xs min-[1536px]:inline">
                     {todayBadge && todayBadge.todayCount > 0 ? `今日 ${todayBadge.todayCount} 项` : '今日'}
                   </span>
                   {hasTodayAlert ? (
@@ -588,7 +588,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                   aria-label="打开外观排版与新手向导小窗"
                 >
                   <SlidersHorizontal className="h-4 w-4 shrink-0" />
-                  <span className="text-center text-[10px] leading-none whitespace-nowrap tracking-tight sm:text-xs sm:tracking-normal">DIY 排版</span>
+                  <span className="text-center text-[0.625rem] leading-none whitespace-nowrap tracking-tight sm:text-xs sm:tracking-normal">DIY 排版</span>
                 </Button>
               ) : null}
               <div className="h-4 w-px bg-border/60 mx-1 hidden min-[1536px]:block" />

@@ -1,5 +1,6 @@
 {
   "schemaVersion": "search-quality-golden-v2",
+  "datasetVersion": "search-gold-v1",
   "queryId": "query_000001",
   "queryText": "",
   "locale": "zh-CN",

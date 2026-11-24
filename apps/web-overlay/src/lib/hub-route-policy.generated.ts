@@ -41,6 +41,7 @@ export const HUB_ROUTES: readonly HubRouteEntry
   { method: "GET", path: "/api/admin/crawl/moderation-gold-progress", scope: "admin" },
   { method: "GET", path: "/api/admin/crawl/moderation-model-evaluations", scope: "admin" },
   { method: "POST", path: "/api/admin/crawl/moderation-model-evaluations", scope: "admin" },
+  { method: "POST", path: "/api/admin/crawl/moderation-model-evaluations/auto", scope: "admin" },
   { method: "GET", path: "/api/admin/crawl/moderation-gold-cases", scope: "admin" },
   { method: "POST", path: "/api/admin/crawl/moderation-gold-cases", scope: "admin" },
   { method: "POST", path: "/api/admin/crawl/moderation-gold-cases/:id/adjudicate", scope: "admin" },

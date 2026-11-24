@@ -7,7 +7,7 @@
 - sitemap、RSS/Atom、普通页面分别解析 `loc`、条目级 `link/guid + title/description`、`a[href] + anchor text`，每个来源最多产生 100 个去重候选；候选元数据只绑定对应条目/链接，不把来源页的标题误当成候选站点标题。
 - 来源请求必须通过 `@navhub/ai` 的 `guardedFetch`，超时 8 秒、响应体上限 1 MiB、最多 3 次重定向；逐跳 DNS/IP 校验由 SSRF 层负责。
 - 解析阶段不对候选链接发起第二次网络请求。候选进入待审核队列；若管理端显式启用 AI 审核策略，Worker 可调用已配置模型生成 Shadow 评估并写入追加式决策账本，但不修改候选状态、不自动发布。
-- Worker 默认关闭。只有明确设置 `NAVHUB_CRAWL_WORKER_ENABLED=1` 才会启动；通用定时任务开关 `NAVHUB_JOBS_ENABLED` 不会隐式开启它。
+- Worker 默认关闭。只有明确设置 `NAVHUB_CRAWL_SOURCE_WORKER_ENABLED=1` 才会启动；通用定时任务开关 `NAVHUB_JOBS_ENABLED` 不会隐式开启它。
 
 ## 启用前检查
 
@@ -28,4 +28,4 @@
 
 ## 回滚
 
-将 `NAVHUB_CRAWL_WORKER_ENABLED` 设为 `0` 或移除该环境变量并重启 API。停止 Worker 不会删除来源或已收集候选。
+将 `NAVHUB_CRAWL_SOURCE_WORKER_ENABLED` 设为 `0` 或移除该环境变量并重启 API。停止 Worker 不会删除来源或已收集候选。

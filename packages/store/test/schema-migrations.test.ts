@@ -89,4 +89,22 @@ describe("版本化数据库迁移台账（DB-01）", () => {
     expect(item).toBeDefined();
     expect(item?.checksum).toBe("test_custom_v1");
   });
+  it("建立双人标注与仲裁金标表，并限制每人每样本只能标注一次", async () => {
+    const cases = await db.sqlite!.prepare("PRAGMA table_info(crawl_moderation_gold_cases)").all() as Array<{name:string}>;
+    const annotations = await db.sqlite!.prepare("PRAGMA table_info(crawl_moderation_gold_annotations)").all() as Array<{name:string}>;
+    expect(new Set(cases.map(row=>row.name))).toEqual(expect.objectContaining(new Set([
+      "id","source_fingerprint","title","description","category","sanitized_excerpt","status",
+      "final_label","final_risk","adjudicator_id","adjudication_reason","created_by","created_at","updated_at","adjudicated_at"
+    ])));
+    for (const name of ["id","case_id","annotator_id","label","risk","evidence","created_at"]) {
+      expect(annotations.some(row=>row.name===name)).toBe(true);
+    }
+    await db.sqlite!.prepare("INSERT INTO crawl_moderation_gold_cases (id,source_fingerprint,created_by,created_at,updated_at) VALUES (?,?,?,?,?)")
+      .run("gold-case-1","a".repeat(64),"admin-a",1,1);
+    await db.sqlite!.prepare("INSERT INTO crawl_moderation_gold_annotations (id,case_id,annotator_id,label,risk,evidence,created_at) VALUES (?,?,?,?,?,?,?)")
+      .run("gold-annotation-1","gold-case-1","reviewer-a","approve",0,"符合收录规则",2);
+    expect(()=>db.sqlite!.prepare("INSERT INTO crawl_moderation_gold_annotations (id,case_id,annotator_id,label,risk,evidence,created_at) VALUES (?,?,?,?,?,?,?)")
+      .run("gold-annotation-2","gold-case-1","reviewer-a","approve",0,"重复标注",3)).toThrow();
+  });
+
 });

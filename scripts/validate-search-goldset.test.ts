@@ -20,8 +20,8 @@ function makeCase(index: number, datasetVersion = "search-gold-v2-2026-11") {
   };
 }
 
-describe("validate-search-goldset JSONL", () => {
-  it("validates 100 unique production cases without echoing query text", () => {
+describe("validate-search-goldset v2 JSONL", () => {
+  it("validates 100 unique real-query records without echoing query text", () => {
     const input = Array.from({ length: 100 }, (_, index) => JSON.stringify(makeCase(index + 1))).join("\n");
     const result = validateSearchGoldJsonl(input);
     expect(result.totalCases).toBe(100);
@@ -30,7 +30,7 @@ describe("validate-search-goldset JSONL", () => {
     expect(result.errors).toEqual([]);
   });
 
-  it("rejects mixed dataset versions and duplicate normalized queries", () => {
+  it("rejects mixed dataset versions and duplicate normalized queryText", () => {
     const first = makeCase(1);
     const second = makeCase(2, "search-gold-v3");
     second.queryText = "  脱敏真实查询样本   001 ";
@@ -49,7 +49,7 @@ describe("validate-search-goldset JSONL", () => {
     }
   });
 
-  it("rejects oversized rows and datasets", () => {
+  it("rejects oversized rows and more than 10000 records", () => {
     expect(() => parseSearchGoldJsonl(JSON.stringify({ queryText: "x".repeat(300_000) }))).toThrow("256KB");
     const many = Array.from({ length: 10_001 }, (_, index) => JSON.stringify(makeCase(index + 1))).join("\n");
     expect(() => parseSearchGoldJsonl(many)).toThrow("最多允许 10000");

@@ -133,7 +133,17 @@ describe("docker compose 安全变量透传契约", () => {
     }
   });
 
-  it("所有生产 Compose 服务默认启用严格 v2 身份签名", () => {\n    // 不能依赖应用代码默认值：Compose 显式注入环境变量，必须自身也采用安全默认。\n    for (const service of ["api", "api-standard", "web"]) {\n      expect(\n        envBlocks.get(service)?.get("NAVHUB_IDENTITY_SIGNATURE_STRICT"),\n        `${service} 未将身份签名默认设为严格模式`\n      ).toBe("${NAVHUB_IDENTITY_SIGNATURE_STRICT:-1}");\n    }\n  });\n\n  it("身份签名密钥同时给到中枢与 Web：只配一侧会让所有带身份请求 401", () => {
+  it("所有生产 Compose 服务默认启用严格 v2 身份签名", () => {
+    // 不能依赖应用代码默认值：Compose 显式注入环境变量，必须自身也采用安全默认。
+    for (const service of ["api", "api-standard", "web"]) {
+      expect(
+        envBlocks.get(service)?.get("NAVHUB_IDENTITY_SIGNATURE_STRICT"),
+        `${service} 未将身份签名默认设为严格模式`
+      ).toBe("${NAVHUB_IDENTITY_SIGNATURE_STRICT:-1}");
+    }
+  });
+
+  it("身份签名密钥同时给到中枢与 Web：只配一侧会让所有带身份请求 401", () => {
     expect(envBlocks.get("api")?.has("NAVHUB_IDENTITY_SECRET")).toBe(true);
     expect(envBlocks.get("web")?.has("NAVHUB_IDENTITY_SECRET")).toBe(true);
   });

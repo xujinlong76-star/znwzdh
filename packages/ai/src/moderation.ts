@@ -177,6 +177,8 @@ export async function moderateSiteWithAi(
     ? await options.complete(provider, completionOptions)
     : await chatCompletion(provider, completionOptions);
   const parsed = parseModelResult(response.content);
+  const knownCategories = new Set(safeInput.knownCategories);
+  if (parsed.category && !knownCategories.has(parsed.category)) parsed.category = null;
   const verdict = decideSiteModerationVerdict(parsed, active, safeInput.url);
   return { ...parsed, verdict, model: response.model, policyVersion: "site-moderation-v1" };
 }

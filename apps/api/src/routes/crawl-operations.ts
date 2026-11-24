@@ -7,7 +7,7 @@ import {
   recordCrawlAiModerationDecision, listCrawlAiModerationDecisions,
   createCrawlModerationGoldCase, listCrawlModerationGoldCases, getCrawlModerationGoldCase,
   annotateCrawlModerationGoldCase, adjudicateCrawlModerationGoldCase, listCrawlModerationGoldAnnotations,
-  listSiteDiscoveryCandidates, reviewSiteDiscoveryCandidate,
+  listSiteDiscoveryCandidates, getSiteDiscoveryCandidate, reviewSiteDiscoveryCandidate, overrideAiApprovedCandidate,
   listCrawlSources, upsertCrawlSource, updateCrawlSource, deleteCrawlSource,
 } from "@navhub/store";
 import type { AppContext } from "../context.ts";
@@ -302,7 +302,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     return { ok: true, items: items.map(item => {
       const quality = scoreCrawlCandidate({ url: item.url, title: item.title, description: item.description, evidence: item.evidence });
       return { id:item.id,url:item.url,title:item.title,description:item.description,source:item.source,
-        status:item.status,discoveredAt:item.discoveredAt,lastSeenAt:item.lastSeenAt,
+        status:item.status,reviewedBy:item.reviewedBy,discoveredAt:item.discoveredAt,lastSeenAt:item.lastSeenAt,
         duplicateEvidence:{ exact: Boolean(item.evidence.exactDuplicateOf), near: Array.isArray(item.evidence.nearDuplicateCandidates) ? item.evidence.nearDuplicateCandidates.length : 0 },
         quality, aiModeration: moderationEvidenceOf(item.evidence) };
     }), total, limit: parsed.data.limit, offset: parsed.data.offset };
@@ -329,6 +329,56 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       policyVersion: row.policy_version == null ? null : String(row.policy_version),
       actor: row.actor == null ? null : String(row.actor), createdAt: Number(row.created_at),
     })) };
+  });
+
+  app.post("/api/admin/crawl/candidates/:id/override-ai", { config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params ?? {});
+    const body = z.object({
+      decision: z.enum(["reopen", "reject"]),
+      reason: z.string().trim().min(10).max(500),
+    }).safeParse(req.body ?? {});
+    if (!params.success || !body.success) { reply.code(400); return { ok: false, error: "AI 自动审核复核参数无效" }; }
+    const candidate = await getSiteDiscoveryCandidate(ctx.repo, params.data.id);
+    if (!candidate) { reply.code(404); return { ok: false, error: "候选不存在" }; }
+    if (candidate.status !== "approved" || !candidate.reviewedBy?.startsWith("ai:")) {
+      reply.code(409); return { ok: false, error: "仅可复核由 AI 自动批准且尚未被人工修改的候选" };
+    }
+    const actor = String(req.auth.actor ?? "admin");
+    const now = Date.now();
+    const currentAi = candidate.evidence.aiModeration && typeof candidate.evidence.aiModeration === "object"
+      ? candidate.evidence.aiModeration as Record<string, unknown> : {};
+    const evidence = {
+      ...candidate.evidence,
+      aiModeration: {
+        ...currentAi,
+        action: body.data.decision === "reopen" ? "human_reopened" : "human_rejected",
+        humanOverride: { decision: body.data.decision, reason: body.data.reason, actor, at: now },
+      },
+    };
+    let updated: Awaited<ReturnType<typeof getSiteDiscoveryCandidate>> = null;
+    await ctx.repo.withTransaction(async () => {
+      updated = await overrideAiApprovedCandidate(ctx.repo, {
+        id: candidate.id, decision: body.data.decision, reviewer: actor,
+        reason: body.data.reason, evidence, now,
+      });
+      const expectedStatus = body.data.decision === "reopen" ? "pending" : "rejected";
+      const expectedReviewer = body.data.decision === "reopen" ? null : actor;
+      if (!updated || updated.status !== expectedStatus || updated.reviewedBy !== expectedReviewer) {
+        throw new Error("AI 自动通过记录已被其他操作修改，请刷新后重试");
+      }
+      await recordCrawlAiModerationDecision(ctx.repo, {
+        id: randomUUID(), candidateId: candidate.id, decisionSource: "human", mode: "manual",
+        status: "completed", verdict: body.data.decision === "reopen" ? "review" : "reject",
+        confidence: null, qualityScore: null, risks: [], reasons: [body.data.reason],
+        model: null, policyVersion: null, actor, createdAt: now,
+      });
+    });
+    await ctx.repo.audit({
+      ip: req.ip, actor, actorKind: req.auth.kind,
+      action: "crawl.ai_moderation.overridden", target: candidate.id,
+      diff: { decision: body.data.decision, reason: body.data.reason, previousReviewer: candidate.reviewedBy },
+    }).catch(() => undefined);
+    return { ok: true, item: updated };
   });
 
   app.post("/api/admin/crawl/candidates/:id/review", { config: { scope: "admin", rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req, reply) => {

@@ -9,11 +9,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import type { MailMessage, MailResult, MailTransport } from "@navhub/ai";
+
+function requireHmac(key: Buffer, message: Buffer): Buffer { return createHmac("sha1", key).update(message).digest(); }
 
 const dir = mkdtempSync(join(tmpdir(), "navhub-account-"));
 const base = {
@@ -85,6 +87,59 @@ async function post(url: string, payload: unknown) {
 }
 
 describe("账号生命周期 API", () => {
+  it("管理员 TOTP 启用、一次性恢复码消费与强制关闭", async () => {
+    const previousKey = process.env.NAVHUB_MFA_ENCRYPTION_KEY;
+    const previousRequired = process.env.NAVHUB_ADMIN_MFA_REQUIRED;
+    process.env.NAVHUB_MFA_ENCRYPTION_KEY = "ab".repeat(32);
+    process.env.NAVHUB_ADMIN_MFA_REQUIRED = "1";
+    ctx.config.internalToken = "mfa-test-internal-token";
+    const totp = (secret: string) => {
+      const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+      let bits = 0, value = 0;
+      const bytes: number[] = [];
+      for (const ch of secret) {
+        value = (value << 5) | alphabet.indexOf(ch); bits += 5;
+        if (bits >= 8) { bytes.push((value >>> (bits - 8)) & 255); bits -= 8; }
+      }
+      const counter = Buffer.alloc(8);
+      counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+      const digest = createHash("sha1").update(Buffer.alloc(0)).digest(); // keep crypto import exercised without platform OTP helper
+      void digest;
+      const hmac = requireHmac(Buffer.from(bytes), counter);
+      const offset = hmac[hmac.length - 1] & 15;
+      const binary = ((hmac[offset] & 127) << 24) | ((hmac[offset + 1] & 255) << 16) | ((hmac[offset + 2] & 255) << 8) | (hmac[offset + 3] & 255);
+      return String(binary % 1_000_000).padStart(6, "0");
+    };
+    try {
+      const setup = await post("/api/account/admin-mfa/setup", {});
+      expect(setup.statusCode).toBe(200);
+      const secret = setup.json().secret as string;
+      expect(secret).toMatch(/^[A-Z2-7]+$/);
+      const code = totp(secret);
+      const confirmed = await post("/api/account/admin-mfa/confirm", { code });
+      expect(confirmed.statusCode).toBe(200);
+      const recovery = confirmed.json().recoveryCodes as string[];
+      expect(recovery).toHaveLength(10);
+
+      const verify = (value: string) => app.inject({
+        method: "POST",
+        url: "/api/account/admin-mfa/verify",
+        headers: { "x-navhub-internal-token": "mfa-test-internal-token" },
+        payload: { code: value },
+      });
+      expect((await verify(recovery[0])).statusCode).toBe(200);
+      expect((await verify(recovery[0])).statusCode).toBe(401);
+      expect((await post("/api/account/admin-mfa/disable", { code: totp(secret) })).statusCode).toBe(200);
+      expect((await verify(totp(secret))).statusCode).toBe(401);
+    } finally {
+      if (previousKey === undefined) delete process.env.NAVHUB_MFA_ENCRYPTION_KEY;
+      else process.env.NAVHUB_MFA_ENCRYPTION_KEY = previousKey;
+      if (previousRequired === undefined) delete process.env.NAVHUB_ADMIN_MFA_REQUIRED;
+      else process.env.NAVHUB_ADMIN_MFA_REQUIRED = previousRequired;
+      ctx.config.internalToken = null;
+    }
+  });
+
   it("注册成功并发送验证邮件", async () => {
     captured.length = 0;
     const res = await post("/api/account/register", {

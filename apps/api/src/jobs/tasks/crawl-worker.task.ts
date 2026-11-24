@@ -93,8 +93,14 @@ export function extractFeedUrls(xml: string, baseUrl: string, kind: "sitemap" | 
   } else {
     for (const item of xml.matchAll(/<(?:item|entry)\b[\s\S]*?<\/(?:item|entry)>/gi)) {
       const block = item[0];
-      const link = block.match(/<link[^>]*href=["']([^"']+)["'][^>]*\/?\s*>/i)?.[1]
-        ?? block.match(/<link[^>]*>([\s\S]*?)<\/link>/i)?.[1]
+      let link: string | undefined;
+      for (const tag of block.matchAll(/<link\b([^>]*)\/?\s*>/gi)) {
+        const attrs = tag[1] ?? "";
+        const href = attrs.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1];
+        const rel = attrs.match(/\brel\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase();
+        if (href && (!rel || rel === "alternate")) { link = href; break; }
+      }
+      link ??= block.match(/<link[^>]*>([\s\S]*?)<\/link>/i)?.[1]
         ?? block.match(/<id[^>]*>([\s\S]*?)<\/id>/i)?.[1];
       if (link) candidates.push(decodeXml(link).trim());
     }
@@ -200,7 +206,7 @@ export function isRobotsAllowed(robotsTxt: string, targetUrl: string, userAgent 
   const agent = userAgent.toLowerCase();
   const matching = groups.map((group) => ({
     group,
-    score: Math.max(0, ...group.agents.map((name) => name === "*" ? 0 : agent.includes(name) ? name.length : -1)),
+    score: Math.max(...group.agents.map((name) => name === "*" ? 0 : agent.includes(name) ? name.length : -1)),
   })).filter((item) => item.score >= 0);
   if (!matching.length) return true;
   const bestScore = Math.max(...matching.map((item) => item.score));

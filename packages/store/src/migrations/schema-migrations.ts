@@ -477,6 +477,16 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     },
     checksum: "v1_crawl_moderation_model_evaluations",
   },
+  {
+    version: "20261124_crawl_source_retry_backoff",
+    name: "采集来源连续失败计数与指数退避",
+    up: async (db: Db) => {
+      const statement = "ALTER TABLE crawl_sources ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0";
+      if (db.dialect === "pg" && db.pg) await db.pg.query(statement);
+      else if (db.sqlite) db.sqlite.exec(statement);
+    },
+    checksum: "v1_crawl_source_retry_backoff",
+  },
 ];
 
 /**

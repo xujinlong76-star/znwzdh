@@ -22,6 +22,7 @@ describe("持久化采集治理队列", () => {
 
   beforeEach(async () => {
     await repo.run("DELETE FROM crawl_page_fingerprints");
+    await repo.run("DELETE FROM crawl_domain_circuit");
     await repo.run("DELETE FROM crawl_domain_state");
     await repo.run("DELETE FROM crawl_tasks");
   });
@@ -131,6 +132,53 @@ describe("持久化采集治理队列", () => {
     expect(result).toEqual({ retried: 0, deadLettered: 1 });
     const rows = await repo.raw("SELECT status FROM crawl_tasks WHERE id = ?", [task!.id]);
     expect(rows[0]?.status).toBe("dead_letter");
+  });
+
+  it("连续五次失败触发持久化域名熔断，冷却后允许单任务探测并在成功后复位", async () => {
+    const first = await enqueueCrawlTask(repo, {
+      url: "https://flaky.example/page", source: "seed", maxAttempts: 10, now: 60_000,
+    });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const task = await claimCrawlTask(repo, "worker-flaky-" + attempt, {
+        now: 60_000 + attempt * 1_000, minDomainIntervalMs: 0,
+      });
+      expect(task?.id).toBe(first.id);
+      expect(await settleCrawlTask(repo, {
+        id: first.id, workerId: "worker-flaky-" + attempt, outcome: "retry",
+        error: "temporary upstream failure", nextRunAt: 60_000 + (attempt + 1) * 1_000,
+        now: 60_000 + attempt * 1_000,
+      })).toBe(true);
+    }
+
+    await enqueueCrawlTask(repo, {
+      url: "https://flaky.example/another", source: "seed", now: 66_000,
+    });
+    expect(await claimCrawlTask(repo, "worker-blocked", {
+      now: 66_000, minDomainIntervalMs: 0,
+    })).toBeNull();
+
+    await enqueueCrawlTask(repo, {
+      url: "https://healthy.example/page", source: "seed", now: 66_000,
+    });
+    const healthy = await claimCrawlTask(repo, "worker-healthy", {
+      now: 66_000, minDomainIntervalMs: 0,
+    });
+    expect(healthy?.host).toBe("healthy.example");
+
+    const probe = await claimCrawlTask(repo, "worker-probe", {
+      now: 60_000 + 5 * 1_000 + 5 * 60_000 + 1, minDomainIntervalMs: 0,
+    });
+    expect(probe?.host).toBe("flaky.example");
+    expect(await settleCrawlTask(repo, {
+      id: probe!.id, workerId: "worker-probe", outcome: "done",
+      now: 60_000 + 5 * 1_000 + 5 * 60_000 + 2,
+    })).toBe(true);
+    const state = await repo.raw(
+      "SELECT consecutive_failures, opened_until FROM crawl_domain_circuit WHERE host = ?",
+      ["flaky.example"],
+    );
+    expect(Number(state[0]?.consecutive_failures)).toBe(0);
+    expect(Number(state[0]?.opened_until)).toBe(0);
   });
 
   it("持久化页面指纹并按规范 URL 读取", async () => {

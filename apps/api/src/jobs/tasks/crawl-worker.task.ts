@@ -3,6 +3,8 @@ import { fingerprintPageContent, simhashDistance } from "@navhub/core";
 import { guardedFetch, SsrfBlockedError } from "@navhub/ai";
 import {
   claimCrawlTask,
+  claimDueCrawlSources,
+  settleCrawlSource,
   enqueueCrawlTask,
   recordCrawlFingerprint,
   reapExpiredCrawlLeases,
@@ -313,6 +315,8 @@ export function rankNearDuplicateFingerprints(
 
 export interface CrawlWorkerSummary {
   seedsEnqueued: number;
+  sourcesClaimed: number;
+  sourcesScheduled: number;
   tasksClaimed: number;
   completed: number;
   retried: number;
@@ -333,6 +337,26 @@ export async function handleCrawlWorker(
   const now = Date.now();
   const reaped = await reapExpiredCrawlLeases(ctx.repo, { retryDelayMs: 1_000, now });
   const seeds = [...(payload.seeds ?? []), ...parseCrawlSeeds(process.env.NAVHUB_CRAWL_SEEDS)];
+  const sourceWorkerId = "crawl-source-scheduler:" + randomUUID();
+  const dueSources = await claimDueCrawlSources(ctx.repo, sourceWorkerId, { now, limit: MAX_SEEDS, leaseMs: 120_000 });
+  let sourcesScheduled = 0;
+  for (const source of dueSources) {
+    try {
+      await enqueueCrawlTask(ctx.repo, {
+        url: source.url, source: seedSource(source.kind), priority: source.priority,
+        maxAttempts: 5, requeueCompleted: true, now,
+      });
+      const settled = await settleCrawlSource(ctx.repo, {
+        id: source.id, workerId: sourceWorkerId, status: "scheduled", now,
+      });
+      if (settled) sourcesScheduled++;
+    } catch (error) {
+      await settleCrawlSource(ctx.repo, {
+        id: source.id, workerId: sourceWorkerId, status: "error",
+        error: error instanceof Error ? error.message : String(error), now,
+      });
+    }
+  }
   const uniqueSeeds = new Map<string, CrawlSeed>();
   for (const seed of seeds.slice(0, MAX_SEEDS)) {
     try {
@@ -354,7 +378,7 @@ export async function handleCrawlWorker(
   }
 
   const summary: CrawlWorkerSummary = {
-    seedsEnqueued, tasksClaimed: 0, completed: 0, retried: 0, deadLettered: 0,
+    seedsEnqueued, sourcesClaimed: dueSources.length, sourcesScheduled, tasksClaimed: 0, completed: 0, retried: 0, deadLettered: 0,
     heldForReview: 0, candidatesUpserted: 0, feedUrlsEnqueued: 0,
     expiredLeaseRetries: reaped.retried, expiredLeaseDeadLetters: reaped.deadLettered, stopped: false,
   };

@@ -11,6 +11,7 @@ export * from "./plugin-ops.ts";
 export * from "./vector/index.ts";
 export * from "./repository.ts";
 export * from "./repository/crawl-governance.ts";
+export * from "./repository/crawl-sources.ts";
 export { upsertSiteDiscoveryCandidate } from "./repository/discovery-candidates.ts";
 export { pluginOwnerKey, normalizePluginReviewSort, type PluginReviewSort } from "./repository/plugins.ts";
 export * from "./repository/videos.ts";

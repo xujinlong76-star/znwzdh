@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scoreCrawlCandidate, selectStratifiedCrawlCandidates } from "../src/routes/crawl-operations.ts";
+import { scoreCrawlCandidate, selectStratifiedCrawlCandidates, selectGoldEvaluationSample, moderationVerdictToPrediction } from "../src/routes/crawl-operations.ts";
 
 describe("crawl candidate quality hints", () => {
   it("rewards complete, substantial HTTPS pages with explainable reasons", () => {
@@ -56,5 +56,20 @@ describe("stratified gold candidate sampling", () => {
   it("returns all available candidates when fewer than requested", () => {
     const items = [{id:"only",category:"AI",source:"rss",riskBand:"unknown",qualityBand:"high",score:80}];
     expect(selectStratifiedCrawlCandidates(items,20)).toEqual(items);
+  });
+});
+describe("automatic moderation gold evaluation helpers", () => {
+  it("selects a stable deterministic subset capped at twenty samples", () => {
+    const rows = Array.from({length:40},(_,index)=>({id:"gold-"+index}));
+    const first = selectGoldEvaluationSample(rows,20).map(row=>row.id);
+    const second = selectGoldEvaluationSample([...rows].reverse(),20).map(row=>row.id);
+    expect(first).toHaveLength(20);
+    expect(first).toEqual(second);
+    expect(selectGoldEvaluationSample(rows,999)).toHaveLength(20);
+  });
+  it("maps moderation verdicts to labels and treats none as no risk", () => {
+    expect(moderationVerdictToPrediction({verdict:"auto_approve",risks:["none"]})).toEqual({actual:"approve",actualRisk:false});
+    expect(moderationVerdictToPrediction({verdict:"reject",risks:["phishing"]})).toEqual({actual:"reject",actualRisk:true});
+    expect(moderationVerdictToPrediction({verdict:"manual_review",risks:["none","spam"]})).toEqual({actual:"review",actualRisk:true});
   });
 });

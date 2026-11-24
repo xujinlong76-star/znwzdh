@@ -45,7 +45,25 @@ function isTest(): boolean {
  */
 const LOGIN_FAIL_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_FAIL_MAX = 5;
+// 失败标识来自匿名请求，必须限制 Map 上限，避免分布式随机标识造成进程内存持续增长。
+// 注意：这是单进程附加防线，不替代生产多副本部署的共享限流器。
+const LOGIN_FAIL_MAX_ENTRIES = 10_000;
+const LOGIN_FAIL_SWEEP_EVERY = 128;
+let loginFailureWrites = 0;
 const loginFailures = new Map<string, { count: number; firstAt: number }>();
+
+function pruneLoginFailures(now: number): void {
+  loginFailureWrites += 1;
+  if (loginFailureWrites % LOGIN_FAIL_SWEEP_EVERY !== 0 && loginFailures.size < LOGIN_FAIL_MAX_ENTRIES) return;
+  for (const [key, entry] of loginFailures) {
+    if (now - entry.firstAt > LOGIN_FAIL_WINDOW_MS) loginFailures.delete(key);
+  }
+  while (loginFailures.size >= LOGIN_FAIL_MAX_ENTRIES) {
+    const oldest = loginFailures.keys().next().value;
+    if (oldest === undefined) break;
+    loginFailures.delete(oldest);
+  }
+}
 
 function loginFailureKey(identifier: string): string {
   return identifier.trim().toLowerCase();
@@ -63,6 +81,7 @@ function isLoginLocked(identifier: string, now: number): boolean {
 
 /** 记一次失败；返回累计次数（到阈值时调用方记锁定审计） */
 function recordLoginFailure(identifier: string, now: number): number {
+  pruneLoginFailures(now);
   const key = loginFailureKey(identifier);
   const entry = loginFailures.get(key);
   if (!entry || now - entry.firstAt > LOGIN_FAIL_WINDOW_MS) {

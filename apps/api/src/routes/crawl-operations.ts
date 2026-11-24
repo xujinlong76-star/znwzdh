@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
   countSiteDiscoveryCandidates, getSiteDiscoveryCandidateForUpdate,
-  listSiteDiscoveryCandidates, reviewSiteDiscoveryCandidate,
+  listSiteDiscoveryCandidates, reviewSiteDiscoveryCandidate, listCrawlAiModerationDecisions, countCrawlAiModerationDecisions,
 } from "@navhub/store";
 import type { AppContext } from "../context.ts";
 
@@ -116,6 +116,23 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         duplicateEvidence:{ exact: Boolean(item.evidence.exactDuplicateOf), near: Array.isArray(item.evidence.nearDuplicateCandidates) ? item.evidence.nearDuplicateCandidates.length : 0 },
         quality, aiModeration: moderationEvidenceOf(item.evidence) };
     }), total, limit: parsed.data.limit, offset: parsed.data.offset };
+  });
+
+  app.get("/api/admin/crawl/candidates/:id/moderation-history", { config: { scope: "admin", cache: { maxAge: 0 } } }, async (req, reply) => {
+    const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params ?? {});
+    const query = z.object({
+      limit: z.coerce.number().int().min(1).max(100).default(20),
+      offset: z.coerce.number().int().min(0).max(100_000).default(0),
+    }).safeParse(req.query ?? {});
+    if (!params.success || !query.success) {
+      reply.code(400);
+      return { ok: false, error: "审核历史查询参数无效" };
+    }
+    const [items, total] = await Promise.all([
+      listCrawlAiModerationDecisions(ctx.repo, { candidateId: params.data.id, ...query.data }),
+      countCrawlAiModerationDecisions(ctx.repo, params.data.id),
+    ]);
+    return { ok: true, items, total, limit: query.data.limit, offset: query.data.offset };
   });
 
   app.post("/api/admin/crawl/candidates/:id/review", { config: { scope: "admin", rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req, reply) => {

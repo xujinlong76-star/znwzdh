@@ -3,6 +3,7 @@ import {
   extractFeedUrls,
   extractHtmlMetadata,
   parseCrawlSeeds,
+  parseRetryAfterMs,
 } from "../src/jobs/tasks/crawl-worker.task.ts";
 
 describe("crawl worker source parsing", () => {
@@ -54,6 +55,15 @@ describe("crawl worker source parsing", () => {
     expect(extractFeedUrls(atom, "https://news.example/feed.xml", "rss")).toEqual([
       "https://news.example/c",
     ]);
+  });
+
+  it("parses Retry-After seconds and HTTP-date with a six-hour ceiling", () => {
+    const now = Date.parse("2026-11-24T00:00:00Z");
+    expect(parseRetryAfterMs("120", now)).toBe(120_000);
+    expect(parseRetryAfterMs("Tue, 24 Nov 2026 00:02:00 GMT", now)).toBe(120_000);
+    expect(parseRetryAfterMs("999999", now)).toBe(6 * 60 * 60_000);
+    expect(parseRetryAfterMs("invalid", now)).toBe(0);
+    expect(parseRetryAfterMs("-5", now)).toBe(0);
   });
 
   it("extracts title, description and readable text without script/style noise", () => {

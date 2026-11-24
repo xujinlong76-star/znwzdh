@@ -42,7 +42,7 @@ export async function listCrawlAiModerationDecisions(
   repo: Repository,
   options: { candidateId?: string; limit?: number; offset?: number } = {},
 ): Promise<Array<Record<string, unknown>>> {
-  const limit = Math.min(100, Math.max(1, Math.floor(options.limit ?? 50)));
+  const limit = Math.min(5000, Math.max(1, Math.floor(options.limit ?? 50)));
   const offset = Math.max(0, Math.floor(options.offset ?? 0));
   const where = options.candidateId ? "WHERE candidate_id = ?" : "";
   return repo.raw(
@@ -54,6 +54,9 @@ export async function listCrawlAiModerationDecisions(
   );
 }
 
+
+const goldRiskParam = (repo: Repository, value: boolean): boolean | number =>
+  repo.db.dialect === "pg" ? value : value ? 1 : 0;
 
 export type CrawlModerationGoldLabel = "approve" | "reject" | "review";
 export interface CreateCrawlModerationGoldCaseInput {
@@ -108,7 +111,7 @@ export async function annotateCrawlModerationGoldCase(
   await repo.run(
     `INSERT INTO crawl_moderation_gold_annotations
       (id,case_id,annotator_id,label,risk,evidence,created_at) VALUES (?,?,?,?,?,?,?)`,
-    [input.id,input.caseId,input.annotatorId,input.label,input.risk,
+    [input.id,input.caseId,input.annotatorId,input.label,goldRiskParam(repo,input.risk),
      input.evidence.slice(0,2000),input.createdAt ?? Date.now()],
   );
   const rows = await repo.raw(
@@ -125,7 +128,7 @@ export async function annotateCrawlModerationGoldCase(
   if (agrees) {
     await repo.run(
       "UPDATE crawl_moderation_gold_cases SET status='gold_ready',final_label=?,final_risk=?,updated_at=? WHERE id=?",
-      [String(rows[0].label),Boolean(rows[0].risk),Date.now(),input.caseId],
+      [String(rows[0].label),goldRiskParam(repo,Boolean(rows[0].risk)),Date.now(),input.caseId],
     );
     return "gold_ready";
   }
@@ -144,7 +147,7 @@ export async function adjudicateCrawlModerationGoldCase(
      SET status='gold_ready',final_label=?,final_risk=?,adjudicator_id=?,adjudication_reason=?,
          adjudicated_at=?,updated_at=?
      WHERE id=? AND status='needs_adjudication'`,
-    [input.label,input.risk,input.adjudicatorId,input.reason.slice(0,2000),
+    [input.label,goldRiskParam(repo,input.risk),input.adjudicatorId,input.reason.slice(0,2000),
      Date.now(),Date.now(),input.caseId],
   );
   return true;

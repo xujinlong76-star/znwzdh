@@ -260,6 +260,8 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     if(!parsed.success){reply.code(400);return {ok:false,error:"样本 ID 无效"};}
     const current=await getCrawlModerationGoldCase(ctx.repo,parsed.data.id);
     if(!current){reply.code(404);return {ok:false,error:"金标样本不存在"};}
+    // 盲标保护：第一位提交后，在第二位提交前不暴露标签或证据。
+    if(current.status==="pending"||current.status==="annotating")return {ok:true,items:[],withheld:true};
     const items=await listCrawlModerationGoldAnnotations(ctx.repo,parsed.data.id);
     return {ok:true,items:items.map(row=>({id:String(row.id),annotatorId:String(row.annotator_id),label:String(row.label),
       risk:Boolean(row.risk),evidence:String(row.evidence),createdAt:Number(row.created_at)}))};
@@ -304,6 +306,33 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     await ctx.repo.audit({ip:req.ip,actor,actorKind:req.auth.kind,action:"crawl.moderation_gold_adjudicate",target:params.data.id,
       diff:{label:body.data.label,risk:body.data.risk,reason:body.data.reason}});
     return {ok:true,status:"gold_ready"};
+  });
+
+  app.get("/api/admin/crawl/moderation-gold-export", { config: { scope: "admin", cache: { maxAge: 0 } } }, async (req, reply) => {
+    const parsed = z.object({
+      limit: z.coerce.number().int().min(1).max(4999).default(1000),
+    }).safeParse(req.query ?? {});
+    if (!parsed.success) { reply.code(400); return { ok: false, error: "金标导出参数无效" }; }
+    const rows = await listCrawlModerationGoldCases(ctx.repo, {
+      status: "gold_ready", limit: parsed.data.limit + 1, offset: 0,
+    });
+    const truncated = rows.length > parsed.data.limit;
+    const items = rows.slice(0, parsed.data.limit).filter(row =>
+      ["approve", "reject", "review"].includes(String(row.final_label)) &&
+      (row.final_risk === true || row.final_risk === false || row.final_risk === 0 || row.final_risk === 1)
+    ).map(row => ({
+      id: String(row.id),
+      sourceFingerprint: String(row.source_fingerprint),
+      title: row.title == null ? null : String(row.title),
+      description: row.description == null ? null : String(row.description),
+      category: row.category == null ? null : String(row.category),
+      sanitizedExcerpt: row.sanitized_excerpt == null ? null : String(row.sanitized_excerpt),
+      expected: String(row.final_label),
+      expectedRisk: Boolean(row.final_risk),
+      adjudicatedAt: row.adjudicated_at == null ? null : Number(row.adjudicated_at),
+    }));
+    return { ok: true, datasetVersion: "moderation-gold-v1", generatedAt: Date.now(),
+      count: items.length, limit: parsed.data.limit, truncated, items };
   });
 
 };

@@ -1,0 +1,74 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { openDb, Repository } from "../src/index.ts";
+import {
+  adjudicateCrawlModerationGoldCase,
+  annotateCrawlModerationGoldCase,
+  createCrawlModerationGoldCase,
+  getCrawlModerationGoldCase,
+  listCrawlModerationGoldAnnotations,
+} from "../src/index.ts";
+
+describe("人工金标双人标注与仲裁", () => {
+  let repository: Repository | null = null;
+
+  afterEach(async () => {
+    if (repository) await repository.db.close();
+    repository = null;
+  });
+
+  async function setup() {
+    const db = await openDb({ dialect: "sqlite", sqlitePath: ":memory:" });
+    repository = new Repository(db);
+    return repository;
+  }
+
+  it("两位标注员一致时自动形成金标", async () => {
+    const repo = await setup();
+    await createCrawlModerationGoldCase(repo, {
+      id: "gold-consensus", sourceFingerprint: "a".repeat(64),
+      title: "脱敏样本", createdBy: "admin-creator",
+    });
+    const first = await annotateCrawlModerationGoldCase(repo, {
+      id: "annotation-a", caseId: "gold-consensus", annotatorId: "reviewer-a",
+      label: "approve", risk: false, evidence: "网站内容完整且具有明确使用价值",
+    });
+    expect(first).toBe("annotating");
+    const second = await annotateCrawlModerationGoldCase(repo, {
+      id: "annotation-b", caseId: "gold-consensus", annotatorId: "reviewer-b",
+      label: "approve", risk: false, evidence: "页面信息与服务说明均符合收录标准",
+    });
+    expect(second).toBe("gold_ready");
+    const gold = await getCrawlModerationGoldCase(repo, "gold-consensus");
+    expect(gold?.status).toBe("gold_ready");
+    expect(gold?.final_label).toBe("approve");
+    expect(Boolean(gold?.final_risk)).toBe(false);
+  });
+
+  it("标签或风险意见不一致时进入仲裁，且独立仲裁人才能完成金标", async () => {
+    const repo = await setup();
+    await createCrawlModerationGoldCase(repo, {
+      id: "gold-dispute", sourceFingerprint: "b".repeat(64),
+      title: "存在分歧的脱敏样本", createdBy: "admin-creator",
+    });
+    await annotateCrawlModerationGoldCase(repo, {
+      id: "annotation-c", caseId: "gold-dispute", annotatorId: "reviewer-c",
+      label: "approve", risk: false, evidence: "页面结构完整，内容具有实际用途",
+    });
+    const second = await annotateCrawlModerationGoldCase(repo, {
+      id: "annotation-d", caseId: "gold-dispute", annotatorId: "reviewer-d",
+      label: "review", risk: true, evidence: "页面存在尚未排除的风险线索",
+    });
+    expect(second).toBe("needs_adjudication");
+    const annotations = await listCrawlModerationGoldAnnotations(repo, "gold-dispute");
+    expect(annotations).toHaveLength(2);
+    expect(await adjudicateCrawlModerationGoldCase(repo, {
+      caseId: "gold-dispute", adjudicatorId: "reviewer-e",
+      label: "review", risk: true, reason: "证据仍不足以支持安全收录，保留人工复核结论",
+    })).toBe(true);
+    const gold = await getCrawlModerationGoldCase(repo, "gold-dispute");
+    expect(gold?.status).toBe("gold_ready");
+    expect(gold?.final_label).toBe("review");
+    expect(gold?.adjudicator_id).toBe("reviewer-e");
+    expect(gold?.adjudication_reason).toContain("证据仍不足");
+  });
+});

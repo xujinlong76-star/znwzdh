@@ -10,7 +10,7 @@ export interface HubRouteEntry {
   scope: HubRouteScope;
 }
 
-export const HUB_ROUTES: readonly HubRouteEntry[] = [
+export const HUB_ROUTES: readonly HubRouteEntry
   { method: "GET", path: "/api/account/email-status", scope: "public" },
   { method: "POST", path: "/api/account/forgot-password", scope: "public" },
   { method: "POST", path: "/api/account/login", scope: "public" },
@@ -34,6 +34,12 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "DELETE", path: "/api/admin/client-errors", scope: "admin" },
   { method: "GET", path: "/api/admin/client-errors", scope: "admin" },
   { method: "GET", path: "/api/admin/copilot/events", scope: "read" },
+  { method: "GET", path: "/api/admin/crawl/moderation-gold-cases", scope: "admin" },
+  { method: "POST", path: "/api/admin/crawl/moderation-gold-cases", scope: "admin" },
+  { method: "POST", path: "/api/admin/crawl/moderation-gold-cases/:id/adjudicate", scope: "admin" },
+  { method: "GET", path: "/api/admin/crawl/moderation-gold-cases/:id/annotations", scope: "admin" },
+  { method: "POST", path: "/api/admin/crawl/moderation-gold-cases/:id/annotations", scope: "admin" },
+  { method: "GET", path: "/api/admin/crawl/moderation-gold-export", scope: "admin" },
   { method: "GET", path: "/api/admin/dashboard/overview", scope: "read" },
   { method: "GET", path: "/api/admin/dashboard/search-ai", scope: "read" },
   { method: "GET", path: "/api/admin/dashboard/security", scope: "read" },

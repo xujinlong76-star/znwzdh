@@ -66,7 +66,7 @@ export function validateSearchGoldenRecord(value: unknown, index = 0): SearchGol
   if (row.sourceType !== "search_telemetry") throw new Error(label + " 必须来自真实搜索遥测");
   if (!validIsoDate(row.sampledAt) || !validIsoDate(row.snapshotAt)) throw new Error(label + " 时间戳必须是 ISO 日期");
   if (row.privacyReviewed !== true || row.queryRedacted !== true) throw new Error(label + " 未通过隐私审查或查询脱敏声明");
-  if (!Array.isArray(row.hits) || row.hits.length === 0) throw new Error(label + " hits 必须非空");
+  if (!Array.isArray(row.hits)) throw new Error(label + " hits 必须是数组（允许零结果空数组）");
   const hits = row.hits as unknown[];
   const siteIds = new Set<string>();
   let previousRank = 0;
@@ -78,7 +78,7 @@ export function validateSearchGoldenRecord(value: unknown, index = 0): SearchGol
     previousRank = Number(item.rank);
     siteIds.add(item.siteId);
   }
-  if (!Array.isArray(row.judgments) || row.judgments.length === 0) throw new Error(label + " judgments 必须非空");
+  if (!Array.isArray(row.judgments) || (siteIds.size > 0 && row.judgments.length === 0)) throw new Error(label + " judgments 必须覆盖非空候选快照");
   const judgmentIds = new Set<string>();
   for (const raw of row.judgments) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error(label + " judgment 项无效");

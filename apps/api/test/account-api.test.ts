@@ -90,6 +90,7 @@ describe("账号生命周期 API", () => {
   it("管理员 TOTP 启用、一次性恢复码消费与强制关闭", async () => {
     const previousKey = process.env.NAVHUB_MFA_ENCRYPTION_KEY;
     const previousRequired = process.env.NAVHUB_ADMIN_MFA_REQUIRED;
+    const previousInternalToken = ctx.config.internalToken;
     process.env.NAVHUB_MFA_ENCRYPTION_KEY = "ab".repeat(32);
     process.env.NAVHUB_ADMIN_MFA_REQUIRED = "1";
     ctx.config.internalToken = "mfa-test-internal-token";
@@ -137,7 +138,7 @@ describe("账号生命周期 API", () => {
       else process.env.NAVHUB_MFA_ENCRYPTION_KEY = previousKey;
       if (previousRequired === undefined) delete process.env.NAVHUB_ADMIN_MFA_REQUIRED;
       else process.env.NAVHUB_ADMIN_MFA_REQUIRED = previousRequired;
-      ctx.config.internalToken = null;
+      ctx.config.internalToken = previousInternalToken;
     }
   });
 

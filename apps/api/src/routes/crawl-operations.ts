@@ -6,29 +6,64 @@ import {
 } from "@navhub/store";
 import type { AppContext } from "../context.ts";
 
-/** 透明、可解释的初筛分数；只用于排序辅助，不自动批准或拒绝。 */
+/** 可解释的采集质量模型。所有维度均为证据提示，不构成自动发布/封禁决策。 */
 export function scoreCrawlCandidate(input: {
   url: string; title?: string | null; description?: string | null;
   evidence?: Record<string, unknown>;
-}): { score: number; reasons: string[] } {
+}): {
+  score: number; reasons: string[];
+  dimensions: { completeness: number; freshness: number | null; uniqueness: number; trust: number; risk: number };
+  host: string | null; domainFamily: { id: string; label: string } | null;
+} {
   let score = 35;
   const reasons: string[] = [];
   const evidence = input.evidence ?? {};
   const tokenCount = Number(evidence.tokenCount ?? 0);
-  if (input.title?.trim()) { score += 15; reasons.push("存在页面标题"); }
+  let completeness = 20;
+  if (input.title?.trim()) { score += 15; completeness += 30; reasons.push("存在页面标题"); }
   else { score -= 12; reasons.push("缺少页面标题"); }
-  if (input.description?.trim()) { score += 10; reasons.push("存在页面描述"); }
+  if (input.description?.trim()) { score += 10; completeness += 20; reasons.push("存在页面描述"); }
   else { score -= 5; reasons.push("缺少页面描述"); }
-  if (tokenCount >= 300) { score += 20; reasons.push("正文信息量较充分"); }
-  else if (tokenCount >= 80) { score += 10; reasons.push("正文达到最低信息量"); }
+  if (tokenCount >= 300) { score += 20; completeness += 30; reasons.push("正文信息量较充分"); }
+  else if (tokenCount >= 80) { score += 10; completeness += 15; reasons.push("正文达到最低信息量"); }
   else { score -= 15; reasons.push("正文信息量偏低"); }
   if (evidence.exactDuplicateOf) { score -= 30; reasons.push("存在完全重复页面证据"); }
   const near = Array.isArray(evidence.nearDuplicateCandidates) ? evidence.nearDuplicateCandidates.length : 0;
   if (near > 0) { score -= Math.min(15, near * 3); reasons.push("存在近重复页面候选"); }
+  const uniqueness = Math.max(0, 100 - (evidence.exactDuplicateOf ? 100 : 0) - Math.min(75, near * 15));
+  let host: string | null = null;
   try {
-    if (new URL(input.url).protocol === "https:") { score += 5; reasons.push("使用 HTTPS"); }
-  } catch { score -= 20; reasons.push("URL 格式异常"); }
-  return { score: Math.max(0, Math.min(100, score)), reasons };
+    const parsed = new URL(input.url);
+    if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error("unsafe URL");
+    host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    if (parsed.protocol === "https:") { score += 5; reasons.push("使用 HTTPS（仅代表传输加密，不代表站点可信）"); }
+  } catch { score -= 20; reasons.push("URL 格式异常或协议不受支持"); }
+  // 新鲜度只在采集证据明确给出时间戳时计算；未知保持 null，不伪装成低分。
+  const freshnessAt = Number(evidence.contentUpdatedAt ?? evidence.lastModifiedAt ?? 0);
+  const freshness = Number.isFinite(freshnessAt) && freshnessAt > 0
+    ? Math.max(0, Math.min(100, Math.round(100 * Math.exp(-Math.max(0, Date.now() - freshnessAt) / (180 * 24 * 60 * 60_000)))))
+    : null;
+  if (freshness !== null) reasons.push(freshness >= 70 ? "内容更新时间较近" : freshness >= 35 ? "内容更新时间一般" : "内容可能较久未更新");
+  const trustSignals = Number(evidence.trustSignals ?? 0);
+  const trust = Math.max(0, Math.min(100, trustSignals * 25));
+  if (trustSignals > 0) reasons.push("存在显式来源可信度证据");
+  else reasons.push("尚无独立可信度背书，需人工核验");
+  const riskFlags = Array.isArray(evidence.riskFlags) ? evidence.riskFlags.length : 0;
+  const risk = Math.max(0, Math.min(100, riskFlags * 25 + (evidence.malwareEvidence ? 60 : 0) + (evidence.phishingEvidence ? 60 : 0)));
+  if (risk > 0) { score -= Math.min(35, risk * 0.35); reasons.push("发现风险线索，需安全复核"); }
+  // 家族归属仅接受经过管理员核验写入的显式证据；绝不通过相似域名或末两段猜测。
+  const familyId = evidence.verifiedDomainFamilyId;
+  const familyLabel = evidence.verifiedDomainFamilyLabel;
+  const domainFamily = typeof familyId === "string" && familyId.trim() && typeof familyLabel === "string" && familyLabel.trim()
+    ? { id: familyId, label: familyLabel } : null;
+  if (domainFamily) reasons.push("命中已核验的域名族关系");
+  return {
+    score: Math.max(0, Math.min(100, Math.round(score))),
+    reasons,
+    dimensions: { completeness: Math.max(0, Math.min(100, completeness)), freshness, uniqueness, trust, risk },
+    host,
+    domainFamily,
+  };
 }
 
 export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {

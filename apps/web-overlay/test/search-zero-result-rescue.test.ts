@@ -286,3 +286,77 @@ describe("U-143：零结果「回到第 1 页」不丢分类/分面", () => {
     expect(link).toContain("searchHref({ q, tag, category, facets })");
   });
 });
+
+describe("2222 W9：零结果回车去完整结果页（首页搜索死路修法）", () => {
+  const src = overlaySource("src/components/search-palette.tsx");
+
+  /** 截取 onSearchKeyDown 里的 Enter 分支：从 Enter 判断起到 Escape 分支为止 */
+  function enterBranch(): string {
+    const start = src.indexOf("if (e.key === 'Enter') {");
+    expect(start, "search-palette.tsx 缺少 Enter 分支").toBeGreaterThan(-1);
+    const end = src.indexOf("if (e.key === 'Escape') {", start);
+    expect(end, "search-palette.tsx 缺少 Escape 分支").toBeGreaterThan(start);
+    return src.slice(start, end);
+  }
+
+  it("真空态（无建议、无结果）回车跳 /search，不静默 return", () => {
+    const enter = enterBranch();
+    // navItems 为空时直接跳完整结果页，而不是 `if (navItems.length === 0) return`
+    const emptyPos = enter.indexOf("if (navItems.length === 0) {");
+    expect(emptyPos, "Enter 分支缺少零结果真空态分支").toBeGreaterThan(-1);
+    const assignPos = enter.indexOf("window.location.assign(searchHref({ q: query }))", emptyPos);
+    expect(assignPos, "真空态回车必须跳 searchHref({ q: query })").toBeGreaterThan(emptyPos);
+    expect(enter).not.toContain("if (navItems.length === 0) return");
+  });
+
+  it("只有建议、无可开结果时，无高亮回车跳 /search，不改写查询词", () => {
+    const enter = enterBranch();
+    // 无高亮（activeIndex < 0）且无非建议项（firstResultIndex === -1）时跳 /search，
+    // 而不是退到索引 0 点第一条建议行（applySuggestion 只会 setQuery 换词）。
+    const guardPos = enter.indexOf("if (activeIndex < 0 && firstResultIndex === -1) {");
+    expect(guardPos, "Enter 分支缺少「只有建议」回车守卫").toBeGreaterThan(-1);
+    const assignPos = enter.indexOf("window.location.assign(searchHref({ q: query }))", guardPos);
+    expect(assignPos, "只有建议时回车必须跳 searchHref({ q: query })").toBeGreaterThan(guardPos);
+    // 守卫在 firstResultIndex 算出之后、旧 target 回退之前
+    expect(enter.indexOf("const firstResultIndex = navItems.findIndex")).toBeLessThan(guardPos);
+    expect(guardPos).toBeLessThan(enter.indexOf("const target = activeIndex >= 0"));
+  });
+
+  it("回车 fallback 不抢在 quicklink / omni 之前", () => {
+    const enter = enterBranch();
+    const quicklinkPos = enter.indexOf("quicklinkMatch.kind === 'hit'");
+    const omniPos = enter.indexOf("const omni = parseOmniCommand(query)");
+    const firstAssign = enter.indexOf("window.location.assign(searchHref({ q: query }))");
+    expect(quicklinkPos, "Enter 分支缺少 quicklink 判断").toBeGreaterThan(-1);
+    expect(omniPos, "Enter 分支缺少 omni 判断").toBeGreaterThan(-1);
+    expect(quicklinkPos).toBeLessThan(firstAssign);
+    expect(omniPos).toBeLessThan(firstAssign);
+  });
+
+  it("有高亮时回车仍采纳/打开高亮项，不落入零结果分支", () => {
+    const enter = enterBranch();
+    // 高亮项（activeIndex >= 0）走旧逻辑：target 取 activeIndex，点真实元素。
+    expect(enter).toContain("const target = activeIndex >= 0 ? activeIndex : firstResultIndex >= 0 ? firstResultIndex : 0");
+    // 两个零结果分支都要求无高亮：真空态在 navItems 为空时才进；
+    // 「只有建议」分支显式要求 activeIndex < 0。
+    expect(enter).toContain("if (activeIndex < 0 && firstResultIndex === -1) {");
+  });
+
+  it("IME 组词中回车不触发：守卫在 Enter 分支之前", () => {
+    const handlerStart = src.indexOf("const onSearchKeyDown = useCallback");
+    expect(handlerStart, "缺少 onSearchKeyDown").toBeGreaterThan(-1);
+    const imePos = src.indexOf("if (e.nativeEvent.isComposing || e.keyCode === 229) return", handlerStart);
+    const enterPos = src.indexOf("if (e.key === 'Enter') {", handlerStart);
+    expect(imePos, "缺少 IME 组词守卫").toBeGreaterThan(-1);
+    expect(imePos).toBeLessThan(enterPos);
+  });
+
+  it("零结果面板底部同样有「查看全部结果」：门控不再绑 displayHits.length", () => {
+    // 门控从 `showResults && query.trim() && displayHits.length > 0` 改为
+    // `showResults && query.trim()`，文案与样式不动。
+    expect(src).not.toContain("showResults && query.trim() && displayHits.length > 0");
+    expect(src).toContain("{showResults && query.trim() && (");
+    expect(src).toContain("查看全部结果");
+    expect(src).toContain("href={searchHref({ q: query })}");
+  });
+});

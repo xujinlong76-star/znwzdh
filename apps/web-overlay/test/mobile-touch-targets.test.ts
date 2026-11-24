@@ -414,3 +414,63 @@ describe('tablist A-1：quick-dock 标准 ARIA Tabs 键盘交互（2026-11-24 14
     expect(handler).not.toContain('selectTab')
   })
 })
+
+describe('tablist A-2：其余 tablist 按 plugin-detail-view 模板补 roving tabIndex + 方向键（2026-11-24 17:22 轮）', () => {
+  // 全仓共 14 处 role="tablist"（apps/web-overlay/src 下 grep 实数）：
+  // 已达标 6 处——plugin-detail-view（模板本身）、home-quick-dock（A-1）、
+  // workspace-filter、home-capsule-row、navigation-category-section、
+  // growth-panel（后三处为旧式 ←/→ + .click() 写法，有方向键处理，本轮不重写）；
+  // 本轮新补 8 处——drama、site-reports、history、bookmark-importer ×3、
+  // video-ai-learning-dialog、video-auto-harvest-dialog。
+  // 模板要点（与 A-1 同款）：守卫 role="tab"、全量 querySelectorAll 保下标
+  // 映射（禁 '[role="tab"]:not([disabled])'）、step() 跳 disabled、
+  // Home/End 取首/末 enabled、先判键再 preventDefault、选择 + focus、
+  // 不用 .click()、不做 URL 同步。
+
+  it('已达标 6 处：容器挂 onKeyDown 且 tab 有 roving tabIndex（防回归）', () => {
+    const detail = read('src/app/marketplace/[slug]/plugin-detail-view.tsx')
+    expect(detail).toContain('onKeyDown={handleTabKeyDown}')
+    expect(count(detail, "tabIndex={activeTab === '")).toBe(6)
+    const dock = read('src/components/home-quick-dock.tsx')
+    expect(dock).toContain('onKeyDown={handleTabKeyDown}')
+    expect(count(dock, "tabIndex={activeTab === '")).toBe(3)
+    const filter = read('src/components/workspace-filter.tsx')
+    expect(filter).toContain('onKeyDown={handleTabKeyDown}')
+    expect(filter).toContain('tabIndex={isActive ? 0 : -1}')
+    const capsule = read('src/components/home-capsule-row.tsx')
+    expect(capsule).toContain('onKeyDown={handleTabKeyDown}')
+    expect(capsule).toContain('tabIndex={isActive ? 0 : -1}')
+    const navcat = read('src/components/navigation-category-section.tsx')
+    expect(navcat).toContain('role="tablist"')
+    expect(navcat).toContain("tabIndex={selectedSubCatId === null ? 0 : -1}")
+    const growth = read('src/components/user-center/growth-panel.tsx')
+    expect(growth).toContain('onKeyDown={handleTabKeyDown}')
+    expect(growth).toContain('tabIndex={selected ? 0 : -1}')
+  })
+
+  it('drama 榜单：容器挂 onKeyDown，三 tab 顺序常量与 handler 接线齐全', () => {
+    const src = read('src/components/drama-rankings-section.tsx')
+    expect(src).toContain('onKeyDown={handleTabKeyDown}')
+    expect(src).toContain('const DRAMA_TABS = TABS.map((t) => t.kind)')
+    expect(src).toContain('const handleTabKeyDown')
+    expect(count(src, "tabIndex={tab === t.kind ? 0 : -1}")).toBe(1)
+    const handler = src.slice(
+      src.indexOf('const handleTabKeyDown'),
+      src.indexOf('\n  }', src.indexOf('const handleTabKeyDown')),
+    )
+    expect(handler).toContain("target.getAttribute(\"role\") !== \"tab\"")
+    expect(handler).toContain("querySelectorAll<HTMLButtonElement>('[role=\"tab\"]')")
+    expect(handler).not.toContain('[role="tab"]:not([disabled])')
+    expect(handler).toContain('tabs.map((t) => !t.disabled)')
+    expect(handler).toContain('const step = (from: number, dir: 1 | -1): number => {')
+    expect(handler).toContain('const firstEnabled = enabled.findIndex(Boolean)')
+    expect(handler).toContain('const lastEnabled = enabled.lastIndexOf(true)')
+    for (const key of ['"ArrowRight"', '"ArrowLeft"', '"Home"', '"End"']) {
+      expect(handler).toContain(`event.key === ${key}`)
+    }
+    expect(handler).toContain('event.preventDefault()')
+    expect(handler).toContain('onTab(DRAMA_TABS[next])')
+    expect(handler).toContain('tabs[next]?.focus()')
+    expect(handler).not.toContain('.click()')
+  })
+})

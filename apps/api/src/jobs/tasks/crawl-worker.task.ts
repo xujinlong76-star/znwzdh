@@ -9,6 +9,8 @@ import {
   recordCrawlFingerprint,
   reapExpiredCrawlLeases,
   renewCrawlLease,
+  getCrawlRobotsCache,
+  upsertCrawlRobotsCache,
   settleCrawlTask,
   upsertSiteDiscoveryCandidate,
   recordCrawlAiModerationDecision,
@@ -283,50 +285,50 @@ class CrawlRobotsRetryError extends Error {
 }
 
 const ROBOTS_CACHE_TTL_MS = 60 * 60_000;
-const ROBOTS_CACHE_MAX_ENTRIES = 5_000;
-const robotsCache = new Map<string, { expiresAt: number; body: string | null; blocked: boolean }>();
 
-function cacheRobots(origin: string, value: { expiresAt: number; body: string | null; blocked: boolean }): void {
-  if (!robotsCache.has(origin) && robotsCache.size >= ROBOTS_CACHE_MAX_ENTRIES) {
-    const now = Date.now();
-    for (const [key, cached] of robotsCache) {
-      if (cached.expiresAt <= now) robotsCache.delete(key);
-    }
-    if (robotsCache.size >= ROBOTS_CACHE_MAX_ENTRIES) {
-      const oldest = robotsCache.keys().next().value;
-      if (oldest) robotsCache.delete(oldest);
-    }
-  }
-  robotsCache.set(origin, value);
-}
-
-async function checkRobotsPolicy(url: string, signal?: AbortSignal): Promise<RobotsResult> {
+async function checkRobotsPolicy(
+  repo: AppContext["repo"],
+  url: string,
+  signal?: AbortSignal,
+): Promise<RobotsResult> {
   const target = new URL(url);
   const origin = target.origin;
   const now = Date.now();
-  const cached = robotsCache.get(origin);
-  if (cached && cached.expiresAt > now) {
-    if (cached.blocked) return { kind: "blocked", reason: "robots.txt 禁止自动抓取该站点" };
-    if (cached.body !== null && !isRobotsAllowed(cached.body, url)) {
-      return { kind: "blocked", reason: "robots.txt Disallow 规则禁止抓取该 URL" };
-    }
-    return { kind: "allowed" };
-  }
   try {
+    // 数据库共享缓存让多个 API/Worker 实例使用同一份 robots 决策；
+    // 缓存读取失败时 fail-closed，不绕过策略直接抓取。
+    const cached = await getCrawlRobotsCache(repo, origin, now);
+    if (cached) {
+      if (cached.blocked) return { kind: "blocked", reason: "robots.txt 禁止自动抓取该站点" };
+      if (cached.body !== null && !isRobotsAllowed(cached.body, url)) {
+        return { kind: "blocked", reason: "robots.txt Disallow 规则禁止抓取该 URL" };
+      }
+      return { kind: "allowed" };
+    }
+
     const response = await guardedFetch(new URL("/robots.txt", origin).toString(), {
       timeoutMs: 5_000, maxBytes: 64 * 1024, maxRedirects: 3,
       userAgent: "NavHubDiscoveryBot/1.0 (+https://github.com/xujinlong76-star/znwzdh)",
     }, { signal });
     if (response.status === 404 || response.status === 410) {
-      cacheRobots(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: "", blocked: false });
+      await upsertCrawlRobotsCache(repo, {
+        origin, body: "", blocked: false, status: response.status, fetchedAt: now,
+        ttlMs: ROBOTS_CACHE_TTL_MS,
+      });
       return { kind: "allowed" };
     }
     if (response.status === 401 || response.status === 403 || response.status === 451) {
-      cacheRobots(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: null, blocked: true });
+      await upsertCrawlRobotsCache(repo, {
+        origin, body: null, blocked: true, status: response.status, fetchedAt: now,
+        ttlMs: ROBOTS_CACHE_TTL_MS,
+      });
       return { kind: "blocked", reason: "robots.txt 不允许自动抓取" };
     }
-    if (response.truncated || /text\/html/i.test(response.contentType ?? "") || /<html\b/i.test(response.body)) {
-      cacheRobots(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: null, blocked: true });
+    if (response.truncated || /text\\/html/i.test(response.contentType ?? "") || /<html\\b/i.test(response.body)) {
+      await upsertCrawlRobotsCache(repo, {
+        origin, body: null, blocked: true, status: response.status, fetchedAt: now,
+        ttlMs: ROBOTS_CACHE_TTL_MS,
+      });
       return { kind: "blocked", reason: "robots.txt 返回了超限内容或 HTML 页面，无法安全确认抓取许可" };
     }
     if (response.status === 429 || response.status >= 500 || response.status < 200 || response.status >= 300) {
@@ -335,7 +337,10 @@ async function checkRobotsPolicy(url: string, signal?: AbortSignal): Promise<Rob
         retryAfterMs: parseRetryAfterMs(response.retryAfter, now),
       };
     }
-    cacheRobots(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: response.body, blocked: false });
+    await upsertCrawlRobotsCache(repo, {
+      origin, body: response.body, blocked: false, status: response.status,
+      fetchedAt: now, ttlMs: ROBOTS_CACHE_TTL_MS,
+    });
     return isRobotsAllowed(response.body, url)
       ? { kind: "allowed" }
       : { kind: "blocked", reason: "robots.txt Disallow 规则禁止抓取该 URL" };
@@ -479,7 +484,7 @@ export async function handleCrawlWorker(
     summary.tasksClaimed++;
     const leaseHeartbeat = startCrawlLeaseHeartbeat(ctx.repo, task.id, workerId, leaseHeartbeat.signal);
     try {
-      const robots = await checkRobotsPolicy(task.url, leaseHeartbeat.signal);
+      const robots = await checkRobotsPolicy(ctx.repo, task.url, leaseHeartbeat.signal);
       if (robots.kind === "blocked") {
         await settleCrawlTask(ctx.repo, {
           id: task.id, workerId, outcome: "hold_for_review", error: robots.reason, now: Date.now(),
@@ -505,7 +510,7 @@ export async function handleCrawlWorker(
         onRedirect: async (fromUrl, toUrl) => {
           // 必须在目标 URL 请求发出前检查目标 origin 的 robots，而不是等页面已抓取后补查。
           if (new URL(fromUrl).origin === new URL(toUrl).origin) return;
-          const redirectedRobots = await checkRobotsPolicy(toUrl, leaseHeartbeat.signal);
+          const redirectedRobots = await checkRobotsPolicy(ctx.repo, toUrl, leaseHeartbeat.signal);
           if (redirectedRobots.kind === "blocked") {
             throw new CrawlRobotsBlockedError("重定向目标 robots.txt 不允许抓取：" + redirectedRobots.reason);
           }

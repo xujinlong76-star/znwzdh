@@ -53,6 +53,8 @@ export * from "./facets.ts";
 export * from "./pricing.ts";
 export * from "./search-limits.ts";
 export * from "./search-eval.ts";
+export * from "./site-quality.ts";
+export * from "./quality-shadow-rerank.ts";
 export * from "./relations.ts";
 export * from "./taxonomy-governance.ts";
 export * from "./taxonomy-rules.ts";

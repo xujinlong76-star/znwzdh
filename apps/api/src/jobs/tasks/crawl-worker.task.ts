@@ -487,7 +487,8 @@ export async function handleCrawlWorker(
               fetchedStatus: response.status, finalUrl: response.finalUrl,
               fetchedAt: Date.now(), contentHash, simhash64: fp.simhash,
               tokenCount: fp.tokenCount, truncated: response.truncated,
-              exactDuplicateOf: exactDuplicate?.canonical_url ?? null,\n              nearDuplicateCandidates: nearDuplicates,
+              exactDuplicateOf: exactDuplicate?.canonical_url ?? null,
+              nearDuplicateCandidates: nearDuplicates,
             },
           });
           summary.candidatesUpserted++;

@@ -502,12 +502,22 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     });
     const metrics=evaluateSiteModerationGoldSet(cases);
     const datasetVersion=createHash("sha256").update(gold.map(row=>String(row.id)+":"+String(row.final_label)+":"+String(Boolean(row.final_risk))).join("|")).digest("hex");
+    const previousRows=await ctx.repo.raw("SELECT metrics_json FROM crawl_moderation_model_evaluations WHERE model=? AND dataset_version=? ORDER BY created_at DESC,id DESC LIMIT 1",[body.data.model,datasetVersion]);
+    const previous=previousRows[0]?.metrics_json?JSON.parse(String(previousRows[0].metrics_json)) as {exactMatchRate?:number|null;riskDetection?:{recall?:number|null}}:null;
+    const alerts:Array<{severity:"warning"|"critical";code:string;message:string}>=[];
+    if(metrics.exactMatchRate!==null&&metrics.exactMatchRate<0.9)alerts.push({severity:"warning",code:"low_exact_match",message:"标签精确匹配率低于 90%，建议保持 Shadow 并检查错分样本"});
+    if(metrics.riskDetection.support===0)alerts.push({severity:"warning",code:"risk_support_missing",message:"当前金标集没有正向风险样本，风险召回率无法评估"});
+    else if(metrics.riskDetection.recall!==null&&metrics.riskDetection.recall<0.95)alerts.push({severity:"critical",code:"low_risk_recall",message:"风险召回率低于 95%，存在漏检风险，不应启用自动审核"});
+    if(metrics.riskDetection.falseNegatives>0)alerts.push({severity:"critical",code:"risk_false_negative",message:"本轮出现 "+metrics.riskDetection.falseNegatives+" 条风险漏报，必须复核对应样本"});
+    if(previous?.exactMatchRate!=null&&metrics.exactMatchRate!==null&&previous.exactMatchRate-metrics.exactMatchRate>0.05)alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次评测，标签精确匹配率下降超过 5 个百分点"});
+    if(previous?.riskDetection?.recall!=null&&metrics.riskDetection.recall!==null&&previous.riskDetection.recall-metrics.riskDetection.recall>0.05)alerts.push({severity:"critical",code:"risk_recall_regression",message:"相较该模型上一次评测，风险召回率下降超过 5 个百分点"});
+    const evaluation={...metrics,alerts};
     const id=randomUUID(),actor=String(req.auth.actor??"admin"),createdAt=Date.now();
     await ctx.repo.run("INSERT INTO crawl_moderation_model_evaluations (id,model,dataset_version,sample_size,metrics_json,created_by,created_at) VALUES (?,?,?,?,?,?,?)",
-      [id,body.data.model,datasetVersion,metrics.sampleSize,JSON.stringify(metrics),actor,createdAt]);
+      [id,body.data.model,datasetVersion,metrics.sampleSize,JSON.stringify(evaluation),actor,createdAt]);
     await ctx.repo.audit({ip:req.ip,actor,actorKind:req.auth.kind,action:"crawl.moderation_model_evaluation",target:id,
-      diff:{model:body.data.model,datasetVersion,sampleSize:metrics.sampleSize,exactMatchRate:metrics.exactMatchRate}});
-    return {ok:true,id,model:body.data.model,datasetVersion,sampleSize:metrics.sampleSize,metrics,createdAt};
+      diff:{model:body.data.model,datasetVersion,sampleSize:metrics.sampleSize,exactMatchRate:metrics.exactMatchRate,alertCount:alerts.length}});
+    return {ok:true,id,model:body.data.model,datasetVersion,sampleSize:metrics.sampleSize,metrics:evaluation,alerts,createdAt};
   });
 
 };

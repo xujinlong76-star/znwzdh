@@ -6,6 +6,7 @@ import {
   createCrawlModerationGoldCase,
   getCrawlModerationGoldCase,
   listCrawlModerationGoldAnnotations,
+  listCrawlModerationGoldCases,
 } from "../src/index.ts";
 
 describe("人工金标双人标注与仲裁", () => {
@@ -21,6 +22,20 @@ describe("人工金标双人标注与仲裁", () => {
     repository = new Repository(db);
     return repository;
   }
+
+  it("金标队列查询支持超过 100 条的数据集分页", async () => {
+    const repo = await setup();
+    for (let index = 0; index < 105; index++) {
+      await createCrawlModerationGoldCase(repo, {
+        id: "gold-page-" + index,
+        sourceFingerprint: "page-" + String(index).padStart(64, "0"),
+        title: "分页样本 " + index,
+        createdBy: "admin-creator",
+      });
+    }
+    const rows = await listCrawlModerationGoldCases(repo, { limit: 5000 });
+    expect(rows).toHaveLength(105);
+  });
 
   it("两位标注员一致时自动形成金标", async () => {
     const repo = await setup();

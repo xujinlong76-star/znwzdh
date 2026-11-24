@@ -39,9 +39,12 @@ const LOGIN_FAIL_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_FAIL_MAX = 5;
 let lastLoginFailurePruneAt = 0;
 
-function loginFailureKey(identifier: string): string {
-  // 不把邮箱/用户名明文作为 system_states key，避免数据库运维面泄露登录标识。
-  return "auth:login-failure:" + hashApiToken(identifier.trim().toLowerCase());
+function loginFailureKey(ctx: AppContext, identifier: string): string {
+  // 使用跨副本共享的会话密钥 HMAC；普通 SHA-256 会允许数据库读取者离线枚举常见邮箱。
+  const digest = createHmac("sha256", ctx.config.sessionSecret)
+    .update(identifier.trim().toLowerCase())
+    .digest("hex");
+  return "auth:login-failure:" + digest;
 }
 
 
@@ -700,33 +703,31 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(400);
         return { error: "参数无效" };
       }
-      // 返回 null = 用户不存在、密码错误或邮箱未验证（不区分，防账号枚举）；
-      // next-auth 的 authorize 收到 null 即登录失败。
-      // 失败计数先查：已锁定的标识不再查密码（M15），避免锁定期间继续烧 scrypt。
+      // 在 scrypt 前通过单条 UPSERT 原子预留尝试；多副本并发时也只有前 5 次进入密码校验。
       const identifier = body.data.identifier.trim();
-      const failureKey = loginFailureKey(identifier);
+      const failureKey = loginFailureKey(ctx, identifier);
       const loginNow = Date.now();
       if (loginNow - lastLoginFailurePruneAt > 60_000) {
         lastLoginFailurePruneAt = loginNow;
         await ctx.repo.pruneSystemStatePrefix("auth:login-failure:", loginNow - LOGIN_FAIL_WINDOW_MS).catch(() => 0);
       }
-      const failureState = await ctx.repo.getLoginFailureState(failureKey);
-      if (failureState && failureState.count >= LOGIN_FAIL_MAX && Date.now() - failureState.firstAt <= LOGIN_FAIL_WINDOW_MS) {
+      const attempt = await ctx.repo.recordLoginFailure(failureKey, loginNow, LOGIN_FAIL_WINDOW_MS);
+      if (attempt.count > LOGIN_FAIL_MAX) {
         reply.code(429);
         return { error: "登录失败次数过多，请 15 分钟后再试" };
       }
+      // 返回 null = 用户不存在、密码错误或邮箱未验证（不区分，防账号枚举）。
       const user = await ctx.repo.verifyUserPassword(identifier, body.data.password);
       if (!user) {
-        // 每次失败都记审计（M15）：只靠 429 计数看不见「谁在被撞」；
-        // 审计 target 只放标识本身，不放密码、不区分「账号不存在 / 密码错误」。
-        const failures = (await ctx.repo.recordLoginFailure(failureKey, Date.now(), LOGIN_FAIL_WINDOW_MS)).count;
+        // 审计只保存共享会话密钥生成的 HMAC 摘要，不持久化原始邮箱/用户名或密码。
+        const digest = failureKey.slice("auth:login-failure:".length);
         await ctx.repo
           .audit({
             actor: "anonymous",
             actorKind: "anonymous",
-            action: failures >= LOGIN_FAIL_MAX ? "account.login_locked" : "account.login_failed",
-            target: identifier,
-            diff: { failures },
+            action: attempt.count >= LOGIN_FAIL_MAX ? "account.login_locked" : "account.login_failed",
+            target: `hmac-sha256:${digest}`,
+            diff: { failures: attempt.count },
           })
           .catch(() => {
             // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
@@ -739,7 +740,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         actor: user.id,
         actorKind: "user",
         action: "account.login",
-        target: user.email ?? undefined,
+        target: user.id,
       });
       return {
         ok: true,

@@ -462,10 +462,10 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   // Java 官方文档：站方 favicon 即红色 Oracle 椭圆 O 标（120×120），
   // 不是 Java 咖啡杯；按“官网在用图标”原样接线，未擅自换标，只记录。
   // ISO/IEC 标准：iso.svg 为白字透明底（fill 仅 #fff，无底色），
-  // 浅色主题下不可见；红色底块须用 ISO 品牌红，但 iso.org 站点头色
-  // 未能核实具体色值（www.iso.org curl 空回复、官方品牌页无 hex、
-  // 候选 #D22630 经查是 Saudi Aramco 的 SA Red、与 ISO 无关），
-  // 故本次不加底块分支、不猜 hex，记为未决点，见 C4 测试事实钉死。
+  // 浅色主题下不可见；2026-11-24 深色复核 W8 合流：按复核清单 §7 #29
+  // 建议 B，给 'iso.org': 'dark' 深色底块（CNKI/Haiper 同款 neutral-900
+  // 块，不猜品牌红 hex——候选 #D22630 经查是 Saudi Aramco 的 SA Red、
+  // 与 ISO 无关，见 C4 测试事实钉死）。
   'gitee.com=giteep',
   'gitlab.com=gitlabp',
   'gitcode.com=gitcodep',
@@ -500,7 +500,8 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   // 48px（dev.java favicon，另一图形）未擅自替换，待用户裁决，未决点。
   // 纯黑标：rust.svg（黑齿轮 R）与 terraform.svg（黑 HashiCorp 标，
   // SVG 内含 @media (prefers-color-scheme: dark) 白字规则）深色主题下
-  // 对比度弱，属规范 §9 留待统一处理轮次，本批不加底块、不改组件。
+  // 对比度弱；2026-11-24 深色复核 W7 已删两站 @media 翻转、W8 合流
+  // 各配 'light' 浅色底块（复核清单 §7 #23/#24），见 C5 测试事实钉死。
   // express.svg / fastify.svg 自带黑底方块（#1a1a1a / #0a0b0d），
   // 双主题均可见，无问题。
   // Compose：标取自官方 docker/compose 仓库根目录 logo.png（README 标注
@@ -697,8 +698,10 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   // Arch_AWS-WAF_64.svg 原样，来源类别待复审裁决（接受或改阻塞）。
   // permit-mee.png 为灰色齿轮标（站方 /favicon.ico 实测返回），待复审
   // 确认接受或阻塞。pinterest.svg 的 P 无 fill（默认黑色），深色主题
-  // 可见性风险留待规范 §9 统一处理轮，不擅自改。mobbin.svg 内嵌
-  // base64 PNG + 深色反色滤镜，按规范原样落盘。
+  // 可见性风险 2026-11-24 深色复核 W8 合流已解决：配 'pinterest.com':
+  // 'light' 浅色底块（复核清单 §7 #9）。mobbin.svg 内嵌 base64 PNG，
+  // 其深色反色滤镜已由 W7 删除（93a8d1eed），W8 另配 'mobbin.com':
+  // 'light' 浅色底块（复核清单 §7 #27）。
   // 小尺寸原样站（源 <128 不放大）：16×16（Mixkit / 生态环境部）、
   // 32×32（Storyblocks / npmmirror / 中国天气网）、48×48（Dafont /
   // Lucide / Uiverse / Chakra UI / 排污平台）。
@@ -768,21 +771,23 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   // （370 B，viewBox 0 0 32 32，三色 #19181B / #6300FF / #EE430E，
   // 见 C13 测试事实钉死）。深色变体 /logo-dark.svg（368 B，仅黑
   // 元素改为白色）未另行落盘：按统一规范 §9，只落默认浅色标、
-  // 不做单站补丁，深色底块问题留待统一处理轮；接线/复审如需
-  // 定夺深色变体，请裁决（见 C13 测试事实钉死）。
+  // 不做单站补丁；2026-11-24 深色复核 W8 合流：浅色标配
+  // 'zeabur.com': 'light' 浅色底块（复核清单 §7 #16），深色变体
+  // 是否另行落盘仍待裁决（见 C13 测试事实钉死）。
   'zeabur.com=zeaburs',
   // 2026-11-20（C 类第 13 批 C13 续，尾巴 1 站）：Midjourney。
   // 原属 C1 清单，当时被 Cloudflare 墙阻塞未入；设计经 Wayback 路线
   // 取回后解堵（staging specials/midjourney.png，128×128、9,084 B，
   // SHA-1 与 CDX 摘要一致，md5 685a01a27d7876273584052dd06f846e）。
+  // 2026-11-24（W6 透明化重出 95609ff2 + 深色复核 W8 合流）：去白底
+  // 透明化后 8,957 B（128×128 不变）；透明化只去满幅白底，不解决深色下
+  // 黑标不可见，故另配 'midjourney.com': 'light' 浅色底块（复核清单
+  // §7 #22），两者缺一不可。白底方块“无底块、留待统一处理轮”已解决。
   // 站 icon 字段为远端 https://midjourney.com/favicon.ico，被
   // isRemoteRawFavicon 拦截（pathname '/favicon.ico'），map 生效，
   // navigation.json 不动。'github.com' / 'adobe.com' 键绝不加。
   // 全库 383 站核对：'midjourney.com' 键只命中 Midjourney 一站，
-  // 无后缀串站、无子域站。落盘为白底不透明 PNG 原样（128×128，
-  // 全图不透明像素 16,384/16,384，深色帆船标 bbox x18–109 y19–96），
-  // 浅/深主题下均显白底方块，无底块（resolveLogoTile 为 null），
-  // 不做单站补丁，留待统一处理轮。
+  // 无后缀串站、无子域站。
   'midjourney.com=midjourneyp',
   // 2026-11-20（U-08 补站 Rancher）：站方 favicon.ico 为 0 B 不可用，
   // 站 icon 字段用站方 head 自声明的 favicon.png，被 isRemoteRawFavicon
@@ -1113,8 +1118,9 @@ export const LOCAL_LOGO_MAP: Record<string, string> = Object.fromEntries(
  *
  * 底块颜色是主题无关的固定色：浅色块永远纯白、深色块永远 neutral-900，
  * 浅/深模式下同一张图对比度恒定——这正是“同时覆盖浅色与深色模式”的做法。
- * 不接标题关键词兜底：底块是按 logo 形态定的资产属性，标题兜底的远端
- * 图标形态未知，不能默认给块。
+ * 不接标题关键词兜底——唯一例外是下方 LOGO_TILE_TITLE_RULES：github.com
+ * 为 7 站共享域、主机名键被禁（见该表注释），这 5 站只能按标题区分；
+ * 除此 5 站外不新增标题规则，底块仍是按 logo 形态定的资产属性。
  *
  * 每站形态证据见轮次笔记 evolution-round-2026-11-17-1122.md §1：
  * Ollama/SourceHut 为 fill #000000 的 SI 黑标；天音不透明像素均值亮度 10
@@ -1132,7 +1138,11 @@ export type LogoTileTone = 'light' | 'dark'
 
 export const LOGO_TILE_MAP: Record<string, LogoTileTone> = {
   'ollama.com': 'light',
-  'sourcehut.org': 'light',
+  // 2026-11-24（深色复核 W8 合流，复核清单 §7 #30）：SourceHut 由 'light'
+  // 改为 'dark'——落盘为官网现用细灰环版（白环 + 灰细框），白环配白底块
+  // 在双主题下仅剩灰细框可见（浅色可见墨量 11.0%），白底块正是问题本身；
+  // 改配深色底块，白环在深底上清晰，见 §7 #30 首选方案。
+  'sourcehut.org': 'dark',
   'notion.com': 'light',
   'radix-ui.com': 'light',
   'tianyin.163.com': 'light',
@@ -1150,6 +1160,36 @@ export const LOGO_TILE_MAP: Record<string, LogoTileTone> = {
   // 改用橙底 #f29600 或 #101828，改一处 LOGO_TILE_CLASSES 即可。
   // 宽版不裁：object-contain + 底块 p-0.5 渲染，不进 isWideLogoSite。
   'cnki.net': 'dark',
+  // 2026-11-24（深色复核 W8 合流，复核清单 §7 #1–#28，30 项）：
+  // #3/#6–#11/#13–#22/#23–#28 均给 'light'（黑标/黑字标）；#29 ISO 给
+  // 'dark'（白字透明底，CNKI/Haiper 同款深色底块）；#1/#2/#4/#5/#12
+  // 共用 github.com、无主机名键，走下方 LOGO_TILE_TITLE_RULES 标题规则；
+  // #18/#19 共用 'yz.chsi.com.cn' 一键，不加重复键，'chsi.com.cn' 父域键绝不加。
+  // 每键全库命中核对见 w8-note.md（388 站：22 键各只命中目标站，
+  // yz.chsi.com.cn 命中研招网 + 考研网上报名 2 站）。
+  'devin.ai': 'light',
+  'helm.sh': 'light',
+  'moark.com': 'light',
+  'mubert.com': 'light',
+  'pinterest.com': 'light',
+  'sf-express.com': 'light',
+  'ncpssd.org': 'light',
+  'chinatax.gov.cn': 'light',
+  'dify.ai': 'light',
+  'w3.org': 'light',
+  'zeabur.com': 'light',
+  'atcoder.jp': 'light',
+  'yz.chsi.com.cn': 'light',
+  'coding.net': 'light',
+  'huaweicloud.com': 'light',
+  'midjourney.com': 'light',
+  'rust-lang.org': 'light',
+  'developer.hashicorp.com': 'light',
+  'chatgpt.com': 'light',
+  'awwwards.com': 'light',
+  'mobbin.com': 'light',
+  'pika.art': 'light',
+  'iso.org': 'dark',
 }
 
 /** 底块 class：主题无关固定底色 + 与 Cursor 芯片同款的内边距、描边与圆角。 */
@@ -1158,7 +1198,16 @@ export const LOGO_TILE_CLASSES: Record<LogoTileTone, string> = {
   dark: 'bg-neutral-900 p-0.5 border border-border/30 rounded-xs',
 }
 
-export function resolveLogoTile(url?: string): LogoTileTone | null {
+/** 标题规则底块表：小写子串，顺序重要（见 resolveLogoTile 内注释）。 */
+const LOGO_TILE_TITLE_RULES: ReadonlyArray<readonly [keyword: string, tone: LogoTileTone]> = [
+  ['trending', 'light'],
+  ['copilot', 'light'],
+  ['cline', 'light'],
+  ['langgraph', 'light'],
+  ['github', 'light'],
+]
+
+export function resolveLogoTile(url?: string, title?: string): LogoTileTone | null {
   if (!url || typeof url !== 'string') return null
   try {
     // CodeQL #140：`startsWith('http')` 方案嗅探不完整（httpx:// 等会误判）；
@@ -1177,6 +1226,25 @@ export function resolveLogoTile(url?: string): LogoTileTone | null {
     for (const [domainKey, tone] of Object.entries(LOGO_TILE_MAP)) {
       if (hostname.endsWith(`.${domainKey}`)) {
         return tone
+      }
+    }
+
+    // 标题规则底块（2026-11-24 深色复核 W8 合流，复核清单 §7
+    // #1/#2/#4/#5/#12，与图标解析的标题规则同款机制，见 resolveSiteIcon
+    // 内 cline / copilot / langgraph 标题规则先例）：github.com 为 7 站
+    // 共享域（GitHub、GitHub Trending、Cline、GitHub Copilot、LangGraph、
+    // Qwen 3、vLLM），'github.com' 键绝不加——加了会连带给 Qwen 3 / vLLM
+    // 这两站 §6 PASS 站加块；这 5 站只能按标题区分。顺序重要：
+    // 'trending' 与 'copilot' 必须排在 'github' 之前（两标题都含 github）。
+    // 仅当主机名 map 未命中时查标题表。全库审计（2026-11-24，388 站，
+    // navigation.json 标题大小写不敏感匹配）：标题含上述任一关键词的
+    // 只有这 5 站，Qwen 3 / vLLM 标题不含任一关键词，不受影响。
+    const lowerTitle = (title || '').toLowerCase()
+    if (lowerTitle) {
+      for (const [keyword, tone] of LOGO_TILE_TITLE_RULES) {
+        if (lowerTitle.includes(keyword)) {
+          return tone
+        }
       }
     }
 
@@ -1485,9 +1553,10 @@ export function SiteFavicon({
     (url && url.toLowerCase().includes('cursor.com'))
   )
 
-  // 深色底块统一处理：黑标/黑字标给浅色块、白字标给深色块（LOGO_TILE_MAP）；
+  // 深色底块统一处理：黑标/黑字标给浅色块、白字标给深色块（LOGO_TILE_MAP
+  // + LOGO_TILE_TITLE_RULES 标题规则，github.com 共域 5 站专用）；
   // 与 Cursor 芯片互斥——cursor.com 不在 map 里，tile 优先于芯片。
-  const logoTile = resolveLogoTile(url)
+  const logoTile = resolveLogoTile(url, title)
 
   // 宽版 logo（中央气象台 255x65、国家哲学 385x56）：横长条在方形卡片里
   // object-contain 后上下留空已够、左右贴边，img 级统一加 p-1 免得贴边；

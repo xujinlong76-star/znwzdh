@@ -5,14 +5,23 @@ export type SearchGoldIntent =
   | "exact_site" | "task" | "category" | "pinyin" | "mixed_language"
   | "zero_result" | "ambiguous" | "long_tail" | "other";
 
+export type SearchGoldReasonCode =
+  | "exact_match" | "task_fit" | "category_fit" | "partial_fit"
+  | "unrelated" | "unavailable" | "insufficient_evidence" | "safety_risk" | "other";
 export interface SearchGoldAnnotation {
   annotatorId: string;
+  submittedAt: string;
   independent: true;
   judgments: Record<string, SearchGoldGrade>;
+  evidenceUrls: Record<string, string>;
+  reasonCodes: Record<string, SearchGoldReasonCode>;
 }
 export interface SearchGoldAdjudication {
   reviewerId: string;
+  reviewedAt: string;
+  rationale: string;
   judgments: Record<string, SearchGoldGrade>;
+  reasonCodes: Record<string, SearchGoldReasonCode>;
 }
 export interface SearchGoldCase {
   id: string;
@@ -39,6 +48,10 @@ export interface SearchGoldValidationResult {
   evaluationCases: SearchEvalCase[];
 }
 
+const REASON_CODES = new Set<SearchGoldReasonCode>([
+  "exact_match", "task_fit", "category_fit", "partial_fit",
+  "unrelated", "unavailable", "insufficient_evidence", "safety_risk", "other",
+]);
 const INTENTS = new Set<SearchGoldIntent>([
   "exact_site", "task", "category", "pinyin", "mixed_language",
   "zero_result", "ambiguous", "long_tail", "other",
@@ -60,6 +73,37 @@ function isIsoDate(value: unknown): value is string {
 function isGrade(value: unknown): value is SearchGoldGrade {
   return value === "unjudgeable" || (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 3);
 }
+function assertEvidenceUrls(value: unknown, hitIds: Set<string>, field: string): Record<string, string> {
+  if (!isRecord(value) || Object.keys(value).length !== hitIds.size) {
+    throw new Error(field + " 必须覆盖候选快照中的全部 siteId");
+  }
+  for (const [siteId, rawUrl] of Object.entries(value)) {
+    if (!hitIds.has(siteId) || typeof rawUrl !== "string") throw new Error(field + " 结构无效");
+    let url: URL;
+    try { url = new URL(rawUrl); } catch { throw new Error(field + " 必须是有效 HTTP(S) 证据 URL"); }
+    if ((url.protocol !== "http:" && url.protocol !== "https:") ||
+        url.username || url.password || url.search || url.hash) {
+      throw new Error(field + " 仅允许不含凭据、查询参数和片段的 HTTP(S) URL");
+    }
+  }
+  return value as Record<string, string>;
+}
+function assertReasonCodes(
+  value: unknown,
+  siteIds: Set<string>,
+  field: string,
+): Record<string, SearchGoldReasonCode> {
+  if (!isRecord(value) || Object.keys(value).length !== siteIds.size) {
+    throw new Error(field + " 必须覆盖待判断的全部 siteId");
+  }
+  for (const [siteId, code] of Object.entries(value)) {
+    if (!siteIds.has(siteId) || typeof code !== "string" || !REASON_CODES.has(code as SearchGoldReasonCode)) {
+      throw new Error(field + " 包含无效 siteId 或 reasonCode");
+    }
+  }
+  return value as Record<string, SearchGoldReasonCode>;
+}
+
 function assertJudgments(value: unknown, hitIds: Set<string>, field: string): Record<string, SearchGoldGrade> {
   if (!isRecord(value)) throw new Error(field + " 必须是对象");
   const entries = Object.entries(value);
@@ -136,13 +180,21 @@ export function validateSearchGoldSet(input: unknown): SearchGoldValidationResul
     const annotations = item.annotations as unknown[];
     const parsed = annotations.map((annotation, annotatorIndex) => {
       if (!isRecord(annotation) || annotation.independent !== true ||
-          typeof annotation.annotatorId !== "string" || !ID_PATTERN.test(annotation.annotatorId)) {
-        throw new Error(prefix + " 第 " + (annotatorIndex + 1) + " 份标注缺少独立标注员标识");
+          typeof annotation.annotatorId !== "string" || !ID_PATTERN.test(annotation.annotatorId) ||
+          !isIsoDate(annotation.submittedAt)) {
+        throw new Error(prefix + " 第 " + (annotatorIndex + 1) + " 份标注缺少独立标注员标识或提交时间");
       }
-      return {
-        annotatorId: annotation.annotatorId,
-        judgments: assertJudgments(annotation.judgments, hitIds, prefix + " 标注"),
-      };
+      const judgments = assertJudgments(annotation.judgments, hitIds, prefix + " 标注");
+      const evidenceUrls = assertEvidenceUrls(annotation.evidenceUrls, hitIds, prefix + " 证据 URL");
+      const reasonCodes = assertReasonCodes(annotation.reasonCodes, hitIds, prefix + " reasonCode");
+      for (const [siteId, grade] of Object.entries(judgments)) {
+        if (grade === "unjudgeable" &&
+            reasonCodes[siteId] !== "unavailable" &&
+            reasonCodes[siteId] !== "insufficient_evidence") {
+          throw new Error(prefix + " unjudgeable 必须使用 unavailable 或 insufficient_evidence reasonCode");
+        }
+      }
+      return { annotatorId: annotation.annotatorId, judgments, evidenceUrls, reasonCodes };
     });
     if (parsed[0]!.annotatorId === parsed[1]!.annotatorId) {
       throw new Error(prefix + " 两份标注必须来自不同标注员");
@@ -168,16 +220,22 @@ export function validateSearchGoldSet(input: unknown): SearchGoldValidationResul
       if (!isRecord(adjudication) ||
           typeof adjudication.reviewerId !== "string" ||
           !ID_PATTERN.test(adjudication.reviewerId) ||
-          parsed.some((annotation) => annotation.annotatorId === adjudication.reviewerId)) {
-        throw new Error(prefix + " 存在重大分歧或不可判断项，必须由第三人仲裁");
+          parsed.some((annotation) => annotation.annotatorId === adjudication.reviewerId) ||
+          !isIsoDate(adjudication.reviewedAt) ||
+          typeof adjudication.rationale !== "string" ||
+          !adjudication.rationale.trim() || adjudication.rationale.length > 500) {
+        throw new Error(prefix + " 存在重大分歧或不可判断项，必须由第三人仲裁并记录时间/理由");
       }
-      const adjudicated = assertJudgments(
-        adjudication.judgments,
-        new Set(conflicts),
-        prefix + " 仲裁",
-      );
+      const conflictIds = new Set(conflicts);
+      const adjudicated = assertJudgments(adjudication.judgments, conflictIds, prefix + " 仲裁");
+      const adjudicationReasons = assertReasonCodes(adjudication.reasonCodes, conflictIds, prefix + " 仲裁 reasonCode");
       for (const siteId of conflicts) {
         const grade = adjudicated[siteId]!;
+        if (grade === "unjudgeable" &&
+            adjudicationReasons[siteId] !== "unavailable" &&
+            adjudicationReasons[siteId] !== "insufficient_evidence") {
+          throw new Error(prefix + " 仲裁 unjudgeable 必须记录不可判断 reasonCode");
+        }
         if (typeof grade === "number") finalJudgments[siteId] = grade;
       }
     }

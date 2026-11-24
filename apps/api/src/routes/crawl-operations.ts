@@ -642,9 +642,10 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       const predictions: Array<{ id: string; actual: "approve" | "reject" | "review"; actualRisk: boolean }> = [];
       const actualModels = new Set<string>();
       let failed = 0;
+      let quotaBlockedBody: ReturnType<typeof replyQuotaBlocked> | null = null;
       for (const row of selected) {
         const quota = await reserveLlmQuota(ctx, null, { source: resolved.source, estimatedTokens: 1800 });
-        if (!quota.ok) return replyQuotaBlocked(reply, quota.error);
+        if (!quota.ok) { quotaBlockedBody = replyQuotaBlocked(reply, quota.error); break; }
         try {
           const decision = await moderateSiteWithAi(provider, {
             // 金标表不保存原始 URL；评测时使用固定脱敏占位 URL，不反查候选原始地址。
@@ -681,6 +682,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         ["crawl_moderation_gold_eval", evaluationId],
       );
       const usage = summarizeModerationEvaluationUsage(usageRows[0] ?? {});
+      if (quotaBlockedBody) return { ...quotaBlockedBody, id: evaluationId, usage };
       if (failed || predictions.length !== selected.length) {
         reply.code(502); return { ok: false, id: evaluationId, error: "自动评测未完整完成，未保存不完整指标", selected: selected.length, completed: predictions.length, failed, usage };
       }

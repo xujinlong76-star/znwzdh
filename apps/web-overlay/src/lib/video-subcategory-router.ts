@@ -4,6 +4,7 @@
  */
 
 import type { NavigationSubCategory } from '@/types/navigation'
+import { urlHostnameMatches } from '@/lib/safe-url'
 
 export interface SubcategoryMatchResult {
   targetSub: NavigationSubCategory
@@ -424,7 +425,8 @@ export function normalizeVideoCoverUrl(rawUrl?: string, platform?: string): stri
   }
 
   // Bilibili 封面高清处理：去除低清裁切后缀，统一使用高效标准尺寸
-  if (platform === 'bilibili' || url.includes('hdslb.com')) {
+  //（CodeQL #111：includes('hdslb.com') 会把 hdslb.com.evil.com 也判成 B 站源）
+  if (platform === 'bilibili' || urlHostnameMatches(url, ['hdslb.com'])) {
     // 移除旧格式的低清尺寸
     url = url.replace(/@\d+w_\d+h.*$/, '')
   }

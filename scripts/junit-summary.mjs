@@ -122,7 +122,10 @@ export function parseJunit(xml) {
 }
 
 function cell(value, limit = 200) {
+  // CodeQL #42：先转义反斜杠，再转义 `|`；否则值里原有的 `\` 会把后加的 `\|`
+  // 变成 `\\|`（或把 `\|` 还原成裸 `|`），破坏表格转义。
   let text = String(value ?? "")
+    .replace(/\\/g, "\\\\")
     .replace(/\s+/g, " ")
     .replace(/`/g, "'")
     .replace(/\|/g, "\\|")

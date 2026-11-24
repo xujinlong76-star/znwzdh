@@ -60,6 +60,11 @@ function stripToContract(html, path) {
   const h1 = (html.match(/<h1\b[\s\S]*?<\/h1>/) ?? [''])[0];
   let kept = head
     .replace(/<script(?![\s][^>]*application\/ld\+json)[\s\S]*?<\/script>/g, '')
+    // CodeQL #78：上一步只清带闭合标签的非 ld+json 脚本；孤立的开标签
+    //（无 `</script>`，如 `<script src=x>` 单条）与未闭合尾部会残留 `<script`，
+    // 这里补清（ld+json 开标签用同一否定前瞻排除，保留）。
+    .replace(/<script\b(?![^>]*application\/ld\+json)[^>]*>/gi, '')
+    .replace(/<script\b[^>]*$/gi, '')
     .replace(/<link rel="(stylesheet|preload|modulepreload|prefetch|dns-prompt|icon)"[^>]*>/g, '')
     .replace(/\n\s*\n/g, '\n');
   const extra = ldBlocks.filter((b) => !kept.includes(b)).join('');
@@ -82,7 +87,7 @@ export function shape(html) {
   const all = (re) => [...html.matchAll(re)].map((m) => m[0]);
   const ldTypes = all(/<script type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/g)
     .map((block) => {
-      const json = block.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, '');
+      const json = block.replace(/^<script[^>]*>/, '').replace(/<\/script\s*>$/, '');
       try {
         const parsed = JSON.parse(json);
         const list = Array.isArray(parsed) ? parsed : [parsed];

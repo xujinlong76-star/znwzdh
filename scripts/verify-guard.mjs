@@ -362,7 +362,10 @@ if (exitCode === 0) {
 }
 
 if (args.expectOutput) {
-  const hit = output.includes(args.expectOutput) || new RegExp(args.expectOutput).test(output);
+  // CodeQL #94：--expect-output 是字面诊断串（见文件头用法），不是正则；
+  // 原 `new RegExp(args.expectOutput)` 把调用方输入当正则编译，是正则注入，
+  // 且串里含正则元字符时会误判。字面 includes 已足够。
+  const hit = output.includes(args.expectOutput);
   if (!hit) {
     fail(
       `无法归因：测试确实失败了，但输出里找不到期望的诊断串。\n` +

@@ -61,6 +61,34 @@ export function safeHref(value?: string | null, fallback = '#'): string {
   return isSafeHttpUrl(v) ? v : fallback
 }
 
+/**
+ * 主机名精确匹配（CodeQL js/incomplete-url-substring-sanitization 的修复口径）。
+ * `url.includes('example.com')` 会把 `evil-example.com` / `example.com.evil.com` /
+ * `https://evil.com/?x=example.com` 都判成命中；这里只认 URL 解析出的 hostname
+ * 本身等于白名单域或是其子域。解析失败（相对路径、非法串）返回 false。
+ * 注意：协议相对地址 `//host/path` 用 https 基准解析，hostname 照常取出；
+ * 纯相对路径解析后 hostname 是基准域，不会命中。
+ */
+export function urlHostnameMatches(value: string, hosts: readonly string[]): boolean {
+  if (!value) return false
+  try {
+    const hostname = new URL(value, 'https://invalid.local').hostname.toLowerCase()
+    return hosts.some((h) => hostname === h || hostname.endsWith(`.${h}`))
+  } catch {
+    return false
+  }
+}
+
+/** 主机名精确相等（不含子域）：只认 `github.com` 本身，不认 `gist.github.com`。 */
+export function urlHostnameIs(value: string, host: string): boolean {
+  if (!value) return false
+  try {
+    return new URL(value, 'https://invalid.local').hostname.toLowerCase() === host
+  } catch {
+    return false
+  }
+}
+
 /** iframe/媒体 src 安全化：不安全返回 undefined（调用方应跳过渲染） */
 export function safeSrc(value?: string | null): string | undefined {
   if (!value) return undefined

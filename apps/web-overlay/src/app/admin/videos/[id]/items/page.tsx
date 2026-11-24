@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { safeHref } from '@/lib/safe-url'
+import { safeHref, urlHostnameMatches } from '@/lib/safe-url'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from "@/registry/new-york/ui/button"
 import { useToast } from "@/registry/new-york/hooks/use-toast"
@@ -38,7 +38,7 @@ function AdminVideoThumbnail({ item }: { item: FlatVideoItem }) {
 
     const rawIcon = item.icon || ''
     const normalizedUrl = rawIcon.startsWith('//') ? `https:${rawIcon}` : rawIcon
-    const isStrictAntiLeech = normalizedUrl.includes('hdslb.com') || normalizedUrl.includes('biliimg.com')
+    const isStrictAntiLeech = urlHostnameMatches(normalizedUrl, ['hdslb.com', 'biliimg.com'])
 
     const displaySrc = (useProxy || isStrictAntiLeech) && item.mediaProxyIconUrl
         ? item.mediaProxyIconUrl

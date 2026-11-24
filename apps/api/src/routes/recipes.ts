@@ -307,7 +307,7 @@ ${candidateContext}
    * 不再受限于 6 条预设，实时生成结构化优劣势、开源/收费协议与多维胜负裁决。
    */
   app.get("/api/comparisons", { config: { scope: "public", cache: { maxAge: 300, etag: true } } }, async (req) => {
-    const q = String((req.query as Record<string, string>)?.q ?? "").trim();
+    const q = String((req.query as Record<string, string>)?.q ?? "").trim().slice(0, 200);
     if (!q) {
       return { ok: false, matrix: null };
     }

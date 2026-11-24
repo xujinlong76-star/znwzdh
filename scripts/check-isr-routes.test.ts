@@ -499,6 +499,11 @@ describe("check-isr-routes.mjs --live 抽查", () => {
         }
         const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
         const canonical = opts.canonicalKeepsQuery ? `${origin}${url.pathname}${url.search}` : `${origin}${url.pathname}`;
+        // CodeQL #89/#90/#91：canonical 由请求路径拼出，直接插进 HTML 属性/JSON-LD
+        // 就是反射型 XSS（夹具只绑 127.0.0.1，实际风险为零，但写法本身是错的）。
+        // 属性位转义，JSON 位用 JSON.stringify；正常路径输出逐字不变。
+        const canonicalAttr = canonical.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const canonicalJson = JSON.stringify(canonical);
         // 缺 NAVHUB_SITE_URL 时 Next 用 http://localhost:3000 兜底解析 og:image；
         // 假站用随机端口，所以这个地址必然与当前 base 不同端口。
         const og = opts.bakeLocalAsset
@@ -511,7 +516,7 @@ describe("check-isr-routes.mjs --live 抽查", () => {
           res.end(
             `<html lang="zh-CN"><head><title>分页夹具</title>` +
               `<meta name="description" content="非索引分页的夹具页面。"/>` +
-              `<link rel="canonical" href="${canonical}"/>` +
+              `<link rel="canonical" href="${canonicalAttr}"/>` +
               `<meta name="robots" content="noindex"/></head><body><h1>分页</h1></body></html>`,
           );
           return;
@@ -520,19 +525,19 @@ describe("check-isr-routes.mjs --live 抽查", () => {
         // og 全套/一块 JSON-LD）：契约断言默认就开，夹具要是还发空壳，
         // 每一条既有用例都会红在无关处。`stripContract` 专门用来造残缺页。
         if (opts.stripContract) {
-          res.end(`<html><head><link rel="canonical" href="${canonical}"/>${og}</head><body>ok</body></html>`);
+          res.end(`<html><head><link rel="canonical" href="${canonicalAttr}"/>${og}</head><body>ok</body></html>`);
           return;
         }
         res.end(
           `<html lang="zh-CN"><head><title>门禁夹具页</title>` +
             `<meta name="description" content="用于门禁用例的夹具页面。"/>` +
-            `<link rel="canonical" href="${canonical}"/>` +
+            `<link rel="canonical" href="${canonicalAttr}"/>` +
             `<meta property="og:type" content="website"/>` +
             `<meta property="og:site_name" content="NavHub"/>` +
             `<meta property="og:locale" content="zh_CN"/>` +
-            `<meta property="og:url" content="${canonical}"/>` +
+            `<meta property="og:url" content="${canonicalAttr}"/>` +
             `${og}` +
-            `<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"门禁夹具页","url":"${canonical}"}</script>` +
+            `<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"门禁夹具页","url":${canonicalJson}}</script>` +
             `</head><body><h1>门禁夹具</h1>ok</body></html>`,
         );
       });
@@ -811,7 +816,7 @@ describe("契约层变异自证（真实渲染语料）", () => {
       key: "JSON-LD 整族丢失",
       kind: "jsonld",
       message: "结构化数据整族丢失",
-      apply: (h) => h.replace(/<script\b[^>]*application\/ld\+json[^>]*>[\s\S]*?<\/script>/g, ""),
+      apply: (h) => h.replace(/<script\b[^>]*application\/ld\+json[^>]*>[\s\S]*?<\/script>/g, "").replace(/<script\b[^>]*$/gi, ""),
     },
     {
       key: "误挂 noindex",

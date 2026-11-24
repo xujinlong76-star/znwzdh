@@ -13,6 +13,18 @@ import {
   XINGZHIGE_BILI_PARSE_ENDPOINT,
 } from '../src/lib/video-bilibili-hd-parser'
 
+
+/** mock fetch 按 hostname 分流（CodeQL #117-#123：includes('api.mir6.com') 会把
+ * api.mir6.com.evil.com 也当成米人；只认解析出的 hostname）。 */
+const mockHostIs = (u: string, ...hosts: string[]): boolean => {
+  try {
+    const h = new URL(u).hostname.toLowerCase()
+    return hosts.some((x) => h === x || h.endsWith(`.${x}`))
+  } catch {
+    return false
+  }
+}
+
 describe('video-bilibili-hd-parser (Xingzhige + 5 Backup Engines Auto-Failover)', () => {
   beforeEach(() => {
     clearBilibiliHdStreamCache()
@@ -141,10 +153,10 @@ describe('video-bilibili-hd-parser (Xingzhige + 5 Backup Engines Auto-Failover)'
   it('automatically falls back from Xingzhige to Mir6 when Xingzhige fails', async () => {
     const mockFetch: typeof fetch = async (input) => {
       const urlStr = String(input)
-      if (urlStr.includes('api.xingzhige.com')) {
+      if (mockHostIs(urlStr, 'api.xingzhige.com')) {
         return new Response(JSON.stringify({ code: -400, msg: '星之阁服务超时' }), { status: 504 })
       }
-      if (urlStr.includes('api.mir6.com')) {
+      if (mockHostIs(urlStr, 'api.mir6.com')) {
         return new Response(
           JSON.stringify({
             code: 200,
@@ -168,10 +180,10 @@ describe('video-bilibili-hd-parser (Xingzhige + 5 Backup Engines Auto-Failover)'
   it('automatically falls back to Official WBI when both Xingzhige and Mir6 fail', async () => {
     const mockFetch: typeof fetch = async (input) => {
       const urlStr = String(input)
-      if (urlStr.includes('api.xingzhige.com')) {
+      if (mockHostIs(urlStr, 'api.xingzhige.com')) {
         throw new Error('Connection refused')
       }
-      if (urlStr.includes('api.mir6.com')) {
+      if (mockHostIs(urlStr, 'api.mir6.com')) {
         return new Response(JSON.stringify({ code: 500, msg: '米人服务繁忙' }), { status: 500 })
       }
       if (urlStr.includes('x/web-interface/view')) {
@@ -208,7 +220,7 @@ describe('video-bilibili-hd-parser (Xingzhige + 5 Backup Engines Auto-Failover)'
   it('automatically falls back to Official HTML5 when Xingzhige, Mir6, and WBI fail', async () => {
     const mockFetch: typeof fetch = async (input) => {
       const urlStr = String(input)
-      if (urlStr.includes('api.xingzhige.com') || urlStr.includes('api.mir6.com')) {
+      if (mockHostIs(urlStr, 'api.xingzhige.com', 'api.mir6.com')) {
         throw new Error('Timeout')
       }
       if (urlStr.includes('x/web-interface/view')) {
@@ -248,7 +260,7 @@ describe('video-bilibili-hd-parser (Xingzhige + 5 Backup Engines Auto-Failover)'
     let calledEngine = ''
     const mockFetch: typeof fetch = async (input: RequestInfo | URL) => {
       const urlStr = String(input)
-      if (urlStr.includes('mir6.com')) {
+      if (mockHostIs(urlStr, 'mir6.com')) {
         calledEngine = 'mir6'
         return new Response(
           JSON.stringify({

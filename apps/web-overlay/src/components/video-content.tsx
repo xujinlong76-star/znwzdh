@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { VideoCard } from '@/components/video-card'
+import { urlHostnameMatches } from '@/lib/safe-url'
 import dynamic from 'next/dynamic'
 
 const VideoAutoHarvestDialog = dynamic(
@@ -380,10 +381,12 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
         const p = item.videoConfig?.type?.toLowerCase() || ''
         const url = ((item as any).url || item.href || '').toLowerCase()
         if (platformFilter === 'bilibili') {
-            return p === 'bilibili' || url.includes('bilibili.com') || url.includes('b23.tv')
+            // CodeQL #108/#109：includes('bilibili.com') 会把 bilibili.com.evil.com
+            // 也判成 B 站，只认解析出的 hostname。
+            return p === 'bilibili' || urlHostnameMatches(url, ['bilibili.com', 'b23.tv'])
         }
         if (platformFilter === 'youtube') {
-            return p === 'youtube' || url.includes('youtube.com') || url.includes('youtu.be')
+            return p === 'youtube' || urlHostnameMatches(url, ['youtube.com', 'youtu.be'])
         }
         return true
     }

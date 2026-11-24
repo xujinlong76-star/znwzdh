@@ -18,6 +18,16 @@ import {
 } from '../src/lib/video-seo'
 import type { NavigationSubItem } from '../src/types/navigation'
 
+/** mock fetch 按 hostname 分流（CodeQL #124：includes 会把 api.dailymotion.com.evil.com 也当成真域）。 */
+const isMockHost = (u: string, ...hosts: string[]): boolean => {
+  try {
+    const h = new URL(u).hostname.toLowerCase()
+    return hosts.some((x) => h === x || h.endsWith(`.${x}`))
+  } catch {
+    return false
+  }
+}
+
 describe('多平台视频采集与搜索引擎收录 (SEO) 深度套件', () => {
   describe('1. 国内外视频平台 URL 识别 (detectVideoPlatform)', () => {
     it('支持识别国内主流平台 (Bilibili)', () => {
@@ -161,7 +171,7 @@ describe('多平台视频采集与搜索引擎收录 (SEO) 深度套件', () => 
 
     it('harvestMultiPlatformVideosForKeyword 支持从 Dailymotion 采集并注入 SEO 元数据', async () => {
       const mockFetch = vi.fn().mockImplementation(async (url: string) => {
-        if (url.includes('api.dailymotion.com')) {
+        if (isMockHost(url, 'api.dailymotion.com')) {
           return {
             ok: true,
             json: async () => ({

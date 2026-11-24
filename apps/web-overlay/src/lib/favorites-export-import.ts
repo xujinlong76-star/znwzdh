@@ -380,7 +380,7 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
       // 检查文件夹名 <H3 ...>FolderName</H3>
       const folderMatch = line.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i)
       if (folderMatch) {
-        const fName = folderMatch[1].replace(/<[^>]+>/g, '').trim()
+        const fName = folderMatch[1].replace(/<[^>]+>/g, '').replace(/<\/?[a-zA-Z!][^>]*$/, '').trim()
         if (fName && fName !== 'Bookmarks' && fName !== '书签栏') {
           currentFolder = fName
           folders.add(fName)
@@ -393,7 +393,7 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
         const rawHref = m[2]
         const href = sanitizeBookmarkUrl(rawHref)
         const fp = fingerprintUrl(href)
-        const rawTitle = m[4].replace(/<[^>]+>/g, '').trim()
+        const rawTitle = m[4].replace(/<[^>]+>/g, '').replace(/<\/?[a-zA-Z!][^>]*$/, '').trim()
         const title = rawTitle || href
 
         // 提取 TAGS="..."

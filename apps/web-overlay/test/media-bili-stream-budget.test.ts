@@ -622,11 +622,20 @@ describe('B 站视频流代理：超时、Range 封顶、并发与限流', () =>
   })
 
   it('重定向逐跳校验：跳到内网地址即 403，绝不代为请求', async () => {
-    const { seen } = mockUpstream((url) =>
-      url.includes('bilivideo.com')
+    // CodeQL #115：只认 hostname 是 bilivideo.com 或其子域；includes('bilivideo.com')
+    // 会把 bilivideo.com.evil.com 也当成 B 站流。
+    const { seen } = mockUpstream((url) => {
+      let isBili = false
+      try {
+        const h = new URL(url).hostname.toLowerCase()
+        isBili = h === 'bilivideo.com' || h.endsWith('.bilivideo.com')
+      } catch {
+        isBili = false
+      }
+      return isBili
         ? new Response(null, { status: 302, headers: { location: 'http://127.0.0.1:8787/probe' } })
         : new Response('should never be fetched', { status: 200 })
-    )
+    })
     const mod = await loadStream()
     const res = await mod.GET(biliRequest(streamUrl, { 'x-forwarded-for': '3.3.3.3' }))
     expect(res.status).toBe(403)

@@ -223,7 +223,9 @@ export const COMPARISON_KNOWLEDGE_BASE: TechComparisonMatrix[] = [
  *   "react vs vue", "react 对比 vue", "cursor vs vscode", "pnpm pk bun"
  */
 export function parseTechComparisonQuery(query: string): TechComparisonMatrix | null {
-  const q = query.trim().toLowerCase();
+  // 截断 200 字符：对比查询是人 typed 的短句；vs 正则的 (.+?) 懒惰匹配在超长输入上
+  // 多项式回溯（CodeQL #21），200 字符内回溯量可忽略。
+  const q = query.trim().toLowerCase().slice(0, 200);
   if (q.length < 3) return null;
 
   // 提取两方名称

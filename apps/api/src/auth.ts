@@ -105,8 +105,15 @@ export function secureEqual(a: string, b: string): boolean {
 export function bearerOf(req: FastifyRequest): string | null {
   const header = req.headers.authorization;
   if (!header) return null;
-  const m = header.match(/^Bearer\s+(.+)$/i);
-  return m?.[1]?.trim() || null;
+  // 不用 /^Bearer\s+(.+)$/i：\s+ 与 (.+) 在含大量制表符的输入上多项式回溯
+  //（CodeQL #1）；Authorization 头是单行短串，前缀比对 + 截断等价语义。
+  if (header.length > 8192) return null;
+  if (header.slice(0, 6).toLowerCase() !== "bearer") return null;
+  const rest = header.slice(6);
+  if (rest.length === 0) return null;
+  const sep = rest[0]!;
+  if (sep !== " " && sep !== "\t") return null;
+  return rest.trim() || null;
 }
 
 declare module "fastify" {

@@ -126,9 +126,11 @@ export function assertAttachableLeaf(category: { id: string; title?: string; par
 
 /** ASCII slug 化（与存储层 slugify 分开：那边锁死了中文原样保留的行为） */
 function asciiSlug(input: string): string {
+  // 截断 200 字符：类目标题是短串；/[^a-z0-9]+/g 在超长输入上多项式回溯（CodeQL #28）。
   return (input ?? "")
     .normalize("NFKD")
     .toLowerCase()
+    .slice(0, 200)
     .replace(/['’`]/g, "")
     .replace(/&/g, " and ")
     .replace(/[^a-z0-9]+/g, "-")

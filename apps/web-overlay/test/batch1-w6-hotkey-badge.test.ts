@@ -45,7 +45,7 @@ const ROOT = overlayRoot()
 const paletteSrc = readFileSync(join(ROOT, 'src/components/search-palette.tsx'), 'utf8')
 
 /** renderToString 的 HTML 去标签后即 textContent。 */
-const textOf = (html: string) => html.replace(/<[^>]*>/g, '')
+const textOf = (html: string) => html.replace(/<[^>]*>/g, '').replace(/<\/?[a-zA-Z!][^>]*$/, '')
 
 describe('altDigitTargetIndex（D1：映射本身）', () => {
   it('Alt+1..9 → 0..8，Alt+0 → 9', () => {

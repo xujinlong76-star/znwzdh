@@ -148,7 +148,19 @@ export async function updateUserProfileInfo(
 /* ------------------------- 账号生命周期（注册/登录/找回） ------------------------- */
 
 /** 邮箱格式的宽松校验：只挡明显非法，不追求 RFC 完备（注册转化率优先） */
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/**
+ * 邮箱结构校验（CodeQL #29：不用 /^[^\s@]+@[^\s@]+\.[^\s@]+$/，该式在
+ * `!@!.` 型输入上多项式回溯）。按结构拆分校验，等价口径：单 @、本地与
+ * 域名非空、无空白、域名含点且点不在首尾。
+ */
+function isValidEmailAddress(email: string): boolean {
+  if (email.length > 254 || /\s/.test(email)) return false;
+  const at = email.indexOf("@");
+  if (at <= 0 || at !== email.lastIndexOf("@")) return false;
+  const domain = email.slice(at + 1);
+  if (!domain || domain.startsWith(".") || domain.endsWith(".") || !domain.includes(".")) return false;
+  return true;
+}
 
 /** 系统保留用户名（禁止普通注册或修改资料占用） */
 export const RESERVED_USERNAMES: ReadonlySet<string> = new Set([
@@ -221,7 +233,7 @@ export async function createUserWithPassword(
   const pwError = validatePassword(input.password);
   if (pwError) return { ok: false, reason: "invalid_password" };
   if (username.length < 1 || username.length > 40) return { ok: false, reason: "invalid_username" };
-  if (!EMAIL_RE.test(email)) return { ok: false, reason: "invalid_email" };
+  if (!isValidEmailAddress(email)) return { ok: false, reason: "invalid_email" };
 
   // 1. 保留用户名与保留邮箱阻断
   if (RESERVED_USERNAMES.has(username.toLowerCase())) {

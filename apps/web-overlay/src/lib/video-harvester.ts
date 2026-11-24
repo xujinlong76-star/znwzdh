@@ -339,9 +339,10 @@ export async function harvestVideosForTopic(
         const durationSec = parseDurationToSeconds(item.duration)
         if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
 
-        // 过滤标题 html 标签
-        const cleanTitle = (item.title || '').replace(/<[^>]+>/g, '').trim()
-        const cleanDesc = (item.description || '').replace(/<[^>]+>/g, '').trim()
+        // 过滤标题 html 标签（CodeQL #65/#66：/<[^>]+>/g 漏掉未闭合的尾部标签，
+        // 如末尾孤立的 `<script`，第二步补清）
+        const cleanTitle = (item.title || '').replace(/<[^>]+>/g, '').replace(/<\/?[a-zA-Z!][^>]*$/, '').trim()
+        const cleanDesc = (item.description || '').replace(/<[^>]+>/g, '').replace(/<\/?[a-zA-Z!][^>]*$/, '').trim()
 
         const stats: VideoStats = {
           views: item.play || 0,

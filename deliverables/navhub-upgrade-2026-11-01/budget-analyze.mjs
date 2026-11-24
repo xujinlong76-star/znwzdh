@@ -15,8 +15,10 @@ const html = await res.text();
 const bytes = Buffer.byteLength(html, "utf8");
 
 // 1. RSC flight：Next 把序列化 payload 塞进 self.__next_f.push([...]) 的 <script> 里
+// CodeQL #47：原式只认小写 `<script>` 与紧贴的 `</script>`，大写 <SCRIPT>、带属性的
+// <script src>、带空白的 `</script >` 都会漏计。
 let flightBytes = 0;
-const scriptRe = /<script>([\s\S]*?)<\/script>/g;
+const scriptRe = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
 let sm;
 while ((sm = scriptRe.exec(html))) {
   if (sm[1].includes("__next_f")) flightBytes += Buffer.byteLength(sm[1], "utf8");

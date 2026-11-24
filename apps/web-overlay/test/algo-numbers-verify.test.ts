@@ -191,8 +191,10 @@ describe('健康巡检面板：三份样本的熵与判定（逐字复制面板�
   /** 独立剥离：与引擎 stripHtmlToText 同款正则链（只校验，不复用引擎）。 */
   const strip = (html: string): string =>
     html
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
-      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
+      // CodeQL #135：闭合标签允许 `</script >` 这种带空白的写法（与引擎同款修复，
+      // 样本不含该写法时输出不变，见下 H=5.3375 / textLength=79 断言）。
+      .replace(/<script\b[^<]*(?:(?!<\/script\s*>)<[^<]*)*<\/script\s*>/gi, ' ')
+      .replace(/<style\b[^<]*(?:(?!<\/style\s*>)<[^<]*)*<\/style\s*>/gi, ' ')
       .replace(/<!--[\s\S]*?-->/g, ' ')
       .replace(/<[^>]+>/g, ' ')
       .replace(/&[a-z]+;/gi, ' ')

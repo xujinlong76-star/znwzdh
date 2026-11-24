@@ -360,7 +360,9 @@ export function resolvePluginDescription(
   description: string,
   summary?: PluginManifestSummary | null,
 ): string {
-  const text = String(description ?? '')
+  // 截断 10000 字符：清单描述是短文本；中文数字 + 单位的回溯在超长输入上
+  // 多项式增长（CodeQL #22），10000 字符内可忽略。
+  const text = String(description ?? "").slice(0, 10000);
   if (!text) return ''
 
   const CN_DIGIT: Record<string, number> = {

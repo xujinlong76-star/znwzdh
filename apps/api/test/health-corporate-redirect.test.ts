@@ -20,7 +20,16 @@ vi.mock("@navhub/ai", async (importOriginal) => {
     ...mod,
     guardedFetch: async (url: string) => {
       hoisted.calls++;
-      if (url.includes("jd.com")) {
+      // CodeQL #160：只认 hostname 是 jd.com 或其子域；includes("jd.com") 会把
+      // jd.com.evil.com 也当成京东。mock 行为不变（www.jd.com 仍命中）。
+      let isJd = false;
+      try {
+        const host = new URL(url).hostname.toLowerCase();
+        isJd = host === "jd.com" || host.endsWith(".jd.com");
+      } catch {
+        isJd = false;
+      }
+      if (isJd) {
         const shell =
           '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8" /><title>JoyGen</title></head><body><div id="root"></div></body></html>';
         return {

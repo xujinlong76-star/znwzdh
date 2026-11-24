@@ -11,6 +11,20 @@ import { scopeSatisfies } from "../auth.ts";
 import { identityAllowed, isSafeAvatarUrl, resolveCanonicalIdentity } from "./shared.ts";
 import { verifyIdentityHeaders } from "../identity-signature.ts";
 
+/**
+ * 邮箱结构校验（CodeQL #2：不用 /^[^\s@]+@[^\s@]+\.[^\s@]+$/，该式在
+ * `!@!.` 型输入上多项式回溯）。按结构拆分校验，等价口径：单 @、本地与
+ * 域名非空、无空白、域名含点且点不在首尾。
+ */
+function isValidEmailAddress(email: string): boolean {
+  if (email.length > 254 || /\s/.test(email)) return false;
+  const at = email.indexOf("@");
+  if (at <= 0 || at !== email.lastIndexOf("@")) return false;
+  const domain = email.slice(at + 1);
+  if (!domain || domain.startsWith(".") || domain.endsWith(".") || !domain.includes(".")) return false;
+  return true;
+}
+
 export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
@@ -50,7 +64,7 @@ export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     if (!username) username = strict.data.providerId; // 缺省回退到 providerId，保证非空
     username = username.slice(0, 64); // 超长截断而非拒绝
     let email = typeof raw.email === "string" && raw.email.trim() !== "" ? raw.email.trim() : null;
-    if (email !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) email = null; // 非法邮箱不入库
+    if (email !== null && !isValidEmailAddress(email)) email = null; // 非法邮箱不入库
     const targetId = strict.data.provider + ":" + strict.data.providerId;
     const canonicalTarget = await resolveCanonicalIdentity(ctx, targetId);
 

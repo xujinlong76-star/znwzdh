@@ -34,7 +34,9 @@ test("manifest：host_permissions 指向真实生产域，不含示例域", () =
   assert.ok(manifest.host_permissions.includes("https://www.shanyanghu.com/*"));
   assert.ok(manifest.host_permissions.includes("http://127.0.0.1/*"));
   assert.ok(manifest.host_permissions.includes("http://localhost/*"));
-  assert.equal(JSON.stringify(manifest).includes("example.com"), false);
+  // CodeQL #141：否定断言（清单里不得出现示例域），用转义点的正则写，与
+  // includes("example.com") 同义但点不再通配。
+  assert.equal(/example\.com/.test(JSON.stringify(manifest)), false);
   assert.equal(manifest.version, "1.2.0");
 });
 
@@ -161,7 +163,8 @@ test("background.js / popup.js：白名单含生产域，不含示例域", () =>
   for (const name of ["background.js", "popup.js"]) {
     const src = read(name);
     assert.ok(src.includes('"www.shanyanghu.com"'), `${name} 白名单缺生产域`);
-    assert.equal(src.includes("navhub.example.com"), false, `${name} 仍含示例域`);
+    // CodeQL #142：否定断言（源码里不得残留示例域），用转义点的正则写。
+    assert.equal(/navhub\.example\.com/.test(src), false, `${name} 仍含示例域`);
   }
 });
 

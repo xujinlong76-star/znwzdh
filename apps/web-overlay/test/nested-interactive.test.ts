@@ -101,6 +101,20 @@ interface Violation {
   index: number;
 }
 
+/** 是否只含空白与 JSX 注释（逐段扫描，原正则的等价实现） */
+function isOnlyWhitespaceAndJsxComments(s: string): boolean {
+  let rest = s;
+  for (;;) {
+    const ws = /^\s*/.exec(rest);
+    rest = rest.slice(ws![0].length);
+    if (!rest) return true;
+    if (!rest.startsWith("{/*")) return false;
+    const end = rest.indexOf("*/}");
+    if (end === -1) return false;
+    rest = rest.slice(end + 3);
+  }
+}
+
 /** 找出「直接子节点是可交互元素」的嵌套（JSX 注释不算内容） */
 function findNestedInteractive(src: string): Violation[] {
   const out: Violation[] = [];
@@ -109,8 +123,9 @@ function findNestedInteractive(src: string): Violation[] {
     const t = tags[k];
     const next = tags[k + 1];
     const between = src.slice(t.end, next.start);
-    // 只允许空白与 JSX 注释
-    if (!/^\s*(?:\{\/\*[\s\S]*?\*\/\}\s*)*$/.test(between)) continue;
+    // 只允许空白与 JSX 注释（CodeQL #30：原 /^\s*(?:\{\/\*[\s\S]*?\*\/\}\s*)*$/ 在
+    // '{{/*' 重复串上多项式回溯；改写成逐段扫描，等价语义）。
+    if (!isOnlyWhitespaceAndJsxComments(between)) continue;
     const linkParent = t.name === "Link" || t.name === "a";
     const buttonParent = t.name === "Button" && !/\basChild\b/.test(t.attrs);
     const childButton = next.name === "Button";

@@ -567,9 +567,22 @@ export function stripCodeFence(s: string): string {
   if (t.startsWith(fence) && t.endsWith(fence)) {
     return t.slice(fence.length, t.length - fence.length).replace(/^(json)?\s*/i, "").trim();
   }
-  const match = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  if (match?.[1]) {
-    return match[1].trim();
+  // 不用 /```(?:json)?\s*([\s\S]*?)\s*```/i：懒惰匹配在无闭合围栏的长输入上
+  // 多项式回溯（CodeQL #7）。indexOf 定位首尾围栏，等价语义：取第一个 ``` 之后
+  //（跳过可选 json 标记与空白）到下一个 ``` 之前的内容并 trim。
+  const firstFence = s.indexOf(fence);
+  if (firstFence !== -1) {
+    let contentStart = firstFence + fence.length;
+    // 正则原语义是贪心的 (?:json)?：只要后面存在闭合围栏，json 标记总被吃掉
+    //（即使后接非空白，如 ```json{"a":1}）；无闭合围栏时整条不匹配，走大括号兜底。
+    if (s.slice(contentStart, contentStart + 4).toLowerCase() === "json") {
+      contentStart += 4;
+    }
+    while (contentStart < s.length && /\s/.test(s[contentStart]!)) contentStart++;
+    const secondFence = s.indexOf(fence, contentStart);
+    if (secondFence !== -1) {
+      return s.slice(contentStart, secondFence).trim();
+    }
   }
   const firstBrace = s.indexOf("{");
   const lastBrace = s.lastIndexOf("}");

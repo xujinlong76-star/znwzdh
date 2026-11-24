@@ -151,8 +151,15 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
   /** 提取 Bearer 明文（仅用于计算会话绑定指纹，不落日志、不回响应） */
   function bearerOf(req: IncomingMessage): string | null {
     const header = req.headers.authorization ?? "";
-    const match = header.match(/^Bearer\s+(.+)$/i);
-    return match?.[1]?.trim() || null;
+    // 不用 /^Bearer\s+(.+)$/i：\s+ 与 (.+) 在含大量制表符的输入上多项式回溯
+    //（CodeQL #4/#5）；Authorization 头是单行短串，前缀比对 + 截断等价语义。
+    if (header.length > 8192) return null;
+    if (header.slice(0, 6).toLowerCase() !== "bearer") return null;
+    const rest = header.slice(6);
+    if (rest.length === 0) return null;
+    const sep = rest[0]!;
+    if (sep !== " " && sep !== "\t") return null;
+    return rest.trim() || null;
   }
 
   async function auth(req: IncomingMessage): Promise<ToolContext | null> {
@@ -167,8 +174,7 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
     }
 
     const header = req.headers.authorization ?? "";
-    const match = header.match(/^Bearer\s+(.+)$/i);
-    const bearer = match?.[1]?.trim();
+    const bearer = bearerOf(req);
     if (!bearer) return null;
 
     // 1) 静态引导 token（内存比对，视同 admin）——与 REST 的 NAVHUB_BOOTSTRAP_TOKEN 同性质

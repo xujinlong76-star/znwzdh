@@ -237,7 +237,9 @@ export function updateLedger(ledger, failures, { now = new Date(), ttlDays = 14,
 }
 
 function cell(value, limit = 120) {
+  // CodeQL #43：先转义反斜杠，再转义 `|`（与 junit-summary.mjs 的 cell 同款修复）。
   let text = String(value ?? "")
+    .replace(/\\/g, "\\\\")
     .replace(/\s+/g, " ")
     .replace(/`/g, "'")
     .replace(/\|/g, "\\|")

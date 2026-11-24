@@ -37,12 +37,12 @@ function parseArgs(args) {
 function cleanHtmlText(raw) {
   if (!raw) return "";
   return raw
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
+    // CodeQL #50：闭合标签允许 `</script >` 这种带空白的写法（与 health-sentinel 同款修复）。
+    .replace(/<script\b[^<]*(?:(?!<\/script\s*>)<[^<]*)*<\/script\s*>/gi, " ")
+    .replace(/<style\b[^<]*(?:(?!<\/style\s*>)<[^<]*)*<\/style\s*>/gi, " ")
     .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
+    // CodeQL #68：实体单遍解，`&amp;quot;` 停在 `&quot;`，不二次解成 `"`。
+    .replace(/&(amp|nbsp|quot);/g, (_, e) => (e === "amp" ? "&" : e === "nbsp" ? " " : '"'))
     .replace(/\s+/g, " ")
     .trim();
 }

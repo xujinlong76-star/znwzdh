@@ -190,13 +190,18 @@ export const THINKING_TIMEOUT_FLOOR_MS = 60_000;
  *
  * 抽成纯函数是为了让它能被单独断言，也为了让配置视图能回显同一个数字，而不是两处各写一遍规则。
  */
+/** 单次请求超时硬上限（CodeQL #151：provider.timeoutMs 来自管理端配置，无上限时
+ * setTimeout 周期无界；600 秒远高于思考态实测上限，正常配置不受影响）。 */
+export const MAX_REQUEST_TIMEOUT_MS = 600_000;
+
 export function resolveRequestTimeout(
   provider: Pick<LlmProvider, "timeoutMs" | "timeoutMsExplicit">,
   thinkingSent: boolean,
 ): number {
   const baseTimeout = provider.timeoutMs && provider.timeoutMs > 0 ? provider.timeoutMs : DEFAULT_TIMEOUT_MS;
-  if (!thinkingSent) return baseTimeout;
-  return provider.timeoutMsExplicit === true ? baseTimeout : Math.max(baseTimeout, THINKING_TIMEOUT_FLOOR_MS);
+  const capped = Math.min(baseTimeout, MAX_REQUEST_TIMEOUT_MS);
+  if (!thinkingSent) return capped;
+  return provider.timeoutMsExplicit === true ? capped : Math.min(Math.max(capped, THINKING_TIMEOUT_FLOOR_MS), MAX_REQUEST_TIMEOUT_MS);
 }
 
 /**
@@ -227,7 +232,12 @@ const UPSTREAM_CANCEL_NOTICES = new Set([
 
 /** 判断一段模型输出是否只是上游的「取消」提示（整段相等才算） */
 export function isUpstreamCancelNotice(content: string): boolean {
-  const normalized = content.trim().replace(/[。.!！?？\s]+$/g, "").toLowerCase();
+  // 不用 .replace(/[。.!！?？\s]+$/g, "")：该式在长空白串上多项式回溯（CodeQL #8）。
+  // 先截断（判定只认 ≤32 字符，尾部标点再长也不影响结论），再逐字去尾部标点与空白。
+  const trimmed = content.trim().slice(0, 64);
+  let end = trimmed.length;
+  while (end > 0 && /[。.!！?？\s]/.test(trimmed[end - 1]!)) end--;
+  const normalized = trimmed.slice(0, end).toLowerCase();
   if (!normalized || normalized.length > 32) return false;
   return UPSTREAM_CANCEL_NOTICES.has(normalized);
 }

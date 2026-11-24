@@ -41,15 +41,19 @@ function decodeCodePoint(cp: number): string {
 }
 
 function decodeEntities(s: string): string {
-  return s
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#(\d+);/g, (_, d: string) => decodeCodePoint(Number(d)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => decodeCodePoint(parseInt(h, 16)));
+  // 单遍解码（CodeQL #54）：逐条 replace 会把 `&amp;lt;` 先解成 `&lt;` 再解成 `<`，
+  // 即二次解码；单遍只解一层，`&amp;lt;` 停在 `&lt;`。
+  return s.replace(/&(#\d+|#x[0-9a-f]+|amp|lt|gt|quot|#39|nbsp);/gi, (m: string, e: string) => {
+    const lower = e.toLowerCase();
+    if (lower.startsWith("#x")) return decodeCodePoint(parseInt(lower.slice(2), 16));
+    if (lower.startsWith("#")) return decodeCodePoint(Number(lower.slice(1)));
+    if (lower === "amp") return "&";
+    if (lower === "lt") return "<";
+    if (lower === "gt") return ">";
+    if (lower === "quot") return '"';
+    if (lower === "nbsp") return " ";
+    return m;
+  });
 }
 
 function clean(s: string | null | undefined): string | null {

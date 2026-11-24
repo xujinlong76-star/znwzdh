@@ -6,6 +6,7 @@
  */
 
 import type { VideoHarvestReport } from './video-harvester'
+import { urlHostnameMatches } from './safe-url'
 
 export interface WebhookConfig {
   url?: string
@@ -79,7 +80,9 @@ export async function sendHarvestWebhookNotification(
     const markdownContent = formatHarvestMarkdownReport(report)
     let payload: Record<string, unknown>
 
-    if (webhookUrl.includes('feishu.cn') || webhookUrl.includes('larksuite.com')) {
+    // 按解析出的 hostname 判定平台（CodeQL #112/#113/#114：includes('dingtalk.com')
+    // 会把 evil-dingtalk.com / evil.com/?x=dingtalk.com 也判成钉钉，发错 payload 格式）。
+    if (urlHostnameMatches(webhookUrl, ['feishu.cn', 'larksuite.com'])) {
       // 飞书富文本/卡片消息
       payload = {
         msg_type: 'interactive',
@@ -99,7 +102,7 @@ export async function sendHarvestWebhookNotification(
           ]
         }
       }
-    } else if (webhookUrl.includes('dingtalk.com')) {
+    } else if (urlHostnameMatches(webhookUrl, ['dingtalk.com'])) {
       // 钉钉 Markdown 消息
       payload = {
         msgtype: 'markdown',
@@ -108,7 +111,7 @@ export async function sendHarvestWebhookNotification(
           text: markdownContent
         }
       }
-    } else if (webhookUrl.includes('slack.com')) {
+    } else if (urlHostnameMatches(webhookUrl, ['slack.com'])) {
       // Slack 消息
       payload = {
         text: `*🎬 视频知识库自动轮换报告*\n\n${markdownContent}`

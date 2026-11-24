@@ -227,7 +227,9 @@ describe('U-389 门禁：本地图标引用必须在 served 树存在，live map
     ]
     expect(keys).toHaveLength(41)
     for (const k of keys) {
-      const m = core.match(new RegExp(`'${k.replace('.', '\\.')}': '([^']+)'`))
+      // CodeQL #155-#159：原 replace('.', …) 只转义第一个点，'chat.openai.com'
+      // 会变成 /chat\.openai.com/（第二个点未转义，可多匹配主机）；全部转义。
+      const m = core.match(new RegExp(`'${k.replace(/\./g, '\\.')}': '([^']+)'`))
       expect(m, k).not.toBeNull()
       expect(m![1]!.startsWith('/brand-icons/'), k).toBe(true)
     }

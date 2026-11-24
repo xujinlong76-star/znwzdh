@@ -50,14 +50,32 @@ const HTTP_STATUS_DICT: Record<number, HttpStatusDef> = {
 
 export function tryParseHttpStatus(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
+  // 截断 32 字符：状态码输入是短串；前缀词 + \s*:?\s* + 3 位数字的正则在
+  // 超长空白/制表串上多项式回溯（CodeQL #26）。下面是等价的字符串判定。
+  if (trimmed.length > 32) return null;
   let codeNum: number | null = null;
 
-  const explicitMatch = trimmed.match(/^(?:http|status|code|httpstatus|httpcode|状态码)\s*:?\s*(\d{3})$/i)
-    || trimmed.match(/^(\d{3})\s*(?:status|http|状态码)$/i);
-
-  if (explicitMatch) {
-    codeNum = parseInt(explicitMatch[1]!, 10);
-  } else if (/^\d{3}$/.test(trimmed)) {
+  const lower = trimmed.toLowerCase();
+  const headWords = ["http", "status", "code", "httpstatus", "httpcode", "状态码"];
+  for (const w of headWords) {
+    if (!lower.startsWith(w)) continue;
+    let rest = lower.slice(w.length).trimStart();
+    if (rest.startsWith(":")) rest = rest.slice(1).trimStart();
+    if (/^\d{3}$/.test(rest)) {
+      codeNum = parseInt(rest, 10);
+      break;
+    }
+  }
+  if (codeNum === null) {
+    const head = lower.slice(0, 3);
+    if (/^\d{3}$/.test(head)) {
+      const tail = lower.slice(3).trim();
+      if (tail === "status" || tail === "http" || tail === "状态码") {
+        codeNum = parseInt(head, 10);
+      }
+    }
+  }
+  if (codeNum === null && /^\d{3}$/.test(trimmed)) {
     const candidate = parseInt(trimmed, 10);
     if (candidate in HTTP_STATUS_DICT) {
       codeNum = candidate;

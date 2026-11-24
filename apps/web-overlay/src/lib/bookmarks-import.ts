@@ -27,7 +27,15 @@ export function bookmarkId(href: string): string {
 }
 
 function stripTags(text: string): string {
-  return text.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim()
+  // 去标签 + 单遍解实体（CodeQL #62 去标签不彻底、#52 二次解码）：
+  // `/<[^>]+>/g` 漏掉未闭合的尾部标签（如末尾孤立的 `<script`），第二步补清；
+  // 实体单遍解，`&amp;lt;` 停在 `&lt;`，不二次解成 `<`。
+  return text
+    .replace(/<[^>]+>/g, '')
+    .replace(/<\/?[a-zA-Z!][^>]*$/, '')
+    .replace(/&(amp|lt|gt|quot|#39);/g, (_, e: string) =>
+      e === 'amp' ? '&' : e === 'lt' ? '<' : e === 'gt' ? '>' : e === 'quot' ? '"' : "'")
+    .trim()
 }
 
 /** 单次上限与 parseUniversalBookmarks 对齐（总协调人决策 1：5000） */

@@ -523,7 +523,9 @@ try {
   check('诚实性：自动应用失败时显示「未应用：无实测通过的平替」', /未应用：无实测通过的平替/.test(healText))
   check(
     '诚实性：被拒绝的包外 URL 有提示',
-    /不属于本包，已跳过诊断/.test(healText) && healText.includes('not-in-pack.example.com'),
+    // CodeQL #125：否定断言用的域名串仍用转义点的正则写（与 includes 等价的文字判定，
+    // 点不再通配）；断言本身是“页面文案含该域名”，不是 URL 白名单校验。
+    /不属于本包，已跳过诊断/.test(healText) && /not-in-pack\.example\.com/.test(healText),
   )
 
   /* --- 5. 控制台与网络 ------------------------------------------------- */

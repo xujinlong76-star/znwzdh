@@ -247,6 +247,10 @@ export function generateAISanitizedMetadata(
   durationSec: number = 1800,
   conceptTags: string[] = ['架构']
 ): AISanitizedCourse {
+  // 截断 1000 字符：标题/描述是短文本；【】/[] 去噪正则在超长输入上多项式回溯
+  //（CodeQL #6），1000 字符内可忽略；超长标题截断后仍走同一清洗流程。
+  rawTitle = rawTitle.slice(0, 1000)
+  rawDesc = rawDesc.slice(0, 1000)
   // 1. Sanitize title: strip brackets and sensational marketing words
   let cleanTitle = rawTitle
     .replace(/【[^】]*】/g, '')

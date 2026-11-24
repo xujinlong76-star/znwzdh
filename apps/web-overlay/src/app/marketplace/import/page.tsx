@@ -21,6 +21,7 @@ import { importPlugin, installPlugin } from '@/lib/navhub-api'
 import { formatImportError } from '@/lib/plugin-import-errors'
 import { setActiveTheme } from '@/lib/plugins/theme-runtime'
 import { stageWorkspacePreset } from '@/lib/plugins/preset-staging'
+import { urlHostnameIs } from '@/lib/safe-url'
 import { ArrowLeft, FileUp, Loader2, Upload, Globe } from 'lucide-react'
 
 export default function MarketplaceImportPage() {
@@ -41,7 +42,10 @@ export default function MarketplaceImportPage() {
   const handleFetchRemoteUrl = async () => {
     let url = remoteUrl.trim()
     if (!url) return
-    if (url.includes('github.com/') && url.includes('/blob/')) {
+    // CodeQL #104：只认 hostname 恰好是 github.com 的 URL 才改写到
+    // raw.githubusercontent.com；includes('github.com/') 会把 github.com.evil.com、
+    // evil.com/github.com/ 也改写过去，fetch 的就不是 GitHub。
+    if (urlHostnameIs(url, 'github.com') && url.includes('/blob/')) {
       url = url.replace('github.com/', 'raw.githubusercontent.com/').replace('/blob/', '/')
     }
     setFetchingUrl(true)

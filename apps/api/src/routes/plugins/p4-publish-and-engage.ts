@@ -56,7 +56,16 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
       let manifestInput = body.manifest ?? body;
       if (typeof body.url === "string" && body.url.trim()) {
         let fetchUrl = body.url.trim();
-        if (fetchUrl.includes("github.com/") && fetchUrl.includes("/blob/")) {
+        // CodeQL #95：只认 hostname 恰好是 github.com 的 URL 才改写到
+        // raw.githubusercontent.com；includes('github.com/') 会把
+        // github.com.evil.com / evil.com/github.com/ 也改写过去。
+        let isGithub = false;
+        try {
+          isGithub = new URL(fetchUrl).hostname.toLowerCase() === "github.com";
+        } catch {
+          isGithub = false;
+        }
+        if (isGithub && fetchUrl.includes("/blob/")) {
           fetchUrl = fetchUrl.replace("github.com/", "raw.githubusercontent.com/").replace("/blob/", "/");
         }
         const res = await guardedFetch(fetchUrl, { timeoutMs: 8000 });

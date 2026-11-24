@@ -564,7 +564,7 @@ export function summarizeJob(job, { logText = "", annotations = [] } = {}) {
 
 /** 归因表的渲染（markdown 表格；单元格内换行会被压成空格） */
 export function renderAttributionTable(rows) {
-  const cell = (value) => String(value ?? "").replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
+  const cell = (value) => String(value ?? "").replace(/\\/g, "\\\\").replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
   const lines = ["| job | 失败步骤 | 归因层 | 归因头 | 信号 |", "| --- | --- | --- | --- | --- |"];
   for (const row of rows) {
     // 警告级归因头必须在表里就写明「非判红原因」：只把它藏在 JSON 字段里，

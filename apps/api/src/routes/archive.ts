@@ -227,13 +227,17 @@ function escapeHtml(str: string): string {
 }
 
 function unescapeBasicEntities(str: string): string {
-  return str
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#0*39;/gi, "'");
+  // 单遍解码（CodeQL #51）：逐条 replace 会把 `&amp;lt;` 先解成 `&lt;` 再解成 `<`，
+  // 即二次解码；单遍只解一层，`&amp;lt;` 停在 `&lt;`。
+  return str.replace(/&(#0*39|amp|lt|gt|quot|nbsp);/gi, (_, e: string) => {
+    const lower = e.toLowerCase();
+    if (lower === "amp") return "&";
+    if (lower === "lt") return "<";
+    if (lower === "gt") return ">";
+    if (lower === "quot") return '"';
+    if (lower === "nbsp") return " ";
+    return "'"; // #39 / #039 等
+  });
 }
 
 /**
@@ -317,5 +321,12 @@ export function sanitizeSnapshotHtml(raw: string): string {
         return full;
       }
     )
+    // 7. 兜底清除未闭合的残留结构（CodeQL #164/#165/#166）：
+    //    上面各步都要求标签/注释完整闭合才移除；孤立的 `<script`（无 `>`，
+    //    如 `<script src=x` 末尾截断）与未闭合 `<!--`（无 `-->`，按 HTML
+    //    语义会吞掉其后全部内容）会残留，拼进 HTML 后仍可能与后续内容组合成标签。
+    //    第二个 replace 与第 3 步同表但无 `\b` 且允许行尾终结，专清这两类残留。
+    .replace(/<\/?\s*(script|style|iframe|frame|frameset|object|embed|applet|form|svg|math|template|noscript|textarea|audio|video|source|track|base|meta|link|input|button|select|option)[^>]*(?:>|$)/gi, "")
+    .replace(/<!--[\s\S]*$/, "")
     .trim();
 }

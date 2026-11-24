@@ -58,6 +58,9 @@ vi.mock('@/lib/vault', () => ({
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
+/** 把任意字符串转成正则字面量（CodeQL #41：STORAGE_KEY 只转义了点，反斜杠等未转义） */
+const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /** overlay 真相文件（镜像 apps/web/** 由门禁保持同步，这里优先读 overlay） */
 function overlayFile(rel: string): string {
   const candidates = [resolve(HERE, '..', rel), resolve(HERE, '..', '..', 'web-overlay', rel)]
@@ -773,7 +776,7 @@ describe('导入走分享确认管线：只合携带字段，其余保持本地�
     if (!prepared.ok) return
     const applied = applyPreparedHomeDiyImport(prepared, cap.persist, fake.storage)
     expect(applied.backupKey).not.toBeNull()
-    expect(applied.backupKey as string).toMatch(new RegExp(`^${STORAGE_KEY.replace(/\./g, '\\.')}\\.share-backup\\.\\d+$`))
+    expect(applied.backupKey as string).toMatch(new RegExp(`^${escapeRegExp(STORAGE_KEY)}\\.share-backup\\.\\d+$`))
     const backupRaw = fake.store.get(applied.backupKey as string)
     expect(backupRaw).toBeDefined()
     // 备份键能还原：读回来的就是导入前那份本地配置

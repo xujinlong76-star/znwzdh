@@ -23,7 +23,7 @@ import { Badge } from "@/registry/new-york/ui/badge"
 import { describeDegrade } from '@/lib/degrade'
 import { formatDuration } from '@/lib/video-format'
 import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-platform-registry'
-import { safeHref } from '@/lib/safe-url'
+import { safeHref, urlHostnameMatches } from '@/lib/safe-url'
 import {
     ArrowLeft,
     FolderOpen,
@@ -43,7 +43,7 @@ function CategoryVideoThumbnail({ item }: { item: NavigationSubItem }) {
 
     const rawIcon = item.icon || ''
     const normalizedUrl = rawIcon.startsWith('//') ? `https:${rawIcon}` : rawIcon
-    const isStrictAntiLeech = normalizedUrl.includes('hdslb.com') || normalizedUrl.includes('biliimg.com')
+    const isStrictAntiLeech = urlHostnameMatches(normalizedUrl, ['hdslb.com', 'biliimg.com'])
 
     const displaySrc = (useProxy || isStrictAntiLeech) && item.mediaProxyIconUrl
         ? item.mediaProxyIconUrl

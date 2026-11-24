@@ -53,12 +53,10 @@ const sitemapUrl = valueOf("sitemap") ?? `${base}/sitemap.xml`;
 const endpoint = process.env.INDEXNOW_ENDPOINT ?? DEFAULT_ENDPOINT;
 
 function decodeXml(text) {
-  return text
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'");
+  // 单遍解码（CodeQL #69）：逐条 replace 会把 `&amp;lt;` 先解成 `&lt;` 再解成 `<`，
+  // 即二次解码；单遍只解一层。
+  return text.replace(/&(amp|lt|gt|quot|apos);/g, (_, e) =>
+    e === "amp" ? "&" : e === "lt" ? "<" : e === "gt" ? ">" : e === "quot" ? '"' : "'");
 }
 
 /**

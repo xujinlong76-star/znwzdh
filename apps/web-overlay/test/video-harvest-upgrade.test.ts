@@ -72,6 +72,16 @@ afterAll(() => {
 // ---------------------------------------------------------------------------
 // A. B 站域名断言
 // ---------------------------------------------------------------------------
+/** mock fetch 按 hostname 分流（CodeQL #124：includes 会把 api.dailymotion.com.evil.com 也当成真域）。 */
+const isMockHost = (u: string, ...hosts: string[]): boolean => {
+  try {
+    const h = new URL(u).hostname.toLowerCase()
+    return hosts.some((x) => h === x || h.endsWith(`.${x}`))
+  } catch {
+    return false
+  }
+}
+
 describe('A：normalizeBilibiliTarget 只放行 B 站域（P0-4 任意 URL 中继）', () => {
   it('B 站域（含 www / b23.tv 短链）照常放行', () => {
     expect(normalizeBilibiliTarget({ url: 'https://www.bilibili.com/video/BV1MmUSB5Efw' }).bvid).toBe('BV1MmUSB5Efw')
@@ -327,7 +337,7 @@ describe('D：解析引擎官方优先，第三方可关停', () => {
     )
     const fetchImpl = (async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.includes('api.xingzhige.com')) {
+      if (isMockHost(url, 'api.xingzhige.com')) {
         return new Response(
           JSON.stringify({
             code: 0,

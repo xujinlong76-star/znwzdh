@@ -48,6 +48,23 @@ function safeBase64Decode(candidate: string): { decoded: string; reEncoded: stri
   }
 }
 
+/** 线性判定：是否全由可打印字符（ASCII 可见、\r\n\t、CJK）组成，至少 1 字符 */
+function isPrintableText(s: string): boolean {
+  if (s.length === 0) return false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (!((c >= 0x20 && c <= 0x7e) || c === 0x0d || c === 0x0a || c === 0x09 || (c >= 0x4e00 && c <= 0x9fa5))) return false;
+  }
+  return true;
+}
+
+/** 去掉尾部 '='（Base64 补位），线性实现 */
+function stripTrailingEquals(s: string): string {
+  let end = s.length;
+  while (end > 0 && s[end - 1] === "=") end--;
+  return s.slice(0, end);
+}
+
 /**
  * 尝试安全解析与解码 Base64 字符串
  */
@@ -91,8 +108,10 @@ export function tryParseBase64(input: string): SpeculativeIntentResult | null {
     const { decoded, reEncoded } = res;
 
     // 检查解码后是否包含有效可打印字符且重编码一致性或显式指令
-    const isPrintable = /^[\x20-\x7E\r\n\t\u4e00-\u9fa5]+$/.test(decoded);
-    const isNormalizedBase64 = candidate.replace(/=+$/, '') === reEncoded.replace(/=+$/, '');
+    // 不用 /^[\x20-\x7E\r\n\t\u4e00-\u9fa5]+$/ 与 /=+$/：CodeQL #24/#25 多项式回溯；
+    // 逐字判定与去尾 '=' 是线性实现，等价语义（BMP 内逐码点判定与无 /u 正则一致）。
+    const isPrintable = isPrintableText(decoded);
+    const isNormalizedBase64 = stripTrailingEquals(candidate) === stripTrailingEquals(reEncoded);
 
     // 显式 b64: 前缀仍要求可打印+一致性，防止 b64:!!! 解出垃圾仍返回
     if (((explicitDecode && isPrintable) || (isPrintable && isNormalizedBase64)) && decoded.length > 0) {

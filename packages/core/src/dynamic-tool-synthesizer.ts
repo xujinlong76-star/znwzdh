@@ -20,6 +20,11 @@ export interface SynthesizedToolDefinition {
 
 export type SynthesizedToolHandler = (params: Record<string, unknown>) => Promise<unknown> | unknown;
 
+/** 把任意字符串转成正则字面量（CodeQL #150 配套） */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export interface GuardOptions {
   timeoutMs?: number;
   maxResponseBytes?: number;
@@ -383,7 +388,9 @@ export function synthesizeRestTool(
       if (val === undefined) continue;
 
       if (p.in === 'path') {
-        url = url.replace(new RegExp(`\\{${p.name}\\}`, 'g'), encodeURIComponent(String(val)));
+        // CodeQL #150：p.name 来自工具规格（插件作者可控），直接拼进 RegExp 就是
+        // 正则注入；先转义再构造，占位符仍只匹配字面 `{name}`。
+        url = url.replace(new RegExp(`\\{${escapeRegExp(p.name)}\\}`, 'g'), encodeURIComponent(String(val)));
       } else if (p.in === 'query') {
         queryParams.set(p.name, String(val));
       } else if (p.in === 'header') {

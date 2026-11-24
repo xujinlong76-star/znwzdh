@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { safeWindowOpen } from '@/lib/safe-url'
+import { safeWindowOpen, urlHostnameMatches } from '@/lib/safe-url'
 import { PlayCircle, Clock, Check, Download, Play, Eye, User } from 'lucide-react'
 import type { NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
@@ -87,7 +87,9 @@ export const VideoCard = React.memo(function VideoCard({ item, priority = false 
     // （签名不能在这里现算：node:crypto 会把 buffer/crypto 垫片打进客户端包）
     // 特别说明：对于 Bilibili（hdslb.com / biliimg.com）等存在已知严格防盗链及网络重置（net::ERR_CONNECTION_CLOSED）的域，
     // 若服务端已下发预签代理 URL，直接优先走代理，避免首屏控制台大量 ERR 噪音与闪烁重试
-    const isStrictAntiLeech = rawCoverPath.includes('hdslb.com') || rawCoverPath.includes('biliimg.com')
+    // CodeQL #106/#107：includes('hdslb.com') 会把 hdslb.com.evil.com 也判成 B 站
+    // 防盗链域，只认解析出的 hostname。
+    const isStrictAntiLeech = urlHostnameMatches(rawCoverPath, ['hdslb.com', 'biliimg.com'])
     const normalizedCoverPath = (isUsingProxy || isStrictAntiLeech) && item.mediaProxyIconUrl
         ? item.mediaProxyIconUrl
         : rawCoverPath

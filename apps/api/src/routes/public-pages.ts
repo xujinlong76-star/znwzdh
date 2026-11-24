@@ -61,12 +61,24 @@ function publicView(page: PublicPage) {
  * 不把标题原文（可能含隐私信息）塞进 slug。
  */
 export function slugifyPublicPageTitle(title: string): string {
-  const base = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 32);
-  return base || "nav";
+  // 不用 /[^a-z0-9]+/g + /^-+|-+$/g：CodeQL #147 多项式回溯。单遍扫描等价实现
+  //（连续非字母数字折成一个 '-'，首尾不留 '-'；单遍线性扫描本身无回溯，不截断输入）。
+  const lower = title.toLowerCase();
+  let out = "";
+  let lastWasDash = true; // 开头不留 '-'
+  for (let i = 0; i < lower.length; i++) {
+    const ch = lower[i]!;
+    const isAlnum = (ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9");
+    if (isAlnum) {
+      out += ch;
+      lastWasDash = false;
+    } else if (!lastWasDash) {
+      out += "-";
+      lastWasDash = true;
+    }
+  }
+  if (out.endsWith("-")) out = out.slice(0, -1);
+  return out.slice(0, 32) || "nav";
 }
 
 function randomSuffix(): string {

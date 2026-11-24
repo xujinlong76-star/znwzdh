@@ -74,7 +74,16 @@ export function registrableDomain(url) {
 }
 
 export function waybackUrl(url, suggestion) {
-  if (typeof suggestion === "string" && suggestion.includes("web.archive.org")) return suggestion;
+  // CodeQL #154：只认解析出的 hostname 是 web.archive.org（或其子域）才采纳
+  // 建议值；includes('web.archive.org') 会把 evil.com/?x=web.archive.org 也当成真。
+  if (typeof suggestion === "string") {
+    try {
+      const host = new URL(suggestion).hostname.toLowerCase();
+      if (host === "web.archive.org" || host.endsWith(".web.archive.org")) return suggestion;
+    } catch {
+      // 不是合法 URL，走默认拼接
+    }
+  }
   return `${WAYBACK_PREFIX}${url}`;
 }
 

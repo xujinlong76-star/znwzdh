@@ -53,6 +53,9 @@ function satisfiesTilde(range: SemverParsed, target: SemverParsed): boolean {
 
 export function tryParseSemver(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
+  // 截断 200 字符：semver 对比是短串；vs 正则的 (?:-[^\s]+)? 等在超长输入上
+  // 多项式回溯（CodeQL #27）。
+  if (trimmed.length > 200) return null;
   const explicit = trimmed.match(/^(?:semver|version|ver):\s*(.+)$/i);
   const content = explicit ? explicit[1]!.trim() : trimmed;
 

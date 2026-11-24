@@ -111,7 +111,11 @@ function expandGlobs(patterns) {
       continue;
     }
     const dir = dirname(pattern);
-    const re = new RegExp("^" + pattern.split("/").pop().replace(/\./g, "\\.").replace(/\*/g, ".*") + "$");
+    // CodeQL #93/#45：glob 转正则必须先转义全部正则元字符（含反斜杠），
+    // 再把 `*` 换成 `.*`；原式只转义了 `.`，文件名里的 `[`、`+`、`?`、`\`
+    // 会改变匹配语义或抛错。
+    const base = pattern.split("/").pop();
+    const re = new RegExp("^" + base.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
     if (!existsSync(dir)) continue;
     for (const name of readdirSync(dir)) if (re.test(name)) files.push(join(dir, name));
   }

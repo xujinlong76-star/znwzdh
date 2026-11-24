@@ -207,14 +207,18 @@ export function parseIso8601DurationToSeconds(iso?: string | number | null): num
 }
 
 function decodeHtmlEntities(input: string): string {
+  // 单遍解码（CodeQL #53）：逐条 replace 会把 `&amp;lt;` 先解成 `&lt;` 再解成 `<`，
+  // 即二次解码；单遍只解一层，`&amp;lt;` 停在 `&lt;`。
   return input
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x27;/gi, "'")
-    .replace(/&nbsp;/g, ' ')
+    .replace(/&(#x27|#39|amp|lt|gt|quot|nbsp);/gi, (_, e: string) => {
+      const lower = e.toLowerCase();
+      if (lower === "amp") return "&";
+      if (lower === "lt") return "<";
+      if (lower === "gt") return ">";
+      if (lower === "quot") return '"';
+      if (lower === "nbsp") return " ";
+      return "'"; // #39 / #x27
+    })
     .trim()
 }
 
@@ -446,7 +450,7 @@ export async function resolveMultiPlatformVideoUrl(
           return attachResolvedSeoMetadata({
             title: String(d.title).trim(),
             href: canonicalUrl,
-            description: String(d.description || '').replace(/<[^>]+>/g, '').trim(),
+            description: String(d.description || '').replace(/<[^>]+>/g, '').replace(/<\/?[a-zA-Z!][^>]*$/, '').trim(),
             icon: d.thumbnail_720_url || undefined,
             videoConfig: {
               type: 'dailymotion',
@@ -901,9 +905,9 @@ async function harvestDailymotionChannel(
       const durationSec = Number(item.duration) || 0
       if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
 
-      const cleanTitle = String(item.title || '').replace(/<[^>]+>/g, '').trim()
+      const cleanTitle = String(item.title || '').replace(/<[^>]+>/g, '').replace(/<\/?[a-zA-Z!][^>]*$/, '').trim()
       if (!cleanTitle) continue
-      const cleanDesc = String(item.description || '').replace(/<[^>]+>/g, '').trim()
+      const cleanDesc = String(item.description || '').replace(/<[^>]+>/g, '').replace(/<\/?[a-zA-Z!][^>]*$/, '').trim()
 
       const stats: VideoStats = { views: Number(item.views_total) || 0 }
       const qualityScore = calculateQualityScore(stats, durationSec || undefined, item.created_time)

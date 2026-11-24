@@ -123,13 +123,16 @@ function sanitizeBookmarkIcon(rawIcon: string | undefined): string | undefined {
 // =========================================================================
 
 function decodeHtmlEntities(str: string): string {
-  return str
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
+  // 单遍解码（CodeQL #55）：逐条 replace 会把 `&amp;lt;` 先解成 `&lt;` 再解成 `<`，
+  // 即二次解码；单遍只解一层，`&amp;lt;` 停在 `&lt;`。
+  return str.replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (_, e: string) => {
+    if (e === "amp") return "&";
+    if (e === "lt") return "<";
+    if (e === "gt") return ">";
+    if (e === "quot") return '"';
+    if (e === "nbsp") return " ";
+    return "'"; // #39
+  });
 }
 
 /**
@@ -146,19 +149,69 @@ export function parseBookmarkDate(raw: string | undefined | null): number {
 }
 
 /**
+ * 去标签：剥掉完整标签，孤立的未闭合尾部标签（如末尾的 `<script`）也清掉
+ *（CodeQL #74/#75：/<[^>]+>/g 漏掉未闭合标签，净化后仍可能含 `<script`）。
+ */
+function stripBookmarkTags(text: string): string {
+  return text.replace(/<[^>]+>/g, '').replace(/<\/?[a-zA-Z!][^>]*$/, '');
+}
+
+const BOOKMARK_TOKEN_TAG = /^\/?(h3|a|dl|dd|dt)(?=[\s/>])/i;
+
+/**
+ * 线性分词器：把 Netscape 书签 HTML 切成文本段与 h3/a/dl/dd/dt 标签交替的
+ * token 序列（与原 split 的捕获分组等价，空文本段不保留，下游循环本就跳过空 token）。
+ * 无闭合 `>` 的残段并入末尾文本段，不单独成 token。
+ */
+function splitBookmarkTokens(html: string): string[] {
+  const tokens: string[] = [];
+  let segStart = 0; // 当前文本段起点（非目标标签的 '<' 仍属文本段，不丢弃）
+  let pos = 0;
+  while (pos < html.length) {
+    const lt = html.indexOf('<', pos);
+    if (lt === -1) {
+      if (segStart < html.length) tokens.push(html.slice(segStart));
+      break;
+    }
+    if (!BOOKMARK_TOKEN_TAG.test(html.slice(lt + 1, lt + 5))) {
+      // 不是目标标签：这个 '<' 留在文本段里，继续往后找
+      pos = lt + 1;
+      continue;
+    }
+    const gt = html.indexOf('>', lt + 1);
+    if (gt === -1) {
+      // 目标标签未闭合：从段起到末尾整体并入文本段
+      tokens.push(html.slice(segStart));
+      break;
+    }
+    if (lt > segStart) tokens.push(html.slice(segStart, lt));
+    tokens.push(html.slice(lt, gt + 1));
+    pos = gt + 1;
+    segStart = pos;
+  }
+  return tokens;
+}
+
+/**
  * 解析 Netscape Bookmarks HTML 格式文本
  */
 export function parseNetscapeBookmarksHtml(htmlString: string): ParsedBookmarkFolder[] {
   if (!htmlString || typeof htmlString !== 'string') return []
+
+  // 截断 1MB：书签导出文件极少超此规模；分词正则在超长输入上多项式回溯
+  //（CodeQL #13），截断后结合下方的线性分词器消除该向量。
+  const html = htmlString.slice(0, 1_000_000);
 
   const folders: ParsedBookmarkFolder[] = []
   const folderStack: ParsedBookmarkFolder[] = [
     { title: '默认导入书签', items: [], subFolders: [] },
   ]
 
-  // 按行或标签流式正则解析
+  // 按标签流式解析（CodeQL #13：原 split 用 /(<\/?(?:h3|a|dl|dd|dt)[^>]*>)/gi，
+  // 在 `<a<a<a…` 型输入上多项式回溯；改用 indexOf 线性分词，等价 token 序列：
+  // 文本段与 h3/a/dl/dd/dt 标签交替出现，无闭合 `>` 的残段并入末尾文本）。
   // Netscape 结构特征: <DT><H3 ...>FolderName</H3>, <DL><p>, <DT><A HREF="..." ...>Title</A>, <DD>Description, </DL>
-  const tokens = htmlString.split(/(<\/?(?:h3|a|dl|dd|dt)[^>]*>)/gi)
+  const tokens = splitBookmarkTokens(html)
 
   let pendingItem: Partial<ParsedBookmarkItem> | null = null
 
@@ -171,11 +224,12 @@ export function parseNetscapeBookmarksHtml(htmlString: string): ParsedBookmarkFo
       const titleMatch = token.match(/<h3[^>]*>(.*?)<\/h3>/i)
       let title = ''
       if (titleMatch) {
-        title = decodeHtmlEntities(titleMatch[1] || '').trim()
+        // 标题里嵌套的标签同样剥掉（与 else 分支口径一致，CodeQL #74 配套）
+        title = decodeHtmlEntities(stripBookmarkTags(titleMatch[1] || '')).trim()
       } else {
         // H3 内容可能在紧接着的 token 里
         const nextContent = tokens[i + 1] || ''
-        title = decodeHtmlEntities(nextContent.replace(/<[^>]+>/g, '')).trim()
+        title = decodeHtmlEntities(stripBookmarkTags(nextContent)).trim()
       }
 
       if (!title) title = '书签文件夹'
@@ -213,10 +267,10 @@ export function parseNetscapeBookmarksHtml(htmlString: string): ParsedBookmarkFo
       // 提取标题
       const fullMatch = token.match(/<a[^>]*>(.*?)<\/a>/i)
       if (fullMatch) {
-        title = decodeHtmlEntities(fullMatch[1] || '').trim()
+        title = decodeHtmlEntities(stripBookmarkTags(fullMatch[1] || '')).trim()
       } else {
         const nextContent = tokens[i + 1] || ''
-        title = decodeHtmlEntities(nextContent.replace(/<[^>]+>/g, '')).trim()
+        title = decodeHtmlEntities(stripBookmarkTags(nextContent)).trim()
       }
 
       if (href && !/^(place:|javascript:|data:|vbscript:|file:)/i.test(href)) {
@@ -325,7 +379,9 @@ export function parseOneTabExportText(rawText: string, defaultCategory = 'OneTab
 export function parseMarkdownBookmarks(markdownText: string): ParsedBookmarkFolder[] {
   if (!markdownText || typeof markdownText !== 'string') return []
 
-  const lines = markdownText.split(/\r?\n/)
+  // 逐行截断 4096 字符：标题/链接正则（CodeQL #18/#19）在超长行上多项式回溯，
+  // 单行 4096 字符内回溯量可忽略；书签行远短于此。
+  const lines = markdownText.slice(0, 1_000_000).split(/\r?\n/)
   const folders: ParsedBookmarkFolder[] = []
   let currentFolder: ParsedBookmarkFolder = {
     title: 'Markdown 导入书签',
@@ -335,7 +391,7 @@ export function parseMarkdownBookmarks(markdownText: string): ParsedBookmarkFold
   const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)(?:\s*[-—:]\s*(.+))?/i
 
   for (const line of lines) {
-    const trimmed = line.trim()
+    const trimmed = line.trim().slice(0, 4096)
     if (!trimmed) continue
 
     // 匹配 Markdown 标题：# / ## / ###
@@ -429,7 +485,9 @@ export function parseUniversalBookmarks(content: string): {
   }
 
   // 3. 检查是否为 Markdown 格式（含 # 和 [title](url)）
-  if (/^#{1,4}\s+/m.test(trimmed) || /\[.+?\]\(https?:\/\/.+?\)/.test(trimmed)) {
+  // 链接嗅探只看前 20000 字符（CodeQL #20：/\[.+?\]\(https?:\/\/.+?\)/ 在超长
+  // 输入上多项式回溯；格式嗅探不需要看全文）。
+  if (/^#{1,4}\s+/m.test(trimmed) || /\[.+?\]\(https?:\/\/.+?\)/.test(trimmed.slice(0, 20000))) {
     const folders = parseMarkdownBookmarks(trimmed)
     const total = folders.reduce((acc, f) => acc + f.items.length, 0)
     return { format: 'markdown', folders, totalItems: total }

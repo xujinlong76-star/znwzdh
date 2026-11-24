@@ -84,7 +84,7 @@ export function parseFacetedQuery(raw: string): ParsedFacetedQuery {
     return { rawQuery: "", cleanedQuery: "", inferredFacets: {}, matchedModifiers: [] };
   }
 
-  let working = rawTrimmed;
+  let working = rawTrimmed.slice(0, 1000); // 截断：分面查询是短句，精确短语正则在超长输入上多项式回溯（CodeQL #23）
   const inferredFacets: Record<string, string[]> = {};
   const matchedModifiers: MatchedFacetModifier[] = [];
   let inferredTag: string | undefined;

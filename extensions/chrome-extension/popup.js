@@ -50,10 +50,20 @@ async function getApiBase() {
 async function getWebBase() {
   try {
     const store = await chrome.storage.local.get(["webUrl"]);
-    return (store.webUrl || DEFAULT_WEB_BASE).replace(/\/$/, "");
+    return normalizeWebBase(store.webUrl || DEFAULT_WEB_BASE);
   } catch {
     return DEFAULT_WEB_BASE;
   }
+}
+
+/**
+ * webUrl 来自用户存入的配置：只认 http(s) 地址，其余（javascript:、data: 等）
+ * 一律回落默认站。否则 updateNavLinks / 热门插件链接的 href 会变成可点击的
+ * XSS 载体（CodeQL #86/#87/#88，href 赋值点在 updateNavLinks）。
+ */
+function normalizeWebBase(raw) {
+  const value = String(raw || "").trim().replace(/\/$/, "");
+  return /^https?:\/\//i.test(value) ? value : DEFAULT_WEB_BASE;
 }
 
 async function getToken() {
@@ -115,7 +125,8 @@ const statusIndicator = document.getElementById("status-indicator");
 let currentTab = null;
 
 function updateNavLinks(webBase) {
-  const base = (webBase || DEFAULT_WEB_BASE).replace(/\/$/, "");
+  // 入口有两条（getWebBase 与 storage 变更回调），这里再守一道：只认 http(s)。
+  const base = normalizeWebBase(webBase || DEFAULT_WEB_BASE);
   if (webHomeLink) webHomeLink.href = base;
   if (webMarketLink) webMarketLink.href = `${base}/marketplace`;
   if (morePluginsLink) morePluginsLink.href = `${base}/marketplace`;

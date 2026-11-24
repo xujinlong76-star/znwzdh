@@ -15,7 +15,7 @@
  * 某天突然不对——所以必须用假 db 把分派行为钉住。
  */
 import { describe, expect, it } from "vitest";
-import { migrateColumns, migrateSiteIndexes } from "../src/migrate.ts";
+import { cleanTaxonomyAndDuplicates, migrateColumns, migrateSiteIndexes } from "../src/migrate.ts";
 
 function pgRecorder() {
   const calls: string[] = [];
@@ -102,6 +102,40 @@ describe("migrateColumns：按方言分派", () => {
     expect(added).toContain("categories.source");
     expect(added).toContain("categories.alt_labels");
     expect(calls.some((s) => s.startsWith("ALTER TABLE categories ADD COLUMN alt_labels"))).toBe(true);
+  });
+
+  it("pg：尚未创建的新表不提前执行 ALTER TABLE", async () => {
+    const calls: string[] = [];
+    const db = {
+      dialect: "pg",
+      pg: {
+        query: async (sql: string) => {
+          calls.push(sql);
+          return { rows: [], rowCount: 0 };
+        },
+      },
+    };
+    const added = await migrateColumns(db);
+    expect(added).toEqual([]);
+    expect(calls.every((sql) => sql.includes("information_schema"))).toBe(true);
+  });
+
+  it("pg：存量类目清洗使用 BOOLEAN TRUE，不写 SQLite 整数 1", async () => {
+    const calls: string[] = [];
+    const db = {
+      dialect: "pg",
+      pg: {
+        query: async (sql: string) => {
+          calls.push(sql);
+          return { rows: [], rowCount: 0 };
+        },
+      },
+    };
+    await cleanTaxonomyAndDuplicates(db);
+    const insert = calls.find((sql) => sql.includes("INSERT INTO categories"));
+    expect(insert).toContain("TRUE");
+    expect(insert).not.toContain("enabled, source, created_at, updated_at) VALUES");
+    expect(insert).not.toContain(", 1, 'registry'");
   });
 
   it("pg 不识别的方言不误伤：sqlite 走 exec", async () => {

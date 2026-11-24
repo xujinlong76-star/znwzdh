@@ -44,7 +44,8 @@ export function scoreCrawlCandidate(input: {
     ? Math.max(0, Math.min(100, Math.round(100 * Math.exp(-Math.max(0, Date.now() - freshnessAt) / (180 * 24 * 60 * 60_000)))))
     : null;
   if (freshness !== null) reasons.push(freshness >= 70 ? "内容更新时间较近" : freshness >= 35 ? "内容更新时间一般" : "内容可能较久未更新");
-  const trustSignals = Number(evidence.trustSignals ?? 0);
+  const rawTrustSignals = Number(evidence.trustSignals ?? 0);
+  const trustSignals = Number.isFinite(rawTrustSignals) ? Math.max(0, Math.min(4, rawTrustSignals)) : 0;
   const trust = Math.max(0, Math.min(100, trustSignals * 25));
   if (trustSignals > 0) reasons.push("存在显式来源可信度证据");
   else reasons.push("尚无独立可信度背书，需人工核验");

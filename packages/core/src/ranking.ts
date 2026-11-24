@@ -1,3 +1,5 @@
+import type { SearchHit } from "./types.ts";
+
 /**
  * 排序公式（纯函数）。
  *
@@ -119,7 +121,7 @@ const clampFinite = (value: number, min: number, max: number): number =>
  * 只有在调用方提供可信元数据时才参与，缺失值严格中性。
  */
 export function evaluateSearchRankingShadow(
-  hits: import("./types.ts").SearchHit[],
+  hits: SearchHit[],
   topK = 10,
   featuresBySite: ReadonlyMap<string, SearchRankingFeatures> = new Map(),
 ): SearchRankingShadowDiagnostics {

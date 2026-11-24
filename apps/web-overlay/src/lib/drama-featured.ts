@@ -149,6 +149,18 @@ export interface ParsedDramaFeatured {
   dramas: DramaFeatured[];
   /** 因字段不全 / 自相矛盾被跳过的行数 */
   skipped: number;
+  /**
+   * 清单数据日期（JSON 顶层 updatedAt，原样透传到页面）。
+   * 缺失或不是 YYYY-MM-DD 时为 null——缺失不编造日期，由调用方决定不渲染。
+   */
+  updatedAt: string | null;
+}
+
+/** 顶层 updatedAt：只收 YYYY-MM-DD，其余一律按缺失处理（不编造）。 */
+function asDataDate(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
 }
 
 /**
@@ -157,7 +169,7 @@ export interface ParsedDramaFeatured {
  */
 export function parseDramaFeatured(raw: unknown): ParsedDramaFeatured {
   if (!isRecord(raw) || !Array.isArray(raw.dramas)) {
-    return { dramas: [], skipped: 0 };
+    return { dramas: [], skipped: 0, updatedAt: null };
   }
   const dramas: DramaFeatured[] = [];
   let skipped = 0;
@@ -169,7 +181,7 @@ export function parseDramaFeatured(raw: unknown): ParsedDramaFeatured {
     }
     if (dramas.length < DRAMA_FEATURED_MAX) dramas.push(parsed);
   }
-  return { dramas, skipped };
+  return { dramas, skipped, updatedAt: asDataDate(raw.updatedAt) };
 }
 
 /** 与追剧清单同一把键：platformSiteId:归一化剧名（见 lib/watchlist）。 */

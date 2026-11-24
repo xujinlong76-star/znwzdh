@@ -52,7 +52,7 @@ export async function upsertCrawlSource(repo: Repository, input: UpsertCrawlSour
      ON CONFLICT(canonical_url) DO UPDATE SET url=excluded.url,kind=excluded.kind,
        enabled=excluded.enabled,priority=excluded.priority,interval_ms=excluded.interval_ms,
        next_run_at=excluded.next_run_at,updated_at=excluded.updated_at`,
-    [id, normalized.url, normalized.url, input.kind, input.enabled ?? true, priority, intervalMs,
+    [id, normalized.url, normalized.url, input.kind, input.enabled === false ? 0 : 1, priority, intervalMs,
       Math.max(0, Math.floor(input.nextRunAt ?? now)), now, now],
   );
   const rows = await repo.raw("SELECT * FROM crawl_sources WHERE canonical_url = ? LIMIT 1", [normalized.url]);
@@ -64,7 +64,7 @@ export async function listCrawlSources(repo: Repository, options: { enabled?: bo
   const offset = Math.max(0, Math.min(100_000, Math.floor(options.offset ?? 0)));
   const rows = options.enabled === undefined
     ? await repo.raw("SELECT * FROM crawl_sources ORDER BY priority DESC, created_at DESC LIMIT ? OFFSET ?", [limit, offset])
-    : await repo.raw("SELECT * FROM crawl_sources WHERE enabled = ? ORDER BY priority DESC, created_at DESC LIMIT ? OFFSET ?", [options.enabled, limit, offset]);
+    : await repo.raw("SELECT * FROM crawl_sources WHERE enabled = ? ORDER BY priority DESC, created_at DESC LIMIT ? OFFSET ?", [options.enabled ? 1 : 0, limit, offset]);
   return rows.map(mapSource);
 }
 export async function updateCrawlSource(repo: Repository, id: string, patch: Partial<Omit<UpsertCrawlSourceInput,"url">> & { url?: string }, now = Date.now()): Promise<CrawlSource | null> {
@@ -78,7 +78,7 @@ export async function updateCrawlSource(repo: Repository, id: string, patch: Par
   const priority = patch.priority === undefined ? current.priority : Math.max(-100, Math.min(100, Math.floor(patch.priority)));
   await repo.run(
     `UPDATE crawl_sources SET url=?,canonical_url=?,kind=?,enabled=?,priority=?,interval_ms=?,next_run_at=?,updated_at=? WHERE id=?`,
-    [normalized.url, normalized.url, kind, patch.enabled ?? current.enabled, priority, intervalMs,
+    [normalized.url, normalized.url, kind, (patch.enabled ?? current.enabled) ? 1 : 0, priority, intervalMs,
       patch.nextRunAt === undefined ? current.nextRunAt : Math.max(0, Math.floor(patch.nextRunAt)), now, id],
   );
   const rows = await repo.raw("SELECT * FROM crawl_sources WHERE id = ? LIMIT 1", [id]);
@@ -97,16 +97,16 @@ export async function claimDueCrawlSources(repo: Repository, workerId: string, o
   return repo.withTransaction(async () => {
     const lock = repo.db.dialect === "pg" ? " FOR UPDATE SKIP LOCKED" : "";
     const rows = await repo.raw(
-      `SELECT * FROM crawl_sources WHERE enabled = TRUE AND next_run_at <= ?
+      `SELECT * FROM crawl_sources WHERE enabled = ? AND next_run_at <= ?
        AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
        ORDER BY priority DESC,next_run_at ASC,created_at ASC LIMIT ?${lock}`,
-      [now, now, limit],
+      [1, now, now, limit],
     );
     const claimed: CrawlSource[] = [];
     for (const row of rows) {
       const updated = await repo.raw(
-        "UPDATE crawl_sources SET lease_owner=?,lease_expires_at=?,updated_at=? WHERE id=? AND enabled=TRUE AND (lease_expires_at IS NULL OR lease_expires_at <= ?) RETURNING *",
-        [owner, now + leaseMs, now, String(row.id), now],
+        "UPDATE crawl_sources SET lease_owner=?,lease_expires_at=?,updated_at=? WHERE id=? AND enabled=? AND (lease_expires_at IS NULL OR lease_expires_at <= ?) RETURNING *",
+        [owner, now + leaseMs, now, String(row.id), 1, now],
       );
       if (updated[0]) claimed.push(mapSource(updated[0]));
     }
@@ -177,7 +177,7 @@ export async function settleCrawlSource(repo: Repository, input: { id: string; w
     `UPDATE crawl_sources
         SET last_run_at=?, last_status=?, last_error=?,
             consecutive_failures=CASE WHEN ?='error' THEN consecutive_failures+1 ELSE 0 END,
-            next_run_at=CASE WHEN enabled=TRUE THEN ? + CASE
+            next_run_at=CASE WHEN enabled=1 THEN ? + CASE
               WHEN ?='error' THEN CASE
                 WHEN consecutive_failures >= 9 THEN 86400000
                 ELSE 300000 * (1 << consecutive_failures)

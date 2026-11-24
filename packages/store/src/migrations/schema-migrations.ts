@@ -359,7 +359,7 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
           status TEXT NOT NULL CHECK (status IN ('completed','error','quota_blocked')),
           verdict TEXT CHECK (verdict IS NULL OR verdict IN ('auto_approve','reject','manual_review')),
           confidence REAL,
-          quality_score INTEGER,
+          quality_score REAL,
           risks_json TEXT NOT NULL DEFAULT '[]',
           reasons_json TEXT NOT NULL DEFAULT '[]',
           evidence_json TEXT NOT NULL DEFAULT '[]',

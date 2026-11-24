@@ -134,6 +134,7 @@ describe("NAVHUB_ALLOW_UNSIGNED_IDENTITY 装配", () => {
     "NAVHUB_PUBLIC_URL",
     "NAVHUB_AUTH_REQUIRED",
     "NAVHUB_IDENTITY_SECRET",
+    "NAVHUB_IDENTITY_SIGNATURE_STRICT",
     "NAVHUB_ALLOW_UNSIGNED_IDENTITY",
     "NAVHUB_ALLOW_INSECURE_LOCALHOST",
     "NAVHUB_ADMIN_TOKEN",
@@ -196,10 +197,17 @@ describe("NAVHUB_ALLOW_UNSIGNED_IDENTITY 装配", () => {
     // P0-4: production loadConfig has an SMTP gate; this test only checks identity, so opt in to log transport.
     process.env.NAVHUB_MAIL_LOG_TRANSPORT_OK = "1";
     delete process.env.NAVHUB_IDENTITY_SECRET;
+    delete process.env.NAVHUB_IDENTITY_SIGNATURE_STRICT;
     delete process.env.NAVHUB_ALLOW_UNSIGNED_IDENTITY;
 
     const config = loadConfig();
+    expect(config.identitySignatureStrict).toBe(true);
     expect(config.allowUnsignedIdentity).toBe(false);
+
+    // 只有显式兼容配置才能在生产临时接受 v1；不设置时必须严格。
+    process.env.NAVHUB_IDENTITY_SIGNATURE_STRICT = "0";
+    expect(loadConfig().identitySignatureStrict).toBe(false);
+    delete process.env.NAVHUB_IDENTITY_SIGNATURE_STRICT;
     expect(() => assertIdentitySecurity(config, true)).toThrow(
       /NAVHUB_ALLOW_UNSIGNED_IDENTITY/,
     );

@@ -179,6 +179,8 @@ export interface VerifyIdentityHeadersInput {
   /** true = 不再接受仅 v1 的请求（关闭兼容窗口） */
   strict?: boolean;
   guard?: IdentityReplayGuard;
+  /** 多实例共享存储的原子重放占坑；生产 API 必须注入数据库实现。 */
+  acceptReplay?: (signature: string, nowMs: number, ttlMs: number) => Promise<boolean>;
   nowMs?: number;
   windowSeconds?: number;
 }
@@ -189,7 +191,7 @@ export interface VerifyIdentityHeadersInput {
  * 有 v2 头就只验 v2：签名/时间/重放任一失败都拒绝，**不回退 v1**——否则
  * 攻击者只要把 v2 头改坏就能退回可重放的老路径。
  */
-export function verifyIdentityHeaders(input: VerifyIdentityHeadersInput): IdentitySignatureVerdict {
+export async function verifyIdentityHeaders(input: VerifyIdentityHeadersInput): Promise<IdentitySignatureVerdict> {
   const { secret, identity, headers } = input;
   if (!secret || !identity) return { ok: false, reason: "missing" };
 
@@ -222,9 +224,14 @@ export function verifyIdentityHeaders(input: VerifyIdentityHeadersInput): Identi
       return { ok: false, reason: "v2-invalid" };
     }
 
-    const guard = input.guard ?? defaultIdentityReplayGuard;
-    // TTL 取两倍窗口：从最早可接受的 ts 到彻底过期，签名最多还能被重放这么久
-    if (!guard.accept(v2.trim().toLowerCase(), nowMs, windowSeconds * 2 * 1000)) {
+    // TTL 取两倍窗口：从最早可接受的 ts 到彻底过期，签名最多还能被重放这么久。
+    // 生产注入数据库原子占坑，确保不同 API 副本之间共享同一重放账本。
+    const signature = v2.trim().toLowerCase();
+    const ttlMs = windowSeconds * 2 * 1000;
+    const accepted = input.acceptReplay
+      ? await input.acceptReplay(signature, nowMs, ttlMs)
+      : (input.guard ?? defaultIdentityReplayGuard).accept(signature, nowMs, ttlMs);
+    if (!accepted) {
       return { ok: false, reason: "replay" };
     }
     return { ok: true, mode: "v2" };

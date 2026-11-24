@@ -49,6 +49,15 @@ describe("持久化采集来源注册表", () => {
     expect(current.consecutiveFailures).toBe(0);
     expect(current.nextRunAt).toBe(current.lastRunAt! + current.intervalMs);
   });
+  it("跨实例共享域名租约并在释放后执行最小请求间隔", async () => {
+    const { claimCrawlDomain, releaseCrawlDomain } = await import("../src/repository/crawl-sources.ts");
+    expect(await claimCrawlDomain(repo, "Shared.Example", "source-a", { now: 10_000, leaseMs: 30_000 })).toBe(true);
+    expect(await claimCrawlDomain(repo, "shared.example", "source-b", { now: 10_001, leaseMs: 30_000 })).toBe(false);
+    expect(await releaseCrawlDomain(repo, "shared.example", "source-a", { now: 11_000, minIntervalMs: 15_000 })).toBe(true);
+    expect(await claimCrawlDomain(repo, "shared.example", "source-b", { now: 20_000 })).toBe(false);
+    expect(await claimCrawlDomain(repo, "shared.example", "source-b", { now: 26_000 })).toBe(true);
+    expect(await releaseCrawlDomain(repo, "shared.example", "source-b", { now: 26_100 })).toBe(true);
+  });
   it("更新、禁用与删除来源", async () => {
     const source = await upsertCrawlSource(repo, { url: "https://manage.example/", kind: "page" });
     const updated = await updateCrawlSource(repo, source.id, { enabled: false, priority: 9 });

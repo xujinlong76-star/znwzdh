@@ -471,8 +471,9 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
         sample_size INTEGER NOT NULL, metrics_json TEXT NOT NULL, created_by TEXT NOT NULL,
         created_at BIGINT NOT NULL
       )`;
-      if (db.dialect === "pg" && db.pg) await db.pg.query(statement);
-      else if (db.sqlite) db.sqlite.exec(statement);
+      const index = "CREATE INDEX IF NOT EXISTS crawl_moderation_model_eval_model_dataset_idx ON crawl_moderation_model_evaluations(model,dataset_version,created_at DESC)";
+      if (db.dialect === "pg" && db.pg) { await db.pg.query(statement); await db.pg.query(index); }
+      else if (db.sqlite) { db.sqlite.exec(statement); db.sqlite.exec(index); }
     },
     checksum: "v1_crawl_moderation_model_evaluations",
   },

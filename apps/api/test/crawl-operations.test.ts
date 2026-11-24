@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scoreCrawlCandidate, selectStratifiedCrawlCandidates, selectGoldEvaluationSample, moderationVerdictToPrediction, buildModerationErrorAnalysis } from "../src/routes/crawl-operations.ts";
+import { scoreCrawlCandidate, selectStratifiedCrawlCandidates, selectGoldEvaluationSample, moderationVerdictToPrediction, buildModerationErrorAnalysis, summarizeModerationEvaluationUsage } from "../src/routes/crawl-operations.ts";
 
 describe("crawl candidate quality hints", () => {
   it("rewards complete, substantial HTTPS pages with explainable reasons", () => {
@@ -95,5 +95,17 @@ describe("moderation evaluation error analysis", () => {
     expect(result.confusionGroups[0]?.sampleIds).toHaveLength(20);
     expect(result.riskFalseNegativeIds).toHaveLength(50);
     expect(result.samplesTruncated).toBe(true);
+  });
+});
+describe("moderation evaluation usage accounting", () => {
+  it("keeps unknown model cost null instead of treating it as free", () => {
+    expect(summarizeModerationEvaluationUsage({calls:2,prompt_tokens:1200,completion_tokens:300,priced_calls:0,cost_rmb:null,failed_calls:1})).toEqual({
+      calls:2,promptTokens:1200,completionTokens:300,totalTokens:1500,costRmb:null,pricedCalls:0,unpricedCalls:2,failedCalls:1,
+    });
+  });
+  it("aggregates known cost and bounds counters by actual call count", () => {
+    expect(summarizeModerationEvaluationUsage({calls:2,prompt_tokens:1000,completion_tokens:500,priced_calls:3,cost_rmb:0.0123,failed_calls:5})).toEqual({
+      calls:2,promptTokens:1000,completionTokens:500,totalTokens:1500,costRmb:0.0123,pricedCalls:2,unpricedCalls:0,failedCalls:2,
+    });
   });
 });

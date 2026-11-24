@@ -132,6 +132,119 @@ export function parseRetryAfterMs(value: string | null | undefined, now = Date.n
   return Math.min(6 * 60 * 60_000, Math.max(0, date - now));
 }
 
+export interface RobotsRule { allow: boolean; path: string; }
+interface RobotsGroup { agents: string[]; rules: RobotsRule[]; }
+
+/** RFC 9309 的保守子集：User-agent 分组、Allow/Disallow、最长匹配优先、Allow 同长优先。 */
+function robotsPatternMatches(pattern: string, target: string): boolean {
+  const anchored = pattern.endsWith("$");
+  const raw = anchored ? pattern.slice(0, -1) : pattern;
+  const parts = raw.split("*");
+  let cursor = 0;
+  if (!raw.startsWith("*") && !target.startsWith(parts[0] ?? "")) return false;
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i] ?? "";
+    if (!part) continue;
+    const at = target.indexOf(part, cursor);
+    if (at < 0) return false;
+    if (i === 0 && !raw.startsWith("*") && at !== 0) return false;
+    cursor = at + part.length;
+  }
+  return !anchored || target.endsWith(parts[parts.length - 1] ?? "");
+}
+
+export function isRobotsAllowed(robotsTxt: string, targetUrl: string, userAgent = "NavHubDiscoveryBot"): boolean {
+  const groups: RobotsGroup[] = [];
+  let current: RobotsGroup | null = null;
+  let hasRules = false;
+  for (const rawLine of robotsTxt.split(/\r?\n/)) {
+    const line = rawLine.split("#", 1)[0]?.trim() ?? "";
+    if (!line) continue;
+    const colon = line.indexOf(":");
+    if (colon < 0) continue;
+    const key = line.slice(0, colon).trim().toLowerCase();
+    const value = line.slice(colon + 1).trim();
+    if (key === "user-agent" && value) {
+      if (current && hasRules) { current = null; hasRules = false; }
+      if (!current) { current = { agents: [], rules: [] }; groups.push(current); }
+      current.agents.push(value.toLowerCase());
+      continue;
+    }
+    if (!current || (key !== "allow" && key !== "disallow")) continue;
+    if (value) current.rules.push({ allow: key === "allow", path: value });
+    hasRules = true;
+  }
+  const agent = userAgent.toLowerCase();
+  const matching = groups.map((group) => ({
+    group,
+    score: Math.max(0, ...group.agents.map((name) => name === "*" ? 0 : agent.includes(name) ? name.length : -1)),
+  })).filter((item) => item.score >= 0);
+  if (!matching.length) return true;
+  const bestScore = Math.max(...matching.map((item) => item.score));
+  const rules = matching.filter((item) => item.score === bestScore).flatMap((item) => item.group.rules);
+  if (!rules.length) return true;
+  const url = new URL(targetUrl);
+  const target = url.pathname + url.search;
+  let winner: { allow: boolean; specificity: number } | null = null;
+  for (const rule of rules) {
+    if (!robotsPatternMatches(rule.path, target)) continue;
+    const specificity = Array.from(rule.path.replace(/[*$]/g, "")).length;
+    if (!winner || specificity > winner.specificity || (specificity === winner.specificity && rule.allow)) {
+      winner = { allow: rule.allow, specificity };
+    }
+  }
+  return winner?.allow ?? true;
+}
+
+type RobotsResult =
+  | { kind: "allowed" }
+  | { kind: "blocked"; reason: string }
+  | { kind: "retry"; reason: string; retryAfterMs: number };
+
+const ROBOTS_CACHE_TTL_MS = 60 * 60_000;
+const robotsCache = new Map<string, { expiresAt: number; body: string | null; blocked: boolean }>();
+
+async function checkRobotsPolicy(url: string): Promise<RobotsResult> {
+  const target = new URL(url);
+  const origin = target.origin;
+  const now = Date.now();
+  const cached = robotsCache.get(origin);
+  if (cached && cached.expiresAt > now) {
+    if (cached.blocked) return { kind: "blocked", reason: "robots.txt 禁止自动抓取该站点" };
+    if (cached.body !== null && !isRobotsAllowed(cached.body, url)) {
+      return { kind: "blocked", reason: "robots.txt Disallow 规则禁止抓取该 URL" };
+    }
+    return { kind: "allowed" };
+  }
+  try {
+    const response = await guardedFetch(new URL("/robots.txt", origin).toString(), {
+      timeoutMs: 5_000, maxBytes: 64 * 1024, maxRedirects: 3,
+      userAgent: "NavHubDiscoveryBot/1.0 (+https://github.com/xujinlong76-star/znwzdh)",
+    });
+    if (response.status === 404 || response.status === 410) {
+      robotsCache.set(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: "", blocked: false });
+      return { kind: "allowed" };
+    }
+    if (response.status === 401 || response.status === 403 || response.status === 451) {
+      robotsCache.set(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: null, blocked: true });
+      return { kind: "blocked", reason: "robots.txt 不允许自动抓取" };
+    }
+    if (response.status === 429 || response.status >= 500 || response.status < 200 || response.status >= 300) {
+      return {
+        kind: "retry", reason: "robots.txt 暂时不可读取，按 fail-closed 策略稍后重试",
+        retryAfterMs: parseRetryAfterMs(response.retryAfter, now),
+      };
+    }
+    robotsCache.set(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: response.body, blocked: false });
+    return isRobotsAllowed(response.body, url)
+      ? { kind: "allowed" }
+      : { kind: "blocked", reason: "robots.txt Disallow 规则禁止抓取该 URL" };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { kind: "retry", reason: "robots.txt 检查失败，按 fail-closed 策略稍后重试：" + reason, retryAfterMs: 0 };
+  }
+}
+
 export interface CrawlWorkerSummary {
   seedsEnqueued: number;
   tasksClaimed: number;
@@ -186,6 +299,22 @@ export async function handleCrawlWorker(
     if (!task) break;
     summary.tasksClaimed++;
     try {
+      const robots = await checkRobotsPolicy(task.url);
+      if (robots.kind === "blocked") {
+        await settleCrawlTask(ctx.repo, {
+          id: task.id, workerId, outcome: "hold_for_review", error: robots.reason, now: Date.now(),
+        });
+        summary.heldForReview++;
+        continue;
+      }
+      if (robots.kind === "retry") {
+        await settleCrawlTask(ctx.repo, {
+          id: task.id, workerId, outcome: "retry", error: robots.reason,
+          nextRunAt: Date.now() + Math.max(retryDelay(task.attempts), robots.retryAfterMs), now: Date.now(),
+        });
+        summary.retried++;
+        continue;
+      }
       const response = await guardedFetch(task.url, {
         timeoutMs: FETCH_TIMEOUT_MS,
         maxBytes: MAX_BODY_BYTES,

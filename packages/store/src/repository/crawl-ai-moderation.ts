@@ -42,7 +42,7 @@ export async function listCrawlAiModerationDecisions(
   repo: Repository,
   options: { candidateId?: string; limit?: number; offset?: number } = {},
 ): Promise<Array<Record<string, unknown>>> {
-  const limit = Math.min(100, Math.max(1, Math.floor(options.limit ?? 50)));
+  const limit = Math.min(5000, Math.max(1, Math.floor(options.limit ?? 50)));
   const offset = Math.max(0, Math.floor(options.offset ?? 0));
   const where = options.candidateId ? "WHERE candidate_id = ?" : "";
   return repo.raw(

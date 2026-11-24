@@ -298,9 +298,13 @@ const config = {
       token.issuedAt = issuedAt
       const identity = canonicalUserId({ id: user.id, provider: account?.provider })
       if (identity) {
-        const revoked = await hubSessionRevoked(token.sid, identity, issuedAt).catch(() => { /* 核对失败按不可用处理，fail-open */ return null })
-        if (revoked === true) console.warn('[session-register] unexpected revoked at login')
-        else if (revoked === null) console.warn('[session-register] sessions/check unavailable')
+        const revoked = await hubSessionRevoked(token.sid, identity, issuedAt).catch(() => null)
+        if (revoked === true) throw new Error('Session registration rejected: session is revoked')
+        if (revoked === null && IS_PRODUCTION_RUNTIME) {
+          // 生产环境无法登记/核对会话时不签发可用登录态；避免形成无法吊销的 JWT。
+          throw new Error('Session verification unavailable')
+        }
+        if (revoked === null) console.warn('[session-register] sessions/check unavailable in non-production')
       }
     }
       return token
@@ -345,7 +349,7 @@ export async function verifyAdminSession() {
     return { ok: false as const, error: 'Forbidden', status: 403 }
   }
 
-  // 吊销检查（P0-2）：被踢出/改密的管理员 JWT 须 401；核对不可用时 fail-open。
+  // 吊销检查（P0-2）：被踢出/改密的管理员 JWT 须 401；核对不可用时 fail-closed（503）。
   const sessionSid = (session as { sessionSid?: string }).sessionSid
   if (typeof sessionSid === 'string' && sessionSid) {
     const identity = canonicalUserId(user)

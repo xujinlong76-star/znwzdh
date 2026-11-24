@@ -346,6 +346,40 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     },
     checksum: "v1_crawl_source_registry",
   },
+  {
+    version: "20261124_crawl_ai_moderation_history",
+    name: "不可变采集 AI 审核决策历史",
+    up: async (db: Db) => {
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS crawl_ai_moderation_decisions (
+          id TEXT PRIMARY KEY,
+          candidate_id TEXT NOT NULL,
+          canonical_url TEXT NOT NULL,
+          mode TEXT NOT NULL CHECK (mode IN ('shadow','auto')),
+          status TEXT NOT NULL CHECK (status IN ('completed','error','quota_blocked')),
+          verdict TEXT CHECK (verdict IS NULL OR verdict IN ('auto_approve','reject','manual_review')),
+          confidence REAL,
+          quality_score REAL,
+          risks_json TEXT NOT NULL DEFAULT '[]',
+          reasons_json TEXT NOT NULL DEFAULT '[]',
+          evidence_json TEXT NOT NULL DEFAULT '[]',
+          model TEXT,
+          policy_version TEXT,
+          error_type TEXT,
+          created_at BIGINT NOT NULL
+        )`,
+        "CREATE INDEX IF NOT EXISTS crawl_ai_moderation_candidate_idx ON crawl_ai_moderation_decisions(candidate_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS crawl_ai_moderation_url_idx ON crawl_ai_moderation_decisions(canonical_url, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS crawl_ai_moderation_status_idx ON crawl_ai_moderation_decisions(status, created_at DESC)",
+      ];
+      if (db.dialect === "pg" && db.pg) {
+        for (const statement of statements) await db.pg.query(statement);
+      } else if (db.sqlite) {
+        db.sqlite.exec(statements.join(";"));
+      }
+    },
+    checksum: "v1_crawl_ai_moderation_history",
+  },
 ];
 
 /**

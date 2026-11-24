@@ -66,7 +66,7 @@ describe("crawl AI auto-approval gate", () => {
   const goodMetrics = {
     exactMatchRate: 1,
     perLabel: { approve: { precision: 1 } },
-    riskDetection: { recall: 1, positiveSupport: 50, falseNegatives: 0 },
+    riskDetection: { recall: 1, support: 50, falseNegatives: 0 },
     alerts: [],
   };
 
@@ -82,7 +82,7 @@ describe("crawl AI auto-approval gate", () => {
 
     const missedRisk = await getCrawlAiAutoApprovalGate(makeContext({
       ...goodMetrics,
-      riskDetection: { recall: 0.98, positiveSupport: 50, falseNegatives: 1 },
+      riskDetection: { recall: 0.98, support: 50, falseNegatives: 1 },
     }) as never, "model-x", now);
     expect(missedRisk.eligible).toBe(false);
     expect(missedRisk.reason).toBe("risk_recall_below_0_99");

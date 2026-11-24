@@ -376,6 +376,35 @@ describe("账号生命周期 API", () => {
     expect(login.statusCode).toBe(200);
   });
 
+  it("并发使用同一账号的不同重置令牌时只允许一个事务成功", async () => {
+    captured.length = 0;
+    await post("/api/account/register", {
+      username: "concurrent-reset",
+      email: "concurrent-reset@example.com",
+      password: "OldPassw0rd!",
+    });
+    await post("/api/account/forgot-password", { email: "concurrent-reset@example.com" });
+    await post("/api/account/forgot-password", { email: "concurrent-reset@example.com" });
+    const messages = captured.filter((m) => m.text.includes("reset-password"));
+    expect(messages).toHaveLength(2);
+    const tokens = messages.map((m) => extractToken(m, "reset-password"));
+    const results = await Promise.all(tokens.map((token, index) =>
+      post("/api/account/reset-password", {
+        token,
+        password: index === 0 ? "FirstNewPass1!" : "SecondNewPass1!",
+      }),
+    ));
+    expect(results.filter((result) => result.statusCode === 200)).toHaveLength(1);
+    expect(results.filter((result) => result.statusCode === 400)).toHaveLength(1);
+    const firstLogin = await post("/api/account/login", {
+      identifier: "concurrent-reset@example.com", password: "FirstNewPass1!",
+    });
+    const secondLogin = await post("/api/account/login", {
+      identifier: "concurrent-reset@example.com", password: "SecondNewPass1!",
+    });
+    expect([firstLogin.statusCode, secondLogin.statusCode].sort()).toEqual([200, 401]);
+  });
+
   it("重置密码：令牌一次性", async () => {
     captured.length = 0;
     await post("/api/account/register", {

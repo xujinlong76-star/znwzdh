@@ -24,6 +24,7 @@ import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-url'
+import { classifyOutboundUrl } from '@/lib/lookalike-guard'
 import { buildDeadLinkWaybackUrl } from '@/lib/dead-link'
 import { isFailingHealthState, siteHealthState, siteHealthTitle, type SiteHealthState } from '@/lib/site-health'
 import { tagSlug } from '@/lib/seo/tag-slug'
@@ -40,6 +41,23 @@ import {
   isDragHandleFocused,
   isEventTargetTyping,
 } from '@/lib/keyboard-guards'
+
+/**
+ * 出站守卫接线（W10）：卡片主锚点的 href 先过 safeHref，再过守卫。
+ *
+ * - lookalike → 改跳比对页 `/verify?brand=<规范域名>&domain=<host>`
+ *  （brand 取守卫返回的 `brand.canonicalDomain`，与 W2 `parseVerifyParams`
+ *   的口径一致；host 取守卫归一化后的 host）；
+ * - official / unknown 原样放行；不安全输入（safeHref 落到 '#'）、相对路径
+ *   守卫判 unknown，同样原样返回。
+ * 纯函数：不改文案、不改样式、不写库、不写 localStorage、不记录点击。
+ */
+function guardedOutboundHref(rawHref: string): string {
+  const safe = safeHref(rawHref)
+  const result = classifyOutboundUrl(safe)
+  if (result.verdict !== 'lookalike' || !result.brand) return safe
+  return `/verify?brand=${encodeURIComponent(result.brand.canonicalDomain)}&domain=${encodeURIComponent(result.host)}`
+}
 
 /**
  * 视觉缩略图（P1 #9：视觉卡片——缩略图一半）。
@@ -285,6 +303,12 @@ export const NavigationCard = memo(function NavigationCard({
    * 时不渲染任何徽标位、不占位、不写“检测中”——与移除前的无徽标视觉一致。
    */
   const healthState = siteHealthState(item.health)
+
+  /**
+   * 出站守卫（W10）：三形态共用同一个主锚点 href；lookalike 改跳 /verify
+   * 比对页，official/unknown 原样放行（见文件顶部的 guardedOutboundHref）。
+   */
+  const outboundHref = guardedOutboundHref(item.href)
 
   /**
    * dnd-kit 拖拽手柄的 ref 回调（轻量 context，不 import dnd-kit）。
@@ -686,7 +710,7 @@ export const NavigationCard = memo(function NavigationCard({
             >
               {/* 外链覆盖层：唯一 Tab 停留点（Enter 打开站点 / Space 速览 / → 进操作区） */}
               <a
-                href={safeHref(item.href)}
+                href={outboundHref}
                 target={linkTarget}
                 rel={externalRel}
                 data-prefetch-target="true"
@@ -913,7 +937,7 @@ export const NavigationCard = memo(function NavigationCard({
 
               {/* 外链覆盖层：唯一 Tab 停留点（Enter 打开站点 / Space 速览 / → 进操作区） */}
               <a
-                href={safeHref(item.href)}
+                href={outboundHref}
                 target={linkTarget}
                 rel={externalRel}
                 data-prefetch-target="true"
@@ -1219,7 +1243,7 @@ export const NavigationCard = memo(function NavigationCard({
 
             {/* 外链覆盖层：唯一 Tab 停留点（Enter 打开站点 / Space 速览 / → 进操作区） */}
             <a
-              href={safeHref(item.href)}
+              href={outboundHref}
               target={linkTarget}
               rel={externalRel}
               data-prefetch-target="true"

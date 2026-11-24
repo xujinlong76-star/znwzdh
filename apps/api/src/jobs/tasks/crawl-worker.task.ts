@@ -156,7 +156,7 @@ export async function handleCrawlWorker(
   for (const seed of uniqueSeeds.values()) {
     if (run.shouldStop()) break;
     const task = await enqueueCrawlTask(ctx.repo, {
-      url: seed.url, source: seedSource(seed.kind), priority: 10, maxAttempts: 5, now,
+      url: seed.url, source: seedSource(seed.kind), priority: 10, maxAttempts: 5, requeueCompleted: true, now,
     });
     if (task.status === "queued" || task.status === "retry") seedsEnqueued++;
   }
@@ -171,7 +171,7 @@ export async function handleCrawlWorker(
   for (let i = 0; i < maxTasks; i++) {
     if (run.shouldStop()) { summary.stopped = true; break; }
     const task = await claimCrawlTask(ctx.repo, workerId, {
-      leaseMs: 45_000, minDomainIntervalMs: 2_000, scanLimit: 50,
+      leaseMs: 120_000, minDomainIntervalMs: 2_000, scanLimit: 50,
     });
     if (!task) break;
     summary.tasksClaimed++;
@@ -216,7 +216,7 @@ export async function handleCrawlWorker(
         for (const url of links) {
           if (run.shouldStop()) break;
           const queued = await enqueueCrawlTask(ctx.repo, {
-            url, source: childSource(task.source), priority: 0, maxAttempts: 5,
+            url, source: childSource(task.source), priority: 0, maxAttempts: 5, requeueCompleted: true,
           });
           if (queued.status === "queued" || queued.status === "retry") summary.feedUrlsEnqueued++;
         }

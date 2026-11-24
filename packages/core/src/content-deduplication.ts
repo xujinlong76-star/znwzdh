@@ -28,7 +28,7 @@ export function fingerprintPageContent(text: string, shingleSize = 3): PageFinge
   const unique = new Set(shingles), vector = Array<number>(64).fill(0);
   for (const shingle of unique) {
     const hash = hash64(shingle);
-    for (let bit = 0; bit < 64; bit++) vector[bit] += (hash & (1n << BigInt(bit))) === 0n ? -1 : 1;
+    for (let bit = 0; bit < 64; bit++) vector[bit] = (vector[bit] ?? 0) + ((hash & (1n << BigInt(bit))) === 0n ? -1 : 1);
   }
   let simhash = 0n;
   for (let bit = 0; bit < 64; bit++) if (vector[bit]! >= 0) simhash |= 1n << BigInt(bit);

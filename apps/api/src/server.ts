@@ -728,6 +728,8 @@ export async function buildServer(ctx: AppContext) {
     if (!verdict.ok) {
       return reply.code(401).send({ error: "身份签名缺失或无效" });
     }
+    // 路由层如需额外校验另一个身份（例如 anonId），可避免对同一 identity 重复消费 nonce。
+    (req as typeof req & { __navhubVerifiedIdentitySignature?: string }).__navhubVerifiedIdentitySignature = identity;
   });
 
   /* ---------------------------- 业务路由（按域 register） ---------------------------- */

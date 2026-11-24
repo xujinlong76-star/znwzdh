@@ -125,9 +125,12 @@ describe("账号生命周期 API", () => {
         headers: { "x-navhub-internal-token": "mfa-test-internal-token" },
         payload: { code: value },
       });
+      const currentCode = totp(secret);
+      expect((await verify(currentCode)).statusCode).toBe(200);
+      expect((await verify(currentCode)).statusCode).toBe(401);
       expect((await verify(recovery[0])).statusCode).toBe(200);
       expect((await verify(recovery[0])).statusCode).toBe(401);
-      expect((await post("/api/account/admin-mfa/disable", { code: totp(secret) })).statusCode).toBe(200);
+      expect((await post("/api/account/admin-mfa/disable", { code: recovery[1] })).statusCode).toBe(200);
       expect((await verify(totp(secret))).statusCode).toBe(401);
     } finally {
       if (previousKey === undefined) delete process.env.NAVHUB_MFA_ENCRYPTION_KEY;

@@ -128,16 +128,6 @@ CREATE TABLE IF NOT EXISTS tag_aliases (
 );
 CREATE INDEX IF NOT EXISTS tag_aliases_tag_idx ON tag_aliases(tag_id);
 
-CREATE TABLE IF NOT EXISTS site_id_aliases (
-  old_site_id TEXT PRIMARY KEY,
-  canonical_site_id TEXT NOT NULL,
-  old_title TEXT,
-  old_url TEXT,
-  reason TEXT,
-  merged_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS site_id_aliases_canonical_idx ON site_id_aliases(canonical_site_id);
-
 CREATE TABLE IF NOT EXISTS site_tags (
   site_id TEXT NOT NULL, tag_id TEXT NOT NULL
 );
@@ -318,6 +308,26 @@ CREATE TABLE IF NOT EXISTS health_checks (
 );
 CREATE INDEX IF NOT EXISTS health_checks_site_idx ON health_checks(site_id);
 CREATE INDEX IF NOT EXISTS health_checks_checked_idx ON health_checks(checked_at);
+
+-- 站点质量评分（影子模式）：每站点/规则版本只保留最新快照，不参与线上排序。
+CREATE TABLE IF NOT EXISTS site_quality_assessments (
+  site_id TEXT PRIMARY KEY, version TEXT NOT NULL, evaluated_at INTEGER NOT NULL,
+  overall_score REAL, evidence_coverage REAL NOT NULL, observed_dimensions INTEGER NOT NULL,
+  risk_score REAL, band TEXT NOT NULL, dimensions_json TEXT NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS site_quality_assessments_band_idx ON site_quality_assessments(band);
+
+-- 待审核的站点发现候选：保留来源、抓取证据与审核轨迹，绝不直接公开。
+CREATE TABLE IF NOT EXISTS site_discovery_candidates (
+  id TEXT PRIMARY KEY, url TEXT NOT NULL, canonical_url TEXT NOT NULL UNIQUE,
+  title TEXT, description TEXT, category_id TEXT,
+  tags_json TEXT NOT NULL DEFAULT '[]', source TEXT NOT NULL, confidence REAL,
+  evidence_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'pending',
+  site_id TEXT, discovered_at INTEGER NOT NULL, last_seen_at INTEGER NOT NULL,
+  reviewed_at INTEGER, reviewed_by TEXT, rejection_reason TEXT, updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS site_discovery_candidates_status_idx ON site_discovery_candidates(status, discovered_at);
+CREATE INDEX IF NOT EXISTS site_discovery_candidates_site_idx ON site_discovery_candidates(site_id);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, actor_kind TEXT NOT NULL DEFAULT 'user',
@@ -970,16 +980,6 @@ CREATE INDEX IF NOT EXISTS site_relations_source_idx ON site_relations(source_si
 CREATE INDEX IF NOT EXISTS site_relations_target_idx ON site_relations(target_site_id);
 CREATE INDEX IF NOT EXISTS site_relations_type_idx ON site_relations(relation_type);
 
-CREATE TABLE IF NOT EXISTS site_id_aliases (
-  old_site_id TEXT PRIMARY KEY,
-  canonical_site_id TEXT NOT NULL,
-  old_title TEXT,
-  old_url TEXT,
-  reason TEXT,
-  merged_at BIGINT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS site_id_aliases_canonical_idx ON site_id_aliases(canonical_site_id);
-
 CREATE TABLE IF NOT EXISTS collections (
   id TEXT PRIMARY KEY, slug TEXT NOT NULL, title TEXT NOT NULL, description TEXT,
   kind TEXT NOT NULL DEFAULT 'topic', icon TEXT, sort INTEGER NOT NULL DEFAULT 0,
@@ -1104,6 +1104,27 @@ CREATE TABLE IF NOT EXISTS health_checks (
 );
 CREATE INDEX IF NOT EXISTS health_checks_site_idx ON health_checks(site_id);
 CREATE INDEX IF NOT EXISTS health_checks_checked_idx ON health_checks(checked_at);
+
+-- Site quality shadow assessment; latest snapshot per site, never used for live ranking.
+CREATE TABLE IF NOT EXISTS site_quality_assessments (
+  site_id TEXT PRIMARY KEY, version TEXT NOT NULL, evaluated_at BIGINT NOT NULL,
+  overall_score DOUBLE PRECISION, evidence_coverage DOUBLE PRECISION NOT NULL,
+  observed_dimensions INTEGER NOT NULL, risk_score DOUBLE PRECISION, band TEXT NOT NULL,
+  dimensions_json TEXT NOT NULL, updated_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS site_quality_assessments_band_idx ON site_quality_assessments(band);
+
+-- Staged discovery candidates with provenance and an explicit human review state.
+CREATE TABLE IF NOT EXISTS site_discovery_candidates (
+  id TEXT PRIMARY KEY, url TEXT NOT NULL, canonical_url TEXT NOT NULL UNIQUE,
+  title TEXT, description TEXT, category_id TEXT,
+  tags_json TEXT NOT NULL DEFAULT '[]', source TEXT NOT NULL, confidence DOUBLE PRECISION,
+  evidence_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'pending',
+  site_id TEXT, discovered_at BIGINT NOT NULL, last_seen_at BIGINT NOT NULL,
+  reviewed_at BIGINT, reviewed_by TEXT, rejection_reason TEXT, updated_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS site_discovery_candidates_status_idx ON site_discovery_candidates(status, discovered_at);
+CREATE INDEX IF NOT EXISTS site_discovery_candidates_site_idx ON site_discovery_candidates(site_id);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id BIGSERIAL PRIMARY KEY, actor TEXT NOT NULL, actor_kind TEXT NOT NULL DEFAULT 'user',
@@ -1655,7 +1676,6 @@ export async function openDb(config: {
     // 省掉 read 系统调用的用户态拷贝。这是上限不是预分配 ——
     // SQLite 只映射实际访问到的页，小内存部署同样安全。
     raw.pragma("mmap_size = 268435456"); // 256MB
-    raw.pragma("cache_size = -65536"); // 64MB 页缓存（按需分配，确保 4,800+ 站点与 FTS5/trigram 热索引常驻内存）
     const { drizzle } = await import("drizzle-orm/better-sqlite3");
     const db: Db = {
       dialect: "sqlite",
@@ -1681,7 +1701,10 @@ export async function openDb(config: {
     // 顺序不能反：存量重复会让 CREATE UNIQUE INDEX 失败，而那里是逐语句 try/catch，
     // 失败等于静默跳过索引 —— 看起来迁移成功，实际约束从未生效。
     await runVersionedMigrations(db);
+  await migrateWorkspaceBlobs(db);
     await migrateWorkspaceBlobs(db);
+
+
 
     await cleanupOrphanPluginCategories(db, { skip: config.skipOrphanCleanup });
     return db;

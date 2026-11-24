@@ -501,4 +501,37 @@ describe('tablist A-2：其余 tablist 按 plugin-detail-view 模板补 roving t
     expect(handler).toContain('tabs[next]?.focus()')
     expect(handler).not.toContain('.click()')
   })
+
+  it('history 历史类型：容器挂 onKeyDown，切 tab 走 switchHistoryTab（武装清理共用）', () => {
+    const src = read('src/app/me/history/page.tsx')
+    expect(src).toContain('onKeyDown={handleTabKeyDown}')
+    expect(src).toContain("const HISTORY_TABS = ['searches', 'visits'] as const")
+    expect(src).toContain('const handleTabKeyDown')
+    expect(src).toContain("const switchHistoryTab = (key: 'searches' | 'visits') => {")
+    // 点击与键盘共用同一切换函数：武装清理（U-145/U-400/清空全部/清空访问）不丢
+    expect(src).toContain('onClick={() => switchHistoryTab(key)}')
+    expect(src).toContain('setConfirmDeleteId(null)')
+    expect(src).toContain('setConfirmClear(false)')
+    expect(src).toContain('setConfirmCleanZero(false)')
+    expect(src).toContain('setConfirmClearVisits(false)')
+    expect(count(src, 'tabIndex={tab === key ? 0 : -1}')).toBe(1)
+    const handler = src.slice(
+      src.indexOf('const handleTabKeyDown'),
+      src.indexOf('\n  }', src.indexOf('const handleTabKeyDown')),
+    )
+    expect(handler).toContain("target.getAttribute('role') !== 'tab'")
+    expect(handler).toContain("querySelectorAll<HTMLButtonElement>('[role=\"tab\"]')")
+    expect(handler).not.toContain('[role="tab"]:not([disabled])')
+    expect(handler).toContain('tabs.map((t) => !t.disabled)')
+    expect(handler).toContain('const step = (from: number, dir: 1 | -1): number => {')
+    expect(handler).toContain('const firstEnabled = enabled.findIndex(Boolean)')
+    expect(handler).toContain('const lastEnabled = enabled.lastIndexOf(true)')
+    for (const key of ["'ArrowRight'", "'ArrowLeft'", "'Home'", "'End'"]) {
+      expect(handler).toContain(`event.key === ${key}`)
+    }
+    expect(handler).toContain('event.preventDefault()')
+    expect(handler).toContain('switchHistoryTab(HISTORY_TABS[next])')
+    expect(handler).toContain('tabs[next]?.focus()')
+    expect(handler).not.toContain('.click()')
+  })
 })

@@ -96,3 +96,16 @@ node scripts/search-quality-shadow-eval.mts path/to/shadow-fixture.json --json
 - 不把 WAF、403、超时直接当作站点死亡。
 - 不将用户身份或可识别个人信息写入 golden fixtures。
 - 不因离线指标变好就直接更改生产排序；必须经过分层评测和人工审批。
+
+
+## 本地 JSONL 导入前校验
+
+将每条脱敏 query 的完整金标对象写成一行 JSON，所有行必须使用相同的 `datasetVersion`，每条记录的 `snapshotId` 对应其冻结候选快照。提交前在受控环境执行：
+
+```bash
+pnpm tsx scripts/validate-search-goldset.mts --input /secure/path/search-gold-v1.jsonl --min-cases 100
+```
+
+校验器会检查 schema 版本、数据集版本一致性、100 条最低样本量、queryId 唯一性、隐私复核、两名独立标注、第三人仲裁和候选快照完整性。输入文件限制 5MB、单行 256KB、最多 10,000 条；解析错误只输出行号，不回显原始查询文本。该命令只读本地文件，不会把数据上传、写入仓库或触发模型调用。
+
+注意：测试中的合成样本仅用于验证校验逻辑，不构成真实搜索金标。只有经过脱敏、隐私复核和人工双标/仲裁的真实查询，才可用于质量结论。

@@ -67,6 +67,18 @@ describe("automatic moderation gold evaluation helpers", () => {
     expect(first).toEqual(second);
     expect(selectGoldEvaluationSample(rows,999)).toHaveLength(20);
   });
+  it("always includes a risk-positive gold sample when one exists and preserves a negative control", () => {
+    const rows = [
+      ...Array.from({length:60},(_,index)=>({id:"safe-"+index,category:index%2?"AI":"办公",final_risk:false})),
+      {id:"risk-positive-1",category:"安全",final_risk:true},
+    ];
+    const selected = selectGoldEvaluationSample(rows,20);
+    expect(selected).toHaveLength(20);
+    expect(selected.some(row=>row.final_risk===true)).toBe(true);
+    expect(selected.some(row=>row.final_risk===false)).toBe(true);
+    expect(new Set(selected.map(row=>row.category)).size).toBeGreaterThan(1);
+    expect(selected.map(row=>row.id)).toEqual(selectGoldEvaluationSample([...rows].reverse(),20).map(row=>row.id));
+  });
   it("maps moderation verdicts to labels and treats none as no risk", () => {
     expect(moderationVerdictToPrediction({verdict:"auto_approve",risks:["none"]})).toEqual({actual:"approve",actualRisk:false});
     expect(moderationVerdictToPrediction({verdict:"reject",risks:["phishing"]})).toEqual({actual:"reject",actualRisk:true});

@@ -10,6 +10,7 @@ import {
   reapExpiredCrawlLeases,
   settleCrawlTask,
   upsertSiteDiscoveryCandidate,
+  recordCrawlAiModerationDecision,
 } from "@navhub/store";
 import { llmProviderReadyAny, resolveLlm } from "../../llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../../llm-quota.ts";
@@ -331,6 +332,7 @@ export interface CrawlWorkerSummary {
   aiModerationSucceeded: number;
   aiModerationFailed: number;
   aiModerationQuotaSkipped: number;
+  aiModerationHistoryWriteFailed: number;
   feedUrlsEnqueued: number;
   expiredLeaseRetries: number;
   expiredLeaseDeadLetters: number;
@@ -388,7 +390,7 @@ export async function handleCrawlWorker(
   const summary: CrawlWorkerSummary = {
     seedsEnqueued, sourcesClaimed: dueSources.length, sourcesScheduled, tasksClaimed: 0, completed: 0, retried: 0, deadLettered: 0,
     heldForReview: 0, candidatesUpserted: 0,
-    aiModerationAttempted: 0, aiModerationSucceeded: 0, aiModerationFailed: 0, aiModerationQuotaSkipped: 0,
+    aiModerationAttempted: 0, aiModerationSucceeded: 0, aiModerationFailed: 0, aiModerationQuotaSkipped: 0, aiModerationHistoryWriteFailed: 0,
     feedUrlsEnqueued: 0,
     expiredLeaseRetries: reaped.retried, expiredLeaseDeadLetters: reaped.deadLettered, stopped: false,
   };
@@ -555,6 +557,13 @@ export async function handleCrawlWorker(
                     mode: "shadow", status: "quota_blocked", recordedAt: Date.now(),
                   } },
                 });
+                try {
+                  await recordCrawlAiModerationDecision(ctx.repo, {
+                    candidateId: candidate.id, canonicalUrl: candidate.canonicalUrl,
+                    mode: "shadow", status: "quota_blocked",
+                    policyVersion: "site-moderation-v1", createdAt: Date.now(),
+                  });
+                } catch { summary.aiModerationHistoryWriteFailed++; }
               } else {
                 summary.aiModerationAttempted++;
                 aiModerationCount++;
@@ -609,6 +618,15 @@ export async function handleCrawlWorker(
                       reviewedAt: Date.now(),
                     } },
                   });
+                  try {
+                    await recordCrawlAiModerationDecision(ctx.repo, {
+                      candidateId: candidate.id, canonicalUrl: candidate.canonicalUrl,
+                      mode: "shadow", status: "completed", verdict: decision.verdict,
+                      confidence: decision.confidence, qualityScore: decision.qualityScore,
+                      risks: decision.risks, reasons: decision.reasons, evidence: decision.evidence,
+                      model: decision.model, policyVersion: decision.policyVersion, createdAt: Date.now(),
+                    });
+                  } catch { summary.aiModerationHistoryWriteFailed++; }
                 } catch (moderationError) {
                   summary.aiModerationFailed++;
                   await upsertSiteDiscoveryCandidate(ctx.repo, {
@@ -620,6 +638,14 @@ export async function handleCrawlWorker(
                       recordedAt: Date.now(),
                     } },
                   });
+                  try {
+                    await recordCrawlAiModerationDecision(ctx.repo, {
+                      candidateId: candidate.id, canonicalUrl: candidate.canonicalUrl,
+                      mode: "shadow", status: "error",
+                      errorType: moderationError instanceof Error ? moderationError.name : "UnknownError",
+                      policyVersion: "site-moderation-v1", createdAt: Date.now(),
+                    });
+                  } catch { summary.aiModerationHistoryWriteFailed++; }
                 } finally {
                   await settleLlmQuota(ctx, quota.hold);
                 }

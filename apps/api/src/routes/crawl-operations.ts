@@ -681,12 +681,16 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
   });
 
   app.get("/api/admin/crawl/moderation-model-evaluations/providers", { config: { scope: "admin", cache: { maxAge: 0 } } }, async () => {
-    const resolved = await resolveLlm(ctx);
-    const configured = [{ provider: resolved.provider, source: resolved.source }, ...resolved.fallbacks.map(provider => ({ provider, source: "fallback" }))];
-    const items = configured.filter(item => llmProviderReady(item.provider)).map((item,index) => ({
-      index, name: item.provider.name || item.provider.model, model: item.provider.model, source: item.source,
-    }));
-    return { ok: true, items };
+    try {
+      const resolved = await resolveLlm(ctx);
+      const configured = [{ provider: resolved.provider, source: resolved.source }, ...resolved.fallbacks.map(provider => ({ provider, source: "fallback" }))];
+      const items = configured.filter(item => llmProviderReady(item.provider)).map((item,index) => ({
+        index, name: item.provider.name || item.provider.model, model: item.provider.model, source: item.source,
+      }));
+      return { ok: true, items };
+    } catch {
+      return { ok: true, items: [] };
+    }
   });
   app.post("/api/admin/crawl/moderation-model-evaluations/auto",
     { config: { scope: "admin", rateLimit: { max: 2, timeWindow: "1 minute" } } },

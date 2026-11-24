@@ -23,7 +23,8 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
  * - 秘塔：官网 apple-touch-icon.png（1024×1024）缩至 128；favicon 为深蓝
  *   透明底 M 标，深色对比度弱，未采用。
  * - 天工：www.tiangong.cn favicon.ico，ICO 内 PNG 29×28，原样不放大。
- * - Pika：官网 icon.svg（<style> 内含 prefers-color-scheme: dark 变白标）。
+ * - Pika：官网 icon.svg；2026-11-24 深色复核 W7 已删 SVG 内 @media
+ *   (prefers-color-scheme: dark) 翻转（93a8d1eed），固定为黑色静态版。
  * - Viggle：官网 favicon.svg，白外框 + 黑内芯双色 V 盾标。
  * - Genmo：www.genmo.ai favicon.ico 最大帧 48×48（32bpp，已避默认帧陷阱）。
  * - Vidu：官网 logo.svg（favicon.ico 实测 500，不可用）；自带 #03061E
@@ -68,7 +69,7 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
  *   亮蓝 + 亮青双色标，双主题可辨。
  * - meta-ai.png 来源为 Wayback 存档（见上文），64×64 原样不放大，
  *   透明底亮蓝渐变环，双主题可辨。
- * - 其余站自带底色或亮色标：元宝/秘塔蓝底白标、Pika 深色自变白标、
+ * - 其余站自带底色或亮色标：元宝/秘塔蓝底白标、Pika 黑标（W7 已删深色翻转）、
  *   Viggle 双色标、Genmo 彩色方块、Vidu 深蓝底、Krea 浅灰底黑标、
  *   Deep Dream Generator 透明底橙标、Remove.bg 黄底、ModelScope 紫底、
  *   飞桨蓝底、Stability 紫渐变圆底黑 S.、Mistral 橙红渐变、Flowise

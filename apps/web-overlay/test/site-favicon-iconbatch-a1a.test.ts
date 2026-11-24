@@ -71,12 +71,15 @@ describe('resolveSiteIcon（图标修复 A 类第 1 批前半 a1a）', () => {
 
   it('SVG 事实钉死：三站 SVG 原样落盘且为当前品牌标', () => {
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
-    // ChatGPT：官网 favicon.svg，180 viewBox，黑结标；内含 prefers-color-scheme，
-    // 深色模式自动切白字，无需组件侧底色补丁。file 会报 HTML 是因文件首行为
+    // ChatGPT：官网 favicon.svg，180 viewBox，黑结标；W7 已删 @media
+    // (prefers-color-scheme: dark) 翻转（93a8d1eed），固定为黑色静态版，
+    // 深色模式不再自动切白字。file 会报 HTML 是因文件首行为
     // 官方注释（<!-- https://github.com/openai/openai/... -->），内容确为 SVG。
     const chatgpt = readFileSync(`${dir}chatgpt.svg`, 'utf8')
     expect(chatgpt.includes('<svg'), 'chatgpt.svg').toBe(true)
-    expect(chatgpt.includes('prefers-color-scheme'), 'chatgpt.svg').toBe(true)
+    // W7 已删 @media 翻转（93a8d1eed）：此处原断言 toBe(true) 在 HEAD 已过期，
+    // 随本批一并修正为不存在
+    expect(chatgpt.includes('prefers-color-scheme'), 'chatgpt.svg').toBe(false)
     // Claude：官网 favicon.svg，248 viewBox，珊瑚色 #D97757 星标。
     const claude = readFileSync(`${dir}claude.svg`, 'utf8')
     expect(claude.includes('<svg'), 'claude.svg').toBe(true)

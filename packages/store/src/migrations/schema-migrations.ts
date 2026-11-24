@@ -494,7 +494,7 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
       const statement = `CREATE TABLE IF NOT EXISTS crawl_robots_cache (
         origin TEXT PRIMARY KEY,
         body TEXT,
-        blocked INTEGER NOT NULL DEFAULT 0,
+        blocked BOOLEAN NOT NULL DEFAULT FALSE,
         status INTEGER NOT NULL,
         etag TEXT,
         last_modified TEXT,

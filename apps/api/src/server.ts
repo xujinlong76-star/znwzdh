@@ -84,6 +84,7 @@ import { workspacesRoutes } from "./routes/workspaces.ts";
 import { healthAuditRoutes } from "./routes/health-audit.ts";
 import { crawlSourceRoutes } from "./routes/crawl-sources.ts";
 import { crawlOperationsRoutes } from "./routes/crawl-operations.ts";
+import { crawlModerationPolicyRoutes } from "./routes/crawl-moderation-policy.ts";
 import { linkHealthRoutes } from "./routes/link-health.ts";
 import { graphRoutes } from "./routes/graph.ts";
 import { archiveRoutes } from "./routes/archive.ts";
@@ -762,6 +763,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(healthAuditRoutes, { ctx });
   await app.register(crawlSourceRoutes, { ctx });
   await app.register(crawlOperationsRoutes, { ctx });
+  await app.register(crawlModerationPolicyRoutes, { ctx });
   await app.register(linkHealthRoutes, { ctx });
   await app.register(graphRoutes, { ctx });
   await app.register(archiveRoutes, { ctx });

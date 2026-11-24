@@ -31,7 +31,40 @@ export function moderationVerdictToPrediction(result: { verdict: "auto_approve" 
     actualRisk: result.risks.some(risk => risk !== "none"),
   };
 }
-/** 输出不含网页正文/URL 的错分摘要，便于审核员定位模型错误样本。 */\nexport function buildModerationErrorAnalysis(cases: Array<{id:string;expected:"approve"|"reject"|"review";actual:"approve"|"reject"|"review";expectedRisk?:boolean;actualRisk?:boolean}>) {\n  const groups = new Map<string,{expected:string;actual:string;count:number;sampleIds:string[]}>();\n  const riskFalseNegativeIds:string[] = [];\n  const riskFalsePositiveIds:string[] = [];\n  let labelMismatchCount = 0, riskMismatchCount = 0;\n  for (const item of cases) {\n    if (item.expected !== item.actual) {\n      labelMismatchCount++;\n      const key = item.expected + "->" + item.actual;\n      const group = groups.get(key) ?? {expected:item.expected,actual:item.actual,count:0,sampleIds:[]};\n      group.count++; if (group.sampleIds.length < 20) group.sampleIds.push(item.id);\n      groups.set(key,group);\n    }\n    if (item.expectedRisk !== undefined && item.actualRisk !== undefined && item.expectedRisk !== item.actualRisk) {\n      riskMismatchCount++;\n      if (item.expectedRisk && !item.actualRisk && riskFalseNegativeIds.length < 50) riskFalseNegativeIds.push(item.id);\n      if (!item.expectedRisk && item.actualRisk && riskFalsePositiveIds.length < 50) riskFalsePositiveIds.push(item.id);\n    }\n  }\n  return { labelMismatchCount, riskMismatchCount, confusionGroups:[...groups.values()].sort((a,b)=>b.count-a.count||a.expected.localeCompare(b.expected)||a.actual.localeCompare(b.actual)),\n    riskFalseNegativeIds, riskFalsePositiveIds, samplesTruncated: labelMismatchCount > 20 || riskMismatchCount > 100 };\n}\n/** 透明、可解释的初筛分数；只用于排序辅助，不自动批准或拒绝。 */
+/** 成本未知时保留 null，绝不把未配置单价伪装成免费。 */
+export function summarizeModerationEvaluationUsage(row: Record<string, unknown>) {
+  const numberOrZero = (value: unknown) => { const parsed = Number(value); return Number.isFinite(parsed) ? Math.max(0,parsed) : 0; };
+  const calls = numberOrZero(row.calls), promptTokens = numberOrZero(row.prompt_tokens), completionTokens = numberOrZero(row.completion_tokens);
+  const pricedCalls = Math.min(calls,numberOrZero(row.priced_calls));
+  const parsedCost = row.cost_rmb == null ? null : Number(row.cost_rmb);
+  return { calls, promptTokens, completionTokens, totalTokens:promptTokens+completionTokens,
+    costRmb:parsedCost !== null && Number.isFinite(parsedCost) ? parsedCost : null,
+    pricedCalls, unpricedCalls:Math.max(0,calls-pricedCalls), failedCalls:Math.min(calls,numberOrZero(row.failed_calls)) };
+}
+/** 输出不含网页正文/URL 的错分摘要，便于审核员定位模型错误样本。 */
+export function buildModerationErrorAnalysis(cases: Array<{id:string;expected:"approve"|"reject"|"review";actual:"approve"|"reject"|"review";expectedRisk?:boolean;actualRisk?:boolean}>) {
+  const groups = new Map<string,{expected:string;actual:string;count:number;sampleIds:string[]}>();
+  const riskFalseNegativeIds:string[] = [];
+  const riskFalsePositiveIds:string[] = [];
+  let labelMismatchCount = 0, riskMismatchCount = 0;
+  for (const item of cases) {
+    if (item.expected !== item.actual) {
+      labelMismatchCount++;
+      const key = item.expected + "->" + item.actual;
+      const group = groups.get(key) ?? {expected:item.expected,actual:item.actual,count:0,sampleIds:[]};
+      group.count++; if (group.sampleIds.length < 20) group.sampleIds.push(item.id);
+      groups.set(key,group);
+    }
+    if (item.expectedRisk !== undefined && item.actualRisk !== undefined && item.expectedRisk !== item.actualRisk) {
+      riskMismatchCount++;
+      if (item.expectedRisk && !item.actualRisk && riskFalseNegativeIds.length < 50) riskFalseNegativeIds.push(item.id);
+      if (!item.expectedRisk && item.actualRisk && riskFalsePositiveIds.length < 50) riskFalsePositiveIds.push(item.id);
+    }
+  }
+  return { labelMismatchCount, riskMismatchCount, confusionGroups:[...groups.values()].sort((a,b)=>b.count-a.count||a.expected.localeCompare(b.expected)||a.actual.localeCompare(b.actual)),
+    riskFalseNegativeIds, riskFalsePositiveIds, samplesTruncated: labelMismatchCount > 20 || riskMismatchCount > 100 };
+}
+/** 透明、可解释的初筛分数；只用于排序辅助，不自动批准或拒绝。 */
 export function scoreCrawlCandidate(input: {
   url: string; title?: string | null; description?: string | null;
   evidence?: Record<string, unknown>;
@@ -599,6 +632,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         (row.title != null || row.description != null || row.sanitized_excerpt != null));
       if (!gold.length) { reply.code(409); return { ok: false, error: "正式金标样本缺少可供模型判断的脱敏文本" }; }
       const selected = selectGoldEvaluationSample(gold, body.data.limit);
+      const evaluationId = randomUUID();
       const resolved = await resolveLlm(ctx);
       const provider = [resolved.provider, ...resolved.fallbacks].find(llmProviderReady);
       if (!provider) { reply.code(409); return { ok: false, error: "系统尚未配置可用的大模型或备用模型" }; }
@@ -608,9 +642,10 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       const predictions: Array<{ id: string; actual: "approve" | "reject" | "review"; actualRisk: boolean }> = [];
       const actualModels = new Set<string>();
       let failed = 0;
+      let quotaBlockedBody: ReturnType<typeof replyQuotaBlocked> | null = null;
       for (const row of selected) {
         const quota = await reserveLlmQuota(ctx, null, { source: resolved.source, estimatedTokens: 1800 });
-        if (!quota.ok) return replyQuotaBlocked(reply, quota.error);
+        if (!quota.ok) { quotaBlockedBody = replyQuotaBlocked(reply, quota.error); break; }
         try {
           const decision = await moderateSiteWithAi(provider, {
             // 金标表不保存原始 URL；评测时使用固定脱敏占位 URL，不反查候选原始地址。
@@ -628,7 +663,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
             deadlineAt: Date.now() + 45_000,
             complete: async (_provider, request) => {
               const result = await callLlm(ctx, evaluationResolved, {
-                scenario: "crawl_moderation_gold_eval", identity: null, messages: request.messages,
+                scenario: "crawl_moderation_gold_eval", identity: evaluationId, messages: request.messages,
                 temperature: request.temperature, maxTokens: request.maxTokens, json: request.json,
                 thinking: false, signal: request.signal, deadlineAt: request.deadlineAt, fetchImpl: request.fetchImpl,
               });
@@ -641,10 +676,17 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         } catch { failed++; }
         finally { await settleLlmQuota(ctx, quota.hold); }
       }
+      // 用 evaluationId 作为 llm_usage.identity 关联键，精确隔离并发评测的真实成本。
+      const usageRows = await ctx.repo.raw(
+        "SELECT COUNT(*) AS calls, SUM(prompt_tokens) AS prompt_tokens, SUM(completion_tokens) AS completion_tokens, SUM(cost_rmb) AS cost_rmb, SUM(CASE WHEN cost_rmb IS NOT NULL THEN 1 ELSE 0 END) AS priced_calls, SUM(CASE WHEN ok THEN 0 ELSE 1 END) AS failed_calls FROM llm_usage WHERE scenario=? AND identity=?",
+        ["crawl_moderation_gold_eval", evaluationId],
+      );
+      const usage = summarizeModerationEvaluationUsage(usageRows[0] ?? {});
+      if (quotaBlockedBody) return { ...quotaBlockedBody, id: evaluationId, usage };
       if (failed || predictions.length !== selected.length) {
-        reply.code(502); return { ok: false, error: "自动评测未完整完成，未保存不完整指标", selected: selected.length, completed: predictions.length, failed };
+        reply.code(502); return { ok: false, id: evaluationId, error: "自动评测未完整完成，未保存不完整指标", selected: selected.length, completed: predictions.length, failed, usage };
       }
-      if (actualModels.size !== 1) { reply.code(409); return { ok: false, error: "本轮模型标识不一致，已阻止混合模型评测", models: [...actualModels] }; }
+      if (actualModels.size !== 1) { reply.code(409); return { ok: false, id: evaluationId, error: "本轮模型标识不一致，已阻止混合模型评测", models: [...actualModels], usage }; }
       const predictionMap = new Map(predictions.map(item => [item.id,item]));
       const cases = selected.map(row => {
         const prediction = predictionMap.get(String(row.id));
@@ -665,12 +707,12 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       if (previous?.exactMatchRate != null && metrics.exactMatchRate !== null && previous.exactMatchRate-metrics.exactMatchRate > 0.05) alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次同快照评测，标签精确匹配率下降超过 5 个百分点"});
       if (previous?.riskDetection?.recall != null && metrics.riskDetection.recall !== null && previous.riskDetection.recall-metrics.riskDetection.recall > 0.05) alerts.push({severity:"critical",code:"risk_recall_regression",message:"相较该模型上一次同快照评测，风险召回率下降超过 5 个百分点"});
       const errorAnalysis = buildModerationErrorAnalysis(cases);
-      const evaluation = { ...metrics, alerts, errorAnalysis, execution: { mode: "automatic", requested: body.data.limit, selected: selected.length, source: resolved.source } };
-      const id = randomUUID(), actor = String(req.auth.actor ?? "admin"), createdAt = Date.now();
+      const evaluation = { ...metrics, alerts, errorAnalysis, execution: { mode: "automatic", requested: body.data.limit, selected: selected.length, source: resolved.source, usage } };
+      const id = evaluationId, actor = String(req.auth.actor ?? "admin"), createdAt = Date.now();
       await ctx.repo.run("INSERT INTO crawl_moderation_model_evaluations (id,model,dataset_version,sample_size,metrics_json,created_by,created_at) VALUES (?,?,?,?,?,?,?)",
         [id,model,datasetVersion,metrics.sampleSize,JSON.stringify(evaluation),actor,createdAt]);
       await ctx.repo.audit({ ip:req.ip,actor,actorKind:req.auth.kind,action:"crawl.moderation_model_auto_evaluation",target:id,
-        diff:{ model,datasetVersion,sampleSize:metrics.sampleSize,exactMatchRate:metrics.exactMatchRate,alertCount:alerts.length,source:resolved.source } });
+        diff:{ model,datasetVersion,sampleSize:metrics.sampleSize,exactMatchRate:metrics.exactMatchRate,alertCount:alerts.length,source:resolved.source,usage } });
       return { ok:true,id,model,datasetVersion,sampleSize:metrics.sampleSize,metrics:evaluation,alerts,createdAt,source:resolved.source };
     },
   );

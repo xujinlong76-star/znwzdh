@@ -754,11 +754,23 @@ export async function handleCrawlWorker(
           }
         }
       }
-      await settleCrawlTask(ctx.repo, {
+      if (leaseHeartbeat.signal.aborted) {
+        summary.stopped = true;
+        break;
+      }
+      const settled = await settleCrawlTask(ctx.repo, {
         id: task.id, workerId, outcome: "done", now: Date.now(),
       });
+      if (!settled) {
+        summary.stopped = true;
+        break;
+      }
       summary.completed++;
     } catch (error) {
+      if (leaseHeartbeat.signal.aborted) {
+        summary.stopped = true;
+        break;
+      }
       const message = error instanceof Error ? error.message : String(error);
       if (error instanceof CrawlRobotsBlockedError) {
         await settleCrawlTask(ctx.repo, {

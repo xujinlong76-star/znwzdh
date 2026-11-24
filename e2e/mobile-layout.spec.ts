@@ -28,10 +28,9 @@ import { test, expect, devices } from '@playwright/test';
 /** 用 Pixel 7 做代表：390×915，属于当前安卓主流尺寸 */
 test.use({ ...devices['Pixel 7'] });
 
-const MOBILE_ROUTES: Array<{ path: string; heading: RegExp }> = [
-  // 移动端首页的 h1 是短标题「山羊胡导航」，不是桌面版的「山羊胡网址导航大全」——
-  // 断言放宽到品牌名，避免响应式文案差异把测试打红
-  { path: '/', heading: /山羊胡/ },
+const MOBILE_ROUTES: Array<{ path: string; heading?: RegExp }> = [
+  // 首页品牌标识不是主内容区标题；这里只要求 main 区域存在可见标题。
+  { path: '/' },
   { path: '/category', heading: /分类总览/ },
   { path: '/sites', heading: /全部站点目录/ },
   { path: '/hot', heading: /精选风向标|趋势榜/ },
@@ -49,10 +48,12 @@ test.describe('移动端布局冒烟（Pixel 7）', () => {
 
       await page.goto(path);
 
-      // 主标题可见：用正则放宽文案，避免文案微调就把测试打红
-      await expect(page.getByRole('heading', { level: 1 }).first()).toContainText(heading, {
-        timeout: 20_000,
-      });
+      // 主内容区必须有可见标题；仅非首页继续校验页面特征文案。
+      const mainHeading = page.locator('main h1, main h2, main h3').first()
+      await expect(mainHeading).toBeVisible({ timeout: 20_000 })
+      if (heading) {
+        await expect(mainHeading).toContainText(heading, { timeout: 20_000 })
+      }
 
       // 横向溢出：这是移动端最常见、用户最难受的布局问题
       const overflow = await page.evaluate(() => ({

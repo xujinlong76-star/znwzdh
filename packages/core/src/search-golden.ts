@@ -94,12 +94,14 @@ export function validateSearchGoldenRecord(value: unknown, index = 0): SearchGol
     if (differs && !item.adjudication) throw new Error(label + " 标注存在分歧，必须仲裁");
     if (!differs && item.adjudication) throw new Error(label + " 无分歧样本不应重复仲裁");
     if (item.adjudication) {
-      const adjudication = validateJudgment(item.adjudication, label + " adjudication");
+      const rawAdjudication = item.adjudication as Record<string, unknown>;
+      const adjudication = validateJudgment({ ...rawAdjudication, annotatorId: rawAdjudication.adjudicatorId }, label + " adjudication");
       if (adjudication.annotatorId === a.annotatorId || adjudication.annotatorId === b.annotatorId) {
         throw new Error(label + " 仲裁员必须是第三人");
       }
     }
   }
+  if (judgmentIds.size !== siteIds.size) throw new Error(label + " 每个命中站点都必须完成双人标注");
   return row as unknown as SearchGoldenRecord;
 }
 

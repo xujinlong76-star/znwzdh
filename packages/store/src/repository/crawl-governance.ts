@@ -120,8 +120,10 @@ export async function claimCrawlTask(
         LIMIT ?${lock}`,
       [now, scanLimit],
     );
-    for (const candidate of candidates) {
-      const host = String(candidate.host);
+    // 多候选跨域名时，所有事务按 host 字典序拿域名行锁，避免 A→B / B→A 死锁。
+    const domainByHost = new Map<string, Record<string, unknown>>();
+    const hosts = [...new Set(candidates.map((row) => String(row.host)))].sort();
+    for (const host of hosts) {
       await repo.run(
         "INSERT INTO crawl_domain_state (host, next_allowed_at, lease_task_id, lease_expires_at, updated_at) VALUES (?, 0, NULL, NULL, ?) ON CONFLICT(host) DO NOTHING",
         [host, now],
@@ -131,7 +133,11 @@ export async function claimCrawlTask(
         "SELECT * FROM crawl_domain_state WHERE host = ? LIMIT 1" + domainLock,
         [host],
       );
-      const domain = domainRows[0];
+      if (domainRows[0]) domainByHost.set(host, domainRows[0]);
+    }
+    for (const candidate of candidates) {
+      const host = String(candidate.host);
+      const domain = domainByHost.get(host);
       if (!domain) continue;
       if (Number(domain.next_allowed_at ?? 0) > now) continue;
       if (domain.lease_task_id && Number(domain.lease_expires_at ?? 0) > now) continue;
@@ -168,10 +174,10 @@ export async function settleCrawlTask(
   const now = input.now ?? Date.now();
   return repo.withTransaction(async () => {
     const rows = await repo.raw(
-      "UPDATE crawl_tasks SET status = ?, last_error = ?, next_run_at = ?, lease_owner = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ? AND status = 'leased' AND lease_owner = ? RETURNING host",
+      "UPDATE crawl_tasks SET status = ?, last_error = ?, next_run_at = ?, lease_owner = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ? AND status = 'leased' AND lease_owner = ? AND lease_expires_at > ? RETURNING host",
       [input.outcome, input.error?.slice(0, 2000) ?? null,
         input.outcome === "retry" ? Math.max(now, input.nextRunAt ?? now) : 0,
-        now, input.id, input.workerId],
+        now, input.id, input.workerId, now],
     );
     if (!rows[0]) return false;
     await repo.run(
@@ -191,8 +197,8 @@ export async function renewCrawlLease(
   const expiresAt = now + Math.max(5_000, Math.min(30 * 60_000, Math.floor(input.leaseMs ?? 120_000)));
   return repo.withTransaction(async () => {
     const rows = await repo.raw(
-      "UPDATE crawl_tasks SET lease_expires_at = ?, updated_at = ? WHERE id = ? AND status = 'leased' AND lease_owner = ? RETURNING host",
-      [expiresAt, now, input.id, input.workerId],
+      "UPDATE crawl_tasks SET lease_expires_at = ?, updated_at = ? WHERE id = ? AND status = 'leased' AND lease_owner = ? AND lease_expires_at > ? RETURNING host",
+      [expiresAt, now, input.id, input.workerId, now],
     );
     if (!rows[0]) return false;
     await repo.run(
@@ -212,7 +218,7 @@ export async function reapExpiredCrawlLeases(
   const delay = Math.max(1_000, Math.min(6 * 60 * 60_000, Math.floor(options.retryDelayMs ?? 60_000)));
   return repo.withTransaction(async () => {
     const rows = await repo.raw(
-      "SELECT id, host, attempts, max_attempts FROM crawl_tasks WHERE status = 'leased' AND lease_expires_at <= ? LIMIT 500",
+      "SELECT id, host, attempts, max_attempts FROM crawl_tasks WHERE status = 'leased' AND lease_expires_at <= ? ORDER BY host ASC, id ASC LIMIT 500",
       [now],
     );
     let retried = 0, deadLettered = 0;

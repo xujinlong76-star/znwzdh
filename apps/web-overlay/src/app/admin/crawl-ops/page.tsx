@@ -19,7 +19,7 @@ type Candidate = {
   id:string;url:string;title:string|null;description:string|null;source:string;status:string;
   discoveredAt:number;lastSeenAt:number;
   duplicateEvidence:{exact:boolean;near:number};
-  quality:{score:number;reasons:string[]}
+  quality:{score:number;reasons:string[];dimensions:{completeness:number;freshness:number|null;uniqueness:number;trust:number;risk:number};host:string|null;domainFamily:{id:string;label:string}|null}
 }
 type CandidatePage = {ok:boolean;items:Candidate[];total:number;limit:number;offset:number}
 type Source = {id:string;url:string;kind:'sitemap'|'rss'|'page';enabled:boolean;priority:number;intervalMs:number;nextRunAt:number;lastRunAt:number|null;lastStatus:string|null;lastError:string|null}
@@ -127,7 +127,7 @@ export default function CrawlOperationsPage(){
             <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h3 className="font-semibold">{item.title||'未命名网站'}</h3><a href={safeHref(item.url)} target="_blank" rel="noopener noreferrer" className="break-all text-sm text-muted-foreground underline">{item.url}</a></div><div className="rounded-lg bg-muted px-3 py-2 text-center"><div className="text-xl font-bold tabular-nums">{item.quality.score}</div><div className="text-[11px] text-muted-foreground">质量参考分</div></div></div>
             {item.description&&<p className="text-sm text-muted-foreground">{item.description}</p>}
             <div className="flex flex-wrap gap-2 text-xs"><span className="rounded bg-muted px-2 py-1">来源：{item.source}</span><span className="rounded bg-muted px-2 py-1">完全重复：{item.duplicateEvidence.exact?'是':'否'}</span><span className="rounded bg-muted px-2 py-1">近重复候选：{item.duplicateEvidence.near}</span><span className="rounded bg-muted px-2 py-1">发现：{time(item.discoveredAt)}</span></div>
-            <ul className="list-disc pl-5 text-xs text-muted-foreground">{item.quality.reasons.map((reason,i)=><li key={i}>{reason}</li>)}</ul>
+            <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted/40 p-3 text-xs sm:grid-cols-5"><div>完整度 <strong>{item.quality.dimensions.completeness}</strong></div><div>新鲜度 <strong>{item.quality.dimensions.freshness??'未知'}</strong></div><div>独特性 <strong>{item.quality.dimensions.uniqueness}</strong></div><div>可信度 <strong>{item.quality.dimensions.trust}</strong></div><div>风险指数 <strong>{item.quality.dimensions.risk}</strong></div></div>{item.quality.domainFamily&&<div className="text-xs text-muted-foreground">已核验域名族：{item.quality.domainFamily.label}</div>}<ul className="list-disc pl-5 text-xs text-muted-foreground">{item.quality.reasons.map((reason,i)=><li key={i}>{reason}</li>)}</ul>
             <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row"><Button size="sm" disabled={busy!==null} onClick={()=>void review(item,'approve')}><CheckCircle2 className="mr-1.5 h-4 w-4"/>{busy===item.id?'处理中…':'标记通过'}</Button><input value={reasons[item.id]??''} onChange={e=>setReasons(old=>({...old,[item.id]:e.target.value}))} placeholder="驳回原因（必填）" className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm"/><Button size="sm" variant="outline" disabled={busy!==null} onClick={()=>void review(item,'reject')}><XCircle className="mr-1.5 h-4 w-4"/>驳回</Button></div>
           </div>)}
           {page&&page.total>page.items.length&&<p className="text-center text-xs text-muted-foreground">当前展示前 {page.items.length} 条，共 {page.total} 条。可通过接口分页继续查看。</p>}

@@ -285,7 +285,8 @@ compose 里的服务 `mcp`（[docker/docker-compose.yml](../../docker/docker-com
 
 1. 登录后打开 **`/me/account`** 页的「API 令牌」面板（`ApiTokensPanel`）；
 2. 填名称，权限档位选 **只读**（默认就是只读），创建；
-3. 明文（`nh_…`）只在创建或轮换响应里出现一次，立即复制保存——库里只存 sha256，丢了只能吊销重建。\n4. 令牌需要定期更换时，在同一面板点击「轮换」；系统以 `rotatedAt` 版本做 CAS，并发重复提交只有一个成功，旧明文立即失效。
+3. 明文（`nh_…`）只在创建或轮换响应里出现一次，立即复制保存——库里只存 sha256，丢了只能吊销重建。
+4. 令牌需要定期更换时，在同一面板点击「轮换」；系统以 `rotatedAt` 版本做 CAS，并发重复提交只有一个成功，旧明文立即失效。
 
 对应接口：`POST /api/me/tokens`（`{ name, permission: "read" }`）、`POST /api/me/tokens/:id/rotate`（必须提交列表中的 `expectedRotatedAt` 版本）与 `DELETE /api/me/tokens/:id`；登录身份受信才放行，匿名身份 403；每人最多 10 条未吊销令牌。落库形态：`api_tokens.scopes = "read"`，`owner_identity = 登录身份的规范化 identity`。
 

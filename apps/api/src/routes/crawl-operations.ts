@@ -618,10 +618,18 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       sampleSize:Number(row.sample_size),metrics:JSON.parse(String(row.metrics_json)),createdBy:String(row.created_by),createdAt:Number(row.created_at)}))};
   });
 
+  app.get("/api/admin/crawl/moderation-model-evaluations/providers", { config: { scope: "admin", cache: { maxAge: 0 } } }, async () => {
+    const resolved = await resolveLlm(ctx);
+    const configured = [{ provider: resolved.provider, source: resolved.source }, ...resolved.fallbacks.map(provider => ({ provider, source: "fallback" }))];
+    const items = configured.filter(item => llmProviderReady(item.provider)).map((item,index) => ({
+      index, name: item.provider.name || item.provider.model, model: item.provider.model, source: item.source,
+    }));
+    return { ok: true, items };
+  });
   app.post("/api/admin/crawl/moderation-model-evaluations/auto",
     { config: { scope: "admin", rateLimit: { max: 2, timeWindow: "1 minute" } } },
     async (req, reply) => {
-      const body = z.object({ limit: z.coerce.number().int().min(1).max(20).default(20) }).safeParse(req.body ?? {});
+      const body = z.object({ limit: z.coerce.number().int().min(1).max(20).default(20), providerIndex: z.coerce.number().int().min(0).max(5).default(0) }).safeParse(req.body ?? {});
       if (!body.success) { reply.code(400); return { ok: false, error: "自动评测样本数必须为 1–20" }; }
       const countRows = await ctx.repo.raw("SELECT COUNT(*) AS total FROM crawl_moderation_gold_cases WHERE status='gold_ready'");
       const total = Number(countRows[0]?.total ?? 0);
@@ -634,17 +642,19 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       const selected = selectGoldEvaluationSample(gold, body.data.limit);
       const evaluationId = randomUUID();
       const resolved = await resolveLlm(ctx);
-      const provider = [resolved.provider, ...resolved.fallbacks].find(llmProviderReady);
-      if (!provider) { reply.code(409); return { ok: false, error: "系统尚未配置可用的大模型或备用模型" }; }
-      // 固定本轮实际模型，避免同一评测集混入主模型与备用模型的预测结果。
-      const evaluationResolved = { ...resolved, provider, fallbacks: [] };
+      const configured = [{ provider: resolved.provider, source: resolved.source }, ...resolved.fallbacks.map(provider => ({ provider, source: "fallback" }))].filter(item => llmProviderReady(item.provider));
+      const selectedProvider = configured[body.data.providerIndex];
+      if (!selectedProvider) { reply.code(409); return { ok: false, error: "所选模型不可用或配置已变更，请刷新模型列表" }; }
+      const provider = selectedProvider.provider;
+      // 固定本轮实际模型和来源，避免同一评测集混入不同模型或错误计入备用池用量。
+      const evaluationResolved = { ...resolved, provider, source: selectedProvider.source, fallbacks: [] };
       const policy = await loadCrawlAiModerationPolicy(ctx);
       const predictions: Array<{ id: string; actual: "approve" | "reject" | "review"; actualRisk: boolean }> = [];
       const actualModels = new Set<string>();
       let failed = 0;
       let quotaBlockedBody: ReturnType<typeof replyQuotaBlocked> | null = null;
       for (const row of selected) {
-        const quota = await reserveLlmQuota(ctx, null, { source: resolved.source, estimatedTokens: 1800 });
+        const quota = await reserveLlmQuota(ctx, null, { source: selectedProvider.source, estimatedTokens: 1800 });
         if (!quota.ok) { quotaBlockedBody = replyQuotaBlocked(reply, quota.error); break; }
         try {
           const decision = await moderateSiteWithAi(provider, {
@@ -707,13 +717,13 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       if (previous?.exactMatchRate != null && metrics.exactMatchRate !== null && previous.exactMatchRate-metrics.exactMatchRate > 0.05) alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次同快照评测，标签精确匹配率下降超过 5 个百分点"});
       if (previous?.riskDetection?.recall != null && metrics.riskDetection.recall !== null && previous.riskDetection.recall-metrics.riskDetection.recall > 0.05) alerts.push({severity:"critical",code:"risk_recall_regression",message:"相较该模型上一次同快照评测，风险召回率下降超过 5 个百分点"});
       const errorAnalysis = buildModerationErrorAnalysis(cases);
-      const evaluation = { ...metrics, alerts, errorAnalysis, execution: { mode: "automatic", requested: body.data.limit, selected: selected.length, source: resolved.source, usage } };
+      const evaluation = { ...metrics, alerts, errorAnalysis, execution: { mode: "automatic", requested: body.data.limit, selected: selected.length, source: selectedProvider.source, providerIndex: body.data.providerIndex, usage } };
       const id = evaluationId, actor = String(req.auth.actor ?? "admin"), createdAt = Date.now();
       await ctx.repo.run("INSERT INTO crawl_moderation_model_evaluations (id,model,dataset_version,sample_size,metrics_json,created_by,created_at) VALUES (?,?,?,?,?,?,?)",
         [id,model,datasetVersion,metrics.sampleSize,JSON.stringify(evaluation),actor,createdAt]);
       await ctx.repo.audit({ ip:req.ip,actor,actorKind:req.auth.kind,action:"crawl.moderation_model_auto_evaluation",target:id,
-        diff:{ model,datasetVersion,sampleSize:metrics.sampleSize,exactMatchRate:metrics.exactMatchRate,alertCount:alerts.length,source:resolved.source,usage } });
-      return { ok:true,id,model,datasetVersion,sampleSize:metrics.sampleSize,metrics:evaluation,alerts,createdAt,source:resolved.source };
+        diff:{ model,datasetVersion,sampleSize:metrics.sampleSize,exactMatchRate:metrics.exactMatchRate,alertCount:alerts.length,source:selectedProvider.source,providerIndex:body.data.providerIndex,usage } });
+      return { ok:true,id,model,datasetVersion,sampleSize:metrics.sampleSize,metrics:evaluation,alerts,createdAt,source:selectedProvider.source,providerIndex:body.data.providerIndex };
     },
   );
   app.post("/api/admin/crawl/moderation-model-evaluations", {config:{scope:"admin",rateLimit:{max:20,timeWindow:"1 minute"}}}, async(req,reply)=>{

@@ -6,6 +6,7 @@ import {
   updateDiscountedArmReward,
   computeDwellTimeReward,
   fuse,
+  evaluateSearchRankingShadow,
   type LinUCBModel,
   type RetrievalChannel,
   looksLikeLatinQuery,
@@ -820,6 +821,8 @@ export class SearchEngine {
     }
 
     const hits: SearchHit[] = fuse(candidates, weights, pool);
+    // Shadow ranker is diagnostic-only: compare top-K order without mutating production hits.
+    const rankingDiagnostics = evaluateSearchRankingShadow(hits, 10);
 
     const used = new Set(candidates.map((c) => c.channel));
     // 兼容旧调用方（getLastTimings）；请求内请优先读 result.channelTimings ——
@@ -845,6 +848,7 @@ export class SearchEngine {
       ...(didYouMean ? { didYouMean } : {}),
       ...(correction ? { correction } : {}),
       ...(expandedTerms.length > 1 ? { queryExpansion: expandedTerms } : {}),
+      rankingDiagnostics,
     };
   }
 

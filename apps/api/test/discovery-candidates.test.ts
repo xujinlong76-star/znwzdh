@@ -165,6 +165,28 @@ describe("staged discovery candidate pipeline", () => {
     expect(response.json().error).toContain("不能包含");
   });
 
+  it("falls back to the uncategorized bucket when a suggested category is stale", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/discovery/candidates",
+      payload: {
+        url: "https://candidate-stale-category.example/",
+        source: "ai",
+        title: "Stale Category Candidate",
+        categoryId: "category-no-longer-exists",
+      },
+    });
+    const candidateId = created.json().candidate.id;
+    const review = await app.inject({
+      method: "POST",
+      url: `/api/admin/discovery/candidates/${candidateId}/review`,
+      payload: { action: "approve" },
+    });
+    expect(review.statusCode).toBe(200);
+    expect(review.json().categoryFallback).toBe(true);
+    expect(review.json().candidate.status).toBe("approved");
+  });
+
   it("rejects oversized evidence payloads", async () => {
     const response = await app.inject({
       method: "POST",

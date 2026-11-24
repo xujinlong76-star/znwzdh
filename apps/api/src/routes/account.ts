@@ -45,7 +45,7 @@ function loginFailureKey(identifier: string): string {
 }
 
 
-/** 管理员 TOTP（RFC 6238）：密钥 AES-256-GCM 加密后存入共享 system_states。 */
+/** 管理员 TOTP（RFC 6238）：密钥 AES-256-GCM 加密后存入共享 system_states；同一时间步验证码通过共享消费标记防重放。 */
 type AdminMfaState = {
   iv: string;
   ciphertext: string;

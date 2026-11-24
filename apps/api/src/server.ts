@@ -118,6 +118,7 @@ declare module "fastify" {
  * 鉴权失败审计的节流窗口：同一 IP + 同一失败动作，在这个间隔内只记一条。
  * 失败路径是未认证的，不节流会让"刷失败请求"变成撑爆 audit_logs 的新攻击面。
  */
+let lastIdentityReplayPruneAt = 0;
 const AUTH_FAIL_AUDIT_THROTTLE_MS = 10_000;
 const AUTH_FAIL_AUDIT_AT = new Map<string, number>();
 
@@ -711,12 +712,18 @@ export async function buildServer(ctx: AppContext) {
       identity,
       headers: req.headers as Record<string, unknown>,
       strict: ctx.config.identitySignatureStrict,
-      acceptReplay: (signature, nowMs, ttlMs) => ctx.repo.claimSystemState(
-        "identity-replay:" + createHash("sha256").update(signature).digest("hex"),
-        true,
-        ttlMs,
-        nowMs,
-      ),
+      acceptReplay: async (signature, nowMs, ttlMs) => {
+        if (nowMs - lastIdentityReplayPruneAt > 60_000) {
+          lastIdentityReplayPruneAt = nowMs;
+          await ctx.repo.pruneSystemStatePrefix("identity-replay:", nowMs - ttlMs).catch(() => 0);
+        }
+        return ctx.repo.claimSystemState(
+          "identity-replay:" + createHash("sha256").update(signature).digest("hex"),
+          true,
+          ttlMs,
+          nowMs,
+        );
+      },
     });
     if (!verdict.ok) {
       return reply.code(401).send({ error: "身份签名缺失或无效" });

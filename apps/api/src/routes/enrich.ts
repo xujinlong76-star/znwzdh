@@ -5,6 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { enrichUrl } from "@navhub/ai";
 import { INTERACTIVE_LLM_BUDGET_MS } from "../llm-usage.ts";
@@ -290,6 +291,114 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       enrichment: enriched,
       categoryGap,
       // 审核界面与调用方都要能对上账：哪些字段真的写进去了、哪些因为没值被跳过
+      appliedFields: selection.appliedFields,
+      skippedFields: selection.skipped,
+      ignoredFields: selection.ignoredFields,
+      ...(budget.llmBlocked ? { aiSkipped: "quota" as const, quota: budget.quotaInfo } : {}),
+    };
+  });
+
+  /**
+   * AI 富化后先进入人工审核队列。与兼容旧行为的 /api/sites/auto 不同，
+   * 本入口不会创建正式站点，也不会写搜索索引。
+   */
+  app.post("/api/discovery/enrich-candidate", {
+    config: { rateLimit: { max: 15, timeWindow: "1 minute" }, scope: "write" },
+  }, async (req, reply) => {
+    const body = z.object({
+      url: httpUrl(),
+      categoryId: z.string().max(64).optional(),
+      tags: z.array(z.string().trim().min(1).max(32)).max(20).optional(),
+      title: z.string().trim().min(1).max(120).optional(),
+      description: z.string().trim().max(500).optional(),
+      enrichFields: z.array(z.string()).max(10).optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) {
+      reply.code(400);
+      return { ok: false, error: "参数无效", detail: body.error.issues };
+    }
+
+    const existing = await ctx.repo.findSiteByUrl(body.data.url);
+    if (existing) {
+      reply.code(409);
+      return { ok: false, error: "站点已在正式目录中", siteId: existing.id };
+    }
+
+    const categories = await ctx.repo.listCategories();
+    const budget = await enrichBudget(req as never);
+    const resolved = await resolveLlm(ctx, budget.identity);
+    const enriched = await enrichUrl(body.data.url, {
+      llm: enrichLlmOf(resolved),
+      guard: ctx.config.fetch,
+      knownCategories: categories.map((category) => category.title),
+      heuristicOnly: budget.llmBlocked,
+      onLlmCall: createEnrichUsageCallback(ctx, resolved.source, budget.identity),
+      deadlineAt: Date.now() + INTERACTIVE_LLM_BUDGET_MS,
+    }).finally(() => settleLlmQuota(ctx, budget.hold));
+
+    const selection = selectEnrichmentFields(enriched, body.data.enrichFields);
+    const title = body.data.title ?? selection.applied.title;
+    if (!title) {
+      reply.code(400);
+      return {
+        ok: false,
+        error: "富化结果没有可用标题，请显式提供 title",
+        appliedFields: selection.appliedFields,
+        skippedFields: selection.skipped,
+      };
+    }
+
+    let categoryId = body.data.categoryId ?? null;
+    if (!categoryId && selection.applied.category) {
+      const resolution = resolveCategoryTitleSuggestion(
+        selection.applied.category,
+        categories.map((category) => ({
+          id: category.id,
+          title: category.title,
+          altLabels: category.altLabels,
+        })),
+      );
+      if (resolution.status === "unique") categoryId = resolution.categoryId;
+    }
+
+    const url = enriched.url;
+    const id = randomUUID();
+    const candidate = await ctx.repo.upsertSiteDiscoveryCandidate({
+      id,
+      url,
+      canonicalUrl: canonicalizeUrl(url),
+      title,
+      description: body.data.description ?? selection.applied.description,
+      categoryId,
+      tags: body.data.tags ?? selection.applied.tags,
+      source: "ai",
+      evidence: {
+        provenance: enriched.provenance,
+        appliedFields: selection.appliedFields,
+        skippedFields: selection.skipped,
+        ignoredFields: selection.ignoredFields,
+        heuristicOnly: budget.llmBlocked,
+      },
+    });
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: req.auth.actor,
+      actorKind: req.auth.kind,
+      action: "discovery.candidate_submitted",
+      target: candidate.id,
+      diff: {
+        source: "ai",
+        canonicalUrl: candidate.canonicalUrl,
+        duplicate: candidate.id !== id,
+        aiSkipped: budget.llmBlocked ? "quota" : null,
+      },
+    });
+    reply.code(202);
+    return {
+      ok: true,
+      queued: true,
+      duplicate: candidate.id !== id,
+      candidate,
       appliedFields: selection.appliedFields,
       skippedFields: selection.skipped,
       ignoredFields: selection.ignoredFields,

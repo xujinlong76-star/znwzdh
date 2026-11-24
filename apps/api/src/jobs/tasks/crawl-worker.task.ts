@@ -444,6 +444,28 @@ export async function handleCrawlWorker(
         maxRedirects: 5,
         userAgent: "NavHubDiscoveryBot/1.0 (+https://github.com/xujinlong76-star/znwzdh)",
       }, { signal: run.signal });
+      // 跨 origin 重定向后再次检查目标 robots 策略；禁止把原站许可当作目标站许可。
+      if (new URL(response.finalUrl).origin !== new URL(task.url).origin) {
+        const redirectedRobots = await checkRobotsPolicy(response.finalUrl, run.signal);
+        if (redirectedRobots.kind === "blocked") {
+          await settleCrawlTask(ctx.repo, {
+            id: task.id, workerId, outcome: "hold_for_review",
+            error: "重定向目标 robots.txt 不允许抓取：" + redirectedRobots.reason, now: Date.now(),
+          });
+          summary.heldForReview++;
+          continue;
+        }
+        if (redirectedRobots.kind === "retry") {
+          await settleCrawlTask(ctx.repo, {
+            id: task.id, workerId, outcome: "retry",
+            error: "重定向目标 robots.txt 暂不可读取：" + redirectedRobots.reason,
+            nextRunAt: Date.now() + Math.max(retryDelay(task.attempts), redirectedRobots.retryAfterMs),
+            now: Date.now(),
+          });
+          summary.retried++;
+          continue;
+        }
+      }
       if (response.status === 401 || response.status === 403 || response.status === 451) {
         await settleCrawlTask(ctx.repo, {
           id: task.id, workerId, outcome: "hold_for_review",

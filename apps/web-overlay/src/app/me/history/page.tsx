@@ -385,6 +385,60 @@ export default function SearchHistoryPage() {
     [toast],
   )
 
+  // 切 tab 时清各武装态，避免武装态跨 tab 残留（U-145 / U-400 与
+  // 「清空全部」「清空访问记录」同款清理，原写在 tab onClick 内；
+  // 抽成函数供点击与键盘漫游共用，行为不变）。
+  const switchHistoryTab = (key: 'searches' | 'visits') => {
+    // U-145：切 tab 清武装，避免武装态跨 tab 残留。
+    setConfirmDeleteId(null)
+    // A2：同款清「清空全部」武装——页头操作栏是搜索历史专属，
+    // 武装态若跨 tab 残留，在访问 tab 点「确认清空全部」会删搜索历史。
+    setConfirmClear(false)
+    // U-400：同款清零结果清理武装，避免武装态跨 tab 残留。
+    setConfirmCleanZero(false)
+    // 访问侧同款：切 tab 清「清空访问记录」武装，避免武装态跨 tab 残留。
+    setConfirmClearVisits(false)
+    setTab(key)
+  }
+
+  // A-2：标准 ARIA Tabs 键盘交互。照抄 plugin-detail-view.tsx:143-170
+  // 骨架 + A-1 的 disabled 跳过（全量列表保下标映射，步进跳 disabled；
+  // 两 tab 当前均无 disabled，step() 是防后人加）。无 .click()、无 URL 同步。
+  const HISTORY_TABS = ['searches', 'visits'] as const
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement
+    if (target.getAttribute('role') !== 'tab') return
+    const tabs = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+    )
+    const index = tabs.indexOf(target as HTMLButtonElement)
+    if (index < 0) return
+
+    const enabled = tabs.map((t) => !t.disabled)
+    if (!enabled.some(Boolean)) return
+    const step = (from: number, dir: 1 | -1): number => {
+      let i = from
+      for (let n = 0; n < tabs.length; n++) {
+        i = (i + dir + tabs.length) % tabs.length
+        if (enabled[i]) return i
+      }
+      return from
+    }
+    const firstEnabled = enabled.findIndex(Boolean)
+    const lastEnabled = enabled.lastIndexOf(true)
+
+    let next = index
+    if (event.key === 'ArrowRight') next = step(index, 1)
+    else if (event.key === 'ArrowLeft') next = step(index, -1)
+    else if (event.key === 'Home') next = firstEnabled
+    else if (event.key === 'End') next = lastEnabled
+    else return
+
+    event.preventDefault()
+    switchHistoryTab(HISTORY_TABS[next])
+    tabs[next]?.focus()
+  }
+
   return (
     <Container as="main" id="main-content" className="space-y-6 pt-3 pb-8 sm:pt-4 sm:pb-10">
       <CenterPageHeader
@@ -438,7 +492,7 @@ export default function SearchHistoryPage() {
 
       {/* 双 tab（T23）：搜索历史 / 访问历史。访问历史来自服务端 click 流水，
           与搜索历史一样都是「用户自己的行为数据」。 */}
-      <div role="tablist" aria-label="历史类型" className="flex w-full gap-1.5 sm:w-auto">
+      <div role="tablist" aria-label="历史类型" className="flex w-full gap-1.5 sm:w-auto" onKeyDown={handleTabKeyDown}>
         {(
           [
             ['searches', '搜索历史'],
@@ -449,18 +503,8 @@ export default function SearchHistoryPage() {
             key={key}
             role="tab"
             aria-selected={tab === key}
-            onClick={() => {
-              // U-145：切 tab 清武装，避免武装态跨 tab 残留。
-              setConfirmDeleteId(null)
-              // A2：同款清「清空全部」武装——页头操作栏是搜索历史专属，
-              // 武装态若跨 tab 残留，在访问 tab 点「确认清空全部」会删搜索历史。
-              setConfirmClear(false)
-              // U-400：同款清零结果清理武装，避免武装态跨 tab 残留。
-              setConfirmCleanZero(false)
-              // 访问侧同款：切 tab 清「清空访问记录」武装，避免武装态跨 tab 残留。
-              setConfirmClearVisits(false)
-              setTab(key)
-            }}
+            tabIndex={tab === key ? 0 : -1}
+            onClick={() => switchHistoryTab(key)}
             className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
               tab === key
                 ? 'border-primary/40 bg-primary/10 text-primary'

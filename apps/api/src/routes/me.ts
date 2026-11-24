@@ -1748,6 +1748,12 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         headers: req.headers,
         prefix: "x-navhub-anon",
         strict: ctx.config.identitySignatureStrict,
+        acceptReplay: (signature, nowMs, ttlMs) => ctx.repo.claimSystemState(
+          "identity-replay:" + createHash("sha256").update(signature).digest("hex"),
+          true,
+          ttlMs,
+          nowMs,
+        ),
       });
       if (!verdict.ok) {
         reply.code(401);

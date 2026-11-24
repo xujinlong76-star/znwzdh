@@ -184,7 +184,7 @@ const providers: NextAuthConfig['providers'] = [
 
       // 1. 本地单机 / 开发调试快速登录通道
       if (credentials?.bypass === 'true') {
-        if (allowInsecureLogin) {
+        if (allowInsecureLogin && (await verifyAdminSecondFactor(typeof credentials?.otp === 'string' ? credentials.otp : ''))) {
           return {
             id: 'admin',
             name: '本地管理员',
@@ -268,7 +268,7 @@ const providers: NextAuthConfig['providers'] = [
       if (!envAdminPassword && !adminToken) {
         if (allowInsecureLogin) {
           const allowedDefaults = ['admin', 'admin123', 'navhub', '123456']
-          if (allowedDefaults.includes(rawPassword) || (!rawPassword && (isDev || !authRequired))) {
+          if ((allowedDefaults.includes(rawPassword) || (!rawPassword && (isDev || !authRequired))) && (await verifyAdminSecondFactor(typeof credentials?.otp === 'string' ? credentials.otp : ''))) {
             return {
               id: 'admin',
               name: username || '山羊胡管理员',

@@ -35,6 +35,7 @@ export const HUB_ROUTES: readonly HubRouteEntry
   { method: "GET", path: "/api/admin/client-errors", scope: "admin" },
   { method: "GET", path: "/api/admin/copilot/events", scope: "read" },
   { method: "POST", path: "/api/admin/crawl/moderation-gold-cases/from-candidate/:id", scope: "admin" },
+  { method: "POST", path: "/api/admin/crawl/moderation-gold-cases/sample-from-candidates", scope: "admin" },
   { method: "POST", path: "/api/admin/crawl/moderation-gold-cases/claim", scope: "admin" },
   { method: "GET", path: "/api/admin/crawl/moderation-gold-assignments/metrics", scope: "admin" },
   { method: "GET", path: "/api/admin/crawl/moderation-gold-progress", scope: "admin" },

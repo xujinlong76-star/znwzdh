@@ -229,6 +229,20 @@ export default function CrawlOperationsPage(){
     }finally{setGoldBusy(false)}
   }
 
+  const importStratifiedCandidatesToGold=async()=>{
+    if(goldBusy)return
+    setGoldBusy(true);setGoldMessage(null)
+    try{
+      const result=await hubSend<{ok:boolean;requested:number;scanned:number;selected:number;created:number;existing:number;failed:number;malformed:number;distribution:{categories:Record<string,number>;riskHints:Record<string,number>;sources:Record<string,number>;qualityBands:Record<string,number>}}>(
+        '/api/hub/admin/crawl/moderation-gold-cases/sample-from-candidates','POST',{limit:20}
+      )
+      const categories=Object.entries(result.distribution.categories).map(([key,value])=>key+' '+value).join('、')||'无'
+      const risks=Object.entries(result.distribution.riskHints).map(([key,value])=>key+' '+value).join('、')||'无'
+      setGoldMessage('智能分层抽样完成：扫描 '+result.scanned+' 条，抽中 '+result.selected+' 条；新增 '+result.created+' 条，重复 '+result.existing+' 条，失败 '+result.failed+' 条。类别覆盖：'+categories+'；风险线索分层：'+risks+'。AI 风险线索不是金标结论，所有样本仍需双人独立标注。')
+      await load()
+    }catch(e){setGoldMessage(e instanceof Error?e.message:'智能分层抽样失败')}
+    finally{setGoldBusy(false)}
+  }
   const submitModelEvaluation=async()=>{
     if(goldBusy)return
     let predictions:unknown
@@ -289,7 +303,7 @@ export default function CrawlOperationsPage(){
         <CardContent className="space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
             <div className="text-sm"><div className="font-medium">真实采集候选导入</div><p className="text-xs text-muted-foreground">从当前待审核队列最多导入 20 条；自动脱敏明显 URL、邮箱和电话，并按候选指纹防止重复导入。</p></div>
-            <Button variant="outline" size="sm" onClick={()=>void importCandidatesToGold()} disabled={goldBusy||!page?.items.length}>导入当前候选（最多20条）</Button>
+            <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={()=>void importStratifiedCandidatesToGold()} disabled={goldBusy}>智能分层抽样（20条）</Button><Button variant="ghost" size="sm" onClick={()=>void importCandidatesToGold()} disabled={goldBusy||!page?.items.length}>导入当前页（最多20条）</Button></div>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-1 text-sm"><span className="text-muted-foreground">样本标题</span><input value={goldTitle} onChange={e=>setGoldTitle(e.target.value)} maxLength={200} className="h-9 w-full rounded-md border bg-background px-3"/></label>

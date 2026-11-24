@@ -36,6 +36,31 @@ export function scoreCrawlCandidate(input: {
   return { score: Math.max(0, Math.min(100, score)), reasons };
 }
 
+/** 按类别、风险线索、来源和质量区间做轮转抽样，避免单一分层占满整批。 */
+export function selectStratifiedCrawlCandidates<T extends { category: string; source: string; riskBand: string; qualityBand: string; score: number }>(
+  items: T[], limit: number,
+): T[] {
+  const buckets = new Map<string, T[]>();
+  for (const item of items) {
+    const key = [item.category,item.riskBand,item.source,item.qualityBand].join("|");
+    const bucket = buckets.get(key) ?? []; bucket.push(item); buckets.set(key,bucket);
+  }
+  for (const bucket of buckets.values()) bucket.sort((a,b) => b.score-a.score);
+  const keys = [...buckets.keys()].sort((a,b) => (buckets.get(a)?.length ?? 0) - (buckets.get(b)?.length ?? 0) || a.localeCompare(b));
+  const selected: T[] = [];
+  while (selected.length < Math.max(0,Math.min(100,Math.floor(limit)))) {
+    let progressed = false;
+    for (const key of keys) {
+      const item = buckets.get(key)?.shift();
+      if (!item) continue;
+      selected.push(item); progressed = true;
+      if (selected.length >= Math.max(0,Math.min(100,Math.floor(limit)))) break;
+    }
+    if (!progressed) break;
+  }
+  return selected;
+}
+
 function moderationEvidenceOf(evidence: Record<string, unknown>): Record<string, unknown> | null {
   const raw = evidence.aiModeration;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -240,6 +265,77 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       .replace(/\s+/g, " ").trim().slice(0, max);
   };
 
+  app.post("/api/admin/crawl/moderation-gold-cases/sample-from-candidates",
+    { config: { scope: "admin", rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const body = z.object({ limit: z.coerce.number().int().min(1).max(100).default(20) }).safeParse(req.body ?? {});
+      if (!body.success) { reply.code(400); return { ok: false, error: "抽样数量必须为 1–100" }; }
+      const rows = await ctx.repo.raw(
+        "SELECT id,url,title,description,category_id,source,evidence_json,discovered_at FROM site_discovery_candidates WHERE status = 'pending' ORDER BY discovered_at DESC,id ASC LIMIT 5000",
+      );
+      const importedRows = await ctx.repo.raw("SELECT source_fingerprint FROM crawl_moderation_gold_cases WHERE source_fingerprint LIKE 'candidate:%'");
+      const imported = new Set(importedRows.map(row => String(row.source_fingerprint)));
+      const eligibleCandidates: Array<{ row: Record<string, unknown>; evidence: Record<string, unknown>; score: number; category: string; source: string; riskBand: string; qualityBand: string }> = [];
+      let malformed = 0;
+      for (const row of rows) {
+        let evidence: Record<string, unknown>;
+        try {
+          const parsedEvidence = JSON.parse(String(row.evidence_json ?? "{}")) as unknown;
+          if (!parsedEvidence || typeof parsedEvidence !== "object" || Array.isArray(parsedEvidence)) { malformed++; continue; }
+          evidence = parsedEvidence as Record<string, unknown>;
+        } catch { malformed++; continue; }
+        const fingerprint = "candidate:" + createHash("sha256").update(String(row.id)).digest("hex");
+        if (imported.has(fingerprint)) continue;
+        const category = String(row.category_id ?? "").trim() || "未分类";
+        const source = String(row.source ?? "").trim() || "未知来源";
+        const ai = evidence.aiModeration && typeof evidence.aiModeration === "object" && !Array.isArray(evidence.aiModeration)
+          ? evidence.aiModeration as Record<string, unknown> : null;
+        const risks = ai && Array.isArray(ai.risks) ? ai.risks.filter(value => typeof value === "string" && value.trim()) : [];
+        // AI 风险线索只决定抽样分层，不会被写入人工金标标签。
+        const riskBand = risks.length ? "risk_hint" : ai?.status === "completed" ? "no_risk_hint" : "unknown";
+        const quality = scoreCrawlCandidate({ url: String(row.url ?? ""), title: row.title == null ? null : String(row.title),
+          description: row.description == null ? null : String(row.description), evidence });
+        const qualityBand = quality.score < 40 ? "low" : quality.score < 70 ? "medium" : "high";
+        eligibleCandidates.push({ row, evidence, score: quality.score, category, source, riskBand, qualityBand });
+      }
+      const selected = selectStratifiedCrawlCandidates(eligibleCandidates, body.data.limit);
+      const actor = String(req.auth.actor ?? "admin");
+      let created = 0, existing = 0, failed = 0;
+      const createdIds: string[] = [];
+      for (const item of selected) {
+        const candidateId = String(item.row.id);
+        const fingerprint = "candidate:" + createHash("sha256").update(candidateId).digest("hex");
+        const excerptValue = [item.evidence.sanitizedExcerpt,item.evidence.excerpt,item.evidence.bodyExcerpt,item.evidence.contentExcerpt]
+          .find(value => typeof value === "string" && value.trim()) as string | undefined;
+        const title = redactGoldText(item.row.title == null ? undefined : String(item.row.title), 200);
+        const description = redactGoldText(item.row.description == null ? undefined : String(item.row.description), 1000);
+        const sanitizedExcerpt = redactGoldText(excerptValue, 3000);
+        if (!title && !description && !sanitizedExcerpt) { failed++; continue; }
+        try {
+          const result = await ctx.repo.withTransaction(async () => {
+            const found = await ctx.repo.raw("SELECT id FROM crawl_moderation_gold_cases WHERE source_fingerprint = ? LIMIT 1", [fingerprint]);
+            if (found[0]) return false;
+            await createCrawlModerationGoldCase(ctx.repo, { id: randomUUID(), sourceFingerprint: fingerprint, title, description,
+              category: item.category, sanitizedExcerpt, createdBy: actor });
+            return true;
+          });
+          if (result) { created++; createdIds.push(candidateId); imported.add(fingerprint); } else existing++;
+        } catch {
+          const found = await ctx.repo.raw("SELECT id FROM crawl_moderation_gold_cases WHERE source_fingerprint = ? LIMIT 1", [fingerprint]);
+          if (found[0]) existing++; else failed++;
+        }
+      }
+      const countBy = (key: "category" | "riskBand" | "source" | "qualityBand") => Object.fromEntries(
+        [...selected.reduce((map,item) => map.set(item[key], (map.get(item[key]) ?? 0) + 1), new Map<string,number>())].sort((a,b) => b[1]-a[1]),
+      );
+      if (createdIds.length) await ctx.repo.audit({ ip: req.ip, actor, actorKind: req.auth.kind,
+        action: "crawl.moderation_gold_stratified_import", target: "batch",
+        diff: { created: createdIds.length, candidateIds: createdIds.slice(0,100), requested: body.data.limit } });
+      return { ok: true, requested: body.data.limit, scanned: rows.length, eligible: eligibleCandidates.length,
+        selected: selected.length, created, existing, failed, malformed, distribution: { categories: countBy("category"),
+          riskHints: countBy("riskBand"), sources: countBy("source"), qualityBands: countBy("qualityBand") } };
+    },
+  );
   app.post("/api/admin/crawl/moderation-gold-cases/from-candidate/:id",
     { config: { scope: "admin", rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (req, reply) => {

@@ -77,6 +77,14 @@ GET /api/ready
 GET /api/recipes
 GET /api/relations/types
 # 搜索热词：只读聚合，词库实时变化且未登记响应契约（与 search/linucb 同口径）
+# 相似站点/联想（similar 子系统，2026-11-24 并行批次在途）：只读召回接口，响应随该子系统一起定型，
+# 与 search/linucb 同口径暂不登记响应契约；子系统落地时随其批次补绑定并从本清单删除。
+GET /api/similar/lookup
+HEAD /api/similar/lookup
+GET /api/similar/suggestions
+HEAD /api/similar/suggestions
+GET /api/sites/{id}/similar-insights
+HEAD /api/sites/{id}/similar-insights
 GET /api/search/linucb
 GET /api/shortlinks/{code}
 GET /api/sites/duplicates

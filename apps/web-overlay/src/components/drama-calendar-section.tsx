@@ -125,9 +125,11 @@ function CalendarBody({ data }: { data: DramaCalendarResponse }) {
                     </span>
                   </h3>
                   <ul className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {day.items.map((item) => (
+                    {day.items.map((item, idx) => (
                       <li
-                        key={item.title}
+                        // 剧名不唯一：同一剧名可在快照里出现多次（如重复下榜），
+                        // 裸剧名作 key 会报 duplicate key；下标后缀保证唯一。
+                        key={`${item.title}-${idx}`}
                         className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 p-3 shadow-sm"
                       >
                         <span className="block text-sm font-medium">{item.title}</span>
@@ -162,9 +164,10 @@ function CalendarBody({ data }: { data: DramaCalendarResponse }) {
                       </span>
                     </p>
                     <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                      {group.items.map((i) => (
+                      {group.items.map((i, idx) => (
                         <li
-                          key={i.title}
+                          // 同上：剧名不唯一，下标后缀保证唯一。
+                          key={`${i.title}-${idx}`}
                           className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 p-3 shadow-sm"
                         >
                           <span className="block text-sm font-medium">{i.title}</span>
@@ -201,9 +204,12 @@ function CalendarBody({ data }: { data: DramaCalendarResponse }) {
                 （这里不知道它在哪个平台播，先按剧名预约着，开播后平台确认了再补）。
               </p>
               <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {data.recentlyDropped.map((item) => (
+                {data.recentlyDropped.map((item, idx) => (
                   <li
-                    key={item.title}
+                    // 同一剧名掉榜→重回榜→再掉榜时 dropped 里会累积多条同名记录
+                    // （buildCalendarSnapshot 不对 dropped 去重），裸剧名作 key
+                    // 必然撞车（实测「早安，林思忆」）；下标后缀保证唯一。
+                    key={`${item.title}-${idx}`}
                     className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 p-3 shadow-sm"
                   >
                     <span className="block text-sm font-medium">{item.title}</span>
@@ -223,8 +229,8 @@ function CalendarBody({ data }: { data: DramaCalendarResponse }) {
                 档期未兑现（{data.expired.length} 部）：预计日期已过，榜单仍未更新
               </summary>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-600 dark:text-zinc-400">
-                {data.expired.map((item) => (
-                  <li key={item.title}>
+                {data.expired.map((item, idx) => (
+                  <li key={`${item.title}-${idx}`}>
                     《{item.title}》原定 {item.premiereDate} 上线
                     <span className="ml-2 inline-flex align-middle">
                       <ReserveButton title={item.title} premiereDate={item.premiereDate} />

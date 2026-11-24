@@ -166,11 +166,13 @@ describe('P1 #10 触控目标：首页常驻控件', () => {
 })
 
 describe('P1 #10 触控目标：顶部工具栏与开关', () => {
-  it('navigation-toolbar：顶栏收口后 6 处 44×44，单行菜单项 44px', () => {
+  it('navigation-toolbar：44×44 按钮 11 处（按宽度预算分档显示），菜单项 44px', () => {
     const src = read('src/components/navigation-toolbar.tsx')
-    // 2026-11-21：今日中心移入聚合菜单、字号/外观等开关收进下拉，
-    // 独立 44×44 按钮从 11 处减到 6 处；触控目标仍由菜单项 min-h-11 保证。
-    expect(count(src, 'h-11 w-11')).toBe(6)
+    // 判定记录（2026-11-24）：2026-11-21「顶栏收口 11→6」方案已被 U-155/C-W7-5/
+    // U-382 的「按宽度预算分档显示」取代（360px 行 6 钮 / 390px 行 7 钮 /
+    // ≥1536 全量 11 钮，宽度账见 u155-diy-entry-guard.test.ts 与
+    // e2e/toolbar-360-overflow.spec.ts）。触控目标不变：全部 h-11 w-11 = 44px。
+    expect(count(src, 'h-11 w-11')).toBe(11)
     expect(src).not.toContain('h-9 w-9')
     // 收口后单行菜单项改走 min-h-11 px-2.5 text-xs rounded-lg
     // 收口后菜单触发器走 h-9 w-auto rounded-lg px-2（视觉紧凑），

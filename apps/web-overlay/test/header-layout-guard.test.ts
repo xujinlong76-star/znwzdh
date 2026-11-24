@@ -56,19 +56,15 @@ describe('navigation-toolbar：顶栏 Flex 布局', () => {
     expect(src).not.toContain('basis-full max-w-none md:basis-auto overflow-hidden')
   })
 
-  it('「今日中心」已下沉进聚合菜单（2026-11-21 顶栏收敛）', () => {
-    // 顶栏收敛把 11 个纯图标压成「4 核心 + 2 聚合」，今日中心成为菜单项
-    //（DropdownMenuItem 内的 <span>今日中心</span>），不再有行内按钮形态。
-    expect(src).toContain('>今日中心<')
-    // 行内不应再保留独立的今日中心按钮（避免两处入口语义重复）
-    expect(src).not.toContain('aria-label="打开今日中心小窗"')
-  })
-
-  it('「今日中心」入口保留在聚合菜单内', () => {
-    // 入口完整性：菜单项受 onOpenTodayCenter 守卫，且带可读的今日项数说明
+  it('「今日中心」行内小窗入口（U-155 设计；取代 2026-11-21 菜单项形态）', () => {
+    // 判定记录（2026-11-24）：与 u155-diy-entry-guard「360px 行内应有
+    // aria-label="打开今日中心小窗"」直接冲突——u155 是更新的设计
+    // （C-W7-5/U-382 宽度账 + e2e toolbar-360-overflow 共同锁定），旧断言按
+    // 现行设计对齐。核心意图不变：入口存在、受 onOpenTodayCenter 守卫、
+    // 带可读的今日项数说明与紧急红点。
+    expect(src).toContain('aria-label="打开今日中心小窗"')
     expect(src).toContain('onOpenTodayCenter')
     expect(src).toContain('todayBadge.todayCount')
-    // 有紧急项时仍要有视觉红点提示（从行内按钮移到了菜单项上）
     expect(src).toContain('hasTodayAlert')
   })
 })

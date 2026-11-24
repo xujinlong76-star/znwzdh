@@ -44,6 +44,21 @@ describe("人工金标双人标注与仲裁", () => {
     expect(Boolean(gold?.final_risk)).toBe(false);
   });
 
+  it("模型评测可读取超过 100 条的完整金标集", async () => {
+    const repo = await setup();
+    const now = Date.now();
+    for (let i = 0; i < 150; i += 1) {
+      await repo.run(
+        "INSERT INTO crawl_moderation_gold_cases (id,source_fingerprint,status,created_by,created_at,updated_at,final_label,final_risk) VALUES (?,?,?,?,?,?,?,?)",
+        [`gold-bulk-${i}`, `bulk:${String(i).padStart(4, "0")}`, "gold_ready", "admin", now + i, now + i, i % 2 ? "reject" : "approve", i % 2 === 1 ? 1 : 0],
+      );
+    }
+    const rows = await (await import("../src/repository/crawl-ai-moderation.ts")).listCrawlModerationGoldCases(
+      repo, { status: "gold_ready", limit: 5000, offset: 0 },
+    );
+    expect(rows).toHaveLength(150);
+  });
+
   it("同一采集候选来源指纹不能并发重复进入金标队列", async () => {
     const repo = await setup();
     const fingerprint = "candidate:" + "c".repeat(64);

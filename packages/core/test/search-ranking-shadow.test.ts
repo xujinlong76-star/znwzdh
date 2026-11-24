@@ -29,6 +29,7 @@ describe("versioned search ranking shadow", () => {
       topK: 3,
       compared: 3,
     });
+    expect(result.overlap).toBe(3);
     expect(result.changed).toBeGreaterThan(0);
     expect(hits).toEqual(before);
   });

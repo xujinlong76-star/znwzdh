@@ -47,6 +47,9 @@ describe("site quality shadow reranker", () => {
       { siteId: "same", qualityScore: 80, evidenceCoverage: 80, band: "high" },
       { siteId: "same", qualityScore: 70, evidenceCoverage: 70, band: "medium" },
     ])).toThrow(/唯一/);
+    expect(() => rerankBySiteQualityShadow([
+      { siteId: "bad-band", qualityScore: 80, evidenceCoverage: 80, band: "unknown" as never },
+    ])).toThrow("质量分档无效");
   });
 
   it("allows offline relevance metrics to compare baseline and shadow order", () => {

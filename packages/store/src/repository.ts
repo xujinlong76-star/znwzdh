@@ -846,6 +846,10 @@ async savedPluginEmbeddings(filter?: {
     return healthRepo.countSiteQualityAssessments(this, band);
   }
 
+  async getSiteQualityAssessmentsBySiteIds(siteIds: readonly string[]) {
+    return healthRepo.getSiteQualityAssessmentsBySiteIds(this, siteIds);
+  }
+
   async upsertSiteDiscoveryCandidate(input: discoveryCandidatesRepo.UpsertSiteDiscoveryCandidateInput) {
     return discoveryCandidatesRepo.upsertSiteDiscoveryCandidate(this, input);
   }

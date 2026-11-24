@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { openDb, type Db } from "../src/driver.ts";
 import { Repository } from "../src/repository.ts";
 import {
+  countCrawlAiModerationDecisions,
   listCrawlAiModerationDecisions,
   recordCrawlAiModerationDecision,
 } from "../src/repository/crawl-ai-moderation.ts";
@@ -38,6 +39,7 @@ describe("不可变采集 AI 审核历史", () => {
     expect(rows[0]?.createdAt).toBe(200);
     expect(rows[0]?.model).toBe("model-b");
     expect(rows[1]?.verdict).toBe("manual_review");
+    expect(await countCrawlAiModerationDecisions(repo, "candidate-1")).toBe(2);
   });
 
   it("拒绝超范围置信度与质量分", async () => {

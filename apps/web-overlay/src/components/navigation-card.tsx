@@ -144,7 +144,7 @@ function CardHealthBadge({
         : 'bg-amber-500'
   return (
     <span
-      className="inline-flex shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground"
+      className="inline-flex shrink-0 items-center gap-1 font-mono text-[0.6875rem] text-muted-foreground"
       title={title ?? undefined}
     >
       <span aria-hidden="true" className={cn('h-2 w-2 rounded-full', dotClass)} />
@@ -638,7 +638,7 @@ export const NavigationCard = memo(function NavigationCard({
 {/* 键盘聚焦可见提示（P1-19）：主链接聚焦时显式给出快捷键，复用 Space 徽章样式；仅主链接聚焦时显示（peer-focus-visible），按 → 进操作区后自动隐去、不遮按钮。 */}
               {effectiveCardElements.showQuickLookBadge && (
                 <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 peer-focus-visible:opacity-100 sm:group-hover/card:opacity-0 transition-opacity duration-[--duration-fast]">
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded-sm shadow-xs">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[0.625rem] font-mono font-medium bg-primary text-primary-foreground rounded-sm shadow-xs">
                     <span>Space 速览</span>
                     <span aria-hidden="true">·</span>
                     <span>→ 操作</span>
@@ -677,7 +677,7 @@ export const NavigationCard = memo(function NavigationCard({
                     <Pin className="w-2.5 h-2.5 text-pinned fill-pinned shrink-0" />
                   )}
                   {item.liveMetrics?.githubStars && (
-                    <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-pinned-foreground bg-pinned/10 px-1 py-0.2 rounded-sm">
+                    <span className="hidden sm:inline-flex items-center gap-0.5 text-[0.625rem] font-mono font-medium text-pinned-foreground bg-pinned/10 px-1 py-0.2 rounded-sm">
                       <Star className="w-2 h-2 text-pinned fill-pinned" />
                       {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
                     </span>
@@ -804,7 +804,7 @@ export const NavigationCard = memo(function NavigationCard({
           {!isFeatureHidden('feat:tooltips') && (
             <TooltipContent side="bottom" align="center" className="max-w-[280px] max-h-40 overflow-y-auto text-xs">
               <p>{item.description || item.title}</p>
-              <p className="text-[10px] text-muted-foreground pt-1 border-t mt-1">按 Space 空格键沙箱速览</p>
+              <p className="text-[0.625rem] text-muted-foreground pt-1 border-t mt-1">按 Space 空格键沙箱速览</p>
             </TooltipContent>
           )}
         </Tooltip>
@@ -828,7 +828,7 @@ export const NavigationCard = memo(function NavigationCard({
               onKeyDown={handleActionsKeyDown}
             >
               {isPinnedInCategory && effectiveCardElements.showPinnedBadge && (
-                <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-pinned/15 text-pinned-foreground border border-pinned/30 font-medium">
+                <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[0.625rem] font-mono px-1.5 py-0.2 rounded-full bg-pinned/15 text-pinned-foreground border border-pinned/30 font-medium">
                   <Pin className="w-2.5 h-2.5 fill-pinned" />
                   <span>已置顶</span>
                 </div>
@@ -866,7 +866,7 @@ export const NavigationCard = memo(function NavigationCard({
 {/* 键盘聚焦可见提示（P1-19）：主链接聚焦时显式给出快捷键，复用 Space 徽章样式；仅主链接聚焦时显示（peer-focus-visible），按 → 进操作区后自动隐去、不遮按钮。 */}
               {effectiveCardElements.showQuickLookBadge && (
                 <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 peer-focus-visible:opacity-100 sm:group-hover/card:opacity-0 transition-opacity duration-[--duration-fast]">
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded-sm shadow-xs">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[0.625rem] font-mono font-medium bg-primary text-primary-foreground rounded-sm shadow-xs">
                     <span>Space 速览</span>
                     <span aria-hidden="true">·</span>
                     <span>→ 操作</span>
@@ -970,7 +970,7 @@ export const NavigationCard = memo(function NavigationCard({
                     onClick={handleTagClick}
                     tabIndex={-1}
                     data-card-action
-                    className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors min-h-6"
+                    className="pointer-events-auto inline-flex items-center text-[0.625rem] px-1.5 py-0.5 rounded-full bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors min-h-6"
                   >
                     #{tag}
                   </Link>
@@ -986,13 +986,13 @@ export const NavigationCard = memo(function NavigationCard({
                       onPeek?.(item)
                     }}
                     aria-label={`查看平替：${topAlternative.targetTitle}`}
-                    className="pointer-events-auto inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-category/10 text-category-foreground font-medium hover:bg-category/20 border border-category/20 transition-colors cursor-pointer"
+                    className="pointer-events-auto inline-flex items-center gap-1 text-[0.625rem] px-2 py-0.5 rounded-full bg-category/10 text-category-foreground font-medium hover:bg-category/20 border border-category/20 transition-colors cursor-pointer"
                   >
                     <span>平替: {topAlternative.targetTitle}</span>
                   </button>
                 )}
                 {item.actions && item.actions.length > 0 && (
-                  <span className="inline-flex items-center gap-0.5 text-[10px] text-pinned-foreground font-medium bg-pinned/10 border border-pinned/20 px-1.5 py-0.5 rounded-full">
+                  <span className="inline-flex items-center gap-0.5 text-[0.625rem] text-pinned-foreground font-medium bg-pinned/10 border border-pinned/20 px-1.5 py-0.5 rounded-full">
                     <Zap className="w-2.5 h-2.5" />
                     <span>深链</span>
                   </span>
@@ -1125,7 +1125,7 @@ export const NavigationCard = memo(function NavigationCard({
           {!isFeatureHidden('feat:tooltips') && (
             <TooltipContent side="bottom" align="center" className="max-w-[280px] max-h-40 overflow-y-auto text-xs">
               <p>{item.description || item.title}</p>
-              <p className="text-[10px] text-muted-foreground pt-1 border-t mt-1">💡 按 Space 空格键呼出沙箱速览与微动作</p>
+              <p className="text-[0.625rem] text-muted-foreground pt-1 border-t mt-1">💡 按 Space 空格键呼出沙箱速览与微动作</p>
             </TooltipContent>
           )}
         </Tooltip>
@@ -1148,7 +1148,7 @@ export const NavigationCard = memo(function NavigationCard({
             onKeyDown={handleActionsKeyDown}
           >
             {isPinnedInCategory && effectiveCardElements.showPinnedBadge && (
-              <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-pinned/15 text-pinned-foreground border border-pinned/30 font-medium">
+              <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[0.625rem] font-mono px-1.5 py-0.2 rounded-full bg-pinned/15 text-pinned-foreground border border-pinned/30 font-medium">
                 <Pin className="w-2.5 h-2.5 fill-pinned" />
                 <span>已置顶</span>
               </div>
@@ -1175,7 +1175,7 @@ export const NavigationCard = memo(function NavigationCard({
             {/* 键盘聚焦可见提示（P1-19）：主链接聚焦时显式给出快捷键，复用 Space 徽章样式；仅主链接聚焦时显示（peer-focus-visible），按 → 进操作区后自动隐去、不遮按钮。 */}
             {effectiveCardElements.showQuickLookBadge && (
               <div className="absolute top-2 right-2 z-20 pointer-events-none opacity-0 peer-focus-visible:opacity-100 sm:group-hover/card:opacity-0 transition-opacity duration-[--duration-fast]">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-primary text-primary-foreground rounded-sm shadow-xs">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[0.625rem] font-mono font-medium bg-primary text-primary-foreground rounded-sm shadow-xs">
                   <span>Space 速览</span>
                   <span aria-hidden="true">·</span>
                   <span>→ 操作</span>
@@ -1317,7 +1317,7 @@ export const NavigationCard = memo(function NavigationCard({
                       onClick={handleTagClick}
                       tabIndex={-1}
                       data-card-action
-                      className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.2 rounded-full bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors"
+                      className="pointer-events-auto inline-flex items-center text-[0.625rem] px-1.5 py-0.2 rounded-full bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors"
                     >
                       #{tag}
                     </Link>

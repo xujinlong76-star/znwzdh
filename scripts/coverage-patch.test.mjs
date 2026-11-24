@@ -19,7 +19,7 @@ describe("coverage-patch", () => {
       "+doc",
       "+doc2",
     ].join("\n"));
-    expect([...parsed.get("packages/core/src/demo.ts") ?? []]).toEqual([1,2,3,4,5,6,7,8,9,10]);
+    expect([...(parsed.get("packages/core/src/demo.ts") ?? [])]).toEqual([1,2,3,4,5,6,7,8,9,10]);
     expect(parsed.has("docs/example.md")).toBe(false);
   });
 

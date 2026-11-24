@@ -182,6 +182,14 @@ describe("Web 管理员凭据隔离", () => {
   });
 });
 
+describe("BFF session-check rate-limit exemption", () => {
+  it("server-side session revocation checks send the internal token when configured", () => {
+    const source = readFileSync(new URL("../src/lib/server/hub.ts", import.meta.url), "utf8");
+    expect(source).toContain("const internalToken = process.env.NAVHUB_INTERNAL_TOKEN");
+    expect(source).toContain('headers["x-navhub-internal-token"] = internalToken');
+  });
+});
+
 describe("isAdminIdentity", () => {
   it("空值与未命中 → false", async () => {
     const mod = await loadConfig({ NODE_ENV: "development", NAVHUB_ADMIN_IDS: "koudev" });

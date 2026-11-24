@@ -92,8 +92,8 @@ export interface AppConfig {
    */
   trustProxy: boolean | string;
   /**
-   * 是否对管理面强制 Bearer token 鉴权
-   * 默认 false（开放模式）：个人 / NAS 部署零配置可用
+   * 是否对管理面强制 Bearer token 鉴权。
+   * 默认跟随 NODE_ENV：生产 true，开发/测试 false；生产开放模式必须显式承认并满足回环地址限制。
    */
   authRequired: boolean;
   /**

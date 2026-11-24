@@ -151,3 +151,74 @@ export function evaluateSearch(cases: SearchEvalCase[], k = 10): SearchEvalMetri
     recallAtK: recall / cases.length,
   };
 }
+
+
+export interface SearchEvalQueryDiagnostics {
+  /** 1-based row index; never includes raw query text. */
+  queryIndex: number;
+  zeroResult: boolean;
+  hasPositiveJudgment: boolean;
+  relevantCandidates: number;
+  relevantRetrievedAtK: number;
+}
+
+export interface SearchEvalDiagnostics {
+  metrics: SearchEvalMetrics;
+  zeroResultQueries: number;
+  queriesWithoutPositiveJudgments: number;
+  relevantCandidates: number;
+  relevantRetrievedAtK: number;
+  /** Micro coverage over all human-labelled relevant candidates. */
+  relevantCandidateCoverage: number;
+  cases: SearchEvalQueryDiagnostics[];
+}
+
+/**
+ * Privacy-safe diagnostics for evaluation reports.
+ * It deliberately reports row indices and counts, never query text or user identifiers.
+ * Existing macro metrics remain unchanged for backwards compatibility.
+ */
+export function evaluateSearchDiagnostics(cases: SearchEvalCase[], k = 10): SearchEvalDiagnostics {
+  const metrics = evaluateSearch(cases, k);
+  const limit = normalizeK(k);
+  let zeroResultQueries = 0;
+  let queriesWithoutPositiveJudgments = 0;
+  let relevantCandidates = 0;
+  let relevantRetrievedAtK = 0;
+  const details = cases.map((testCase, index) => {
+    const relevant = Object.entries(testCase.relevance)
+      .filter(([, grade]) => typeof grade === "number" && Number.isFinite(grade) && grade > 0)
+      .map(([siteId]) => siteId);
+    const relevantSet = new Set(relevant);
+    const uniqueHits: string[] = [];
+    const seen = new Set<string>();
+    for (const siteId of testCase.hits) {
+      if (seen.has(siteId)) continue;
+      seen.add(siteId);
+      uniqueHits.push(siteId);
+    }
+    const retrieved = uniqueHits.slice(0, limit).filter(siteId => relevantSet.has(siteId)).length;
+    const zeroResult = uniqueHits.length === 0;
+    const hasPositiveJudgment = relevant.length > 0;
+    if (zeroResult) zeroResultQueries++;
+    if (!hasPositiveJudgment) queriesWithoutPositiveJudgments++;
+    relevantCandidates += relevant.length;
+    relevantRetrievedAtK += retrieved;
+    return {
+      queryIndex: index + 1,
+      zeroResult,
+      hasPositiveJudgment,
+      relevantCandidates: relevant.length,
+      relevantRetrievedAtK: retrieved,
+    };
+  });
+  return {
+    metrics,
+    zeroResultQueries,
+    queriesWithoutPositiveJudgments,
+    relevantCandidates,
+    relevantRetrievedAtK,
+    relevantCandidateCoverage: relevantCandidates > 0 ? relevantRetrievedAtK / relevantCandidates : 0,
+    cases: details,
+  };
+}

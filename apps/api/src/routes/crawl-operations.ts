@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
+import { evaluateSiteModerationGoldSet } from "@navhub/ai";
 import {
   countSiteDiscoveryCandidates, getSiteDiscoveryCandidateForUpdate,
   recordCrawlAiModerationDecision, listCrawlAiModerationDecisions,
@@ -445,6 +446,68 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     }));
     return { ok: true, datasetVersion: "moderation-gold-v1", generatedAt: Date.now(),
       count: items.length, limit: parsed.data.limit, truncated, items };
+  });
+
+
+  app.get("/api/admin/crawl/moderation-gold-progress", {config:{scope:"admin",cache:{maxAge:0}}}, async()=>{
+    const [totals,labels]=await Promise.all([
+      ctx.repo.raw("SELECT status,COUNT(*) AS total FROM crawl_moderation_gold_cases GROUP BY status"),
+      ctx.repo.raw("SELECT final_label,final_risk,COUNT(*) AS total FROM crawl_moderation_gold_cases WHERE status='gold_ready' GROUP BY final_label,final_risk"),
+    ]);
+    const counts=Object.fromEntries(totals.map(row=>[String(row.status),Number(row.total??0)]));
+    const goldReady=counts.gold_ready??0;
+    const distribution=labels.map(row=>({label:String(row.final_label??"unknown"),risk:Boolean(row.final_risk),count:Number(row.total??0)}));
+    return {ok:true,target:100,total:totals.reduce((sum,row)=>sum+Number(row.total??0),0),
+      pending:counts.pending??0,annotating:counts.annotating??0,needsAdjudication:counts.needs_adjudication??0,
+      goldReady,remaining:Math.max(0,100-goldReady),progress:Math.min(100,Math.round(goldReady/100*100)),
+      distribution,generatedAt:Date.now()};
+  });
+
+  app.get("/api/admin/crawl/moderation-model-evaluations", {config:{scope:"admin",cache:{maxAge:0}}}, async()=>{
+    const rows=await ctx.repo.raw("SELECT id,model,dataset_version,sample_size,metrics_json,created_by,created_at FROM crawl_moderation_model_evaluations ORDER BY created_at DESC,id DESC LIMIT 50");
+    return {ok:true,items:rows.map(row=>({id:String(row.id),model:String(row.model),datasetVersion:String(row.dataset_version),
+      sampleSize:Number(row.sample_size),metrics:JSON.parse(String(row.metrics_json)),createdBy:String(row.created_by),createdAt:Number(row.created_at)}))};
+  });
+
+  app.post("/api/admin/crawl/moderation-model-evaluations", {config:{scope:"admin",rateLimit:{max:20,timeWindow:"1 minute"}}}, async(req,reply)=>{
+    const body=z.object({
+      model:z.string().trim().min(1).max(120),
+      predictions:z.array(z.object({
+        id:z.string().uuid(),actual:z.enum(["approve","reject","review"]),actualRisk:z.boolean(),
+      })).min(1).max(4999),
+    }).safeParse(req.body??{});
+    if(!body.success){reply.code(400);return {ok:false,error:"模型评测数据格式无效",details:body.error.issues};}
+    const countRows=await ctx.repo.raw("SELECT COUNT(*) AS total FROM crawl_moderation_gold_cases WHERE status='gold_ready'");
+    const total=Number(countRows[0]?.total??0);
+    if(total===0){reply.code(409);return {ok:false,error:"尚无正式金标样本，暂不能进行模型评测"};}
+    if(total>4999){reply.code(409);return {ok:false,error:"正式金标样本超过单次评测上限，请先建立分批评测集"};}
+    const goldRows=await listCrawlModerationGoldCases(ctx.repo,{status:"gold_ready",limit:5000,offset:0});
+    const gold=goldRows.filter(row=>
+      ["approve","reject","review"].includes(String(row.final_label)) &&
+      (row.final_risk===true||row.final_risk===false||row.final_risk===0||row.final_risk===1)
+    );
+    if(gold.length!==total){reply.code(409);return {ok:false,error:"部分正式金标缺少有效标签或风险标记，请先修复数据"};}
+    const ids=new Set(body.data.predictions.map(item=>item.id));
+    if(ids.size!==body.data.predictions.length){reply.code(400);return {ok:false,error:"模型预测包含重复样本 ID"};}
+    const goldIds=new Set(gold.map(row=>String(row.id)));
+    if(ids.size!==goldIds.size||[...goldIds].some(id=>!ids.has(id))){
+      reply.code(400);return {ok:false,error:"模型预测必须覆盖当前全部正式金标样本，确保模型间使用相同评测集"};
+    }
+    const predictionMap=new Map(body.data.predictions.map(item=>[item.id,item]));
+    const cases=gold.map(row=>{
+      const prediction=predictionMap.get(String(row.id));
+      if(!prediction)throw new Error("预测样本缺失");
+      return {id:String(row.id),expected:String(row.final_label) as "approve"|"reject"|"review",
+        actual:prediction.actual,expectedRisk:Boolean(row.final_risk),actualRisk:prediction.actualRisk};
+    });
+    const metrics=evaluateSiteModerationGoldSet(cases);
+    const datasetVersion=createHash("sha256").update(gold.map(row=>String(row.id)+":"+String(row.final_label)+":"+String(Boolean(row.final_risk))).join("|")).digest("hex");
+    const id=randomUUID(),actor=String(req.auth.actor??"admin"),createdAt=Date.now();
+    await ctx.repo.run("INSERT INTO crawl_moderation_model_evaluations (id,model,dataset_version,sample_size,metrics_json,created_by,created_at) VALUES (?,?,?,?,?,?,?)",
+      [id,body.data.model,datasetVersion,metrics.sampleSize,JSON.stringify(metrics),actor,createdAt]);
+    await ctx.repo.audit({ip:req.ip,actor,actorKind:req.auth.kind,action:"crawl.moderation_model_evaluation",target:id,
+      diff:{model:body.data.model,datasetVersion,sampleSize:metrics.sampleSize,exactMatchRate:metrics.exactMatchRate}});
+    return {ok:true,id,model:body.data.model,datasetVersion,sampleSize:metrics.sampleSize,metrics,createdAt};
   });
 
 };

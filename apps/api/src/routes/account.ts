@@ -309,7 +309,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, {
       ...encrypted, enabled: false, recoveryHashes: [], recoveryVersion: randomBytes(12).toString("hex"), updatedAt: Date.now(),
     } satisfies AdminMfaState);
-    await ctx.repo.audit({ actor: _req.auth.actor, actorKind: _req.auth.kind, action: "account.admin_mfa_setup_started" });
+    await ctx.repo.audit({ actor: _req.auth.actor, actorKind: _req.auth.kind, action: "account.admin_mfa_setup_started" }).catch(() => {});
     reply.header("cache-control", "no-store");
     const issuer = "山羊胡管理后台";
     return {
@@ -336,7 +336,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       ...state, enabled: true, recoveryHashes: codes.map((code) => hashApiToken(code.replace(/-/g, ""))),
       updatedAt: Date.now(),
     } satisfies AdminMfaState);
-    await ctx.repo.audit({ actor: req.auth.actor, actorKind: req.auth.kind, action: "account.admin_mfa_enabled" });
+    await ctx.repo.audit({ actor: req.auth.actor, actorKind: req.auth.kind, action: "account.admin_mfa_enabled" }).catch(() => { /* 不得因审计故障吞掉一次性恢复码 */ });
     reply.header("cache-control", "no-store");
     return { ok: true, recoveryCodes: codes, message: "双因素认证已启用。请离线保存恢复码；每个恢复码只能使用一次，此后不会再次显示。" };
   });
@@ -371,7 +371,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     const state = await readAdminMfa(ctx);
     if (!state?.enabled || !(await verifyAdminMfa(ctx, body.data.code))) { reply.code(401); return { error: "验证码无效" }; }
     await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, { ...state, enabled: false, recoveryHashes: [], updatedAt: Date.now() });
-    await ctx.repo.audit({ actor: req.auth.actor, actorKind: req.auth.kind, action: "account.admin_mfa_disabled" });
+    await ctx.repo.audit({ actor: req.auth.actor, actorKind: req.auth.kind, action: "account.admin_mfa_disabled" }).catch(() => {});
     return { ok: true };
   });
 

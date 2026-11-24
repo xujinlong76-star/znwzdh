@@ -526,7 +526,7 @@ export async function safeFetch(rawUrl: string, options: SafeFetchOptions = {}):
   let method = (options.method ?? 'GET').toUpperCase()
   let body = options.body instanceof URLSearchParams ? options.body.toString() : options.body
   const SENSITIVE = new Set(['authorization', 'cookie', 'proxy-authorization'])
-  let carriedHeaders: Record<string, string> = { ...(options.headers ?? {}) }
+  const carriedHeaders: Record<string, string> = { ...(options.headers ?? {}) }
   let prevOrigin = ''
 
   for (let hop = 0; hop <= opts.maxRedirects; hop++) {

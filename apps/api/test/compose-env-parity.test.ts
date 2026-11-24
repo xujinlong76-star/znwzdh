@@ -101,6 +101,8 @@ const SECURITY_KEYS_BY_SERVICE: Record<string, string[]> = {
     "NAVHUB_IDENTITY_SIGNATURE_STRICT",
     // 限流豁免凭据：中枢这一侧没有它，web 侧发了头也换不到豁免（收录页照样刷成 noindex 壳）
     "NAVHUB_INTERNAL_TOKEN",
+    "NAVHUB_MFA_ENCRYPTION_KEY",
+    "NAVHUB_ADMIN_MFA_REQUIRED",
     "NAVHUB_SESSION_SECRET",
     "NAVHUB_SESSION_SECRET_PREV",
     "NAVHUB_TRUST_PROXY",

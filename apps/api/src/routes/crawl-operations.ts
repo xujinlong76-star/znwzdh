@@ -31,7 +31,7 @@ export function moderationVerdictToPrediction(result: { verdict: "auto_approve" 
     actualRisk: result.risks.some(risk => risk !== "none"),
   };
 }
-/** 透明、可解释的初筛分数；只用于排序辅助，不自动批准或拒绝。 */
+/** 输出不含网页正文/URL 的错分摘要，便于审核员定位模型错误样本。 */\nexport function buildModerationErrorAnalysis(cases: Array<{id:string;expected:"approve"|"reject"|"review";actual:"approve"|"reject"|"review";expectedRisk?:boolean;actualRisk?:boolean}>) {\n  const groups = new Map<string,{expected:string;actual:string;count:number;sampleIds:string[]}>();\n  const riskFalseNegativeIds:string[] = [];\n  const riskFalsePositiveIds:string[] = [];\n  let labelMismatchCount = 0, riskMismatchCount = 0;\n  for (const item of cases) {\n    if (item.expected !== item.actual) {\n      labelMismatchCount++;\n      const key = item.expected + "->" + item.actual;\n      const group = groups.get(key) ?? {expected:item.expected,actual:item.actual,count:0,sampleIds:[]};\n      group.count++; if (group.sampleIds.length < 20) group.sampleIds.push(item.id);\n      groups.set(key,group);\n    }\n    if (item.expectedRisk !== undefined && item.actualRisk !== undefined && item.expectedRisk !== item.actualRisk) {\n      riskMismatchCount++;\n      if (item.expectedRisk && !item.actualRisk && riskFalseNegativeIds.length < 50) riskFalseNegativeIds.push(item.id);\n      if (!item.expectedRisk && item.actualRisk && riskFalsePositiveIds.length < 50) riskFalsePositiveIds.push(item.id);\n    }\n  }\n  return { labelMismatchCount, riskMismatchCount, confusionGroups:[...groups.values()].sort((a,b)=>b.count-a.count||a.expected.localeCompare(b.expected)||a.actual.localeCompare(b.actual)),\n    riskFalseNegativeIds, riskFalsePositiveIds, samplesTruncated: labelMismatchCount > 20 || riskMismatchCount > 100 };\n}\n/** 透明、可解释的初筛分数；只用于排序辅助，不自动批准或拒绝。 */
 export function scoreCrawlCandidate(input: {
   url: string; title?: string | null; description?: string | null;
   evidence?: Record<string, unknown>;
@@ -659,12 +659,13 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       const previous = previousRows[0]?.metrics_json ? JSON.parse(String(previousRows[0].metrics_json)) as {exactMatchRate?:number|null;riskDetection?:{recall?:number|null}} : null;
       const alerts: Array<{severity:"warning"|"critical";code:string;message:string}> = [];
       if (metrics.exactMatchRate !== null && metrics.exactMatchRate < 0.9) alerts.push({severity:"warning",code:"low_exact_match",message:"标签精确匹配率低于 90%，建议保持 Shadow 并检查错分样本"});
-      if (metrics.riskDetection.support === 0) alerts.push({severity:"warning",code:"risk_support_missing",message:"当前评测样本没有风险正样本，风险召回率无法评估"});
+      if (metrics.riskDetection.positiveSupport === 0) alerts.push({severity:"warning",code:"risk_support_missing",message:"当前评测样本没有风险正样本，风险召回率无法评估"});
       else if (metrics.riskDetection.recall !== null && metrics.riskDetection.recall < 0.95) alerts.push({severity:"critical",code:"low_risk_recall",message:"风险召回率低于 95%，存在漏检风险，不应启用自动审核"});
       if (metrics.riskDetection.falseNegatives > 0) alerts.push({severity:"critical",code:"risk_false_negative",message:"本轮出现 "+metrics.riskDetection.falseNegatives+" 条风险漏报，必须复核对应样本"});
       if (previous?.exactMatchRate != null && metrics.exactMatchRate !== null && previous.exactMatchRate-metrics.exactMatchRate > 0.05) alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次同快照评测，标签精确匹配率下降超过 5 个百分点"});
       if (previous?.riskDetection?.recall != null && metrics.riskDetection.recall !== null && previous.riskDetection.recall-metrics.riskDetection.recall > 0.05) alerts.push({severity:"critical",code:"risk_recall_regression",message:"相较该模型上一次同快照评测，风险召回率下降超过 5 个百分点"});
-      const evaluation = { ...metrics, alerts, execution: { mode: "automatic", requested: body.data.limit, selected: selected.length, source: resolved.source } };
+      const errorAnalysis = buildModerationErrorAnalysis(cases);
+      const evaluation = { ...metrics, alerts, errorAnalysis, execution: { mode: "automatic", requested: body.data.limit, selected: selected.length, source: resolved.source } };
       const id = randomUUID(), actor = String(req.auth.actor ?? "admin"), createdAt = Date.now();
       await ctx.repo.run("INSERT INTO crawl_moderation_model_evaluations (id,model,dataset_version,sample_size,metrics_json,created_by,created_at) VALUES (?,?,?,?,?,?,?)",
         [id,model,datasetVersion,metrics.sampleSize,JSON.stringify(evaluation),actor,createdAt]);
@@ -710,12 +711,13 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     const previous=previousRows[0]?.metrics_json?JSON.parse(String(previousRows[0].metrics_json)) as {exactMatchRate?:number|null;riskDetection?:{recall?:number|null}}:null;
     const alerts:Array<{severity:"warning"|"critical";code:string;message:string}>=[];
     if(metrics.exactMatchRate!==null&&metrics.exactMatchRate<0.9)alerts.push({severity:"warning",code:"low_exact_match",message:"标签精确匹配率低于 90%，建议保持 Shadow 并检查错分样本"});
-    if(metrics.riskDetection.support===0)alerts.push({severity:"warning",code:"risk_support_missing",message:"当前金标集没有正向风险样本，风险召回率无法评估"});
+    if(metrics.riskDetection.positiveSupport===0)alerts.push({severity:"warning",code:"risk_support_missing",message:"当前金标集没有正向风险样本，风险召回率无法评估"});
     else if(metrics.riskDetection.recall!==null&&metrics.riskDetection.recall<0.95)alerts.push({severity:"critical",code:"low_risk_recall",message:"风险召回率低于 95%，存在漏检风险，不应启用自动审核"});
     if(metrics.riskDetection.falseNegatives>0)alerts.push({severity:"critical",code:"risk_false_negative",message:"本轮出现 "+metrics.riskDetection.falseNegatives+" 条风险漏报，必须复核对应样本"});
     if(previous?.exactMatchRate!=null&&metrics.exactMatchRate!==null&&previous.exactMatchRate-metrics.exactMatchRate>0.05)alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次评测，标签精确匹配率下降超过 5 个百分点"});
     if(previous?.riskDetection?.recall!=null&&metrics.riskDetection.recall!==null&&previous.riskDetection.recall-metrics.riskDetection.recall>0.05)alerts.push({severity:"critical",code:"risk_recall_regression",message:"相较该模型上一次评测，风险召回率下降超过 5 个百分点"});
-    const evaluation={...metrics,alerts};
+    const errorAnalysis=buildModerationErrorAnalysis(cases);
+    const evaluation={...metrics,alerts,errorAnalysis};
     const id=randomUUID(),actor=String(req.auth.actor??"admin"),createdAt=Date.now();
     await ctx.repo.run("INSERT INTO crawl_moderation_model_evaluations (id,model,dataset_version,sample_size,metrics_json,created_by,created_at) VALUES (?,?,?,?,?,?,?)",
       [id,body.data.model,datasetVersion,metrics.sampleSize,JSON.stringify(evaluation),actor,createdAt]);

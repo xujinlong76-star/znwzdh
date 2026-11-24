@@ -211,7 +211,7 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
 
   // 会话治理（T8）：登记活跃 + 核对吊销（一次往返）。
   // - revoked → 401：被踢出的设备从下一个请求起失去 /api/me/* 全部能力；
-  // - 核对失败：写请求 502（上游不可用），读请求 fail-open 但记数告警；
+  // - 核对失败：所有用户中心读写请求均 fail-closed（503）；
   // - 没有 sid（老会话 / 非会话身份）跳过。
   if (sessionSid) {
     const isWrite = method !== 'GET' && method !== 'HEAD'
@@ -249,13 +249,13 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
       sessionCheckFailStreak += 1
       console.warn('[session-check] error', method, sessionCheckFailStreak, error)
     }
-    if (checkFailed && isWrite) {
+    if (checkFailed) {
+      // 用户中心读写均可能包含个人资料、令牌和私密数据；会话吊销状态未知时一律拒绝。
       return NextResponse.json(
         { error: '会话核对服务暂时不可用，请稍后重试' },
-        { status: 502, headers: { 'cache-control': 'no-store' } },
+        { status: 503, headers: { 'cache-control': 'no-store' } },
       )
     }
-    // 读请求 fail-open：核对失败不阻断主请求，但失败已被计数
   }
 
   // v2 签名带重放守卫：同一签名在 sessions/check 验过一次后不可再用于正向转发，核对后换一套新签名。

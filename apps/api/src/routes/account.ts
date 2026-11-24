@@ -281,6 +281,11 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(400);
         return { error: "验证链接已失效，请重新发送验证邮件" };
       }
+      // 成功验证后，撤销同一用户的其他验证链接，避免旧邮件在后续邮箱变更时重放。
+      await ctx.repo.runCount(
+        "UPDATE auth_tokens SET consumed_at = ? WHERE user_id = ? AND purpose = 'email_verification' AND consumed_at IS NULL",
+        [Date.now(), String(row.user_id)],
+      );
       await ctx.repo.audit({
         actor: String(row.user_id),
         actorKind: "user",
@@ -431,6 +436,11 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(400);
         return { error: "重置链接已失效，请重新申请密码重置" };
       }
+      // 成功重置后撤销该用户所有其他重置令牌，防止旧邮件链接再次覆盖新密码。
+      await ctx.repo.runCount(
+        "UPDATE auth_tokens SET consumed_at = ? WHERE user_id = ? AND purpose = 'password_reset' AND consumed_at IS NULL",
+        [Date.now(), String(row.user_id)],
+      );
     // 密码重置后吊销该用户全部已登录会话：旧的 next-auth JWT (sid) 即便未过期，
     // BFF 也会在下一个 /api/me/* 请求上经 isSessionRevoked 拦下 (401)。
     // row.user_id 是 users 表原始 id——凭据用户为裸 UUID，而 sessions 表按 canonical

@@ -157,3 +157,5 @@
 - TOTP 验证码按 30 秒时间步记录共享消费标记，同一时间步验证码只能成功一次；待确认的 MFA enrollment 仅在 10 分钟内有效。恢复码使用记录进入审计日志。
 
 - 管理员 TOTP 目前保护 Web NextAuth Credentials 管理员登录与 GitHub 管理员 OAuth 的 MFA 绕过路径；直接调用管理 API 的 admin Bearer Token 仍是独立的 bearer 凭据，不会自动要求 TOTP，必须按高权限密钥管理并定期轮换。
+
+- 升级前已签发、尚未消费但没有 `target_email` 绑定的旧验证/重置链接会被拒绝；用户需重新发送验证邮件或重新申请密码重置。这是为了避免旧邮箱链接作用于新邮箱。

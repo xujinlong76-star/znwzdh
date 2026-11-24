@@ -772,10 +772,8 @@ export class JobRunner {
     this.budgetOverrides = opts.budgetOverrides;
     this.taskRegistry = new TaskRegistry();
     /**
-     * 执行分派的**唯一**事实源（ARC-02 收口）：14 个 kind 全部在此登记。
-     * 此前注册表只登记 4 个 kind，而 process() 另有一套 switch 覆盖 12 个分支——
-     * 新增 kind 要改两处，漏改一处就会出现「注册了不执行」或「执行了没登记」的漂移。
-     * 构造函数末尾的覆盖断言会把这种漂移变成启动即失败。
+     * 执行分派的**唯一**事实源（ARC-02 收口）：JOB_KINDS 中的全部 kind 必须在此登记。
+     * 新增 kind 只允许在这里增加一个 handler；构造函数末尾的覆盖断言会把遗漏变成启动即失败。
      */
     this.taskRegistry.register("health_check", async ({ payload, run }) => {
       await this.runHealthCheck((payload ?? {}) as { siteId?: string; limit?: number }, run);

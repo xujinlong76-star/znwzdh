@@ -125,7 +125,7 @@ describe("账号生命周期 API", () => {
         headers: { "x-navhub-internal-token": "mfa-test-internal-token" },
         payload: { code: value },
       });
-      const currentCode = totp(secret, Date.now() + 30_000);
+      const currentCode = totp(secret, (Math.floor(Date.now() / 30_000) + 1) * 30_000);
       expect((await verify(currentCode)).statusCode).toBe(200);
       expect((await verify(currentCode)).statusCode).toBe(401);
       expect((await verify(recovery[0])).statusCode).toBe(200);

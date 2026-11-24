@@ -470,7 +470,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       // 返回 null = 用户不存在、密码错误或邮箱未验证（不区分，防账号枚举）。
       const user = await ctx.repo.verifyUserPassword(identifier, body.data.password);
       if (!user) {
-        // 审计只记录不可逆摘要，不持久化邮箱/用户名或密码。
+        // 审计只记录由共享身份密钥生成的 HMAC 摘要，不持久化邮箱/用户名或密码。
         await ctx.repo
           .audit({
             actor: "anonymous",

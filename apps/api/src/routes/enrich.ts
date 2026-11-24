@@ -253,6 +253,10 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       deadlineAt: Date.now() + INTERACTIVE_LLM_BUDGET_MS,
     }).finally(() => settleLlmQuota(ctx, budget.hold));
 
+    if (enriched.warnings.some((warning) => warning.startsWith("抓取失败："))) {
+      reply.code(422);
+      return { ok: false, error: "目标站点未通过安全抓取校验或暂时无法访问，未创建站点/采集候选", warnings: enriched.warnings };
+    }
     // 分类解析：调用方指定 -> 富化建议匹配已有类目 -> 落「未分类」并产类目缺口提案。
     // 「富化建议」只有在调用方把 category 选进 enrichFields 时才参与：取消该字段
     // 就是不想让模型碰类目，这时也不该再拿它的建议去记一条类目缺口提案。
@@ -349,6 +353,10 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       deadlineAt: Date.now() + INTERACTIVE_LLM_BUDGET_MS,
     }).finally(() => settleLlmQuota(ctx, budget.hold));
 
+    if (enriched.warnings.some((warning) => warning.startsWith("抓取失败："))) {
+      reply.code(422);
+      return { ok: false, error: "目标站点未通过安全抓取校验或暂时无法访问，未创建站点/采集候选", warnings: enriched.warnings };
+    }
     const selection = selectEnrichmentFields(enriched, body.data.enrichFields);
     const title = body.data.title ?? selection.applied.title;
     if (!title) {

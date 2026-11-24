@@ -680,7 +680,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       if (!selectedProvider) { reply.code(409); return { ok: false, error: "所选模型不可用或配置已变更，请刷新模型列表" }; }
       const provider = selectedProvider.provider;
       // 固定本轮实际模型和来源，避免同一评测集混入不同模型或错误计入备用池用量。
-      const evaluationResolved = { ...resolved, provider, source: selectedProvider.source, fallbacks: [] };
+      const evaluationResolved = { ...resolved, provider, fallbacks: [] };
       const policy = await loadCrawlAiModerationPolicy(ctx);
       const predictions: Array<{ id: string; actual: "approve" | "reject" | "review"; actualRisk: boolean }> = [];
       const actualModels = new Set<string>();
@@ -690,6 +690,15 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         const quota = await reserveLlmQuota(ctx, null, { source: selectedProvider.source, estimatedTokens: 1800 });
         if (!quota.ok) { quotaBlockedBody = replyQuotaBlocked(reply, quota.error); break; }
         try {
+          const completion: NonNullable<NonNullable<Parameters<typeof moderateSiteWithAi>[2]>["complete"]> =
+            async (_provider, request) => {
+              const result = await callLlm(ctx, evaluationResolved, {
+                scenario: "crawl_moderation_gold_eval", identity: evaluationId, messages: request.messages,
+                temperature: request.temperature, maxTokens: request.maxTokens, json: request.json,
+                thinking: false, signal: request.signal, deadlineAt: request.deadlineAt, fetchImpl: request.fetchImpl,
+              });
+              return { content: result.content, model: result.model };
+            };
           const decision = await moderateSiteWithAi(provider, {
             // 金标表不保存原始 URL；评测时使用固定脱敏占位 URL，不反查候选原始地址。
             url: "https://redacted.invalid/",
@@ -702,17 +711,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
           }, {
             autoApproveConfidence: policy.autoApproveConfidence, rejectConfidence: policy.rejectConfidence,
             minQualityScore: policy.minQualityScore, maxExcerptChars: policy.maxExcerptChars, requireHttps: policy.requireHttps,
-          }, {
-            deadlineAt: Date.now() + 45_000,
-            complete: async (_provider, request) => {
-              const result = await callLlm(ctx, evaluationResolved, {
-                scenario: "crawl_moderation_gold_eval", identity: evaluationId, messages: request.messages,
-                temperature: request.temperature, maxTokens: request.maxTokens, json: request.json,
-                thinking: false, signal: request.signal, deadlineAt: request.deadlineAt, fetchImpl: request.fetchImpl,
-              });
-              return { content: result.content, model: result.model };
-            },
-          });
+          }, { deadlineAt: Date.now() + 45_000, complete: completion });
           actualModels.add(decision.model);
           const prediction = moderationVerdictToPrediction(decision);
           predictions.push({ id: String(row.id), ...prediction });

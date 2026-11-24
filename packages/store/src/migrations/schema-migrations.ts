@@ -269,6 +269,41 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     },
     checksum: "v1_user_sync_state",
   },
+  {
+    version: "20261124_durable_crawl_governance",
+    name: "持久化采集任务队列、域名租约与页面指纹",
+    up: async (db: Db) => {
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS crawl_tasks (
+          id TEXT PRIMARY KEY, url TEXT NOT NULL, canonical_url TEXT NOT NULL UNIQUE,
+          host TEXT NOT NULL, source TEXT NOT NULL, payload_json TEXT,
+          status TEXT NOT NULL DEFAULT 'queued', priority INTEGER NOT NULL DEFAULT 0,
+          attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 6,
+          next_run_at BIGINT NOT NULL, lease_owner TEXT, lease_expires_at BIGINT,
+          last_error TEXT, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL
+        )`,
+        "CREATE INDEX IF NOT EXISTS crawl_tasks_due_idx ON crawl_tasks(status, next_run_at, priority, created_at)",
+        "CREATE INDEX IF NOT EXISTS crawl_tasks_host_idx ON crawl_tasks(host, status)",
+        `CREATE TABLE IF NOT EXISTS crawl_domain_state (
+          host TEXT PRIMARY KEY, next_allowed_at BIGINT NOT NULL DEFAULT 0,
+          lease_task_id TEXT, lease_expires_at BIGINT, updated_at BIGINT NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS crawl_page_fingerprints (
+          canonical_url TEXT PRIMARY KEY, site_id TEXT, content_hash TEXT NOT NULL,
+          simhash64 TEXT NOT NULL, language TEXT, fetched_at BIGINT NOT NULL,
+          updated_at BIGINT NOT NULL
+        )`,
+        "CREATE INDEX IF NOT EXISTS crawl_fingerprints_site_idx ON crawl_page_fingerprints(site_id)",
+        "CREATE INDEX IF NOT EXISTS crawl_fingerprints_hash_idx ON crawl_page_fingerprints(content_hash)",
+      ];
+      if (db.dialect === "pg" && db.pg) {
+        for (const statement of statements) await db.pg.query(statement);
+      } else if (db.sqlite) {
+        db.sqlite.exec(statements.join(";"));
+      }
+    },
+    checksum: "v1_durable_crawl_governance",
+  },
 ];
 
 /**

@@ -262,6 +262,8 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, {
       ...encrypted, enabled: false, recoveryHashes: [], recoveryVersion: randomBytes(12).toString("hex"), updatedAt: Date.now(),
     } satisfies AdminMfaState);
+    await ctx.repo.audit({ actor: _req.auth.actor, actorKind: _req.auth.kind, action: "account.admin_mfa_setup_started" });
+    reply.header("cache-control", "no-store");
     const issuer = "山羊胡管理后台";
     return {
       ok: true,

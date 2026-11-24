@@ -83,7 +83,7 @@ function base32Decode(input: string): Buffer {
     const n = BASE32.indexOf(ch);
     if (n < 0) throw new Error("invalid base32");
     value = (value << 5) | n; bits += 5;
-    if (bits >= 8) { out.push((value >>> (bits - 8)) & 255); bits -= 8; }
+    if (bits >= 8) { out.push((value >>> (bits - 8)) & 255); bits -= 8; value &= (1 << bits) - 1; }
   }
   return Buffer.from(out);
 }

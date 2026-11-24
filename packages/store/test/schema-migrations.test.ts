@@ -33,6 +33,20 @@ describe("版本化数据库迁移台账（DB-01）", () => {
     expect(res.skipped.length).toBeGreaterThanOrEqual(BUILTIN_MIGRATIONS.length);
   });
 
+  it("建立 AI 采集审核追加式决策历史表及候选/时间索引", async () => {
+    const rows = await db.sqlite!.prepare(
+      "PRAGMA table_info(crawl_ai_moderation_decisions)"
+    ).all() as Array<{ name: string }>;
+    const columns = new Set(rows.map((row) => row.name));
+    for (const name of ["id","candidate_id","decision_source","mode","status","verdict","confidence","quality_score","risks_json","reasons_json","model","policy_version","actor","created_at"]) {
+      expect(columns.has(name)).toBe(true);
+    }
+    const indexes = await db.sqlite!.prepare(
+      "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'crawl_ai_decisions_%'"
+    ).all() as Array<{ name: string }>;
+    expect(indexes.length).toBeGreaterThanOrEqual(3);
+  });
+
   it("台账记录包含 version, name, applied_at, checksum", async () => {
     const ledger = await getMigrationLedger(db);
     expect(ledger.length).toBeGreaterThanOrEqual(BUILTIN_MIGRATIONS.length);
@@ -75,4 +89,22 @@ describe("版本化数据库迁移台账（DB-01）", () => {
     expect(item).toBeDefined();
     expect(item?.checksum).toBe("test_custom_v1");
   });
+  it("建立双人标注与仲裁金标表，并限制每人每样本只能标注一次", async () => {
+    const cases = await db.sqlite!.prepare("PRAGMA table_info(crawl_moderation_gold_cases)").all() as Array<{name:string}>;
+    const annotations = await db.sqlite!.prepare("PRAGMA table_info(crawl_moderation_gold_annotations)").all() as Array<{name:string}>;
+    for (const name of ["id","source_fingerprint","title","description","category","sanitized_excerpt","status",
+      "final_label","final_risk","adjudicator_id","adjudication_reason","created_by","created_at","updated_at","adjudicated_at"]) {
+      expect(cases.some(row=>row.name===name)).toBe(true);
+    }
+    for (const name of ["id","case_id","annotator_id","label","risk","evidence","created_at"]) {
+      expect(annotations.some(row=>row.name===name)).toBe(true);
+    }
+    await db.sqlite!.prepare("INSERT INTO crawl_moderation_gold_cases (id,source_fingerprint,created_by,created_at,updated_at) VALUES (?,?,?,?,?)")
+      .run("gold-case-1","a".repeat(64),"admin-a",1,1);
+    await db.sqlite!.prepare("INSERT INTO crawl_moderation_gold_annotations (id,case_id,annotator_id,label,risk,evidence,created_at) VALUES (?,?,?,?,?,?,?)")
+      .run("gold-annotation-1","gold-case-1","reviewer-a","approve",0,"符合收录规则",2);
+    expect(()=>db.sqlite!.prepare("INSERT INTO crawl_moderation_gold_annotations (id,case_id,annotator_id,label,risk,evidence,created_at) VALUES (?,?,?,?,?,?,?)")
+      .run("gold-annotation-2","gold-case-1","reviewer-a","approve",0,"重复标注",3)).toThrow();
+  });
+
 });

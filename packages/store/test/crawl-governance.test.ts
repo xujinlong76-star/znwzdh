@@ -97,6 +97,50 @@ describe("持久化采集治理队列", () => {
     expect(otherHost?.host).toBe("two.example");
   });
 
+  it("队列健康快照能区分积压、过期租约、死信与人工复核", async () => {
+    const now = Date.now();
+    const pending = await enqueueCrawlTask(repo, {
+      url: "https://pending-health.example/page", source: "seed", now: now - 30_000,
+    });
+    const expired = await enqueueCrawlTask(repo, {
+      url: "https://expired-health.example/page", source: "seed", now,
+    });
+    const expiredLease = await claimCrawlTask(repo, "worker-expired-health", {
+      now, leaseMs: 5_000, minDomainIntervalMs: 0,
+    });
+    expect(expiredLease?.id).toBe(expired.id);
+    await repo.run("UPDATE crawl_tasks SET lease_expires_at = ? WHERE id = ?", [now - 1, expired.id]);
+
+    const dead = await enqueueCrawlTask(repo, {
+      url: "https://dead-health.example/page", source: "seed", now,
+    });
+    const deadLease = await claimCrawlTask(repo, "worker-dead-health", { now, minDomainIntervalMs: 0 });
+    expect(deadLease?.id).toBe(dead.id);
+    expect(await settleCrawlTask(repo, {
+      id: dead.id, workerId: "worker-dead-health", outcome: "dead_letter", now: now + 1,
+    })).toBe(true);
+
+    const held = await enqueueCrawlTask(repo, {
+      url: "https://held-health.example/page", source: "seed", now,
+    });
+    const heldLease = await claimCrawlTask(repo, "worker-held-health", { now: now + 2, minDomainIntervalMs: 0 });
+    expect(heldLease?.id).toBe(held.id);
+    expect(await settleCrawlTask(repo, {
+      id: held.id, workerId: "worker-held-health", outcome: "hold_for_review", now: now + 3,
+    })).toBe(true);
+
+    const rows = await repo.raw(
+      "SELECT SUM(CASE WHEN status IN ('queued','retry') THEN 1 ELSE 0 END) AS pending, MIN(CASE WHEN status IN ('queued','retry') THEN created_at ELSE NULL END) AS oldest_pending_at, SUM(CASE WHEN status = 'leased' AND lease_expires_at <= ? THEN 1 ELSE 0 END) AS expired_leases, SUM(CASE WHEN status = 'dead_letter' THEN 1 ELSE 0 END) AS dead_letter, SUM(CASE WHEN status = 'hold_for_review' THEN 1 ELSE 0 END) AS hold_for_review FROM crawl_tasks",
+      [now + 4],
+    );
+    expect(Number(rows[0]?.pending)).toBe(1);
+    expect(Number(rows[0]?.oldest_pending_at)).toBe(now - 30_000);
+    expect(Number(rows[0]?.expired_leases)).toBe(1);
+    expect(Number(rows[0]?.dead_letter)).toBe(1);
+    expect(Number(rows[0]?.hold_for_review)).toBe(1);
+    expect(pending.status).toBe("queued");
+  });
+
   it("熔断域名的大量高优先级任务不会挤占扫描窗口或饿死健康域名", async () => {
     const now = 25_000;
     for (let index = 0; index < 35; index++) {

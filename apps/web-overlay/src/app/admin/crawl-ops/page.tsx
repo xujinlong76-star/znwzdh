@@ -17,7 +17,7 @@ type Overview = {
   aiModeration:{windowHours:number;sampleSize:number;completed:number;errors:number;quotaBlocked:number;verdicts:Record<string,number>;ledger24h?:Record<string,number>;humanOverturns30d?:number}
 }
 type Candidate = {
-  id:string;url:string;title:string|null;description:string|null;source:string;status:string;
+  id:string;url:string;title:string|null;description:string|null;source:string;status:string;reviewedBy:string|null;
   discoveredAt:number;lastSeenAt:number;
   duplicateEvidence:{exact:boolean;near:number};
   quality:{score:number;reasons:string[]};
@@ -41,6 +41,8 @@ function time(value:number){return new Date(value).toLocaleString('zh-CN',{hour1
 export default function CrawlOperationsPage(){
   const [overview,setOverview]=useState<Overview|null>(null)
   const [page,setPage]=useState<CandidatePage|null>(null)
+  const [aiApprovedCandidates,setAiApprovedCandidates]=useState<Candidate[]>([])
+  const [aiOverrideReasons,setAiOverrideReasons]=useState<Record<string,string>>({})
   const [sources,setSources]=useState<Source[]>([])
   const [policy,setPolicy]=useState<ModerationPolicy>(DEFAULT_POLICY)
   const [autoApprovalGate,setAutoApprovalGate]=useState<AutoApprovalGate>({ready:false,models:[]})
@@ -77,9 +79,10 @@ export default function CrawlOperationsPage(){
   const load=useCallback(async()=>{
     setLoading(true);setError(null)
     try{
-      const [stats,queue,registry,moderation,history,analytics,providers,goldQueue]=await Promise.all([
+      const [stats,queue,approvedQueue,registry,moderation,history,analytics,providers,goldQueue]=await Promise.all([
         hubGet<Overview>('/api/hub/admin/crawl/overview'),
         hubGet<CandidatePage>('/api/hub/admin/crawl/candidates?status=pending&limit=50&offset=0'),
+        hubGet<CandidatePage>('/api/hub/admin/crawl/candidates?status=approved&limit=100&offset=0'),
         hubGet<{ok:boolean;items:Source[]}>('/api/hub/admin/crawl-sources?limit=100'),
         hubGet<{ok:boolean;policy:ModerationPolicy;autoApprovalGate?:AutoApprovalGate}>('/api/hub/admin/crawl-moderation/policy'),
         hubGet<{ok:boolean;items:Array<{id:string;candidateId:string;decisionSource:string;mode:string;verdict:string|null;status:string;confidence:number|null;model:string|null;createdAt:number;actor:string|null}>}>('/api/hub/admin/crawl/moderation-decisions?limit=10'),
@@ -87,7 +90,7 @@ export default function CrawlOperationsPage(){
         hubGet<{ok:boolean;items:EvaluationProvider[]}>('/api/hub/admin/crawl/moderation-model-evaluations/providers'),
         hubGet<{ok:boolean;items:GoldCase[]}>('/api/hub/admin/crawl/moderation-gold-cases?limit=100&offset=0')
       ])
-      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setAutoApprovalGate(moderation.autoApprovalGate??{ready:false,models:[]});setDecisionHistory(history.items);setModelAnalytics(analytics);setEvaluationProviders(providers.items);if(!providers.items.some(item=>item.index===evaluationProviderIndex))setEvaluationProviderIndex(providers.items[0]?.index??0);setGoldCases(goldQueue.items)
+      setOverview(stats);setPage(queue);setAiApprovedCandidates(approvedQueue.items.filter(item=>item.reviewedBy?.startsWith('ai:')));setSources(registry.items);setPolicy(moderation.policy);setAutoApprovalGate(moderation.autoApprovalGate??{ready:false,models:[]});setDecisionHistory(history.items);setModelAnalytics(analytics);setEvaluationProviders(providers.items);if(!providers.items.some(item=>item.index===evaluationProviderIndex))setEvaluationProviderIndex(providers.items[0]?.index??0);setGoldCases(goldQueue.items)
     }catch(e){setError(e instanceof Error?e.message:'采集运营数据加载失败')}
     finally{setLoading(false)}
   },[])
@@ -137,6 +140,19 @@ export default function CrawlOperationsPage(){
         {decision,...(decision==='reject'?{reason}:{})})
       await load()
     }catch(e){setError(e instanceof Error?e.message:'审核操作失败')}
+    finally{setBusy(null)}
+  }
+
+  const overrideAiApproval=async(item:Candidate,decision:'reopen'|'reject')=>{
+    if(busy)return
+    const reason=(aiOverrideReasons[item.id]??'').trim()
+    if(reason.length<10){setError('AI 自动通过复核必须填写至少 10 个字符的原因');return}
+    setBusy(item.id);setError(null)
+    try{
+      await hubSend('/api/hub/admin/crawl/candidates/'+encodeURIComponent(item.id)+'/override-ai','POST',{decision,reason})
+      setAiOverrideReasons(old=>({...old,[item.id]:''}))
+      await load()
+    }catch(e){setError(e instanceof Error?e.message:'复核 AI 自动通过失败')}
     finally{setBusy(null)}
   }
 
@@ -307,6 +323,14 @@ export default function CrawlOperationsPage(){
         <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4"/>队列运行概况</CardTitle><CardDescription>实时统计来自数据库快照，近 24 小时按任务更新时间计算。</CardDescription></CardHeader>
           <CardContent className="grid grid-cols-2 gap-3 text-sm">{Object.entries(overview?.last24Hours??{}).map(([key,value])=><div key={key} className="rounded-lg bg-muted/50 p-3"><div className="text-muted-foreground">{key}</div><div className="mt-1 text-xl font-semibold tabular-nums">{value}</div></div>)}</CardContent></Card>
       </div>
+      <Card><CardHeader><CardTitle className="text-base">AI 自动通过抽查与人工推翻</CardTitle><CardDescription>自动通过不会发布网站。若发现误判，可退回待审核队列或由人工驳回；人工操作会追加留档，原 AI 决策不会被覆盖。</CardDescription></CardHeader><CardContent className="space-y-3">
+        {!aiApprovedCandidates.length?<p className="text-sm text-muted-foreground">当前没有 AI 自动通过、等待抽查的候选。</p>:aiApprovedCandidates.map(item=><div key={item.id} className="space-y-2 rounded-lg border p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><div className="font-medium">{item.title||'未命名网站'}</div><a href={safeHref(item.url)} target="_blank" rel="noopener noreferrer" className="break-all text-xs text-muted-foreground underline">{item.url}</a></div><span className="rounded bg-muted px-2 py-1 text-xs">AI 已批准 · 未发布</span></div>
+          <div className="text-xs text-muted-foreground">审核者：{item.reviewedBy} · 模型：{item.aiModeration?.model||'—'} · 置信度：{item.aiModeration?.confidence==null?'—':Math.round(item.aiModeration.confidence*100)+'%'}</div>
+          <textarea value={aiOverrideReasons[item.id]??''} onChange={e=>setAiOverrideReasons(old=>({...old,[item.id]:e.target.value}))} rows={2} maxLength={500} placeholder="填写抽查结论或推翻原因（至少 10 个字符）" className="w-full rounded-md border bg-background p-2 text-sm"/>
+          <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={busy!==null} onClick={()=>void overrideAiApproval(item,'reopen')}>退回人工审核</Button><Button size="sm" variant="destructive" disabled={busy!==null} onClick={()=>void overrideAiApproval(item,'reject')}>人工驳回</Button></div>
+        </div>)}
+      </CardContent></Card>
       <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4"/>待审核网站</CardTitle><CardDescription>按透明规则给出 0–100 初筛分数；重复证据和低分用于提示人工复核，不作为自动封禁条件。</CardDescription></CardHeader>
         <CardContent className="space-y-3">
           {!page?.items.length?<p className="py-8 text-center text-sm text-muted-foreground">当前没有待审核候选</p>:page.items.map(item=><div key={item.id} className="space-y-3 rounded-xl border p-4">
@@ -317,7 +341,7 @@ export default function CrawlOperationsPage(){
               <div className="flex flex-wrap gap-2 text-xs text-muted-foreground"><span>置信度：{item.aiModeration.confidence===null?'—':Math.round(item.aiModeration.confidence*100)+'%'}</span><span>质量分：{item.aiModeration.qualityScore??'—'}</span><span>模型：{item.aiModeration.model||'—'}</span></div>
               {!!item.aiModeration.risks.length&&<div className="text-xs">风险标记：{item.aiModeration.risks.join('、')}</div>}
               {!!item.aiModeration.reasons.length&&<ul className="list-disc pl-5 text-xs text-muted-foreground">{item.aiModeration.reasons.slice(0,4).map((reason,i)=><li key={i}>{reason}</li>)}</ul>}
-              <p className="text-[11px] text-muted-foreground">{item.aiModeration.action==='auto_approved'?'已按金标评测门槛自动批准候选；这不会将网站发布到正式目录。':item.aiModeration.autoApprovalGate&&!item.aiModeration.autoApprovalGate.eligible?'自动审核门槛未通过，当前仅记录建议并保留人工复核。':'仅供参考；风险、低置信度和不确定结果仍需人工审核。'}</p>
+              <p className="text-[11px] text-muted-foreground">{item.aiModeration.action==='auto_approved'?'已按金标评测门槛自动批准候选；这不会将网站发布到正式目录。':item.aiModeration.action==='human_reopened'?'人工已推翻自动通过，候选重新进入待审核队列。':item.aiModeration.action==='human_rejected'?'人工已推翻自动通过并驳回候选。':item.aiModeration.autoApprovalGate&&!item.aiModeration.autoApprovalGate.eligible?'自动审核门槛未通过，当前仅记录建议并保留人工复核。':'仅供参考；风险、低置信度和不确定结果仍需人工审核。'}</p>
             </div>}
             {item.aiModeration?.status==='error'&&<p className="text-xs text-amber-700 dark:text-amber-500">AI 审核暂未完成：模型调用失败，候选仍保持待审核。</p>}
             {item.aiModeration?.status==='quota_blocked'&&<p className="text-xs text-amber-700 dark:text-amber-500">AI 审核因额度限制跳过，候选仍保持待审核。</p>}

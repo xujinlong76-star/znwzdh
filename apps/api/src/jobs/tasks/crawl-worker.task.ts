@@ -14,6 +14,7 @@ import {
 import { llmProviderReadyAny, resolveLlm } from "../../llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../../llm-quota.ts";
 import { callLlm } from "../../llm-usage.ts";
+import { DEFAULT_CRAWL_AI_MODERATION_POLICY, loadCrawlAiModerationPolicy } from "../../crawl-moderation-policy.ts";
 import type { AppContext } from "../../context.ts";
 import type { JobRunHandle } from "../../jobs.ts";
 
@@ -393,6 +394,8 @@ export async function handleCrawlWorker(
   };
   const maxTasks = Math.max(1, Math.min(25, Math.floor(payload.maxTasks ?? 10)));
   const workerId = "crawl-worker:" + randomUUID();
+  const moderationPolicy = await loadCrawlAiModerationPolicy(ctx).catch(() => DEFAULT_CRAWL_AI_MODERATION_POLICY);
+  let aiModerationCount = 0;
 
   for (let i = 0; i < maxTasks; i++) {
     if (run.shouldStop()) { summary.stopped = true; break; }
@@ -535,8 +538,8 @@ export async function handleCrawlWorker(
 
           // 默认不产生模型费用；仅在部署显式设置 shadow 时运行影子审核。
           // 本阶段只写审核证据，绝不修改 pending/approved/rejected 状态。
-          if (process.env.NAVHUB_CRAWL_AI_MODERATION?.trim().toLowerCase() === "shadow" &&
-              candidate.status === "pending") {
+          if (moderationPolicy.enabled && moderationPolicy.mode === "shadow" &&
+              aiModerationCount < moderationPolicy.maxAiReviewsPerRun && candidate.status === "pending") {
             const resolved = await resolveLlm(ctx);
             if (llmProviderReadyAny(resolved)) {
               const quota = await reserveLlmQuota(ctx, null, {
@@ -554,6 +557,7 @@ export async function handleCrawlWorker(
                 });
               } else {
                 summary.aiModerationAttempted++;
+                aiModerationCount++;
                 try {
                   const decision = await moderateSiteWithAi(resolved.provider, {
                     url: finalUrl,
@@ -569,7 +573,13 @@ export async function handleCrawlWorker(
                         ...(nearDuplicates.length ? ["存在近重复内容候选"] : []),
                       ],
                     },
-                  }, {}, {
+                  }, {
+                    autoApproveConfidence: moderationPolicy.autoApproveConfidence,
+                    rejectConfidence: moderationPolicy.rejectConfidence,
+                    minQualityScore: moderationPolicy.minQualityScore,
+                    maxExcerptChars: moderationPolicy.maxExcerptChars,
+                    requireHttps: moderationPolicy.requireHttps,
+                  }, {
                     signal: run.signal,
                     deadlineAt: Date.now() + 45_000,
                     complete: (_provider, request) => callLlm(ctx, resolved, {

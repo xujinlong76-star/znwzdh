@@ -65,6 +65,8 @@ export interface HorizontalScrollFadeProps {
   prevAriaLabel?: string
   /** 右箭头无障碍文案，默认「向右滚动」 */
   nextAriaLabel?: string
+  /** 外层 relative 包装的 id（可选；如 tablist 步骤 0 的面板锚点），默认不设 */
+  id?: string
   /** 内层滚动容器的 role（如 tablist），默认不设；由调用方按语义给 */
   role?: string
   /** 内层滚动容器的键盘处理（如 tablist 的 ←/→ 漫游），默认不设 */
@@ -78,6 +80,7 @@ export const HorizontalScrollFade = forwardRef<HTMLDivElement, HorizontalScrollF
       className,
       scrollClassName,
       ariaLabel,
+      id,
       showArrows = true,
       fadeWidth = 32,
       scrollStep = 240,
@@ -175,7 +178,7 @@ export const HorizontalScrollFade = forwardRef<HTMLDivElement, HorizontalScrollF
          因此永远不触发，整个文档被顶出横向滚动（768px 实测 940>768）。
          min-w-0 让 flex 子项允许收缩到容器宽，overflow 才真正生效；
          w-full 兜住块级父容器下的同等场景。 */
-      <div className={cn('relative w-full min-w-0 overflow-hidden', className)} aria-label={ariaLabel}>
+      <div id={id} className={cn('relative w-full min-w-0 overflow-hidden', className)} aria-label={ariaLabel}>
         {showArrows && canScrollLeft ? (
           <button
             type="button"

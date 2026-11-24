@@ -348,3 +348,28 @@ describe('P1 #10 跟进：wayback-resolver 的 isPotentialBrokenHttpCode 不删'
     expect(coreTest).toContain('isPotentialBrokenHttpCode')
   })
 })
+
+describe('tablist 步骤 0：quick-dock 三 tab id + aria-controls 与面板锚点（2026-11-24 16:22 轮）', () => {
+  const DOCK = 'src/components/home-quick-dock.tsx'
+  const FADE = 'src/components/horizontal-scroll-fade.tsx'
+
+  it('三 tab 各有唯一 id 且 aria-controls 指向 quick-dock-panel', () => {
+    const src = read(DOCK)
+    for (const tab of ['speed', 'frequent', 'recent']) {
+      expect(src).toContain(`id="quick-dock-tab-${tab}"`)
+    }
+    expect(count(src, 'id="quick-dock-tab-')).toBe(3)
+    expect(count(src, 'aria-controls="quick-dock-panel"')).toBe(3)
+  })
+
+  it('aria-controls 指向的面板真实存在：dock 把 id 传给面板容器，容器把它落到外层 div', () => {
+    const dock = read(DOCK)
+    // 面板就是三 tab 切换的胶囊列表区（HorizontalScrollFade 外层包装）
+    expect(dock).toContain('id="quick-dock-panel"')
+    const fade = read(FADE)
+    expect(fade).toContain('id?: string')
+    expect(fade).toContain('id={id}')
+    // 面板 id 全仓唯一：dock 里只出现一次 quick-dock-panel 作为 id 值
+    expect(count(dock, 'id="quick-dock-panel"')).toBe(1)
+  })
+})

@@ -32,10 +32,10 @@ function validIsoDate(value: unknown): value is string {
  */
 export function detectSearchGoldenQueryPrivacyRisk(query: string): string[] {
   const risks: string[] = [];
-  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/i.test(query)) risks.push("email");
-  if (/(?:\\+?\\d[\\s().-]*){10,}/.test(query)) risks.push("phone_like_number");
-  if (/\\b(?:sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16})\\b/.test(query) ||
-      /\\bBearer\\s+[A-Za-z0-9._~+/=-]{20,}/i.test(query)) risks.push("credential");
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(query)) risks.push("email");
+  if (/(?:\+?\d[\s().-]*){10,}/.test(query)) risks.push("phone_like_number");
+  if (/\b(?:sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16})\b/.test(query) ||
+      /\bBearer\s+[A-Za-z0-9._~+/=-]{20,}/i.test(query)) risks.push("credential");
   return risks;
 }
 

@@ -346,6 +346,40 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     },
     checksum: "v1_crawl_source_registry",
   },
+
+  {
+    version: "20261124_crawl_ai_decision_ledger",
+    name: "AI 采集审核追加式决策历史",
+    up: async (db: Db) => {
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS crawl_ai_moderation_decisions (
+          id TEXT PRIMARY KEY,
+          candidate_id TEXT NOT NULL,
+          decision_source TEXT NOT NULL CHECK (decision_source IN ('ai','human')),
+          mode TEXT NOT NULL,
+          status TEXT NOT NULL,
+          verdict TEXT,
+          confidence DOUBLE PRECISION,
+          quality_score INTEGER,
+          risks_json TEXT NOT NULL DEFAULT '[]',
+          reasons_json TEXT NOT NULL DEFAULT '[]',
+          model TEXT,
+          policy_version TEXT,
+          actor TEXT,
+          created_at BIGINT NOT NULL
+        )`,
+        "CREATE INDEX IF NOT EXISTS crawl_ai_decisions_candidate_idx ON crawl_ai_moderation_decisions(candidate_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS crawl_ai_decisions_time_idx ON crawl_ai_moderation_decisions(created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS crawl_ai_decisions_source_idx ON crawl_ai_moderation_decisions(decision_source, created_at DESC)"
+      ];
+      if (db.dialect === "pg" && db.pg) {
+        for (const statement of statements) await db.pg.query(statement);
+      } else if (db.sqlite) {
+        db.sqlite.exec(statements.join(";"));
+      }
+    },
+    checksum: "v1_crawl_ai_decision_ledger",
+  },
 ];
 
 /**

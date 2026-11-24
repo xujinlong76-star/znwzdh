@@ -294,6 +294,7 @@ const IMPLICIT_SCOPE_BASELINE: readonly string[] = [
   "POST /api/me/prune",
   "POST /api/me/sessions/check",
   "POST /api/me/tokens",
+  "POST /api/me/tokens/:id/rotate",
   "DELETE /api/me/tokens/:id",
   "POST /api/me/notifications/:id/read",
   "POST /api/me/notifications/read-all",

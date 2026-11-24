@@ -26,6 +26,7 @@ const MINIMAL_PAYLOADS: Record<(typeof JOB_KINDS)[number], Record<string, unknow
   drama_calendar_refresh: {},
   drama_rankings_refresh: {},
   plugin_url_health: {},
+  crawl_worker: { maxTasks: 10, seeds: [{ url: "https://example.com/sitemap.xml", kind: "sitemap" }] },
 };
 
 describe("任务 payload 契约", () => {
@@ -58,6 +59,18 @@ describe("任务 payload 契约", () => {
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.issues.length).toBeGreaterThan(0);
     }
+  });
+
+  it("采集 Worker payload 限制种子数量、URL 协议与任务批量大小", () => {
+    expect(validateJobPayload("crawl_worker", {
+      seeds: [{ url: "file:///etc/passwd", kind: "sitemap" }],
+    }).ok).toBe(false);
+    expect(validateJobPayload("crawl_worker", { maxTasks: 26 }).ok).toBe(false);
+    expect(validateJobPayload("crawl_worker", {
+      seeds: Array.from({ length: 101 }, (_, i) => ({
+        url: `https://example-${i}.com/sitemap.xml`, kind: "sitemap",
+      })),
+    }).ok).toBe(false);
   });
 
   it("未知任务类型返回结构化错误", () => {

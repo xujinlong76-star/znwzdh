@@ -162,7 +162,19 @@ function moderationEvidenceOf(evidence: Record<string, unknown>): Record<string,
   const confidence = Number(value.confidence);
   const qualityScore = Number(value.qualityScore);
   return {
-    mode: value.mode === "shadow" ? "shadow" : "unknown",
+    mode: value.mode === "auto_approve" ? "auto_approve" : value.mode === "shadow" ? "shadow" : "unknown",
+    status,
+    action: typeof value.action === "string" ? value.action.slice(0, 80) : null,
+    autoApprovalGate: value.autoApprovalGate && typeof value.autoApprovalGate === "object"
+      ? (() => {
+          const gate = value.autoApprovalGate as Record<string, unknown>;
+          return {
+            eligible: gate.eligible === true,
+            reason: typeof gate.reason === "string" ? gate.reason.slice(0, 80) : null,
+            sampleSize: Number.isFinite(Number(gate.sampleSize)) ? Number(gate.sampleSize) : 0,
+          };
+        })()
+      : null,
     status,
     verdict,
     confidence: Number.isFinite(confidence) && confidence >= 0 && confidence <= 1 ? confidence : null,

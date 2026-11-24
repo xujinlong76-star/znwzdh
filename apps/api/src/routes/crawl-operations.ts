@@ -502,7 +502,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     });
     const metrics=evaluateSiteModerationGoldSet(cases);
     const datasetVersion=createHash("sha256").update(gold.map(row=>String(row.id)+":"+String(row.final_label)+":"+String(Boolean(row.final_risk))).join("|")).digest("hex");
-    const previousRows=await ctx.repo.raw("SELECT metrics_json FROM crawl_moderation_model_evaluations WHERE model=? ORDER BY created_at DESC,id DESC LIMIT 1",[body.data.model]);
+    const previousRows=await ctx.repo.raw("SELECT metrics_json FROM crawl_moderation_model_evaluations WHERE model=? AND dataset_version=? ORDER BY created_at DESC,id DESC LIMIT 1",[body.data.model,datasetVersion]);
     const previous=previousRows[0]?.metrics_json?JSON.parse(String(previousRows[0].metrics_json)) as {exactMatchRate?:number|null;riskDetection?:{recall?:number|null}}:null;
     const alerts:Array<{severity:"warning"|"critical";code:string;message:string}>=[];
     if(metrics.exactMatchRate!==null&&metrics.exactMatchRate<0.9)alerts.push({severity:"warning",code:"low_exact_match",message:"标签精确匹配率低于 90%，建议保持 Shadow 并检查错分样本"});

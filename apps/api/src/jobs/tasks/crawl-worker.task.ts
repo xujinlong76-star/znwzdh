@@ -213,12 +213,23 @@ export async function handleCrawlWorker(
       if ((isSitemap || isRss) && response.body) {
         const kind = isSitemap ? "sitemap" : "rss";
         const links = extractFeedUrls(response.body, response.finalUrl, kind);
+        let feedInterrupted = false;
         for (const url of links) {
-          if (run.shouldStop()) break;
+          if (run.shouldStop()) { feedInterrupted = true; break; }
           const queued = await enqueueCrawlTask(ctx.repo, {
             url, source: childSource(task.source), priority: 0, maxAttempts: 5, requeueCompleted: true,
           });
           if (queued.status === "queued" || queued.status === "retry") summary.feedUrlsEnqueued++;
+        }
+        if (feedInterrupted) {
+          await settleCrawlTask(ctx.repo, {
+            id: task.id, workerId, outcome: "retry",
+            error: "采集任务在 feed 分发过程中被协作式停止",
+            nextRunAt: Date.now() + 30_000, now: Date.now(),
+          });
+          summary.retried++;
+          summary.stopped = true;
+          break;
         }
       } else if (response.body && /(?:text\/html|application\/xhtml\+xml)/i.test(response.contentType ?? "")) {
         const metadata = extractHtmlMetadata(response.body);

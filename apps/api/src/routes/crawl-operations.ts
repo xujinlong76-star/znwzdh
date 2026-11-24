@@ -23,7 +23,7 @@ export async function assertSafeCrawlSourceUrl(rawUrl: string): Promise<void> {
 }
 
 /** 对正式金标集做稳定抽样：相同数据集重复运行时选中相同样本。 */
-export function selectGoldEvaluationSample<T extends { id: unknown; category?: unknown; final_risk?: unknown }>(rows: readonly T[], limit = 20): T[] {
+export function selectGoldEvaluationSample<T extends { id: unknown; category?: unknown; final_risk?: unknown; sanitized_excerpt?: unknown; final_label?: unknown }>(rows: readonly T[], limit = 20): T[] {
   const bounded = Math.max(1, Math.min(20, Math.floor(limit)));
   const keyed = rows.map(row => ({ row, hash:createHash("sha256").update(String(row.id)).digest("hex"),
     risk:row.final_risk === true || row.final_risk === 1 ? "positive" : row.final_risk === false || row.final_risk === 0 ? "negative" : "unknown",

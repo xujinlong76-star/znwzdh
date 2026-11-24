@@ -756,15 +756,27 @@ export async function handleCrawlWorker(
                     reasons: decision.reasons, evidence: decision.evidence,
                     model: decision.model, policyVersion: decision.policyVersion, reviewedAt,
                   };
+                  if (leaseHeartbeat.signal.aborted) throw new Error("采集任务租约已丢失，禁止写入 AI 自动审核结果");
                   let autoApprovalApplied = false;
                   if (autoApprovalEligible && candidate.status === "pending") {
                     const reviewer = `ai:${decision.model}`;
-                    const reviewed = await reviewSiteDiscoveryCandidate(ctx.repo, {
-                      id: candidate.id, status: "approved", reviewer, siteId: null,
-                      evidence: { ...candidate.evidence, aiModeration: autoEvidence },
-                      now: reviewedAt,
+                    await ctx.repo.withTransaction(async () => {
+                      const reviewed = await reviewSiteDiscoveryCandidate(ctx.repo, {
+                        id: candidate.id, status: "approved", reviewer, siteId: null,
+                        evidence: { ...candidate.evidence, aiModeration: autoEvidence },
+                        now: reviewedAt,
+                      });
+                      autoApprovalApplied = reviewed?.status === "approved" && reviewed.reviewedBy === reviewer;
+                      if (autoApprovalApplied) {
+                        await recordCrawlAiModerationDecision(ctx.repo, {
+                          id: randomUUID(), candidateId: candidate.id, decisionSource: "ai",
+                          mode: "auto_approve", status: "completed", verdict: decision.verdict,
+                          confidence: decision.confidence, qualityScore: decision.qualityScore,
+                          risks: decision.risks, reasons: decision.reasons, model: decision.model,
+                          policyVersion: decision.policyVersion, createdAt: reviewedAt,
+                        });
+                      }
                     });
-                    autoApprovalApplied = reviewed?.status === "approved" && reviewed.reviewedBy === reviewer;
                   }
                   if (!autoApprovalApplied) {
                     await upsertSiteDiscoveryCandidate(ctx.repo, {
@@ -776,15 +788,14 @@ export async function handleCrawlWorker(
                         action: gate && !gate.eligible ? "gate_blocked" : "human_review_required",
                       } },
                     });
+                    await recordCrawlAiModerationDecision(ctx.repo, {
+                      id: randomUUID(), candidateId: candidate.id, decisionSource: "ai",
+                      mode: "shadow", status: "completed", verdict: decision.verdict,
+                      confidence: decision.confidence, qualityScore: decision.qualityScore,
+                      risks: decision.risks, reasons: decision.reasons, model: decision.model,
+                      policyVersion: decision.policyVersion, createdAt: reviewedAt,
+                    });
                   }
-                  await recordCrawlAiModerationDecision(ctx.repo, {
-                    id: randomUUID(), candidateId: candidate.id, decisionSource: "ai",
-                    mode: autoApprovalApplied ? "auto_approve" : "shadow", status: "completed",
-                    verdict: decision.verdict, confidence: decision.confidence,
-                    qualityScore: decision.qualityScore, risks: decision.risks,
-                    reasons: decision.reasons, model: decision.model,
-                    policyVersion: decision.policyVersion, createdAt: reviewedAt,
-                  });
                   if (autoApprovalApplied) {
                     await ctx.repo.audit({
                       actor: `ai:${decision.model}`, actorKind: "system",
@@ -794,7 +805,7 @@ export async function handleCrawlWorker(
                         datasetVersion: gate?.datasetVersion, sampleSize: gate?.sampleSize,
                         policyVersion: decision.policyVersion,
                       },
-                    });
+                    }).catch(() => undefined);
                   }
                 } catch (moderationError) {
                   if (leaseHeartbeat.signal.aborted) throw new Error("采集任务租约已丢失，停止写入 AI 审核错误记录");

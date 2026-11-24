@@ -57,6 +57,19 @@ export async function consumeAuthToken(
   return changes > 0;
 }
 
+/** 使某用户指定用途的所有未消费令牌失效（邮箱变更时撤销旧验证链接）。 */
+export async function revokeAuthTokens(
+  repo: Repository,
+  userId: string,
+  purpose: AuthTokenPurpose,
+  now = Date.now(),
+): Promise<number> {
+  return repo.runCount(
+    "UPDATE auth_tokens SET consumed_at = ? WHERE user_id = ? AND purpose = ? AND consumed_at IS NULL",
+    [now, userId, purpose],
+  );
+}
+
 /** 该用户某用途下是否已有未消费且未过期的令牌（用于「重新发送」的节流判断） */
 export async function hasActiveAuthToken(
   repo: Repository,

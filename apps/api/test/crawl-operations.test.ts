@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scoreCrawlCandidate, selectStratifiedCrawlCandidates, selectGoldEvaluationSample, moderationVerdictToPrediction } from "../src/routes/crawl-operations.ts";
+import { scoreCrawlCandidate, selectStratifiedCrawlCandidates, selectGoldEvaluationSample, moderationVerdictToPrediction, buildModerationErrorAnalysis } from "../src/routes/crawl-operations.ts";
 
 describe("crawl candidate quality hints", () => {
   it("rewards complete, substantial HTTPS pages with explainable reasons", () => {
@@ -71,5 +71,29 @@ describe("automatic moderation gold evaluation helpers", () => {
     expect(moderationVerdictToPrediction({verdict:"auto_approve",risks:["none"]})).toEqual({actual:"approve",actualRisk:false});
     expect(moderationVerdictToPrediction({verdict:"reject",risks:["phishing"]})).toEqual({actual:"reject",actualRisk:true});
     expect(moderationVerdictToPrediction({verdict:"manual_review",risks:["none","spam"]})).toEqual({actual:"review",actualRisk:true});
+  });
+});
+describe("moderation evaluation error analysis", () => {
+  it("groups label mismatches and lists risk false negatives/positives without page content", () => {
+    const result = buildModerationErrorAnalysis([
+      {id:"a",expected:"approve",actual:"reject",expectedRisk:false,actualRisk:true},
+      {id:"b",expected:"reject",actual:"review",expectedRisk:true,actualRisk:false},
+      {id:"c",expected:"reject",actual:"review",expectedRisk:true,actualRisk:false},
+      {id:"d",expected:"approve",actual:"approve",expectedRisk:false,actualRisk:false},
+    ]);
+    expect(result.labelMismatchCount).toBe(3);
+    expect(result.riskMismatchCount).toBe(3);
+    expect(result.confusionGroups).toEqual([{expected:"reject",actual:"review",count:2,sampleIds:["b","c"]},{expected:"approve",actual:"reject",count:1,sampleIds:["a"]}]);
+    expect(result.riskFalseNegativeIds).toEqual(["b","c"]);
+    expect(result.riskFalsePositiveIds).toEqual(["a"]);
+    expect(JSON.stringify(result)).not.toMatch(/https?:|<html|网页正文/);
+  });
+  it("bounds per-group sample identifiers and reports truncation", () => {
+    const cases = Array.from({length:80},(_,index)=>({id:"id-"+index,expected:"reject" as const,actual:"review" as const,expectedRisk:true,actualRisk:false}));
+    const result = buildModerationErrorAnalysis(cases);
+    expect(result.labelMismatchCount).toBe(80);
+    expect(result.confusionGroups[0]?.sampleIds).toHaveLength(20);
+    expect(result.riskFalseNegativeIds).toHaveLength(50);
+    expect(result.samplesTruncated).toBe(true);
   });
 });

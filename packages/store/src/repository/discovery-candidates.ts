@@ -163,6 +163,40 @@ export async function countSiteDiscoveryCandidates(
 }
 
 /** 只允许 pending 记录完成一次审核；调用方随后回读以检测并发审核冲突。 */
+/**
+ * 仅允许人工覆盖由 AI 自动批准的候选；人工批准的记录不能通过此接口被重写。
+ */
+export async function overrideAiApprovedCandidate(
+  repo: Repository,
+  input: {
+    id: string;
+    decision: "reopen" | "reject";
+    reviewer: string;
+    reason: string;
+    evidence?: Record<string, unknown>;
+    now?: number;
+  },
+): Promise<SiteDiscoveryCandidate | null> {
+  const now = input.now ?? Date.now();
+  const reopen = input.decision === "reopen";
+  await repo.run(
+    `UPDATE site_discovery_candidates
+        SET status = ?, site_id = NULL, reviewed_at = ?, reviewed_by = ?,
+            rejection_reason = ?, evidence_json = COALESCE(?, evidence_json), updated_at = ?
+      WHERE id = ? AND status = 'approved' AND reviewed_by LIKE 'ai:%'`,
+    [
+      reopen ? "pending" : "rejected",
+      reopen ? null : now,
+      reopen ? null : input.reviewer,
+      reopen ? null : input.reason,
+      input.evidence == null ? null : JSON.stringify(input.evidence),
+      now,
+      input.id,
+    ],
+  );
+  return getSiteDiscoveryCandidate(repo, input.id);
+}
+
 export async function reviewSiteDiscoveryCandidate(
   repo: Repository,
   input: {

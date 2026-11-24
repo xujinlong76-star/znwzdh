@@ -301,6 +301,23 @@ export async function verifyUserPassword(
   return ok && user.emailVerified ? user : null;
 }
 
+/** 仅当当前邮箱仍等于重置链接发放时的邮箱，才允许更新密码。 */
+export async function updateUserPasswordForEmail(
+  repo: Repository,
+  userId: string,
+  newPassword: string,
+  email: string,
+): Promise<boolean> {
+  const pwError = validatePassword(newPassword);
+  if (pwError) return false;
+  const passwordHash = await hashPassword(newPassword);
+  const changes = await repo.runCount(
+    "UPDATE users SET password_hash = ? WHERE id = ? AND LOWER(email) = ?",
+    [passwordHash, userId, email.trim().toLowerCase()],
+  );
+  return changes > 0;
+}
+
 /** 更新密码（找回密码流程用）：先哈希再写，明文不落库 */
 export async function updateUserPassword(
   repo: Repository,

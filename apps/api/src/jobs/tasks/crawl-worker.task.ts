@@ -122,6 +122,16 @@ function retryDelay(attempts: number): number {
   return Math.min(base, 60 * 60_000);
 }
 
+/** Retry-After 可为秒数或 HTTP-date；最大等待 6 小时，不能被上游无限期挂起。 */
+export function parseRetryAfterMs(value: string | null | undefined, now = Date.now()): number {
+  if (!value?.trim()) return 0;
+  const seconds = Number(value.trim());
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(6 * 60 * 60_000, seconds * 1000);
+  const date = Date.parse(value);
+  if (!Number.isFinite(date)) return 0;
+  return Math.min(6 * 60 * 60_000, Math.max(0, date - now));
+}
+
 export interface CrawlWorkerSummary {
   seedsEnqueued: number;
   tasksClaimed: number;
@@ -194,7 +204,7 @@ export async function handleCrawlWorker(
         await settleCrawlTask(ctx.repo, {
           id: task.id, workerId, outcome: "retry",
           error: "上游暂时不可用，HTTP " + response.status,
-          nextRunAt: Date.now() + retryDelay(task.attempts), now: Date.now(),
+          nextRunAt: Date.now() + Math.max(retryDelay(task.attempts), parseRetryAfterMs(response.retryAfter)), now: Date.now(),
         });
         summary.retried++;
         continue;

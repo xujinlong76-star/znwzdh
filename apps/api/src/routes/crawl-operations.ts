@@ -911,6 +911,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     }
     await ctx.repo.setSystemState(CRAWL_AI_MODERATION_POLICY_KEY, body.data);
     await ctx.repo.audit({ ip: req.ip, actor: String(req.auth.actor ?? "admin"), actorKind: req.auth.kind, action: "crawl.moderation_policy_update", target: CRAWL_AI_MODERATION_POLICY_KEY, diff: { enabled: body.data.enabled, mode: body.data.mode, autoApproveConfidence: body.data.autoApproveConfidence, rejectConfidence: body.data.rejectConfidence, minQualityScore: body.data.minQualityScore, maxAiReviewsPerRun: body.data.maxAiReviewsPerRun } });
-    return { ok: true, policy: body.data };
+    const gates = await getAutoApprovalGates();
+    return { ok: true, policy: body.data, autoApprovalGate: { ready: gates.some(gate => gate.eligible), models: gates } };
   });
 };

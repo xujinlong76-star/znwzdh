@@ -475,4 +475,30 @@ describe('tablist A-2：其余 tablist 按 plugin-detail-view 模板补 roving t
     expect(handler).toContain('tabs[next]?.focus()')
     expect(handler).not.toContain('.click()')
   })
+
+  it('site-reports 状态筛选：容器挂 onKeyDown，五 tab 顺序常量与 handler 接线齐全', () => {
+    const src = read('src/app/admin/site-reports/page.tsx')
+    expect(src).toContain('onKeyDown={handleTabKeyDown}')
+    expect(src).toContain('const STATUS_KEYS = STATUS_TABS.map((t) => t.key)')
+    expect(src).toContain('const handleTabKeyDown')
+    expect(count(src, 'tabIndex={status === tab.key ? 0 : -1}')).toBe(1)
+    const handler = src.slice(
+      src.indexOf('const handleTabKeyDown'),
+      src.indexOf('\n  }', src.indexOf('const handleTabKeyDown')),
+    )
+    expect(handler).toContain("target.getAttribute('role') !== 'tab'")
+    expect(handler).toContain("querySelectorAll<HTMLButtonElement>('[role=\"tab\"]')")
+    expect(handler).not.toContain('[role="tab"]:not([disabled])')
+    expect(handler).toContain('tabs.map((t) => !t.disabled)')
+    expect(handler).toContain('const step = (from: number, dir: 1 | -1): number => {')
+    expect(handler).toContain('const firstEnabled = enabled.findIndex(Boolean)')
+    expect(handler).toContain('const lastEnabled = enabled.lastIndexOf(true)')
+    for (const key of ["'ArrowRight'", "'ArrowLeft'", "'Home'", "'End'"]) {
+      expect(handler).toContain(`event.key === ${key}`)
+    }
+    expect(handler).toContain('event.preventDefault()')
+    expect(handler).toContain('setStatus(STATUS_KEYS[next])')
+    expect(handler).toContain('tabs[next]?.focus()')
+    expect(handler).not.toContain('.click()')
+  })
 })

@@ -181,6 +181,27 @@ export default function CrawlOperationsPage(){
     finally{setGoldBusy(false)}
   }
 
+  const importCandidatesToGold=async()=>{
+    if(goldBusy)return
+    const candidates=(page?.items??[]).slice(0,20)
+    if(!candidates.length){setGoldMessage('当前没有可导入的采集候选');return}
+    setGoldBusy(true);setGoldMessage(null)
+    let created=0,existing=0,failed=0
+    try{
+      for(const candidate of candidates){
+        try{
+          const result=await hubSend<{ok:boolean;created:boolean}>(
+            '/api/hub/admin/crawl/moderation-gold-cases/from-candidate/'+encodeURIComponent(candidate.id),
+            'POST',{}
+          )
+          if(result.created)created++;else existing++
+        }catch{failed++}
+      }
+      setGoldMessage('候选导入完成：新增 '+created+' 条，已存在 '+existing+' 条，失败 '+failed+' 条。导入样本仍需双人独立标注。')
+      await load()
+    }finally{setGoldBusy(false)}
+  }
+
   const tasks=overview?.tasks??{}
   return <div className="mx-auto max-w-7xl space-y-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -212,6 +233,10 @@ export default function CrawlOperationsPage(){
 
       <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4"/>人工金标标注工作台</CardTitle><CardDescription>先提交完成脱敏的样本，再由两位不同管理员独立盲标；双人提交完成前互相看不到对方的标签和证据，结论不一致时交给第三位管理员仲裁。AI 输出不参与生成金标。</CardDescription></CardHeader>
         <CardContent className="space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+            <div className="text-sm"><div className="font-medium">真实采集候选导入</div><p className="text-xs text-muted-foreground">从当前待审核队列最多导入 20 条；自动脱敏明显 URL、邮箱和电话，并按候选指纹防止重复导入。</p></div>
+            <Button variant="outline" size="sm" onClick={()=>void importCandidatesToGold()} disabled={goldBusy||!page?.items.length}>导入当前候选（最多20条）</Button>
+          </div>
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-1 text-sm"><span className="text-muted-foreground">样本标题</span><input value={goldTitle} onChange={e=>setGoldTitle(e.target.value)} maxLength={200} className="h-9 w-full rounded-md border bg-background px-3"/></label>
             <label className="space-y-1 text-sm"><span className="text-muted-foreground">所属类别</span><input value={goldCategory} onChange={e=>setGoldCategory(e.target.value)} maxLength={80} className="h-9 w-full rounded-md border bg-background px-3"/></label>

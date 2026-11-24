@@ -93,8 +93,8 @@ export default function MobileNav() {
                 }
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  // 触控可读性基线（F3）：标签 12px（原 10px 触控不可读）；leading 收紧防 5 项 flex-1 纵向溢出
-                  'flex h-full w-full flex-col items-center justify-center gap-0.5 text-[12px] leading-[14px] font-medium transition-colors',
+                  // 触控可读性基线（F3）：标签 0.75rem（原 0.625rem 触控不可读）；leading 0.875rem 收紧防 5 项 flex-1 纵向溢出
+                  'flex h-full w-full flex-col items-center justify-center gap-0.5 text-[0.75rem] leading-[0.875rem] font-medium transition-colors',
                   active ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
@@ -103,8 +103,8 @@ export default function MobileNav() {
                   {showBadge && (
                     <span
                       aria-hidden
-                      // 徽章 11px（原 8px）；leading/min-w 同步到 16px 保持胶囊形，不影响 flex-1 列宽
-                      className="absolute -right-2 -top-1.5 min-w-[16px] rounded-full bg-primary px-1 text-center text-[11px] font-semibold leading-[16px] text-primary-foreground tabular-nums"
+                      // 徽章 0.6875rem（原 0.5rem）；leading/min-w 同步到 1rem 保持胶囊形，不影响 flex-1 列宽
+                      className="absolute -right-2 -top-1.5 min-w-[1rem] rounded-full bg-primary px-1 text-center text-[0.6875rem] font-semibold leading-[1rem] text-primary-foreground tabular-nums"
                     >
                       {unreadText}
                     </span>
@@ -113,7 +113,7 @@ export default function MobileNav() {
                     <span
                       aria-hidden
                       // 与「我的」未读徽章同一套尺寸与 9+ 封顶（unreadBadgeText），不另立样式
-                      className="absolute -right-2 -top-1.5 min-w-[16px] rounded-full bg-primary px-1 text-center text-[11px] font-semibold leading-[16px] text-primary-foreground tabular-nums"
+                      className="absolute -right-2 -top-1.5 min-w-[1rem] rounded-full bg-primary px-1 text-center text-[0.6875rem] font-semibold leading-[1rem] text-primary-foreground tabular-nums"
                     >
                       {dueText}
                     </span>

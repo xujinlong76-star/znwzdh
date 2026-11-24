@@ -13,11 +13,11 @@ describe("crawl source URL extraction", () => {
 
   it("extracts RSS text links and Atom href links without duplicates", () => {
     const result = extractCrawlCandidateUrls(
-      '<rss><channel><item><link>https://example.com/post/1</link></item><item><link>https://example.com/post/1</link></item></channel></rss><link href="https://example.com/feed/2" rel="self"/>',
+      '<feed><entry><title>Atom article</title><link href="https://example.com/feed/2" rel="alternate"/></entry><link href="https://example.com/feed.xml" rel="self"/></feed><rss><channel><item><link>https://example.com/post/1</link></item><item><link>https://example.com/post/1</link></item></channel></rss>',
       "rss",
       "https://example.com/feed.xml",
     );
-    expect(result).toEqual(["https://example.com/post/1", "https://example.com/feed/2"]);
+    expect(result).toEqual(["https://example.com/feed/2", "https://example.com/post/1"]);
   });
 
   it("keeps RSS item metadata and HTML anchor labels attached to their own candidate", () => {

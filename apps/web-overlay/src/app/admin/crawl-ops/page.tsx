@@ -271,6 +271,18 @@ export default function CrawlOperationsPage(){
     }catch(e){setGoldMessage(e instanceof Error?e.message:'模型评测失败')}
     finally{setGoldBusy(false)}
   }
+  const latestEvaluationByModel=Array.from(modelEvaluationRuns.reduce((map,item)=>{
+    const previous=map.get(item.model)
+    if(!previous||item.createdAt>previous.createdAt)map.set(item.model,item)
+    return map
+  },new Map<string,ModelEvaluationRun>()).values()).sort((a,b)=>(b.metrics.riskDetection.recall??-1)-(a.metrics.riskDetection.recall??-1)||(b.metrics.exactMatchRate??-1)-(a.metrics.exactMatchRate??-1))
+  const latestDiagnostics=latestEvaluationByModel.flatMap(run=>run.metrics.caseDiagnostics??[])
+  const errorSummary={
+    labelMismatch:latestDiagnostics.filter(item=>item.labelMismatch).length,
+    riskFalseNegative:latestDiagnostics.filter(item=>item.riskFalseNegative).length,
+    riskFalsePositive:latestDiagnostics.filter(item=>item.riskFalsePositive).length,
+    evaluated:latestDiagnostics.length,
+  }
   const tasks=overview?.tasks??{}
   return <div className="mx-auto max-w-7xl space-y-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -300,6 +312,16 @@ export default function CrawlOperationsPage(){
         {!modelAnalytics?.models.length?<p className="text-sm text-muted-foreground">当前时间范围内暂无 AI 审核样本。</p>:<div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="p-2">模型</th><th className="p-2">样本</th><th className="p-2">完成</th><th className="p-2">成功率</th><th className="p-2">平均置信度</th><th className="p-2">建议通过</th><th className="p-2">建议驳回</th><th className="p-2">人工复核</th><th className="p-2">错误/额度跳过</th></tr></thead><tbody>{modelAnalytics.models.map(item=><tr key={item.model} className="border-b last:border-0"><td className="p-2 font-medium">{item.model}</td><td className="p-2 tabular-nums">{item.total}</td><td className="p-2 tabular-nums">{item.completed}</td><td className="p-2 tabular-nums">{item.successRate===null?'—':item.successRate+'%'}</td><td className="p-2 tabular-nums">{item.averageConfidence===null?'—':Math.round(item.averageConfidence*100)+'%'}</td><td className="p-2 tabular-nums">{item.verdicts.autoApprove}</td><td className="p-2 tabular-nums">{item.verdicts.reject}</td><td className="p-2 tabular-nums">{item.verdicts.manualReview}</td><td className="p-2 tabular-nums">{item.errors}/{item.quotaBlocked}</td></tr>)}</tbody></table></div>}
       </CardContent></Card>
 
+      <Card><CardHeader><CardTitle className="text-base">模型质量排行榜与错误趋势</CardTitle><CardDescription>每个模型仅取最近一次评测，按风险召回率、标签精确匹配率排序；不同金标快照不直接混算。异常统计基于各模型最近一次评测的逐样本诊断。</CardDescription></CardHeader><CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-4">
+          <Stat label="参与对比模型" value={latestEvaluationByModel.length} detail="有正式评测记录的模型"/>
+          <Stat label="诊断样本数" value={errorSummary.evaluated} detail="各模型最近一次评测样本"/>
+          <Stat label="标签错分" value={errorSummary.labelMismatch} detail="模型标签与人工金标不一致"/>
+          <Stat label="风险漏报" value={errorSummary.riskFalseNegative} detail={"风险误报 "+errorSummary.riskFalsePositive+" 条"}/>
+        </div>
+        {!latestEvaluationByModel.length?<p className="text-xs text-muted-foreground">尚无模型评测数据；完成正式金标并运行模型评测后自动生成排行榜。</p>:<div className="overflow-x-auto"><table className="w-full min-w-[620px] text-xs"><thead><tr className="border-b text-left text-muted-foreground"><th className="p-2">排名</th><th className="p-2">模型</th><th className="p-2">样本数</th><th className="p-2">风险召回</th><th className="p-2">精确匹配</th><th className="p-2">风险漏报</th><th className="p-2">预警</th></tr></thead><tbody>{latestEvaluationByModel.map((item,index)=><tr key={item.model} className="border-b"><td className="p-2 font-semibold">{index+1}</td><td className="p-2 font-medium">{item.model}</td><td className="p-2">{item.sampleSize}</td><td className="p-2">{item.metrics.riskDetection.recall===null?'不可评估':(item.metrics.riskDetection.recall*100).toFixed(1)+'%'}</td><td className="p-2">{item.metrics.exactMatchRate===null?'—':(item.metrics.exactMatchRate*100).toFixed(1)+'%'}</td><td className="p-2">{item.metrics.riskDetection.falseNegatives}</td><td className="p-2">{item.metrics.alerts?.length??0}</td></tr>)}</tbody></table></div>}
+        <p className="text-xs text-muted-foreground">排行榜是辅助分析，不代表模型已获准上线。样本量、数据集版本和风险正样本覆盖必须同时审查；不得仅凭排名解除 Shadow。</p>
+      </CardContent></Card>
       <Card><CardHeader><CardTitle className="text-base">真实金标基线进度</CardTitle><CardDescription>目标 100 条正式金标样本；仅统计双人一致或独立第三人仲裁完成的数据。</CardDescription></CardHeader><CardContent className="space-y-3">
         <div className="flex items-end justify-between gap-3"><div><div className="text-3xl font-semibold tabular-nums">{goldProgress?.goldReady??0}<span className="text-base text-muted-foreground"> / 100</span></div><p className="text-xs text-muted-foreground">还需 {goldProgress?.remaining??100} 条 · 待标注 {goldProgress?.pending??0} · 标注中 {goldProgress?.annotating??0} · 待仲裁 {goldProgress?.needsAdjudication??0}</p></div><div className="text-sm font-medium tabular-nums">{goldProgress?.progress??0}%</div></div>
         <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{width:(goldProgress?.progress??0)+'%'}}/></div>

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { fingerprintPageContent, simhashDistance } from "@navhub/core";
-import { guardedFetch, SsrfBlockedError } from "@navhub/ai";
+import { guardedFetch, SsrfBlockedError, moderateSiteWithAi } from "@navhub/ai";
 import {
   claimCrawlTask,
   claimDueCrawlSources,
@@ -11,6 +11,9 @@ import {
   settleCrawlTask,
   upsertSiteDiscoveryCandidate,
 } from "@navhub/store";
+import { llmProviderReadyAny, resolveLlm } from "../../llm-config.ts";
+import { reserveLlmQuota, settleLlmQuota } from "../../llm-quota.ts";
+import { callLlm } from "../../llm-usage.ts";
 import type { AppContext } from "../../context.ts";
 import type { JobRunHandle } from "../../jobs.ts";
 
@@ -323,6 +326,10 @@ export interface CrawlWorkerSummary {
   deadLettered: number;
   heldForReview: number;
   candidatesUpserted: number;
+  aiModerationAttempted: number;
+  aiModerationSucceeded: number;
+  aiModerationFailed: number;
+  aiModerationQuotaSkipped: number;
   feedUrlsEnqueued: number;
   expiredLeaseRetries: number;
   expiredLeaseDeadLetters: number;
@@ -379,7 +386,9 @@ export async function handleCrawlWorker(
 
   const summary: CrawlWorkerSummary = {
     seedsEnqueued, sourcesClaimed: dueSources.length, sourcesScheduled, tasksClaimed: 0, completed: 0, retried: 0, deadLettered: 0,
-    heldForReview: 0, candidatesUpserted: 0, feedUrlsEnqueued: 0,
+    heldForReview: 0, candidatesUpserted: 0,
+    aiModerationAttempted: 0, aiModerationSucceeded: 0, aiModerationFailed: 0, aiModerationQuotaSkipped: 0,
+    feedUrlsEnqueued: 0,
     expiredLeaseRetries: reaped.retried, expiredLeaseDeadLetters: reaped.deadLettered, stopped: false,
   };
   const maxTasks = Math.max(1, Math.min(25, Math.floor(payload.maxTasks ?? 10)));
@@ -510,19 +519,103 @@ export async function handleCrawlWorker(
           fetchedAt: Date.now(),
         });
         if (metadata.title || metadata.description || metadata.text.length >= 80) {
-          await upsertSiteDiscoveryCandidate(ctx.repo, {
+          const candidateEvidence = {
+            fetchedStatus: response.status, finalUrl: response.finalUrl,
+            fetchedAt: Date.now(), contentHash, simhash64: fp.simhash,
+            tokenCount: fp.tokenCount, truncated: response.truncated,
+            exactDuplicateOf: exactDuplicate?.canonical_url ?? null,
+            nearDuplicateCandidates: nearDuplicates,
+          };
+          const candidate = await upsertSiteDiscoveryCandidate(ctx.repo, {
             id: randomUUID(), url: finalUrl, canonicalUrl: finalUrl,
             title: metadata.title, description: metadata.description,
-            source: task.source,
-            evidence: {
-              fetchedStatus: response.status, finalUrl: response.finalUrl,
-              fetchedAt: Date.now(), contentHash, simhash64: fp.simhash,
-              tokenCount: fp.tokenCount, truncated: response.truncated,
-              exactDuplicateOf: exactDuplicate?.canonical_url ?? null,
-              nearDuplicateCandidates: nearDuplicates,
-            },
+            source: task.source, evidence: candidateEvidence,
           });
           summary.candidatesUpserted++;
+
+          // 默认不产生模型费用；仅在部署显式设置 shadow 时运行影子审核。
+          // 本阶段只写审核证据，绝不修改 pending/approved/rejected 状态。
+          if (process.env.NAVHUB_CRAWL_AI_MODERATION?.trim().toLowerCase() === "shadow" &&
+              candidate.status === "pending") {
+            const resolved = await resolveLlm(ctx);
+            if (llmProviderReadyAny(resolved)) {
+              const quota = await reserveLlmQuota(ctx, null, {
+                source: resolved.source,
+                estimatedTokens: 1800,
+              });
+              if (!quota.ok) {
+                summary.aiModerationQuotaSkipped++;
+                await upsertSiteDiscoveryCandidate(ctx.repo, {
+                  id: candidate.id, url: candidate.url, canonicalUrl: candidate.canonicalUrl,
+                  source: candidate.source,
+                  evidence: { ...candidate.evidence, aiModeration: {
+                    mode: "shadow", status: "quota_blocked", recordedAt: Date.now(),
+                  } },
+                });
+              } else {
+                summary.aiModerationAttempted++;
+                try {
+                  const decision = await moderateSiteWithAi(resolved.provider, {
+                    url: finalUrl,
+                    title: metadata.title,
+                    description: metadata.description,
+                    contentExcerpt: metadata.text.slice(0, 6000),
+                    evidence: {
+                      httpStatus: response.status,
+                      provenance: task.source,
+                      warnings: [
+                        ...(response.truncated ? ["页面正文抓取被截断"] : []),
+                        ...(exactDuplicate ? ["存在完全重复内容"] : []),
+                        ...(nearDuplicates.length ? ["存在近重复内容候选"] : []),
+                      ],
+                    },
+                  }, {}, {
+                    signal: run.signal,
+                    deadlineAt: Date.now() + 45_000,
+                    complete: (_provider, request) => callLlm(ctx, resolved, {
+                      scenario: "crawl_moderation",
+                      identity: null,
+                      messages: request.messages,
+                      temperature: request.temperature,
+                      maxTokens: request.maxTokens,
+                      json: request.json,
+                      thinking: false,
+                      signal: request.signal,
+                      deadlineAt: request.deadlineAt,
+                      fetchImpl: request.fetchImpl,
+                    }),
+                  });
+                  summary.aiModerationSucceeded++;
+                  await upsertSiteDiscoveryCandidate(ctx.repo, {
+                    id: candidate.id, url: candidate.url, canonicalUrl: candidate.canonicalUrl,
+                    source: candidate.source,
+                    confidence: decision.confidence,
+                    evidence: { ...candidate.evidence, aiModeration: {
+                      mode: "shadow", status: "completed", verdict: decision.verdict,
+                      confidence: decision.confidence, qualityScore: decision.qualityScore,
+                      category: decision.category, tags: decision.tags, risks: decision.risks,
+                      reasons: decision.reasons, evidence: decision.evidence,
+                      model: decision.model, policyVersion: decision.policyVersion,
+                      reviewedAt: Date.now(),
+                    } },
+                  });
+                } catch (moderationError) {
+                  summary.aiModerationFailed++;
+                  await upsertSiteDiscoveryCandidate(ctx.repo, {
+                    id: candidate.id, url: candidate.url, canonicalUrl: candidate.canonicalUrl,
+                    source: candidate.source,
+                    evidence: { ...candidate.evidence, aiModeration: {
+                      mode: "shadow", status: "error",
+                      errorType: moderationError instanceof Error ? moderationError.name : "UnknownError",
+                      recordedAt: Date.now(),
+                    } },
+                  });
+                } finally {
+                  await settleLlmQuota(ctx, quota.hold);
+                }
+              }
+            }
+          }
         }
       }
       await settleCrawlTask(ctx.repo, {

@@ -608,6 +608,7 @@ export async function handleCrawlWorker(
               maxDistance: 3, limit: 5,
             })
           : [];
+        if (leaseHeartbeat.signal.aborted) throw new Error("采集任务租约已丢失，禁止写入页面指纹");
         if (hasFingerprintText && fp && contentHash) {
           await recordCrawlFingerprint(ctx.repo, {
             canonicalUrl: finalUrl, contentHash, simhash64: fp.simhash,
@@ -616,6 +617,7 @@ export async function handleCrawlWorker(
           });
         }
         if (metadata.title || metadata.description || hasFingerprintText) {
+          if (leaseHeartbeat.signal.aborted) throw new Error("采集任务租约已丢失，禁止写入候选");
           const candidateEvidence = {
             fetchedStatus: response.status, finalUrl: response.finalUrl,
             fetchedAt: Date.now(), fingerprintStatus: hasFingerprintText ? "recorded" : "insufficient_text",
@@ -713,6 +715,7 @@ export async function handleCrawlWorker(
                       ? lastProviderError
                       : new Error("主模型及备用模型均不可用");
                   }
+                  if (leaseHeartbeat.signal.aborted) throw new Error("采集任务租约已丢失，禁止写入 AI 审核结果");
                   summary.aiModerationSucceeded++;
                   await recordCrawlAiModerationDecision(ctx.repo, {
                     id: randomUUID(), candidateId: candidate.id, decisionSource: "ai",
@@ -735,6 +738,7 @@ export async function handleCrawlWorker(
                     } },
                   });
                 } catch (moderationError) {
+                  if (leaseHeartbeat.signal.aborted) throw new Error("采集任务租约已丢失，停止写入 AI 审核错误记录");
                   summary.aiModerationFailed++;
                   await recordCrawlAiModerationDecision(ctx.repo, {
                     id: randomUUID(), candidateId: candidate.id, decisionSource: "ai",

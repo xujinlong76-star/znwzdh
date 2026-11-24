@@ -1,57 +1,53 @@
-# 真实搜索金标集导入与验收
+# 真实搜索金标集导入与验收（v2）
 
-本流程用于建立至少 100 条脱敏真实生产查询的搜索质量金标集。它只提供数据契约、校验和评测导出工具；**不会生成或伪造真实查询、相关性标签或双人标注记录**。
+本流程建立至少 100 条脱敏真实生产查询的搜索质量金标集。仓库提供 v2 数据契约、双盲标注校验、第三人仲裁、隐私检查和离线评测导出；**不会生成或伪造真实查询、相关性标签或人工标注记录**。
 
 ## 数据治理边界
 
 - 查询必须来自真实生产搜索遥测的分层抽样，不能用模型合成查询冒充真实样本。
-- 进入标注前必须完成脱敏和人工隐私复核；邮箱、中国手机号、常见国际电话号码、IPv4 和常见 API 访问令牌会被校验器拒绝。
+- 进入标注前必须完成脱敏和人工隐私复核；邮箱、中国手机号、常见国际电话、IPv4 和常见 API 访问令牌会被校验器拒绝。
 - 不导出用户 ID、匿名 ID、邮箱、IP、Cookie、Token、设备标识或原始会话 ID。
-- sampleId 必须是随机生成的非身份关联编号，不得由 userId/anonId 哈希直接派生。
-- 规范化（去首尾空白、折叠连续空白、忽略大小写）后的 query 必须唯一，防止重复查询虚增 100 条样本规模。
-- 原始查询与标注文件保存在受控存储中，不提交到 Git 仓库；评测报告只输出数量、指标和行号，不输出查询文本。
+- queryId 必须是随机生成的非身份关联编号，不得由 userId/anonId 哈希直接派生。
+- 规范化（去首尾空白、折叠连续空白、忽略大小写）后的 queryText 必须唯一，避免重复查询虚增 100 条样本规模。
+- 原始 JSONL 与导出 fixture 保存在受控存储中，不提交到 Git 仓库；CLI 的聚合报告不输出 queryText。
 - 两名标注员必须独立、互不可见；重大分歧或不可判断项由第三人仲裁。
 - 站点无法访问或证据不足必须标记 unjudgeable；未解决的样本不会被当作 0 分进入评测。
 
-## 输入 JSON 契约
+## v2 JSONL 数据契约
 
-顶层字段：
+每行一个 JSON case，所有行必须使用同一 datasetVersion：
 
-- schema：固定为 navhub-search-gold-v1
-- deidentified：必须为 true
-- source：固定为 production_search_telemetry
-- cases：查询样本数组
-
-每条 case 必须包含：
-
-- id、sampleId：随机、不含身份信息的唯一编号
-- sampledAt：ISO 时间
-- query：已脱敏查询，最多 240 字符
-- locale：如 zh-CN、en-US、mixed
-- intent：exact_site / task / category / pinyin / mixed_language / zero_result / ambiguous / long_tail / other
+- schemaVersion：固定为 search-quality-golden-v2
+- datasetVersion：不可变数据集版本号
+- queryId：随机脱敏查询 ID，唯一
+- queryText：脱敏后的真实查询，最多 240 字符
+- locale / intent：语言区域与查询意图
+- sampledAt：生产遥测抽样时间戳
 - privacyReviewed：必须为 true
-- hits：冻结候选快照的 siteId 列表，按实际搜索名次排序
-- annotations：恰好两份独立标注；annotatorId 不同，independent=true，submittedAt 为 ISO 时间；judgments、evidenceUrls、reasonCodes 必须覆盖 hits 中全部 siteId。证据 URL 仅允许不含凭据、查询参数和片段的 HTTP(S) URL；reasonCode 使用 exact_match / task_fit / category_fit / partial_fit / unrelated / unavailable / insufficient_evidence / safety_risk / other
-- adjudication：仅当重大分歧/不可判断项出现时需要；reviewerId 必须不同于两名标注员，reviewedAt 为 ISO 时间，rationale 为 1–500 字，judgments 与 reasonCodes 只覆盖待仲裁的 siteId
+- snapshotId：冻结的搜索候选快照 ID
+- candidates：按 baselineRank 记录冻结候选；每项包含 siteId、唯一 baselineRank、evidenceUrl
+- annotations：恰好两份独立标注；annotatorId 不同，annotatedAt 为时间戳；judgments 必须覆盖所有候选，label 为 0–3 或 unjudgeable，rationaleCode 使用受控枚举
+- adjudication：仅重大分歧/不可判断项需要；adjudicatorId 必须不同于两名标注员，记录 adjudicatedAt、rationale，并只仲裁争议候选
 
-相关性等级为 0–3；unjudgeable 不是 0 分。两名标注员分差为 1 时，导出采用较低等级，避免评测过度乐观；分差大于 1、任何一方标记 unjudgeable 或双方均无法判断时，必须由第三人仲裁。标为 unjudgeable 时必须使用 unavailable 或 insufficient_evidence reasonCode。仲裁后仍 unjudgeable 的整条查询样本会被排除，并计入 excludedUnjudgeableCases。
+evidenceUrl 必须为 HTTP(S)，不得包含凭据、查询参数或片段。reasonCode 仅允许 exact_match / task_fit / category_fit / partial_fit / unrelated / unavailable / insufficient_evidence / safety_risk / other。unjudgeable 只能使用 unavailable 或 insufficient_evidence。
+
+两名标注员等级相同则取该等级；相差 1 级时按较低分计，避免评测过度乐观；差距大于 1、单方/双方 unjudgeable 时必须第三人仲裁。仲裁后仍 unjudgeable 的整条查询样本会被排除，并计入 excludedUnjudgeableCases。zero_result 查询允许空候选快照和空 judgments。
 
 ## 执行
 
-将经过隐私复核的 JSON 放在访问受控的位置，然后执行：
+将经过隐私复核的 JSONL 放在访问受控的位置，然后执行：
 
 ```bash
-pnpm validate:search-goldset /secure/path/search-goldset.json --min-cases 100 --export /secure/path/search-eval.json
+pnpm validate:search-goldset --input /secure/path/search-goldset.jsonl --min-cases 100 --export /secure/path/search-eval.json
 pnpm eval:search /secure/path/search-eval.json --json
 ```
 
-- 默认要求至少 100 条可评估样本；不足时命令以非零状态退出。
-- 报告包含可评估样本按 intent 与 locale 的分布，便于发现只覆盖单一语言或意图的样本偏差；样本分层比例仍需按标注协议人工验收。
-- --export 只在达到最小样本数时写出 SearchEvalCase fixture；输出文件包含查询文本，必须继续保存在受控位置。
-- 导出文件使用独占创建（已存在时拒绝覆盖），避免误覆盖历史评测快照。
-- 终端报告不包含原始 query，只包含样本数量、不可判断排除数和 NDCG@10 / MRR@10 / Recall@10。
-- 每次评测应冻结同一候选快照和排序版本；变更搜索排序时，用同一金标文件进行基线/候选版本对比。
+- 默认要求至少 100 条可评估样本；不足、存在错误或存在待仲裁项时命令以非零状态退出。
+- 输入文件上限 5MB、每行 256KB、最多 10000 条。
+- 报告包含可评估样本按 intent 与 locale 的分布，便于发现只覆盖单一语言或意图的偏差；样本分层比例仍需按标注协议人工验收。
+- --export 只在验收通过时写出 SearchEvalCase fixture；输出文件包含 queryText，必须继续保存在受控位置，并采用独占创建避免覆盖历史快照。
+- 终端报告不包含原始 queryText，只输出数量、仲裁/错误计数和 NDCG@10 / MRR@10 / Recall@10。
 
 ## 当前完成状态
 
-仓库已提供双盲金标数据校验函数、测试和 CLI；**真实 100 条查询、两名标注员实际标注、第三人仲裁尚待从生产遥测采样并由人工完成**。在受控数据文件导入且验收通过前，不得宣称已完成 100 条真实金标集。
+仓库已提供 v2 数据契约、隐私与证据校验、双盲/仲裁校验、JSONL CLI、评测导出和自动化测试；**真实 100 条查询、两名标注员实际标注及第三人仲裁尚待从生产遥测采样并由人工完成**。在受控数据文件导入且验收通过前，不得宣称已完成 100 条真实金标集。

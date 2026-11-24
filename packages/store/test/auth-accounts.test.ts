@@ -126,16 +126,36 @@ describe("账号生命周期仓储", () => {
     expect(await repo.setUserEmailVerified(user.user.id)).toBe(true);
     expect(await repo.verifyUserPassword("emailchange-old@example.com", "S3cret-Passw0rd!")).not.toBeNull();
 
+    const staleVerificationToken = generateToken(32);
+    await repo.createAuthToken({
+      userId: user.user.id,
+      purpose: "email_verification",
+      tokenHash: hashToken(staleVerificationToken),
+      expiresAt: Date.now() + 3_600_000,
+    });
+    expect(await repo.hasActiveAuthToken(user.user.id, "email_verification")).toBe(true);
+
     const changed = await repo.updateUserProfileInfo(user.user.id, {
-      email: "emailchange-new@example.com",
+      email: "  EMAILCHANGE-NEW@EXAMPLE.COM  ",
     });
     expect(changed.ok).toBe(true);
     if (!changed.ok) return;
+    expect(changed.user.email).toBe("emailchange-new@example.com");
     expect(changed.user.emailVerified).toBe(false);
     expect(await repo.verifyUserPassword("emailchange-new@example.com", "S3cret-Passw0rd!")).toBeNull();
+    expect(await repo.hasActiveAuthToken(user.user.id, "email_verification")).toBe(false);
+    expect(await repo.consumeAuthToken({
+      userId: user.user.id,
+      purpose: "email_verification",
+      tokenHash: hashToken(staleVerificationToken),
+    })).toBe(false);
 
     expect(await repo.setUserEmailVerified(user.user.id)).toBe(true);
     expect(await repo.verifyUserPassword("emailchange-new@example.com", "S3cret-Passw0rd!")).not.toBeNull();
+
+    const caseOnly = await repo.updateUserProfileInfo(user.user.id, { email: "EMAILCHANGE-NEW@example.com" });
+    expect(caseOnly.ok).toBe(true);
+    if (caseOnly.ok) expect(caseOnly.user.emailVerified).toBe(true);
   });
 
   it("邮箱验证令牌一次性消费：首次成功，重复使用失败", async () => {

@@ -372,7 +372,7 @@ export async function handleCrawlWorker(
         summary.heldForReview++;
         continue;
       }
-      if (response.status === 429 || response.status >= 500) {
+      if (response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500) {
         await settleCrawlTask(ctx.repo, {
           id: task.id, workerId, outcome: "retry",
           error: "上游暂时不可用，HTTP " + response.status,
@@ -381,7 +381,7 @@ export async function handleCrawlWorker(
         summary.retried++;
         continue;
       }
-      if (response.status < 200 || response.status >= 400) {
+      if (response.status < 200 || response.status >= 300) {
         await settleCrawlTask(ctx.repo, {
           id: task.id, workerId, outcome: "dead_letter",
           error: "不可重试的 HTTP 状态 " + response.status, now: Date.now(),

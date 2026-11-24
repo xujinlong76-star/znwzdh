@@ -381,6 +381,16 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     checksum: "v1_crawl_ai_decision_ledger",
   },
   {
+    version: "20261124_crawl_gold_candidate_source_unique",
+    name: "金标采集候选来源指纹并发唯一约束",
+    up: async (db: Db) => {
+      const statement = "CREATE UNIQUE INDEX IF NOT EXISTS crawl_gold_candidate_source_unique_idx ON crawl_moderation_gold_cases(source_fingerprint) WHERE source_fingerprint LIKE 'candidate:%'";
+      if (db.dialect === "pg" && db.pg) await db.pg.query(statement);
+      else if (db.sqlite) db.sqlite.exec(statement);
+    },
+    checksum: "v1_crawl_gold_candidate_source_unique",
+  },
+  {
     version: "20261124_crawl_moderation_gold_annotation",
     name: "审核金标样本双人标注与仲裁",
     up: async (db: Db) => {

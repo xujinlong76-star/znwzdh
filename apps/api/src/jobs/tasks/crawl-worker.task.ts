@@ -45,7 +45,7 @@ export function parseCrawlSeeds(raw: string | undefined): CrawlSeed[] {
     let url: string;
     try { url = canonicalUrl(value.url); } catch { continue; }
     const parsedUrl = new URL(url);
-    if (!["http:", "https:"].includes(parsedUrl.protocol) || parsedUrl.username || parsedUrl.password) continue;
+    if (url.length > 2048 || !["http:", "https:"].includes(parsedUrl.protocol) || parsedUrl.username || parsedUrl.password) continue;
     if (seen.has(url)) continue;
     seen.add(url);
     out.push({ url, kind });
@@ -99,7 +99,7 @@ export function extractFeedUrls(xml: string, baseUrl: string, kind: "sitemap" | 
       if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) continue;
       url.hash = "";
       const normalized = url.toString();
-      if (seen.has(normalized)) continue;
+      if (normalized.length > 2048 || seen.has(normalized)) continue;
       seen.add(normalized);
       urls.push(normalized);
     } catch { /* 忽略格式错误的 feed 项，不中断整批 */ }
@@ -302,7 +302,7 @@ export async function handleCrawlWorker(
     try {
       const url = canonicalUrl(seed.url);
       const parsed = new URL(url);
-      if (["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password) {
+      if (url.length <= 2048 && ["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password) {
         uniqueSeeds.set(url, { url, kind: seed.kind });
       }
     } catch { /* malformed seeds are rejected, not scheduled */ }

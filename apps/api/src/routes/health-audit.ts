@@ -87,6 +87,14 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       confidence: body.data.confidence ?? null,
       evidence,
     });
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: req.auth.actor,
+      actorKind: req.auth.kind,
+      action: "discovery.candidate_submitted",
+      target: candidate.id,
+      diff: { source: candidate.source, canonicalUrl: candidate.canonicalUrl, duplicate: candidate.id !== id },
+    });
     reply.code(202);
     return { ok: true, duplicate: candidate.id !== id, candidate };
   });

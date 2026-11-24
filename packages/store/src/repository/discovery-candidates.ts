@@ -171,6 +171,7 @@ export async function reviewSiteDiscoveryCandidate(
     reviewer: string;
     siteId?: string | null;
     rejectionReason?: string | null;
+    evidence?: Record<string, unknown>;
     now?: number;
   },
 ): Promise<SiteDiscoveryCandidate | null> {
@@ -178,11 +179,12 @@ export async function reviewSiteDiscoveryCandidate(
   await repo.run(
     `UPDATE site_discovery_candidates
         SET status = ?, site_id = ?, reviewed_at = ?, reviewed_by = ?,
-            rejection_reason = ?, updated_at = ?
+            rejection_reason = ?, evidence_json = COALESCE(?, evidence_json), updated_at = ?
       WHERE id = ? AND status = 'pending'`,
     [
       input.status, input.siteId ?? null, now, input.reviewer,
-      input.rejectionReason ?? null, now, input.id,
+      input.rejectionReason ?? null, input.evidence == null ? null : JSON.stringify(input.evidence),
+      now, input.id,
     ],
   );
   return getSiteDiscoveryCandidate(repo, input.id);

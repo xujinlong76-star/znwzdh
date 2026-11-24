@@ -1,6 +1,6 @@
 {
-  "_note": "覆盖率阈值单一事实源（docs/TESTING-STRATEGY.md §3.2）。由 2026-11-06 W0 全量实测生成，stage=W1 表示「钉住现状、只升不降」。每两周的收紧必须是独立 PR，禁止在功能 PR 里悄悄调低。",
-  "stage": "W1",
+  "_note": "覆盖率阈值单一事实源（docs/TESTING-STRATEGY.md §3.2）。由 2026-11-06 W0 全量实测生成，stage=W3 表示「保留 W1 floor 并启用 patch 覆盖门禁」。每两周的收紧必须是独立 PR，禁止在功能 PR 里悄悄调低。",
+  "stage": "W3",
   "generatedAt": "2026-11-06T00:00:00+08:00",
   "baseline": {
     "collectedAt": "2026-11-06（vitest run --coverage，641 文件 / 7235 用例）",
@@ -95,8 +95,9 @@
   },
   "patch": {
     "minPatchLines": 70,
-    "enabled": false,
-    "_why": "W3 上线；需要 coverage-final.json 的 statementMap 与 git diff --unified=0 映射，见文档 §3.4"
+    "minExecutableLines": 10,
+    "enabled": true,
+    "_why": "W3 已启用：基于 coverage-final.json 的 statementMap/s 计数与 git diff --unified=0，只统计 apps/api 与 packages 源码改动中的可执行行；少于 10 行跳过，见 docs/TESTING-STRATEGY.md §3.4"
   },
   "requireCoveredNew": {
     "enabled": false,

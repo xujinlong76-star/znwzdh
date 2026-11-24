@@ -87,7 +87,7 @@ node scripts/search-quality-shadow-eval.mts path/to/shadow-fixture.json --json
 
 ## 8. JSONL 标注记录格式
 
-每行一条 query，字段参考 `search-quality-annotation-template.json`（`search-quality-golden-v2`，与 `SearchGoldCase` 对齐）。正式数据必须包含脱敏 query、`sampledAt`（Unix 毫秒时间戳）、`privacyReviewed: true`、冻结候选、两名不同标注员及标注时间。若存在分歧，仲裁员必须与两名标注员都不同，并逐条裁决争议候选。模板中的空字段/null 是占位符，不是有效样本；未通过隐私复核的数据不得进入评测集。
+每行一条 query，字段参考 `search-quality-annotation-template.json`（`search-quality-golden-v2`，与 `SearchGoldCase` 对齐）。一个数据集必须使用唯一且不可变的 `datasetVersion`；每条 query 另有 `snapshotId` 标识其候选结果快照。正式数据必须包含脱敏 query、`sampledAt`（Unix 毫秒时间戳）、`privacyReviewed: true`、冻结候选、两名不同标注员及标注时间。若存在分歧，仲裁员必须与两名标注员都不同，并逐条裁决争议候选。模板中的空字段/null 是占位符，不是有效样本；未通过隐私复核的数据不得进入评测集。
 
 ## 9. 本轮禁止事项
 

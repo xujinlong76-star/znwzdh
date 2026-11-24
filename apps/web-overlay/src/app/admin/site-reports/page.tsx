@@ -118,6 +118,44 @@ export default function SiteReportsAdminPage() {
   const notice = loadError === null ? null : describeDegrade(loadError)
   const hasMore = items.length < total
 
+  // A-2：标准 ARIA Tabs 键盘交互。照抄 plugin-detail-view.tsx:143-170
+  // 骨架 + A-1 的 disabled 跳过（全量列表保下标映射，步进跳 disabled；
+  // 五 tab 当前均无 disabled，step() 是防后人加）。无 .click()、无 URL 同步。
+  const STATUS_KEYS = STATUS_TABS.map((t) => t.key)
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement
+    if (target.getAttribute('role') !== 'tab') return
+    const tabs = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+    )
+    const index = tabs.indexOf(target as HTMLButtonElement)
+    if (index < 0) return
+
+    const enabled = tabs.map((t) => !t.disabled)
+    if (!enabled.some(Boolean)) return
+    const step = (from: number, dir: 1 | -1): number => {
+      let i = from
+      for (let n = 0; n < tabs.length; n++) {
+        i = (i + dir + tabs.length) % tabs.length
+        if (enabled[i]) return i
+      }
+      return from
+    }
+    const firstEnabled = enabled.findIndex(Boolean)
+    const lastEnabled = enabled.lastIndexOf(true)
+
+    let next = index
+    if (event.key === 'ArrowRight') next = step(index, 1)
+    else if (event.key === 'ArrowLeft') next = step(index, -1)
+    else if (event.key === 'Home') next = firstEnabled
+    else if (event.key === 'End') next = lastEnabled
+    else return
+
+    event.preventDefault()
+    setStatus(STATUS_KEYS[next])
+    tabs[next]?.focus()
+  }
+
   return (
     <div className="p-3 sm:p-6 max-w-6xl mx-auto">
       <h1 className="text-xl font-bold mb-2">站点纠错</h1>
@@ -125,13 +163,14 @@ export default function SiteReportsAdminPage() {
         用户在站点详情页上报的问题。复核后请到站点管理里手动修正——上报本身不会改任何数据。
       </p>
 
-      <div className="flex flex-wrap gap-2 mb-4" role="tablist" aria-label="按状态筛选">
+      <div className="flex flex-wrap gap-2 mb-4" role="tablist" aria-label="按状态筛选" onKeyDown={handleTabKeyDown}>
         {STATUS_TABS.map((tab) => (
           <Button
             key={tab.key}
             type="button"
             role="tab"
             aria-selected={status === tab.key}
+            tabIndex={status === tab.key ? 0 : -1}
             variant={status === tab.key ? 'default' : 'outline'}
             size="sm"
             onClick={() => setStatus(tab.key)}

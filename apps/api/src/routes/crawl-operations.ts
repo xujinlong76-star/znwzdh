@@ -294,6 +294,10 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     const body=z.object({label:z.enum(["approve","reject","review"]),risk:z.boolean(),reason:z.string().trim().min(10).max(2000)}).safeParse(req.body??{});
     if(!params.success||!body.success){reply.code(400);return {ok:false,error:"仲裁参数无效"};}
     const actor=String(req.auth.actor??"admin");
+    const annotations=await listCrawlModerationGoldAnnotations(ctx.repo,params.data.id);
+    if(annotations.some(row=>String(row.annotator_id)===actor)){
+      reply.code(403);return {ok:false,error:"仲裁人必须独立于该样本的两位标注员"};
+    }
     const adjudicated=await ctx.repo.withTransaction(()=>adjudicateCrawlModerationGoldCase(ctx.repo,{
       caseId:params.data.id,adjudicatorId:actor,label:body.data.label,risk:body.data.risk,reason:body.data.reason}));
     if(!adjudicated){reply.code(409);return {ok:false,error:"样本不存在或当前状态不允许仲裁"};}

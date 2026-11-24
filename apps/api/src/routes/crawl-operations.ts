@@ -160,15 +160,17 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         id: current.id, status: body.data.decision === "approve" ? "approved" : "rejected",
         reviewer, rejectionReason: body.data.decision === "reject" ? body.data.reason : null,
       });
-      return updated ? { kind:"ok" as const, candidate:updated } : { kind:"conflict" as const, status:"changed" };
+      if (!updated) return { kind:"conflict" as const, status:"changed" };
+      // 审核状态与追加式决策账本必须原子提交，避免出现已审核但历史缺失。
+      await recordCrawlAiModerationDecision(ctx.repo, {
+        id: randomUUID(), candidateId: updated.id, decisionSource: "human",
+        mode: "manual", status: "reviewed", verdict: body.data.decision,
+        actor: reviewer, reasons: body.data.reason ? [body.data.reason] : [],
+      });
+      return { kind:"ok" as const, candidate:updated };
     });
     if (result.kind === "missing") { reply.code(404); return {ok:false,error:"候选不存在"}; }
     if (result.kind === "conflict") { reply.code(409); return {ok:false,error:"候选已被其他审核操作处理",status:result.status}; }
-    await recordCrawlAiModerationDecision(ctx.repo, {
-      id: randomUUID(), candidateId: result.candidate.id, decisionSource: "human",
-      mode: "manual", status: "reviewed", verdict: body.data.decision,
-      actor: reviewer, reasons: body.data.reason ? [body.data.reason] : [],
-    });
     await ctx.repo.audit({ ip:req.ip,actor:reviewer,actorKind:req.auth.kind,action:"crawl.candidate_review",target:result.candidate.id,
       diff:{decision:body.data.decision,reason:body.data.reason ?? null,previousStatus:"pending"} });
     return {ok:true,candidate:{id:result.candidate.id,status:result.candidate.status,reviewedAt:result.candidate.reviewedAt}};

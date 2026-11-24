@@ -50,10 +50,10 @@ describe("卡片 #tag 内链化（rich 模式）", () => {
 
   it("#tag 渲染成真 <Link>，href 走 /tags/{slug}", () => {
     expect(richSrc).toContain("href={'/tags/' + encodeURIComponent(tagSlug(tag))}");
-    // 视觉形态不能丢：还是原来那个 10px mono 小芯片（只加 hover 反馈）。
+    // 视觉形态不能丢：还是原来那个 0.625rem（=10px）mono 小芯片（只加 hover 反馈）。
     // 订正（2026-11-20 首屏瘦身）：标签改为 rounded-full 浅灰胶囊（最多 2 个），
-    // 仍是 10px mono 小芯片 + hover 反馈。
-    expect(richSrc).toContain("text-[10px] px-1.5 py-0.5 rounded-full bg-muted/70 text-muted-foreground font-mono");
+    // 仍是 0.625rem（=10px）mono 小芯片 + hover 反馈。
+    expect(richSrc).toContain("text-[0.625rem] px-1.5 py-0.5 rounded-full bg-muted/70 text-muted-foreground font-mono");
     expect(richSrc).toContain("hover:bg-primary/10 hover:text-primary transition-colors");
   });
 
@@ -85,7 +85,7 @@ describe("卡片 #tag 内链化（rich 模式）", () => {
     const titleTag = richSrc.slice(richSrc.lastIndexOf("<Link", titleLink), richSrc.indexOf(">", titleLink));
     expect(titleTag).toContain("pointer-events-auto");
     // 标签芯片（订正 2026-11-20 首屏瘦身：rounded-full 浅灰胶囊）
-    expect(richSrc).toContain("pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full bg-muted/70");
+    expect(richSrc).toContain("pointer-events-auto inline-flex items-center text-[0.625rem] px-1.5 py-0.5 rounded-full bg-muted/70");
   });
 
   it("外链覆盖层绝对定位铺满且不带 h-full（不参与网格同行拉伸）", () => {

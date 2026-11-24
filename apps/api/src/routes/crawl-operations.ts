@@ -665,10 +665,6 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         } catch { failed++; }
         finally { await settleLlmQuota(ctx, quota.hold); }
       }
-      if (failed || predictions.length !== selected.length) {
-        reply.code(502); return { ok: false, error: "自动评测未完整完成，未保存不完整指标", selected: selected.length, completed: predictions.length, failed };
-      }
-      if (actualModels.size !== 1) { reply.code(409); return { ok: false, error: "本轮模型标识不一致，已阻止混合模型评测", models: [...actualModels] }; }
       // 用 evaluationId 作为 llm_usage.identity 关联键，精确隔离并发评测的真实成本。
       const usageRows = await ctx.repo.raw(
         "SELECT COUNT(*) AS calls, SUM(prompt_tokens) AS prompt_tokens, SUM(completion_tokens) AS completion_tokens, SUM(cost_rmb) AS cost_rmb, SUM(CASE WHEN cost_rmb IS NOT NULL THEN 1 ELSE 0 END) AS priced_calls, SUM(CASE WHEN ok THEN 0 ELSE 1 END) AS failed_calls FROM llm_usage WHERE scenario=? AND identity=?",
@@ -680,6 +676,10 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         costRmb:usageRow.cost_rmb == null ? null : Number(usageRow.cost_rmb),
         pricedCalls:Number(usageRow.priced_calls ?? 0), unpricedCalls:Math.max(0,Number(usageRow.calls ?? 0)-Number(usageRow.priced_calls ?? 0)),
         failedCalls:Number(usageRow.failed_calls ?? 0) };
+      if (failed || predictions.length !== selected.length) {
+        reply.code(502); return { ok: false, id: evaluationId, error: "自动评测未完整完成，未保存不完整指标", selected: selected.length, completed: predictions.length, failed, usage };
+      }
+      if (actualModels.size !== 1) { reply.code(409); return { ok: false, id: evaluationId, error: "本轮模型标识不一致，已阻止混合模型评测", models: [...actualModels], usage }; }
       const predictionMap = new Map(predictions.map(item => [item.id,item]));
       const cases = selected.map(row => {
         const prediction = predictionMap.get(String(row.id));

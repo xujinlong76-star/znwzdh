@@ -50,8 +50,10 @@ name: CI
 on:
   push:
     branches: [main, master]
+  # pull_request 不设 branches 过滤：branches 是按 PR 的目标（base）分支匹配的，
+  # 叠加式 PR（#144–#154 以 feature 分支为 base）因此一次都没触发过 CI，零检查。
+  # push 仍只限 main/master，feature 分支推送不触发 push 事件，不会重复跑。
   pull_request:
-    branches: [main, master]
   workflow_dispatch:
 
 # 最小权限 + 每次推送独立成组（按 SHA），互不取消、互不排队

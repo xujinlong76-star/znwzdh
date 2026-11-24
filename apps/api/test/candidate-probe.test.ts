@@ -97,6 +97,14 @@ describe("候选批量探活：排序、标注与读数", () => {
     expect(rankCandidate(enriched)).toBeGreaterThan(baseRank);
     expect(rankCandidate(risky)).toBe(baseRank);
     expect(rankCandidate(thin)).toBe(baseRank);
+    const invalidBand = candidate("https://invalid-band.example/", {
+      catalogQuality: { score: 95, evidenceCoverage: 80, band: "unknown" },
+    });
+    const invalidCoverage = candidate("https://invalid-coverage.example/", {
+      catalogQuality: { score: 95, evidenceCoverage: 101, band: "high" },
+    });
+    expect(rankCandidate(invalidBand)).toBe(baseRank);
+    expect(rankCandidate(invalidCoverage)).toBe(baseRank);
   });
 
   it("预算用尽的候选按「没测准」标注，并且接口不无限期挂着", async () => {

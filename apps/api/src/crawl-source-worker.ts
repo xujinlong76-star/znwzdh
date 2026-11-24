@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { guardedFetch, moderateSiteWithAi, type SiteModerationPolicy } from "@navhub/ai";
+import { guardedFetch, moderateSiteWithAi } from "@navhub/ai";
 import {
   claimDueCrawlSources,
   claimCrawlDomain,
@@ -8,135 +8,15 @@ import {
   settleCrawlSource,
   upsertSiteDiscoveryCandidate,
   recordCrawlAiModerationDecision,
-  listCrawlAiModerationDecisions,
   type CrawlSource,
   type SiteDiscoveryCandidate,
 } from "@navhub/store";
 import type { AppContext } from "./context.ts";
-import { resolveLlm, llmProviderReadyAny, type ResolvedLlm } from "./llm-config.ts";
+import { resolveLlm, llmProviderReady } from "./llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota } from "./llm-quota.ts";
 import { callLlm } from "./llm-usage.ts";
 import { loadCrawlAiModerationPolicy, type CrawlAiModerationPolicy } from "./crawl-moderation-policy.ts";
 
-
-interface CrawlShadowModerationRuntime {
-  policy: CrawlAiModerationPolicy;
-  resolved: ResolvedLlm;
-  reviewed: number;
-}
-
-async function processSource(
-  ctx: AppContext,
-  source: CrawlSource,
-  now: number,
-): Promise<SiteDiscoveryCandidate[]> {
-  const response = await guardedFetch(
-    source.url,
-    { timeoutMs: 8_000, maxBytes: MAX_SOURCE_BODY_BYTES, maxRedirects: 3, allowPrivateNetworks: false },
-    { headers: { accept: source.kind === "sitemap" ? "application/xml,text/xml,*/*"
-      : source.kind === "rss" ? "application/rss+xml,application/atom+xml,application/xml,text/xml,*/*"
-      : "text/html,application/xhtml+xml,*/*" } },
-  );
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error("采集来源返回 HTTP " + response.status);
-  }
-  if (response.truncated) throw new Error("采集来源响应超过 1 MiB，已拒绝不完整内容");
-  const details = extractCrawlCandidateDetails(response.body, source.kind, response.finalUrl);
-  const saved: SiteDiscoveryCandidate[] = [];
-  for (const detail of details) {
-    const candidate = await upsertSiteDiscoveryCandidate(ctx.repo, {
-      id: randomUUID(),
-      url: detail.url,
-      canonicalUrl: detail.url,
-      title: detail.title,
-      description: detail.description,
-      source: "crawl:" + source.id,
-      evidence: {
-        provenance: source.kind,
-        sourceId: source.id,
-        sourceUrl: source.url,
-        fetchedUrl: response.finalUrl,
-        httpStatus: response.status,
-        contentType: response.contentType,
-        discoveredAt: now,
-      },
-      now,
-    });
-    saved.push(candidate);
-  }
-  return saved;
-}
-
-async function moderateCandidateShadow(
-  ctx: AppContext,
-  candidate: SiteDiscoveryCandidate,
-  runtime: CrawlShadowModerationRuntime,
-): Promise<void> {
-  if (runtime.reviewed >= runtime.policy.maxAiReviewsPerRun || !llmProviderReadyAny(runtime.resolved)) return;
-  const previous = await listCrawlAiModerationDecisions(ctx.repo, { candidateId: candidate.id, limit: 10 });
-  const recentlyReviewed = previous.some(row =>
-    row.decision_source === "ai" && row.status === "completed" &&
-    Number(row.created_at) >= Date.now() - 24 * 60 * 60_000,
-  );
-  if (recentlyReviewed) return;
-
-  runtime.reviewed++;
-  const holdResult = await reserveLlmQuota(ctx, null, { estimatedTokens: 1800, source: runtime.resolved.source });
-  if (!holdResult.ok) {
-    await recordCrawlAiModerationDecision(ctx.repo, {
-      id: randomUUID(), candidateId: candidate.id, decisionSource: "ai", mode: "shadow",
-      status: "quota_blocked", reasons: [holdResult.error.message], model: null,
-      policyVersion: "crawl-shadow-v1", actor: "crawl-worker",
-    });
-    return;
-  }
-
-  try {
-    const policy: Partial<SiteModerationPolicy> = {
-      autoApproveConfidence: runtime.policy.autoApproveConfidence,
-      rejectConfidence: runtime.policy.rejectConfidence,
-      minQualityScore: runtime.policy.minQualityScore,
-      maxExcerptChars: runtime.policy.maxExcerptChars,
-      requireHttps: runtime.policy.requireHttps,
-    };
-    const result = await moderateSiteWithAi(runtime.resolved.provider, {
-      url: candidate.url,
-      title: candidate.title,
-      description: candidate.description,
-      contentExcerpt: null,
-      evidence: candidate.evidence,
-    }, policy, {
-      complete: async (_provider, request) => {
-        const completion = await callLlm(ctx, runtime.resolved, {
-          scenario: "health_audit",
-          identity: null,
-          messages: request.messages,
-          temperature: request.temperature,
-          maxTokens: request.maxTokens,
-          json: request.json,
-          signal: request.signal,
-          deadlineAt: request.deadlineAt,
-        });
-        return { content: completion.content, model: completion.model };
-      },
-    });
-    await recordCrawlAiModerationDecision(ctx.repo, {
-      id: randomUUID(), candidateId: candidate.id, decisionSource: "ai", mode: "shadow",
-      status: "completed", verdict: result.verdict, confidence: result.confidence,
-      qualityScore: result.qualityScore, risks: result.risks, reasons: result.reasons,
-      model: result.model, policyVersion: result.policyVersion, actor: "crawl-worker",
-    });
-  } catch (error) {
-    await recordCrawlAiModerationDecision(ctx.repo, {
-      id: randomUUID(), candidateId: candidate.id, decisionSource: "ai", mode: "shadow",
-      status: "error", reasons: [error instanceof Error ? error.message.slice(0, 240) : "模型审核失败"],
-      model: runtime.resolved.provider.model || null, policyVersion: "crawl-shadow-v1", actor: "crawl-worker",
-    });
-    throw error;
-  } finally {
-    await settleLlmQuota(ctx, holdResult.hold);
-  }
-}
 
 const MAX_CANDIDATES_PER_SOURCE = 100;
 const MAX_SOURCE_BODY_BYTES = 1024 * 1024;

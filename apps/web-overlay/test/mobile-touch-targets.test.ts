@@ -684,4 +684,16 @@ describe('tablist A-3：tablist 面板补 role="tabpanel" / aria-labelledby（20
     expect(src).not.toContain('role="tabpanel"')
     expect(src).not.toContain('aria-controls')
   })
+
+  it('#5 navigation-category-section：共享内容区待裁决，A-3 不硬套', () => {
+    const src = read('src/components/navigation-category-section.tsx')
+    // categoryContentId div 不能直接包成 tabpanel：子分类 tablist 在该 div 内部，
+    // 且折叠按钮已用 aria-controls={categoryContentId} 作折叠语义（:814，
+    // 没有任何 tab 带 aria-controls）；站点列表是多个平级块（直属网格 +
+    // 每子分类一块 + 筛选空态），须另设纯内容容器才有处可挂——那是结构改动，
+    // 超出“只补关联属性”的 A-3 范围。裁决二选一待定：另设纯内容容器作共享
+    // tabpanel / 改 role 为快筛 chip 组。本 it 锁死“未硬套”现状。
+    expect(src).not.toContain('role="tabpanel"')
+    expect(src).toContain('aria-controls={categoryContentId}')
+  })
 })

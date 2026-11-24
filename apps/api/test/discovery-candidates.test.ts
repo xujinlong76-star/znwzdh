@@ -75,7 +75,7 @@ describe("staged discovery candidate pipeline", () => {
 
     const staged = await app.inject({
       method: "POST",
-      url: "/api/discovery/enrich-candidate",
+      url: "/api/sites/discover",
       payload: { url, title: "Must Not Queue" },
     });
     expect(staged.statusCode).toBe(422);

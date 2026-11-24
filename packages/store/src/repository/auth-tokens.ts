@@ -18,6 +18,8 @@ export interface CreateAuthTokenInput {
   purpose: AuthTokenPurpose;
   /** 明文令牌的 sha256（hex） */
   tokenHash: string;
+  /** 发放时绑定的邮箱（邮箱验证/密码重置）；防止地址变更后旧链接作用于新邮箱 */
+  targetEmail?: string | null;
   /** 过期时刻（毫秒） */
   expiresAt: number;
 }
@@ -29,9 +31,9 @@ export async function createAuthToken(
 ): Promise<string> {
   const id = randomUUID();
   await repo.run(
-    "INSERT INTO auth_tokens (id, user_id, purpose, token_hash, expires_at, consumed_at, created_at) " +
-      "VALUES (?,?,?,?,?,NULL,?)",
-    [id, input.userId, input.purpose, input.tokenHash, input.expiresAt, Date.now()],
+    "INSERT INTO auth_tokens (id, user_id, purpose, token_hash, target_email, expires_at, consumed_at, created_at) " +
+      "VALUES (?,?,?,?,?,?,NULL,?)",
+    [id, input.userId, input.purpose, input.tokenHash, input.targetEmail?.trim().toLowerCase() ?? null, input.expiresAt, Date.now()],
   );
   return id;
 }
@@ -45,15 +47,23 @@ export async function createAuthToken(
  */
 export async function consumeAuthToken(
   repo: Repository,
-  input: { userId: string; purpose: AuthTokenPurpose; tokenHash: string; now?: number },
+  input: { userId: string; purpose: AuthTokenPurpose; tokenHash: string; targetEmail?: string | null; now?: number },
 ): Promise<boolean> {
   const now = input.now ?? Date.now();
-  const changes = await repo.runCount(
+  let sql =
     "UPDATE auth_tokens SET consumed_at = ? " +
-      "WHERE token_hash = ? AND user_id = ? AND purpose = ? " +
-      "AND consumed_at IS NULL AND expires_at > ?",
-    [now, input.tokenHash, input.userId, input.purpose, now],
-  );
+    "WHERE token_hash = ? AND user_id = ? AND purpose = ? " +
+    "AND consumed_at IS NULL AND expires_at > ?";
+  const params: unknown[] = [now, input.tokenHash, input.userId, input.purpose, now];
+  if (input.targetEmail !== undefined && input.targetEmail !== null) {
+    const targetEmail = input.targetEmail.trim().toLowerCase();
+    // 原子校验发放邮箱仍是当前邮箱；地址变更与消费并发时，只有一个顺序能成功。
+    sql += " AND target_email = ? AND EXISTS (SELECT 1 FROM users WHERE users.id = auth_tokens.user_id AND LOWER(users.email) = ?)";
+    params.push(targetEmail, targetEmail);
+  } else if (input.targetEmail === null) {
+    sql += " AND target_email IS NULL";
+  }
+  const changes = await repo.runCount(sql, params);
   return changes > 0;
 }
 

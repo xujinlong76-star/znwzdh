@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   countSiteDiscoveryCandidates, getSiteDiscoveryCandidateForUpdate,

@@ -666,4 +666,12 @@ describe('tablist A-3：tablist 面板补 role="tabpanel" / aria-labelledby（20
     const hsf = src.slice(src.indexOf('<HorizontalScrollFade'), src.indexOf('>', src.indexOf('<HorizontalScrollFade')))
     expect(hsf).not.toContain('id=')
   })
+
+  it('#3 workspace-filter：无面板（组件已退役），A-3 跳过登记', () => {
+    const src = read('src/components/workspace-filter.tsx')
+    // 文件内无任何面板元素（只渲染 tablist + 时段提示行）；全仓无 <WorkspaceFilter
+    // JSX 用法，lib/workspaces.ts:8 注明该组件早已被 HomeCapsuleRow 取代、没有任何挂载点。
+    expect(src).not.toContain('role="tabpanel"')
+    expect(src).not.toContain('aria-controls')
+  })
 })

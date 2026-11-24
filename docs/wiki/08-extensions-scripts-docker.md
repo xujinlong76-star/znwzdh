@@ -44,7 +44,7 @@
 | [vendor-web.mjs](../../scripts/vendor-web.mjs) / `.ps1` | Node / PS | **拉取 NavSphere 底座到 `apps/web`** 并注入 山羊胡存储适配器。用脚本而非 checked-in 副本——保持仓库聚焦 山羊胡自有代码，更新上游只需一条命令 |
 | [sync-web-overlay.mjs](../../scripts/sync-web-overlay.mjs) | Node | **反向同步**：下载上游 tarball 逐文件 diff，把「与上游不同或上游没有」的文件精确同步进 `apps/web-overlay`（唯一事实源）。规则：本地有/上游没有→新增；内容不同→更新；**内容一致→从 overlay 删除** |
 | [check-web-overlay.mjs](../../scripts/check-web-overlay.mjs) | Node | 检查 `apps/web` 与 `apps/web-overlay` 的**一致性漂移**——改了 `apps/web` 忘了同步，重新 vendor 或构建镜像时改动会丢。把漂移变成显式失败（CI 可加） |
-| [gen-pwa-icons.mjs](../../scripts/gen-pwa-icons.mjs) | Node | 从 SVG **栅格化**生成 PWA 图标（品牌色 + 首字母「N」，与站内 LetterAvatar 视觉一致）。输出 `icon-{192,512}.png`、`icon-maskable-512.png`、`apple-touch-icon.png`。**为什么不用现有 `logo.webp`**：只有 80x80，放大到 512 会模糊 |
+| [icon-192.png](../../apps/web-overlay/public/icons/icon-192.png) / [icon-maskable-512.png](../../apps/web-overlay/public/icons/icon-maskable-512.png) | Node | 从 SVG **栅格化**生成 PWA 图标（品牌色 + 首字母「N」，与站内 LetterAvatar 视觉一致）。输出 `icon-{192,512}.png`、`icon-maskable-512.png`、`apple-touch-icon.png`。**为什么不用现有 `logo.webp`**：只有 80x80，放大到 512 会模糊 |
 | [pg-check.mts](../../scripts/pg-check.mts) | TS | **PostgreSQL 分档验收**：`loadConfig({mode:"standard", databaseUrl:...})` + `createContext()` 跑 17 项检查（README 报告 17/17 通过）。用法 `node --experimental-strip-types scripts/pg-check.mts`（`pnpm test:pg`） |
 | [d1-regression.mjs](../../scripts/d1-regression.mjs) | Node | **D1 缺陷回归**：起临时中枢（`127.0.0.1:8791`），提交**不含 API 创建站点**的快照，验证该站点**幸存**（不被 navigation.json 全量对齐误删） |
 

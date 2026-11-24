@@ -1424,8 +1424,16 @@ async revokeAllSessions(userId: string): Promise<number> {
     return usersRepo.updateUserPassword(this, userId, newPassword);
   }
 
+  async updateUserPasswordForEmail(userId: string, newPassword: string, email: string): Promise<boolean> {
+    return usersRepo.updateUserPasswordForEmail(this, userId, newPassword, email);
+  }
+
   async setUserEmailVerified(userId: string): Promise<boolean> {
     return usersRepo.setUserEmailVerified(this, userId);
+  }
+
+  async setUserEmailVerifiedForEmail(userId: string, email: string): Promise<boolean> {
+    return usersRepo.setUserEmailVerifiedForEmail(this, userId, email);
   }
 
   /* ------------------------- 认证令牌（邮箱验证/密码重置） ------------------------- */
@@ -1435,7 +1443,7 @@ async revokeAllSessions(userId: string): Promise<number> {
   }
 
   /** 原子消费一次性令牌；成功 true，失败（不存在/已用/过期/用途不符）false */
-  async consumeAuthToken(input: { userId: string; purpose: authTokensRepo.AuthTokenPurpose; tokenHash: string; now?: number }): Promise<boolean> {
+  async consumeAuthToken(input: { userId: string; purpose: authTokensRepo.AuthTokenPurpose; tokenHash: string; targetEmail?: string | null; now?: number }): Promise<boolean> {
     return authTokensRepo.consumeAuthToken(this, input);
   }
 

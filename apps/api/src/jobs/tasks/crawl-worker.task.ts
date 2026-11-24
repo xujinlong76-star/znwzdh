@@ -122,6 +122,20 @@ function retryDelay(attempts: number): number {
   return Math.min(base, 60 * 60_000);
 }
 
+async function waitForDomainWindow(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return;
+  await new Promise<void>((resolve) => {
+    let timer: ReturnType<typeof setTimeout>;
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    timer = setTimeout(finish, ms);
+    signal.addEventListener("abort", finish, { once: true });
+  });
+}
+
 /** Retry-After 可为秒数或 HTTP-date；最大等待 6 小时，不能被上游无限期挂起。 */
 export function parseRetryAfterMs(value: string | null | undefined, now = Date.now()): number {
   if (!value?.trim()) return 0;
@@ -297,9 +311,19 @@ export async function handleCrawlWorker(
 
   for (let i = 0; i < maxTasks; i++) {
     if (run.shouldStop()) { summary.stopped = true; break; }
-    const task = await claimCrawlTask(ctx.repo, workerId, {
+    let task = await claimCrawlTask(ctx.repo, workerId, {
       leaseMs: 120_000, minDomainIntervalMs: 2_000, scanLimit: 50,
     });
+    // 同一域名的后续任务会被 2 秒频控暂时挡住；短暂等待后再认领，
+    // 避免「每轮只抓同一域名 1 页、下一轮要等 30 分钟」的吞吐问题。
+    if (!task && !run.shouldStop()) {
+      await waitForDomainWindow(2_050, run.signal);
+      if (!run.shouldStop()) {
+        task = await claimCrawlTask(ctx.repo, workerId, {
+          leaseMs: 120_000, minDomainIntervalMs: 2_000, scanLimit: 50,
+        });
+      }
+    }
     if (!task) break;
     summary.tasksClaimed++;
     try {

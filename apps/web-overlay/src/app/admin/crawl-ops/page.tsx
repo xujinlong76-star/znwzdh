@@ -23,7 +23,7 @@ type Candidate = {
   quality:{score:number;reasons:string[]};
   aiModeration?:{mode:string;status:string;verdict:string|null;confidence:number|null;qualityScore:number|null;risks:string[];reasons:string[];model:string|null;policyVersion:string|null;reviewedAt:number|null}|null
 }
-type CandidatePage = {ok:boolean;items:Candidate[];total:number;limit:number;offset:number}
+type ModerationDecision = {id:string;status:string;verdict:string|null;confidence:number|null;qualityScore:number|null;risks:string[];reasons:string[];model:string|null;policyVersion:string|null;errorType:string|null;createdAt:number}\ntype CandidatePage = {ok:boolean;items:Candidate[];total:number;limit:number;offset:number}
 type Source = {id:string;url:string;kind:'sitemap'|'rss'|'page';enabled:boolean;priority:number;intervalMs:number;nextRunAt:number;lastRunAt:number|null;lastStatus:string|null;lastError:string|null}\ntype ModerationPolicy = {enabled:boolean;mode:'shadow';autoApproveConfidence:number;rejectConfidence:number;minQualityScore:number;maxExcerptChars:number;maxAiReviewsPerRun:number;requireHttps:boolean}\nconst DEFAULT_POLICY:ModerationPolicy={enabled:false,mode:'shadow',autoApproveConfidence:0.93,rejectConfidence:0.97,minQualityScore:70,maxExcerptChars:6000,maxAiReviewsPerRun:5,requireHttps:false}
 
 function Stat({label,value,detail}:{label:string;value:string|number;detail?:string}) {
@@ -34,7 +34,7 @@ function time(value:number){return new Date(value).toLocaleString('zh-CN',{hour1
 export default function CrawlOperationsPage(){
   const [overview,setOverview]=useState<Overview|null>(null)
   const [page,setPage]=useState<CandidatePage|null>(null)
-  const [sources,setSources]=useState<Source[]>([])\n  const [policy,setPolicy]=useState<ModerationPolicy>(DEFAULT_POLICY)\n  const [policyBusy,setPolicyBusy]=useState(false)
+  const [sources,setSources]=useState<Source[]>([])\n  const [policy,setPolicy]=useState<ModerationPolicy>(DEFAULT_POLICY)\n  const [policyBusy,setPolicyBusy]=useState(false)\n  const [historyByCandidate,setHistoryByCandidate]=useState<Record<string,ModerationDecision[]>>({})\n  const [historyOpen,setHistoryOpen]=useState<Record<string,boolean>>({})
   const [sourceUrl,setSourceUrl]=useState('')
   const [sourceKind,setSourceKind]=useState<Source['kind']>('sitemap')
   const [sourceBusy,setSourceBusy]=useState<string|null>(null)
@@ -72,7 +72,7 @@ export default function CrawlOperationsPage(){
     try{await hubSend('/api/hub/admin/crawl-sources/'+encodeURIComponent(source.id),'DELETE',{});await load()}
     catch(e){setError(e instanceof Error?e.message:'删除采集来源失败')}finally{setSourceBusy(null)}
   }
-  const savePolicy=async()=>{\n    if(policyBusy)return;setPolicyBusy(true);setError(null)\n    try{const result=await hubSend<{ok:boolean;policy:ModerationPolicy}>('/api/hub/admin/crawl-moderation/policy','PUT',policy);setPolicy(result.policy)}\n    catch(e){setError(e instanceof Error?e.message:'保存 AI 审核规则失败')}finally{setPolicyBusy(false)}\n  }\n  const review=async(item:Candidate,decision:'approve'|'reject')=>{
+  const savePolicy=async()=>{\n    if(policyBusy)return;setPolicyBusy(true);setError(null)\n    try{const result=await hubSend<{ok:boolean;policy:ModerationPolicy}>('/api/hub/admin/crawl-moderation/policy','PUT',policy);setPolicy(result.policy)}\n    catch(e){setError(e instanceof Error?e.message:'保存 AI 审核规则失败')}finally{setPolicyBusy(false)}\n  }\n  const toggleHistory=async(item:Candidate)=>{\n    const open=!(historyOpen[item.id]??false);setHistoryOpen(old=>({...old,[item.id]:open}))\n    if(open&&!historyByCandidate[item.id]){try{const result=await hubGet<{items:ModerationDecision[]}>(`/api/hub/admin/crawl/candidates/${encodeURIComponent(item.id)}/moderation-history?limit=20`);setHistoryByCandidate(old=>({...old,[item.id]:result.items}))}catch(e){setError(e instanceof Error?e.message:'读取 AI 审核历史失败')}}\n  }\n  const review=async(item:Candidate,decision:'approve'|'reject')=>{
     if(busy)return
     const reason=(reasons[item.id]??'').trim()
     if(decision==='reject'&&!reason){setError('驳回候选必须填写原因');return}
@@ -152,6 +152,15 @@ export default function CrawlOperationsPage(){
             {item.aiModeration?.status==='quota_blocked'&&<p className="text-xs text-amber-600">AI 审核因额度限制跳过，候选仍保持待审核。</p>}
             <div className="flex flex-wrap gap-2 text-xs"><span className="rounded bg-muted px-2 py-1">来源：{item.source}</span><span className="rounded bg-muted px-2 py-1">完全重复：{item.duplicateEvidence.exact?'是':'否'}</span><span className="rounded bg-muted px-2 py-1">近重复候选：{item.duplicateEvidence.near}</span><span className="rounded bg-muted px-2 py-1">发现：{time(item.discoveredAt)}</span></div>
             <ul className="list-disc pl-5 text-xs text-muted-foreground">{item.quality.reasons.map((reason,i)=><li key={i}>{reason}</li>)}</ul>
+            <div className="flex justify-end"><Button size="sm" variant="ghost" onClick={()=>void toggleHistory(item)}>{historyOpen[item.id]?'收起 AI 审核历史':'查看 AI 审核历史'}</Button></div>
+            {historyOpen[item.id]&&<div className="space-y-2 rounded-lg bg-muted/40 p-3">
+              {!historyByCandidate[item.id]?.length?<p className="text-xs text-muted-foreground">暂无历史决策记录，或历史正在加载。</p>:historyByCandidate[item.id].map(record=><div key={record.id} className="border-b pb-2 last:border-0 last:pb-0">
+                <div className="flex flex-wrap justify-between gap-2 text-xs"><span className="font-medium">{record.status==='completed'?(record.verdict==='auto_approve'?'建议通过':record.verdict==='reject'?'建议驳回':'建议人工复核'):record.status==='error'?'调用失败':'额度跳过'}</span><span className="text-muted-foreground">{time(record.createdAt)}</span></div>
+                <p className="mt-1 text-xs text-muted-foreground">模型：{record.model||'—'} · 置信度：{record.confidence===null?'—':Math.round(record.confidence*100)+'%'} · 质量分：{record.qualityScore??'—'}</p>
+                {!!record.reasons.length&&<ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">{record.reasons.slice(0,3).map((reason,i)=><li key={i}>{reason}</li>)}</ul>}
+                {record.errorType&&<p className="mt-1 text-xs text-amber-600">错误类型：{record.errorType}</p>}
+              </div>)}
+            </div>}
             <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row"><Button size="sm" disabled={busy!==null} onClick={()=>void review(item,'approve')}><CheckCircle2 className="mr-1.5 h-4 w-4"/>{busy===item.id?'处理中…':'标记通过'}</Button><input value={reasons[item.id]??''} onChange={e=>setReasons(old=>({...old,[item.id]:e.target.value}))} placeholder="驳回原因（必填）" className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm"/><Button size="sm" variant="outline" disabled={busy!==null} onClick={()=>void review(item,'reject')}><XCircle className="mr-1.5 h-4 w-4"/>驳回</Button></div>
           </div>)}
           {page&&page.total>page.items.length&&<p className="text-center text-xs text-muted-foreground">当前展示前 {page.items.length} 条，共 {page.total} 条。可通过接口分页继续查看。</p>}

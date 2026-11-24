@@ -135,6 +135,14 @@ describe("账号生命周期仓储", () => {
       expiresAt: Date.now() + 3_600_000,
     });
     expect(await repo.hasActiveAuthToken(user.user.id, "email_verification")).toBe(true);
+    const stalePasswordResetToken = generateToken(32);
+    await repo.createAuthToken({
+      userId: user.user.id,
+      purpose: "password_reset",
+      tokenHash: hashToken(stalePasswordResetToken),
+      targetEmail: "emailchange-old@example.com",
+      expiresAt: Date.now() + 3_600_000,
+    });
 
     const changed = await repo.updateUserProfileInfo(user.user.id, {
       email: "  EMAILCHANGE-NEW@EXAMPLE.COM  ",
@@ -149,6 +157,13 @@ describe("账号生命周期仓储", () => {
       userId: user.user.id,
       purpose: "email_verification",
       tokenHash: hashToken(staleVerificationToken),
+      targetEmail: "emailchange-old@example.com",
+    })).toBe(false);
+    expect(await repo.hasActiveAuthToken(user.user.id, "password_reset")).toBe(false);
+    expect(await repo.consumeAuthToken({
+      userId: user.user.id,
+      purpose: "password_reset",
+      tokenHash: hashToken(stalePasswordResetToken),
       targetEmail: "emailchange-old@example.com",
     })).toBe(false);
 

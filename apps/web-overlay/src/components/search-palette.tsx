@@ -1489,12 +1489,27 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           setIsFocused(false)
           return
         }
-        if (navItems.length === 0) return
+        // 零结果回车（2222 W9）：navItems 为空（真空态）或只有建议行时，
+        // 回车不再静默 return / 不再点第一条建议改词，而是跳完整结果页
+        // /search?q=<原查询词>（服务端直出、可分享、可回退）。
+        // 有高亮时仍走下面的采纳/打开逻辑；quicklink / omni / AI 模式
+        // 的回车已在上方先行返回，不受影响。
+        if (navItems.length === 0) {
+          e.preventDefault()
+          window.location.assign(searchHref({ q: query }))
+          return
+        }
         // 没有高亮项时回车 = 打开第一条结果。原实现在 activeIndex === -1（默认态）
         // 直接忽略，「输完词直接回车」这个最常见的动作等于完全没反应。
         // 默认目标必须是第一条「结果」（DIY/收藏/操作/工具/插件/站点），而不是第一条建议：
         // 建议是用来采纳改词的，直接回车的用户要的是打开，不是换词。
         const firstResultIndex = navItems.findIndex((item) => item.kind !== 'suggestion')
+        if (activeIndex < 0 && firstResultIndex === -1) {
+          // 只有建议、无可开结果：回车去完整结果页，不改写查询词（不采纳建议）。
+          e.preventDefault()
+          window.location.assign(searchHref({ q: query }))
+          return
+        }
         const target = activeIndex >= 0 ? activeIndex : firstResultIndex >= 0 ? firstResultIndex : 0
         // 交给真实元素处理：站点行是 role=option 的 div（onClick 打开），插件行是 Link（路由跳转）
         const el = findOptionElement(target)
@@ -3103,7 +3118,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   </div>
                 </div>
               )}
-              {showResults && query.trim() && displayHits.length > 0 && (
+              {showResults && query.trim() && (
                 <div className="border-t border-border/60 bg-muted/10 px-2 py-1.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
                   <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
                     <span className="inline-flex items-center gap-1">

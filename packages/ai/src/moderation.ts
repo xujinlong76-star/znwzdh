@@ -24,6 +24,7 @@ export interface SiteModerationPolicy {
   rejectConfidence: number;
   maxExcerptChars: number;
   requireHttps: boolean;
+  minQualityScore: number;
 }
 
 export interface SiteModerationResult {
@@ -44,6 +45,7 @@ export const DEFAULT_SITE_MODERATION_POLICY: SiteModerationPolicy = {
   rejectConfidence: 0.97,
   maxExcerptChars: 6000,
   requireHttps: false,
+  minQualityScore: 70,
 };
 
 const RISK_VALUES = new Set<SiteModerationRisk>([
@@ -91,7 +93,7 @@ export function decideSiteModerationVerdict(
   const hasCriticalRisk = riskOnly.some(risk => ["phishing", "malware", "scam", "illegal"].includes(risk));
   if (hasCriticalRisk && result.confidence >= active.rejectConfidence) return "reject";
   if (riskOnly.length === 0 && result.confidence >= active.autoApproveConfidence &&
-      result.qualityScore >= 70 && (!active.requireHttps || url.startsWith("https://"))) return "auto_approve";
+      result.qualityScore >= active.minQualityScore && (!active.requireHttps || url.startsWith("https://"))) return "auto_approve";
   return "manual_review";
 }
 
@@ -121,7 +123,8 @@ export async function moderateSiteWithAi(
   const active = { ...DEFAULT_SITE_MODERATION_POLICY, ...policy };
   if (active.autoApproveConfidence < 0.5 || active.autoApproveConfidence > 1 ||
       active.rejectConfidence < active.autoApproveConfidence || active.rejectConfidence > 1 ||
-      active.maxExcerptChars < 200 || active.maxExcerptChars > 12_000) {
+      active.maxExcerptChars < 200 || active.maxExcerptChars > 12_000 ||
+      active.minQualityScore < 0 || active.minQualityScore > 100) {
     throw new Error("AI 审核策略配置无效");
   }
   const safeInput = {

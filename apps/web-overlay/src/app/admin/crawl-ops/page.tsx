@@ -22,7 +22,7 @@ type Candidate = {
   quality:{score:number;reasons:string[]}
 }
 type CandidatePage = {ok:boolean;items:Candidate[];total:number;limit:number;offset:number}
-type Source = {id:string;url:string;kind:'sitemap'|'rss'|'page';enabled:boolean;priority:number;intervalMs:number;nextRunAt:number;lastRunAt:number|null;lastStatus:string|null;lastError:string|null}
+type Source = {id:string;url:string;kind:'sitemap'|'rss'|'page';enabled:boolean;priority:number;intervalMs:number;nextRunAt:number;lastRunAt:number|null;lastStatus:string|null;lastError:string|null}\ntype ModerationPolicy = {enabled:boolean;mode:'shadow';autoApproveConfidence:number;rejectConfidence:number;minQualityScore:number;maxExcerptChars:number;maxAiReviewsPerRun:number;requireHttps:boolean}\nconst DEFAULT_POLICY:ModerationPolicy={enabled:false,mode:'shadow',autoApproveConfidence:0.93,rejectConfidence:0.97,minQualityScore:70,maxExcerptChars:6000,maxAiReviewsPerRun:5,requireHttps:false}
 
 function Stat({label,value,detail}:{label:string;value:string|number;detail?:string}) {
   return <Card><CardHeader className="pb-2"><CardDescription>{label}</CardDescription><CardTitle className="text-2xl tabular-nums">{value}</CardTitle></CardHeader>{detail&&<CardContent className="pt-0 text-xs text-muted-foreground">{detail}</CardContent>}</Card>
@@ -32,7 +32,7 @@ function time(value:number){return new Date(value).toLocaleString('zh-CN',{hour1
 export default function CrawlOperationsPage(){
   const [overview,setOverview]=useState<Overview|null>(null)
   const [page,setPage]=useState<CandidatePage|null>(null)
-  const [sources,setSources]=useState<Source[]>([])
+  const [sources,setSources]=useState<Source[]>([])\n  const [policy,setPolicy]=useState<ModerationPolicy>(DEFAULT_POLICY)\n  const [policyBusy,setPolicyBusy]=useState(false)
   const [sourceUrl,setSourceUrl]=useState('')
   const [sourceKind,setSourceKind]=useState<Source['kind']>('sitemap')
   const [sourceBusy,setSourceBusy]=useState<string|null>(null)
@@ -43,7 +43,7 @@ export default function CrawlOperationsPage(){
   const load=useCallback(async()=>{
     setLoading(true);setError(null)
     try{
-      const [stats,queue,registry]=await Promise.all([
+      const [stats,queue,registry,moderation]=await Promise.all([
         hubGet<Overview>('/api/hub/admin/crawl/overview'),
         hubGet<CandidatePage>('/api/hub/admin/crawl/candidates?status=pending&limit=50&offset=0'),
         hubGet<{ok:boolean;items:Source[]}>('/api/hub/admin/crawl-sources?limit=100')
@@ -70,7 +70,7 @@ export default function CrawlOperationsPage(){
     try{await hubSend('/api/hub/admin/crawl-sources/'+encodeURIComponent(source.id),'DELETE',{});await load()}
     catch(e){setError(e instanceof Error?e.message:'删除采集来源失败')}finally{setSourceBusy(null)}
   }
-  const review=async(item:Candidate,decision:'approve'|'reject')=>{
+  const savePolicy=async()=>{\n    if(policyBusy)return;setPolicyBusy(true);setError(null)\n    try{const result=await hubSend<{ok:boolean;policy:ModerationPolicy}>('/api/hub/admin/crawl-moderation/policy','PUT',policy);setPolicy(result.policy)}\n    catch(e){setError(e instanceof Error?e.message:'保存 AI 审核规则失败')}finally{setPolicyBusy(false)}\n  }\n  const review=async(item:Candidate,decision:'approve'|'reject')=>{
     if(busy)return
     const reason=(reasons[item.id]??'').trim()
     if(decision==='reject'&&!reason){setError('驳回候选必须填写原因');return}
@@ -114,6 +114,19 @@ export default function CrawlOperationsPage(){
             <div className="min-w-0 flex-1"><div className="break-all text-sm font-medium">{source.url}</div><div className="mt-1 text-xs text-muted-foreground">{source.kind.toUpperCase()} · 优先级 {source.priority} · 间隔 {Math.round(source.intervalMs/60000)} 分钟 · {source.lastStatus||'尚未调度'}</div>{source.lastError&&<div className="mt-1 break-all text-xs text-destructive">{source.lastError}</div>}</div>
             <div className="flex gap-2"><Button size="sm" variant="outline" disabled={sourceBusy!==null} onClick={()=>void updateSource(source,{enabled:!source.enabled})}>{source.enabled?<><Pause className="mr-1 h-3.5 w-3.5"/>暂停</>:<><Play className="mr-1 h-3.5 w-3.5"/>启用</>}</Button><Button size="sm" variant="ghost" disabled={sourceBusy!==null} onClick={()=>void removeSource(source)} aria-label="删除来源"><Trash2 className="h-4 w-4"/></Button></div>
           </div>)}</div>}
+        </CardContent></Card>
+      <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4"/>AI 自动审核规则</CardTitle><CardDescription>使用全局已配置的大模型。当前只允许影子模式：模型生成审核建议并记录证据，不会自动批准、驳回或发布网站。</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={policy.enabled} onChange={e=>setPolicy(p=>({...p,enabled:e.target.checked}))}/>启用 AI 影子审核</label>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="space-y-1 text-sm"><span className="text-muted-foreground">自动通过建议置信度</span><input type="number" min="0.5" max="1" step="0.01" value={policy.autoApproveConfidence} onChange={e=>setPolicy(p=>({...p,autoApproveConfidence:Number(e.target.value)}))} className="h-9 w-full rounded-md border bg-background px-3"/></label>
+            <label className="space-y-1 text-sm"><span className="text-muted-foreground">高风险拒绝建议置信度</span><input type="number" min="0.5" max="1" step="0.01" value={policy.rejectConfidence} onChange={e=>setPolicy(p=>({...p,rejectConfidence:Number(e.target.value)}))} className="h-9 w-full rounded-md border bg-background px-3"/></label>
+            <label className="space-y-1 text-sm"><span className="text-muted-foreground">最低质量分</span><input type="number" min="0" max="100" step="1" value={policy.minQualityScore} onChange={e=>setPolicy(p=>({...p,minQualityScore:Number(e.target.value)}))} className="h-9 w-full rounded-md border bg-background px-3"/></label>
+            <label className="space-y-1 text-sm"><span className="text-muted-foreground">每轮最多审核数</span><input type="number" min="1" max="25" step="1" value={policy.maxAiReviewsPerRun} onChange={e=>setPolicy(p=>({...p,maxAiReviewsPerRun:Number(e.target.value)}))} className="h-9 w-full rounded-md border bg-background px-3"/></label>
+            <label className="space-y-1 text-sm"><span className="text-muted-foreground">正文截断字符数</span><input type="number" min="200" max="12000" step="100" value={policy.maxExcerptChars} onChange={e=>setPolicy(p=>({...p,maxExcerptChars:Number(e.target.value)}))} className="h-9 w-full rounded-md border bg-background px-3"/></label>
+            <label className="flex items-center gap-2 pt-6 text-sm"><input type="checkbox" checked={policy.requireHttps} onChange={e=>setPolicy(p=>({...p,requireHttps:e.target.checked}))}/>审核建议要求 HTTPS</label>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"><p className="text-xs text-muted-foreground">当前模式：Shadow · 单日调用仍受系统 LLM 配额保护；每轮审核数可限制批量成本。</p><Button size="sm" onClick={()=>void savePolicy()} disabled={policyBusy}>{policyBusy?'保存中…':'保存审核规则'}</Button></div>
         </CardContent></Card>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Globe2 className="h-4 w-4"/>活跃域名分布</CardTitle><CardDescription>按采集任务主机名统计；此处不将相似域名误判为同一企业或产品生态。</CardDescription></CardHeader>

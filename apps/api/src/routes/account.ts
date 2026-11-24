@@ -33,68 +33,11 @@ function isTest(): boolean {
 }
 
 /**
- * 登录失败计数（M15）：路由级 20 次/小时只限「请求数」，挡不住对着一个账号
- * 慢速撞密码（每小时 20 次、每天 480 次，弱口令早晚被撞开）。
- *
- * 同一标识连续失败 5 次 → 15 分钟内再试直接 429，不再查密码（也不再烧 scrypt）。
- * 成功登录清零；窗口外首败重新计数。进程内 Map：单进程部署够用，与
- * @fastify/rate-limit 的默认内存桶同一口径；多副本部署下每副本独立计数，
- * 仍比「只有限流」多一道按账号的闸。
- * 注意：失败计数按「归一化后的标识」分桶，`Foo@Example.com` 与 `foo@example.com`
- * 是同一个账号，必须共用一个计数器。
+ * 登录失败计数使用数据库共享表，跨 API 副本原子计数。
+ * 原始邮箱/用户名只在当前请求内使用；持久化与审计只保存 SHA-256 标识摘要。
  */
 const LOGIN_FAIL_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_FAIL_MAX = 5;
-// 失败标识来自匿名请求，必须限制 Map 上限，避免分布式随机标识造成进程内存持续增长。
-// 注意：这是单进程附加防线，不替代生产多副本部署的共享限流器。
-const LOGIN_FAIL_MAX_ENTRIES = 10_000;
-const LOGIN_FAIL_SWEEP_EVERY = 128;
-let loginFailureWrites = 0;
-const loginFailures = new Map<string, { count: number; firstAt: number }>();
-
-function pruneLoginFailures(now: number): void {
-  loginFailureWrites += 1;
-  if (loginFailureWrites % LOGIN_FAIL_SWEEP_EVERY !== 0 && loginFailures.size < LOGIN_FAIL_MAX_ENTRIES) return;
-  for (const [key, entry] of loginFailures) {
-    if (now - entry.firstAt > LOGIN_FAIL_WINDOW_MS) loginFailures.delete(key);
-  }
-  while (loginFailures.size >= LOGIN_FAIL_MAX_ENTRIES) {
-    const oldest = loginFailures.keys().next().value;
-    if (oldest === undefined) break;
-    loginFailures.delete(oldest);
-  }
-}
-
-function loginFailureKey(identifier: string): string {
-  return identifier.trim().toLowerCase();
-}
-
-function isLoginLocked(identifier: string, now: number): boolean {
-  const entry = loginFailures.get(loginFailureKey(identifier));
-  if (!entry) return false;
-  if (now - entry.firstAt > LOGIN_FAIL_WINDOW_MS) {
-    loginFailures.delete(loginFailureKey(identifier));
-    return false;
-  }
-  return entry.count >= LOGIN_FAIL_MAX;
-}
-
-/** 记一次失败；返回累计次数（到阈值时调用方记锁定审计） */
-function recordLoginFailure(identifier: string, now: number): number {
-  pruneLoginFailures(now);
-  const key = loginFailureKey(identifier);
-  const entry = loginFailures.get(key);
-  if (!entry || now - entry.firstAt > LOGIN_FAIL_WINDOW_MS) {
-    loginFailures.set(key, { count: 1, firstAt: now });
-    return 1;
-  }
-  entry.count += 1;
-  return entry.count;
-}
-
-function clearLoginFailures(identifier: string): void {
-  loginFailures.delete(loginFailureKey(identifier));
-}
 
 /** 路由级限流：测试环境放开，真实环境限制为「小时级若干次」 */
 function accountRateLimit(max: number) {
@@ -516,26 +459,25 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(400);
         return { error: "参数无效" };
       }
-      // 返回 null = 用户不存在、密码错误或邮箱未验证（不区分，防账号枚举）；
-      // next-auth 的 authorize 收到 null 即登录失败。
-      // 失败计数先查：已锁定的标识不再查密码（M15），避免锁定期间继续烧 scrypt。
+      // 先原子预留一次尝试：所有 API 实例共享同一数据库计数，
+      // 第 6 次请求在任何 scrypt 校验前即被拒绝，避免多副本绕过锁定。
       const identifier = body.data.identifier.trim();
-      if (isLoginLocked(identifier, Date.now())) {
+      const attempt = await ctx.repo.reserveLoginAttempt(identifier, Date.now(), LOGIN_FAIL_WINDOW_MS);
+      if (attempt.count > LOGIN_FAIL_MAX) {
         reply.code(429);
         return { error: "登录失败次数过多，请 15 分钟后再试" };
       }
+      // 返回 null = 用户不存在、密码错误或邮箱未验证（不区分，防账号枚举）。
       const user = await ctx.repo.verifyUserPassword(identifier, body.data.password);
       if (!user) {
-        // 每次失败都记审计（M15）：只靠 429 计数看不见「谁在被撞」；
-        // 审计 target 只放标识本身，不放密码、不区分「账号不存在 / 密码错误」。
-        const failures = recordLoginFailure(identifier, Date.now());
+        // 审计只记录不可逆摘要，不持久化邮箱/用户名或密码。
         await ctx.repo
           .audit({
             actor: "anonymous",
             actorKind: "anonymous",
-            action: failures >= LOGIN_FAIL_MAX ? "account.login_locked" : "account.login_failed",
-            target: identifier,
-            diff: { failures },
+            action: attempt.count >= LOGIN_FAIL_MAX ? "account.login_locked" : "account.login_failed",
+            target: `sha256:${attempt.identifierHash}`,
+            diff: { failures: attempt.count },
           })
           .catch(() => {
             // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
@@ -543,7 +485,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(401);
         return { error: "邮箱/用户名或密码错误" };
       }
-      clearLoginFailures(identifier);
+      await ctx.repo.clearLoginAttempts(identifier);
       await ctx.repo.audit({
         actor: user.id,
         actorKind: "user",

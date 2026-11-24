@@ -57,12 +57,25 @@ describe("安全响应头：默认档", () => {
     expect(find(headers, "Cross-Origin-Resource-Policy")?.value).toBe("same-site");
   });
 
-  it("默认既不下发 CSP 也不下发 Report-Only（个人部署不被打挂）", async () => {
+  it("默认下发 CSP enforce + HSTS（2026-11-24 审计 §6：默认开启）", async () => {
     delete process.env.NAVHUB_CSP;
     delete process.env.NAVHUB_CSP_REPORT_ONLY;
+    delete process.env.NAVHUB_HSTS;
+    const headers = await loadHeaders();
+    const csp = find(headers, "Content-Security-Policy");
+    expect(csp).toBeDefined();
+    expect(csp!.value).toContain("default-src 'self'");
+    expect(csp!.value).toContain("object-src 'none'");
+    expect(csp!.value).not.toContain("unsafe-eval");
+    // 默认开启后 report-only 不应同时下发（浏览器会都执行）
+    expect(find(headers, "Content-Security-Policy-Report-Only")).toBeUndefined();
+    expect(find(headers, "Strict-Transport-Security")?.value).toBe("max-age=31536000; includeSubDomains");
+  });
+
+  it("NAVHUB_CSP=0 → 关闭 enforce（紧急逃生口）", async () => {
+    process.env.NAVHUB_CSP = "0";
     const headers = await loadHeaders();
     expect(find(headers, "Content-Security-Policy")).toBeUndefined();
-    expect(find(headers, "Content-Security-Policy-Report-Only")).toBeUndefined();
   });
 });
 
@@ -76,12 +89,14 @@ describe("CSP 三档开关", () => {
     expect(csp!.value).toContain("object-src 'none'");
     // 投机算式的 new Function 已移除，生产不再需要 unsafe-eval
     expect(csp!.value).not.toContain("unsafe-eval");
+    // GA 是唯一的外部脚本：script-src 具名放行 googletagmanager.com（见 next.config.js）
+    expect(csp!.value).toContain("https://www.googletagmanager.com");
     // 没有 report-only 时不应同时下发两个变体（浏览器会都执行）
     expect(find(headers, "Content-Security-Policy-Report-Only")).toBeUndefined();
   });
 
-  it("NAVHUB_CSP_REPORT_ONLY=1 → 只收集不拦截，且不与 enforce 同时下发", async () => {
-    delete process.env.NAVHUB_CSP;
+  it("NAVHUB_CSP=0 + NAVHUB_CSP_REPORT_ONLY=1 → 只收集不拦截，且不与 enforce 同时下发", async () => {
+    process.env.NAVHUB_CSP = "0";
     process.env.NAVHUB_CSP_REPORT_ONLY = "1";
     const headers = await loadHeaders();
     expect(find(headers, "Content-Security-Policy")).toBeUndefined();
@@ -91,6 +106,7 @@ describe("CSP 三档开关", () => {
   });
 
   it("NAVHUB_CSP_REPORT_URI 指定时追加 report-uri", async () => {
+    process.env.NAVHUB_CSP = "0";
     process.env.NAVHUB_CSP_REPORT_ONLY = "1";
     process.env.NAVHUB_CSP_REPORT_URI = "https://csp.example.com/report";
     const headers = await loadHeaders();
@@ -117,26 +133,32 @@ describe("CSP 三档开关", () => {
   it("enforce 与 report-only 的指令逐字一致（单一事实源，防策略漂移）", async () => {
     process.env.NAVHUB_CSP = "1";
     const enforced = find(await loadHeaders(), "Content-Security-Policy")!.value;
-    delete process.env.NAVHUB_CSP;
+    process.env.NAVHUB_CSP = "0";
     process.env.NAVHUB_CSP_REPORT_ONLY = "1";
     const observed = find(await loadHeaders(), "Content-Security-Policy-Report-Only")!.value;
     expect(observed).toBe(enforced);
   });
 });
 
-describe("HSTS 只在明确 https 时下发", () => {
-  it("无 NAVHUB_PUBLIC_URL 时不下发（http 自托管不会被强制升级）", async () => {
+describe("HSTS 默认开启，仅 http 生效问题由浏览器决定", () => {
+  it("默认下发 HSTS（max-age=31536000 + includeSubDomains）", async () => {
     delete process.env.NAVHUB_HSTS;
     delete process.env.NAVHUB_PUBLIC_URL;
+    const headers = await loadHeaders();
+    expect(find(headers, "Strict-Transport-Security")?.value).toBe("max-age=31536000; includeSubDomains");
+  });
+
+  it("NAVHUB_HSTS=0 → 不下发（紧急逃生口）", async () => {
+    process.env.NAVHUB_HSTS = "0";
     const headers = await loadHeaders();
     expect(find(headers, "Strict-Transport-Security")).toBeUndefined();
   });
 
-  it("https 公开地址时下发", async () => {
+  it("https 公开地址时下发（与默认同值）", async () => {
     delete process.env.NAVHUB_HSTS;
     process.env.NAVHUB_PUBLIC_URL = "https://nav.example.com";
     const headers = await loadHeaders();
-    expect(find(headers, "Strict-Transport-Security")?.value).toBe("max-age=15552000");
+    expect(find(headers, "Strict-Transport-Security")?.value).toBe("max-age=31536000; includeSubDomains");
   });
 });
 
@@ -146,4 +168,5 @@ afterAll(() => {
   delete process.env.NAVHUB_CSP_REPORT_ONLY;
   delete process.env.NAVHUB_CSP_REPORT_URI;
   delete process.env.NAVHUB_PUBLIC_URL;
+  delete process.env.NAVHUB_HSTS;
 });

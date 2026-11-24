@@ -6,7 +6,12 @@ const CSP_DIRECTIVES = [
   "default-src 'self'",
   // 投机算式已改为纯递归下降求值（apps/web-overlay/src/lib/arithmetic.ts），
   // 生产 CSP 不再需要 'unsafe-eval'；保留 'unsafe-inline' 是 Next 内联样式/脚本的边界。
-  "script-src 'self' 'unsafe-inline'",
+  // GA 是本站唯一的外部脚本（layout.tsx，GA_ID 设置时才注入 gtag.js）。
+  // CSP 在构建期固化、GA_ID 在运行时才读，策略无法按 GA 有无条件切换；
+  // 不放行该域名 = 默认开启 CSP 会在配了 GA 的部署上静默打断统计。
+  // 只放行 www.googletagmanager.com 一个具名源（gtag.js 的加载域；
+  // GA4 的数据信标走 connect-src，已由 https: 覆盖），不放宽到 https: 通配。
+  "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
@@ -78,7 +83,14 @@ const nextConfig = {
   },
   // 安全响应头：Docker 自托管走 `next start`，vercel.json 里的头在那种形态下不生效，
   // 因此把头下沉到应用本身，任何部署形态都一致。
-  // 破坏性较强的两项（HSTS / CSP）默认关闭或按需开启，避免一上线就把站点打挂。
+  // CSP / HSTS 默认开启（2026-11-24 审计 §6 修复：此前 CSP 仅构建期 NAVHUB_CSP=1
+  // 才下发、HSTS 默认关闭，仓库配置≠线上生效）。
+  // 逃生口（仅紧急情况下用，默认不要设）：
+  //   NAVHUB_CSP=0  → 关闭 CSP enforce（仍可用 NAVHUB_CSP_REPORT_ONLY=1 做观察模式）；
+  //   NAVHUB_HSTS=0 → 关闭 HSTS。
+  // 注意：Next 的 headers() 在 `next build` 时求值并写入 routes-manifest，
+  // 因此这两个开关是**构建期**环境变量；运行时改 env 不会生效（Docker 用 --build-arg 传入）。
+  // （开发服务器每次请求都会重新求值 headers()，本地 dev 验证不受构建期固化影响。）
   async headers() {
     const hosts = [
       { key: "X-Content-Type-Options", value: "nosniff" },
@@ -92,28 +104,33 @@ const nextConfig = {
       // 挡住其它站点把我们的接口当图像端点白蹭。
       { key: "Cross-Origin-Resource-Policy", value: "same-site" },
     ];
-    // HSTS：http-only 的自托管一旦下发就会被浏览器强制升级，因此只在明确 https 时开启。
-    const hsts = process.env.NAVHUB_HSTS === "1" || (process.env.NAVHUB_PUBLIC_URL || "").startsWith("https://");
-    if (hsts) {
-      hosts.push({ key: "Strict-Transport-Security", value: "max-age=15552000" });
+    // HSTS：默认开启。值取生产常规：max-age=31536000（1 年）+ includeSubDomains
+    // （旧值 15552000 = 180 天，仅在明确 https 时才下发）。
+    // “只对 https 生效”是浏览器行为：按 RFC 6797 §8.1，浏览器必须忽略经 http
+    // 收到的 HSTS 头，因此开发环境的 http 下发该头也不会报错、不会强制升级；
+    // curl 在 http 上仍能看到它，便于验证。逃生口 NAVHUB_HSTS=0。
+    // NAVHUB_HSTS=1 / NAVHUB_PUBLIC_URL=https://… 仍视为显式开启。
+    // 不加 preload：进预加载列表是不可逆的外部承诺，另行决策。
+    const hstsDisabled = process.env.NAVHUB_HSTS === "0";
+    if (!hstsDisabled) {
+      hosts.push({ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" });
     }
-    // CSP：Next 依赖内联脚本/样式，收紧需要逐页验证，故默认关闭，用 NAVHUB_CSP=1 开启。
-    // 注意：Next 的 headers() 在 `next build` 时求值并写入 routes-manifest，
-    // 因此 CSP 开关是**构建期**环境变量；运行时改 env 不会生效（Docker 用 --build-arg 传入）。
+    // CSP：默认开启 enforce。逃生口 NAVHUB_CSP=0（构建期）。
+    // NAVHUB_CSP=1 仍接受（历史开关，等价于默认开启）。
     // 两种档位共用 CSP_DIRECTIVES（唯一事实源），避免「观察策略」与「拦截策略」漂移；
     // NAVHUB_CSP_REPORT_URI 在两种档位都会追加 report-uri，enforce 后仍可持续收集违规。
     const cspValue = process.env.NAVHUB_CSP_REPORT_URI
       ? `${CSP_DIRECTIVES}; report-uri ${process.env.NAVHUB_CSP_REPORT_URI}`
       : CSP_DIRECTIVES;
-    if (process.env.NAVHUB_CSP === "1") {
+    const cspDisabled = process.env.NAVHUB_CSP === "0";
+    if (!cspDisabled) {
       hosts.push({ key: "Content-Security-Policy", value: cspValue });
     }
     // CSP report-only（P2-4 第一步）：与 enforce 完全同源的策略，但只收集违规
-    // 不拦截。理由见下方 enforce 分支的注释——直接 enforce 会把需要内联脚本的
-    // 页面打挂，必须先跑一周收集真实违规再决定收哪些源。
-    // 用法：NAVHUB_CSP_REPORT_ONLY=1 开启；可选 NAVHUB_CSP_REPORT_URI 指定上报地址。
-    // 两个开关同时打开时 enforce 优先：只下发 enforce，避免同源策略双份报告。
-    if (process.env.NAVHUB_CSP_REPORT_ONLY === "1" && process.env.NAVHUB_CSP !== "1") {
+    // 不拦截。仅在 enforce 被逃生口关闭时下发（观察模式）；两个开关同时打开时
+    // enforce 优先：只下发 enforce，避免同源策略双份报告。
+    // 用法：NAVHUB_CSP=0 + NAVHUB_CSP_REPORT_ONLY=1 开启；可选 NAVHUB_CSP_REPORT_URI 指定上报地址。
+    if (process.env.NAVHUB_CSP_REPORT_ONLY === "1" && cspDisabled) {
       hosts.push({ key: "Content-Security-Policy-Report-Only", value: cspValue });
     }
     return [{ source: "/:path*", headers: hosts }];

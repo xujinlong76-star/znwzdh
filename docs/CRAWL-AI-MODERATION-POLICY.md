@@ -1,6 +1,6 @@
 # AI 采集审核规则配置
 
-规则通过管理员接口持久化到 system_states，模型本身仍复用全局 AI 模型配置。
+管理员可在「采集运营中心 → AI 自动审核规则」配置审核开关和策略，设置持久化在 system_states 中，并写入审计日志。
 
 - GET `/api/admin/crawl-moderation/policy`：读取当前规则。
 - PUT `/api/admin/crawl-moderation/policy`：保存规则并写入审计日志。
@@ -9,4 +9,4 @@
 - 支持自动通过置信度阈值、高风险拒绝置信度阈值、最低质量分、正文截断长度、每轮最大审核数和 HTTPS 要求。
 - 系统每日 Token/调用额度继续复用现有 LLM quota；每轮审核数上限用于限制单次 Worker 批量费用。
 
-自动通过阈值在 Shadow 中只生成建议，不会改变候选状态。
+自动通过/拒绝阈值在 Shadow 中只生成建议，不会改变候选状态。

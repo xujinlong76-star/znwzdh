@@ -354,7 +354,7 @@ export async function verifyAdminSession() {
   if (typeof sessionSid === 'string' && sessionSid) {
     const identity = canonicalUserId(user)
     const issuedAt = (session as { sessionIssuedAt?: number }).sessionIssuedAt
-    const revoked = identity ? await hubSessionRevoked(sessionSid, identity, issuedAt).catch(() => { /* 核对失败按不可用处理，fail-open */ return null }) : null
+    const revoked = identity ? await hubSessionRevoked(sessionSid, identity, issuedAt).catch(() => { /* 核对失败按不可用处理；生产登录会拒绝签发会话 */ return null }) : null
     if (revoked === true) return { ok: false as const, error: 'Unauthorized', status: 401 }
     if (revoked === null && identity) return { ok: false as const, error: 'Session verification unavailable', status: 503 }
   }

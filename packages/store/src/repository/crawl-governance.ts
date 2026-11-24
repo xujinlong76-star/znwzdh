@@ -67,6 +67,11 @@ function rowToCrawlTask(row: Record<string, unknown>): CrawlTask {
 /** URL 幂等入队；已审核/死信任务不会被重复发现自动复活。 */
 export async function enqueueCrawlTask(repo: Repository, input: EnqueueCrawlTaskInput): Promise<CrawlTask> {
   const normalized = canonicalizeCrawlUrl(input.url);
+  const source = input.source.trim().slice(0, 120);
+  if (!source) throw new TypeError("采集来源不能为空");
+  if (normalized.url.length > 2048) throw new RangeError("采集 URL 超过 2048 字符");
+  const payloadJson = input.payload ? JSON.stringify(input.payload) : null;
+  if (payloadJson && payloadJson.length > 16_384) throw new RangeError("采集任务 payload 超过 16 KiB");
   const now = input.now ?? Date.now();
   const id = randomUUID();
   const priority = Math.max(-100, Math.min(100, Math.floor(input.priority ?? 0)));
@@ -82,8 +87,8 @@ export async function enqueueCrawlTask(repo: Repository, input: EnqueueCrawlTask
        priority = CASE WHEN crawl_tasks.status IN ('queued','retry') THEN CASE WHEN crawl_tasks.priority > excluded.priority THEN crawl_tasks.priority ELSE excluded.priority END ELSE crawl_tasks.priority END,
        payload_json = CASE WHEN crawl_tasks.status IN ('queued','retry') THEN excluded.payload_json ELSE crawl_tasks.payload_json END,
        updated_at = excluded.updated_at`,
-    [id, normalized.url, normalized.url, normalized.host, input.source.slice(0, 120),
-      input.payload ? JSON.stringify(input.payload) : null, priority, maxAttempts, now, now, now],
+    [id, normalized.url, normalized.url, normalized.host, source,
+      payloadJson, priority, maxAttempts, now, now, now],
   );
   const rows = await repo.raw("SELECT * FROM crawl_tasks WHERE canonical_url = ? LIMIT 1", [normalized.url]);
   if (!rows[0]) throw new Error("采集任务入队后无法读取");
@@ -231,6 +236,7 @@ export async function reapExpiredCrawlLeases(
 
 export async function recordCrawlFingerprint(repo: Repository, input: CrawlFingerprintInput): Promise<void> {
   const canonical = canonicalizeCrawlUrl(input.canonicalUrl).url;
+  if (!input.contentHash.trim() || !input.simhash64.trim()) throw new TypeError("页面指纹不能为空");
   const fetchedAt = input.fetchedAt ?? Date.now();
   await repo.run(
     `INSERT INTO crawl_page_fingerprints

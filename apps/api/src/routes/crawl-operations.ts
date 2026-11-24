@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   countSiteDiscoveryCandidates, getSiteDiscoveryCandidateForUpdate,
@@ -164,7 +165,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     if (result.kind === "missing") { reply.code(404); return {ok:false,error:"候选不存在"}; }
     if (result.kind === "conflict") { reply.code(409); return {ok:false,error:"候选已被其他审核操作处理",status:result.status}; }
     await recordCrawlAiModerationDecision(ctx.repo, {
-      id: crypto.randomUUID(), candidateId: result.candidate.id, decisionSource: "human",
+      id: randomUUID(), candidateId: result.candidate.id, decisionSource: "human",
       mode: "manual", status: "reviewed", verdict: body.data.decision,
       actor: reviewer, reasons: body.data.reason ? [body.data.reason] : [],
     });

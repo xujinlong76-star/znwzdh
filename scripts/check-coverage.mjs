@@ -227,7 +227,16 @@ if (patchEnabled) {
     process.exit(2);
   }
   const thresholdFile = resolve(REPO_ROOT, thresholdsPath);
-  const thresholdConfig = JSON.parse(readFileSync(thresholdFile, "utf8"));
+  if (!existsSync(thresholdFile)) {
+    console.error("[coverage] 找不到阈值文件：" + thresholdFile);
+    process.exit(2);
+  }
+  let thresholdConfig;
+  try { thresholdConfig = JSON.parse(readFileSync(thresholdFile, "utf8")); }
+  catch (error) {
+    console.error("[coverage] 阈值文件解析失败：" + (error instanceof Error ? error.message : String(error)));
+    process.exit(2);
+  }
   if (thresholdConfig.patch?.enabled !== true) {
     console.error("[coverage] 阈值配置未启用 patch 覆盖率门禁");
     process.exit(2);
@@ -247,7 +256,12 @@ if (patchEnabled) {
     console.error("[coverage] 无法读取 patch diff（请确认 base ref 存在）： " + (error instanceof Error ? error.message : String(error)));
     process.exit(2);
   }
-  const coverageFinal = JSON.parse(readFileSync(finalFile, "utf8"));
+  let coverageFinal;
+  try { coverageFinal = JSON.parse(readFileSync(finalFile, "utf8")); }
+  catch (error) {
+    console.error("[coverage] coverage-final.json 解析失败：" + (error instanceof Error ? error.message : String(error)));
+    process.exit(2);
+  }
   const patch = evaluatePatchCoverage(diff, coverageFinal, thresholdConfig.patch.minExecutableLines ?? 10);
   console.log("[coverage] Patch 行覆盖：" + patch.covered + "/" + patch.total +
     " executable lines (" + patch.percent.toFixed(2) + "%)");

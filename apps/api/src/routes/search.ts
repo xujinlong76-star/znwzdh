@@ -4,6 +4,7 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
+import { createHash } from "node:crypto";
 import { MAX_SEARCH_QUERY_LENGTH, rerankBySiteQualityShadow } from "@navhub/core";
 import { recordSearchChannels, recordSearchSuggestionsDegraded, recordSearchWriteFailure } from "../metrics.ts";
 import { refreshUserProfile } from "../profile-service.ts";
@@ -226,12 +227,8 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
     // 10% 确定性采样：计算质量影子名次并记录对照，不改写 result.hits 或响应缓存。
     // 使用查询字符 hash 而不是随机数，保证同一 query 在回归中采样稳定。
-    let sampleHash = 2166136261;
-    for (const char of q) {
-      sampleHash ^= char.charCodeAt(0);
-      sampleHash = Math.imul(sampleHash, 16777619);
-    }
-    const shadowSampled = q.length > 0 && (sampleHash >>> 0) % 10 === 0;
+    const queryHash = createHash("sha256").update(q).digest("hex");
+    const shadowSampled = q.length > 0 && Number.parseInt(queryHash.slice(0, 8), 16) % 10 === 0;
     if (shadowSampled && isFirstPage && !isProbe && result.hits.length > 0) {
       try {
         const topHits = result.hits.slice(0, 20);
@@ -250,9 +247,10 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           .sort((a, b) => a.baselineRank - b.baselineRank)
           .map((item) => item.siteId);
         await ctx.repo.recordEvent("search_quality_shadow", {
-          query: q,
           meta: {
             version: "site-quality-v1",
+            queryHash,
+            queryLength: q.length,
             sampleRate: 0.1,
             qualityWeight: 0.12,
             minEvidenceCoverage: 40,

@@ -161,6 +161,11 @@ export function evaluateSearchRankingShadow(
   const shadowTop = scored.slice(0, safeTopK).map((item) => item.siteId);
   const overlap = shadowTop.filter((siteId) => baselineSet.has(siteId)).length;
   const compared = Math.min(baseline.length, shadowTop.length);
+  // changed 表示 top-K 内位置发生变化的条数；overlap 单独表示成员集合重合。
+  const changed = baseline.reduce(
+    (count, siteId, index) => count + (shadowTop[index] === siteId ? 0 : 1),
+    0,
+  );
 
   return {
     rankerVersion: "search-shadow-v1",
@@ -169,7 +174,7 @@ export function evaluateSearchRankingShadow(
     topK: safeTopK,
     compared,
     overlap,
-    changed: compared - overlap,
+    changed,
     overlapRate: compared === 0 ? 1 : Number((overlap / compared).toFixed(4)),
   };
 }

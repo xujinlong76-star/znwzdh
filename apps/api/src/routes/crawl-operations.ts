@@ -314,7 +314,8 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     const rows = await listCrawlModerationGoldCases(ctx.repo, {
       status: "gold_ready", limit: parsed.data.limit + 1, offset: 0,
     });
-    const truncated = rows.length > parsed.data.limit;\n    const items = rows.slice(0, parsed.data.limit).filter(row =>
+    const truncated = rows.length > parsed.data.limit;
+    const items = rows.slice(0, parsed.data.limit).filter(row =>
       ["approve", "reject", "review"].includes(String(row.final_label)) &&
       (row.final_risk === true || row.final_risk === false || row.final_risk === 0 || row.final_risk === 1)
     ).map(row => ({

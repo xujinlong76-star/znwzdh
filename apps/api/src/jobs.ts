@@ -47,6 +47,8 @@ import {
   handleDramaCalendarRefresh,
   handleDramaRankingsRefresh,
   handlePluginUrlHealth,
+  handleCrawlWorker,
+  type CrawlSeed,
 } from "./jobs/index.ts";
 
 export {
@@ -63,6 +65,7 @@ export {
   handleDramaCalendarRefresh,
   handleDramaRankingsRefresh,
   handlePluginUrlHealth,
+  handleCrawlWorker,
 };
 
 /** 仓储返回的站点行类型：显式取一次，避免重构期返回类型退化时回调参数变成隐式 any */
@@ -147,9 +150,9 @@ export interface PatrolSelection {
   depth: { unchecked: number; checked: number };
 }
 
-export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit" | "backup_restore" | "hotlist_refresh" | "daily_brief" | "drama_update_check" | "drama_calendar_refresh" | "drama_rankings_refresh" | "plugin_url_health";
+export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit" | "backup_restore" | "hotlist_refresh" | "daily_brief" | "drama_update_check" | "drama_calendar_refresh" | "drama_rankings_refresh" | "plugin_url_health" | "crawl_worker";
 
-export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit", "backup_restore", "hotlist_refresh", "daily_brief", "drama_update_check", "drama_calendar_refresh", "drama_rankings_refresh", "plugin_url_health"];
+export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit", "backup_restore", "hotlist_refresh", "daily_brief", "drama_update_check", "drama_calendar_refresh", "drama_rankings_refresh", "plugin_url_health", "crawl_worker"];
 
 /** data_retention 任务的参数：mode 决定走哪条路，apply 决定是否真的动手 */
 export interface DataRetentionPayload {
@@ -209,6 +212,8 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   // 搜索包 URL 健康探活（P1-4 前缀引擎登录墙化）：每天对 5 个 search-pack 种子的
   // 全部外部检索 URL 探活一次，只记事件与审计，不自动下架（见 tasks/plugin-url-health.task.ts）。
   { kind: "plugin_url_health", intervalMs: 86_400_000 },
+  // 默认关闭；仅在显式配置 NAVHUB_CRAWL_WORKER_ENABLED=true 后启用持久化发现队列。
+  ...(process.env.NAVHUB_CRAWL_WORKER_ENABLED === "true" ? [{ kind: "crawl_worker" as const, intervalMs: 5 * 60_000, payload: { maxTasks: 10 } }] : []),
   // 数据治理默认只做 rollup 的 dry-run：自动化可以先"看见"，不该先"动手"。
   // 确认过输出后再把 payload 改成 { mode: "rollup", apply: true }（或手动触发一次）。
   { kind: "data_retention", intervalMs: 86_400_000, payload: { mode: "rollup", apply: false, maxDays: 30, telemetryDays: 90 } },
@@ -250,7 +255,7 @@ export const MANUAL_ONLY_KINDS: JobKind[] = ["backup_restore"];
  * 因此这里不改变个人/NAS 部署的历史行为。
  */
 export function jobEnqueueScope(kind: JobKind, payload: unknown): "write" | "admin" {
-  if (kind === "backup_restore" || kind === "purge_trash") return "admin";
+  if (kind === "backup_restore" || kind === "purge_trash" || kind === "crawl_worker") return "admin";
   if (kind === "data_retention") {
     const apply =
       typeof payload === "object" && payload !== null && (payload as { apply?: unknown }).apply === true;
@@ -803,6 +808,9 @@ export class JobRunner {
     });
     this.taskRegistry.register("plugin_url_health", async ({ run }) => {
       await this.runPluginUrlHealth(run);
+    });
+    this.taskRegistry.register("crawl_worker", async ({ payload, run }) => {
+      await handleCrawlWorker(this.ctx, run, (payload ?? {}) as { seeds?: CrawlSeed[]; maxTasks?: number });
     });
     this.taskRegistry.register("user_data_audit", async () => {
       await this.runUserDataAudit();

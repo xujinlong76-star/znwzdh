@@ -262,7 +262,7 @@ export async function guardedFetch(
   // 白名单域名的一个 302 就能把它们带到第三方/内网。packages/ai/src/ssrf.ts 早已
   // 逐跳剥离，此处与它对齐（parity 测试会锁两侧行为一致）。
   const SENSITIVE_HEADERS = new Set(['authorization', 'cookie', 'proxy-authorization'])
-  const carriedHeaders: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) }
+  let carriedHeaders: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) }
   let prevOrigin = current.origin
   for (let hop = 0; hop <= opts.maxRedirects; hop++) {
     const resolvedIps = await resolveAndCheckAddresses(current, opts)

@@ -540,7 +540,7 @@ export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
   data_retention: { cron: "DAILY4AM", timeoutMs: 600_000, maxConcurrency: 1 },
   plugin_governance: { cron: "X4H", timeoutMs: 120_000, maxConcurrency: 1 },
   plugin_url_health: { cron: "DAILY", timeoutMs: 300_000, maxConcurrency: 1 },
-  crawl_worker: { cron: "X30MIN", timeoutMs: 300_000, maxConcurrency: 1 },
+  crawl_worker: { cron: "X30MIN", timeoutMs: 600_000, maxConcurrency: 1 },
   user_data_audit: { cron: "DAILY5AM", timeoutMs: 300_000, maxConcurrency: 1 },
   /**
    * 备份恢复：**手动触发，绝不自动调度**。

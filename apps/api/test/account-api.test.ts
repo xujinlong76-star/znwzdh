@@ -199,12 +199,23 @@ describe("账号生命周期 API", () => {
   // loginFailures），同一标识的第二份相同用例会在第一次错误登录时就拿到 429，
   // 永远跑不绿——不是生产行为错了，是用例被粘贴重复了（2026-11-15 删重复）。
 
-  it("登录：正确口令返回用户，错误口令 401", async () => {
+  it("登录：未验证邮箱拒绝；完成验证后正确口令通过", async () => {
+    captured.length = 0;
     await post("/api/account/register", {
       username: "dave",
       email: "dave@example.com",
       password: "S3cret-Passw0rd!",
     });
+    const unverified = await post("/api/account/login", {
+      identifier: "dave@example.com",
+      password: "S3cret-Passw0rd!",
+    });
+    expect(unverified.statusCode).toBe(401);
+
+    const verificationToken = extractToken(captured[0], "verify-email");
+    const verified = await post("/api/account/verify-email", { token: verificationToken });
+    expect(verified.statusCode).toBe(200);
+
     const ok = await post("/api/account/login", {
       identifier: "dave@example.com",
       password: "S3cret-Passw0rd!",
@@ -248,6 +259,9 @@ describe("账号生命周期 API", () => {
       email: "erin@example.com",
       password: "OldPassw0rd!",
     });
+    const verifyToken = extractToken(captured[0], "verify-email");
+    expect((await post("/api/account/verify-email", { token: verifyToken })).statusCode).toBe(200);
+    captured.length = 0;
     await post("/api/account/forgot-password", { email: "erin@example.com" });
     const resetMsg = captured.find((m) => m.text.includes("reset-password"));
     expect(resetMsg).toBeDefined();

@@ -655,7 +655,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       const updated = await ctx.repo.updateUserPasswordForEmail(String(row.user_id), body.data.password, String(row.target_email));
       if (!updated) {
         reply.code(400);
-        return { error: "密码不符合要求" };
+        return { error: "重置链接已失效，请重新申请密码重置" };
       }
     // 密码重置后吊销该用户全部已登录会话：旧的 next-auth JWT (sid) 即便未过期，
     // BFF 也会在下一个 /api/me/* 请求上经 isSessionRevoked 拦下 (401)。

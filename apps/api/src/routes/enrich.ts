@@ -4,10 +4,11 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync } from "fastify";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { enrichUrl } from "@navhub/ai";
 import { INTERACTIVE_LLM_BUDGET_MS } from "../llm-usage.ts";
-import { httpUrl, resolveCategoryTitleSuggestion, sanitizeIconUrl } from "@navhub/core";
+import { httpUrl, canonicalizeUrl, resolveCategoryTitleSuggestion, sanitizeIconUrl } from "@navhub/core";
 import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
@@ -100,6 +101,111 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
     });
     return budget.llmBlocked ? { ...result, aiSkipped: "quota" as const, quota: budget.quotaInfo } : result;
+  });
+
+  /**
+   * AI 发现：抓取 + 富化 + 进入待审核队列。
+   * 与 /api/sites/auto 的旧行为并行保留；此新入口绝不直接创建/发布站点。
+   */
+  app.post("/api/sites/discover", {
+    config: { rateLimit: { max: 15, timeWindow: "1 minute" }, scope: "write" },
+  }, async (req, reply) => {
+    const body = z.object({
+      url: httpUrl(),
+      categoryId: z.string().optional(),
+      tags: z.array(z.string()).max(50).optional(),
+      title: z.string().min(1).max(120).optional(),
+      description: z.string().optional(),
+      enrichFields: z.array(z.string()).max(10).optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+
+    const existing = await ctx.repo.findSiteByUrl(body.data.url);
+    if (existing) return { created: false, reason: "已存在正式站点", site: existing };
+
+    const categories = await ctx.repo.listCategories();
+    const budget = await enrichBudget(req as never);
+    const resolved = await resolveLlm(ctx, budget.identity);
+    const enriched = await enrichUrl(body.data.url, {
+      llm: enrichLlmOf(resolved),
+      guard: ctx.config.fetch,
+      knownCategories: categories.map((category) => category.title),
+      heuristicOnly: budget.llmBlocked,
+      onLlmCall: createEnrichUsageCallback(ctx, resolved.source, budget.identity),
+      deadlineAt: Date.now() + INTERACTIVE_LLM_BUDGET_MS,
+    }).finally(() => settleLlmQuota(ctx, budget.hold));
+
+    const selection = selectEnrichmentFields(enriched, body.data.enrichFields);
+    const title = body.data.title ?? selection.applied.title ?? null;
+    const description = body.data.description ?? selection.applied.description ?? null;
+    const tags = body.data.tags ?? selection.applied.tags;
+
+    let categoryId = body.data.categoryId ?? null;
+    let categoryResolution: string | null = null;
+    let ambiguousCategoryIds: string[] = [];
+    if (categoryId) {
+      const check = await ctx.repo.checkSiteCategoryAttachment(categoryId);
+      if (!check.ok) {
+        reply.code(400);
+        return { error: "指定分类不可用于候选入库", detail: check.error };
+      }
+      categoryId = check.categoryId;
+    } else if (selection.applied.category) {
+      const resolution = resolveCategoryTitleSuggestion(
+        selection.applied.category,
+        categories.map((category) => ({
+          id: category.id,
+          title: category.title,
+          altLabels: category.altLabels,
+        })),
+      );
+      categoryResolution = resolution.status;
+      if (resolution.status === "unique") categoryId = resolution.categoryId;
+      else if (resolution.status === "ambiguous") ambiguousCategoryIds = resolution.categoryIds;
+    }
+
+    const candidateUrl = enriched.url || body.data.url;
+    const candidate = await ctx.repo.upsertSiteDiscoveryCandidate({
+      id: randomUUID(),
+      url: candidateUrl,
+      canonicalUrl: canonicalizeUrl(candidateUrl),
+      title,
+      description,
+      categoryId,
+      tags,
+      source: "ai",
+      evidence: {
+        requestedUrl: body.data.url,
+        finalUrl: candidateUrl,
+        provenance: enriched.provenance,
+        httpStatus: enriched.httpStatus,
+        warnings: enriched.warnings,
+        fields: enriched.fields,
+        categorySuggestion: selection.applied.category ?? null,
+        categoryResolution,
+        ambiguousCategoryIds,
+        appliedFields: selection.appliedFields,
+        skippedFields: selection.skipped,
+        ignoredFields: selection.ignoredFields,
+        aiSkipped: budget.llmBlocked ? "quota" : null,
+      },
+    });
+
+    reply.code(202);
+    return {
+      created: false,
+      queuedForReview: true,
+      duplicate: candidate.status !== "pending" || candidate.url !== candidateUrl,
+      candidate,
+      enrichment: enriched,
+      appliedFields: selection.appliedFields,
+      skippedFields: selection.skipped,
+      ignoredFields: selection.ignoredFields,
+      ...(budget.llmBlocked ? { aiSkipped: "quota" as const, quota: budget.quotaInfo } : {}),
+    };
   });
 
   /** 一步到位：抓取 + 富化 + 入库（AI 自动入库的核心接口） */

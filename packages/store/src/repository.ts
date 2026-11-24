@@ -1462,12 +1462,12 @@ async revokeAllSessions(userId: string): Promise<number> {
 
   /* ------------------------- 跨实例登录失败计数 ------------------------- */
 
-  async reserveLoginAttempt(identifier: string, now: number, windowMs: number): Promise<{ count: number; identifierHash: string }> {
-    return loginFailuresRepo.reserveLoginAttempt(this, identifier, now, windowMs);
+  async reserveLoginAttempt(identifier: string, sharedSecret: string, now: number, windowMs: number): Promise<{ count: number; identifierHash: string }> {
+    return loginFailuresRepo.reserveLoginAttempt(this, identifier, sharedSecret, now, windowMs);
   }
 
-  async clearLoginAttempts(identifier: string): Promise<void> {
-    return loginFailuresRepo.clearLoginAttempts(this, identifier);
+  async clearLoginAttempts(identifier: string, sharedSecret: string): Promise<void> {
+    return loginFailuresRepo.clearLoginAttempts(this, identifier, sharedSecret);
   }
 
   /* ------------------------- 投稿收录汇报 ------------------------- */

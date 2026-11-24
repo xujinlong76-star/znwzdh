@@ -351,6 +351,31 @@ describe("账号生命周期 API", () => {
     expect(login.statusCode).toBe(200);
   });
 
+  it("重置密码：成功后撤销该账号其他尚未使用的重置令牌", async () => {
+    captured.length = 0;
+    await post("/api/account/register", {
+      username: "multi-reset",
+      email: "multi-reset@example.com",
+      password: "OldPassw0rd!",
+    });
+    await post("/api/account/forgot-password", { email: "multi-reset@example.com" });
+    await post("/api/account/forgot-password", { email: "multi-reset@example.com" });
+    const resetMessages = captured.filter((m) => m.text.includes("reset-password"));
+    expect(resetMessages).toHaveLength(2);
+    const firstToken = extractToken(resetMessages[0], "reset-password");
+    const secondToken = extractToken(resetMessages[1], "reset-password");
+    expect((await post("/api/account/reset-password", {
+      token: firstToken, password: "NewPassw0rd!",
+    })).statusCode).toBe(200);
+    expect((await post("/api/account/reset-password", {
+      token: secondToken, password: "Another1!",
+    })).statusCode).toBe(400);
+    const login = await post("/api/account/login", {
+      identifier: "multi-reset@example.com", password: "NewPassw0rd!",
+    });
+    expect(login.statusCode).toBe(200);
+  });
+
   it("重置密码：令牌一次性", async () => {
     captured.length = 0;
     await post("/api/account/register", {

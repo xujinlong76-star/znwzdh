@@ -103,7 +103,7 @@ export async function getCrawlAiAutoApprovalGate(
   const exactMatchRate = Number.isFinite(Number(metrics.exactMatchRate)) ? Number(metrics.exactMatchRate) : null;
   const approvePrecision = approve.precision == null ? null : Number(approve.precision);
   const riskRecall = risk.recall == null ? null : Number(risk.recall);
-  const riskPositiveSupport = Number(risk.positiveSupport ?? 0);
+  const riskPositiveSupport = Number(risk.support ?? risk.positiveSupport ?? 0);
   const riskFalseNegatives = Number(risk.falseNegatives ?? 0);
   const evaluatedAt = Number(evaluation.created_at ?? 0);
   const hasCriticalAlert = alerts.some(alert =>

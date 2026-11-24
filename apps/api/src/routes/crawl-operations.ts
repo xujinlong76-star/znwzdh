@@ -14,6 +14,15 @@ import { resolveLlm, llmProviderReady } from "../llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota, replyQuotaBlocked } from "../llm-quota.ts";
 import { callLlm } from "../llm-usage.ts";
 import { loadCrawlAiModerationPolicy } from "../crawl-moderation-policy.ts";
+type ModerationGoldEvaluationRow = {
+  id: string;
+  category?: string | null;
+  final_label?: string | null;
+  final_risk?: boolean | number | null;
+  title?: string | null;
+  description?: string | null;
+  sanitized_excerpt?: string | null;
+};
 
 /** 对正式金标集做稳定抽样：相同数据集重复运行时选中相同样本。 */
 export function selectGoldEvaluationSample<T extends { id: unknown; category?: unknown; final_risk?: unknown }>(rows: readonly T[], limit = 20): T[] {
@@ -666,7 +675,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       const countRows = await ctx.repo.raw("SELECT COUNT(*) AS total FROM crawl_moderation_gold_cases WHERE status='gold_ready'");
       const total = Number(countRows[0]?.total ?? 0);
       if (!total) { reply.code(409); return { ok: false, error: "尚无正式金标样本，暂不能自动评测" }; }
-      const goldRows = await listCrawlModerationGoldCases(ctx.repo, { status: "gold_ready", limit: 5000, offset: 0 });
+      const goldRows = (await listCrawlModerationGoldCases(ctx.repo, { status: "gold_ready", limit: 5000, offset: 0 })) as unknown as ModerationGoldEvaluationRow[];
       const gold = goldRows.filter(row => ["approve","reject","review"].includes(String(row.final_label)) &&
         (row.final_risk === true || row.final_risk === false || row.final_risk === 0 || row.final_risk === 1) &&
         (row.title != null || row.description != null || row.sanitized_excerpt != null));
@@ -679,7 +688,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       if (!selectedProvider) { reply.code(409); return { ok: false, error: "所选模型不可用或配置已变更，请刷新模型列表" }; }
       const provider = selectedProvider.provider;
       // 固定本轮实际模型和来源，避免同一评测集混入不同模型或错误计入备用池用量。
-      const evaluationResolved = { ...resolved, provider, source: selectedProvider.source, fallbacks: [] };
+      const evaluationResolved = { ...resolved, provider, fallbacks: [] };
       const policy = await loadCrawlAiModerationPolicy(ctx);
       const predictions: Array<{ id: string; actual: "approve" | "reject" | "review"; actualRisk: boolean }> = [];
       const actualModels = new Set<string>();
@@ -689,6 +698,15 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
         const quota = await reserveLlmQuota(ctx, null, { source: selectedProvider.source, estimatedTokens: 1800 });
         if (!quota.ok) { quotaBlockedBody = replyQuotaBlocked(reply, quota.error); break; }
         try {
+          const completion: NonNullable<NonNullable<Parameters<typeof moderateSiteWithAi>[2]>["complete"]> =
+            async (_provider, request) => {
+              const result = await callLlm(ctx, evaluationResolved, {
+                scenario: "crawl_moderation_gold_eval", identity: evaluationId, messages: request.messages,
+                temperature: request.temperature, maxTokens: request.maxTokens, json: request.json,
+                thinking: false, signal: request.signal, deadlineAt: request.deadlineAt, fetchImpl: request.fetchImpl,
+              });
+              return { content: result.content, model: result.model };
+            };
           const decision = await moderateSiteWithAi(provider, {
             // 金标表不保存原始 URL；评测时使用固定脱敏占位 URL，不反查候选原始地址。
             url: "https://redacted.invalid/",
@@ -701,17 +719,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
           }, {
             autoApproveConfidence: policy.autoApproveConfidence, rejectConfidence: policy.rejectConfidence,
             minQualityScore: policy.minQualityScore, maxExcerptChars: policy.maxExcerptChars, requireHttps: policy.requireHttps,
-          }, {
-            deadlineAt: Date.now() + 45_000,
-            complete: async (_provider, request) => {
-              const result = await callLlm(ctx, evaluationResolved, {
-                scenario: "crawl_moderation_gold_eval", identity: evaluationId, messages: request.messages,
-                temperature: request.temperature, maxTokens: request.maxTokens, json: request.json,
-                thinking: false, signal: request.signal, deadlineAt: request.deadlineAt, fetchImpl: request.fetchImpl,
-              });
-              return { content: result.content, model: result.model };
-            },
-          });
+          }, { deadlineAt: Date.now() + 45_000, complete: completion });
           actualModels.add(decision.model);
           const prediction = moderationVerdictToPrediction(decision);
           predictions.push({ id: String(row.id), ...prediction });
@@ -770,7 +778,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     const total=Number(countRows[0]?.total??0);
     if(total===0){reply.code(409);return {ok:false,error:"尚无正式金标样本，暂不能进行模型评测"};}
     if(total>4999){reply.code(409);return {ok:false,error:"正式金标样本超过单次评测上限，请先建立分批评测集"};}
-    const goldRows=await listCrawlModerationGoldCases(ctx.repo,{status:"gold_ready",limit:5000,offset:0});
+    const goldRows=(await listCrawlModerationGoldCases(ctx.repo,{status:"gold_ready",limit:5000,offset:0})) as unknown as ModerationGoldEvaluationRow[];
     const gold=goldRows.filter(row=>
       ["approve","reject","review"].includes(String(row.final_label)) &&
       (row.final_risk===true||row.final_risk===false||row.final_risk===0||row.final_risk===1)

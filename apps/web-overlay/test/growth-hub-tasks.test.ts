@@ -72,8 +72,12 @@ function dayWithCounts(counts: GrowthDay['counts']): GrowthDay {
 
 const AI_IDS = new Set(['core-ai-find', 'core-search'])
 const DRAMA_IDS = new Set(['core-drama-progress', 'core-drama-new'])
-/** 已核实的站内真实路由（2026-11-21 逐个核实） */
-const REAL_ROUTES = new Set(['/', '/?scene=make-ppt', '/brief', '/hot', '/search', '/me/watchlist', '/category/duanju', '/submit'])
+/** 已核实的站内真实路由基准路径（允许带语义引导 query 参数，如 ?from=growth_task&...） */
+const REAL_PATHNAMES = new Set(['/', '/brief', '/hot', '/search', '/me/watchlist', '/category/duanju', '/submit'])
+function pathnameOf(href: string): string {
+  const q = href.indexOf('?')
+  return q === -1 ? href : href.slice(0, q)
+}
 /** 完成动作就在当前面板内、无需跳转的任务 */
 const NO_BUTTON_IDS = new Set(['s1', 'd6', 'd7'])
 
@@ -148,13 +152,15 @@ describe('一键直达映射完整性（task-actions）', () => {
     expect(taskAction('d3')).toBeUndefined()
   })
 
-  it('每个映射的 href 均为已核实的站内真实路由', () => {
+  it('每个映射的 href 均为已核实的站内真实路由（且携带 from=growth_task 语义上下文）', () => {
     for (const [_id, a] of Object.entries(TASK_ACTIONS)) {
-      expect(REAL_ROUTES.has(a.href)).toBe(true)
+      expect(REAL_PATHNAMES.has(pathnameOf(a.href))).toBe(true)
+      expect(a.href).toContain('from=growth_task')
       expect(a.cta.length).toBeGreaterThan(0)
     }
     for (const [_metric, a] of Object.entries(EVENT_METRIC_ACTIONS)) {
-      expect(REAL_ROUTES.has(a.href)).toBe(true)
+      expect(REAL_PATHNAMES.has(pathnameOf(a.href))).toBe(true)
+      expect(a.href).toContain('from=growth_task')
       expect(a.cta.length).toBeGreaterThan(0)
     }
   })
@@ -166,11 +172,11 @@ describe('一键直达映射完整性（task-actions）', () => {
   })
 })
 
-describe('展示层守卫（去抽卡感）', () => {
-  it('主界面无「挂机陪伴：前台浏览每分钟 +1 经验」大段文案', () => {
+describe('展示层守卫（去抽卡感 + 2026-11-21 UX 全面重构）', () => {
+  it('主界面无「挂机陪伴：前台浏览每分钟 +1 经验」大段文案，并配备无障碍专注浏览 Tooltip', () => {
     const s = overlayFile('src/components/user-center/growth-panel.tsx')
     expect(s).not.toContain('挂机陪伴：前台浏览每分钟 +1 经验')
-    expect(s).toContain('专注浏览自动累计经验')
+    expect(s).toContain('专注浏览换算规则')
   })
 
   it('宝箱概率规则已折叠进「? 规则说明」Popover，不再是 details 大段铺开', () => {
@@ -182,22 +188,31 @@ describe('展示层守卫（去抽卡感）', () => {
     expect(s).toContain('连开 3 个没出卡，第 4 个必出')
   })
 
-  it('新手一周为横向 7 天步骤条：仅当前天高亮展开，无 7 行长列表', () => {
+  it('新手一周为横向 7 天圆点步骤条 + 未完成时动态置顶在今天的三件事正上方', () => {
     const s = overlayFile('src/components/growth/growth-tasks.tsx')
-    expect(s).toContain('新手一周进度')
-    expect(s).toContain('第 {currentRookieTask.day} 天：今日目标')
+    expect(s).toContain('新手一周 7 天进度')
+    expect(s).toContain('data-rookie-section={isPinnedTop ? \'pinned-top\' : \'archived-bottom\'}')
+    expect(s).toContain('{pinRookieTop && renderRookieBanner(true)}')
     expect(s).not.toContain('sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4')
   })
 
-  it('成长面板导出 GrowthHubTab 别名（供「成长与任务」Tab 挂载）', () => {
+  it('成长面板导出 GrowthHubTab 别名（供「成长与任务」Tab 挂载）且二级 Tab 独立于档案大卡外部', () => {
     const s = overlayFile('src/components/user-center/growth-panel.tsx')
     expect(s).toContain('export const GrowthHubTab = GrowthPanel')
     expect(s).toContain('export function GrowthPanel')
+    expect(s).toContain('data-growth-profile-card="true"')
+    expect(s).toContain('data-growth-segmented-control="true"')
+    // 二级 Tab 必须在顶部档案大卡的 </section> 之外
+    const profileCloseIdx = s.indexOf('</section>', s.indexOf('data-growth-profile-card="true"'))
+    const tablistIdx = s.indexOf('data-growth-segmented-control="true"')
+    expect(profileCloseIdx).toBeGreaterThan(-1)
+    expect(tablistIdx).toBeGreaterThan(profileCloseIdx)
   })
 
-  it('每日三槽与本周/回归任务行均接了直达按钮', () => {
+  it('每日三槽仅第一条未完成项使用 Primary CTA，且本周/回归任务行均接了直达按钮', () => {
     const s = overlayFile('src/components/growth/growth-tasks.tsx')
-    expect(s).toContain('<TaskGoButton id={s.id} />')
+    expect(s).toContain('<TaskGoButton id={s.id} variant={isPrimaryAction ? \'primary\' : \'secondary\'} />')
     expect(s).toContain('action={taskAction(t.id)}')
+    expect(s).toContain('完成同一动作将自动同步推进今日、本周与新手多条进度')
   })
 })

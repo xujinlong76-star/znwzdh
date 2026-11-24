@@ -359,6 +359,7 @@
     /* 气泡：纯平极简胶囊（1px 细框，零毛玻璃零阴影），防压卡片透字互撞 */
     '#xiaomaomao .xm-bubble{position:absolute;right:-4px;bottom:calc(100% + 12px);width:max-content;max-width:224px;background:var(--xm-win-bg);-webkit-backdrop-filter:none;backdrop-filter:none;border:1px solid var(--xm-win-border);border-radius:12px;padding:7px 11px;min-height:38px;font-size:12.5px;font-weight:500;line-height:1.45;color:var(--xm-accent-deep);text-align:left;box-shadow:none;opacity:0;transition:opacity .18s var(--xm-ease);pointer-events:none;word-break:break-word;z-index:9}' +
     '#xiaomaomao .xm-bubble.xm-show{opacity:1;pointer-events:auto;cursor:pointer}' +
+    '#xiaomaomao .xm-bubble:empty,#xiaomaomao .xm-fish-n:empty,#xiaomaomao .xm-p-lv:empty{display:none !important}' +
     '#xiaomaomao.xm-avoid-fab .xm-bubble{right:calc(100% + 10px);bottom:14px;max-width:min(220px,calc(100vw - 120px))}' +
     /* 舞台与所有猫猫形象图保持纯透明零背景零光影，避免边缘发虚/像贴纸图片 */
     '#xiaomaomao .xm-wrap{position:relative;width:112px;height:112px}' +
@@ -1964,6 +1965,8 @@
        userTyping 为 false，不受影响。 */
     if (userTyping) return;
     hideControls(); /* v7：气泡与悬浮坞互斥——猫说话时坞先退场，不许两样东西一起围着猫 */
+    var safeText = typeof text === 'string' ? text.trim() : '';
+    if (!safeText) { hideBubble(); return; }
     if (root.classList.contains('xm-open')) return;
     lastBubbleAt = Date.now();
     if (typeof syncFabAvoid === 'function') syncFabAvoid();
@@ -1971,24 +1974,27 @@
     window.clearTimeout(bubbleHideTimer);
     window.clearInterval(typeTimer);
     bubbleEl.classList.add('xm-show');
-    if (reducedMotion || !text) {
-      bubbleEl.textContent = text || '';
+    if (reducedMotion) {
+      bubbleEl.textContent = safeText;
     } else {
-      bubbleEl.textContent = '';
-      var idx = 0;
-      typeTimer = window.setInterval(function () {
-        idx += 1;
-        bubbleEl.textContent = text.slice(0, idx);
-        if (idx >= text.length) window.clearInterval(typeTimer);
-      }, 26);
+      bubbleEl.textContent = safeText.slice(0, 1);
+      var idx = 1;
+      if (safeText.length > 1) {
+        typeTimer = window.setInterval(function () {
+          idx += 1;
+          bubbleEl.textContent = safeText.slice(0, idx);
+          if (idx >= safeText.length) window.clearInterval(typeTimer);
+        }, 26);
+      }
     }
-    if (speakIt) speak(text);
+    if (speakIt) speak(safeText);
     /* P1-1：单次气泡 4.5 秒消失（验收 ≤5 秒，计时起点即 showBubble 入口，含打字机动画余量） */
     bubbleHideTimer = window.setTimeout(hideBubble, 4500);
   }
   function hideBubble() {
     window.clearInterval(typeTimer);
     bubbleEl.classList.remove('xm-show');
+    bubbleEl.textContent = '';
   }
 
   /* c3001：开场招呼先量一下——气泡会大面积盖住正文卡片/可点元素时跳过本次自动招呼。
@@ -3548,7 +3554,7 @@
   function updateFishBtn() {
     rollFishDay();
     var left = Math.max(0, 5 - v4.fishCount);
-    fishNEl.textContent = left;
+    fishNEl.textContent = left > 0 ? String(left) : '';
     fishNEl.style.display = left > 0 ? 'block' : 'none';
     fishBtn.classList.toggle('xm-fish-out', left <= 0);
     fishBtn.title = left > 0 ? ('喂小猫猫吃小鱼干（今天还剩 ' + left + ' 条）') : '今天的小鱼干喂完啦，明天再来';

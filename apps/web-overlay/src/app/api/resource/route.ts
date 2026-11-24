@@ -9,6 +9,15 @@ import { uint8ArrayToBase64 } from '@/lib/buffer-utils'
 export const runtime = 'nodejs'
 
 const MAX_IMAGE_BASE64_LEN = 7 * 1024 * 1024 // ~5MB binary
+const SAFE_DATA_IMAGE_HEADER_RE = /^data:image\/(png|jpeg|jpg|gif|webp|x-icon|vnd\.microsoft\.icon|avif);base64$/i
+
+function isSafeImageBytes(bytes: Uint8Array): boolean {
+    if (bytes.length === 0) return false
+    const headText = new TextDecoder('utf-8', { fatal: false })
+        .decode(bytes.subarray(0, Math.min(bytes.length, 256)))
+        .trimStart()
+    return !/^<\s*(\?xml|!doctype|svg|html|script)/i.test(headText)
+}
 
 function sanitizeRepoPathSegment(input: unknown, fallback: string): string {
     if (typeof input !== 'string') return fallback
@@ -57,14 +66,20 @@ export async function POST(request: Request) {
         if (typeof image !== 'string' || !image.includes(',')) {
             return NextResponse.json({ error: '无效的图片数据格式' }, { status: 400 });
         }
-        const base64Data = image.split(",")[1] || '';
+        const [dataHeader = '', base64Data = ''] = image.split(',', 2);
+        if (!SAFE_DATA_IMAGE_HEADER_RE.test(dataHeader.trim())) {
+            return NextResponse.json({ error: '仅支持上传 PNG/JPEG/GIF/WebP/ICO/AVIF 位图格式（禁止 SVG）' }, { status: 415 });
+        }
         if (!base64Data || base64Data.length > MAX_IMAGE_BASE64_LEN) {
             return NextResponse.json({ error: '图片内容为空或超出 5MB 大小限制' }, { status: 413 });
         }
 
         const safeFolder = sanitizeRepoPathSegment(folder, 'assets');
         const safePrefix = sanitizeFilePrefix(prefix, 'img');
-        const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+        const binaryData = new Uint8Array(Buffer.from(base64Data, 'base64'));
+        if (!isSafeImageBytes(binaryData)) {
+            return NextResponse.json({ error: '检测到非法文本或 SVG/HTML 负载，已拒绝上传' }, { status: 415 });
+        }
 
         const token = authCheck.githubToken || process.env.GITHUB_PAT || '';
         if (!token) {

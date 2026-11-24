@@ -77,7 +77,7 @@ describe("generateSecureUuid：始终合法 v4，永不回退 Math.random", () =
     // 注入只有 getRandomValues 的源（模拟老浏览器），覆盖回退分支
     const source: SecureRandomSource = {
       getRandomValues<T extends ArrayBufferView>(array: T): T {
-        return globalThis.crypto.getRandomValues(array);
+        return globalThis.crypto.getRandomValues(array as unknown as Uint8Array) as unknown as T;
       },
     };
     for (let i = 0; i < 20; i++) {
@@ -98,7 +98,7 @@ describe("generateSecureUuid：始终合法 v4，永不回退 Math.random", () =
   it("回退分支的 y 位只取 8/9/a/b（变体位正确）", () => {
     const source: SecureRandomSource = {
       getRandomValues<T extends ArrayBufferView>(array: T): T {
-        return globalThis.crypto.getRandomValues(array);
+        return globalThis.crypto.getRandomValues(array as unknown as Uint8Array) as unknown as T;
       },
     };
     for (let i = 0; i < 50; i++) {

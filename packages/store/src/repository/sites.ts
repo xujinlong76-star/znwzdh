@@ -455,7 +455,25 @@ export async function getSite(repo: Repository, idOrUrl: string): Promise<Site |
     repo.selectSitesSql() + " WHERE s.url = ? AND s.deleted_at IS NULL LIMIT 1",
     [idOrUrl],
   );
-  return byUrl[0] ? rowToSite(byUrl[0]) : null;
+  if (byUrl[0]) return rowToSite(byUrl[0]);
+  // 重复站点合并后的旧 siteId 别名兜底：避免老收藏/外链 /site/{oldId} 变成 404
+  try {
+    const aliasRows = await repo.raw(
+      "SELECT canonical_site_id FROM site_id_aliases WHERE old_site_id = ? LIMIT 1",
+      [idOrUrl],
+    );
+    const canonicalId = aliasRows[0] ? String((aliasRows[0] as Record<string, unknown>).canonical_site_id ?? "") : "";
+    if (canonicalId && canonicalId !== idOrUrl) {
+      const resolved = await repo.raw(
+        repo.selectSitesSql() + " WHERE s.id = ? AND s.deleted_at IS NULL LIMIT 1",
+        [canonicalId],
+      );
+      if (resolved[0]) return rowToSite(resolved[0]);
+    }
+  } catch {
+    // 尚未执行去重脚本建表时静默跳过，零侵入
+  }
+  return null;
 }
 
 export async function getDeletedSite(repo: Repository, id: string): Promise<Site | null> {

@@ -293,29 +293,35 @@ function isDangerousUriAttrValue(rawVal: string): boolean {
 }
 
 /**
- * 严格清洗离线快照 HTML（防范 <svg onload>, 实体编码伪协议, srcdoc, 孤立未闭合 <script 等 XSS 向量）
+ * 严格清洗离线快照 HTML（防范 <svg onload>, 紧贴引号/斜杠分隔的無空格属性 <img/onerror=...>,
+ * 嵌套标签重组 <scr<script></script>ipt>, 实体编码伪协议, srcdoc, 孤立未闭合 <script 等 XSS 向量）
  */
 export function sanitizeSnapshotHtml(raw: string): string {
-  return raw
-    // 1. 移除 HTML 注释
-    .replace(/<!--[\s\S]*?-->/g, "")
-    // 2. 移除高危成对标签及其内部全部内容
-    .replace(/<(script|style|iframe|frame|frameset|object|embed|applet|form|svg|math|template|noscript|textarea|audio|video)\b[\s\S]*?<\/\1\s*>/gi, "")
-    // 3. 兜底移除任何残留的同名开/闭标签或自闭合危险标签（防未闭合 <script src=...> 等绕过）
-    .replace(/<\/?\s*(script|style|iframe|frame|frameset|object|embed|applet|form|svg|math|template|noscript|textarea|audio|video|source|track|base|meta|link|input|button|select|option)\b[^>]*>/gi, "")
-    // 4. 移除所有内联事件处理器属性（on* = "..." / '...' / `...` / 无引号值）
-    .replace(/\s+on[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|`[^`]*`|[^\s>"'`]+)/gi, "")
-    // 5. 移除 srcdoc / formaction 等可直接注入代码或跳转的属性
-    .replace(/\s+(?:srcdoc|formaction|xlink:href)\s*=\s*(?:"[^"]*"|'[^']*'|`[^`]*`|[^\s>"'`]+)/gi, "")
-    // 6. 清洗 href / src / action / data 属性中的危险伪协议（含 HTML 实体混淆）
-    .replace(
-      /\b(href|src|action|data)\s*=\s*("[^"]*"|'[^']*'|`[^`]*`|[^\s>"'`]+)/gi,
-      (full, attrName: string, rawVal: string) => {
-        if (isDangerousUriAttrValue(rawVal)) {
-          return attrName.toLowerCase() === "href" ? 'href="#"' : `${attrName}=""`;
+  let current = raw;
+  for (let pass = 0; pass < 4; pass++) {
+    const next = current
+      // 1. 移除 HTML 注释
+      .replace(/<!--[\s\S]*?-->/g, "")
+      // 2. 移除高危成对标签及其内部全部内容
+      .replace(/<(script|style|iframe|frame|frameset|object|embed|applet|form|svg|math|template|noscript|textarea|audio|video)\b[\s\S]*?<\/\1\s*>/gi, "")
+      // 3. 兜底移除任何残留的同名开/闭标签或自闭合危险标签（防未闭合 <script src=...> 等绕过）
+      .replace(/<\/?\s*(script|style|iframe|frame|frameset|object|embed|applet|form|svg|math|template|noscript|textarea|audio|video|source|track|base|meta|link|input|button|select|option)\b[^>]*>/gi, "")
+      // 4. 移除所有内联事件处理器属性（涵盖空格、斜杠 <img/onerror=...> 及紧邻前一个引号 "a"onerror=... 的无空格注入）
+      .replace(/(?:[\s/]+|(?<=["'`]))on[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|`[^`]*`|[^\s>"'`]+)/gi, " ")
+      // 5. 移除 srcdoc / formaction / xlink:href 等可直接注入代码或跳转的属性
+      .replace(/(?:[\s/]+|(?<=["'`]))(?:srcdoc|formaction|xlink:href)\s*=\s*(?:"[^"]*"|'[^']*'|`[^`]*`|[^\s>"'`]+)/gi, " ")
+      // 6. 清洗 href / src / action / data 属性中的危险伪协议（含 HTML 实体混淆）
+      .replace(
+        /\b(href|src|action|data)\s*=\s*("[^"]*"|'[^']*'|`[^`]*`|[^\s>"'`]+)/gi,
+        (full, attrName: string, rawVal: string) => {
+          if (isDangerousUriAttrValue(rawVal)) {
+            return attrName.toLowerCase() === "href" ? 'href="#"' : `${attrName}=""`;
+          }
+          return full;
         }
-        return full;
-      }
-    )
-    .trim();
+      );
+    if (next === current) break;
+    current = next;
+  }
+  return current.trim();
 }

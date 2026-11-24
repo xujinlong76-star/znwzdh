@@ -315,7 +315,9 @@ export function isAlwaysBlockedIp(ip: string): boolean {
     if (/^fe[89ab]/.test(lower)) return true;
     // IPv4 映射地址：剥出内嵌 IPv4 再判
     const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
-    if (mapped) return isAlwaysBlockedIp(mapped[1]);
+    // 捕获组 1 在匹配成功时恒非空；noUncheckedIndexedAccess 下仍标 string|undefined，
+    // ?? '' 仅消除类型告警——空串进 isAlwaysBlockedIp 走 v!==4/v!==6 分支返回 false，安全。
+    if (mapped) return isAlwaysBlockedIp(mapped[1] ?? "");
     return false;
   }
   return false;

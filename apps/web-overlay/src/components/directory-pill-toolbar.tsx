@@ -123,6 +123,7 @@ export function DirectoryPillToolbar({
         <li key={link.id}>
           <Link
             href={`/category/${encodeURIComponent(link.slug)}`}
+            prefetch={false}
             data-dir-pill=""
             tabIndex={index === activeIndex ? 0 : -1}
             onFocus={() => setActiveIndex(index)}

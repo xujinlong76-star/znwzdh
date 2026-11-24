@@ -151,7 +151,7 @@ export function StarredPluginsSectionView({
   )
 }
 
-export function StarredPluginsSection() {
+export function StarredPluginsSection({ onCountChange }: { onCountChange?: (total: number) => void } = {}) {
   const [snapshot, setSnapshot] = useState<StarredPluginsSnapshot>({ status: 'loading' })
   const [reloadToken, setReloadToken] = useState(0)
 
@@ -169,8 +169,10 @@ export function StarredPluginsSection() {
       failed = true
       return { items: [], total: 0 }
     })
-    setSnapshot(applyStarredPluginsLoad(res, failed))
-  }, [])
+    const next = applyStarredPluginsLoad(res, failed)
+    setSnapshot(next)
+    if (next.status === 'ready') onCountChange?.(next.total)
+  }, [onCountChange])
 
   useEffect(() => {
     void load()

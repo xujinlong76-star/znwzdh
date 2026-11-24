@@ -259,12 +259,12 @@ export function CategoryIndexFilterableList({
                                   {leaf.title}
                                 </span>
                                 {leaf.description ? (
-                                  <span className="block text-[11px] text-muted-foreground/80 truncate mt-0.5 font-normal">
+                                  <span className="block text-[11px] text-muted-foreground truncate mt-0.5 font-normal">
                                     {leaf.description}
                                   </span>
                                 ) : null}
                               </span>
-                              <span className="text-xs font-mono font-medium text-muted-foreground/70 bg-muted/60 px-2 py-0.5 rounded-md border border-border/40 shrink-0">
+                              <span className="text-xs font-mono font-medium text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-md border border-border/40 shrink-0">
                                 {leaf.count}
                               </span>
                             </Link>

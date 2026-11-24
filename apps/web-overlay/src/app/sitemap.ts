@@ -25,7 +25,7 @@ import {
  * 与上一版的三处差异：
  * 1. 站点必须带 `status=active` —— 不带时会返回 1020 条（含 7 条 broken），
  *    等于主动把 7 个软 404 提交给搜索引擎；
- * 2. 标签走 `/api/tags` 的 `count` 并按 `MIN_SITES_FOR_TAG_INDEX` 过滤——count 是
+ * 2. 标签走 `/api/tags` 的 `count` 并按 `MIN_SITES_FOR_TAG_INDEX`（3）过滤——count 是
  *    **存活站点数**（2026-10-21 修了 listTagsWithCounts 的软删除计数污染后，
  *    数量随数据集浮动：当前 dev 库只有「大模型」1 条达标；站点集恢复后分层
  *    自动回填，无写死名单）；

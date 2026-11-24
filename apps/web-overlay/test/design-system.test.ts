@@ -47,10 +47,15 @@ describe("EmptyState 样板组件", () => {
 describe("已迁移页面：/favorites", () => {
   const src = () => overlayFile("src/app/favorites/page.tsx");
 
-  it("两个空态都改用 EmptyState", () => {
+  it("真空态用 FavoritesQuickStartEmpty，筛空分支仍用 EmptyState", () => {
     const s = src();
+    // 0 收藏破冰已升级为三卡快速起步，不再复用通用空态组件
+    expect(s).toContain("FavoritesQuickStartEmpty");
+    expect(s).toContain("<FavoritesQuickStartEmpty");
+    // 筛选无结果（收藏还在）仍走 EmptyState，不许并进真空态
     expect(s).toContain("import { EmptyState } from '@/components/ui/empty-state'");
-    expect(s.split("<EmptyState").length - 1).toBe(2);
+    expect(s.split("<EmptyState").length - 1).toBe(1);
+    expect(s).toContain("favoriteFilterEmptyMessage");
   });
 
   it("旧的手写空态结构已移除，且没有未配对暗色的满色度 emerald", () => {

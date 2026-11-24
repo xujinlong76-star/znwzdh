@@ -17,9 +17,16 @@ export async function GET(req: NextRequest) {
     const { bytes } = await readBodyLimited(response, MAX_FAVICON_BYTES)
     // 不放行 svg+xml：与 media-proxy 同口径，避免同源代理成为脚本型图片投递面
     const rawType = (response.headers.get('content-type') || 'image/png').split(';')[0].trim().toLowerCase()
-    const contentType = /^image\/(png|jpeg|gif|webp|x-icon|vnd\.microsoft\.icon)$/.test(rawType) ? rawType : 'image/png'
+    if (!/^image\/(png|jpeg|gif|webp|x-icon|vnd\.microsoft\.icon|avif)$/.test(rawType)) {
+      return NextResponse.json({ error: '上游图标类型不受支持' }, { status: 502 })
+    }
     return new NextResponse(new Uint8Array(bytes), {
-      headers: { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=86400' },
+      headers: {
+        'Content-Type': rawType,
+        'Cache-Control': 'public, max-age=86400',
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+        'X-Content-Type-Options': 'nosniff',
+      },
     })
   } catch (error) {
     if (error instanceof SsrfBlockedError) return NextResponse.json({ error: '目标地址不被允许' }, { status: 403 })

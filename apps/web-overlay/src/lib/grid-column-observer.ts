@@ -50,6 +50,49 @@ function readGapPx(el: HTMLDivElement): number {
   return 14
 }
 
+/**
+ * 从 `getComputedStyle(el).gridTemplateColumns` 精确解析真实列数。
+ *
+ * 根因修复：当分类区块位于视口外且挂了 `.cv-auto-section`（`content-visibility: auto`）时，
+ * Chromium 跳过子树布局，`gridTemplateColumns` 返回未展开的原始模板字符串
+ * `"repeat(5, minmax(0px, 1fr))"` 而非解析后的像素序列 `"218px 218px ..."`。
+ * 旧实现 `template.split(' ').filter(Boolean).length` 会把 3 个空格分词误判为 3 列
+ *（在 3 行模式下把 5 列算成 9 条，滚动进视口展开像素后又变成 15 条，造成跨大类密度分裂）。
+ * 本解析器优先识别 `repeat(N, ...)`，再按括号层级统计顶层轨道数，视口内外恒一致。
+ */
+export function parseGridTemplateColumnCount(template: string | null | undefined): number {
+  const raw = (template || '').trim()
+  if (!raw || raw === 'none') return 0
+
+  const repeatMatch = /^repeat\(\s*(\d+)\s*,/i.exec(raw)
+  if (repeatMatch) {
+    const n = Number(repeatMatch[1])
+    return Number.isFinite(n) && n > 0 ? n : 0
+  }
+
+  let depth = 0
+  let count = 0
+  let inToken = false
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]!
+    if (ch === '(') {
+      depth++
+      if (!inToken) {
+        inToken = true
+        count++
+      }
+    } else if (ch === ')') {
+      depth = Math.max(0, depth - 1)
+    } else if (/\s/.test(ch)) {
+      if (depth === 0) inToken = false
+    } else if (!inToken) {
+      inToken = true
+      count++
+    }
+  }
+  return count
+}
+
 function syncOne(rec: GridRecord, entry?: ResizeObserverEntry): void {
   const { el } = rec
   // className 可能随模块拖窄在 auto-fill 与固定列数之间切换，每次重判，不缓存。
@@ -60,7 +103,7 @@ function syncOne(rec: GridRecord, entry?: ResizeObserverEntry): void {
       entry?.contentBoxSize?.[0]?.inlineSize ?? entry?.contentRect?.width ?? el.clientWidth
     cols = columnsForWidth(width, rec.gapPx)
   } else {
-    cols = getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length
+    cols = parseGridTemplateColumnCount(getComputedStyle(el).gridTemplateColumns)
   }
   if (cols > 0) el.dataset.gridCols = String(cols)
 }
@@ -85,6 +128,17 @@ function ensureDensityWatcher(): void {
     }
   })
   densityWatcher.observe(document.documentElement, { attributes: true, attributeFilter: ['data-density'] })
+}
+
+/**
+ * 网格 className 因卡片展示模式切换而改变时，容器宽度不变（ResizeObserver 不触发），
+ * 需主动重算一次所有已观测网格的真实列数，确保预览行数与列数实时对齐、零孤儿行。
+ */
+export function resyncAllObservedGrids(): void {
+  for (const rec of observed.values()) {
+    rec.gapPx = readGapPx(rec.el)
+    syncOne(rec)
+  }
 }
 
 /**

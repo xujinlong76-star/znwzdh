@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import { hubGetProbe } from '@/lib/server/hub'
 import { hubGet } from '@/lib/server/hub'
 import { safeDecodeParam } from '@/lib/server/route-params'
@@ -237,7 +237,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   if (!safeId) notFound()
   if (probe.status === 'miss') notFound()
 
-  const canonical = `/site/${encodeURIComponent(safeId)}`
+  const canonical = `/site/${encodeURIComponent(probe.status === 'ok' && probe.data.id ? probe.data.id : safeId)}`
   if (probe.status === 'failed') {
     // 降级：不编造站点名，保留通用标题与 canonical。
     //
@@ -294,6 +294,9 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
   const { safeId, probe } = await loadSite(id)
   if (!safeId) notFound()
   if (probe.status === 'miss') notFound()
+  if (probe.status === 'ok' && probe.data.id && probe.data.id !== safeId) {
+    permanentRedirect(`/site/${encodeURIComponent(probe.data.id)}`)
+  }
 
   const site = probe.status === 'ok' ? probe.data : null
   const context = site

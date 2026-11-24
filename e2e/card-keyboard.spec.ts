@@ -53,6 +53,11 @@ test.describe('站点卡片：单一 Tab 入口与方向键操作区', () => {
       undefined,
       { timeout: 60_000 },
     );
+    await page.waitForFunction(
+      () => !!document.getElementById('navhub-card-keyboard-hint'),
+      undefined,
+      { timeout: 60_000 },
+    );
 
     /**
      * 从「第一张卡的上一个可聚焦元素」按一次 Tab 到达卡片主链接。

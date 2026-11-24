@@ -5,7 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { StorageDeleteInput, StorageWriteInput } from "@navhub/core";
-import { deleteAssetDoc, listAssetDocs, readStoragePath, readStorageVersion, writeStoragePath, StorageVersionConflictError, VideoShrinkError, NavigationShrinkError } from "../storage.ts";
+import { deleteAssetDoc, isNavigationShardDocName, listAssetDocs, readStoragePath, readStorageVersion, writeStoragePath, StorageVersionConflictError, VideoShrinkError, NavigationShrinkError } from "../storage.ts";
 import { canSeeUnpublishedSites } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
@@ -47,10 +47,15 @@ export const navsphereRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
     {
       config: { scope: "read", cache: { maxAge: 0, etag: true } },
       preHandler: async (req, reply) => {
-        // Zero-Cost 304 预拦截短路：针对 navigation.json 检查客户端 If-None-Match
+        // Zero-Cost 304 预拦截短路：针对 navigation.json 及导航分片检查客户端 If-None-Match
         const q = (req.query ?? {}) as Record<string, string>;
         const p = String(q.path ?? "");
-        if (p !== "src/navsphere/content/navigation.json" && p !== "navigation.json") {
+        const base = p.split("/").pop() ?? p;
+        if (
+          p !== "src/navsphere/content/navigation.json" &&
+          p !== "navigation.json" &&
+          !isNavigationShardDocName(base)
+        ) {
           return;
         }
         const clientEtag = req.headers["if-none-match"];
@@ -70,9 +75,13 @@ export const navsphereRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
       const q = (req.query ?? {}) as Record<string, string>;
       const path = String(q.path ?? "");
       if (!path) { reply.code(400); return { error: "缺少 path 参数" }; }
-      // 只有 navigation.json 的 ETag 认版本号，其余文档不该为它付一次点查；
+      const base = path.split("/").pop() ?? path;
+      // navigation.json 与导航分片（index / cat）共用同一份 data_version ETag，
       // 读到的版本顺手交给 readStoragePath 复用，命中路径只剩这一次点查。
-      const isNavPath = path === "src/navsphere/content/navigation.json" || path === "navigation.json";
+      const isNavPath =
+        path === "src/navsphere/content/navigation.json" ||
+        path === "navigation.json" ||
+        isNavigationShardDocName(base);
       const currentVersion = isNavPath ? await ctx.repo.readNavDataVersion() : null;
       if (currentVersion !== null && isNavPath) {
         reply.header("etag", `W/"v${currentVersion}"`);

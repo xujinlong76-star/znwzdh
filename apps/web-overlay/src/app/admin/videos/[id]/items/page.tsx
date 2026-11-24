@@ -669,7 +669,7 @@ export default function VideoItemsPage() {
                                             </span>
                                         )}
                                         {item.videoConfig?.tags && item.videoConfig.tags.length > 0 && (
-                                            <span className="text-[10px] text-muted-foreground/80 font-mono">
+                                            <span className="text-[10px] text-muted-foreground font-mono">
                                                 [{item.videoConfig.tags.slice(0, 3).join(', ')}]
                                             </span>
                                         )}
@@ -729,7 +729,7 @@ export default function VideoItemsPage() {
                 </div>
             ) : (
                 <div className="text-center py-16 border rounded-xl border-dashed bg-card/50">
-                    <Icons.video className="h-8 w-8 mx-auto text-muted-foreground/60 mb-2" />
+                    <Icons.video className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
                     <h3 className="text-sm font-semibold text-foreground">没有找到匹配的视频条目</h3>
                     <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
                         {searchQuery ? "请尝试更改搜索词或重置筛选条件" : "该分类下暂无视频条目，点击上方「添加视频」开始收录。"}

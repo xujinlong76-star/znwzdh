@@ -735,22 +735,70 @@ export async function writeNavigationData(
   // 源数据已经落库，读路径靠 sourceVersion 校验发现分片缺失/不一致时自动
   // 回落整包读。派生源是提交后重建的 public 快照（不是本次提交的输入文档：
   // 输入可能含停用站，public 投影才是首页真实读到的内容）。
-  try {
-    const version = await ctx.repo.readNavDataVersion();
-    if (version !== null) {
-      invalidateSnapshotCache();
+  await ensureNavigationShardsFresh(ctx, { forceRebuildSnapshot: true });
+  return result;
+}
+
+let inFlightNavShardsPromise: Promise<boolean> | null = null;
+
+/**
+ * 确保导航分片（navigation-index.json + navigation-cat-*.json）已派生且版本与当前 data_version 对齐。
+ *
+ * 触发时机：
+ *  1. writeNavigationData 提交后；
+ *  2. 服务启动预热（main.ts）；
+ *  3. readStoragePath 读分片发现缺失或 sourceVersion 落后于 data_version 时惰性自愈
+ *     （覆盖 seed、/api/sites 单站增删改、dedupe-sites.mjs 批量去重等不经 writeNavigationData 的写路径）。
+ *
+ * 空库保护：当 public 快照中无任何一级分类（如 E2E 空库）时不派生空索引，
+ * 保持返回 null 以便前端按既有约定回退构建期基线。
+ */
+export async function ensureNavigationShardsFresh(
+  ctx: AppContext,
+  opts: { knownVersion?: number | null; forceRebuildSnapshot?: boolean } = {},
+): Promise<boolean> {
+  if (opts.forceRebuildSnapshot) {
+    invalidateSnapshotCache();
+  }
+  if (inFlightNavShardsPromise) {
+    return inFlightNavShardsPromise;
+  }
+  inFlightNavShardsPromise = (async () => {
+    try {
+      const version = opts.knownVersion === undefined ? await ctx.repo.readNavDataVersion() : opts.knownVersion;
+      if (version === null) {
+        console.warn("[navigation] 分片派生跳过：data_version 取不到（读路径将回落整包读）");
+        return false;
+      }
+      const existingIndex = (await readKv(ctx, pathToKey("src/navsphere/content/navigation-index.json"))) as {
+        kind?: unknown;
+        sourceVersion?: unknown;
+      } | null;
+      if (
+        !opts.forceRebuildSnapshot &&
+        existingIndex &&
+        existingIndex.kind === "navhub-navigation-index" &&
+        existingIndex.sourceVersion === version
+      ) {
+        return true;
+      }
       const publicDoc = await readNavigationSnapshot(ctx, "public", version);
+      if (!Array.isArray(publicDoc?.navigationItems) || publicDoc.navigationItems.length === 0) {
+        return false;
+      }
       const derived = deriveNavigationShards(publicDoc, version);
       for (const w of derived.writes) {
         await writeKv(ctx, pathToKey(w.path), w.data);
       }
-    } else {
-      console.warn("[navigation] 分片派生跳过：data_version 取不到（读路径将回落整包读）");
+      return true;
+    } catch (err) {
+      console.error("[navigation] 分片派生失败（读路径将回落整包读）:", err);
+      return false;
     }
-  } catch (err) {
-    console.error("[navigation] 分片派生失败（读路径将回落整包读）:", err);
-  }
-  return result;
+  })().finally(() => {
+    inFlightNavShardsPromise = null;
+  });
+  return inFlightNavShardsPromise;
 }
 
 type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
@@ -1489,6 +1537,10 @@ export function pathToKey(path: string): string {
   return "doc:" + path.replace(/^\/+/, "");
 }
 
+export function isNavigationShardDocName(name: string): boolean {
+  return name === "navigation-index.json" || /^navigation-cat-.+\.json$/.test(name);
+}
+
 /**
  * 分发：把 NavSphere 的 path 映射到上面的处理函数。
  *
@@ -1509,6 +1561,18 @@ export async function readStoragePath(
   if (name === "site.json") return readSiteConfig(ctx);
   if (name === "resource-metadata.json") return readResourceMetadata(ctx);
   if (name === "videos.json") return readVideosData(ctx);
+  if (isNavigationShardDocName(name)) {
+    const version = opts.navVersion === undefined ? await ctx.repo.readNavDataVersion() : opts.navVersion;
+    const existing = (await readKv(ctx, pathToKey(path))) as { sourceVersion?: unknown } | null;
+    if (existing && typeof existing === "object" && version !== null && existing.sourceVersion === version) {
+      return existing;
+    }
+    const healed = await ensureNavigationShardsFresh(ctx, { knownVersion: version });
+    if (healed) {
+      return readKv(ctx, pathToKey(path));
+    }
+    return existing;
+  }
   // 其余内容文件走通用 JSON 文档。从未写入过时返回 null（与"保存了空对象"区分开），
   // 由调用方决定是静默回退还是告警。
   return readKv(ctx, pathToKey(path));

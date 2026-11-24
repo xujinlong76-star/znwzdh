@@ -869,7 +869,7 @@ export function SiteDetailView({
                 <span>信息有误</span>
               </Button>
             </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground/80 font-mono">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
               {(site.visitCount ?? 0) > 0 && (
                 <>
                   <Activity className="w-3.5 h-3.5 text-muted-foreground" />
@@ -1226,7 +1226,7 @@ export function SiteDetailView({
                   </div>
 
                   {alt.note && (
-                    <p className="text-xs text-muted-foreground/90 bg-muted/30 p-2 rounded-lg border border-border/40">
+                    <p className="text-xs text-muted-foreground bg-muted/30 p-2 rounded-lg border border-border/40">
                       💡 {alt.note}
                     </p>
                   )}
@@ -1543,7 +1543,7 @@ export function SiteDetailView({
         {/* 关联技术视频频道一键联动 */}
         <section aria-label="相关精选技术视频" className="rounded-2xl border border-blue-500/25 bg-blue-500/5 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0">
               <MonitorPlay className="w-5 h-5" />
             </div>
             <div className="min-w-0">

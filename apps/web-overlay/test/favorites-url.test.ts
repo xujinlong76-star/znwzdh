@@ -30,20 +30,27 @@ describe("收藏筛选 URL 往返", () => {
   });
 
   it("三个条件都能往返", () => {
-    const filters = { q: "react 教程", folder: "folder-1", sort: "title" as const };
+    const filters = { q: "react 教程", folder: "folder-1", sort: "title" as const, view: "sites" as const };
     const parsed = parseFavoritesFilters(buildFavoritesSearch(filters));
     expect(parsed).toEqual(filters);
   });
 
   it("sort=recent 能往返", () => {
-    const filters = { q: "", folder: "all", sort: "recent" as const };
+    const filters = { q: "", folder: "all", sort: "recent" as const, view: "sites" as const };
     expect(parseFavoritesFilters(buildFavoritesSearch(filters))).toEqual(filters);
     expect(buildFavoritesSearch(filters)).toBe("?sort=recent");
   });
 
+  it("view 非默认值落参数，非法值回退 sites", () => {
+    expect(buildFavoritesSearch({ ...FAVORITES_DEFAULT_FILTERS, view: "plugins" })).toBe("?view=plugins");
+    expect(parseFavoritesFilters("?view=public").view).toBe("public");
+    expect(parseFavoritesFilters("?view=whatever").view).toBe("sites");
+    expect(parseFavoritesFilters("").view).toBe("sites");
+  });
+
   it("超长关键词截断到 100，空白关键词不落参数", () => {
     expect(parseFavoritesFilters("?q=" + "a".repeat(150)).q).toHaveLength(100);
-    expect(buildFavoritesSearch({ q: "   ", folder: "all", sort: "created" })).toBe("");
+    expect(buildFavoritesSearch({ q: "   ", folder: "all", sort: "created", view: "sites" })).toBe("");
   });
 
   it("非法排序回退 created，folder=all 视为默认", () => {

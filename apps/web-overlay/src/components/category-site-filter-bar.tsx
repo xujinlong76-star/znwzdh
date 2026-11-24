@@ -212,7 +212,7 @@ export function CategorySiteFilterBar({
             <span
               className={cn(
                 'text-[10px] font-mono',
-                selectedSubcategoryId === null ? 'text-primary-foreground/80' : 'text-muted-foreground/60',
+                selectedSubcategoryId === null ? 'text-primary-foreground/80' : 'text-muted-foreground',
               )}
             >
               {totalCount}
@@ -236,7 +236,7 @@ export function CategorySiteFilterBar({
                 <span
                   className={cn(
                     'text-[10px] font-mono',
-                    isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground/60',
+                    isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground',
                   )}
                 >
                   {sub.count}
@@ -270,7 +270,7 @@ export function CategorySiteFilterBar({
                 )}
               >
                 <span>#{tag}</span>
-                <span className={cn('text-[10px] font-mono', isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground/60')}>
+                <span className={cn('text-[10px] font-mono', isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground')}>
                   {count}
                 </span>
               </button>

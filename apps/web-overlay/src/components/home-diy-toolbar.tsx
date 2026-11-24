@@ -31,6 +31,11 @@ import {
 } from '@/registry/new-york/ui/dropdown-menu'
 import { Input } from '@/registry/new-york/ui/input'
 import { useHomeDIY, setHomeDiyPreview, type AccentColor } from '@/lib/modular/use-home-diy'
+import {
+  CARD_DISPLAY_MODE_OPTIONS,
+  getCardDisplayModeMeta,
+  normalizeCardDisplayMode,
+} from '@/lib/modular/card-display-modes'
 import { resetAllModuleWindowSizes } from '@/lib/modular/module-resize-store'
 import { HomeDIYBackupDialog } from '@/components/home-diy-backup-dialog'
 import { HomeDiyShareConfirmDialog } from '@/components/diy/home-diy-share-confirm-dialog'
@@ -537,26 +542,30 @@ export function HomeDIYToolbar({
                   <CreditCard className="w-3.5 h-3.5 text-blue-500" />
                   <span className="hidden sm:inline">形态:</span>
                   <span className="font-semibold">
-                    {cardDisplayMode === 'minimal' || (cardDisplayMode as any) === 'mini-chip' ? '胶囊' : cardDisplayMode === 'compact' ? '紧凑' : cardDisplayMode === 'rich' ? '深度' : '标准'}
+                    {getCardDisplayModeMeta(cardDisplayMode).shortLabel}
                   </span>
                   <ChevronDown className="w-3 h-3 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48 p-1.5">
-                <DropdownMenuLabel className="text-xs text-muted-foreground">全局卡片形态</DropdownMenuLabel>
+              <DropdownMenuContent align="start" className="w-56 p-1.5">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">全局网址展示风格（7 种）</DropdownMenuLabel>
                 <DropdownMenuSeparator className="my-1" />
-                <DropdownMenuItem onClick={() => setCardDisplayMode('standard')} className={cn('min-h-11 text-xs flex items-center justify-between cursor-pointer', cardDisplayMode === 'standard' && 'font-bold text-primary')}>
-                  <span>标准图文 (均衡两行)</span>{cardDisplayMode === 'standard' && <Check className="w-3.5 h-3.5" />}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setCardDisplayMode('compact')} className={cn('min-h-11 text-xs flex items-center justify-between cursor-pointer', cardDisplayMode === 'compact' && 'font-bold text-primary')}>
-                  <span>紧凑条形 (单行简介)</span>{cardDisplayMode === 'compact' && <Check className="w-3.5 h-3.5" />}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setCardDisplayMode('minimal')} className={cn('min-h-11 text-xs flex items-center justify-between cursor-pointer', (cardDisplayMode === 'minimal' || (cardDisplayMode as any) === 'mini-chip') && 'font-bold text-primary')}>
-                  <span>⚡ 极速胶囊 (Mini Chip 零截断)</span>{(cardDisplayMode === 'minimal' || (cardDisplayMode as any) === 'mini-chip') && <Check className="w-3.5 h-3.5" />}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setCardDisplayMode('rich')} className={cn('min-h-11 text-xs flex items-center justify-between cursor-pointer', cardDisplayMode === 'rich' && 'font-bold text-primary')}>
-                  <span>深度丰富 (大图文光晕)</span>{cardDisplayMode === 'rich' && <Check className="w-3.5 h-3.5" />}
-                </DropdownMenuItem>
+                {CARD_DISPLAY_MODE_OPTIONS.map((opt) => {
+                  const active = normalizeCardDisplayMode(cardDisplayMode) === opt.id
+                  return (
+                    <DropdownMenuItem
+                      key={opt.id}
+                      onClick={() => setCardDisplayMode(opt.id)}
+                      className={cn(
+                        'min-h-10 text-xs flex items-center justify-between cursor-pointer gap-2',
+                        active && 'font-bold text-primary',
+                      )}
+                    >
+                      <span className="truncate">{opt.label} ({opt.badge})</span>
+                      {active && <Check className="w-3.5 h-3.5 shrink-0" />}
+                    </DropdownMenuItem>
+                  )
+                })}
               </DropdownMenuContent>
             </DropdownMenu>
 

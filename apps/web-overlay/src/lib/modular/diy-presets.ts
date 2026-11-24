@@ -1,6 +1,7 @@
 /**
  * 首页次世代 DIY 可视化排版与分类编排纯算法 (Web 客户端运行时)
  */
+import { VALID_CARD_DISPLAY_MODES, type CardDisplayMode } from './card-display-modes'
 
 export interface CategoryLayoutOptions {
   categoryOrder?: string[]
@@ -337,7 +338,7 @@ export function evaluateLayoutErgonomics<
  */
 export interface DIYConfigPayload {
   viewMode?: 'hybrid' | 'classic' | 'workbench'
-  cardDisplayMode?: 'compact' | 'standard' | 'rich'
+  cardDisplayMode?: CardDisplayMode
   canvasBackground?: 'mesh' | 'dots' | 'grid' | 'aurora' | 'clean'
   accentColor?: string
   heroDeckCollapsed?: boolean
@@ -504,7 +505,7 @@ export interface DIYPreset {
   icon: string
   config: {
     viewMode: 'hybrid' | 'classic' | 'workbench'
-    cardDisplayMode: 'compact' | 'standard' | 'rich' | 'minimal' | 'mini-chip'
+    cardDisplayMode: CardDisplayMode
     canvasBackground: 'mesh' | 'dots' | 'grid' | 'aurora' | 'clean'
     density: 'dense' | 'comfortable' | 'spacious'
     heroDeckCollapsed: boolean
@@ -805,7 +806,7 @@ export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
   }
 
   const validViewModes = ['hybrid', 'classic', 'workbench']
-  const validCardModes = ['compact', 'standard', 'rich', 'minimal', 'mini-chip']
+  const validCardModes: readonly string[] = VALID_CARD_DISPLAY_MODES
   const validCanvasBgs = ['mesh', 'dots', 'grid', 'aurora', 'clean']
 
   // 枚举回退不是「丢条目」，但用户选的模式被换掉了，同样得说
@@ -1075,7 +1076,7 @@ export function expandAllCategories(): string[] {
  */
 export interface DiyShortcutMatch {
   density?: 'dense' | 'comfortable' | 'spacious'
-  cardDisplayMode?: 'compact' | 'standard' | 'rich' | 'minimal'
+  cardDisplayMode?: CardDisplayMode
   canvasBackground?: 'mesh' | 'dots' | 'grid' | 'aurora' | 'clean'
   /** 命中类目聚焦意图时，要隐藏的类目 id（没命中时为 undefined） */
   hiddenCategoryIds?: string[]
@@ -1105,13 +1106,22 @@ export function parseDiyShortcut(
   if (q.includes('胶囊') || q.includes('mini')) {
     match.cardDisplayMode = 'minimal'
     feedback.push('极速胶囊')
+  } else if (q.includes('图标') || q.includes('启动台') || q.includes('桌面')) {
+    match.cardDisplayMode = 'icon-wall'
+    feedback.push('图标启动台')
+  } else if (q.includes('清单') || q.includes('列表') || q.includes('list')) {
+    match.cardDisplayMode = 'list'
+    feedback.push('极客清单')
+  } else if (q.includes('目录') || q.includes('书签') || q.includes('文本')) {
+    match.cardDisplayMode = 'directory'
+    feedback.push('书签目录')
   } else if (q.includes('紧凑')) {
     match.cardDisplayMode = 'compact'
     feedback.push('紧凑条形')
   } else if (q.includes('标准')) {
     match.cardDisplayMode = 'standard'
     feedback.push('标准图文')
-  } else if (q.includes('丰富') || q.includes('深度')) {
+  } else if (q.includes('丰富') || q.includes('深度') || q.includes('画廊')) {
     match.cardDisplayMode = 'rich'
     feedback.push('深度大卡')
   }

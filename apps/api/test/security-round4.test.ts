@@ -142,13 +142,16 @@ describe("第四轮安全与逻辑缺陷守卫", () => {
     expect(resRedisPort.statusCode).toBe(400);
   });
 
-  it("sanitizeSnapshotHtml 拦截 SVG onload、HTML 实体混淆伪协议与未闭合 script 注入", () => {
+  it("sanitizeSnapshotHtml 拦截 SVG onload、无空格/斜杠分隔事件属性、嵌套标签重组、HTML 实体混淆伪协议与未闭合 script 注入", () => {
     const dirty = [
       '<p>正文段落</p>',
       '<svg onload="alert(1)"><circle r="10"/></svg>',
       '<a href="&#106;avascript:alert(document.cookie)">伪协议链接</a>',
       '<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">Data链接</a>',
       '<img src="x" onerror=`alert(1)` />',
+      '<img/src="x"/onerror="alert(2)" />',
+      '<div title="safe"onmouseover="alert(3)"onclick="alert(4)">悬停测试</div>',
+      '<scr<script>evil()</script>ipt>alert(5)</script>',
       '<script src="https://evil.example/xss.js">',
     ].join("\n");
     const cleaned = sanitizeSnapshotHtml(dirty);
@@ -156,6 +159,8 @@ describe("第四轮安全与逻辑缺陷守卫", () => {
     expect(cleaned).not.toContain("<svg");
     expect(cleaned).not.toContain("onload");
     expect(cleaned).not.toContain("onerror");
+    expect(cleaned).not.toContain("onmouseover");
+    expect(cleaned).not.toContain("onclick");
     expect(cleaned).not.toContain("<script");
     expect(cleaned).not.toContain("&#106;avascript:");
     expect(cleaned).not.toContain("data:text/html");

@@ -13,39 +13,51 @@
 
 export type FavoritesSort = 'created' | 'title' | 'recent';
 
+/**
+ * 工作区视图（?view=）：站点收藏 / 星标插件 / 我的批注 / 公开导航页。
+ * 我的批注是独立页面（/me/annotations），这里保留其值以兼容直达链接的回读。
+ */
+export type FavoritesView = 'sites' | 'plugins' | 'annotations' | 'public';
+
 export interface FavoritesFilters {
   q: string;
   folder: string;
   sort: FavoritesSort;
+  view: FavoritesView;
 }
 
 export const FAVORITES_DEFAULT_FILTERS: FavoritesFilters = {
   q: '',
   folder: 'all',
   sort: 'created',
+  view: 'sites',
 };
 
 const MAX_Q = 100;
+const VIEWS: readonly FavoritesView[] = ['sites', 'plugins', 'annotations', 'public'];
 
 export function parseFavoritesFilters(search: string): FavoritesFilters {
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
   const rawQ = params.get('q') ?? '';
   const rawFolder = params.get('folder') ?? '';
   const rawSort = params.get('sort');
+  const rawView = params.get('view');
   return {
     q: rawQ.slice(0, MAX_Q),
     folder: rawFolder && rawFolder !== 'all' ? rawFolder.slice(0, 128) : 'all',
     sort: rawSort === 'title' ? 'title' : rawSort === 'recent' ? 'recent' : 'created',
+    view: VIEWS.includes(rawView as FavoritesView) ? (rawView as FavoritesView) : 'sites',
   };
 }
 
-export function buildFavoritesSearch(filters: FavoritesFilters): string {
+export function buildFavoritesSearch(filters: Omit<FavoritesFilters, 'view'> & { view?: FavoritesView }): string {
   const params = new URLSearchParams();
   const q = filters.q.trim().slice(0, MAX_Q);
   if (q) params.set('q', q);
   if (filters.folder && filters.folder !== 'all') params.set('folder', filters.folder);
   if (filters.sort === 'title') params.set('sort', 'title');
   if (filters.sort === 'recent') params.set('sort', 'recent');
+  if (filters.view && filters.view !== 'sites') params.set('view', filters.view);
   const s = params.toString();
   return s ? `?${s}` : '';
 }

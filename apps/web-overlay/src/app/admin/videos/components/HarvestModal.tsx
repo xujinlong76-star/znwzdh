@@ -325,7 +325,7 @@ export function HarvestModal({
                               </span>
                             )}
                             {item.item.videoConfig?.tags && item.item.videoConfig.tags.length > 0 && (
-                              <span className="text-muted-foreground/80">
+                              <span className="text-muted-foreground">
                                 [{item.item.videoConfig.tags.slice(0, 3).join(', ')}]
                               </span>
                             )}

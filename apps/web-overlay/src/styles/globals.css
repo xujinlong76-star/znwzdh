@@ -964,19 +964,8 @@
   color: hsl(var(--muted-foreground));
 }
 
-/* 折叠态网格的孤儿卡片（2026-11-09 实测，2026-11-21 默认 4 -> 6 改写）。
-   默认每组 6 张卡：6 列 / 3 列 / 2 列 / 1 列都恰好整行（1/2/3 行）；4 列
-   会变成 4+2、5 列会变成 5+1。列数由 ResizeObserver 写成 data-grid-cols，
-   不硬编码断点——侧栏宽度可拖拽，视口宽度推不出真实列数。data-grid-folded
-   由 React 按「该组是否真的被截断」标注：展开/筛选/选中子分类时全量卡片
-   照常显示，不会被误藏。 */
-[data-nav-grid][data-grid-folded][data-grid-cols="4"] > [data-navhub-site-id]:nth-child(5),
-[data-nav-grid][data-grid-folded][data-grid-cols="4"] > [data-navhub-site-id]:nth-child(6) {
-  display: none;
-}
-[data-nav-grid][data-grid-folded][data-grid-cols="5"] > [data-navhub-site-id]:nth-child(6) {
-  display: none;
-}
+/* 折叠态整行对齐已由数据层 previewCountForColumns(gridCols, previewRows) 精准切片，
+   不再通过 CSS nth-child 强制 display:none（避免 4/5 列 2~3 行多展示模式误藏第 5、6 张卡片）。 */
 
 /* 首屏防闪烁（Anti-FOUC）：在 React 水合前通过 html[data-pruned] 提前隐藏用户已删减的 L1/L4 全局模块 */
 html[data-pruned~="mod:workspace-bar"] [data-feature-id="mod:workspace-bar"],

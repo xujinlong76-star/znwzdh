@@ -128,13 +128,13 @@ const WIZARD_STEPS: Array<{ step: WizardStep; title: string; hint: string }> = [
 
 const VERDICT_META: Record<DedupVerdict, { label: string; className: string }> = {
   new: { label: '新增', className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/25' },
-  'exists-local': { label: '已在收藏夹', className: 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-300 border-zinc-500/25' },
+  'exists-local': { label: '已在收藏夹', className: 'bg-zinc-500/10 text-zinc-700 dark:text-zinc-300 border-zinc-500/25' },
   'exists-public': { label: '已在公共库', className: 'bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/25' },
   'intra-file-dup': { label: '文件内重复', className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/25' },
   'title-conflict': { label: '标题冲突', className: 'bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-500/25' },
   'folder-conflict': { label: '文件夹冲突', className: 'bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-500/25' },
   'private-blocked': { label: '隐私拦截', className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/25' },
-  invalid: { label: '无效', className: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/25' },
+  invalid: { label: '无效', className: 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/25' },
 }
 
 interface ImportResult {
@@ -1431,7 +1431,7 @@ export function BookmarkImporter({
               <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 font-medium">
                 <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />纯前端本地解析
               </span>
-              <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-medium">启发式自动归类</span>
+              <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-500/20 font-medium">启发式自动归类</span>
               <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-muted/60 text-muted-foreground border border-border/50 font-medium">
                 <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />零外泄隐私保护
               </span>
@@ -1616,7 +1616,7 @@ export function BookmarkImporter({
               />
               <label htmlFor="bookmark-file-input" id="dropzone-title"
                 className="flex flex-col items-center gap-2 text-center cursor-pointer rounded-xl p-2 peer-focus-visible:ring-2 peer-focus-visible:ring-primary">
-                <span className="w-11 h-11 rounded-xl bg-indigo-500/10 dark:bg-indigo-500/20 border border-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                <span className="w-11 h-11 rounded-xl bg-indigo-500/10 dark:bg-indigo-500/20 border border-indigo-500/20 flex items-center justify-center text-indigo-700 dark:text-indigo-400">
                   <FileUp className="w-5 h-5" aria-hidden="true" />
                 </span>
                 <span className="text-sm font-semibold text-foreground">{sourceKind === 'social' ? '点击选择或拖拽社交导出文件至此' : '点击选择或拖拽书签文件至此'}</span>
@@ -1684,7 +1684,7 @@ export function BookmarkImporter({
           )}
 
           {error && (
-            <div role="alert" className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center gap-2.5">
+            <div role="alert" className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400 text-xs flex items-center gap-2.5">
               <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" /><span>{error}</span>
             </div>
           )}
@@ -2101,7 +2101,7 @@ export function BookmarkImporter({
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/80 text-muted-foreground border border-border/50">{CONFIDENCE_META[b.confidence]}</span>
                           {b.folder && <span className="text-[10px] text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded truncate max-w-[8rem]">{b.folder}</span>}
                         </div>
-                        <p className="text-[11px] text-muted-foreground/80 truncate font-mono" title={b.originalUrl}>{b.url}</p>
+                        <p className="text-[11px] text-muted-foreground truncate font-mono" title={b.originalUrl}>{b.url}</p>
                         {(b.privacyReason || b.tags.length > 0) && (
                           <p className="text-[10px] text-muted-foreground leading-snug">
                             {b.privacyReason ? `${b.privacyReason}，仅限个人收藏` : ''}

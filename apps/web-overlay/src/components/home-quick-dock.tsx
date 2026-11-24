@@ -184,7 +184,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
         id="quick-access-tray"
         data-speed-dial="true"
         aria-label="高频直达与常用访问"
-        className="mb-1 flex h-12 items-center gap-2 rounded-xl border border-border/60 bg-card/75 px-3 backdrop-blur-xs"
+        className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-border/60 bg-card/75 px-3 py-2 backdrop-blur-xs sm:h-12 sm:flex-nowrap sm:py-0"
       >
         {/* 首屏瘦身：单行 48px（h-12）——左紧凑 tab + 中间横向滚动胶囊区 +
             右「展开全部」。胶囊区已接入 HorizontalScrollFade 横向滚动渐隐
@@ -237,7 +237,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
           </div>
 
         <HorizontalScrollFade
-          className="min-w-0 flex-1"
+          className="order-3 w-full basis-full min-w-0 sm:order-none sm:w-auto sm:basis-auto sm:flex-1"
           scrollClassName="flex items-center gap-1.5"
           ariaLabel="高频直达站点列表"
           prevAriaLabel="向左滚动直达站点"
@@ -279,7 +279,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
         <button
           type="button"
           onClick={() => setAllDialogOpen(true)}
-          className="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+          className="ml-auto inline-flex h-7 shrink-0 items-center gap-0.5 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer sm:ml-0"
         >
           <span>展开全部</span>
           <ChevronRight className="h-3.5 w-3.5" />

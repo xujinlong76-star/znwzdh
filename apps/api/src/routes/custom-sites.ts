@@ -19,7 +19,18 @@ const urlField = z
   .trim()
   .min(1)
   .max(1000)
-  .refine((v) => /^https?:\/\//i.test(v), { message: "只支持 http(s):// 地址" });
+  .refine(
+    (v) => {
+      if (/[\u0000-\u001f\u007f]/.test(v) || !/^https?:\/\//i.test(v)) return false;
+      try {
+        const u = new URL(v);
+        return (u.protocol === "http:" || u.protocol === "https:") && !u.username && !u.password && Boolean(u.hostname);
+      } catch {
+        return false;
+      }
+    },
+    { message: "只支持合法的 http(s):// 地址（不含凭据或控制字符）" },
+  );
 
 const createInput = z.object({
   title: z.string().trim().min(1).max(80),

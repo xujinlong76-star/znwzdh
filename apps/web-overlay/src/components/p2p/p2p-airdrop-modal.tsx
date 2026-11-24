@@ -452,7 +452,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
                 <h3 id="navhub-p2p-airdrop-modal-title" className="font-semibold text-base text-zinc-900 dark:text-zinc-100">
                   NavDrop 跨标签页快传
                 </h3>
-                <Badge variant="outline" className="text-[10px] bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/30">
+                <Badge variant="outline" className="text-[10px] bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-500/30">
                   同浏览器直连
                 </Badge>
               </div>
@@ -484,7 +484,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
             }`}
           >
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0">
                 <Laptop className="w-4 h-4" />
               </div>
               <div className="min-w-0">

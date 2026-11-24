@@ -17,7 +17,11 @@ export const metadata: Metadata = {
 
 export default function MeGrowthPage() {
   return (
-    <Container as="main" id="main-content" className="space-y-4 pb-20 pt-3 sm:space-y-5 sm:pb-14 sm:pt-4">
+    <Container
+      as="main"
+      id="main-content"
+      className="space-y-4 pb-28 pt-3 sm:space-y-5 sm:pb-24 sm:pt-4 md:pr-20 lg:pr-20 xl:pr-12"
+    >
       <GrowthPanelLazy />
     </Container>
   )

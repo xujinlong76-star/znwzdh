@@ -34,7 +34,6 @@ import {
 } from '@/registry/new-york/ui/dropdown-menu'
 import { WORKSPACES, type WorkspaceId } from '@/lib/workspaces'
 import {
-  collectDramaContextSectionIds,
   dramaExposureAllowed,
   isDramaContextCategory,
 } from '@/lib/modular/workspace-presets'
@@ -133,9 +132,7 @@ export function HomeCapsuleRow({
    * 只有影音/短剧分类上下文或 DIY 显式开启才放行。
    */
   const diyOptIn = useDramaHotlistOptIn()
-  const dramaContextIds = collectDramaContextSectionIds([])
   const inDramaCategoryContext =
-    dramaContextIds.size > 0 ||
     isDramaContextCategory(String(activeWorkspace ?? '')) ||
     activeWorkspace === 'short-drama'
   const showDrama =

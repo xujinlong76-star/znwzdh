@@ -24,6 +24,7 @@ import {
 } from '@/lib/modular/layout-sync'
 import { encodeVersionedShareLink, type ShareLinkOutcome } from '@/lib/diy-share-link'
 import { createCustomSiteId } from '@/lib/modular/custom-site-input'
+import type { CanonicalCardDisplayMode } from './card-display-modes'
 import {
   DEFAULT_CONFIG,
   applyRemoteHomeDiyConfig,
@@ -35,6 +36,7 @@ import {
   flushHomeDiyDiskWrites,
   getEffectiveSlotClocks,
   getHomeDiySnapshot,
+  getServerHomeDiySnapshot,
   hydrateHomeDiy,
   redoHomeDiy,
   resolveDiyDataAccent,
@@ -142,11 +144,13 @@ export interface BatchRemoveReceipt {
    */
   failedCount: number
 }
-export function useHomeDIY() {
+export function useHomeDIY(initialCardDisplayMode?: CanonicalCardDisplayMode) {
   const { config, history, isEditingLayout, storageWarning, pendingShare } = useSyncExternalStore(
     subscribeHomeDiy,
     getHomeDiySnapshot,
-    getHomeDiySnapshot,
+    // SSR/hydration 首帧必须钉死默认值；客户端快照可能已被 hydrateHomeDiy()
+    // 从 localStorage 落位（HMR/软导航下甚至早于 hydration render）。
+    getServerHomeDiySnapshot,
   )
   const [mounted, setMounted] = useState(false)
 
@@ -154,9 +158,9 @@ export function useHomeDIY() {
   //    只让第一个挂载的组件去读：共享状态只有一份，后挂载的组件
   //    （例如切到 hybrid 才动态加载的 HomeHeroDeck）再读一遍会把撤销栈冲掉。
   useEffect(() => {
-    hydrateHomeDiy()
+    hydrateHomeDiy(initialCardDisplayMode)
     setMounted(true)
-  }, [])
+  }, [initialCardDisplayMode])
 
   // 2. 动态同步强调色到文档根元素属性
   // 皮肤 accent 优先（resolveDiyDataAccent）：当前有带 accent 的插件皮肤

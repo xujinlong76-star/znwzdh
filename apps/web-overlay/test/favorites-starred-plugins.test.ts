@@ -154,7 +154,10 @@ describe('/favorites 接线守卫', () => {
   it('收藏页挂了星标分区（import + 渲染），入口常量就是星标列表地址', () => {
     const page = read('src/app/favorites/page.tsx')
     expect(page).toContain('StarredPluginsSection')
-    expect(page).toContain('<StarredPluginsSection />')
+    // 2026-11-21：星标分区改由「星标插件」Tab 承接（activeView === 'plugins'），
+    // 带 onCountChange 回传计数给 Tab 角标，不再是首屏常驻裸标签
+    expect(page).toContain('<StarredPluginsSection')
+    expect(page).toContain("activeView === 'plugins'")
     expect(existsSync(join(ROOT, 'src/app/favorites/starred-plugins-section.tsx'))).toBe(true)
     expect(STARRED_PLUGINS_HREF).toBe('/marketplace?starred=1')
     expect(STARRED_PLUGINS_LIMIT).toBeGreaterThan(0)

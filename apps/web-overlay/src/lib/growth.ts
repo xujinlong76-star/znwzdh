@@ -206,6 +206,119 @@ export const LEVELS: LevelDef[] = [
   { level: 16, title: '导航守护神猫', xp: 16000 },
 ]
 
+export interface LevelUnlockHint {
+  /** 副标题单句精炼回报钩子 */
+  summary: string
+  /** 下一级里程碑预告卡中展示的具体 1–2 项权益/彩蛋 */
+  perks: readonly string[]
+  /** 形态徽标表情/视觉图标提示 */
+  previewIcon: string
+  /** 形态阶段短标签 */
+  stageTag: string
+}
+
+/**
+ * 等级升级回报与里程碑预告映射（Lv.2–Lv.16）：
+ * 只用于前端价值驱动展示与下一级预告卡，不改变任何 XP 门槛或结算规则。
+ */
+export const LEVEL_UNLOCK_HINTS: Readonly<Record<number, LevelUnlockHint>> = {
+  2: {
+    summary: '解锁首个小猫配饰槽位与 20 小鱼干',
+    perks: ['解锁首个小猫配饰槽位', '赠 20 小鱼干与「好奇小猫」专属头衔'],
+    previewIcon: '🐱',
+    stageTag: '猫爪二阶',
+  },
+  3: {
+    summary: '解锁探索者主题色徽标与新互动动作',
+    perks: ['解锁「探险小猫」头衔与猫爪三阶印记', '开启小猫互动彩蛋动作'],
+    previewIcon: '🧭',
+    stageTag: '猫爪三阶',
+  },
+  4: {
+    summary: '点亮满星猫爪阶段，解锁铃铛收集挂饰',
+    perks: ['猫爪阶段全 4 枚印记圆满点亮', '解锁铃铛收藏家专属挂饰'],
+    previewIcon: '🔔',
+    stageTag: '猫爪圆满',
+  },
+  5: {
+    summary: '晋升铃铛阶段，解锁夜行捕手深色徽章框',
+    perks: ['晋升「铃铛阶段」全新等阶图标', '解锁夜行捕手头衔与深色档案光晕'],
+    previewIcon: '🌙',
+    stageTag: '铃铛一阶',
+  },
+  6: {
+    summary: '解锁云端漫游者头衔与专属主题配饰',
+    perks: ['解锁「云端漫游猫」头衔', '点亮第 2 枚铃铛等阶印记'],
+    previewIcon: '☁️',
+    stageTag: '铃铛二阶',
+  },
+  7: {
+    summary: '解锁星空领航徽记，逼近冻结卡扩容门槛',
+    perks: ['解锁「星空领航猫」头衔', '下一级即可扩容冻结卡口袋至 3 张'],
+    previewIcon: '✨',
+    stageTag: '铃铛三阶',
+  },
+  8: {
+    summary: '冻结卡库存上限扩至 3 张，解锁传说大猫猫',
+    perks: ['冻结卡口袋上限永久扩容至 3 张', '解锁初代经典满阶「传说大猫猫」头衔'],
+    previewIcon: '🏆',
+    stageTag: '铃铛圆满',
+  },
+  9: {
+    summary: '晋升鱼干阶段，开启高阶深水漫游序列',
+    perks: ['晋升「鱼干阶段」全新金色徽记', '解锁「浅滩试水猫」专属称号'],
+    previewIcon: '🐟',
+    stageTag: '鱼干一阶',
+  },
+  10: {
+    summary: '解锁鱼干品鉴师头衔与高阶鱼干配饰',
+    perks: ['解锁「鱼干品鉴师」专属头衔', '点亮第 2 枚鱼干等阶印记'],
+    previewIcon: '🍱',
+    stageTag: '鱼干二阶',
+  },
+  11: {
+    summary: '解锁深海垂钓猫头衔与三阶鱼干印记',
+    perks: ['解锁「深海垂钓猫」称号', '点亮第 3 枚鱼干等阶印记'],
+    previewIcon: '🎣',
+    stageTag: '鱼干三阶',
+  },
+  12: {
+    summary: '鱼干阶段圆满，解锁月光守夜猫头衔',
+    perks: ['鱼干阶段 4 枚印记全部点亮', '解锁「月光守夜猫」称号'],
+    previewIcon: '🌕',
+    stageTag: '鱼干圆满',
+  },
+  13: {
+    summary: '晋升最高猫冠阶段，解锁云端长老头衔',
+    perks: ['晋升至终极「猫冠阶段」', '解锁「云端长老猫」荣誉称号'],
+    previewIcon: '👑',
+    stageTag: '猫冠一阶',
+  },
+  14: {
+    summary: '解锁星图绘制者头衔与双冠印记',
+    perks: ['解锁「星图绘制者」称号', '点亮第 2 枚猫冠印记'],
+    previewIcon: '🌌',
+    stageTag: '猫冠二阶',
+  },
+  15: {
+    summary: '解锁银河放牧猫头衔，迈向终极守护神',
+    perks: ['解锁「银河放牧猫」荣誉称号', '距终极殿堂仅一步之遥'],
+    previewIcon: '🌠',
+    stageTag: '猫冠三阶',
+  },
+  16: {
+    summary: '登顶「导航守护神猫」终极殿堂头衔',
+    perks: ['点亮全部 4 枚满阶猫冠印记', '解锁终极殿堂「导航守护神猫」称号'],
+    previewIcon: '🌟',
+    stageTag: '终极满阶',
+  },
+}
+
+export function levelUnlockHint(level: number | null): LevelUnlockHint | null {
+  if (level === null) return null
+  return LEVEL_UNLOCK_HINTS[level] ?? null
+}
+
 /* ---------------- 档案结构（v2） ---------------- */
 
 export type DayState = 'lit' | 'frozen' | 'rest' | 'rescued'

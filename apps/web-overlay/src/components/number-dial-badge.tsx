@@ -15,18 +15,24 @@ import type { ReactElement } from 'react'
 export function NumberDialBadge({
   digit,
   className,
+  inline = false,
 }: {
   /** 数字键 1~9（坞映射位）或 1~0（自定义快拨位，由调用方决定传什么） */
   digit?: number | string | null
-  /** 定位：调用方传 absolute 偏移（如 -bottom-1 -right-1），父级须是 relative */
+  /** 定位：非 inline 时调用方传 absolute 偏移（如 -bottom-1 -right-1），父级须是 relative */
   className?: string
+  /** 行内小图标模式（书签目录 / 极速胶囊 / 极客清单）使用流内芯片，绝不遮挡 18–24px 图标或压字 */
+  inline?: boolean
 }): ReactElement | null {
   if (digit === undefined || digit === null || digit === '') return null
   return (
     <kbd
       aria-hidden="true"
       className={cn(
-        'pointer-events-none absolute hidden h-4 w-4 items-center justify-center rounded border border-border bg-background/95 text-[10px] font-mono font-bold leading-none text-foreground shadow-xs sm:inline-flex',
+        'pointer-events-none hidden h-4 w-4 items-center justify-center rounded border border-border/90 bg-background text-[10px] font-mono font-bold leading-none text-foreground shadow-xs sm:inline-flex',
+        inline
+          ? 'relative shrink-0'
+          : 'absolute z-20 ring-2 ring-background dark:ring-card',
         className,
       )}
     >

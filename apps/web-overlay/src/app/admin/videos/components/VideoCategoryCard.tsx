@@ -189,7 +189,7 @@ export function VideoCategoryCard({
                                 "text-[11px] h-5 px-2 font-medium",
                                 (item.enabled ?? true)
                                     ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20 hover:bg-emerald-500/20"
-                                    : "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 border-zinc-500/20"
+                                    : "bg-zinc-500/10 text-zinc-700 dark:text-zinc-400 border-zinc-500/20"
                             )}
                         >
                             {(item.enabled ?? true) ? "已启用" : "已禁用"}
@@ -342,7 +342,7 @@ export function VideoCategoryCard({
                                 aria-label="删除分类"
                                 title="删除分类"
                                 onClick={() => setIsDeleteDialogOpen(true)}
-                                className="h-8.5 w-8.5 text-destructive-text hover:text-destructive-text hover:bg-destructive/10"
+                                className="h-8.5 w-8.5 text-destructive-text hover:text-destructive-text hover:bg-destructive/15"
                             >
                                 <Trash className="h-4 w-4" />
                             </Button>

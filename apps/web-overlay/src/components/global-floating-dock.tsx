@@ -55,8 +55,8 @@ export function GlobalFloatingDock({ children }: GlobalFloatingDockProps) {
   return (
     <div
       data-testid="global-floating-dock"
-      // 底部安全区：max(16px, env(safe-area-inset-bottom)) 兼容 iOS 刘海
-      className="pointer-events-none fixed bottom-[max(16px,env(safe-area-inset-bottom))] right-4 z-40 flex flex-col items-end gap-2"
+      // 移动端抬高至底部导航栏（~64px）之上，防止「回到顶部」与小猫挂件压住「我的」Tab；桌面端沿用安全区底距
+      className="pointer-events-none fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] right-3 z-40 flex flex-col items-end gap-2 md:bottom-[max(16px,env(safe-area-inset-bottom))] md:right-4"
     >
       {/* 挂件槽位：pointer-events-auto 让挂件可点，外壳本身不拦事件 */}
       {children ? <div className="pointer-events-auto">{children}</div> : null}

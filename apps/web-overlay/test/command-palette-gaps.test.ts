@@ -37,16 +37,22 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
 const SUFFIX = '（按 / 快速搜索）'
 
-/** 5 处显式 placeholder 挂载点（/hot 于 2026-11-21 移除全站搜索框，避免双搜索框冲突）。 */
+/** 4 处内页显式 placeholder 挂载点（/hot 于 2026-11-21 移除全站搜索框；首页顶栏于 2026-11-22 改为独立 `<kbd>/</kbd>` 徽标避免中窄屏 placeholder 被 [AI] 按钮劈断）。 */
 const EXPLICIT_PLACEHOLDER_PAGES = [
-  'src/components/navigation-toolbar.tsx',
   'src/app/category/[slug]/category-board.tsx',
   'src/app/collections/[slug]/collection-detail-view.tsx',
   'src/components/tag-results-board.tsx',
   'src/app/not-found.tsx',
 ]
 
-describe('命令面板缺口 ①：placeholder 必须提示“按 / 快速搜索”', () => {
+describe('命令面板缺口 ①：placeholder 与 `/` 快捷键提示完整可达', () => {
+  it('首页顶栏搜索框使用精简 placeholder，`/` 快捷键改由 SearchPalette 内独立 <kbd>/</kbd> 徽标提示（防中窄屏被 [AI] 劈断）', () => {
+    const toolbar = read('src/components/navigation-toolbar.tsx')
+    expect(toolbar).toContain('placeholder="搜索站点、标签或拼音…"')
+    const palette = read('src/components/search-palette.tsx')
+    expect(palette).toContain('title="按 / 快速搜索"')
+    expect(palette).toContain('xl:inline-flex pointer-coarse:hidden')
+  })
 it('/hot 已移除全站搜索框（2026-11-21），改由 / 快捷键 + 文字链提供出口', () => {
   const src = read('src/app/hot/hot-view.tsx')
   expect(src).not.toContain('<SearchPalette')
@@ -113,8 +119,9 @@ describe('命令面板缺口 ②（退役）：FloatingQuickNav 已移除，三�
   it('搜索可达：顶栏仍有搜索框，超级搜索改走 ⌘⇧K / / 呼出（⌘K 改为聚焦顶栏）', () => {
     const toolbar = read('src/components/navigation-toolbar.tsx')
     expect(toolbar).toContain('SearchPalette')
-    expect(toolbar).toContain('按 / 快速搜索')
+    expect(toolbar).toContain('placeholder="搜索站点、标签或拼音…"')
     const palette = read('src/components/search-palette.tsx')
+    expect(palette).toContain('title="按 / 快速搜索"')
     expect(palette).toContain('spotlightHotkeyHint')
     // 2026-11-20 搜索快捷键分流（William 点名）：⌘K 不再开超级搜索弹窗，
     // 改为聚焦顶栏搜索框；超级搜索改由 ⌘⇧K / / 呼出。网守与弹窗都要接新判据。

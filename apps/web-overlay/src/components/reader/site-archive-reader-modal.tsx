@@ -206,7 +206,7 @@ export function SiteArchiveReaderModal({
         {/* 顶部工具栏 */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-inherit bg-black/5 dark:bg-white/5 backdrop-blur-md">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0">
+            <div className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 shrink-0">
               <BookOpen className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div className="min-w-0">

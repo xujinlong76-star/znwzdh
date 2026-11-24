@@ -164,12 +164,13 @@ describe("源码守卫：筛选真的接在页面上，且两种「空」不混�
 
   it("「收藏是空的」与「筛选没命中」必须是两个不同的分支和文案", () => {
     const src = overlaySource("src/app/favorites/page.tsx");
-    // 真正的空（E2E 未覆盖，保留文案守卫）：引导用户去收藏。
-    // 文案住在共享 copy（src/lib/empty-states.ts）里，页面只渲染它——守卫跟到
-    //  canonical 处断言，仍锁死同一句文案，不因重构而丢。
-    expect(src).toContain("FAVORITES_EMPTY_COPY.title");
-    const copy = overlaySource("src/lib/empty-states.ts");
-    expect(copy).toContain("还没有收藏任何站点");
+    // 真正的空（0 收藏破冰空态）：三选一快速起步卡片组（导入/探索/手动新建），
+    // 用户可在当前页完成第一次有效行动，不必抬头找按钮。
+    expect(src).toContain("FavoritesQuickStartEmpty");
+    const quickstart = overlaySource("src/components/user-center/favorites-quickstart.tsx");
+    expect(quickstart).toContain("quickstart-import");
+    expect(quickstart).toContain("quickstart-explore");
+    expect(quickstart).toContain("quickstart-manual");
     // 筛选/收藏夹未命中：必须走独立分支，而不是复用全量空态
     expect(src).toContain("visibleFavorites.length === 0 ? (");
     expect(src).toContain("favoriteFilterEmptyMessage(favoriteQuery)");

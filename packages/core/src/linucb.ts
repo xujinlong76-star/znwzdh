@@ -415,11 +415,11 @@ export function computePinyinLikelihood(raw: string): number {
       const isInitial = !isSyllable && L === 1 && PINYIN_INITIALS.has(seg)
       if (!isSyllable && !isInitial) continue
       const gain = isSyllable ? L * L : 1
-      const score = dp[i] + gain
-      if (score > dp[i + L]) {
+      const score = dp[i]! + gain
+      if (score > dp[i + L]!) {
         dp[i + L] = score
         prev[i + L] = i
-        pure[i + L] = pure[i] && isSyllable
+        pure[i + L] = pure[i]! && isSyllable
       }
     }
   }
@@ -427,9 +427,9 @@ export function computePinyinLikelihood(raw: string): number {
   if (dp[n] !== NEG) {
     let syllables = 0
     let allSyllable = true
-    for (let cur = n; cur > 0; cur = prev[cur]) {
+    for (let cur = n; cur > 0; cur = prev[cur]!) {
       syllables++
-      const seg = q.slice(prev[cur] < 0 ? 0 : prev[cur], cur)
+      const seg = q.slice(prev[cur]! < 0 ? 0 : prev[cur]!, cur)
       if (!PINYIN_SYLLABLES.has(seg)) allSyllable = false
     }
     // 含声母碎片（如 qdjb）→ 走简拼档；纯音节 → 按平均音节长度给分
@@ -459,7 +459,7 @@ function isAllPinyinInitials(q: string): boolean {
   while (i < q.length) {
     const two = q.slice(i, i + 2)
     if (PINYIN_INITIALS.has(two)) { i += 2; continue }
-    if (PINYIN_INITIALS.has(q[i])) { i += 1; continue }
+    if (PINYIN_INITIALS.has(q[i]!)) { i += 1; continue }
     return false
   }
   return i === q.length

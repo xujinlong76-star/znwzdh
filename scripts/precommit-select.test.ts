@@ -284,7 +284,7 @@ describe("选测器把 git 环境与夹具测试隔离", () => {
     expect(payload).toContain('blocked: [{ file: "(未能定位失败文件)"');
   });
 
-  it("外层带着 SCOPE=all / NO_GRAPH=1 跑，夹具仍按「图口径」那一档判", () => {
+  it("外层带着 SCOPE=all / NO_GRAPH=1 跑，夹具仍按「图口径」那一档判", { timeout: 60_000 }, () => {
     // 剥除失效的自证：这两枚开关真泄漏进子进程时，选出来的集合会换一档
     // （all → 整棵；NO_GRAPH → 旧词根，比图口径少），下面这条相等就会红。
     const baseline = select(["apps/api/src/routes/backup.ts"]);

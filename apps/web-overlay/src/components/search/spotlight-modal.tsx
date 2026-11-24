@@ -1081,7 +1081,7 @@ export function SpotlightModal({
                 setQuery(e.target.value)
                 setSelectedIndex(0)
               }}
-              className="h-9 border-0 bg-transparent shadow-none focus-visible:ring-0 text-base sm:text-sm px-0 placeholder:text-muted-foreground/60"
+              className="h-9 border-0 bg-transparent shadow-none focus-visible:ring-0 text-base sm:text-sm px-0 placeholder:text-muted-foreground"
             />
             {query && (
               <button
@@ -1102,7 +1102,7 @@ export function SpotlightModal({
               </Badge>
             )}
             {isAiMode && (
-              <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-600 border-purple-500/30">
+              <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/30">
                 AI Copilot
               </Badge>
             )}
@@ -1267,7 +1267,7 @@ export function SpotlightModal({
                           <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
                           <span>常用与最近常去</span>
                         </span>
-                        <span className="text-[10px] font-mono text-muted-foreground/70">一键秒开</span>
+                        <span className="text-[10px] font-mono text-muted-foreground">一键秒开</span>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {recentVisits.map((visit) => (
@@ -1549,7 +1549,7 @@ export function SpotlightModal({
                       <span>导航站点（RRF 混合多通道排序）</span>
                     </span>
                     <span className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono text-muted-foreground/70">{displayHits.length} 条命中</span>
+                      <span className="text-[11px] font-mono text-muted-foreground">{displayHits.length} 条命中</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -1699,7 +1699,7 @@ export function SpotlightModal({
                       <span>精选技术视频 (Video Hub)</span>
                     </span>
                     <span className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono text-muted-foreground/70">{totalVideoCount} 条命中</span>
+                      <span className="text-[11px] font-mono text-muted-foreground">{totalVideoCount} 条命中</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -2035,7 +2035,7 @@ export function SpotlightModal({
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => setOpen(false)}
-                          className="text-xs px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors inline-flex items-center gap-1"
+                          className="text-xs px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors inline-flex items-center gap-1"
                         >
                           <span className="font-semibold">Google</span>
                         </a>
@@ -2062,7 +2062,7 @@ export function SpotlightModal({
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => setOpen(false)}
-                          className="text-xs px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-colors inline-flex items-center gap-1"
+                          className="text-xs px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-colors inline-flex items-center gap-1"
                         >
                           <span className="font-semibold">Bing</span>
                         </a>
@@ -2096,7 +2096,7 @@ export function SpotlightModal({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setOpen(false)}
-                      className="px-2 py-0.5 rounded text-[11px] bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors font-medium"
+                      className="px-2 py-0.5 rounded text-[11px] bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors font-medium"
                     >
                       Google
                     </a>
@@ -2123,7 +2123,7 @@ export function SpotlightModal({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setOpen(false)}
-                      className="px-2 py-0.5 rounded text-[11px] bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-colors font-medium"
+                      className="px-2 py-0.5 rounded text-[11px] bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-colors font-medium"
                     >
                       Bing
                     </a>
@@ -2177,7 +2177,7 @@ export function SpotlightModal({
             </span>
           </div>
 
-          <div className="hidden min-[420px]:block text-[10px] text-muted-foreground/70 font-mono truncate">
+          <div className="hidden min-[420px]:block text-[10px] text-muted-foreground font-mono truncate">
             RRF Multi-Channel Fusion
           </div>
         </div>

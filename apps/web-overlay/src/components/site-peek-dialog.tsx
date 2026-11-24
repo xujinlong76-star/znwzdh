@@ -774,7 +774,7 @@ export function SitePeekDialog({
                       <span className="text-xs font-semibold truncate group-hover:text-cyan-500 transition-colors">
                         {alt.site.title}
                       </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-mono shrink-0">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 font-mono shrink-0">
                         d_L={alt.geodesicDistance}
                       </span>
                     </div>

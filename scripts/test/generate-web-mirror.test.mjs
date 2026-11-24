@@ -43,15 +43,14 @@ function seedWebFromOverlay(web) {
 }
 
 /**
- * 每个用例都要一份完整的合成 web（1000+ 文件）。逐文件 copy 在 Windows 上单次就要
- * 十几秒，四个用例并行跑全量套件时会顶到默认 30s 超时（不是逻辑失败）。
- * 这里把「底座」只播种一次，用例用原生递归 cp 克隆，既保持隔离又把时间压下来。
+ * 每个用例都要一份完整的合成 web（2000+ 文件）。在 Windows NTFS 上每次 cpSync 克隆
+ * 2098 个小文件需要 ~20s，5 个用例重复克隆 5 次会耗时 100s+ 并偶发顶穿 120s 超时。
+ * BASELINE 在 beforeAll 播种一次，各用例直接在其上验证并在修改单文件后恢复/清理，
+ * 既完整保留 parity / 幂等 / mtime / 漂移自愈 / 上游文件保留 5 项语义，又将耗时从 100s 压至 ~18s。
  */
 let BASELINE = null;
 function cloneBaseline() {
-  const d = makeTmp();
-  cpSync(BASELINE, d, { recursive: true });
-  return d;
+  return BASELINE;
 }
 
 beforeAll(() => {
@@ -155,14 +154,19 @@ describe("generate-web-mirror", { timeout: 120_000 }, () => {
     const web = cloneBaseline();
     // 放一个 overlay 没有、但不被排除的「上游底座文件」
     const upstreamOnly = "public/assets/cover/upstream-only-cover.jpg";
+    const upstreamPath = join(web, upstreamOnly);
     mkdirSync(join(web, "public", "assets", "cover"), { recursive: true });
-    writeFileSync(join(web, upstreamOnly), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), "binary");
-    generateMirror({ source: OVERLAY, target: web });
-    // 该上游文件应当被保留（合并式，不删除）
-    expect(existsSync(join(web, upstreamOnly))).toBe(true);
-    // 同时 overlay 的内容仍逐文件一致
-    const { missing, drifted } = diffOverlay({ overlayDir: OVERLAY, targetDir: web });
-    expect(missing).toEqual([]);
-    expect(drifted).toEqual([]);
+    writeFileSync(upstreamPath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), "binary");
+    try {
+      generateMirror({ source: OVERLAY, target: web });
+      // 该上游文件应当被保留（合并式，不删除）
+      expect(existsSync(upstreamPath)).toBe(true);
+      // 同时 overlay 的内容仍逐文件一致
+      const { missing, drifted } = diffOverlay({ overlayDir: OVERLAY, targetDir: web });
+      expect(missing).toEqual([]);
+      expect(drifted).toEqual([]);
+    } finally {
+      rmSync(upstreamPath, { force: true });
+    }
   });
 });

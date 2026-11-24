@@ -77,7 +77,7 @@ describe("标签段 metadata 归属（Next title.template 截断修复的结构�
 
   it("B-8 薄标签：存活站点数 < MIN_SITES_FOR_TAG_INDEX 时 robots noindex,follow", () => {
     const src = overlayFile("src/app/tags/[slug]/page.tsx");
-    // 阈值从 thresholds 导入（与 sitemap 的 ≥5 同源，不写死数字）
+    // 阈值从 thresholds 导入（与 sitemap 的 ≥3 同源，不写死数字）
     expect(src).toContain("import { MIN_SITES_FOR_TAG_INDEX } from '@/lib/seo/thresholds'");
     // noindex,follow：页面保留、内链传权重，只是不进索引（方案 §4.1 定稿）
     expect(src).toContain("robots: { index: false, follow: true }");

@@ -222,7 +222,7 @@ export function LlmDailyCostChart({
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           <span>窗口合计 {chart.windowCalls.toLocaleString()} 次</span>
-          <span className="text-muted-foreground/60">·</span>
+          <span className="text-muted-foreground">·</span>
           <span>
             累计已知花费{' '}
             <span className="font-medium" style={{ color: COST_LINE_COLOR }}>

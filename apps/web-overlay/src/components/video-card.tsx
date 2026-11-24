@@ -179,7 +179,7 @@ export const VideoCard = React.memo(function VideoCard({ item, priority = false 
                     ) : (
                         /* 默认占位符 */
                         <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-muted-foreground/20">
-                            <PlayCircle className="w-16 h-16 text-muted-foreground/30" />
+                            <PlayCircle className="w-16 h-16 text-muted-foreground" />
                         </div>
                     )}
 
@@ -235,13 +235,13 @@ export const VideoCard = React.memo(function VideoCard({ item, priority = false 
                     </span>
 
                     {videoConfig?.author && (
-                        <div className="text-[11px] text-muted-foreground/80 flex items-center justify-between pt-0.5">
+                        <div className="text-[11px] text-muted-foreground flex items-center justify-between pt-0.5">
                             <span className="truncate flex items-center gap-1.5 font-medium text-foreground/80 max-w-[65%]">
-                                <User className="w-3 h-3 text-muted-foreground/60 shrink-0" />
+                                <User className="w-3 h-3 text-muted-foreground shrink-0" />
                                 <span className="truncate">{videoConfig.author}</span>
                             </span>
                             {videoConfig.stats?.views ? (
-                                <span className="shrink-0 font-mono text-[11px] text-muted-foreground/75 tabular-nums flex items-center gap-1">
+                                <span className="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums flex items-center gap-1">
                                     <Eye className="w-3 h-3 opacity-70" />
                                     {videoConfig.stats.views > 10000
                                         ? `${(videoConfig.stats.views / 10000).toFixed(1)}万次`
@@ -252,7 +252,7 @@ export const VideoCard = React.memo(function VideoCard({ item, priority = false 
                     )}
 
                     {item.description && (
-                        <p className="text-xs text-muted-foreground/75 line-clamp-1 leading-relaxed">
+                        <p className="text-xs text-muted-foreground line-clamp-1 leading-relaxed">
                             {item.description}
                         </p>
                     )}
@@ -265,7 +265,7 @@ export const VideoCard = React.memo(function VideoCard({ item, priority = false 
                                 </span>
                             )}
                             {(videoConfig?.tags || item.tags || []).slice(0, 2).map((t, idx) => (
-                                <span key={idx} className="text-[10px] px-1.5 py-0.2 rounded bg-muted/60 text-muted-foreground/90 font-mono">
+                                <span key={idx} className="text-[10px] px-1.5 py-0.2 rounded bg-muted/60 text-muted-foreground font-mono">
                                     {t}
                                 </span>
                             ))}

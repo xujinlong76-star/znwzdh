@@ -57,7 +57,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         }
 
         const { number } = await params
-        const issueNumber = number
+        const issueNumber = (number || '').trim()
+        if (!/^\d+$/.test(issueNumber) || Number(issueNumber) <= 0) {
+            return NextResponse.json(
+                { success: false, message: '无效的投稿编号' },
+                { status: 400 }
+            )
+        }
         const { action, reason } = await request.json()
 
         if (!action || !['approve', 'reject'].includes(action)) {
@@ -120,6 +126,22 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         if (!submissionData) {
             return NextResponse.json(
                 { success: false, message: '无法解析投稿数据' },
+                { status: 400 }
+            )
+        }
+
+        // 审核入库前再次校验 URL 协议，防止 Issue 正文被篡改为 javascript:/data: 等伪协议入库
+        try {
+            const parsedSubmissionUrl = new URL(submissionData.url)
+            if (parsedSubmissionUrl.protocol !== 'http:' && parsedSubmissionUrl.protocol !== 'https:') {
+                return NextResponse.json(
+                    { success: false, message: '投稿地址协议不合法（仅允许 http/https）' },
+                    { status: 400 }
+                )
+            }
+        } catch {
+            return NextResponse.json(
+                { success: false, message: '投稿地址不是有效的 URL' },
                 { status: 400 }
             )
         }

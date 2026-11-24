@@ -512,7 +512,7 @@ export function VideoAutoHarvestDialog({
                             </span>
                           )}
                           {v.tags && v.tags.length > 0 && (
-                            <span className="text-muted-foreground/80">
+                            <span className="text-muted-foreground">
                               [{v.tags.slice(0, 3).join(', ')}]
                             </span>
                           )}

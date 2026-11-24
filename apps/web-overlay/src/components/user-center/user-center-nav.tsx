@@ -17,7 +17,7 @@
  */
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Bell } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-url'
@@ -115,6 +115,18 @@ export function UserCenterNav() {
 
   const isNotificationsActive =
     pathname === NOTIFICATION_ENTRY.href || pathname.startsWith(NOTIFICATION_ENTRY.href + '/')
+  const isGrowthPage = pathname === '/me/growth' || pathname.startsWith('/me/growth/')
+
+  // 窄屏横向滚动时，自动把激活态 Tab 滚入可见视口，避免被右端边缘遮挡
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    const activeEl = container.querySelector<HTMLElement>('[aria-current="page"]')
+    if (activeEl && container.scrollWidth > container.clientWidth + 2) {
+      activeEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+    }
+  }, [pathname])
 
   // 匹配当前激活的顶级领域
   const activeDomain = DOMAINS.find((item) => {
@@ -131,22 +143,31 @@ export function UserCenterNav() {
         className="relative flex items-center justify-between gap-1 rounded-2xl border border-border/70 bg-card/95 p-1 shadow-xs sm:gap-1.5 sm:p-1.5"
       >
         {/* 2026-11-21 结构重构：补齐全局导航闭环——顶栏最左侧固定返回首页入口，
-            细竖线与用户中心子导航分隔；出现在所有挂载 UserCenterNav 的页面。 */}
-        <div className="flex shrink-0 items-center border-r border-border/60 pr-1.5 sm:pr-2">
+            细竖线与用户中心子导航分隔；768–1024px 紧凑收紧为「首页」/图标+短文案，
+            确保 6 枚核心域 Tab 完整呈现不裁切「安全与数据」。 */}
+        <div className="flex shrink-0 items-center border-r border-border/60 pr-1 sm:pr-1.5 lg:pr-2">
           <Link
             href="/"
             aria-label="返回首页"
+            title="返回首页"
             className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-xl px-2 py-1.5 text-xs font-medium text-foreground/75 transition-all duration-200 hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-            返回首页
+            <ArrowLeft className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="hidden lg:inline">返回首页</span>
+            <span className="inline lg:hidden">首页</span>
           </Link>
         </div>
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto pr-4 sm:gap-1 sm:pr-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:[mask-image:linear-gradient(to_right,black_86%,transparent_100%)]">
+        <div
+          ref={scrollContainerRef}
+          className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto pr-4 sm:gap-1 sm:pr-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-sm:[mask-image:linear-gradient(to_right,black_88%,transparent_100%)]"
+        >
           {DOMAINS.map((item) => {
             const isExact = pathname === item.href
             const isSub = item.subItems?.some((sub) => pathname === sub.href || pathname.startsWith(sub.href + '/'))
             const active = item.href === '/me' ? isExact : isExact || isSub || pathname.startsWith(item.href + '/')
+            // 消除当前激活页的冗余红点焦虑：用户已身处 /me/growth 时隐藏红点，
+            // 仅在处于其他 /me/* 子页且存在可领宝箱/待办任务时展示轻量提示点。
+            const showGrowthDot = item.href === '/me/growth' && growthAlert && !isGrowthPage
 
             return (
               <Link
@@ -154,7 +175,7 @@ export function UserCenterNav() {
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'relative shrink-0 whitespace-nowrap rounded-xl px-2.5 py-1.5 text-xs font-medium transition-all duration-200 sm:px-3',
+                  'relative shrink-0 whitespace-nowrap rounded-xl px-2 py-1.5 text-xs font-medium transition-all duration-200 md:px-2.5 lg:px-3',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                   active
                     ? 'bg-primary text-primary-foreground shadow-sm'
@@ -162,7 +183,7 @@ export function UserCenterNav() {
                 )}
               >
                 {item.label}
-                {item.href === '/me/growth' && growthAlert && (
+                {showGrowthDot && (
                   <>
                     <span
                       aria-hidden

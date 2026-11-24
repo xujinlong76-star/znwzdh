@@ -600,7 +600,7 @@ export default function AdminTaxonomyPage() {
                   if (e.target.checked) setSelectedIds(filteredProposals.map((p) => p.id))
                   else setSelectedIds([])
                 }}
-                className="rounded border-input"
+                className="rounded border-border-strong"
               />
               <span>全选可见提案（共 {filteredProposals.length} 条）</span>
             </div>
@@ -631,7 +631,7 @@ export default function AdminTaxonomyPage() {
                       aria-label={`Select proposal ${proposal.id}`}
                       checked={isSelected}
                       onChange={() => toggleSelect(proposal.id)}
-                      className="mt-1 rounded border-input"
+                      className="mt-1 rounded border-border-strong"
                     />
 
                     <div className="space-y-1.5">
@@ -680,12 +680,12 @@ export default function AdminTaxonomyPage() {
 
                       {/* 类目健康提案的处置线索：采纳不会自动合并，审核人要手动去类目管理执行 */}
                       {proposal.kind === 'duplicate_title' && (
-                        <p className="text-[11px] text-muted-foreground/80 font-mono">
+                        <p className="text-[11px] text-muted-foreground font-mono">
                           保留项：{String(proposal.meta?.keepTitle ?? '')} · {String(proposal.meta?.keepId ?? '')}
                         </p>
                       )}
                       {proposal.kind === 'leaf_too_small' && (
-                        <p className="text-[11px] text-muted-foreground/80 font-mono">
+                        <p className="text-[11px] text-muted-foreground font-mono">
                           站点 {String(proposal.meta?.sites ?? 0)} / 健康线 {String(proposal.meta?.minSites ?? 20)} ·{' '}
                           {proposal.meta?.actionHint === 'demote_to_tags' ? '建议降级为标签' : '建议与兄弟叶合并'}
                         </p>
@@ -704,7 +704,7 @@ export default function AdminTaxonomyPage() {
                             aria-label={`为提案 ${proposal.id} 选择父类目`}
                             value={gapParent[proposal.id] ?? ''}
                             onChange={(e) => setGapParent((prev) => ({ ...prev, [proposal.id]: e.target.value }))}
-                            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                            className="h-8 rounded-md border border-border-strong bg-background px-2 text-xs"
                           >
                             <option value="">选择一级类目…</option>
                             {roots.map((r) => (

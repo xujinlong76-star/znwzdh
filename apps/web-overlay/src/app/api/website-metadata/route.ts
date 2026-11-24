@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
 import { uint8ArrayToBase64 } from '@/lib/buffer-utils'
-import { guardedFetch, isProbablySafeUrl, readBodyLimited, readTextLimited, SsrfBlockedError } from '@/lib/ssrf-guard'
+import { guardedFetch, isProbablySafeUrl, readBodyLimited, readTextLimited, safeFetch, SsrfBlockedError } from '@/lib/ssrf-guard'
 
 // nodejs：SSRF 防护需要 node:dns 做解析后 IP 校验，edge runtime 不具备该能力
 export const runtime = 'nodejs'
@@ -21,6 +21,25 @@ interface WebsiteMetadata {
     icon: string
     image?: string
     videoConfig?: VideoConfig
+}
+
+// 位图安全上传扩展名与 MIME 白名单（严禁上传 svg，防止通过 <link rel="icon" href="/evil.svg"> 向 public/assets/ 投递同源存储型 XSS）
+const SAFE_BITMAP_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'ico', 'webp'] as const
+const SAFE_BITMAP_MIME_REGEX = /^image\/(png|jpeg|gif|webp|x-icon|vnd\.microsoft\.icon|avif)$/i
+
+function isSafeBitmapPayload(contentTypeHeader: string | null, bytes: Uint8Array): boolean {
+    const rawType = (contentTypeHeader || '').split(';')[0]?.trim().toLowerCase() || ''
+    if (!SAFE_BITMAP_MIME_REGEX.test(rawType)) {
+        return false
+    }
+    // 嗅探前 256 字节，防止上游伪造 image/png 头但实际返回 <svg / <html / <?xml 文本负载
+    const headText = new TextDecoder('utf-8', { fatal: false })
+        .decode(bytes.subarray(0, Math.min(bytes.length, 256)))
+        .trimStart()
+    if (/^<\s*(\?xml|!doctype|svg|html|script)/i.test(headText)) {
+        return false
+    }
+    return true
 }
 
 function isDomainOrSubdomain(hostname: string, rootDomain: string): boolean {
@@ -164,12 +183,15 @@ async function fetchBilibiliVideoInfo(videoId: { bvid?: string; aid?: string }):
             return null
         }
 
-        const response = await fetch(apiUrl, {
+        const response = await safeFetch(apiUrl, {
+            allowedHosts: ['api.bilibili.com'],
+            timeoutMs: 5000,
+            maxBytes: 1024 * 1024,
+            maxRedirects: 0,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
                 'Referer': 'https://www.bilibili.com/'
             },
-            signal: AbortSignal.timeout(5000)
         })
 
         if (!response.ok) {
@@ -177,7 +199,7 @@ async function fetchBilibiliVideoInfo(videoId: { bvid?: string; aid?: string }):
             return null
         }
 
-        const data = await response.json()
+        const data = JSON.parse(new TextDecoder('utf-8').decode(response.body))
 
         if (data.code !== 0 || !data.data) {
             console.warn('Bilibili API returned error:', data.message)
@@ -295,6 +317,16 @@ function getFallbackMetadata(url: string): WebsiteMetadata {
     }
 }
 
+function sanitizeExtractedAssetUrl(rawRef: string | null | undefined, baseUrl: string): string | undefined {
+    if (!rawRef || !rawRef.trim()) return undefined
+    try {
+        const resolved = new URL(rawRef.trim(), baseUrl).toString()
+        return isProbablySafeUrl(resolved) ? resolved : undefined
+    } catch {
+        return undefined
+    }
+}
+
 function parseMetadataFromHtml(html: string, url: string): WebsiteMetadata {
 
     // 解析 HTML 获取元数据
@@ -308,10 +340,11 @@ function parseMetadataFromHtml(html: string, url: string): WebsiteMetadata {
         extractMetaContent(html, 'twitter:description') ||
         ''
 
-    // 解析 OG Image
-    const image = extractMetaContent(html, 'og:image') ||
+    // 解析 OG Image 并过滤伪协议与内网 URL
+    const rawImage = extractMetaContent(html, 'og:image') ||
         extractMetaContent(html, 'twitter:image') ||
         extractMetaContent(html, 'image')
+    const image = sanitizeExtractedAssetUrl(rawImage, url)
 
     // 获取 favicon
     const icon = extractFavicon(html, url)
@@ -367,16 +400,8 @@ function extractFavicon(html: string, baseUrl: string): string | null {
     for (const pattern of faviconPatterns) {
         const match = html.match(pattern)
         if (match) {
-            const href = match[1]
-            if (href.startsWith('http')) {
-                return href
-            } else if (href.startsWith('//')) {
-                return base.protocol + href
-            } else if (href.startsWith('/')) {
-                return base.origin + href
-            } else {
-                return base.origin + '/' + href
-            }
+            const safeHref = sanitizeExtractedAssetUrl(match[1], baseUrl)
+            if (safeHref) return safeHref
         }
     }
 
@@ -388,16 +413,22 @@ async function downloadGoogleFavicon(domain: string, token: string): Promise<str
     const googleFaviconUrl = `https://www.google.com/s2/favicons?sz=128&domain=${encodeURIComponent(domain)}`
 
     try {
-        const response = await fetch(googleFaviconUrl, {
+        const response = await safeFetch(googleFaviconUrl, {
+            allowedHosts: ['www.google.com'],
+            timeoutMs: 10000,
+            maxBytes: 2 * 1024 * 1024,
+            maxRedirects: 2,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-                'Accept': 'image/*,*/*'
+                'Accept': 'image/png,image/jpeg,image/gif,image/webp,image/x-icon,*/*'
             },
-            signal: AbortSignal.timeout(10000)
         })
 
         if (response.ok) {
-            const { bytes: binaryData } = await readBodyLimited(response, 2 * 1024 * 1024)
+            const binaryData = new Uint8Array(response.body)
+            if (!isSafeBitmapPayload(response.headers.get('content-type'), binaryData)) {
+                throw new Error('Unsafe favicon payload type from upstream')
+            }
             const { path } = await uploadImageToGitHub(binaryData, token, 'png', 'favicon')
             return path
         } else {
@@ -434,7 +465,7 @@ async function downloadAndUploadIcon(
         strategies.push({
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                'Accept': 'image/avif,image/webp,image/apng,image/png,image/jpeg,image/gif,image/x-icon,*/*;q=0.8',
                 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
                 'Referer': 'https://www.bilibili.com/',
                 'Origin': 'https://www.bilibili.com'
@@ -451,7 +482,7 @@ async function downloadAndUploadIcon(
     strategies.push({
         headers: {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            'Accept': 'image/avif,image/webp,image/apng,image/png,image/jpeg,image/gif,image/x-icon,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Accept-Encoding': 'gzip, deflate, br, zstd',
             'Referer': referer || safeRefererFallback,
@@ -468,9 +499,8 @@ async function downloadAndUploadIcon(
     let lastError: Error | null = null
 
     if (!isProbablySafeUrl(iconUrl)) {
-        // 权威层的 SsrfBlockedError 需要 (message, reason) 两个参数——
-        // reason 用于观测/审计分类，是更严格的契约（旧 web 副本只要 message）。
-        throw new SsrfBlockedError(`图标 URL 协议不允许: ${iconUrl.slice(0, 128)}`, 'protocol-not-allowed')
+        // overlay 的 SsrfBlockedError 只接受 message（独立实现，与 packages/ai 行为对齐由 parity 测试守）
+        throw new SsrfBlockedError(`图标 URL 协议不允许: ${iconUrl.slice(0, 128)}`)
     }
 
     for (const strategy of strategies) {
@@ -483,6 +513,9 @@ async function downloadAndUploadIcon(
 
             if (response.ok) {
                 const { bytes: binaryData } = await readBodyLimited(response, 5 * 1024 * 1024)
+                if (!isSafeBitmapPayload(response.headers.get('content-type'), binaryData)) {
+                    throw new Error('Unsafe image content-type or SVG/HTML payload rejected')
+                }
 
                 // 上传到 GitHub
                 const { path } = await uploadImageToGitHub(
@@ -512,7 +545,7 @@ function getFileExtension(url: string): string {
         const pathname = new URL(url).pathname
         const extension = pathname.split('.').pop()?.toLowerCase()
 
-        if (extension && ['png', 'jpg', 'jpeg', 'gif', 'svg', 'ico', 'webp'].includes(extension)) {
+        if (extension && (SAFE_BITMAP_EXTENSIONS as readonly string[]).includes(extension)) {
             return extension
         }
         return 'png'
@@ -534,18 +567,23 @@ async function uploadImageToGitHub(
 
     const cleanFolder = sanitizeRepoPathSegment(folder, 'assets')
     const cleanPrefix = sanitizeTokenSegment(prefix, 'favicon')
-    const cleanExt = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'ico', 'webp'].includes(extension) ? extension : 'png'
+    const cleanExt = (SAFE_BITMAP_EXTENSIONS as readonly string[]).includes(extension) ? extension : 'png'
     const path = `/${cleanFolder}/${cleanPrefix}_${Date.now()}.${cleanExt}`
     const githubPath = 'public' + path
 
     const base64String = uint8ArrayToBase64(binaryData)
     const currentFileUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${githubPath}?ref=${branch}`
 
-    const response = await fetch(currentFileUrl, {
+    const response = await safeFetch(currentFileUrl, {
         method: 'PUT',
+        allowedHosts: ['api.github.com'],
+        timeoutMs: 15000,
+        maxBytes: 2 * 1024 * 1024,
+        maxRedirects: 0,
         headers: {
             'Authorization': `token ${token}`,
             'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json',
         },
         body: JSON.stringify({
             message: `Upload ${cleanPrefix} ${githubPath}`,
@@ -554,13 +592,15 @@ async function uploadImageToGitHub(
         }),
     })
 
+    const bodyText = new TextDecoder('utf-8').decode(response.body)
     if (!response.ok) {
-        const errorData = await response.json()
+        let errorData: { message?: string } = {}
+        try { errorData = JSON.parse(bodyText) } catch { /* 非 JSON 响应，使用原文 */ }
         console.error('Failed to upload image to GitHub:', errorData)
-        throw new Error(`Failed to upload image to GitHub: ${errorData.message || 'Unknown error'}`)
+        throw new Error(`Failed to upload image to GitHub: ${errorData.message || bodyText.slice(0, 200) || 'Unknown error'}`)
     }
 
-    const responseData = await response.json()
+    const responseData = JSON.parse(bodyText)
     const commitHash = responseData.commit.sha
 
     return { path, commitHash }

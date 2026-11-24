@@ -125,53 +125,12 @@ function accentVars(name: string): Map<string, string> {
 }
 const ACCENTS = ["default", "violet", "emerald", "amber", "rose"] as const;
 
-// ---------- 豁免清单（显式列举，禁止通配放行） ----------
-// 语义统一为「WIP 热区待释放」：并行会话（auth/search/video/backup）占有的文件，
-// 冷区清扫不落笔。WIP 收敛后应逐条清退本表，让门禁回到全量零容忍。
-// packages/store/**、apps/api/**、.github/** 不在 overlay/src 扫描面内，无需登记。
-const WIP_HOT_EXEMPT: string[] = [
-  // —— 任务单热区（navigation-card / navigation-content / search-palette / app/{search,auth,favorites}）——
-  // 2026-11-02 热区清账：navigation-card / search-palette / search-results / signin / favorites /
-  // category-quick-jump-bar / quick-access-tray / universal-bookmark-modal 已清零，豁免已清退，
-  // 由冷区禁令全量接管（回潮即红）。navigation-content 复核无违例，一并清退。
-  "app/search/page.tsx", // WIP 热区待释放
-  "app/auth/layout.tsx", // WIP 热区待释放
-  "app/auth/forgot-password/page.tsx", // WIP 热区待释放
-  // 2026-11-15 无障碍 #11/#14 扫荡 16ac463d 后清退：reset-password/page.tsx（本轮补 bg-destructive/10→/15）已无冷区违例，由门禁全量接管。
-  "app/auth/signup/page.tsx", // WIP 热区待释放
-  "app/auth/verify-email/page.tsx", // WIP 热区待释放
-  // —— 并行会话 WIP 快照（2026-11-02，git 脏文件里的违例文件）——
-  "components/user-center/local-data-manager.tsx", // 2026-11-02 22:45 并行会话活跃写入（me/data 新组件），只报告不改
-  "app/admin/data/restore/page.tsx", // WIP 热区待释放
-  "app/admin/jobs/page.tsx", // WIP 热区待释放
-  "app/admin/taxonomy/page.tsx", // WIP 热区待释放
-  "app/admin/videos/[id]/categories/[categoryId]/items/page.tsx", // WIP 热区待释放
-  "app/admin/videos/[id]/items/page.tsx", // WIP 热区待释放
-  "app/admin/videos/components/HarvestModal.tsx", // WIP 热区待释放
-  "app/admin/videos/components/VideoCategoryCard.tsx", // WIP 热区待释放
-  "app/admin/videos/page.tsx", // WIP 热区待释放
-  "app/category/[slug]/category-board.tsx", // WIP 热区待释放
-  // 2026-11-15 无障碍 #11/#14 扫荡 16ac463d 后清退：collection-detail-view.tsx 与 hot-view.tsx（本轮补 blue-600→blue-700、muted /90 清理）已无冷区违例，由门禁全量接管。
-  "components/ai/llm-daily-cost-chart.tsx", // WIP 热区待释放
-  "components/bookmark-importer.tsx", // WIP 热区待释放
-  "components/category-index-filterable-list.tsx", // WIP 热区待释放
-  "components/category-site-filter-bar.tsx", // WIP 热区待释放
-  "components/navigation-category-section.tsx", // WIP 热区待释放
-  "components/p2p/p2p-airdrop-modal.tsx", // WIP 热区待释放
-  "components/quick-tools-drawer.tsx", // WIP 热区待释放
-  "components/reader/site-archive-reader-modal.tsx", // WIP 热区待释放
-  "components/search/spotlight-modal.tsx", // WIP 热区待释放
-  "components/site-detail-view.tsx", // WIP 热区待释放
-  "components/site-peek-dialog.tsx", // WIP 热区待释放
-  "components/sites-directory-filterable-grid.tsx", // WIP 热区待释放
-  "components/tag-cloud.tsx", // WIP 热区待释放
-  "components/tag-results-board.tsx", // WIP 热区待释放
-  "components/video-auto-harvest-dialog.tsx", // WIP 热区待释放
-  "components/video-card.tsx", // WIP 热区待释放
-  "components/video-content.tsx", // WIP 热区待释放
-  "components/video-player-page.tsx", // WIP 热区待释放
-  "components/workspace/workspace-switcher.tsx", // WIP 热区待释放
-];
+// ---------- 豁免清单（2026-11-22 全量清退至 0 豁免） ----------
+// 原 34 个 WIP 热区文件（navigation-category-section / spotlight-modal / site-detail-view /
+// site-peek-dialog / bookmark-importer / video-card / video-content / admin/* / auth/* 等）
+// 的 text-muted-foreground/NN、border-input、bg-*-500/10+text-*-600、bg-destructive/10
+// 已全部修复收敛，全仓 overlay/src 进入零豁免 WCAG AA 强制门禁。
+const WIP_HOT_EXEMPT: string[] = [];
 const EXEMPT = new Set(WIP_HOT_EXEMPT);
 
 // ---------- 冷区源码扫描 ----------

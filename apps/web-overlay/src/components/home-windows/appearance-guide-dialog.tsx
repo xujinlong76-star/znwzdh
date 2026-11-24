@@ -25,6 +25,7 @@ import { HighContrastToggle } from '@/components/high-contrast-toggle'
 import { SceneSwitcher } from '@/components/scene-switcher'
 import { SkinPicker } from '@/components/skin-picker'
 import { ModeToggle } from '@/components/mode-toggle'
+import { SiteDisplayModeSwitcher } from '@/components/site-display-mode-switcher'
 import { OnboardingCard } from '@/components/onboarding-card'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { trackDiyEvent } from '@/lib/navhub-api'
@@ -137,7 +138,7 @@ export function AppearanceGuideDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[560px] w-[calc(100vw-1.5rem)] max-h-[84vh] flex flex-col gap-3 p-4 sm:p-5 overflow-hidden">
+      <DialogContent className="min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-[560px] w-[calc(100vw-1.5rem)] max-h-[84vh] flex flex-col gap-3 p-4 sm:p-5 overflow-hidden">
         <DialogHeader className="shrink-0 pr-6 text-left">
           <DialogTitle className="flex items-center gap-2 text-base font-bold">
             <SlidersHorizontal className="h-4 w-4 text-primary" />
@@ -166,6 +167,8 @@ export function AppearanceGuideDialog({
 
           <div className="mt-2 min-h-0 flex-1 overflow-y-auto pr-1">
             <TabsContent value="appearance" className="mt-0 space-y-3">
+              <SiteDisplayModeSwitcher variant="inline" />
+
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div className="flex items-center justify-between rounded-xl border border-border/70 bg-card/70 px-3 py-2">
                   <div>

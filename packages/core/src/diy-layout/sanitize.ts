@@ -68,7 +68,7 @@ export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
   }
 
   const validViewModes = ['hybrid', 'classic', 'workbench']
-  const validCardModes = ['compact', 'standard', 'rich']
+  const validCardModes = ['standard', 'icon-wall', 'list', 'minimal', 'compact', 'rich', 'directory', 'mini-chip']
   const validCanvasBgs = ['mesh', 'dots', 'grid', 'aurora', 'clean']
   if (typeof raw.viewMode === 'string' && !validViewModes.includes(raw.viewMode)) {
     ledger.note(`视图模式「${String(raw.viewMode).slice(0, 32)}」不在支持列表，已回退 hybrid`)

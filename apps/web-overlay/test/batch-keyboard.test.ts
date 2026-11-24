@@ -454,7 +454,9 @@ describe('源码守卫：只挂首页与收藏页，别处不动', () => {
     const dialog = overlaySource('src/components/keyboard-shortcuts-dialog.tsx')
     expect(dialog).toContain('批量整理（仅多选模式）')
     const toolbar = overlaySource('src/components/navigation-toolbar.tsx')
-    expect(toolbar).toContain('（快捷键 M）')
+    // 顶栏收敛后多选入口改用 IconTip 的「（M）」短写法，快捷键提示仍在
+    expect(toolbar).toContain('多选模式：批量导出 / 复制 / 置顶（M）')
+    expect(toolbar).toContain('退出多选模式（M）')
     const dock = overlaySource('src/components/batch-operation-dock.tsx')
     expect(dock).toContain('data-batch-move-target')
   })

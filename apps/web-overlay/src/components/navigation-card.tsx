@@ -19,8 +19,10 @@ import { DiyCardMenu } from '@/components/diy/diy-card-menu'
 import { DIY_DRAG_INSTRUCTIONS_ID, type CardMoveDirection } from '@/lib/modular/diy-drag'
 import { useDiyDragHandleRef, useDiyDragActive } from '@/components/diy/diy-drag-context'
 import { useToast } from "@/components/ui/use-toast"
-import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
+import { normalizeCardDisplayMode } from '@/lib/modular/card-display-modes'
+import { NavigationCardVariant } from '@/components/navigation-card-variants'
+import { useSiteItemController } from '@/components/site-item-shell'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-url'
@@ -30,7 +32,6 @@ import { tagSlug } from '@/lib/seo/tag-slug'
 import { recordOfflineVisit } from '@/lib/offline-recent'
 import { getIdentity } from '@/lib/identity'
 import { reportClick } from '@/lib/navhub-api'
-import { copyText } from '@/lib/clipboard'
 import { useExternalLinkTarget } from '@/lib/user-preferences'
 import { NumberDialBadge } from '@/components/number-dial-badge'
 import { resolveBatchKeyboardAction } from '@/lib/batch-keyboard'
@@ -272,10 +273,33 @@ export const NavigationCard = memo(function NavigationCard({
   quickDialDigit,
   siteTitleById,
 }: NavigationCardProps) {
+  const controller = useSiteItemController({
+    item,
+    onPeek,
+    isPinnedInCategory,
+    onTogglePinInCategory,
+    isDraggable,
+    sourceCategoryId,
+    selectable,
+    selected,
+    onToggleSelect,
+    keyboardHintId,
+    isEditingLayout: propIsEditingLayout,
+    isSpeedDialPinned,
+    onToggleSpeedDialPin,
+    linkTarget: propLinkTarget,
+    externalRel,
+    onMoveCard,
+    cardIndex,
+    cardTotal,
+    dialDigit,
+    quickDialDigit,
+    siteTitleById,
+  })
   const linkTarget = useExternalLinkTarget(propLinkTarget)
   const { toast } = useToast()
-  const isEditingLayout = propIsEditingLayout ?? isDraggable
-  const { effectiveCardElements, isFeatureHidden, removeFeature } = useFeatureMask()
+  const isEditingLayout = controller.isEditingLayout
+  const { effectiveCardElements, isFeatureHidden } = useFeatureMask()
   const isCapsuleCollapsed = !effectiveCardElements.showDescription && !effectiveCardElements.showTags
 
   /**
@@ -369,44 +393,11 @@ export const NavigationCard = memo(function NavigationCard({
     </>
   )
 
-  const handlePruneSite = (e?: React.MouseEvent | React.KeyboardEvent) => {
-    if (e) {
-      e.preventDefault()
-      e.stopPropagation()
-    }
-    removeFeature({
-      id: `site:${item.id}`,
-      level: 'L3_SITE',
-      title: item.title,
-      parentTitle: sourceCategoryId ? `所属分类 (${sourceCategoryId})` : '站点卡片',
-    })
-    toast({
-      title: `🙈 已隐藏站点「${item.title}」`,
-      description: '已移入时间轴回收站，按 Ctrl/Cmd+Z 可立即撤销，或在 DIY 恢复中心随时还原。',
-    })
-  }
-
-  const handleToggleSpeedDial = (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (onToggleSpeedDialPin) {
-      onToggleSpeedDialPin(item.id)
-      toast({
-        title: isSpeedDialPinned
-          ? `已从速览坞移除: ${item.title}`
-          : `📌 已钉入速览坞: ${item.title}`,
-      })
-    }
-  }
-
-  /**
-   * 多选模式下卡片点击**不导航**，只切换选中。
-   * 这是「批量操作」的入口：没有它，底部的批量操作坞永远不会出现。
-   */
+  const handlePruneSite = controller.handlePruneSite
+  const handleToggleSpeedDial = controller.handleToggleSpeedDial
   const handleLinkClick = (e: React.MouseEvent) => {
     if (!selectable) {
       recordOfflineVisit({ id: item.id, title: item.title, href: item.href, icon: item.icon })
-      // 快照是「我能回看」，事件是「系统能学」：少了这行，sites.visit_count 永远是 0
       reportClick(item.id, getIdentity())
       return
     }
@@ -414,28 +405,13 @@ export const NavigationCard = memo(function NavigationCard({
     e.stopPropagation()
     onToggleSelect?.(item.id)
   }
-
-  /**
-   * 标签芯片点击语义：非多选时走 Link 默认导航（去 /tags/{slug}）；
-   * 多选模式下与整卡一致——不导航，只切换选中。批量操作进行中误点
-   * 标签不该把用户带离当前上下文（选择态是临时的，标签页随时能回）。
-   */
   const handleTagClick = (e: React.MouseEvent) => {
     if (!selectable) return
     e.preventDefault()
     e.stopPropagation()
     onToggleSelect?.(item.id)
   }
-
-  /**
-   * HTML5 DnD 已移除（DRAG-2）：原生拖拽属性在触屏上根本不触发，
-   * 也没有键盘路径。拖拽改走 dnd-kit（手柄 + PointerSensor/KeyboardSensor，
-   * 见本文件顶部的 renderDragControls 与 DiyDraggableCard），
-   * 不拖拽的等效操作走 ⋯ 菜单。
-   */
-
-  // 提取首个平替
-  const topAlternative = item.relations?.find((r) => r.relationType === 'alternative')
+  const topAlternative = controller.topAlternative
 
   /**
    * 卡片的键盘模型：**整卡只有一个 Tab 停留点**（主链接）。
@@ -554,57 +530,13 @@ export const NavigationCard = memo(function NavigationCard({
     }
   }
 
-  const handleWorkbenchPin = (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const res = pinSiteToWorkbench({
-      siteId: item.id,
-      title: item.title,
-      href: item.href,
-      icon: item.icon,
-      description: item.description,
-    })
-    toast({
-      title: res.ok ? '📌 已固定到工作台' : '固定提示',
-      description: res.message,
-    })
-  }
-
+  const handleWorkbenchPin = controller.handleWorkbenchPin
   const handleCategoryPin = (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (onTogglePinInCategory) {
-      onTogglePinInCategory(item.id)
-      toast({
-        title: isPinnedInCategory ? '已取消分类内置顶' : '📌 已在当前分类置顶',
-        description: isPinnedInCategory ? `站点「${item.title}」已恢复默认排序` : `站点「${item.title}」已优先排至该分类首位`,
-      })
-    }
+    controller.handleCategoryPin?.(e)
   }
-
-  /**
-   * 多选模式的视觉态：整卡可点（不再是链接）+ 主色描边；已选中再叠一层底色。
-   * 放在这里而不是每处 markup，是为了三个显示模式（紧凑 / 标准 / 丰富）完全一致。
-   */
-  const selectionClass = !selectable
-    ? ''
-    : cn(
-        'cursor-pointer ring-2 ring-primary/25 hover:ring-primary/45',
-        selected && 'ring-primary/70 border-primary/60 bg-primary/5',
-      )
-
-  /**
-   * 合成站点（自定义站点）没有对应的中枢站点记录，`/site/{id}` 会 404 ——
-   * 这类卡片只保留外链，不渲染详情内链。
-   */
+  const selectionClass = controller.selectionClass
   const hasSiteDetail = !item.id.startsWith('custom_site_')
   const siteDetailHref = `/site/${encodeURIComponent(item.id)}`
-
-  /**
-   * 视觉缩略图（P1 #9）：只取既有图标管线的真实图片（品牌图标 / 自定义
-   * icon / favicon 代理）；解析不到（非 http(s) 链接、显式默认图标）时
-   * 为 null，各形态回落到现有的图标渲染。
-   */
   const thumbnail = resolveSiteThumbnail(item)
 
   /** 标题/详情与整卡同语义：多选时不导航，只切换选中 */
@@ -615,23 +547,7 @@ export const NavigationCard = memo(function NavigationCard({
     onToggleSelect?.(item.id)
   }
 
-  const handleCopyLink = async (e?: React.MouseEvent) => {
-    e?.preventDefault()
-    e?.stopPropagation()
-    const res = await copyText(item.href)
-    if (res.ok) {
-      toast({
-        title: '已复制网址',
-        description: `「${item.title}」链接已复制到剪贴板`,
-      })
-    } else {
-      toast({
-        title: '复制失败',
-        description: res.reason,
-        variant: 'destructive',
-      })
-    }
-  }
+  const handleCopyLink = controller.handleCopyLink
 
   /**
    * 卡片的内容层：外链覆盖层之下/之上的兄弟层。
@@ -666,8 +582,23 @@ export const NavigationCard = memo(function NavigationCard({
     ) : null
 
   // 「只看失效」开关（03 §7）：打开时只留失效侧卡片，其余整卡不渲染、不占位。
-  // 放在全部 Hook 调用之后、三段形态返回之前：Hook 顺序不受开关影响。
+  // 放在全部 Hook 调用之后、各形态返回之前：Hook 顺序不受开关影响。
   if (showFailingOnly && !isFailingHealthState(healthState)) return null
+
+  const normalizedDisplayMode = normalizeCardDisplayMode(cardDisplayMode)
+  if (
+    normalizedDisplayMode === 'icon-wall' ||
+    normalizedDisplayMode === 'list' ||
+    normalizedDisplayMode === 'minimal' ||
+    normalizedDisplayMode === 'directory'
+  ) {
+    return (
+      <NavigationCardVariant
+        mode={normalizedDisplayMode}
+        controller={controller}
+      />
+    )
+  }
 
   // 1. 紧凑单行条形多态 (Compact Bar Mode)
   if (cardDisplayMode === 'compact') {
@@ -677,9 +608,11 @@ export const NavigationCard = memo(function NavigationCard({
             <div
               data-navhub-site-id={item.id}
               data-navhub-selected={selected ? 'true' : undefined}
+              data-card-variant="compact"
               className={cn(
                 "nav-card-deferred group/card relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-[var(--depth-float)] transition-all duration-[--duration-fast] transform hover:-translate-y-0.5",
                 isPinnedInCategory && "ring-1 ring-pinned/40 bg-pinned/4 border-pinned/30",
+                isEditingLayout && "border-dashed border-border/75",
                 selectionClass
               )}
               onKeyDown={handleActionsKeyDown}
@@ -713,7 +646,7 @@ export const NavigationCard = memo(function NavigationCard({
                 </div>
               )}
 
-              <div className="relative z-10 pointer-events-none flex items-center gap-2 min-w-0 flex-1">
+              <div className="relative z-10 pointer-events-none flex items-center gap-2.5 min-w-0 flex-1">
                 <div className="relative flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-[--duration-fast] group-hover/card:scale-105">
                   <SiteFavicon
                     title={item.title}
@@ -755,12 +688,12 @@ export const NavigationCard = memo(function NavigationCard({
                 </div>
               </div>
 
-              {/* 紧凑操作按钮（首屏瘦身）：收藏星与其它操作同款降透明度，悬停/聚焦/
-                  触屏时才显，编排态常显；图标角标保留（行布局无「右上角」概念）。 */}
-              <div className="relative z-20 flex items-center gap-0.5">
+              {/* 紧凑操作按钮：常态走右侧绝对渐隐浮层（不挤占标题宽度）；DIY 编辑态采用紧凑内联流，避免遮挡标题 */}
+              <div className="relative z-20 flex shrink-0 items-center gap-0.5">
                 <span className={cn(
-                  "flex items-center gap-0.5 transition-opacity",
-                  isEditingLayout ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
+                  isEditingLayout
+                    ? "flex shrink-0 items-center gap-0.5 opacity-100 pointer-events-auto"
+                    : "absolute right-7 top-1/2 -translate-y-1/2 z-30 flex items-center gap-0.5 rounded-r-lg bg-gradient-to-l from-card via-card to-transparent pl-7 pr-1 py-0.5 transition-opacity pointer-events-none opacity-0 sm:group-hover/card:opacity-100 sm:group-hover/card:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto pointer-coarse:opacity-100 pointer-coarse:pointer-events-auto"
                 )}>
                 {renderDragControls('h-6 w-6 rounded-lg')}
                 <Button
@@ -886,6 +819,7 @@ export const NavigationCard = memo(function NavigationCard({
             <Card
               data-navhub-site-id={item.id}
               data-navhub-selected={selected ? 'true' : undefined}
+              data-card-variant="rich"
               className={cn(
                 "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-[var(--depth-float)] nav-card-glow transition-all duration-[--duration-base] transform hover:-translate-y-0.5 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
                 isPinnedInCategory && "ring-1 ring-pinned/40 bg-pinned/4 border-pinned/30",
@@ -1205,6 +1139,7 @@ export const NavigationCard = memo(function NavigationCard({
           <Card
             data-navhub-site-id={item.id}
             data-navhub-selected={selected ? 'true' : undefined}
+            data-card-variant="standard"
             className={cn(
               "nav-card-deferred group/card @container relative flex flex-col h-full overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-[var(--depth-float)] nav-card-glow transition-all duration-[--duration-base] transform hover:-translate-y-0.5",
               isPinnedInCategory && "ring-1 ring-pinned/40 bg-pinned/4 border-pinned/30",

@@ -21,6 +21,16 @@ import type { HubPluginItem } from '@/lib/navhub-api'
 import { usePinnedCornerWidgets } from '@/lib/modular/pinned-widgets-store'
 import { DirectoryPillToolbar } from '@/components/directory-pill-toolbar'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import {
+  getGridClassForCardMode,
+  normalizeCardDisplayMode,
+  resolveEffectiveViewMode,
+  type CanonicalCardDisplayMode,
+} from '@/lib/modular/card-display-modes'
+import {
+  InitialViewModeProvider,
+  useIsMobileViewport,
+} from '@/components/initial-view-mode-context'
 import { buildSceneSiteIndex, registerSceneSiteIndex } from '@/lib/modular/scene-apply'
 import { SCENE_WORKSPACE_CHANGE_EVENT } from '@/lib/modular/scene-apply-live'
 import { useHomeDiyGrid } from '@/lib/modular/use-home-diy-grid'
@@ -50,20 +60,6 @@ const BriefStripContent = dynamic(
 )
 const ExamStripContent = dynamic(
   () => import('@/components/home-exam-strip').then((m) => m.HomeExamStrip),
-  { ssr: false, loading: () => null },
-)
-// C4 广东自考 2027 年 1 月报名报考卡（2026-11-23）：首屏 JS 增量 0 字节
-// （dynamic ssr:false，与 HomeExamStrip 同款 U-358 模式）；门控与文案见
-// guangdong-zikao-signup-card.tsx，窗口 11-24 10:00–12-05 17:00，窗口外渲染 null。
-const GuangdongZikaoSignupCardContent = dynamic(
-  () => import('@/components/guangdong-zikao-signup-card').then((m) => m.GuangdongZikaoSignupCard),
-  { ssr: false, loading: () => null },
-)
-// C1 国考准考证打印回访卡（2026-11-23）：首屏 JS 增量 0 字节
-// （dynamic ssr:false，与 HomeExamStrip 同款 U-358 模式）；门控与文案见
-// guokao-checklist-return-card.tsx，窗口 11-23 00:00–11-29 15:00，窗口外渲染 null。
-const GuokaoReturnCardContent = dynamic(
-  () => import('@/components/guokao-checklist-return-card').then((m) => m.GuokaoChecklistReturnCard),
   { ssr: false, loading: () => null },
 )
 const HandoffCardWithCloudContent = dynamic(
@@ -222,6 +218,10 @@ interface NavigationContentProps {
    */
   initialCategoryLimit?: number
   /**
+   * 服务端从 `nav_view_mode` Cookie 解析出的初始网址展示模式（Zero-CLS SSR 渲染）。
+   */
+  initialCardDisplayMode?: CanonicalCardDisplayMode
+  /**
    * 影院区首屏初始数据（page.tsx 传给短剧微胶囊 + 迷你剧场小窗）
    */
   cinemaInitial?: CinemaInitialData
@@ -275,10 +275,13 @@ export function NavigationContent({
   directoryLinks = [],
   cardsPerGroup = 0,
   initialCategoryLimit = 0,
+  initialCardDisplayMode,
   cinemaInitial,
   pluginItems = null,
   todayBadge,
 }: NavigationContentProps) {
+  const ssrCardDisplayMode = normalizeCardDisplayMode(initialCardDisplayMode)
+  const isMobileViewport = useIsMobileViewport()
   const { toast } = useToast()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   // P1-5：移动抽屉闭合时不挂载 Sidebar（省一份完整分类树）。
@@ -311,10 +314,78 @@ export function NavigationContent({
       const sp = new URLSearchParams(window.location.search)
       const sc = sp.get('scene')
       if (sc) setSceneParam(sc)
+
+      // 成长任务跨页语义微引导：识别 ?from=growth_task 参数后执行聚焦搜索框或高亮未访问分类，
+      // 随后用 history.replaceState 清理 URL 参数，不污染历史记录。
+      if (sp.get('from') === 'growth_task') {
+        const focusTarget = sp.get('focus')
+        const hint = sp.get('hint')
+        const highlight = sp.get('highlight')
+
+        if (focusTarget === 'search') {
+          window.setTimeout(() => {
+            window.dispatchEvent(
+              new CustomEvent('navhub:focus-search', {
+                detail: { ai: hint === 'ai' },
+              }),
+            )
+            const input = document.querySelector<HTMLInputElement>(
+              'input[type="search"], input[placeholder*="搜索"]',
+            )
+            if (input) {
+              input.focus({ preventScroll: false })
+            }
+          }, 260)
+          toast({
+            title: hint === 'ai' ? '✨ 已为你定位到 AI 智能搜索' : '🔍 已为你聚焦搜索框',
+            description: '输入任意关键词或需求即可自动完成成长任务进度。',
+          })
+        } else if (highlight === 'unvisited_category' || highlight === 'explore_sites' || highlight === 'favorite_site') {
+          window.setTimeout(() => {
+            const sections = Array.from(document.querySelectorAll<HTMLElement>('section[id]'))
+            const targetSection =
+              highlight === 'unvisited_category' && sections.length > 1
+                ? sections[1]
+                : sections[0]
+            if (targetSection) {
+              targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              targetSection.classList.add('ring-2', 'ring-amber-500/60', 'ring-offset-4', 'rounded-2xl', 'transition-all')
+              window.setTimeout(() => {
+                targetSection.classList.remove('ring-2', 'ring-amber-500/60', 'ring-offset-4', 'rounded-2xl')
+              }, 2200)
+            }
+          }, 280)
+          toast({
+            title:
+              highlight === 'unvisited_category'
+                ? '🧭 已为你定位到待探索分类'
+                : highlight === 'favorite_site'
+                  ? '⭐ 点击任意卡片右上角星标即可收藏'
+                  : '✨ 点开任意站点卡片即可累计成长进度',
+            description: '完成动作后成长任务会自动同步入账。',
+          })
+        }
+
+        // 清理成长任务引导 query 参数，避免刷新重复触发
+        try {
+          const cleanUrl = new URL(window.location.href)
+          cleanUrl.searchParams.delete('from')
+          cleanUrl.searchParams.delete('focus')
+          cleanUrl.searchParams.delete('hint')
+          cleanUrl.searchParams.delete('highlight')
+          window.history.replaceState(
+            window.history.state,
+            '',
+            cleanUrl.pathname + cleanUrl.search + cleanUrl.hash,
+          )
+        } catch {
+          // 忽略 history 限制
+        }
+      }
     } catch {
       // 忽略异常 URL 查询参数解析
     }
-  }, [])
+  }, [toast])
   // 抽屉的公共行为：Esc 关、点遮罩关、锁背景滚动、焦点圈养与还原、role=dialog
   const { containerProps, scrimProps } = useOverlayBehavior({
     open: isSidebarOpen,
@@ -396,7 +467,14 @@ export function NavigationContent({
     unhideAllCategories,
     speedDialPinnedIds,
     quickDialSlots,
-  } = useHomeDIY()
+  } = useHomeDIY(ssrCardDisplayMode)
+
+  const activeCardDisplayMode = mounted
+    ? normalizeCardDisplayMode(cardDisplayMode)
+    : ssrCardDisplayMode
+  const effectiveCardDisplayMode = mounted
+    ? resolveEffectiveViewMode(activeCardDisplayMode, isMobileViewport)
+    : activeCardDisplayMode
 
   const {
     hiddenCategories: maskHiddenCategories,
@@ -473,12 +551,12 @@ export function NavigationContent({
     return allCategoryIds.every((id) => hidden.has(id))
   }, [isEditingLayout, bypassMaskTemporarily, sortedCategories.length, allCategoryIds, hiddenCategoryIds, maskHiddenCategories])
 
-  // dnd-kit 重型层：挂载后在后台 import（不阻塞首屏；与 section 里的
-  // 后台 import 同一个 chunk，到达后 DiyGridDragBoundary 包上 provider）。
-  // 失败也不影响 ⋯ 菜单（拖拽是增强，不是必需）。
+  // dnd-kit 重型层（~133KB）：仅在进入 DIY 排版编辑态时按需动态加载，
+  // 彻底消除普通浏览态首屏水合后的后台大包下载与跨区块 setDragKit 重渲染。
   type DiyDragKitModule = typeof import('@/components/diy/diy-drag-kit')
   const [dragKit, setDragKit] = useState<DiyDragKitModule | null>(null)
   useEffect(() => {
+    if (!isEditingLayout || dragKit) return
     let cancelled = false
     import('@/components/diy/diy-drag-kit')
       .then((mod) => {
@@ -490,7 +568,7 @@ export function NavigationContent({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [isEditingLayout, dragKit])
 
   // 子分类 → 父分类查找表（子分类拖拽用）：同父校验与同级列表都从这里取。
   // sortedCategories 里的 subCategories 含被隐藏的子分类——拖拽只认
@@ -1028,19 +1106,11 @@ export function NavigationContent({
     }
   }, [canvasBackground])
 
-  // 5. 根据多态卡片选择自适应网格列数
-  const gridColumnsClass = useMemo(() => {
-    if (cardDisplayMode === 'minimal' || (cardDisplayMode as any) === 'mini-chip') {
-      return 'grid grid-cols-2 min-[480px]:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 min-[1536px]:grid-cols-7! min-[1920px]:grid-cols-8!'
-    }
-    if (cardDisplayMode === 'compact') {
-      return 'grid grid-cols-1 min-[480px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 min-[1536px]:grid-cols-6! min-[1920px]:grid-cols-7!'
-    }
-    if (cardDisplayMode === 'rich') {
-      return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 min-[1536px]:grid-cols-4! min-[1920px]:grid-cols-5!'
-    }
-    return 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 min-[1536px]:grid-cols-5! min-[1920px]:grid-cols-6!'
-  }, [cardDisplayMode])
+  // 5. 根据多态卡片选择自适应网格列数（走统一容器查询 token + <640px 自动降级）
+  const gridColumnsClass = useMemo(
+    () => getGridClassForCardMode(effectiveCardDisplayMode, 12),
+    [effectiveCardDisplayMode],
+  )
 
   // 提交添加自定义站点
   const handleAddCustomSiteSubmit = () => {
@@ -1103,6 +1173,7 @@ export function NavigationContent({
   }, [customSiteTitle, customSiteHref, customSiteDesc, sortedCategories])
 
   return (
+    <InitialViewModeProvider value={ssrCardDisplayMode}>
     <div className="flex flex-col md:flex-row min-h-screen">
       <nav aria-label="站点分类导航" className="hidden md:block">
         <Sidebar
@@ -1142,6 +1213,7 @@ export function NavigationContent({
 
       <main
         id="main-content"
+        data-card-mode={effectiveCardDisplayMode}
         /* @container：卡片网格改用容器查询（2026-11-21）。
            为什么必须用容器而不是视口：左侧栏可拖拽、宽度可变，视口宽推不出
            主区宽。同一 1280px 视口下，侧栏 210px 与 320px 时主区差 110px，
@@ -1231,8 +1303,14 @@ export function NavigationContent({
           {/* 移动端品牌主标题（U-263）：桌面侧边栏品牌 h1 在移动端被 hidden，
               首页主内容区又无其它 h1，致移动端无可见主标题（mobile-layout
               冒烟红）。此处补一个移动端专用的紧凑标题（短标题「山羊胡导航」），
-              仅移动端可见；桌面端仍由侧边栏品牌担任唯一 h1。 */}
-          <h1 className="md:hidden text-lg font-bold tracking-tight text-foreground pb-3">山羊胡导航</h1>
+              仅移动端可见；桌面端仍由侧边栏品牌担任唯一 h1。
+
+              2026-11-24 ISR 门禁修复：原为 <h1>，与侧边栏品牌 h1 在 HTML 里
+              同时存在（md:hidden 只是 CSS 隐藏，DOM 仍有 2 个 h1），
+              ISR 首页 SEO 契约要求恰好 1 个 h1 因此失败。
+              改为 <p role="heading" aria-level={1}>：视觉与语义层级不变，
+              但不再产生第二个 h1 元素。 */}
+          <p role="heading" aria-level={1} className="md:hidden text-lg font-bold tracking-tight text-foreground pb-3">山羊胡导航</p>
           {/* 增量掩码与时间轴回收站快捷感知条（当用户存在已删减功能或处于 DIY 编辑态时呈现） */}
           {(totalPrunedCount > 0 || isEditingLayout) && (
             <div
@@ -1324,15 +1402,6 @@ export function NavigationContent({
             tagline={homeControl.basic.tagline || siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
           />
 
-          {/* C1 国考准考证打印回访卡（2026-11-23）：HomeSubtitleHint
-              之后、C4 卡之上，viewMode !== 'workbench' 守卫内；窗口外岛内渲染 null，不留空壳。 */}
-          {viewMode !== 'workbench' ? <GuokaoReturnCardContent /> : null}
-
-          {/* C4 广东自考 2027 年 1 月报名报考卡（2026-11-23）：HomeSubtitleHint
-              之后、胶囊行之前，viewMode !== 'workbench' 守卫内；C1 在上、
-              C4 在下（D4）。窗口外岛内渲染 null，不留空壳。 */}
-          {viewMode !== 'workbench' ? <GuangdongZikaoSignupCardContent /> : null}
-
           {/* 首屏瘦身：工作区胶囊行与运营胶囊行合并为一行（HomeCapsuleRow，
               2026-11-20）：原来上下两行（工作区 ~63px + 运营 ~46px）压成单行
               约 44px；<1024px 只留「全部探索」＋「AI 找站」，其余进「更多」折叠菜单。
@@ -1397,7 +1466,7 @@ export function NavigationContent({
                       totalCategories={sortedCategories.length}
                       allCategoryIds={allCategoryIds}
                       gridColumnsClass={gridColumnsClass}
-                      cardDisplayMode={cardDisplayMode}
+                      cardDisplayMode={effectiveCardDisplayMode}
                       selectionMode={selectionMode}
                       selectedIds={selectedIds}
                       siteData={siteData}
@@ -1559,10 +1628,7 @@ export function NavigationContent({
                 按标签浏览
               </Link>
               {directoryLinks.length > 0 && (
-                <>
-                  <span aria-hidden className="hidden sm:block h-3.5 w-px bg-border" />
-                  <DirectoryPillToolbar links={directoryLinks} counts={treeSiteCounts} />
-                </>
+                <DirectoryPillToolbar links={directoryLinks} counts={treeSiteCounts} />
               )}
             </div>
           </nav>
@@ -1735,5 +1801,6 @@ export function NavigationContent({
         />
       </main>
     </div>
+    </InitialViewModeProvider>
   )
 }

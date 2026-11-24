@@ -100,6 +100,24 @@
 3. **是假绿吗？** 检查 `test.skip`、PG 静默 skip、空分母（sitemap 族下限缺失）、mock 前缀错误、只断言 `toBeTruthy()`。
 4. **守卫排除注释了吗？** `not.toContain` 会被「注释里引用了旧代码」顶掉，要求行首锚定正则。
 5. **overlay 同步了吗？** `apps/web-overlay/test/` 改了要镜像到 `apps/web/test/`，两份都提交。
+
+   > **实操陷阱（2026-11-21 踩过）**：直接改 `apps/web/test/*.test.ts` 是**无效**的——
+   > `apps/web` 是生成产物，下一次 `pnpm mirror:web` 会把你的改动覆盖回去，
+   > 于是「改了测试却还是红」。正确顺序：
+   >
+   > ```bash
+   > # 1) 只改 overlay 源
+   > vim apps/web-overlay/test/xxx.test.ts
+   > # 2) 生成镜像（覆盖 apps/web/test）
+   > pnpm mirror:web
+   > # 3) 用 apps/web/test 的路径跑（vitest 的 include 只收 apps/web/test）
+   > npx vitest run apps/web/test/xxx.test.ts
+   > ```
+   >
+   > 判断两份是否已一致：`git diff --no-index` 或直接比对文件哈希。
+   > 另注：`.gitignore` 第 39/60 行忽略了 `apps/web/*` 与 `apps/web/src/components/*`，
+   > 所以 `git add apps/web/test/...` 会被拒——**这不是规则写错，而是设计如此**：
+   > apps/web 由 overlay 派生，不该单独提交。
 6. **GLOBAL_FILES 跑全量了吗？** 改 `package.json` / `vitest.config.ts` 的 PR，证据必须是全量日志。
 
 ### 3.2 按变更域的审查清单

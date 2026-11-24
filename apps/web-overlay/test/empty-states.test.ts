@@ -241,13 +241,12 @@ describe('W4 诚实空态：六源全空判定与文案（验收 1/2/3）', () =
 })
 
 describe('落点守卫：三个面真的在用这份文案', () => {
-  it('收藏页真空态用 FAVORITES_EMPTY_COPY（含导入提示），筛空分支 untouched', () => {
+  it('收藏页真空态升级为 FavoritesQuickStartEmpty 三卡，筛空分支 untouched', () => {
     const page = read('src/app/favorites/page.tsx')
-    expect(page).toContain("import { FAVORITES_EMPTY_COPY } from '@/lib/empty-states'")
-    expect(page).toContain('title={FAVORITES_EMPTY_COPY.title}')
-    expect(page).toContain('FAVORITES_EMPTY_COPY.tip')
-    expect(page).toContain('FAVORITES_EMPTY_COPY.actionLabel')
-    expect(page).toContain('FAVORITES_EMPTY_COPY.actionHref')
+    // 0 收藏破冰不再是单一 EmptyState 文案，而是三张快速起步卡
+    expect(page).toContain('FavoritesQuickStartEmpty')
+    expect(page).toContain('<FavoritesQuickStartEmpty')
+    expect(page).not.toContain("import { FAVORITES_EMPTY_COPY } from '@/lib/empty-states'")
     // 筛出来的空（收藏还在、只是没匹配到）仍走原分支，不许并进真空态
     expect(page).toContain('favoriteFilterEmptyMessage')
   })

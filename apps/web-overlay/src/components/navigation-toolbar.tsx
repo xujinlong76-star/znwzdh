@@ -53,6 +53,7 @@ import type { SiteConfig } from '@/types/site'
 import { ModeToggle } from '@/components/mode-toggle'
 import { FontSizeToggle } from '@/components/font-size-toggle'
 import { HighContrastToggle } from '@/components/high-contrast-toggle'
+import { SiteDisplayModeSwitcher } from '@/components/site-display-mode-switcher'
 import { cn } from '@/lib/utils'
 import { trackDiyEvent } from '@/lib/navhub-api'
 import { summarizeSelection } from '@/lib/selection'
@@ -97,6 +98,7 @@ export interface NavigationToolbarProps {
   onOpenWidgetBox?: () => void
   onOpenAppearanceGuide?: () => void
   onOpenAiFinder?: () => void
+  unreadNotifications?: number
 }
 
 // P0-2：包 memo——父组件回调已全部 useCallback 化，浅比较才能生效。
@@ -125,10 +127,10 @@ export const NavigationToolbar = memo(function NavigationToolbar({
   return (
         <header className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 shadow-2xs">
           <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 md:h-14 md:flex-nowrap">
-            <div className="flex flex-1 min-w-[260px] max-w-[560px] items-center gap-1.5 transition-all duration-300 ease-out">
+            <div className="flex flex-1 min-w-[260px] max-w-[620px] items-center gap-1.5 transition-all duration-300 ease-out">
               <div className="flex-1 min-w-0">
-                {/* 山羊胡混合检索引擎 */}
-                <SearchPalette siteConfig={siteConfig} placeholder="搜索站点、标签或拼音…（按 / 快速搜索）" />
+                {/* 山羊胡混合检索引擎：placeholder 保持精炼，`/` 快捷键改由独立 <kbd>/</kbd> 徽标提示，避免中窄屏被 [AI] 按钮劈断 */}
+                <SearchPalette siteConfig={siteConfig} placeholder="搜索站点、标签或拼音…" />
               </div>
               {onOpenAiFinder ? (
                 <Button
@@ -143,6 +145,8 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                   <span>AI 找站</span>
                 </Button>
               ) : null}
+              {/* 网址展示风格自由切换（7 大主流模式：标准卡片 / 图标启动台 / 极客清单 / 极速胶囊 / 紧凑条形 / 视觉画廊 / 书签目录） */}
+              <SiteDisplayModeSwitcher />
             </div>
             {/* U-382（2026-11-21）：行容器供 e2e/toolbar-360-overflow.spec.ts 直接量宽
                 （data-testid）；旧探针 closest('div.overflow-hidden') 在 8ebc4b08
@@ -209,12 +213,12 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                   ) : null}
                 </Button>
               ) : null}
-              {/* 发现与热度 */}
+              {/* 发现与热度：1280–1535px 收进探索菜单以保障搜索框充裕可读宽度，≥1536px 独立展示 */}
               <Button
                 asChild
                 variant="ghost"
                 size="icon"
-                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors hidden xl:inline-flex"
+                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors hidden min-[1536px]:inline-flex"
               >
                 <Link href="/hot" aria-label="热度榜" title="热度趋势与新品榜">
                   <Flame className="h-4 w-4" />
@@ -235,17 +239,17 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56 p-1.5 shadow-xl bg-popover/95 backdrop-blur-md border border-border/80">
-                  <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1">
+                  <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1 min-[1536px]:hidden">
                     工具与效率
                   </DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => onOpenTools()} className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent xl:hidden">
+                  <DropdownMenuItem onClick={() => onOpenTools()} className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent min-[1536px]:hidden">
                     <Wrench className="h-4 w-4 text-emerald-500 shrink-0" />
                     <div className="flex flex-col">
                       <span className="font-medium text-foreground">开发者微工具箱</span>
                       <span className="text-xs text-muted-foreground">Base64 / JSON / 正则 (T)</span>
                     </div>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onOpenShortcuts()} className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent xl:hidden">
+                  <DropdownMenuItem onClick={() => onOpenShortcuts()} className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent min-[1536px]:hidden">
                     <HelpCircle className="h-4 w-4 text-sky-500 shrink-0" />
                     <div className="flex flex-col">
                       <span className="font-medium text-foreground">快捷键指南</span>
@@ -288,7 +292,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                       </div>
                     </DropdownMenuItem>
                   ) : null}
-                  <DropdownMenuItem asChild className="xl:hidden">
+                  <DropdownMenuItem asChild className="min-[1536px]:hidden">
                     <Link href="/hot" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
                       <Flame className="h-4 w-4 text-amber-500 shrink-0" />
                       <div className="flex flex-col">
@@ -298,7 +302,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                     </Link>
                   </DropdownMenuItem>
 
-                  <DropdownMenuSeparator className="my-1 xl:hidden" />
+                  <DropdownMenuSeparator className="my-1 min-[1536px]:hidden" />
 
                   <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1">
                     认知与前沿矩阵
@@ -431,13 +435,13 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <div className="h-4 w-px bg-border/60 mx-1 hidden xl:block" />
+              <div className="h-4 w-px bg-border/60 mx-1 hidden min-[1536px]:block" />
 
-              {/* 开发者极速微工具箱按钮 */}
+              {/* 开发者极速微工具箱按钮：1280–1535px 收进探索菜单，≥1536px 独立展示 */}
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden xl:inline-flex"
+                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden min-[1536px]:inline-flex"
                 onClick={() => onOpenTools()}
                 title="打开内置微工具箱 (快捷键: T)"
                 aria-label="微工具箱"
@@ -455,11 +459,11 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                 </Link>
               </Button>
 
-              {/* 快捷键指南按钮 */}
+              {/* 快捷键指南按钮：1280–1535px 收进探索菜单，≥1536px 独立展示 */}
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden xl:inline-flex"
+                className="h-11 w-11 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden min-[1536px]:inline-flex"
                 onClick={() => onOpenShortcuts()}
                 title="快捷键全景指南 (快捷键: ?)"
                 aria-label="快捷键指南"
@@ -548,7 +552,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                   aria-label="打开外观排版与新手向导小窗"
                 >
                   <SlidersHorizontal className="h-4 w-4 shrink-0" />
-                  <span className="text-center text-xs leading-none whitespace-normal break-keep sm:whitespace-nowrap">DIY 排版</span>
+                  <span className="text-center text-[10px] leading-none whitespace-nowrap tracking-tight sm:text-xs sm:tracking-normal">DIY 排版</span>
                 </Button>
               ) : null}
               <div className="h-4 w-px bg-border/60 mx-1 hidden min-[1536px]:block" />

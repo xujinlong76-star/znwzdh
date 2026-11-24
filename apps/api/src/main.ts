@@ -16,6 +16,7 @@ import { JobRunner, MAX_JOB_ATTEMPTS } from "./jobs.ts";
 import { sendWebhookAlert, ALERT_DEDUPE_WINDOW_MS } from "./alerts.ts";
 import { createStoreAlertDeduper } from "./alert-dedupe.ts";
 import { reconcileVideoCatalogOnBoot } from "./video-catalog-boot.ts";
+import { ensureNavigationShardsFresh } from "./storage.ts";
 
 // 本地/容器启动时加载仓库根目录的 .env（Node 原生能力，零依赖）。
 // 注意：dev-all 以 apps/api 为 CWD 启动，默认的 loadEnvFile() 会找 apps/api/.env，
@@ -60,6 +61,8 @@ if (runner) runner.start();
 if (process.env.NAVHUB_VIDEO_CATALOG_RECONCILE_ON_BOOT !== "0") {
   void reconcileVideoCatalogOnBoot(ctx, (line) => console.info(line));
 }
+// 导航分片启动预热与自愈：确保首次 SSR 请求即命中最新 data_version 分片，不再回落 2MB 整包读
+void ensureNavigationShardsFresh(ctx);
 
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, "正在关闭");

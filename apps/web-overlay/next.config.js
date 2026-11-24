@@ -24,8 +24,10 @@ const nextConfig = {
   allowedDevOrigins: [
     '127.0.0.1',
     '127.0.0.1:3000',
+    '127.0.0.1:3111',
     'localhost',
     'localhost:3000',
+    'localhost:3111',
     ...(process.env.NAVHUB_DEV_ORIGINS ? process.env.NAVHUB_DEV_ORIGINS.split(',').map((s) => s.trim()) : []),
   ],
   // 构建输出目录可用 NEXT_DIST_DIR 覆盖（默认 .next）。
@@ -87,9 +89,22 @@ const nextConfig = {
       { key: "Permissions-Policy", value: "geolocation=(), microphone=(), camera=()" },
       // COOP：same-origin-allow-popups 兼顾 OAuth 弹窗登录（GitHub）。
       // 裸 same-origin 会切断 opener 关系，弹窗回跳后前端收不到登录结果。
-      { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
+      //
+      // 但它会让 Lighthouse 打不出性能分（2026-11-22 实测定位）：COOP 把页面放进
+      // 独立的 browsing context group，导航提交时发生进程切换，Chromium 随之
+      // 丢失真实导航的 navigationStart trace 事件；Lighthouse 的 trace 处理器
+      // 找不到可用 navstart，于是**所有**性能审计整体报 NO_NAVSTART（表现成
+      // "页面性能全红"，其实与页面快慢无关）。受控实验（同一份 HTML、同一个
+      // Chrome、只改这一个响应头）：带上 COOP → NO_NAVSTART；去掉 → 正常出分。
+      // 因此做成**构建期开关**：默认保持现状（开），性能基线/审计构建时用
+      // NAVHUB_COOP=off 关掉。Next 的 headers() 在 next build 时求值并写入
+      // routes-manifest，故这是构建期环境变量（与 CSP 开关同一纪律）。
+      ...(process.env.NAVHUB_COOP === "off"
+        ? []
+        : [{ key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" }]),
       // CORP：本站资源（favicon / 预取快照）只准被同站点页面引用，
       // 挡住其它站点把我们的接口当图像端点白蹭。
+      // 实测 CORP 不影响 Lighthouse 出分（同一组对照实验里只有 COOP 是元凶）。
       { key: "Cross-Origin-Resource-Policy", value: "same-site" },
     ];
     // HSTS：http-only 的自托管一旦下发就会被浏览器强制升级，因此只在明确 https 时开启。

@@ -39,7 +39,9 @@ describe('normalizeTagName', () => {
       ['ux', 'UX'],
       ['bi', 'BI'],
       ['seo', 'SEO'],
-      ['rag', 'RAG'],
+      // `rag` 已被同义词表收敛到业务规范名「RAG 架构」（用户交付标准明确要求），
+      // 缩写仍强制大写，只是不能停留在裸缩写形态。
+      ['rag', 'RAG 架构'],
       ['mcp', 'MCP'],
       ['wasm', 'WASM'],
       ['k12', 'K12'],

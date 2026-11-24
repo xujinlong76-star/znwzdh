@@ -44,6 +44,7 @@ import {
   flushHomeDiyDiskWrites,
   getEffectiveSlotClocks,
   getHomeDiySnapshot,
+  getServerHomeDiySnapshot,
   hydrateHomeDiy,
   migrateLegacyHomeDiyConfig,
   pruneHomeDiyShareBackups,
@@ -435,6 +436,38 @@ describe('接线守则：DIY 状态只能住在共享存储里，且失败必须
     expect(hookSrc).toContain('useSyncExternalStore')
     expect(hookSrc).toContain('subscribeHomeDiy')
     expect(hookSrc).toContain('getHomeDiySnapshot')
+  })
+
+  it('hydration 首帧钉死默认快照：serverSnapshot 不能是会被 localStorage 污染的当前快照', () => {
+    const subscription = hookSrc.match(/useSyncExternalStore\(([\s\S]*?)\n  \)/)?.[1] ?? ''
+    expect(subscription).toContain('subscribeHomeDiy')
+    expect(subscription).toContain('getHomeDiySnapshot')
+    expect(subscription).toContain('getServerHomeDiySnapshot')
+    expect(subscription.trim().endsWith('getServerHomeDiySnapshot,')).toBe(true)
+  })
+
+  it('本地配置 hydrate 后 serverSnapshot 仍等于服务端默认值（侧栏分组标题 hydration mismatch）', async () => {
+    const before = getServerHomeDiySnapshot()
+    expect(before.config).toBe(DEFAULT_CONFIG)
+    expect(before.config.hiddenCategoryIds).toEqual([])
+
+    browser = installBrowser({
+      [STORAGE_KEY]: JSON.stringify({
+        ...DEFAULT_CONFIG,
+        hiddenCategoryIds: ['reg-ai-tools', 'reg-frontend-development'],
+      }),
+    })
+    resetHomeDiySharedState()
+    await hydrateHomeDiy()
+
+    // 客户端真实快照确实读到了隐藏类目
+    expect(getHomeDiySnapshot().config.hiddenCategoryIds).toEqual([
+      'reg-ai-tools',
+      'reg-frontend-development',
+    ])
+    // 但 hydration 用的 serverSnapshot 必须仍是默认值、且引用不变
+    expect(getServerHomeDiySnapshot()).toBe(before)
+    expect(getServerHomeDiySnapshot().config.hiddenCategoryIds).toEqual([])
   })
 
   it('hook 不许再用 useState 存 config / history / isEditingLayout（这正是一开始的 bug）', () => {

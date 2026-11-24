@@ -37,10 +37,18 @@ import { useHomeDiyGrid } from '@/lib/modular/use-home-diy-grid'
 import type { CardMoveDirection, DiyCardDragData } from '@/lib/modular/diy-drag'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
 import { countCategorySites } from '@/lib/modular/category-counts'
-import { observeGridColumns } from '@/lib/grid-column-observer'
+import { observeGridColumns, resyncAllObservedGrids } from '@/lib/grid-column-observer'
 import { useGridColumns } from '@/hooks/usePreviewCount'
 import { previewCountForColumns } from '@/lib/preview-count'
 import { CARD_GRID, CARD_BODY, CARD_DESC } from '@/lib/responsive-grid'
+import {
+  computePreviewCountForMode,
+  getCardDisplayModeMeta,
+  getGridClassForCardMode,
+  normalizeCardDisplayMode,
+  resolveEffectiveViewMode,
+} from '@/lib/modular/card-display-modes'
+import { useIsMobileViewport } from '@/components/initial-view-mode-context'
 import { categoryHref } from '@/lib/seo/category-url'
 import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
 import { buildCategoryNameIndex, sanitizeSiteTags, isPollutedTag } from '@/lib/tag-hygiene'
@@ -105,6 +113,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
 }: NavigationCategorySectionProps) {
   const { toast } = useToast()
   const {
+    mounted,
     isEditingLayout,
     isAdaptiveRankingEnabled,
     categoryOrder,
@@ -140,13 +149,13 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   const { moveCard } = useHomeDiyGrid(allCategoryIds)
 
   /**
-   * dnd-kit 重型层：挂载后在后台 import（不阻塞首屏，chunk 到达前
-   * 卡片只渲染 ⋯ 菜单；到达后编辑态再包上可拖拽层）。
-   * 失败也不影响菜单（catch 里静默：拖拽是增强，不是必需）。
+   * dnd-kit 重型层（~133KB）：仅在进入 DIY 排版编辑态时按需动态 import，
+   * 普通浏览态零下载、零水合后额外 setState 重渲染。
    */
   type DiyDragKitModule = typeof import('@/components/diy/diy-drag-kit')
   const [dragKit, setDragKit] = useState<DiyDragKitModule | null>(null)
   useEffect(() => {
+    if (!isEditingLayout || dragKit) return
     let cancelled = false
     import('@/components/diy/diy-drag-kit')
       .then((mod) => {
@@ -158,7 +167,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [isEditingLayout, dragKit])
 
   /** dnd-kit 落点高亮（本区块正被卡片悬停）：复用旧的高亮条样式 */
   const [isCategoryDropTarget, setIsCategoryDropTarget] = useState(false)
@@ -217,42 +226,33 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   /** 网格 DOM 引用（供 useGridColumns 读 data-grid-cols；见 previewLimit）。 */
   const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null)
 
+  const isMobileViewport = useIsMobileViewport()
   const isPinned = pinnedCategoryIds.includes(category.id)
   const isCustom = Boolean(category.isCustom)
   const isCollapsed = collapsedCategoryIds.includes(category.id)
-  const effectiveCardMode = categoryDensityOverrides?.[category.id] || cardDisplayMode
+  const rawCategoryCardMode = categoryDensityOverrides?.[category.id] || cardDisplayMode
+  const normalizedCardMode = mounted
+    ? resolveEffectiveViewMode(rawCategoryCardMode, isMobileViewport)
+    : normalizeCardDisplayMode(rawCategoryCardMode)
+  const effectiveCardMode = normalizedCardMode
+  const effectiveCardModeMeta = getCardDisplayModeMeta(effectiveCardMode)
   /**
-   * 把网格的**真实列数**写成 data-grid-cols，供 CSS 隐藏 3 列折叠态的孤儿卡片。
-   *
-   * 为什么不在 CSS 里按视口断点猜：网格用的是 repeat(auto-fill, minmax(240px,1fr))，
-   * 列数取决于网格容器宽度，而左侧栏宽度可拖拽，视口宽度推不出列数。
-   *
-   * P2-13：改走共享 observer（src/lib/grid-column-observer.ts）——全站一个
-   * ResizeObserver 单例；auto-fill 列数由容器宽直接算出，resize 时不再调
-   * getComputedStyle（间隙只在挂载时读一次，密度切换时失效重读；窄模块固定
-   * 列数网格回退到读实际模板）。React 19 ref callback 返回的 cleanup 即取消观测。
+   * 把网格的**真实列数**写成 data-grid-cols，供 previewLimit 按当前展示模式整行切片。
+   * 仅在尚未绑定或旧节点已卸载时更新 gridEl，确保始终锚定该分类首个（顶部可见）网格，
+   * 避免被末尾视口外子分组反复覆盖。
    */
   const gridColumnRef = useCallback((el: HTMLDivElement | null) => {
     if (!el) return
-    // 同时把元素交给 React state，供 usePreviewCount 读 data-grid-cols。
-    // observeGridColumns 返回的 cleanup 仍照原样交给 React 19 回收。
-    setGridEl(el)
+    setGridEl((prev) => (prev && prev.isConnected ? prev : el))
     return observeGridColumns(el)
   }, [])
 
   /**
-   * 折叠态预览张数（2026-11-21 要求 1）：由**真实列数**联动，previewCount = cols × 2。
-   *
-   * 旧行为是固定 6 张——6 在 1/2/3 列下恰好整行，但 **4 列会 4+2、5 列会 5+1**，
-   * 每行右端空一块（实测 1920×1080 下 30 个分组全部是孤儿行）。
-   * 旧补丁是在 globals.css 里 nth-child 把多出的卡 display:none 藏掉，不干净：
-   * SSR 仍输出 6 张（多渲染、多 favicon 请求），且点「展开全部」时那 2 张只是
-   * 从 hidden 变可见，用户会觉得「展开了却没变化」。
-   *
-   * 现在在数据层直接切片，任何列数下都是整行；展开态照旧全量。
+   * 折叠态预览张数（统一 19 大类同口径）：由真实列数 + 当前展示模式配置统一算出，
+   * 始终是列数的精确整倍数（0 孤儿行），并受模式上限约束防止宽屏无谓 DOM 膨胀。
    */
   const gridCols = useGridColumns(gridEl)
-  const previewLimit = gridCols > 0 ? previewCountForColumns(gridCols) : cardsPerGroup
+  const previewLimit = gridCols > 0 ? computePreviewCountForMode(effectiveCardMode, gridCols) : cardsPerGroup
 
   /**
    * 卡片网格列数（2026-11-21 P0 重写）。
@@ -277,25 +277,19 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
    * 窄模块（DIY 里被拖窄到 moduleColSpan ≤ 9）仍强制减列防挤压，但同样走容器查询。
    */
   const effectiveGridClass = useMemo(() => {
-    /*
-     * 2026-11-21 断点重新标定（用 lib/responsive-grid 的 token）。
-     *
-     * 旧值 @5xl(1024) 做 3 列断点有个临界问题：主流笔记本（1280-1366 视口）
-     * 在侧栏展开时主区约 1020-1120px，正好落在 1024 附近——用户拖一下侧栏
-     * 就会在 2↔3 列之间抖动。
-     *
-     * 新值 @4xl(896) 让整个 1020-1120px 区间**稳定 3 列**，
-     * 而 1024 窄桌面/分屏（主区约 700-800px）仍稳在 2 列。
-     * 2 列断点也提前到 @xl(576)：手机横屏/小平板就该双列。
-     */
-    const fullWidth = CARD_GRID
-    // 窄模块：最多 2 列，避免被拖窄后文字挤压
-    const narrow = 'grid grid-cols-1 @xl:grid-cols-2'
+    if (normalizedCardMode === 'standard' && moduleColSpan > 9) {
+      return CARD_GRID
+    }
+    return getGridClassForCardMode(normalizedCardMode, moduleColSpan)
+  }, [normalizedCardMode, moduleColSpan])
 
-    if (moduleColSpan <= 5) return 'grid grid-cols-1'
-    if (moduleColSpan <= 9) return narrow
-    return fullWidth
-  }, [moduleColSpan])
+  // 切换网址展示模式或模块列宽时容器物理宽度未变，ResizeObserver 不会触发；
+  // 主动重算一次 data-grid-cols，保证预览张数立即按新列数切满整行。
+  useEffect(() => {
+    resyncAllObservedGrids()
+    const rafId = window.requestAnimationFrame(() => resyncAllObservedGrids())
+    return () => window.cancelAnimationFrame(rafId)
+  }, [effectiveGridClass])
   const directItems = useMemo(
     () =>
       ((category.items || []) as NavigationSubItem[]).filter(
@@ -813,7 +807,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                               type="button"
                               onClick={() => toggleCollapseCategory(category.id)}
                               /* 视觉 28px，::before 扩 44px 触摸热区——视觉变小不拿可用性换。 */
-                              className="relative -ml-1 flex h-7 w-7 items-center justify-center rounded-md p-0 text-muted-foreground/70 transition-all before:absolute before:-inset-2 before:content-[''] hover:bg-muted/80 hover:text-foreground cursor-pointer"
+                              className="relative -ml-1 flex h-7 w-7 items-center justify-center rounded-md p-0 text-muted-foreground transition-all before:absolute before:-inset-2 before:content-[''] hover:bg-muted/80 hover:text-foreground cursor-pointer"
                               title={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
                               aria-label={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
                               aria-expanded={!isCollapsed}
@@ -832,6 +826,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                               {canVisitCategoryPage ? (
                                 <Link
                                   href={categoryHref(category)}
+                                  prefetch={false}
                                   className="hover:text-primary hover:underline underline-offset-4 decoration-primary/40 transition-colors"
                                   title={`查看「${category.title}」分类全部站点`}
                                 >
@@ -853,7 +848,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                 </span>
                               )}
                               {isAdaptiveRankingEnabled && (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 font-medium">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-700 dark:text-violet-400 border border-violet-500/20 font-medium">
                                   <Sparkles className="w-2.5 h-2.5" />
                                   <span>自适应热度</span>
                                 </span>
@@ -871,7 +866,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                 <button
                                   type="button"
                                   onClick={handleCopyCategoryLink}
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/70 transition-all hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-all hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
                                   aria-label={`复制「${category.title}」分类的直达链接`}
                                 >
                                   <Link2 className="w-3.5 h-3.5" />
@@ -885,7 +880,8 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                               <TooltipTrigger asChild>
                                 <Link
                                   href={`/graph?category=${encodeURIComponent(category.id)}`}
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/70 transition-all hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  prefetch={false}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                   aria-label={`查看「${category.title}」的技术生态图谱`}
                                 >
                                   <Network className="w-3.5 h-3.5" />
@@ -1116,7 +1112,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                   )}
                                 >
                                   <span>全部</span>
-                                  <span className={cn("text-[10px] font-mono", selectedSubCatId === null ? "text-primary-foreground/80" : "text-muted-foreground/60")}>{`(${totalCount})`}</span>
+                                  <span className={cn("text-[10px] font-mono", selectedSubCatId === null ? "text-primary-foreground/80" : "text-muted-foreground")}>{`(${totalCount})`}</span>
                                 </button>
                                 {sortedDirectItems.length > 0 && (
                                   <button
@@ -1135,7 +1131,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                     )}
                                   >
                                     <span>精选直属</span>
-                                    <span className={cn("text-[10px] font-mono", selectedSubCatId === '__direct__' ? "text-primary-foreground/80" : "text-muted-foreground/60")}>{`(${sortedDirectItems.length})`}</span>
+                                    <span className={cn("text-[10px] font-mono", selectedSubCatId === '__direct__' ? "text-primary-foreground/80" : "text-muted-foreground")}>{`(${sortedDirectItems.length})`}</span>
                                   </button>
                                 )}
                                 {subCats.filter((sub) => isEditingLayout || (sub.items && sub.items.length > 0)).map((sub) => {
@@ -1159,7 +1155,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                       )}
                                     >
                                       <span>{sub.title}</span>
-                                      <span className={cn("text-[10px] font-mono", isCurrent ? "text-primary-foreground/80" : "text-muted-foreground/60")}>{`(${subItemCount})`}</span>
+                                      <span className={cn("text-[10px] font-mono", isCurrent ? "text-primary-foreground/80" : "text-muted-foreground")}>{`(${subItemCount})`}</span>
                                     </button>
                                   )
                                 })}
@@ -1190,9 +1186,10 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                               <div
                                 ref={gridColumnRef}
                                 data-nav-grid=""
+                                data-card-mode={normalizedCardMode}
                                 data-grid-folded={directGroup.items.length < filteredDirectItems.length ? '' : undefined}
                                 className={cn(effectiveGridClass, "transition-all duration-200")}
-                                style={{ gap: 'var(--density-grid-gap, 14px)' }}
+                                style={effectiveCardModeMeta.usesDensityGap ? { gap: 'var(--density-grid-gap, 14px)' } : undefined}
                               >
                                 {directGroup.items.map((item: any, index: number) =>
                                   renderSiteCard(item, {
@@ -1317,9 +1314,10 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                     <div
                                       ref={gridColumnRef}
                                       data-nav-grid=""
+                                      data-card-mode={normalizedCardMode}
                                       data-grid-folded={items.length < sortedSubItems.length ? '' : undefined}
                                       className={cn(effectiveGridClass, "transition-all duration-200")}
-                                      style={{ gap: 'var(--density-grid-gap, 14px)' }}
+                                      style={effectiveCardModeMeta.usesDensityGap ? { gap: 'var(--density-grid-gap, 14px)' } : undefined}
                                     >
                                       {items.map((item: any, index: number) =>
                                         renderSiteCard(item, {

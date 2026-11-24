@@ -239,7 +239,7 @@ export function TagResultsBoard({
                   onChange={(e) => setFilterQuery(e.target.value)}
                   placeholder={`在「#${slug}」标签内即时筛选站点（名称、简介、网址）...`}
                   aria-label={`在标签${slug}内筛选站点`}
-                  className="w-full pl-8.5 pr-8 py-1.5 text-xs bg-background/80 rounded-lg border border-border/50 focus:outline-none focus:ring-1 focus:ring-primary/40 placeholder:text-muted-foreground/60 transition-all"
+                  className="w-full pl-8.5 pr-8 py-1.5 text-xs bg-background/80 rounded-lg border border-border/50 focus:outline-none focus:ring-1 focus:ring-primary/40 placeholder:text-muted-foreground transition-all"
                 />
                 {filterQuery && (
                   <button

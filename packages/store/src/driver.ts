@@ -128,6 +128,16 @@ CREATE TABLE IF NOT EXISTS tag_aliases (
 );
 CREATE INDEX IF NOT EXISTS tag_aliases_tag_idx ON tag_aliases(tag_id);
 
+CREATE TABLE IF NOT EXISTS site_id_aliases (
+  old_site_id TEXT PRIMARY KEY,
+  canonical_site_id TEXT NOT NULL,
+  old_title TEXT,
+  old_url TEXT,
+  reason TEXT,
+  merged_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS site_id_aliases_canonical_idx ON site_id_aliases(canonical_site_id);
+
 CREATE TABLE IF NOT EXISTS site_tags (
   site_id TEXT NOT NULL, tag_id TEXT NOT NULL
 );
@@ -960,6 +970,16 @@ CREATE INDEX IF NOT EXISTS site_relations_source_idx ON site_relations(source_si
 CREATE INDEX IF NOT EXISTS site_relations_target_idx ON site_relations(target_site_id);
 CREATE INDEX IF NOT EXISTS site_relations_type_idx ON site_relations(relation_type);
 
+CREATE TABLE IF NOT EXISTS site_id_aliases (
+  old_site_id TEXT PRIMARY KEY,
+  canonical_site_id TEXT NOT NULL,
+  old_title TEXT,
+  old_url TEXT,
+  reason TEXT,
+  merged_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS site_id_aliases_canonical_idx ON site_id_aliases(canonical_site_id);
+
 CREATE TABLE IF NOT EXISTS collections (
   id TEXT PRIMARY KEY, slug TEXT NOT NULL, title TEXT NOT NULL, description TEXT,
   kind TEXT NOT NULL DEFAULT 'topic', icon TEXT, sort INTEGER NOT NULL DEFAULT 0,
@@ -1635,6 +1655,7 @@ export async function openDb(config: {
     // 省掉 read 系统调用的用户态拷贝。这是上限不是预分配 ——
     // SQLite 只映射实际访问到的页，小内存部署同样安全。
     raw.pragma("mmap_size = 268435456"); // 256MB
+    raw.pragma("cache_size = -65536"); // 64MB 页缓存（按需分配，确保 4,800+ 站点与 FTS5/trigram 热索引常驻内存）
     const { drizzle } = await import("drizzle-orm/better-sqlite3");
     const db: Db = {
       dialect: "sqlite",
@@ -1660,10 +1681,7 @@ export async function openDb(config: {
     // 顺序不能反：存量重复会让 CREATE UNIQUE INDEX 失败，而那里是逐语句 try/catch，
     // 失败等于静默跳过索引 —— 看起来迁移成功，实际约束从未生效。
     await runVersionedMigrations(db);
-  await migrateWorkspaceBlobs(db);
     await migrateWorkspaceBlobs(db);
-
-
 
     await cleanupOrphanPluginCategories(db, { skip: config.skipOrphanCleanup });
     return db;

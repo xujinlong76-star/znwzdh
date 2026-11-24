@@ -526,7 +526,7 @@ export async function CategoryBoard({
                       rel={externalRel}
                       title={`新窗口直达 ${site.title} 官网`}
                       aria-label={`新窗口直达 ${site.title} 官网`}
-                      className="p-1.5 rounded-lg text-muted-foreground/60 hover:text-primary hover:bg-primary/10 transition-colors shrink-0 cursor-pointer"
+                      className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0 cursor-pointer"
                     >
                       <ExternalLink className="w-4 h-4" />
                     </a>

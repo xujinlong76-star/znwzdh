@@ -19,6 +19,10 @@ import {
   DropdownMenuSeparator,
 } from '@/registry/new-york/ui/dropdown-menu'
 import type { CardDisplayMode } from '@/lib/modular/home-diy-storage'
+import {
+  CARD_DISPLAY_MODE_OPTIONS,
+  normalizeCardDisplayMode,
+} from '@/lib/modular/card-display-modes'
 import { cn } from '@/lib/utils'
 
 export interface CategoryDensityMenuContentProps {
@@ -111,7 +115,7 @@ export default function CategoryDensityMenuContent({
 
       <DropdownMenuSeparator className="my-1" />
       <DropdownMenuLabel className="text-[11px] text-muted-foreground px-1.5 py-1">
-        类目卡片形态覆盖
+        类目展示样式覆盖
       </DropdownMenuLabel>
       <DropdownMenuItem
         onClick={() => onSelectDensity(undefined)}
@@ -120,34 +124,19 @@ export default function CategoryDensityMenuContent({
         <span>默认 (跟随全局)</span>
         {!currentDensity && <Check className="w-3.5 h-3.5 text-primary" />}
       </DropdownMenuItem>
-      <DropdownMenuItem
-        onClick={() => onSelectDensity('minimal')}
-        className={cn("text-xs flex items-center justify-between cursor-pointer", currentDensity === 'minimal' && "font-bold text-primary")}
-      >
-        <span>⚡ 极速胶囊 (Mini Chip)</span>
-        {currentDensity === 'minimal' && <Check className="w-3.5 h-3.5 text-primary" />}
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        onClick={() => onSelectDensity('compact')}
-        className={cn("text-xs flex items-center justify-between cursor-pointer", currentDensity === 'compact' && "font-bold text-primary")}
-      >
-        <span>紧凑条形 (Compact)</span>
-        {currentDensity === 'compact' && <Check className="w-3.5 h-3.5 text-primary" />}
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        onClick={() => onSelectDensity('standard')}
-        className={cn("text-xs flex items-center justify-between cursor-pointer", currentDensity === 'standard' && "font-bold text-primary")}
-      >
-        <span>标准图文 (Standard)</span>
-        {currentDensity === 'standard' && <Check className="w-3.5 h-3.5 text-primary" />}
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        onClick={() => onSelectDensity('rich')}
-        className={cn("text-xs flex items-center justify-between cursor-pointer", currentDensity === 'rich' && "font-bold text-primary")}
-      >
-        <span>深度丰富 (Rich)</span>
-        {currentDensity === 'rich' && <Check className="w-3.5 h-3.5 text-primary" />}
-      </DropdownMenuItem>
+      {CARD_DISPLAY_MODE_OPTIONS.map((opt) => {
+        const active = Boolean(currentDensity) && normalizeCardDisplayMode(currentDensity) === opt.id
+        return (
+          <DropdownMenuItem
+            key={opt.id}
+            onClick={() => onSelectDensity(opt.id)}
+            className={cn("text-xs flex items-center justify-between cursor-pointer", active && "font-bold text-primary")}
+          >
+            <span>{opt.label} ({opt.enLabel})</span>
+            {active && <Check className="w-3.5 h-3.5 text-primary" />}
+          </DropdownMenuItem>
+        )
+      })}
     </DropdownMenuContent>
   )
 }

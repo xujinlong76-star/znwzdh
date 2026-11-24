@@ -554,7 +554,7 @@ export default function AdminJobsPage() {
             <label className="space-y-1.5 text-xs">
               <span className="font-medium">处理模式</span>
               <select
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="flex h-9 w-full rounded-md border border-border-strong bg-background px-3 text-sm"
                 value={retentionMode}
                 disabled={retentionBusy !== null}
                 onChange={(event) => {
@@ -573,7 +573,7 @@ export default function AdminJobsPage() {
                 type="number"
                 min={1}
                 max={3650}
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="flex h-9 w-full rounded-md border border-border-strong bg-background px-3 text-sm"
                 value={telemetryDays}
                 disabled={retentionBusy !== null}
                 onChange={(event) => {
@@ -662,7 +662,7 @@ export default function AdminJobsPage() {
           <label className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs">
             <span className="shrink-0 font-medium">目标站点 ID（元数据刷新 / 死链自愈）</span>
             <input
-              className="flex h-9 w-full sm:max-w-md rounded-md border border-input bg-background px-3 text-sm"
+              className="flex h-9 w-full sm:max-w-md rounded-md border border-border-strong bg-background px-3 text-sm"
               value={targetSiteId}
               disabled={Boolean(enqueuing)}
               onChange={(event) => setTargetSiteId(event.target.value)}
@@ -816,7 +816,7 @@ export default function AdminJobsPage() {
                             {j.error}
                           </div>
                         ) : (
-                          <span className="text-muted-foreground/60">—</span>
+                          <span className="text-muted-foreground">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
@@ -846,7 +846,7 @@ export default function AdminJobsPage() {
                           </Button>
                         )}
                         {j.status === 'done' && (
-                          <span className="text-xs text-muted-foreground/40">—</span>
+                          <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
                     </tr>

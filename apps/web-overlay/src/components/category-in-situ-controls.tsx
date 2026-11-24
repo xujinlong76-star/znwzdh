@@ -13,6 +13,7 @@ import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { removeFeatureFromMask } from '@/lib/modular/feature-mask-store'
 import { useModuleWindowSize } from '@/lib/modular/module-resize-store'
 import type { CardDisplayMode } from '@/lib/modular/home-diy-storage'
+import { getCardDisplayModeMeta } from '@/lib/modular/card-display-modes'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -149,11 +150,9 @@ export function CategoryInSituControls({
   const handleSelectDensity = (mode: CardDisplayMode | undefined) => {
     setCategoryDensityOverride(categoryId, mode)
     const label =
-      mode === undefined ? '已恢复跟随全局卡片形态'
-      : mode === 'minimal' ? '已设为 ⚡ 极速胶囊块'
-      : mode === 'compact' ? '已设为 紧凑条形'
-      : mode === 'standard' ? '已设为 标准图文'
-      : '已设为 深度丰富大图文'
+      mode === undefined
+        ? '已恢复跟随全局展示样式'
+        : `已设为「${getCardDisplayModeMeta(mode).label}」展示样式`
     toast({ title: `「${title}」${label}` })
   }
 

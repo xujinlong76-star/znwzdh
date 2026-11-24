@@ -81,6 +81,17 @@ describe('8 个原告警站点已迁移到 safeFetch', () => {
   it('resource 路由 GitHub API 固定白名单', () => {
     const route = readRepo('apps/web-overlay/src/app/api/resource/route.ts')
     expect(route).toContain("allowedHosts: ['api.github.com']")
+    expect(route).toContain('SAFE_DATA_IMAGE_HEADER_RE')
+  })
+
+  it('website-metadata 路由出站全部收口到 safeFetch / guardedFetch 并拒绝 SVG 上传', () => {
+    const route = readRepo('apps/web-overlay/src/app/api/website-metadata/route.ts')
+    expect(route).not.toMatch(/await fetch\(/)
+    expect(route).toContain("allowedHosts: ['api.bilibili.com']")
+    expect(route).toContain("allowedHosts: ['www.google.com']")
+    expect(route).toContain("allowedHosts: ['api.github.com']")
+    expect(route).toContain('SAFE_BITMAP_EXTENSIONS')
+    expect(route).toContain('isSafeBitmapPayload')
   })
 
   it('harvester 声明平台域名白名单', () => {

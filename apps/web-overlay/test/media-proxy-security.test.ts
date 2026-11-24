@@ -56,17 +56,42 @@ describe('媒体签名强度', () => {
 })
 
 describe('上游重定向逐跳防护', () => {
-  it('fetch 使用 redirect: manual 且逐跳校验 isSafeMediaHost', () => {
-    expect(ROUTE).toContain("redirect: 'manual'")
+  /**
+   * 2026-11-21 架构变更后重写：业务路由出站已收口到 packages/ai 的
+   * safeFetch（连接级 IP 钉扎 + 受控重定向 + 跨源剥离敏感头），路由不再
+   * 自己写 redirect:'manual' 循环，也不再自带第二份敏感头集合。
+   * 断言从「路由里有这些字面量」改为「路由确实走统一出口，且逐跳安全
+   * 语义由权威层 ssrf.ts 钉住」——后者由 ssrf-redirect-headers.test.ts
+   * 单独覆盖，本文件只守调用关系不退化。
+   */
+  it('走统一出口 safeFetch：受控重定向 + 媒体域名白名单逐跳复验 + 无 URL 子串欺骗', () => {
+    expect(ROUTE).toContain("from '@/lib/ssrf-guard'")
+    expect(ROUTE).toContain('safeFetch(')
+    expect(ROUTE).toContain('maxRedirects')
     expect(ROUTE).toContain('fetchWithRedirectGuard')
-    // 每跳都重新调用 isSafeMediaHost（不是只校验起始 URL）
-    expect((ROUTE.match(/isSafeMediaHost\(/g) ?? []).length).toBeGreaterThanOrEqual(2)
-    // 不再出现不带 redirect 选项的裸 fetch(rawUrl)
-    expect(ROUTE).not.toMatch(/fetch\(rawUrl,\s*\{[^}]*signal:/s)
+    // 起始 URL + 重定向每跳/落地地址 + GET 入口共至少 3 处过 isSafeMediaHost
+    expect((ROUTE.match(/isSafeMediaHost\(/g) ?? []).length).toBeGreaterThanOrEqual(3)
+    expect(ROUTE).toContain('result.redirects')
+    expect(ROUTE).toContain('result.finalUrl')
+    // 严禁 CodeQL js/incomplete-url-substring-sanitization 的 hostname.includes('hdslb.com')
+    expect(ROUTE).not.toMatch(/hostname\.includes\(/)
+    expect(ROUTE).toContain('matchesRootDomain(')
+    // 响应头包含 CSP sandbox 与 nosniff
+    expect(ROUTE).toContain("'Content-Security-Policy': \"default-src 'none'; sandbox\"")
+    expect(ROUTE).toContain("'X-Content-Type-Options': 'nosniff'")
+    // 不再有裸 fetch 或自维护的 manual 重定向循环
+    expect(ROUTE).not.toMatch(/await fetch\(rawUrl/)
+    expect(ROUTE).not.toMatch(/redirect:\s*['"]manual['"]/)
   })
 
-  it('跨源重定向剥离 Referer/Origin', () => {
-    expect(ROUTE).toContain("delete baseHeaders['Referer']")
-    expect(ROUTE).toContain("delete baseHeaders['Origin']")
+  it('跨源重定向剥离敏感头由权威 SSRF 层统一负责', () => {
+    const AI_SSRF = readFileSync(resolve(ROOT, '..', '..', 'packages/ai/src/ssrf.ts'), 'utf8')
+    expect(AI_SSRF).toContain('SENSITIVE_REDIRECT_HEADERS')
+    for (const h of ['authorization', 'cookie', 'proxy-authorization']) {
+      expect(AI_SSRF.toLowerCase()).toContain(h)
+    }
+    expect(AI_SSRF).toMatch(/origin\s*!==\s*prevOrigin|prevOrigin\s*!==\s*\w+\.origin/)
+    // 路由不再自带第二份实现（两侧曾是两份代码、真的漂移过）
+    expect(ROUTE).not.toContain("delete baseHeaders['Referer']")
   })
 })

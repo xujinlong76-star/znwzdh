@@ -12,17 +12,12 @@
     "src/app/api/site-config/"
   ],
   "files": [
-    "src/app/admin/data/page.tsx",
     "src/app/admin/navigation/[id]/categories/[categoryId]/items/page.tsx",
     "src/app/admin/navigation/[id]/categories/page.tsx",
     "src/app/admin/navigation/[id]/items/page.tsx",
     "src/app/admin/navigation/[id]/page.tsx",
     "src/app/admin/navigation/[id]/subcategory/[subId]/page.tsx",
     "src/app/admin/resources/download/page.tsx",
-    "src/app/admin/submissions/page.tsx",
-    "src/app/api/favicon-im/route.ts",
-    "src/app/api/favicon/route.ts",
-    "src/app/api/resource/check-references/route.ts",
-    "src/app/api/site-config/route.ts"
+    "src/app/admin/submissions/page.tsx"
   ]
 }

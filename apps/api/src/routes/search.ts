@@ -101,7 +101,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     return { hotwords, ...(degraded ? { suggestionsDegraded: true } : {}) };
   });
 
-  app.get("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 20, etag: true, vary: SEARCH_VARY } } }, async (req, reply) => {
+  app.get("/api/search", { config: { rateLimit: { max: 600, timeWindow: "1 minute" }, cache: { maxAge: 20, etag: true, vary: SEARCH_VARY } } }, async (req, reply) => {
     const parsed = searchBody.safeParse(req.query ?? {});
     if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);
     const facetFilter = clampFacets(parsed.data.facets);

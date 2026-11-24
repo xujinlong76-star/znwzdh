@@ -335,4 +335,29 @@ describe("writeNavigationData 分片挂钩", () => {
     // 公开分片只数可见站：n-1、n-2 在，停用的 n-3 不在
     expect(index.totalItems).toBe(2);
   });
+
+  it("非整包写路径（如单站增删 / CLI 去重）改变 data_version 后，读分片自动惰性自愈对齐新版本", async () => {
+    const beforeVersion = await ctx.repo.readNavDataVersion();
+    await ctx.repo.createSite({
+      url: "https://example.com/self-heal",
+      title: "自愈新增站",
+      categoryId: "cat-x",
+    });
+    const afterVersion = await ctx.repo.readNavDataVersion();
+    expect(afterVersion).not.toBe(beforeVersion);
+
+    const index = (await readStoragePath(ctx, NAVIGATION_INDEX_PATH)) as {
+      sourceVersion: number;
+      totalItems: number;
+    };
+    expect(index.sourceVersion).toBe(afterVersion);
+    expect(index.totalItems).toBe(3);
+
+    const shard = (await readStoragePath(ctx, navigationShardPath("cat-x"))) as {
+      sourceVersion: number;
+      category: { items: Array<{ title: string }> };
+    };
+    expect(shard.sourceVersion).toBe(afterVersion);
+    expect(shard.category.items.map((i) => i.title)).toContain("自愈新增站");
+  });
 });

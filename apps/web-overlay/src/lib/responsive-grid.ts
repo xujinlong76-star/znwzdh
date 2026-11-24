@@ -23,9 +23,33 @@
  * 容器（祖先元素）需有 `@container`，然后在网格上用这些 token。
  */
 
-/** 站点卡片主网格：1 → 2 → 3 → 4 列 */
+/** 站点卡片主网格（标准卡片）：1 → 2 → 3 → 4 列 */
 export const CARD_GRID =
   'grid grid-cols-1 gap-[var(--density-grid-gap,0.875rem)] @xl:grid-cols-2 @4xl:grid-cols-3 @6xl:grid-cols-4'
+
+/** 图标启动台网格（iTab / Launchpad 风格大图标方阵）：3 → 4 → 5 → 6 → 8 列 */
+export const CARD_GRID_ICON_WALL =
+  'grid grid-cols-3 gap-2.5 sm:gap-3 @md:grid-cols-4 @3xl:grid-cols-5 @4xl:grid-cols-6 @6xl:grid-cols-8'
+
+/** 极客清单网格（Raindrop / Linear 表格明细行）：通栏单列 */
+export const CARD_GRID_LIST =
+  'grid grid-cols-1 gap-1.5'
+
+/** 极速胶囊网格（高密药丸流）：2 → 3 → 4 → 5 → 6 列 */
+export const CARD_GRID_MINIMAL =
+  'grid grid-cols-2 gap-2 @md:grid-cols-3 @3xl:grid-cols-4 @4xl:grid-cols-5 @6xl:grid-cols-6'
+
+/** 紧凑条形网格（单行精炼卡）：1 → 2 → 3 → 4 → 5 列 */
+export const CARD_GRID_COMPACT_BAR =
+  'grid grid-cols-1 gap-2 @md:grid-cols-2 @3xl:grid-cols-3 @4xl:grid-cols-4 @6xl:grid-cols-5'
+
+/** 视觉画廊网格（品牌渐变封面大图）：1 → 2 → 3 列 */
+export const CARD_GRID_RICH =
+  'grid grid-cols-1 gap-[var(--density-grid-gap,0.875rem)] @xl:grid-cols-2 @5xl:grid-cols-3'
+
+/** 书签目录网格（去框化极简文本索引）：1 → 2 → 3 → 4 → 5 列（1280px 下 3 列保证 ~309px 宽裕阅读宽度） */
+export const CARD_GRID_DIRECTORY =
+  'grid grid-cols-1 gap-x-4 gap-y-0.5 @md:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4 @6xl:grid-cols-5'
 
 /** 紧凑变体：小卡片/插件卡，起步更早进 2 列 */
 export const CARD_GRID_COMPACT =

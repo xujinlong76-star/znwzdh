@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { HubSite } from '@/lib/navhub-api'
 import {
   HEAT_READY_MIN_SITES,
   HEAT_READY_MIN_TOTAL,
@@ -23,7 +24,7 @@ const mk = (o: Partial<{ visitCount: number; trendScore: number; tags: string[];
   id: 'x', url: 'https://x.com', title: 'X', tags: o.tags ?? [], categoryId: 'c',
   status: 'active', visitCount: o.visitCount, trendScore: o.trendScore,
   createdAt: o.createdAt, description: o.description, health: o.health,
-} as never)
+} as unknown as HubSite)
 
 describe('siteHeat', () => {
   it('visit 与 trend 取较大者（trend 按 ×10 折算）', () => {

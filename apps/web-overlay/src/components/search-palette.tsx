@@ -528,16 +528,17 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       return
     }
     let cancelled = false
+    const controller = new AbortController()
     setActionIntentLoading(true)
     const timer = setTimeout(() => {
-      fetch(`/api/hub/intent/action?q=${encodeURIComponent(trimmed)}`)
+      fetch(`/api/hub/intent/action?q=${encodeURIComponent(trimmed)}`, { signal: controller.signal })
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (!cancelled && data?.ok && data.isActionable) {
             setActionIntentData(data)
           }
         })
-        .catch(() => { /* 降级 */ })
+        .catch(() => { /* 降级或已取消 */ })
         .finally(() => {
           if (!cancelled) setActionIntentLoading(false)
         })
@@ -545,6 +546,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     return () => {
       cancelled = true
       clearTimeout(timer)
+      controller.abort()
     }
   }, [query])
 
@@ -563,9 +565,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       return
     }
     let cancelled = false
+    const controller = new AbortController()
     setAiComparisonLoading(true)
     const timer = setTimeout(() => {
-      fetch(`/api/hub/comparisons?q=${encodeURIComponent(trimmed)}`)
+      fetch(`/api/hub/comparisons?q=${encodeURIComponent(trimmed)}`, { signal: controller.signal })
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (!cancelled && data?.ok && data.matrix) {
@@ -573,7 +576,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           }
         })
         // 配方请求失败不打扰用户：下方 catch 已经负责提示，这里只是避免未处理的 rejection
-      .catch(() => { /* 由外层 catch 统一降级 */ })
+      .catch(() => { /* 由外层 catch 统一降级或已取消 */ })
         .finally(() => {
           if (!cancelled) setAiComparisonLoading(false)
         })
@@ -581,6 +584,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     return () => {
       cancelled = true
       clearTimeout(timer)
+      controller.abort()
     }
   }, [query, comparisonMatrix])
 
@@ -1308,11 +1312,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     // LinUCB 通道权重；只发 siteId 会让在线学习永远收不到真实反馈。
     const channel = Object.entries(hit.contributions ?? {})
       .sort((a, b) => b[1].value - a[1].value)[0]?.[0]
-    reportClick(site.id, identity, { query, channel })
-    // site.url 来自后端检索结果（源头是站点库），同样过安全闸：
-    // 非 http(s) 一律不跳，避免 javascript: 之类的脏数据直达执行
+    // site.url 来自后端检索结果（源头是站点库），先过安全闸再上报：
+    // 非 http(s) 一律不跳也不记点击，避免 javascript: 之类的脏数据污染热度信号或直达执行
     const url = safeHref(site.url, '')
     if (!url || !isSafeHttpUrl(url)) return
+    reportClick(site.id, identity, { query, channel })
     // 离线可用性（P2-3）：把这次访问写进本地「最近访问」快照（IndexedDB，
     // 隐私模式降级 localStorage）。断网时用户仍能从本地列表回到常用站点。
     // 放在安全闸之后：只记录真的会打开的站点。
@@ -1637,6 +1641,15 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         />
         <div className="flex shrink-0 items-center gap-1.5">
           {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+          {!query && !aiMode && (
+            <kbd
+              aria-hidden="true"
+              title="按 / 快速搜索"
+              className="hidden h-5 min-w-5 select-none items-center justify-center rounded border border-border/60 bg-muted/60 px-1.5 font-mono text-[11px] font-medium text-muted-foreground shadow-2xs xl:inline-flex pointer-coarse:hidden"
+            >
+              /
+            </kbd>
+          )}
           <Button
             variant="ghost"
             size="sm"

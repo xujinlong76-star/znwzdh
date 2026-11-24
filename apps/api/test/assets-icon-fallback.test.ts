@@ -34,6 +34,33 @@ vi.mock("node:dns/promises", async (importOriginal) => {
   };
 });
 
+/**
+ * 出站收口到 safeFetch 后，它走 node:http/https 的连接级 IP 钉扎
+ * （实测 Node 的 fetch 静默忽略 connect.lookup，那层"钉扎"是假的），
+ * 因此不再经过本文件 stub 的全局 fetch：真实网络会被打出去，桩计数为空。
+ * 本测试只锁图标路由的兜底 / 缓存 / ETag 业务语义，SSRF 五道防线由
+ * ssrf-* 系列测试单独覆盖，所以在测试边界把 safeFetch 桥接回全局 fetch 桩，
+ * 保持「DNS 与网络全部由桩接管，测试不出门」。
+ */
+vi.mock("@navhub/ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@navhub/ai")>();
+  return {
+    ...actual,
+    safeFetch: async (rawUrl: string, options: { headers?: Record<string, string> } = {}) => {
+      const res = await fetch(rawUrl, { headers: options.headers });
+      return {
+        ok: res.ok,
+        status: res.status,
+        headers: res.headers,
+        body: new Uint8Array(await res.arrayBuffer()),
+        finalUrl: rawUrl,
+        pinnedIp: null,
+        redirects: [],
+      };
+    },
+  };
+});
+
 const dir = mkdtempSync(join(tmpdir(), "navhub-icon-cache-"));
 let ctx: AppContext;
 let app: Awaited<ReturnType<typeof buildServer>>;
@@ -90,20 +117,30 @@ describe("GET /api/assets/icon 兜底路径", () => {
 
     expect(first.statusCode, first.body).toBe(200);
     expect(first.headers["content-type"]).toContain("image/svg+xml");
+    expect(first.headers["content-security-policy"]).toContain("sandbox");
+    expect(first.headers["x-content-type-options"]).toBe("nosniff");
     expect(first.body.trim()).toMatch(/^<svg/);
-    expect(probeLog.dns).toEqual([host]);
+    // 出站收口到 safeFetch 后，前置 dns.lookup 之外每个探测 URL 还会各走一次
+    // 权威层的 resolveAndCheck（连接级 IP 钉扎），解析次数不再是 1。这里只锁
+    // 「所有解析都指向目标主机、没被重定向带到别处」，次数交给基线比较。
+    expect(probeLog.dns.length).toBeGreaterThanOrEqual(1);
+    expect(new Set(probeLog.dns)).toEqual(new Set([host]));
     // favicon.ico 的 https/http 两次探测
     expect(probeLog.outbound).toEqual([`https://${host}/favicon.ico`, `http://${host}/favicon.ico`]);
 
     const etag = String(first.headers["etag"]);
     expect(etag).toMatch(/^W\/"svg_/);
 
+    // 首轮计数器基线：缓存命中判据与具体解析次数解耦（迁移后次数会变）
+    const dnsAfterFirst = probeLog.dns.length;
+    const outboundAfterFirst = probeLog.outbound.length;
+
     const second = await icon(`https://${host}`);
     expect(second.statusCode).toBe(200);
     expect(second.headers["etag"]).toBe(etag);
-    // 命中内存缓存的硬证据：既没再解析域名，也没再出一次门
-    expect(probeLog.dns).toHaveLength(1);
-    expect(probeLog.outbound).toHaveLength(2);
+    // 命中内存缓存的硬证据：两个计数器一个都没再涨
+    expect(probeLog.dns).toHaveLength(dnsAfterFirst);
+    expect(probeLog.outbound).toHaveLength(outboundAfterFirst);
 
     const negotiated = await icon(`https://${host}`, { "if-none-match": etag });
     expect(negotiated.statusCode).toBe(304);

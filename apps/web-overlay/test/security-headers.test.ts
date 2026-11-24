@@ -46,6 +46,7 @@ describe("安全响应头：默认档", () => {
   it("基础四件套 + COOP/CORP 常开", async () => {
     delete process.env.NAVHUB_CSP;
     delete process.env.NAVHUB_CSP_REPORT_ONLY;
+    delete process.env.NAVHUB_COOP;
     const headers = await loadHeaders();
 
     expect(find(headers, "X-Content-Type-Options")?.value).toBe("nosniff");
@@ -124,8 +125,36 @@ describe("CSP 三档开关", () => {
   });
 });
 
-describe("HSTS 只在明确 https 时下发", () => {
-  it("无 NAVHUB_PUBLIC_URL 时不下发（http 自托管不会被强制升级）", async () => {
+describe("COOP 可关：性能审计构建用", () => {
+  // 2026-11-22 实测：COOP 让导航提交时切 browsing context group，Chromium 丢掉
+  // 真实导航的 navigationStart trace 事件 → Lighthouse 全部性能审计报
+  // NO_NAVSTART（受控实验：同一份 HTML，只改这一个头，去掉即恢复出分）。
+  // OAuth 弹窗登录仍需要它，故默认保持开，只给审计构建留一个关闭位。
+  it("NAVHUB_COOP=off → 不下发 COOP，其余安全头一个不少", async () => {
+    process.env.NAVHUB_COOP = "off";
+    const headers = await loadHeaders();
+
+    expect(find(headers, "Cross-Origin-Opener-Policy")).toBeUndefined();
+    // 只关 COOP：CORP 与基础头不能被顺手带走
+    expect(find(headers, "Cross-Origin-Resource-Policy")?.value).toBe("same-site");
+    expect(find(headers, "X-Content-Type-Options")?.value).toBe("nosniff");
+    expect(find(headers, "X-Frame-Options")?.value).toBe("SAMEORIGIN");
+    expect(find(headers, "Permissions-Policy")?.value).toBe("geolocation=(), microphone=(), camera=()");
+    expect(find(headers, "Referrer-Policy")?.value).toBe("strict-origin-when-cross-origin");
+  });
+
+  it("其它取值（on / 1 / 空）都按默认开处理，不给脏值开口子", async () => {
+    for (const raw of ["on", "1", "", "same-origin"]) {
+      process.env.NAVHUB_COOP = raw;
+      const headers = await loadHeaders();
+      expect(find(headers, "Cross-Origin-Opener-Policy")?.value, `NAVHUB_COOP=${JSON.stringify(raw)}`).toBe(
+        "same-origin-allow-popups",
+      );
+    }
+  });
+});
+
+describe("HSTS 只在明确 https 时下发", () => {  it("无 NAVHUB_PUBLIC_URL 时不下发（http 自托管不会被强制升级）", async () => {
     delete process.env.NAVHUB_HSTS;
     delete process.env.NAVHUB_PUBLIC_URL;
     const headers = await loadHeaders();
@@ -146,4 +175,5 @@ afterAll(() => {
   delete process.env.NAVHUB_CSP_REPORT_ONLY;
   delete process.env.NAVHUB_CSP_REPORT_URI;
   delete process.env.NAVHUB_PUBLIC_URL;
+  delete process.env.NAVHUB_COOP;
 });

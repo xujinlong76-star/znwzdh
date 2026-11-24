@@ -98,31 +98,38 @@ describe("B13-2 前端版本：Next.js 16（package.json 16.4.2 / React 19.3.1�
   });
 });
 
-describe("B13-3 REST 路由数：348 声明 / 57 插件 / 53 表", () => {
+describe("B13-3 REST 路由数 / 表数：文档与 metrics.json 事实源一致", () => {
+  // 规模数字由 scripts/gen-docs-metrics.mjs 生成，正常演进就会增长。此处不再
+  // 手写 pin 死某一版快照（348/53 那次漂移正是文档没跟上生成器），改为断言
+  // 「文档引用的就是 metrics.json 的当前值」：生成器一刷新，文档必须同步。
+  const REST = String(METRICS.restRoutes);
+  const TABLES = String(METRICS.tables);
+
   it("metrics.json 与静态计数一致", () => {
-    expect(METRICS.restRoutes).toBe(348);
-    expect(METRICS.tables).toBe(53);
+    // 生成器 --check 已钉死结构性数字；这里守住回退下限，防止路由/表被误删后静默通过
+    expect(METRICS.restRoutes).toBeGreaterThanOrEqual(348);
+    expect(METRICS.tables).toBeGreaterThanOrEqual(53);
   });
 
   it("wiki 不再称 62 条路由", () => {
-    expect(WIKI).toContain("348 个 REST 路由声明");
+    expect(WIKI).toContain(`${REST} 个 REST 路由声明`);
     expect(WIKI).not.toContain("62 条 REST");
     expect(WIKI).not.toContain("62 条路由");
   });
 
-  it("概览 §5.4 表合计 348，§9 对照表实际值已更新", () => {
-    expect(OVERVIEW).toContain("### 5.4 `apps/api`：348 个端点 / 57 个路由插件");
-    expect(OVERVIEW).toContain("| **合计** | **348** |");
+  it("概览 §5.4 表合计与 metrics 一致，§9 对照表实际值已更新", () => {
+    expect(OVERVIEW).toContain(`### 5.4 \`apps/api\`：${REST} 个端点 / 57 个路由插件`);
+    expect(OVERVIEW).toContain(`| **合计** | **${REST}** |`);
     expect(OVERVIEW).not.toContain("117 个端点");
-    expect(OVERVIEW).toContain("**348 个端点**（57 个路由插件");
+    expect(OVERVIEW).toContain(`**${REST} 个端点**（57 个路由插件`);
     expect(OVERVIEW).toContain("**57 个**（`server.ts` 的 register 调用）");
-    expect(OVERVIEW).toContain("**53 张**");
+    expect(OVERVIEW).toContain(`**${TABLES} 张**`);
     expect(OVERVIEW).not.toContain("25 张表");
   });
 
-  it("FILE_INDEX 与 server.ts 头注释称 57 个路由插件、53 张表", () => {
+  it("FILE_INDEX 与 server.ts 头注释称 57 个路由插件、表数与 metrics 一致", () => {
     expect(FILE_INDEX).toContain("注册 57 个路由插件");
-    expect(FILE_INDEX).toContain("共 53 张表");
+    expect(FILE_INDEX).toContain(`共 ${TABLES} 张表`);
     expect(FILE_INDEX).not.toContain("24 个路由插件");
     expect(FILE_INDEX).not.toContain("19 张核心表");
     expect(read("apps/api/src/server.ts")).toContain("57 个路由插件");

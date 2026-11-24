@@ -65,7 +65,7 @@ const DiyCustomCategorySchema = z.object({
 export const LayoutSchema = z.object({
   version: z.number().int().optional(),
   viewMode: z.enum(['hybrid', 'classic', 'workbench']).optional(),
-  cardDisplayMode: z.enum(['compact', 'standard', 'rich', 'minimal', 'mini-chip']).optional(),
+  cardDisplayMode: z.enum(['standard', 'icon-wall', 'list', 'minimal', 'compact', 'rich', 'directory', 'mini-chip']).optional(),
   canvasBackground: z.enum(['mesh', 'dots', 'grid', 'aurora', 'clean']).optional(),
   accentColor: z.enum(['default', 'violet', 'emerald', 'amber', 'rose']).optional(),
   heroDeckCollapsed: z.boolean().optional(),
@@ -79,7 +79,7 @@ export const LayoutSchema = z.object({
   customCategories: z.array(DiyCustomCategorySchema).max(1000).optional(),
   siteCategoryOverrides: z.record(z.string(), z.string().max(128)).optional(),
   categoryDensityOverrides: z
-    .record(z.string(), z.enum(['compact', 'standard', 'rich', 'minimal', 'mini-chip']))
+    .record(z.string(), z.enum(['standard', 'icon-wall', 'list', 'minimal', 'compact', 'rich', 'directory', 'mini-chip']))
     .optional(),
   speedDialEnabled: z.boolean().optional(),
   speedDialPinnedIds: idListSchema,

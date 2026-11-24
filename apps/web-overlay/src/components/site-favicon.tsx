@@ -1515,14 +1515,27 @@ export function SiteFavicon({
       title={title}
       aria-label={title ? `${title} 图标` : '站点图标'}
     >
-      {/* 真实站点图标：正在加载或加载成功（未触发 onError）时置于顶层可见 (z-10 opacity-100) */}
-      {shouldRenderImg ? (
+      {/* 底层（Layer 1）：图片未加载完成或加载失败时立即呈现确定性彩色首字母徽标，杜绝空白占位；真实图标就绪后卸载以防透明图透底 */}
+      {(!shouldRenderImg || !imgLoaded) && (
+        <div
+          className="absolute inset-0 flex items-center justify-center font-bold text-xs rounded-xs shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_1px_2px_rgba(0,0,0,0.15)] ring-1 ring-white/20 dark:ring-white/10"
+          style={{
+            background: gradient.cssGradient,
+            color: gradient.textColor,
+          }}
+        >
+          <span className="leading-none font-semibold tracking-wider drop-shadow-xs select-none">{monogram}</span>
+        </div>
+      )}
+      {/* 顶层（Layer 2）：真实站点图标，解码完成后平滑显现 */}
+      {shouldRenderImg && (
         <img
           ref={handleImgRef}
           src={effectiveIcon}
           alt={title ? `${title} 图标` : '站点图标'}
           className={cn(
-            'relative z-10 w-full h-full object-contain opacity-100 transition-opacity duration-150',
+            'relative z-10 w-full h-full object-contain transition-opacity duration-150',
+            imgLoaded ? 'opacity-100' : 'opacity-0',
             logoTile
               ? LOGO_TILE_CLASSES[logoTile]
               : isCursorSite
@@ -1556,17 +1569,6 @@ export function SiteFavicon({
             }
           }}
         />
-      ) : (
-        /* 仅在无有效图标或图片加载失败时显示彩色首字母徽章兜底 */
-        <div
-          className="absolute inset-0 flex items-center justify-center font-bold text-xs rounded-xs shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_1px_2px_rgba(0,0,0,0.15)] ring-1 ring-white/20 dark:ring-white/10"
-          style={{
-            background: gradient.cssGradient,
-            color: gradient.textColor,
-          }}
-        >
-          <span className="leading-none font-semibold tracking-wider drop-shadow-xs select-none">{monogram}</span>
-        </div>
       )}
     </div>
   )

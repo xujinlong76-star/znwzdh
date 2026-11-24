@@ -259,11 +259,10 @@ describe('C1 国考准考证打印回访卡（0422-W3 §3.4）', () => {
     expect(componentCode.match(/text-xs/g) ?? []).toHaveLength(1)
   })
 
-  it('C-G7：单落点——仅首页 navigation-content.tsx 一处挂载，/brief 与 AnnouncementBar 不渲染（2026-11-23 11:22 轮挂载落地后启用）', () => {
-    // 挂载已落地（navigation-content.tsx，HomeSubtitleHint 之后、C4 卡之上）；本 it 在挂载落地后取消 skip。
+  it('C-G7：首页清退——navigation-content.tsx、/brief 与 layout 均不渲染该卡', () => {
     for (const root of [resolve(REPO_ROOT, 'apps', 'web'), OVERLAY_ROOT]) {
       const nav = readFileSync(resolve(root, 'src/components/navigation-content.tsx'), 'utf8')
-      expect(nav.match(/<GuokaoReturnCardContent/g) ?? []).toHaveLength(1)
+      expect(nav).not.toContain('<GuokaoReturnCardContent')
       const brief = readFileSync(resolve(root, 'src/app/brief/page.tsx'), 'utf8')
       expect(brief).not.toContain('GuokaoChecklistReturnCard')
       expect(brief).not.toContain('guokao-checklist-return-card')
@@ -338,23 +337,12 @@ describe('C-G8 高度守卫：C1 卡片高度预算（2026-11-23 12:22 轮，备
   })
 })
 
-describe('C1+C4 双卡叠加首屏预算（2026-11-23 12:22 轮，备选 Q1）', () => {
-  it('挂载顺序：C1 在上、C4 在下，均在 HomeSubtitleHint 之后、胶囊行之前，且在 viewMode 守卫内', () => {
+describe('C1+C4 双卡首屏清退与外壳预算（2026-11-24）', () => {
+  it('首页 navigation-content.tsx 不再顶置堆叠 C1/C4 双卡', () => {
     for (const root of [resolve(REPO_ROOT, 'apps', 'web'), OVERLAY_ROOT]) {
       const nav = readFileSync(resolve(root, 'src/components/navigation-content.tsx'), 'utf8')
-      const c1At = nav.indexOf('<GuokaoReturnCardContent />')
-      const c4At = nav.indexOf('<GuangdongZikaoSignupCardContent />')
-      expect(c1At).toBeGreaterThan(-1)
-      expect(c4At).toBeGreaterThan(-1)
-      expect(c1At).toBeLessThan(c4At)
-      expect(c1At).toBeGreaterThan(nav.indexOf('HomeSubtitleHint'))
-      expect(c4At).toBeLessThan(nav.indexOf('<HomeCapsuleRow'))
-      expect(nav).toContain(
-        "{viewMode !== 'workbench' ? <GuokaoReturnCardContent /> : null}",
-      )
-      expect(nav).toContain(
-        "{viewMode !== 'workbench' ? <GuangdongZikaoSignupCardContent /> : null}",
-      )
+      expect(nav).not.toContain('<GuokaoReturnCardContent')
+      expect(nav).not.toContain('<GuangdongZikaoSignupCardContent')
     }
   })
 

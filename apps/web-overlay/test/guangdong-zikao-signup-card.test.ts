@@ -441,40 +441,11 @@ describe('C4-G6 手机端可读可点（1022-W2 §5.8 改写版：高度上限 2
   })
 })
 
-describe('C4-G7 单落点（源码守卫，只读 navigation-content.tsx，不改它）', () => {
-  it('首页仅一处挂载：dynamic 导入路径恰一次、挂载 JSX 恰一次、且在 viewMode 守卫内', () => {
+describe('C4-G7 首页清退守卫（2026-11-24：不再在首页顶置堆叠考试公告卡，保留在 /exam 考历入口）', () => {
+  it('首页 navigation-content.tsx 与 /brief 均不挂载该卡', () => {
     const nav = read('src/components/navigation-content.tsx')
-    expect(nav.match(/@\/components\/guangdong-zikao-signup-card/g)).toHaveLength(1)
-    expect(nav.match(/<GuangdongZikaoSignupCardContent \/>/g)).toHaveLength(1)
-    expect(nav).toContain(
-      "{viewMode !== 'workbench' ? <GuangdongZikaoSignupCardContent /> : null}",
-    )
-  })
-
-  it('挂载导入的是定稿导出 GuangdongZikaoSignupCard（无 props），不是旧 Island 名', () => {
-    const nav = read('src/components/navigation-content.tsx')
-    expect(nav).toContain('m.GuangdongZikaoSignupCard)')
-    expect(nav).not.toContain('GuangdongZikaoSignupCardIsland')
-  })
-
-  it('挂载点在 HomeSubtitleHint 之后、胶囊行之前（1022-W2 §5.1：L1297–L1299 区间）', () => {
-    const nav = read('src/components/navigation-content.tsx')
-    const mountAt = nav.indexOf('<GuangdongZikaoSignupCardContent />')
-    expect(mountAt).toBeGreaterThan(nav.indexOf('HomeSubtitleHint'))
-    // 注意：裸串 'HomeCapsuleRow' 在文件头 import（L16）就已出现，故用 JSX 用法 '<HomeCapsuleRow' 定位胶囊行。
-    expect(mountAt).toBeLessThan(nav.indexOf('<HomeCapsuleRow'))
-  })
-
-  it('dynamic 用 ssr:false + loading null（首屏 JS 增量 0 字节，C1 同款）', () => {
-    const nav = read('src/components/navigation-content.tsx')
-    const defAt = nav.indexOf('GuangdongZikaoSignupCardContent = dynamic(')
-    expect(defAt).toBeGreaterThan(-1)
-    const block = nav.slice(defAt, defAt + 400)
-    expect(block).toContain('ssr: false')
-    expect(block).toContain('loading: () => null')
-  })
-
-  it('/brief 不渲染该卡', () => {
+    expect(nav).not.toContain('@/components/guangdong-zikao-signup-card')
+    expect(nav).not.toContain('<GuangdongZikaoSignupCardContent')
     const brief = read('src/app/brief/page.tsx')
     expect(brief).not.toContain('guangdong-zikao-signup-card')
   })

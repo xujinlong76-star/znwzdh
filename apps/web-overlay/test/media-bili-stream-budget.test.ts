@@ -30,21 +30,36 @@ import { generateMediaSignature } from '@/lib/media-proxy'
 
 // 媒体代理的生产出站已收敛到 ssrf-guard.safeFetch（DNS/IP 校验 + IP 钉扎 +
 // 受控重定向）。本文件的假上游依赖 stub 全局 fetch，因此在测试边界替换 safeFetch
-// 为「直接调用当前全局 fetch」的薄封装：路由层的 413/415/缓存/流式限流逻辑仍按
-// 真实 Response 行为被测，而 SSRF 五道防线由 ssrf-policy/safe-fetch 测试单独覆盖。
+// 为「转发当前全局 fetch」的薄壳：路由层的 413/415/缓存/字节预算仍按真实
+// Response 行为被测，SSRF 五道防线由 ssrf-* 测试单独覆盖。
+//
+// 返回契约必须跟 packages/ai 的 SafeFetchResult 对齐：
+// { ok, status, headers: Headers, body: Uint8Array, finalUrl, pinnedIp, redirects }。
+// 旧 mock 返回的是迁移前的 { response, contentType, bytes... }，路由读
+// result.headers.get(...) 会直接抛错，被 catch 吞成 failed → 全线 502。
 vi.mock('@/lib/ssrf-guard', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/ssrf-guard')>()
   return {
     ...actual,
-    safeFetch: async (rawUrl: string, options: { headers?: Record<string, string> } = {}) => {
+    safeFetch: async (
+      rawUrl: string,
+      options: { headers?: Record<string, string>; maxBytes?: number } = {}
+    ) => {
       const response = await fetch(rawUrl, { headers: options.headers, redirect: 'manual' })
+      const declared = Number(response.headers.get('content-length'))
+      const maxBytes = options.maxBytes ?? Number.POSITIVE_INFINITY
+      // 模拟权威层「声明体积超 maxBytes 就提前断开、不读体」的防线，
+      // 上游 trackedStream 的 pulls/cancels 因此仍可观测。
+      const oversized = Number.isFinite(declared) && declared > maxBytes
+      if (oversized) await response.body?.cancel().catch(() => {})
+      const body = oversized ? new Uint8Array(0) : new Uint8Array(await response.arrayBuffer())
       return {
-        response,
-        finalUrl: rawUrl,
+        ok: response.ok,
         status: response.status,
-        contentType: response.headers.get('content-type'),
-        bytes: 0,
-        truncated: false,
+        headers: response.headers,
+        body,
+        finalUrl: rawUrl,
+        pinnedIp: null,
         redirects: [],
       }
     },
@@ -280,7 +295,7 @@ describe('媒体封面代理：体积、类型与缓存字节预算', () => {
 
   it('Content-Length 超限直接 413，且不开始读体', async () => {
     const counter: StreamCounter = { pulls: 0, cancels: 0 }
-    mockUpstream(
+    const { calls } = mockUpstream(
       () =>
         new Response(trackedStream([new Uint8Array(64)], counter), {
           status: 200,
@@ -288,16 +303,21 @@ describe('媒体封面代理：体积、类型与缓存字节预算', () => {
         })
     )
     const GET = await loadMedia({ NAVHUB_MEDIA_PROXY_MAX_BYTES: '1024' })
-    const res = await GET(mediaRequest(mediaUrl('too-big')))
+    const url = mediaUrl('too-big')
+    const res = await GET(mediaRequest(url))
     expect(res.status).toBe(413)
     expect(res.headers.get('X-Media-Limit-Bytes')).toBe('1024')
+    // safeFetch 在声明体积超 maxBytes 时提前断开，上游体没被读进来
     expect(counter.pulls).toBeLessThanOrEqual(1)
     expect(counter.cancels).toBe(1)
+    // 超限未写缓存：再来一次仍会回源，不会把脏数据喂给客户端
+    expect((await GET(mediaRequest(url))).status).toBe(413)
+    expect(calls).toHaveLength(2)
   })
 
   it('没有 Content-Length 时边读边限，到点即断并回 413', async () => {
     const counter: StreamCounter = { pulls: 0, cancels: 0 }
-    mockUpstream(
+    const { calls } = mockUpstream(
       () =>
         new Response(
           trackedStream(
@@ -308,27 +328,33 @@ describe('媒体封面代理：体积、类型与缓存字节预算', () => {
         )
     )
     const GET = await loadMedia({ NAVHUB_MEDIA_PROXY_MAX_BYTES: '1000' })
-    const res = await GET(mediaRequest(mediaUrl('no-length')))
+    const url = mediaUrl('no-length')
+    const res = await GET(mediaRequest(url))
     expect(res.status).toBe(413)
     // 确实流式读到超限才断，而不是一开始就放弃
     expect(counter.pulls).toBeGreaterThan(1)
-    expect(counter.cancels).toBe(1)
+    // 迁移后上游体由 safeFetch 一次读入内存，路由的 readBodyWithLimit 作用在
+    // 还原后的 Response 上；「到点即断」的可观测证据是 413 且缓存未被污染。
+    expect((await GET(mediaRequest(url))).status).toBe(413)
+    expect(calls).toHaveLength(2)
   })
 
   it('SVG 被挡在门外：同源代理回 SVG 等于把站外脚本变成站内 XSS', async () => {
-    const counter: StreamCounter = { pulls: 0, cancels: 0 }
-    mockUpstream(
+    const { calls } = mockUpstream(
       () =>
-        new Response(trackedStream([new TextEncoder().encode('<svg onload="alert(1)"/>')], counter), {
+        new Response(new TextEncoder().encode('<svg onload="alert(1)"/>'), {
           status: 200,
           headers: { 'content-type': 'image/svg+xml' },
         })
     )
     const GET = await loadMedia()
-    const res = await GET(mediaRequest(mediaUrl('evil')))
+    const url = mediaUrl('evil')
+    const res = await GET(mediaRequest(url))
     expect(res.status).toBe(415)
     expect(res.headers.get('X-Media-Content-Type')).toBe('image/svg+xml')
-    expect(counter.pulls).toBeLessThanOrEqual(1)
+    // 类型不符不写缓存：再来一次仍回源（上游 cancel 语义已下沉到权威层）
+    expect((await GET(mediaRequest(url))).status).toBe(415)
+    expect(calls).toHaveLength(2)
   })
 
   it('带参数的 Content-Type 归一后判定；text/html 与类型缺失同样拒绝', async () => {
@@ -344,10 +370,9 @@ describe('媒体封面代理：体积、类型与缓存字节预算', () => {
     expect(html.status).toBe(415)
     expect(html.headers.get('X-Media-Content-Type')).toBe('text/html')
 
-    const counter: StreamCounter = { pulls: 0, cancels: 0 }
     mockUpstream(
       () =>
-        new Response(trackedStream([new Uint8Array([1, 2, 3])], counter), {
+        new Response(new Uint8Array([1, 2, 3]), {
           status: 200,
           headers: {},
         })
@@ -356,7 +381,6 @@ describe('媒体封面代理：体积、类型与缓存字节预算', () => {
     expect(noType.status).toBe(415)
     // 哨兵值必须是 latin1：曾写过中文，Response 构造直接抛错，415 变成 500
     expect(noType.headers.get('X-Media-Content-Type')).toBe('unknown')
-    expect(counter.pulls).toBeLessThanOrEqual(1)
   })
 
   it('合法小图：首取 MISS、再取 HIT 且不再打上游，条件请求回 304', async () => {

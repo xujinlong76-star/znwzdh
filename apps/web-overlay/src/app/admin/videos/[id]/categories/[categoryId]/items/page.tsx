@@ -410,7 +410,7 @@ export default function SubCategoryVideoItemsPage() {
                 {subCategory?.items && subCategory.items.length > 0 ? (
                     filteredItems.length === 0 ? (
                         <div className="p-12 text-center border border-dashed rounded-xl space-y-3">
-                            <FolderOpen className="w-10 h-10 mx-auto text-muted-foreground/60" />
+                            <FolderOpen className="w-10 h-10 mx-auto text-muted-foreground" />
                             <div className="text-sm font-medium text-foreground">没有找到匹配的视频</div>
                             <p className="text-xs text-muted-foreground">
                                 请尝试更换搜索词或筛选条件。
@@ -534,7 +534,7 @@ export default function SubCategoryVideoItemsPage() {
                                     <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="h-8 w-8 text-destructive-text hover:bg-destructive/10"
+                                        className="h-8 w-8 text-destructive-text hover:bg-destructive/15"
                                         onClick={() => setDeletingItem({ index: originalIndex, item })}
                                         title="删除视频"
                                     >
@@ -547,7 +547,7 @@ export default function SubCategoryVideoItemsPage() {
                 )
             ) : (
                 <div className="p-12 text-center border border-dashed rounded-xl space-y-3">
-                    <FolderOpen className="w-10 h-10 mx-auto text-muted-foreground/60" />
+                    <FolderOpen className="w-10 h-10 mx-auto text-muted-foreground" />
                     <div className="text-sm font-medium text-foreground">当前二级分类下暂无视频</div>
                     <p className="text-xs text-muted-foreground">
                         可点击右上角「添加视频到此分类」或使用一键智能链接解析自动收录。

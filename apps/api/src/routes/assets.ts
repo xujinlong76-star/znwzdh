@@ -76,10 +76,23 @@ function fnv1aHash(str: string): number {
   return hash >>> 0;
 }
 
+// 位图 MIME 白名单：拒绝 svg+xml（外部不可信存储型 XSS 载体）与非常规类型
+const SAFE_ICON_TYPES = /^(image\/(png|jpeg|webp|gif|x-icon|vnd\.microsoft\.icon|avif))(;|$)/;
+const ICON_CSP_HEADER = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+
+function escapeXmlChar(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 function generateFallbackSvg(monogram: string, seed: string): string {
   const hash = fnv1aHash(seed || "navhub");
   const palette = PRESET_GRADIENTS[hash % PRESET_GRADIENTS.length]!;
-  const char = (monogram || "N").slice(0, 1).toUpperCase();
+  const char = escapeXmlChar((monogram || "N").slice(0, 1).toUpperCase());
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <defs>
@@ -134,6 +147,8 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
         return reply
           .header("Content-Type", memoryCached.contentType)
           .header("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400")
+          .header("Content-Security-Policy", ICON_CSP_HEADER)
+          .header("X-Content-Type-Options", "nosniff")
           .header("ETag", memoryCached.etag)
           .send(memoryCached.buffer);
       }
@@ -148,9 +163,14 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
           readFile(diskDataPath),
         ]);
         const meta = JSON.parse(metaRaw) as { contentType: string; etag: string };
+        // 校验磁盘缓存 MIME 白名单，防止历史遗留的外部 image/svg+xml 缓存被同源回显
+        const normalizedMetaType = ((meta.contentType || "").split(";")[0] ?? "").trim().toLowerCase();
+        if (!SAFE_ICON_TYPES.test(normalizedMetaType)) {
+          throw new Error("Unsafe cached icon content-type");
+        }
         rememberIcon(hostHash, {
           buffer: buf,
-          contentType: meta.contentType,
+          contentType: normalizedMetaType,
           etag: meta.etag,
           updatedAt: Date.now(),
         });
@@ -158,12 +178,14 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
           return reply.code(304).send();
         }
         return reply
-          .header("Content-Type", meta.contentType)
+          .header("Content-Type", normalizedMetaType)
           .header("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400")
+          .header("Content-Security-Policy", ICON_CSP_HEADER)
+          .header("X-Content-Type-Options", "nosniff")
           .header("ETag", meta.etag)
           .send(buf);
       } catch {
-        // 磁盘缺失或损坏，继续向下抓取
+        // 磁盘缺失、损坏或类型不合规，继续向下抓取
       }
 
       // 4. SSRF 安全防线：进行 DNS 解析与内网 IP 过滤
@@ -176,6 +198,8 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
             return reply
               .header("Content-Type", "image/svg+xml")
               .header("Cache-Control", "public, max-age=86400")
+              .header("Content-Security-Policy", ICON_CSP_HEADER)
+              .header("X-Content-Type-Options", "nosniff")
               .send(fallbackSvg);
           }
         }
@@ -185,6 +209,8 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
         return reply
           .header("Content-Type", "image/svg+xml")
           .header("Cache-Control", "public, max-age=86400")
+          .header("Content-Security-Policy", ICON_CSP_HEADER)
+          .header("X-Content-Type-Options", "nosniff")
           .send(fallbackSvg);
       }
 
@@ -193,26 +219,19 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
       // 且 image/svg+xml 被缓存后以本站源回显（存储型 XSS）。修复三管齐下：
       //   a) Accept 头排除 svg+xml；b) Content-Type 白名单只放位图；
       //   c) 响应加 Content-Security-Policy: sandbox 防 SVG 脚本执行。
-      // 初始两个探测地址（https/http）。重定向目标改为进**有界队列**，
-      // 不再就地 push 回正在迭代的同一个数组——旧写法对"自我增长数组"持续
-      // 迭代（for…of 按实时 length 取项），叠加无上限重定向会长时间空转。
-      // 现在：去重（visited）+ 跳数上限（MAX_REDIRECT_HOPS），循环必然有界。
+      // 初始两个探测地址（https/http）。重定向交由 safeFetch 逐跳校验与跟随
+      // （maxRedirects=MAX_REDIRECT_HOPS），不再手动维护队列去重集与跳数计数器。
       const queue: string[] = [
         `https://${hostname}/favicon.ico`,
         `http://${hostname}/favicon.ico`,
       ];
-      const visited = new Set<string>(queue);
       const MAX_REDIRECT_HOPS = 3;
-      let hops = 0;
 
       let iconBuffer: Buffer | null = null;
       let contentType = "image/x-icon";
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 3500);
-
-      // 位图 MIME 白名单：拒绝 svg+xml（存储型 XSS 载体）与非常规类型
-      const SAFE_ICON_TYPES = /^(image\/(png|jpeg|webp|gif|x-icon|vnd\.microsoft\.icon|avif))(;|$)/;
 
       try {
         /**
@@ -278,6 +297,8 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
         return reply
           .header("Content-Type", contentType)
           .header("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400")
+          .header("Content-Security-Policy", ICON_CSP_HEADER)
+          .header("X-Content-Type-Options", "nosniff")
           .header("ETag", etag)
           .send(iconBuffer);
       }
@@ -291,6 +312,8 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
       return reply
         .header("Content-Type", "image/svg+xml")
         .header("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400")
+        .header("Content-Security-Policy", ICON_CSP_HEADER)
+        .header("X-Content-Type-Options", "nosniff")
         .header("ETag", etag)
         .send(fallbackSvg);
     }

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Breadcrumbs } from '@/components/breadcrumbs'
@@ -10,6 +10,7 @@ import { TagResultsBoard } from '@/components/tag-results-board'
 import { RelatedTags } from '@/components/related-tags'
 import { type RelatedTag } from '@/lib/navhub-api'
 import { MIN_SITES_FOR_TAG_INDEX } from '@/lib/seo/thresholds'
+import { isTagSynonymAlias, resolveCanonicalTagSlug } from '@/lib/seo/tag-taxonomy'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 import { ogImageUrl } from '@/lib/seo/og-text'
 
@@ -88,10 +89,13 @@ async function loadTagPage(slug: string) {
  * metadata 不受影响（与 /sites、/site/[id] 同构）。
  *
  * B-8 薄标签分层（方案 §4.1 定稿，count 驱动、无写死名单）：
- * - 存活站点 ≥ MIN_SITES_FOR_TAG_INDEX（5）→ 默认可索引，进 sitemap；
- * - <5（含 2-4 站与 1 站）→ `noindex,follow`：页面保留、内链照常传权重，
+ * - 存活站点 ≥ MIN_SITES_FOR_TAG_INDEX（3）→ 默认可索引，进 sitemap；
+ * - <3（1–2 站长尾）→ `noindex,follow`：页面保留、内链照常传权重，
  *   但不进搜索索引——薄内容页不与站点详情页竞争同一词；
  * - 0 站与不存在的标签 → 页面侧 notFound()（真 404，见下方）。
+ *
+ * 规范 URL：resolve 通道命中别名时 canonical 指向规范页；resolve 抖动时
+ * 退回 tag-taxonomy.json 的静态同义词映射，避免旧大小写/空格 URL 自指。
  * 301/410 刻意不用：标签计数随站点增删会变，noindex 是唯一可逆的处置。
  */
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -103,7 +107,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   // resolve 返回的是规范 slug：别名/原名 URL（如 /tags/AI 编程）与规范页
   // 内容完全相同，canonical 必须指向规范页，否则同一内容在两个 URL 上竞争。
   // resolve 失败（中枢抖动）时退回请求 slug，至少保持自指不串页。
-  const canonicalSlug = tagRes?.tag?.slug ?? safeSlug
+  const canonicalSlug = tagRes?.tag?.slug ?? resolveCanonicalTagSlug(safeSlug) ?? safeSlug
   // search 失败（res === null）时按可索引处理：降级渲染不该把整批标签页
   // 临时标成 noindex；只有确认了真实存活数才降档。
   const indexable = res === null || sites.length >= MIN_SITES_FOR_TAG_INDEX
@@ -132,13 +136,19 @@ export default async function TagDetailPage({ params }: { params: Promise<{ slug
   const safeSlug = safeDecodeParam(slug)
   if (!safeSlug) notFound()
   const { res, sites, tagRes, related } = await loadTagPage(safeSlug)
+  const canonicalSlug = tagRes?.tag?.slug ?? resolveCanonicalTagSlug(safeSlug) ?? safeSlug
+  // 旧同义词/大小写 URL 走 308 到规范页。必须放在 0 命中 notFound 之前：
+  // 归并后旧 slug 已从检索索引移除，先判 404 会把合法别名页误判成不存在。
+  // tagRes 命中才跳：中枢未确认规范标签时只输出 canonical，避免跳到空页。
+  if (tagRes?.tag && isTagSynonymAlias(safeSlug) && canonicalSlug !== safeSlug) {
+    permanentRedirect(`/tags/${encodeURIComponent(canonicalSlug)}`)
+  }
   // 真 404（软 404 消灭战）：search 成功但 0 命中 = 标签无存活站点或压根
   // 不存在（方案 §4.1：两类都 404）。search **失败**（res === null）不 404——
   // 中枢挂了不该把整站标签页打成 404，降级渲染由岛负责。
   if (res !== null && sites.length === 0) notFound()
   const indexable = res === null || sites.length >= MIN_SITES_FOR_TAG_INDEX
   const name = tagRes?.tag?.name ?? safeSlug
-  const canonicalSlug = tagRes?.tag?.slug ?? safeSlug
   return (
     <Container as="main" id="main-content">
       <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">

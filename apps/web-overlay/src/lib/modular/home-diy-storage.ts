@@ -27,8 +27,15 @@ import {
   type LayoutSlotClocks,
 } from '@/lib/modular/layout-sync'
 
+import {
+  normalizeCardDisplayMode,
+  type CanonicalCardDisplayMode,
+  type CardDisplayMode,
+} from './card-display-modes'
+import { readClientViewModeCookie, writeViewModeCookie } from './view-mode-cookie'
+
 export type HomeViewMode = 'hybrid' | 'classic' | 'workbench'
-export type CardDisplayMode = 'compact' | 'standard' | 'rich' | 'minimal' | 'mini-chip'
+export type { CardDisplayMode }
 export type CanvasBackground = 'mesh' | 'dots' | 'grid' | 'aurora' | 'clean'
 export type AccentColor = 'default' | 'violet' | 'emerald' | 'amber' | 'rose'
 
@@ -322,6 +329,19 @@ export function getHomeDiySnapshot(): HomeDiySharedState {
   return cachedSnapshot
 }
 
+/**
+ * hydration/SSR 专用快照：必须与服务端首帧完全一致，且引用稳定。
+ *
+ * 绝不能拿 getHomeDiySnapshot 当第三参数——它在 hydrateHomeDiy() 读过
+ * localStorage 后会变成用户配置。HMR/软导航时该模块状态可能已先于
+ * hydration render 落位，此时 React 拿「已被本地配置污染的 serverSnapshot」
+ * 与服务端 HTML 对比，任何依赖 hiddenCategoryIds 的 DOM（侧栏分组标题等）
+ * 都会直接触发 hydration mismatch。默认值与服务端模块初始化一致。
+ */
+export function getServerHomeDiySnapshot(): HomeDiySharedState {
+  return INITIAL_SHARED_STATE
+}
+
 /** 仅供测试隔离：把共享状态退回初始值（生产代码不要调用） */
 export function resetHomeDiySharedState(): void {
   clearPendingDiskWrite()
@@ -577,6 +597,9 @@ function writeHomeDiyState(
   clocksOverride?: LayoutSlotClocks,
 ): HomeDiyWriteResult {
   const prev = sharedState.config
+  // Cookie + localStorage 双写（Zero-CLS SSR 桥梁）：每次提交同步刷新轻量化 `nav_view_mode` Cookie，
+  // 确保顶栏切换器、DIY 底部栏、快捷预设、撤销/重做、远端标签合并与下次刷新 SSR 首帧永远同源。
+  writeViewModeCookie(next.cardDisplayMode)
   const clocks =
     clocksOverride ?? bumpClocks(getEffectiveSlotClocks(), diffChangedSlots(prev, next))
   lastClocks = { ...clocks }
@@ -786,11 +809,18 @@ export function describeCorruptHomeDiyConfig(backupKey: string | null): string {
  * import zod（首屏不付这笔账），所以分享挂起在一次 await 之后；v3 读取与
  * 旧版迁移仍在 await 之前同步完成。
  */
-export async function hydrateHomeDiy(): Promise<void> {
+export async function hydrateHomeDiy(initialCardDisplayMode?: CanonicalCardDisplayMode): Promise<void> {
   if (sharedHydrated) return
   sharedHydrated = true
+  const cookieFallbackMode = initialCardDisplayMode ?? readClientViewModeCookie()
   const storage = safeLocalStorage()
-  if (!storage) return
+  if (!storage) {
+    if (cookieFallbackMode && cookieFallbackMode !== DEFAULT_CONFIG.cardDisplayMode) {
+      const seeded: HomeDIYConfig = { ...DEFAULT_CONFIG, cardDisplayMode: cookieFallbackMode }
+      commitSharedState({ config: seeded, history: createLayoutHistory(seeded) })
+    }
+    return
+  }
   let raw: string | null = null
   try {
     raw = storage.getItem(STORAGE_KEY)
@@ -802,6 +832,18 @@ export async function hydrateHomeDiy(): Promise<void> {
   const stored = readStoredHomeDiyConfig(raw)
   if (stored.status === 'ok') {
     commitSharedState({ config: stored.config, history: createLayoutHistory(stored.config) })
+    // 老用户只有 localStorage 还没有 Cookie 时立即回填，下一次刷新即刻实现 0 CLS
+    writeViewModeCookie(stored.config.cardDisplayMode)
+  } else if (
+    stored.status === 'absent' &&
+    cookieFallbackMode &&
+    normalizeCardDisplayMode(cookieFallbackMode) !== DEFAULT_CONFIG.cardDisplayMode
+  ) {
+    const seeded: HomeDIYConfig = {
+      ...DEFAULT_CONFIG,
+      cardDisplayMode: normalizeCardDisplayMode(cookieFallbackMode),
+    }
+    commitSharedState({ config: seeded, history: createLayoutHistory(seeded) })
   }
   if (stored.status === 'corrupt') {
     const backupKey = stored.corruptRaw ? backupCorruptHomeDiyConfig(storage, stored.corruptRaw) : null
@@ -816,6 +858,7 @@ export async function hydrateHomeDiy(): Promise<void> {
   const migrated = migrateLegacyHomeDiyConfig(storage, sharedState.config)
   if (migrated) {
     commitSharedState({ config: migrated, history: createLayoutHistory(migrated) })
+    writeViewModeCookie(migrated.cardDisplayMode)
   }
   // 顺序很关键：先让本地配置（含旧版迁移）落位，再解析 #diy 分享——
   // 差异预览要对照『用户真实的本地配置』算，而不是对照默认配置；
@@ -837,7 +880,7 @@ const isLegacyRecord = (v: unknown): v is Record<string, unknown> =>
 function pickLegacyFields(parsed: Record<string, unknown>, from: 2 | 1): Partial<HomeDIYConfig> {
   const out: Partial<HomeDIYConfig> = {}
   const viewModes = ['hybrid', 'classic', 'workbench'] as const
-  const cardModes = ['compact', 'standard', 'rich', 'minimal', 'mini-chip'] as const
+  const cardModes = ['compact', 'standard', 'rich', 'minimal', 'mini-chip', 'icon-wall', 'list', 'directory'] as const
   const canvasBgs = ['mesh', 'dots', 'grid', 'aurora', 'clean'] as const
   const accents = ['default', 'violet', 'emerald', 'amber', 'rose'] as const
   if (typeof parsed.viewMode === 'string' && (viewModes as readonly string[]).includes(parsed.viewMode)) {

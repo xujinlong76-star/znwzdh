@@ -48,6 +48,11 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'image/vnd.microsoft.icon'
 ])
 
+function matchesRootDomain(hostname: string, roots: readonly string[]): boolean {
+  const h = hostname.toLowerCase().replace(/\.$/, '')
+  return roots.some((root) => h === root || h.endsWith(`.${root}`))
+}
+
 // 并发控制与在途请求合并，防止首屏 50+ 封面同时轰炸打爆 Node.js Socket 导致 68 秒 HMR 卡死
 const inFlightRequests = new Map<string, Promise<FetchOutcome>>()
 let activeFetches = 0
@@ -164,11 +169,30 @@ async function fetchWithRedirectGuard(
       maxBytes: 8 * 1024 * 1024,
       headers: baseHeaders,
     })
+    // 校验每一跳重定向与最终落地地址仍在媒体域名白名单内，防止白名单图床开放重定向跨出允许域
+    for (const hopUrl of [...(result.redirects ?? []), result.finalUrl]) {
+      if (!hopUrl) continue
+      let hopHost = ''
+      try {
+        hopHost = new URL(hopUrl).hostname
+      } catch {
+        return new Response(null, { status: 403 })
+      }
+      if (!isSafeMediaHost(hopHost)) {
+        return new Response(null, { status: 403 })
+      }
+    }
     const headers: Record<string, string> = {}
     const ct = result.headers.get('content-type')
     if (ct) headers['content-type'] = ct
     const cc = result.headers.get('cache-control')
     if (cc) headers['cache-control'] = cc
+    // 收口到 safeFetch 时曾只透传上面两个头，把 content-length 一并丢了：
+    // 上层 GET 的「Content-Length 预检直接 413、不开始读体」随之失效，
+    // 只能等 readBodyWithLimit 把整段体读进内存才拒。safeFetch 已按
+    // maxBytes 截断过响应体，回显声明值不会让大文件真正进内存。
+    const cl = result.headers.get('content-length')
+    if (cl) headers['content-length'] = cl
     // Uint8Array 在 TS 的 lib.dom 里不是合法 BodyInit（缺 BufferSource 判别），
     // 运行时完全合法；用 Blob 包一层既满足类型又不复制额外内存语义。
     return new Response(new Blob([result.body as BlobPart]), { status: result.status, headers })
@@ -230,6 +254,8 @@ export async function GET(request: Request) {
           'Content-Length': String(cached.buffer.length),
           'ETag': cached.etag,
           'Cache-Control': 'public, max-age=604800, stale-while-revalidate=86400',
+          'Content-Security-Policy': "default-src 'none'; sandbox",
+          'X-Content-Type-Options': 'nosniff',
           'X-Media-Cache': 'HIT'
         }
       })
@@ -247,13 +273,13 @@ export async function GET(request: Request) {
         try {
           const upstreamHeaders: Record<string, string> = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+            'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8'
           }
 
-          if (parsedUrl.hostname.includes('hdslb.com') || parsedUrl.hostname.includes('bilibili.com')) {
+          if (matchesRootDomain(parsedUrl.hostname, ['hdslb.com', 'bilibili.com'])) {
             upstreamHeaders['Referer'] = 'https://www.bilibili.com/'
             upstreamHeaders['Origin'] = 'https://www.bilibili.com'
-          } else if (parsedUrl.hostname.includes('ytimg.com') || parsedUrl.hostname.includes('youtube.com')) {
+          } else if (matchesRootDomain(parsedUrl.hostname, ['ytimg.com', 'youtube.com'])) {
             upstreamHeaders['Referer'] = 'https://www.youtube.com/'
           }
 
@@ -351,6 +377,8 @@ export async function GET(request: Request) {
         'Content-Length': String(buffer.length),
         'ETag': etag,
         'Cache-Control': 'public, max-age=604800, stale-while-revalidate=86400',
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+        'X-Content-Type-Options': 'nosniff',
         'X-Media-Cache': 'MISS'
       }
     })

@@ -41,7 +41,7 @@ describe("标签 URL 单一形态", () => {
 
   it("标签页 canonical 用 resolve 返回的规范 slug，别名页不自指", () => {
     const src = overlayFile("src/app/tags/[slug]/page.tsx");
-    expect(src).toContain("const canonicalSlug = tagRes?.tag?.slug ?? safeSlug");
+    expect(src).toContain("const canonicalSlug = tagRes?.tag?.slug ?? resolveCanonicalTagSlug(safeSlug) ?? safeSlug");
     expect(src).toContain("const canonical = `/tags/${encodeURIComponent(canonicalSlug)}`");
     expect(src).not.toContain("const canonical = `/tags/${encodeURIComponent(safeSlug)}`");
   });

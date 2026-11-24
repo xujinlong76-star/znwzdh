@@ -407,7 +407,7 @@ export function WorkspaceSwitcher() {
                   aria-label="成员权限角色"
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value as HubWorkspaceRole)}
-                  className="rounded-md border border-input bg-background px-2.5 py-1.5 text-base sm:text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="rounded-md border border-border-strong bg-background px-2.5 py-1.5 text-base sm:text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   <option value="member">👥 协作成员 (Member)</option>
                   <option value="maintainer">🛡️ 管理员 (Maintainer)</option>

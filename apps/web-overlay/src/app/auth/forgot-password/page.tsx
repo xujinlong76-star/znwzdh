@@ -64,7 +64,7 @@ export default function ForgotPasswordPage() {
         </CardHeader>
         <CardContent className="space-y-4 pt-0">
           {errorMessage && (
-            <div className="flex items-start gap-2.5 p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive-text text-xs leading-snug animate-in fade-in">
+            <div className="flex items-start gap-2.5 p-3 rounded-lg bg-destructive/15 border border-destructive/30 text-destructive-text text-xs leading-snug animate-in fade-in">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <div className="flex-1">{errorMessage}</div>
             </div>

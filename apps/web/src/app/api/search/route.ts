@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { sanitizeForwardedFor } from '@/lib/hub-proxy';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -11,10 +12,15 @@ export async function GET(request: Request) {
   const queryString = searchParams.toString();
   const targetUrl = `${baseUrl.replace(/\/$/, '')}/api/search${queryString ? `?${queryString}` : ''}`;
 
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  const xff = sanitizeForwardedFor(request.headers.get('x-forwarded-for'));
+  if (xff) headers['x-forwarded-for'] = xff;
+
   try {
     const res = await fetch(targetUrl, {
-      headers: { Accept: 'application/json' },
+      headers,
       cache: 'no-store',
+      signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {
       return NextResponse.json({ error: 'Search failed', status: res.status }, { status: res.status });

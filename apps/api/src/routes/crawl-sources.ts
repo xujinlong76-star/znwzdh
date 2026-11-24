@@ -41,7 +41,8 @@ export const crawlSourceRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
     const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params ?? {});
     const patchSchema = sourceInput.partial().refine(value => Object.keys(value).length > 0, "至少提供一个更新字段");
     const parsed = patchSchema.safeParse(req.body ?? {});
-    if (!params.success || !parsed.success) { reply.code(400); return { ok: false, error: "更新参数无效", details: parsed.success ? params.error.issues : parsed.error.issues }; }
+    if (!params.success) { reply.code(400); return { ok: false, error: "来源 ID 无效", details: params.error.issues }; }
+    if (!parsed.success) { reply.code(400); return { ok: false, error: "更新参数无效", details: parsed.error.issues }; }
     try {
       const source = await updateCrawlSource(ctx.repo, params.data.id, parsed.data);
       if (!source) { reply.code(404); return { ok: false, error: "采集来源不存在" }; }

@@ -184,13 +184,23 @@ function xmlText(block: string, tag: string): string | null {
   return match?.[1] ? cleanMarkupText(match[1], 600) : null;
 }
 
+function atomAlternateHref(block: string): string | null {
+  for (const match of block.matchAll(/<link\b([^>]*)\/?\s*>/gi)) {
+    const attrs = match[1] ?? "";
+    const href = attrs.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1];
+    const rel = attrs.match(/\brel\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase();
+    if (href && (!rel || rel === "alternate")) return href;
+  }
+  return null;
+}
+
 function candidateDetailsFromBlock(block: string, baseUrl: string, kind: CrawlSource["kind"]): CrawlCandidateDetail | null {
   let rawUrl: string | undefined;
   if (kind === "sitemap") {
     rawUrl = xmlText(block, "loc") ?? undefined;
   } else {
     const guid = xmlText(block, "guid");
-    rawUrl = block.match(/<link\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*\/?\s*>/i)?.[1]
+    rawUrl = atomAlternateHref(block)
       ?? xmlText(block, "link")
       ?? (guid && /^https?:\/\//i.test(guid) ? guid : undefined);
   }
@@ -225,8 +235,12 @@ export function extractCrawlCandidateDetails(body: string, kind: CrawlSource["ki
       if (detail) raw.push(detail);
     }
     if (!raw.length) {
-      for (const match of body.matchAll(/<link\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*\/?\s*>/gi)) {
-        const url = canonicalCandidateUrl(match[1]!, baseUrl);
+      for (const match of body.matchAll(/<link\b([^>]*)\/?\s*>/gi)) {
+        const attrs = match[1] ?? "";
+        const rel = attrs.match(/\brel\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase();
+        const rawUrl = attrs.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1];
+        if (!rawUrl || (rel && rel !== "alternate")) continue;
+        const url = canonicalCandidateUrl(rawUrl, baseUrl);
         if (url) raw.push({ url, title: null, description: null });
       }
     }

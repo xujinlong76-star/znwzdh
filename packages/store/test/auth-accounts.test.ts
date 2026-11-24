@@ -100,6 +100,10 @@ describe("账号生命周期仓储", () => {
     expect(user.ok).toBe(true);
     if (!user.ok) return;
 
+    // 注册账号默认未验证：即使密码正确也不能建立登录会话。
+    expect(await repo.verifyUserPassword("carol@example.com", "S3cret-Passw0rd!")).toBeNull();
+    expect(await repo.setUserEmailVerified(user.user.id)).toBe(true);
+
     const ok = await repo.verifyUserPassword("carol@example.com", "S3cret-Passw0rd!");
     expect(ok?.id).toBe(user.user.id);
 
@@ -220,6 +224,7 @@ describe("账号生命周期仓储", () => {
     });
     expect(consumed).toBe(true);
 
+    expect(await repo.setUserEmailVerified(user.user.id)).toBe(true);
     expect(await repo.updateUserPassword(user.user.id, "NewPassw0rd!")).toBe(true);
     expect(await repo.verifyUserPassword("grace@example.com", "NewPassw0rd!")).not.toBeNull();
     expect(await repo.verifyUserPassword("grace@example.com", "OldPassw0rd!")).toBeNull();

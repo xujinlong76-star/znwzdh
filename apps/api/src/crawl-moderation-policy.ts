@@ -65,7 +65,7 @@ export async function getCrawlAiAutoApprovalGate(
       "WHERE status='gold_ready' ORDER BY created_at ASC,id ASC LIMIT 5001",
   );
   if (rows.length < 100) return blocked("goldset_below_100", rows.length);
-  if (rows.length > 5000) return blocked("goldset_exceeds_5000", rows.length);
+  if (rows.length > 4999) return blocked("goldset_exceeds_4999", rows.length);
   const valid = rows.filter(row =>
     ["approve", "reject", "review"].includes(String(row.final_label)) &&
     (row.final_risk === true || row.final_risk === false || row.final_risk === 0 || row.final_risk === 1),

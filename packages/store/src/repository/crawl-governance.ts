@@ -128,13 +128,13 @@ export async function claimCrawlTask(
       `SELECT * FROM crawl_tasks AS task
         WHERE task.status IN ('queued','retry') AND task.next_run_at <= ?
           AND NOT EXISTS (
-            SELECT 1 FROM crawl_domain_state AS domain
-            WHERE domain.host = task.host
-              AND (domain.next_allowed_at > ? OR domain.lease_expires_at > ?)
+            SELECT 1 FROM crawl_domain_state AS ds
+            WHERE ds.host = task.host
+              AND (ds.next_allowed_at > ? OR ds.lease_expires_at > ?)
           )
           AND NOT EXISTS (
-            SELECT 1 FROM crawl_domain_circuit AS circuit
-            WHERE circuit.host = task.host AND circuit.opened_until > ?
+            SELECT 1 FROM crawl_domain_circuit AS dc
+            WHERE dc.host = task.host AND dc.opened_until > ?
           )
         ORDER BY task.priority DESC, task.next_run_at ASC, task.created_at ASC
         LIMIT ?${lock}`,

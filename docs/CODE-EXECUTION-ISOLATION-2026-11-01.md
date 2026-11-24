@@ -85,7 +85,7 @@ harness 内部：`document.createElement('script')` + `el.textContent = code` + 
 | --- | --- |
 | [`src/lib/video-code-sandbox-runtime.ts`](../apps/web-overlay/src/lib/video-code-sandbox-runtime.ts) | VFS 打包依赖后交给 `session.load`；默认 `openSession: openOpaqueSession`，测试注入 stub 会话。无沙盒 → `success:false` + `stopReason:'unavailable'` |
 | [`src/lib/video-live-test-runner.ts`](../apps/web-overlay/src/lib/video-live-test-runner.ts) | 课后 TDD 每条用例经 `session.load` + `session.invoke`。开不了会话 ⇒ 整套用例判 `blocked`，**不执行任何代码** |
-| [`src/components/video-sandbox-runner-pane.tsx`](../apps/web-overlay/src/components/video-sandbox-runner-pane.tsx) | 「&lt; 返回值」改为「&lt; 导出结果」；空控制台提示改成 `exports.result = ...` 口径；原来那块**假的**「沙盒环境已隔离」面板换成用同一个 `SANDBOX_FLAGS` 的真隔离 iframe |
+| [`src/components/video-sandbox-runner-pane.tsx`](../apps/web-overlay/src/components/video-code-sandbox.tsx) | 「&lt; 返回值」改为「&lt; 导出结果」；空控制台提示改成 `exports.result = ...` 口径；原来那块**假的**「沙盒环境已隔离」面板换成用同一个 `SANDBOX_FLAGS` 的真隔离 iframe |
 | [`src/components/video-code-sandbox.tsx`](../apps/web-overlay/src/components/video-code-sandbox.tsx) | 该页 srcdoc 预览（功能本体，不重写）补上 `e.source !== iframeRef.current?.contentWindow` 过滤，假日志进不了控制台 |
 
 ## 五、门禁：谁盯着它不退化

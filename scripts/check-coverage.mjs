@@ -8,6 +8,7 @@
  *   - --thresholds coverage-thresholds.json：读外置阈值文件（全局 + 分区域 floor），
  *     任一低于阈值即 exit 1，并逐条打 ::error:: 注解供 CI 文件页展示。
  *   - --max-age <minutes>：产物 mtime 超阈值视为旧数据，exit 2（防 clean:false 的假绿）。
+ *   - --patch --base <ref> --min-patch-lines <pct>：基于 coverage-final.json 校验新增可执行改动行覆盖率。
  * 阈值单一事实源为仓库根 coverage-thresholds.json（docs/TESTING-STRATEGY.md §3.2）。
  *
  * 口径（必须与 vitest.config.ts 的 coverage 段保持一致）：

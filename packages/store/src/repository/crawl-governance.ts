@@ -125,11 +125,20 @@ export async function claimCrawlTask(
   return repo.withTransaction(async () => {
     const lock = repo.db.dialect === "pg" ? " FOR UPDATE SKIP LOCKED" : "";
     const candidates = await repo.raw(
-      `SELECT * FROM crawl_tasks
-        WHERE status IN ('queued','retry') AND next_run_at <= ?
-        ORDER BY priority DESC, next_run_at ASC, created_at ASC
+      `SELECT * FROM crawl_tasks AS task
+        WHERE task.status IN ('queued','retry') AND task.next_run_at <= ?
+          AND NOT EXISTS (
+            SELECT 1 FROM crawl_domain_state AS domain
+            WHERE domain.host = task.host
+              AND (domain.next_allowed_at > ? OR domain.lease_expires_at > ?)
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM crawl_domain_circuit AS circuit
+            WHERE circuit.host = task.host AND circuit.opened_until > ?
+          )
+        ORDER BY task.priority DESC, task.next_run_at ASC, task.created_at ASC
         LIMIT ?${lock}`,
-      [now, scanLimit],
+      [now, now, now, now, scanLimit],
     );
     // 多候选跨域名时，所有事务按 host 字典序拿域名行锁，避免 A→B / B→A 死锁。
     const domainByHost = new Map<string, Record<string, unknown>>();

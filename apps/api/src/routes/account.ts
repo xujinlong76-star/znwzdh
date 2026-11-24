@@ -13,7 +13,8 @@
  *  - 每个写端点都有路由级限流，防刷邮件（邮件是真实成本）。
  */
 import type { FastifyPluginAsync } from "fastify";
-import { hashToken } from "../auth.ts";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { hashToken, secureEqual } from "../auth.ts";
 import { z } from "zod";
 import { generateToken, hashPassword, hashToken, validatePassword } from "@navhub/core";
 
@@ -40,6 +41,119 @@ const LOGIN_FAIL_MAX = 5;
 function loginFailureKey(identifier: string): string {
   // 不把邮箱/用户名明文作为 system_states key，避免数据库运维面泄露登录标识。
   return "auth:login-failure:" + hashToken(identifier.trim().toLowerCase());
+}
+
+
+/** 管理员 TOTP（RFC 6238）：密钥 AES-256-GCM 加密后存入共享 system_states。 */
+type AdminMfaState = {
+  iv: string;
+  ciphertext: string;
+  tag: string;
+  enabled: boolean;
+  recoveryHashes: string[];
+  recoveryVersion: string;
+  updatedAt: number;
+};
+
+const ADMIN_MFA_STATE_KEY = "auth:admin-mfa:v1";
+const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function mfaEncryptionKey(): Buffer {
+  const raw = process.env.NAVHUB_MFA_ENCRYPTION_KEY ?? "";
+  const key = /^[a-f0-9]{64}$/i.test(raw) ? Buffer.from(raw, "hex") : Buffer.from(raw, "base64");
+  if (key.length !== 32) throw new Error("NAVHUB_MFA_ENCRYPTION_KEY 必须是 32 字节密钥（64 位 hex 或 base64）");
+  return key;
+}
+
+function base32Encode(input: Buffer): string {
+  let bits = 0, value = 0, output = "";
+  for (const byte of input) {
+    value = (value << 8) | byte; bits += 8;
+    while (bits >= 5) { output += BASE32[(value >>> (bits - 5)) & 31]; bits -= 5; }
+  }
+  if (bits > 0) output += BASE32[(value << (5 - bits)) & 31];
+  return output;
+}
+
+function base32Decode(input: string): Buffer {
+  let bits = 0, value = 0;
+  const out: number[] = [];
+  for (const ch of input.replace(/=+$/g, "").toUpperCase()) {
+    const n = BASE32.indexOf(ch);
+    if (n < 0) throw new Error("invalid base32");
+    value = (value << 5) | n; bits += 5;
+    if (bits >= 8) { out.push((value >>> (bits - 8)) & 255); bits -= 8; }
+  }
+  return Buffer.from(out);
+}
+
+function totpAt(secret: string, timeMs: number): string {
+  const counter = BigInt(Math.floor(timeMs / 30_000));
+  const msg = Buffer.alloc(8);
+  msg.writeBigUInt64BE(counter);
+  const digest = createHmac("sha1", base32Decode(secret)).update(msg).digest();
+  const offset = digest[digest.length - 1] & 15;
+  const binary = ((digest[offset] & 127) << 24) | ((digest[offset + 1] & 255) << 16) | ((digest[offset + 2] & 255) << 8) | (digest[offset + 3] & 255);
+  return String(binary % 1_000_000).padStart(6, "0");
+}
+
+function verifyTotp(secret: string, supplied: string, now = Date.now()): boolean {
+  const code = supplied.replace(/\s+/g, "");
+  if (!/^\d{6}$/.test(code)) return false;
+  const actual = Buffer.from(code);
+  for (const offset of [-30_000, 0, 30_000]) {
+    const expected = Buffer.from(totpAt(secret, now + offset));
+    if (actual.length === expected.length && timingSafeEqual(actual, expected)) return true;
+  }
+  return false;
+}
+
+function encryptMfaSecret(secret: string): Pick<AdminMfaState, "iv" | "ciphertext" | "tag"> {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", mfaEncryptionKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
+  return { iv: iv.toString("hex"), ciphertext: ciphertext.toString("hex"), tag: cipher.getAuthTag().toString("hex") };
+}
+
+function decryptMfaSecret(state: AdminMfaState): string {
+  const decipher = createDecipheriv("aes-256-gcm", mfaEncryptionKey(), Buffer.from(state.iv, "hex"));
+  decipher.setAuthTag(Buffer.from(state.tag, "hex"));
+  return Buffer.concat([decipher.update(Buffer.from(state.ciphertext, "hex")), decipher.final()]).toString("utf8");
+}
+
+function newRecoveryCodes(): string[] {
+  return Array.from({ length: 10 }, () => {
+    const raw = randomBytes(9).toString("base64url").toUpperCase();
+    return raw.match(/.{1,4}/g)?.join("-") ?? raw;
+  });
+}
+
+async function readAdminMfa(ctx: AppContext): Promise<AdminMfaState | null> {
+  return ctx.repo.getSystemState<AdminMfaState>(ADMIN_MFA_STATE_KEY);
+}
+
+async function verifyAdminMfa(ctx: AppContext, supplied: string): Promise<boolean> {
+  const state = await readAdminMfa(ctx);
+  const required = process.env.NAVHUB_ADMIN_MFA_REQUIRED === "1" || process.env.NAVHUB_ADMIN_MFA_REQUIRED === "true";
+  if (!state?.enabled) return !required;
+  const secret = decryptMfaSecret(state);
+  if (verifyTotp(secret, supplied)) return true;
+  const normalized = supplied.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!normalized) return false;
+  const recoveryHash = hashToken(normalized);
+  if (!state.recoveryHashes.includes(recoveryHash)) return false;
+  // 数据库原子占坑：恢复码只可在任一实例成功消费一次。
+  return ctx.repo.claimSystemState(
+    "auth:admin-mfa:recovery:" + state.recoveryVersion + ":" + recoveryHash,
+    true,
+    10 * 365 * 24 * 60 * 60 * 1000,
+  );
+}
+
+function internalMfaRequest(ctx: AppContext, req: { headers: Record<string, unknown> }): boolean {
+  const expected = ctx.config.internalToken;
+  const supplied = req.headers["x-navhub-internal-token"];
+  return Boolean(expected && typeof supplied === "string" && secureEqual(supplied, expected));
 }
 
 /** 路由级限流：测试环境放开，真实环境限制为「小时级若干次」 */
@@ -114,6 +228,79 @@ async function sendResetMail(
 
 export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
+
+
+  /* ---------------- 管理员双因素认证（TOTP + 一次性恢复码） ---------------- */
+
+  app.get("/api/account/admin-mfa/status", { config: { scope: "admin" } }, async () => {
+    const state = await readAdminMfa(ctx);
+    return { enabled: Boolean(state?.enabled), required: process.env.NAVHUB_ADMIN_MFA_REQUIRED === "1" || process.env.NAVHUB_ADMIN_MFA_REQUIRED === "true" };
+  });
+
+  app.post("/api/account/admin-mfa/setup", { config: { scope: "admin" } }, async (_req, reply) => {
+    let encrypted: Pick<AdminMfaState, "iv" | "ciphertext" | "tag">;
+    let secret: string;
+    try {
+      // 先验证密钥配置，再生成并加密；不允许以明文或默认密钥落库。
+      mfaEncryptionKey();
+      secret = base32Encode(randomBytes(20));
+      encrypted = encryptMfaSecret(secret);
+    } catch (err) {
+      reply.code(503);
+      return { error: err instanceof Error ? err.message : "MFA 加密配置不可用" };
+    }
+    const existing = await readAdminMfa(ctx);
+    if (existing?.enabled) { reply.code(409); return { error: "管理员双因素认证已启用；请先使用恢复流程处理" }; }
+    await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, {
+      ...encrypted, enabled: false, recoveryHashes: [], recoveryVersion: randomBytes(12).toString("hex"), updatedAt: Date.now(),
+    } satisfies AdminMfaState);
+    const issuer = "山羊胡管理后台";
+    return {
+      ok: true,
+      secret,
+      otpauthUrl: "otpauth://totp/" + encodeURIComponent(issuer + ":admin") + "?secret=" + secret + "&issuer=" + encodeURIComponent(issuer) + "&algorithm=SHA1&digits=6&period=30",
+      message: "请在验证器 App 中添加密钥，再提交当前 6 位验证码确认启用。密钥只在本次响应中显示。",
+    };
+  });
+
+  app.post("/api/account/admin-mfa/confirm", { config: { scope: "admin" } }, async (req, reply) => {
+    const body = z.object({ code: z.string().regex(/^\d{6}$/) }).safeParse(req.body);
+    if (!body.success) { reply.code(400); return { error: "请输入 6 位验证码" }; }
+    const state = await readAdminMfa(ctx);
+    if (!state || state.enabled) { reply.code(409); return { error: "请先生成待确认的 MFA 密钥" }; }
+    let secret: string;
+    try { secret = decryptMfaSecret(state); } catch { reply.code(503); return { error: "MFA 密钥解密失败，请重新初始化" }; }
+    if (!verifyTotp(secret, body.data.code)) { reply.code(401); return { error: "验证码无效或已过期" }; }
+    const codes = newRecoveryCodes();
+    await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, {
+      ...state, enabled: true, recoveryHashes: codes.map((code) => hashToken(code.replace(/-/g, ""))),
+      recoveryVersion: randomBytes(12).toString("hex"), updatedAt: Date.now(),
+    } satisfies AdminMfaState);
+    await ctx.repo.audit({ actor: req.auth.actor, actorKind: req.auth.kind, action: "account.admin_mfa_enabled" });
+    reply.header("cache-control", "no-store");
+    return { ok: true, recoveryCodes: codes, message: "双因素认证已启用。请离线保存恢复码；每个恢复码只能使用一次，此后不会再次显示。" };
+  });
+
+  // 仅供受信任的 Web BFF 调用；不能使用普通浏览器 Bearer token 冒充内部调用。
+  app.post("/api/account/admin-mfa/verify", { config: { scope: "public", ...accountRateLimit(30) } }, async (req, reply) => {
+    if (!internalMfaRequest(ctx, req as never)) { reply.code(401); return { ok: false }; }
+    const body = z.object({ code: z.string().min(1).max(64) }).safeParse(req.body);
+    if (!body.success) { reply.code(400); return { ok: false }; }
+    const ok = await verifyAdminMfa(ctx, body.data.code);
+    reply.header("cache-control", "no-store");
+    if (!ok) { reply.code(401); return { ok: false }; }
+    return { ok: true };
+  });
+
+  app.post("/api/account/admin-mfa/disable", { config: { scope: "admin" } }, async (req, reply) => {
+    const body = z.object({ code: z.string().min(1).max(64) }).safeParse(req.body);
+    if (!body.success) { reply.code(400); return { error: "验证码无效" }; }
+    const state = await readAdminMfa(ctx);
+    if (!state?.enabled || !(await verifyAdminMfa(ctx, body.data.code))) { reply.code(401); return { error: "验证码无效" }; }
+    await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, { ...state, enabled: false, recoveryHashes: [], updatedAt: Date.now() });
+    await ctx.repo.audit({ actor: req.auth.actor, actorKind: req.auth.kind, action: "account.admin_mfa_disabled" });
+    return { ok: true };
+  });
 
   /* ---------------- 注册 ---------------- */
 

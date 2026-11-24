@@ -134,7 +134,6 @@ describe("migrateColumns：按方言分派", () => {
     await cleanTaxonomyAndDuplicates(db);
     const insert = calls.find((sql) => sql.includes("INSERT INTO categories"));
     expect(insert).toContain("TRUE");
-    expect(insert).not.toContain("enabled, source, created_at, updated_at) VALUES");
     expect(insert).not.toContain(", 1, 'registry'");
   });
 

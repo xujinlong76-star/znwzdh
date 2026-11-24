@@ -63,12 +63,55 @@ export function VideoAiLearningDialog({
 }: VideoAiLearningDialogProps) {
   const [tab, setTab] = useState<AiLearningTab>('copilot')
 
+  // A-2：标准 ARIA Tabs 键盘交互。照抄 plugin-detail-view.tsx:143-170
+  // 骨架 + A-1 的 disabled 跳过（全量列表保下标映射，步进跳 disabled；
+  // 三 tab 当前均无 disabled，step() 是防后人加）。无 .click()、无 URL 同步。
+  // 概念图谱 tab 只在 conceptAvailable 时渲染：键盘顺序须与 DOM 里的 tab
+  // 一致，故先按 conceptAvailable 过滤，否则下标映射会把焦点与选择错位
+  // （1322-w8 §0.1 同款错位：未渲染的 tab 不可进顺序表）。
+  const AI_LEARNING_TABS: AiLearningTab[] = ['copilot', 'concept', 'flashcards']
+  const visibleTabs = AI_LEARNING_TABS.filter((t) => t !== 'concept' || conceptAvailable)
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement
+    if (target.getAttribute('role') !== 'tab') return
+    const tabs = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+    )
+    const index = tabs.indexOf(target as HTMLButtonElement)
+    if (index < 0) return
+
+    const enabled = tabs.map((t) => !t.disabled)
+    if (!enabled.some(Boolean)) return
+    const step = (from: number, dir: 1 | -1): number => {
+      let i = from
+      for (let n = 0; n < tabs.length; n++) {
+        i = (i + dir + tabs.length) % tabs.length
+        if (enabled[i]) return i
+      }
+      return from
+    }
+    const firstEnabled = enabled.findIndex(Boolean)
+    const lastEnabled = enabled.lastIndexOf(true)
+
+    let next = index
+    if (event.key === 'ArrowRight') next = step(index, 1)
+    else if (event.key === 'ArrowLeft') next = step(index, -1)
+    else if (event.key === 'Home') next = firstEnabled
+    else if (event.key === 'End') next = lastEnabled
+    else return
+
+    event.preventDefault()
+    setTab(visibleTabs[next])
+    tabs[next]?.focus()
+  }
+
   const tabButton = (id: AiLearningTab, label: string) => (
     <button
       key={id}
       type="button"
       role="tab"
       aria-selected={tab === id}
+      tabIndex={tab === id ? 0 : -1}
       onClick={() => setTab(id)}
       className={cn(
         'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors',
@@ -94,7 +137,7 @@ export function VideoAiLearningDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div role="tablist" aria-label="AI 学习方式" className="flex gap-1 pt-2 shrink-0">
+        <div role="tablist" aria-label="AI 学习方式" className="flex gap-1 pt-2 shrink-0" onKeyDown={handleTabKeyDown}>
           {tabButton('copilot', 'AI伴学')}
           {conceptAvailable && tabButton('concept', '概念图谱')}
           {tabButton('flashcards', `抽认卡 (${cards.length})`)}

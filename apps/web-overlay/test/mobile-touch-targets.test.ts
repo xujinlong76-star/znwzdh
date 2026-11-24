@@ -568,4 +568,31 @@ describe('tablist A-2：其余 tablist 按 plugin-detail-view 模板补 roving t
     expect(handler).toContain('tabs[next]?.focus()')
     expect(handler).not.toContain('.click()')
   })
+
+  it('video-ai-learning-dialog：容器挂 onKeyDown，顺序表按 conceptAvailable 过滤', () => {
+    const src = read('src/components/video-ai-learning-dialog.tsx')
+    expect(src).toContain('onKeyDown={handleTabKeyDown}')
+    expect(src).toContain("const AI_LEARNING_TABS: AiLearningTab[] = ['copilot', 'concept', 'flashcards']")
+    expect(src).toContain("const visibleTabs = AI_LEARNING_TABS.filter((t) => t !== 'concept' || conceptAvailable)")
+    expect(src).toContain('const handleTabKeyDown')
+    expect(count(src, 'tabIndex={tab === id ? 0 : -1}')).toBe(1)
+    const handler = src.slice(
+      src.indexOf('const handleTabKeyDown'),
+      src.indexOf('\n  }', src.indexOf('const handleTabKeyDown')),
+    )
+    expect(handler).toContain("target.getAttribute('role') !== 'tab'")
+    expect(handler).toContain("querySelectorAll<HTMLButtonElement>('[role=\"tab\"]')")
+    expect(handler).not.toContain('[role="tab"]:not([disabled])')
+    expect(handler).toContain('tabs.map((t) => !t.disabled)')
+    expect(handler).toContain('const step = (from: number, dir: 1 | -1): number => {')
+    expect(handler).toContain('const firstEnabled = enabled.findIndex(Boolean)')
+    expect(handler).toContain('const lastEnabled = enabled.lastIndexOf(true)')
+    for (const key of ["'ArrowRight'", "'ArrowLeft'", "'Home'", "'End'"]) {
+      expect(handler).toContain(`event.key === ${key}`)
+    }
+    expect(handler).toContain('event.preventDefault()')
+    expect(handler).toContain('setTab(visibleTabs[next])')
+    expect(handler).toContain('tabs[next]?.focus()')
+    expect(handler).not.toContain('.click()')
+  })
 })

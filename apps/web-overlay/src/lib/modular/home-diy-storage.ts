@@ -597,8 +597,8 @@ function writeHomeDiyState(
   clocksOverride?: LayoutSlotClocks,
 ): HomeDiyWriteResult {
   const prev = sharedState.config
-  // Cookie + localStorage 双写（Zero-CLS SSR 桥梁）：每次提交同步刷新轻量化 `nav_view_mode` Cookie，
-  // 确保顶栏切换器、DIY 底部栏、快捷预设、撤销/重做、远端标签合并与下次刷新 SSR 首帧永远同源。
+  // Cookie + localStorage 双写（ISR 下的客户端首绘桥梁）：每次提交同步刷新轻量化 `nav_view_mode` Cookie，
+  // 确保顶栏切换器、DIY 底部栏、快捷预设、撤销/重做、远端标签合并与下次客户端首绘读取同源。
   writeViewModeCookie(next.cardDisplayMode)
   const clocks =
     clocksOverride ?? bumpClocks(getEffectiveSlotClocks(), diffChangedSlots(prev, next))

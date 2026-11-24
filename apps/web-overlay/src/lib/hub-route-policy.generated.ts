@@ -42,6 +42,7 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "PATCH", path: "/api/admin/crawl-sources/:id", scope: "admin" },
   { method: "GET", path: "/api/admin/crawl/candidates", scope: "admin" },
   { method: "POST", path: "/api/admin/crawl/candidates/:id/review", scope: "admin" },
+  { method: "POST", path: "/api/admin/crawl/candidates/:id/override-ai", scope: "admin" },
   { method: "GET", path: "/api/admin/crawl/moderation-analytics", scope: "admin" },
   { method: "GET", path: "/api/admin/crawl/moderation-decisions", scope: "admin" },
   { method: "GET", path: "/api/admin/crawl/moderation-gold-assignments/metrics", scope: "admin" },

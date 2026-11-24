@@ -168,18 +168,25 @@ describe('Cookie + localStorage 双写零闪烁 SSR 契约（view-mode-cookie）
     expect(parseViewModeCookie('%E0%A4%A')).toBeNull()
   })
 
-  it('首页 RSC 读取 nav_view_mode Cookie 并经 InitialViewModeProvider 注入客户端，实现 0 CLS', () => {
+  it('首页保持 ISR；客户端在首次绘制前读取 Cookie/localStorage 并应用展示模式', () => {
     const pageSrc = overlaySource('src/app/page.tsx')
-    expect(pageSrc).toContain('NAV_VIEW_MODE_COOKIE')
-    expect(pageSrc).toContain('parseViewModeCookie')
-    expect(pageSrc).toContain('initialCardDisplayMode={initialCardDisplayMode}')
+    expect(pageSrc).toContain('export const revalidate = 60')
+    expect(pageSrc).not.toContain('from "next/headers"')
+    expect(pageSrc).not.toContain('cookies()')
+    expect(pageSrc).not.toContain('NAV_VIEW_MODE_COOKIE')
+    expect(pageSrc).not.toContain('initialCardDisplayMode={')
 
     const storageSrc = overlaySource('src/lib/modular/home-diy-storage.ts')
     expect(storageSrc).toContain('writeViewModeCookie(next.cardDisplayMode)')
     expect(storageSrc).toContain('readClientViewModeCookie')
 
+    const hookSrc = overlaySource('src/lib/modular/use-home-diy.ts')
+    expect(hookSrc).toContain('useIsomorphicLayoutEffect')
+    expect(hookSrc).toContain('hydrateHomeDiy(initialCardDisplayMode)')
+
     const contentSrc = overlaySource('src/components/navigation-content.tsx')
-    expect(contentSrc).toContain('<InitialViewModeProvider value={ssrCardDisplayMode}>')
+    expect(contentSrc).toContain('useHomeDIY(initialCardDisplayMode)')
+    expect(contentSrc).toContain('<InitialViewModeProvider value={activeCardDisplayMode}>')
     expect(contentSrc).toContain('resolveEffectiveViewMode(activeCardDisplayMode, isMobileViewport)')
     expect(contentSrc).toContain('data-card-mode={effectiveCardDisplayMode}')
   })

@@ -336,6 +336,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       ...state, enabled: true, recoveryHashes: codes.map((code) => hashApiToken(code.replace(/-/g, ""))),
       updatedAt: Date.now(),
     } satisfies AdminMfaState);
+    await ctx.repo.clearLoginFailure(ADMIN_MFA_FAILURE_KEY);
     await ctx.repo.audit({ actor: req.auth.actor, actorKind: req.auth.kind, action: "account.admin_mfa_enabled" }).catch(() => { /* 不得因审计故障吞掉一次性恢复码 */ });
     reply.header("cache-control", "no-store");
     return { ok: true, recoveryCodes: codes, message: "双因素认证已启用。请离线保存恢复码；每个恢复码只能使用一次，此后不会再次显示。" };

@@ -13,12 +13,18 @@ import {
   upsertCrawlRobotsCache,
   settleCrawlTask,
   upsertSiteDiscoveryCandidate,
+  reviewSiteDiscoveryCandidate,
   recordCrawlAiModerationDecision,
 } from "@navhub/store";
 import { llmProviderReady, llmProviderReadyAny, resolveLlm } from "../../llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota } from "../../llm-quota.ts";
 import { callLlm } from "../../llm-usage.ts";
-import { DEFAULT_CRAWL_AI_MODERATION_POLICY, loadCrawlAiModerationPolicy } from "../../crawl-moderation-policy.ts";
+import {
+  DEFAULT_CRAWL_AI_MODERATION_POLICY,
+  getCrawlAiAutoApprovalGate,
+  loadCrawlAiModerationPolicy,
+  shouldAutoApproveCrawlCandidate,
+} from "../../crawl-moderation-policy.ts";
 import type { AppContext } from "../../context.ts";
 import type { JobRunHandle } from "../../jobs.ts";
 
@@ -717,26 +723,79 @@ export async function handleCrawlWorker(
                   }
                   if (leaseHeartbeat.signal.aborted) throw new Error("采集任务租约已丢失，禁止写入 AI 审核结果");
                   summary.aiModerationSucceeded++;
+                  let gate: Awaited<ReturnType<typeof getCrawlAiAutoApprovalGate>> | null = null;
+                  if (moderationPolicy.mode === "auto_approve") {
+                    try {
+                      gate = await getCrawlAiAutoApprovalGate(ctx, decision.model);
+                    } catch {
+                      gate = {
+                        eligible: false, reason: "gate_check_error", model: decision.model,
+                        datasetVersion: null, sampleSize: 0, exactMatchRate: null,
+                        approvePrecision: null, riskRecall: null, riskPositiveSupport: 0,
+                        riskFalseNegatives: 0, evaluatedAt: null,
+                      };
+                    }
+                  }
+                  const autoApprovalEligible = gate?.eligible === true &&
+                    shouldAutoApproveCrawlCandidate(decision, moderationPolicy, finalUrl);
+                  const reviewedAt = Date.now();
+                  const autoEvidence = {
+                    mode: autoApprovalEligible ? "auto_approve" : "shadow",
+                    status: "completed",
+                    verdict: decision.verdict,
+                    action: autoApprovalEligible ? "auto_approved" : "human_review_required",
+                    autoApprovalGate: gate ? {
+                      eligible: gate.eligible, reason: gate.reason, datasetVersion: gate.datasetVersion,
+                      sampleSize: gate.sampleSize, exactMatchRate: gate.exactMatchRate,
+                      approvePrecision: gate.approvePrecision, riskRecall: gate.riskRecall,
+                      riskPositiveSupport: gate.riskPositiveSupport, riskFalseNegatives: gate.riskFalseNegatives,
+                      evaluatedAt: gate.evaluatedAt,
+                    } : null,
+                    confidence: decision.confidence, qualityScore: decision.qualityScore,
+                    category: decision.category, tags: decision.tags, risks: decision.risks,
+                    reasons: decision.reasons, evidence: decision.evidence,
+                    model: decision.model, policyVersion: decision.policyVersion, reviewedAt,
+                  };
+                  let autoApprovalApplied = false;
+                  if (autoApprovalEligible && candidate.status === "pending") {
+                    const reviewer = `ai:${decision.model}`;
+                    const reviewed = await reviewSiteDiscoveryCandidate(ctx.repo, {
+                      id: candidate.id, status: "approved", reviewer, siteId: null,
+                      evidence: { ...candidate.evidence, aiModeration: autoEvidence },
+                      now: reviewedAt,
+                    });
+                    autoApprovalApplied = reviewed?.status === "approved" && reviewed.reviewedBy === reviewer;
+                  }
+                  if (!autoApprovalApplied) {
+                    await upsertSiteDiscoveryCandidate(ctx.repo, {
+                      id: candidate.id, url: candidate.url, canonicalUrl: candidate.canonicalUrl,
+                      source: candidate.source, confidence: decision.confidence,
+                      evidence: { ...candidate.evidence, aiModeration: {
+                        ...autoEvidence,
+                        mode: "shadow",
+                        action: gate && !gate.eligible ? "gate_blocked" : "human_review_required",
+                      } },
+                    });
+                  }
                   await recordCrawlAiModerationDecision(ctx.repo, {
                     id: randomUUID(), candidateId: candidate.id, decisionSource: "ai",
-                    mode: "shadow", status: "completed", verdict: decision.verdict,
-                    confidence: decision.confidence, qualityScore: decision.qualityScore,
-                    risks: decision.risks, reasons: decision.reasons, model: decision.model,
-                    policyVersion: decision.policyVersion, createdAt: Date.now(),
+                    mode: autoApprovalApplied ? "auto_approve" : "shadow", status: "completed",
+                    verdict: decision.verdict, confidence: decision.confidence,
+                    qualityScore: decision.qualityScore, risks: decision.risks,
+                    reasons: decision.reasons, model: decision.model,
+                    policyVersion: decision.policyVersion, createdAt: reviewedAt,
                   });
-                  await upsertSiteDiscoveryCandidate(ctx.repo, {
-                    id: candidate.id, url: candidate.url, canonicalUrl: candidate.canonicalUrl,
-                    source: candidate.source,
-                    confidence: decision.confidence,
-                    evidence: { ...candidate.evidence, aiModeration: {
-                      mode: "shadow", status: "completed", verdict: decision.verdict,
-                      confidence: decision.confidence, qualityScore: decision.qualityScore,
-                      category: decision.category, tags: decision.tags, risks: decision.risks,
-                      reasons: decision.reasons, evidence: decision.evidence,
-                      model: decision.model, policyVersion: decision.policyVersion,
-                      reviewedAt: Date.now(),
-                    } },
-                  });
+                  if (autoApprovalApplied) {
+                    await ctx.repo.audit({
+                      actor: `ai:${decision.model}`, actorKind: "system",
+                      action: "crawl.ai_moderation.auto_approved", target: candidate.id,
+                      diff: {
+                        confidence: decision.confidence, qualityScore: decision.qualityScore,
+                        datasetVersion: gate?.datasetVersion, sampleSize: gate?.sampleSize,
+                        policyVersion: decision.policyVersion,
+                      },
+                    });
+                  }
                 } catch (moderationError) {
                   if (leaseHeartbeat.signal.aborted) throw new Error("采集任务租约已丢失，停止写入 AI 审核错误记录");
                   summary.aiModerationFailed++;

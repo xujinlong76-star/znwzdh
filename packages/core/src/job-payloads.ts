@@ -84,6 +84,18 @@ export const JobPayloadSchemas = {
 
   plugin_url_health: z.object({}).strict(),
 
+  crawl_worker: z
+    .object({
+      seeds: z.array(
+        z.object({
+          url: z.string().url().max(2048).refine((value) => value.startsWith("http://") || value.startsWith("https://"), "仅允许 HTTP(S) URL"),
+          kind: z.enum(["sitemap", "rss", "page"]),
+        }).strict(),
+      ).max(100).optional(),
+      maxTasks: z.number().int().min(1).max(25).optional(),
+    })
+    .strict(),
+
   user_data_audit: z.object({}).strict(),
 
   backup_restore: z

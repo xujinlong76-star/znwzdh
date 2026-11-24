@@ -130,6 +130,13 @@ describe("采集来源 SSRF 注册前校验", () => {
     await expect(assertSafeCrawlSourceUrl("http://example.com:6379/")).rejects.toThrow();
   });
 
+  it("拒绝 IPv6 环回、私网地址、非 HTTP 协议和 URL 凭证", async () => {
+    await expect(assertSafeCrawlSourceUrl("http://[::1]/")).rejects.toThrow();
+    await expect(assertSafeCrawlSourceUrl("http://10.0.0.8/")).rejects.toThrow();
+    await expect(assertSafeCrawlSourceUrl("ftp://example.com/file")).rejects.toThrow();
+    await expect(assertSafeCrawlSourceUrl("https://user:pass@example.com/")).rejects.toThrow();
+  });
+
   it("拒绝 DNS 无法解析的主机，采用 fail-closed", async () => {
     await expect(assertSafeCrawlSourceUrl("https://crawl-source.invalid/sitemap.xml")).rejects.toThrow();
   });

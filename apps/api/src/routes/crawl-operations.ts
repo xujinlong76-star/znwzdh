@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { evaluateSiteModerationGoldSet, moderateSiteWithAi } from "@navhub/ai";
+import { DEFAULT_GUARD, assertUrlShape, evaluateSiteModerationGoldSet, moderateSiteWithAi, resolveAndCheck } from "@navhub/ai";
 import {
   countSiteDiscoveryCandidates, getSiteDiscoveryCandidateForUpdate,
   recordCrawlAiModerationDecision, listCrawlAiModerationDecisions,
@@ -15,6 +15,12 @@ import { resolveLlm, llmProviderReady } from "../llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota, replyQuotaBlocked } from "../llm-quota.ts";
 import { callLlm } from "../llm-usage.ts";
 import { CRAWL_AI_MODERATION_POLICY_KEY, CrawlAiModerationPolicySchema, loadCrawlAiModerationPolicy } from "../crawl-moderation-policy.ts";
+
+/** 来源注册前做 DNS/IP 与危险端口校验；真正抓取时仍必须使用 guardedFetch 逐跳防护。 */
+export async function assertSafeCrawlSourceUrl(rawUrl: string): Promise<void> {
+  const url = assertUrlShape(rawUrl);
+  await resolveAndCheck(url, { ...DEFAULT_GUARD, timeoutMs: 5_000, maxRedirects: 0 });
+}
 
 /** 对正式金标集做稳定抽样：相同数据集重复运行时选中相同样本。 */
 export function selectGoldEvaluationSample<T extends { id: unknown; category?: unknown; final_risk?: unknown }>(rows: readonly T[], limit = 20): T[] {

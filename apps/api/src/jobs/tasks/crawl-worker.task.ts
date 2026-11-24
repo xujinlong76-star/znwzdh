@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { fingerprintPageContent } from "@navhub/core";
+import { fingerprintPageContent, simhashDistance } from "@navhub/core";
 import { guardedFetch, SsrfBlockedError } from "@navhub/ai";
 import {
   claimCrawlTask,
@@ -282,6 +282,34 @@ async function checkRobotsPolicy(url: string, signal?: AbortSignal): Promise<Rob
   }
 }
 
+export interface NearDuplicateFingerprint {
+  canonicalUrl: string;
+  distance: number;
+}
+
+/** 对最近指纹做有界 SimHash 比较；只提供审核证据，不自动合并或隐藏候选。 */
+export function rankNearDuplicateFingerprints(
+  rows: Array<{ canonical_url: unknown; content_hash: unknown; simhash64: unknown }>,
+  contentHash: string,
+  simhash64: string,
+  options: { maxDistance?: number; limit?: number } = {},
+): NearDuplicateFingerprint[] {
+  const maxDistance = Math.max(0, Math.min(64, Math.floor(options.maxDistance ?? 3)));
+  const limit = Math.max(1, Math.min(20, Math.floor(options.limit ?? 5)));
+  const matches: NearDuplicateFingerprint[] = [];
+  for (const row of rows) {
+    if (String(row.content_hash ?? "") === contentHash) continue;
+    const canonicalUrl = String(row.canonical_url ?? "");
+    const candidateHash = String(row.simhash64 ?? "");
+    if (!canonicalUrl || !/^[0-9a-f]{16}$/i.test(candidateHash)) continue;
+    try {
+      const distance = simhashDistance(candidateHash, simhash64);
+      if (distance <= maxDistance) matches.push({ canonicalUrl, distance });
+    } catch { /* 坏指纹不参与近重复判断 */ }
+  }
+  return matches.sort((a, b) => a.distance - b.distance).slice(0, limit);
+}
+
 export interface CrawlWorkerSummary {
   seedsEnqueued: number;
   tasksClaimed: number;
@@ -437,10 +465,14 @@ export async function handleCrawlWorker(
         const fp = fingerprintPageContent(metadata.text);
         const contentHash = "sha256:" + createHash("sha256").update(metadata.text).digest("hex");
         const finalUrl = canonicalUrl(response.finalUrl);
-        const existing = await ctx.repo.raw(
-          "SELECT canonical_url FROM crawl_page_fingerprints WHERE content_hash = ? AND canonical_url <> ? LIMIT 1",
-          [contentHash, finalUrl],
+        const recentFingerprints = await ctx.repo.raw(
+          "SELECT canonical_url, content_hash, simhash64 FROM crawl_page_fingerprints WHERE canonical_url <> ? ORDER BY fetched_at DESC LIMIT 500",
+          [finalUrl],
         );
+        const exactDuplicate = recentFingerprints.find((row) => String(row.content_hash ?? "") === contentHash);
+        const nearDuplicates = rankNearDuplicateFingerprints(recentFingerprints, contentHash, fp.simhash, {
+          maxDistance: 3, limit: 5,
+        });
         await recordCrawlFingerprint(ctx.repo, {
           canonicalUrl: finalUrl, contentHash, simhash64: fp.simhash,
           language: response.body.match(/<html[^>]+lang=["']([^"']+)/i)?.[1] ?? null,
@@ -455,7 +487,7 @@ export async function handleCrawlWorker(
               fetchedStatus: response.status, finalUrl: response.finalUrl,
               fetchedAt: Date.now(), contentHash, simhash64: fp.simhash,
               tokenCount: fp.tokenCount, truncated: response.truncated,
-              exactDuplicateOf: existing[0]?.canonical_url ?? null,
+              exactDuplicateOf: exactDuplicate?.canonical_url ?? null,\n              nearDuplicateCandidates: nearDuplicates,
             },
           });
           summary.candidatesUpserted++;

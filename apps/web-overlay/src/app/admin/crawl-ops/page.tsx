@@ -290,17 +290,26 @@ export default function CrawlOperationsPage(){
     evaluated:latestDiagnostics.length,
   }
   const exportRegressionCases=()=>{
-    const items=latestEvaluationByModel.flatMap(run=>(run.metrics.caseDiagnostics??[])
-      .filter(row=>row.labelMismatch||row.riskFalseNegative||row.riskFalsePositive)
-      .map(row=>({model:run.model,datasetVersion:run.datasetVersion,sampleId:row.id,expected:row.expected,actual:row.actual,
-        expectedRisk:row.expectedRisk,actualRisk:row.actualRisk,labelMismatch:row.labelMismatch,
-        riskFalseNegative:row.riskFalseNegative,riskFalsePositive:row.riskFalsePositive})))
-    if(!items.length){setGoldMessage('当前评测记录没有可导出的异常样本');return}
-    const blob=new Blob([JSON.stringify({schemaVersion:'moderation-regression-cases-v1',generatedAt:new Date().toISOString(),count:items.length,items},null,2)],{type:'application/json;charset=utf-8'})
+    // 不同 datasetVersion 代表不同金标快照，必须拆包，禁止把不同快照的案例混成同一回归集。
+    const snapshots=Array.from(new Set(latestEvaluationByModel.map(run=>run.datasetVersion))).sort().map(datasetVersion=>{
+      const runs=latestEvaluationByModel.filter(run=>run.datasetVersion===datasetVersion)
+      const items=runs.flatMap(run=>(run.metrics.caseDiagnostics??[])
+        .filter(row=>row.labelMismatch||row.riskFalseNegative||row.riskFalsePositive)
+        .map(row=>({model:run.model,evaluationId:run.id,datasetVersion,sampleId:row.id,expected:row.expected,actual:row.actual,
+          expectedRisk:row.expectedRisk,actualRisk:row.actualRisk,labelMismatch:row.labelMismatch,
+          riskFalseNegative:row.riskFalseNegative,riskFalsePositive:row.riskFalsePositive})))
+      return {datasetVersion,models:runs.map(run=>({model:run.model,evaluationId:run.id,sampleSize:run.sampleSize,createdAt:run.createdAt})),
+        count:items.length,items}
+    }).filter(snapshot=>snapshot.count>0)
+    const count=snapshots.reduce((sum,snapshot)=>sum+snapshot.count,0)
+    if(!count){setGoldMessage('当前评测记录没有可导出的异常样本');return}
+    const blob=new Blob([JSON.stringify({schemaVersion:'moderation-regression-packs-v2',generatedAt:new Date().toISOString(),
+      snapshotCount:snapshots.length,totalCases:count,policy:{sameDatasetVersionOnly:true,goldLabelsImmutable:true,requiresHumanReview:true},snapshots},null,2)],
+      {type:'application/json;charset=utf-8'})
     const url=URL.createObjectURL(blob);const anchor=document.createElement('a')
-    anchor.href=url;anchor.download='moderation-regression-cases-'+new Date().toISOString().slice(0,10)+'.json'
+    anchor.href=url;anchor.download='moderation-regression-packs-'+new Date().toISOString().slice(0,10)+'.json'
     document.body.appendChild(anchor);anchor.click();anchor.remove();URL.revokeObjectURL(url)
-    setGoldMessage('已导出 '+items.length+' 条模型异常案例，可用于后续人工复核和回归测试')
+    setGoldMessage('已导出 '+snapshots.length+' 个独立金标快照、共 '+count+' 条异常案例；各快照未混合，仍需人工复核后才能纳入正式回归集')
   }
   const tasks=overview?.tasks??{}
   return <div className="mx-auto max-w-7xl space-y-6">
@@ -332,7 +341,7 @@ export default function CrawlOperationsPage(){
       </CardContent></Card>
 
       <Card><CardHeader><CardTitle className="text-base">模型质量排行榜与错误趋势</CardTitle><CardDescription>每个模型仅取最近一次评测，按风险召回率、标签精确匹配率排序；不同金标快照不直接混算。异常统计基于各模型最近一次评测的逐样本诊断。</CardDescription></CardHeader><CardContent className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-muted-foreground">可将最新评测中的异常案例导出为脱敏 JSON，供人工复核和回归测试使用。</p><Button size="sm" variant="outline" onClick={exportRegressionCases} disabled={!latestDiagnostics.length}>导出异常回归案例</Button></div>
+        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-muted-foreground">异常案例按 datasetVersion 拆分为独立快照包，避免不同版本金标混测；导出后仍需人工复核。</p><Button size="sm" variant="outline" onClick={exportRegressionCases} disabled={!latestDiagnostics.length}>导出异常回归案例</Button></div>
         <div className="grid gap-3 sm:grid-cols-4">
           <Stat label="参与对比模型" value={latestEvaluationByModel.length} detail="有正式评测记录的模型"/>
           <Stat label="诊断样本数" value={errorSummary.evaluated} detail="各模型最近一次评测样本"/>

@@ -57,13 +57,13 @@ describe("links 工作流：YAML/TOML 语法与 §6.1 配置", () => {
     expect(text).toBe(
       "# lychee.toml（PR 门禁：只拦内部链接，外部一律不查）\n" +
         "offline = true\n" +
-        "include_fragments = true # 实际为 anchor-only（不带值默认）；站内文档锚点漂移是 PR 可修的\n" +
+        "include_fragments = \"anchor-only\" # 实际为 anchor-only（不带值默认）；站内文档锚点漂移是 PR 可修的\n" +
         "max_concurrency = 16\n" +
         "format = \"json\"\n",
     );
     const parsed = parseToml(text);
     expect(parsed.offline).toBe(true);
-    expect(parsed.include_fragments).toBe(true);
+    expect(parsed.include_fragments).toBe("anchor-only");
     expect(parsed.max_concurrency).toBe(16);
     expect(parsed.format).toBe("json");
   });

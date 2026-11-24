@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import { guardedFetch } from "@navhub/ai";
 import {
   claimDueCrawlSources,
+  claimCrawlDomain,
+  releaseCrawlDomain,
+  deferCrawlSource,
   settleCrawlSource,
   upsertSiteDiscoveryCandidate,
   type CrawlSource,
@@ -118,6 +121,12 @@ export async function runCrawlSourceWorkerBatch(
   });
   let succeeded = 0, failed = 0, candidates = 0;
   for (const source of sources) {
+    const host = new URL(source.url).hostname.toLowerCase();
+    const domainClaimed = await claimCrawlDomain(ctx.repo, host, source.id, { now, leaseMs: 30_000 });
+    if (!domainClaimed) {
+      await deferCrawlSource(ctx.repo, { id: source.id, workerId: options.workerId, now, delayMs: 15_000 });
+      continue;
+    }
     try {
       candidates += await processSource(ctx, source, now);
       await settleCrawlSource(ctx.repo, { id: source.id, workerId: options.workerId, status: "ok", now });
@@ -126,6 +135,8 @@ export async function runCrawlSourceWorkerBatch(
       const message = error instanceof Error ? error.message : String(error);
       await settleCrawlSource(ctx.repo, { id: source.id, workerId: options.workerId, status: "error", error: message, now });
       failed++;
+    } finally {
+      await releaseCrawlDomain(ctx.repo, host, source.id, { now: Date.now(), minIntervalMs: 15_000 });
     }
   }
   return { claimed: sources.length, succeeded, failed, candidates };

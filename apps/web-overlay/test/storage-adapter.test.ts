@@ -9,6 +9,7 @@
  */
 import { describe, expect, it, vi, afterEach } from "vitest";
 import {
+  createGithubAdapter,
   createHttpAdapter,
   resolveAdapterKind,
   StorageError,
@@ -415,5 +416,78 @@ describe("navigation 快照进 Data Cache（2026-11-11 移出豁免）", () => {
     const smallAdapter = createHttpAdapter({ baseUrl: BASE, fetchImpl: smallFetch as unknown as typeof fetch });
     await smallAdapter.read("src/navsphere/content/navigation.json");
     expect(warn.mock.calls.some((args) => String(args[0]).includes("2MB"))).toBe(false);
+  });
+});
+
+describe("createGithubAdapter：sha 冲突重试重取 sha（W5 2026-11-24，审计 §4(b)）", () => {
+  // 旧实现只在循环外取一次 sha、body 也在循环外构造好 —— 冲突重试时 PUT 的
+  // 还是旧 sha，GitHub 会再报一次 409，三次重试全是注定失败的空转。
+  // 现在每次重试前都重取 sha 再构造 body，第二轮 PUT 必须带着新 sha。
+  const META_URL = "https://api.github.com/repos/o/r/contents/p.json?ref=main";
+  const PUT_URL = "https://api.github.com/repos/o/r/contents/p.json";
+
+  function shaConflict(): Response {
+    return jsonResponse({ message: "sha does not match" }, 409);
+  }
+
+  /** 取第 n 次 fetch 的 PUT body 里的 sha（n 从 0 计） */
+  function putSha(fetchImpl: ReturnType<typeof vi.fn>, callIndex: number): string | undefined {
+    const body = (fetchImpl.mock.calls[callIndex][1] as RequestInit).body as string;
+    return (JSON.parse(body) as { sha?: string }).sha;
+  }
+
+  it("冲突后重取新 sha 再 PUT，第二轮成功", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ sha: "sha-1" })) // 取元数据
+      .mockResolvedValueOnce(shaConflict()) // 第 1 次 PUT：旧 sha 冲突
+      .mockResolvedValueOnce(jsonResponse({ sha: "sha-2" })) // 重取元数据
+      .mockResolvedValueOnce(jsonResponse({})); // 第 2 次 PUT：成功
+    const adapter = createGithubAdapter({
+      owner: "o",
+      repo: "r",
+      getWriteToken: async () => "tok",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    await expect(adapter.write("p.json", "{}", "msg")).resolves.toEqual({
+      ok: true,
+      note: "已提交到 GitHub",
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    // 第 3 次调用必须是重取元数据的 GET（无 method），不是复用旧 sha 的 PUT
+    expect(fetchImpl.mock.calls[2][0]).toBe(META_URL);
+    expect((fetchImpl.mock.calls[2][1] as RequestInit).method).toBeUndefined();
+    expect(fetchImpl.mock.calls[3][0]).toBe(PUT_URL);
+    expect(putSha(fetchImpl, 1)).toBe("sha-1");
+    expect(putSha(fetchImpl, 3)).toBe("sha-2");
+  });
+
+  it("三轮都冲突：每次重试前都重取 sha，耗尽后抛错", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ sha: "sha-1" }))
+      .mockResolvedValueOnce(shaConflict())
+      .mockResolvedValueOnce(jsonResponse({ sha: "sha-2" }))
+      .mockResolvedValueOnce(shaConflict())
+      .mockResolvedValueOnce(jsonResponse({ sha: "sha-3" }))
+      .mockResolvedValueOnce(shaConflict());
+    const adapter = createGithubAdapter({
+      owner: "o",
+      repo: "r",
+      getWriteToken: async () => "tok",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    await expect(adapter.write("p.json", "{}", "msg")).rejects.toMatchObject({
+      name: "StorageError",
+    });
+
+    // 3 次 PUT + 每次重试前 1 次重取 = 6 次调用；三轮 PUT 的 sha 各不相同
+    expect(fetchImpl).toHaveBeenCalledTimes(6);
+    expect(putSha(fetchImpl, 1)).toBe("sha-1");
+    expect(putSha(fetchImpl, 3)).toBe("sha-2");
+    expect(putSha(fetchImpl, 5)).toBe("sha-3");
   });
 });

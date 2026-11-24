@@ -439,22 +439,38 @@ export function createGithubAdapter(opts: GithubAdapterOptions): StorageAdapter 
         // 必须在最新 sha 上提交，否则会 409 冲突
         cache: "no-store",
       };
-      const meta = await doFetch(metaUrl, metaInit);
-      if (meta.ok) sha = ((await meta.json()) as { sha: string }).sha;
+      /**
+       * 重取当前 sha（W5 2026-11-24 修复）：
+       *
+       * 旧实现只在循环外取一次 sha、把 body 也在循环外构造好 —— sha 冲突重试时
+       * PUT 的还是旧 sha，GitHub 会再报一次 409，三次重试全是注定失败的空转。
+       * 现在每次重试前都重取 sha 再构造 body：对方先提交了，拿到的就是对方
+       * 提交后的新 sha，本次 PUT 才有可能成功。
+       *
+       * 元数据抖动（非 200/404，如 5xx）时保留旧 sha 重试一次：PUT 仍可能因
+       * sha 冲突失败，最终由外层按原语义抛错；一次元数据抖动不直接升级成写失败。
+       */
+      const fetchCurrentSha = async (): Promise<string | undefined> => {
+        const meta = await doFetch(metaUrl, metaInit);
+        if (meta.ok) return ((await meta.json()) as { sha: string }).sha;
+        if (meta.status === 404) return undefined;
+        return sha;
+      };
+      sha = await fetchCurrentSha();
 
       const base64Content = typeof Buffer !== "undefined"
         ? Buffer.from(content, "utf8").toString("base64")
         : btoa(unescape(encodeURIComponent(content)));
 
-      const body = JSON.stringify({
-        message,
-        content: base64Content,
-        sha,
-        branch,
-      });
-
       // GitHub 的 sha 冲突是常态（并发提交），这里做有限次重试
       for (let attempt = 1; attempt <= 3; attempt++) {
+        // body 必须每轮现构造：sha 是上一轮刚重取的，复用旧 body 等于复用旧 sha。
+        const body = JSON.stringify({
+          message,
+          content: base64Content,
+          sha,
+          branch,
+        });
         const res = await doFetch("https://api.github.com/repos/" + opts.owner + "/" + opts.repo + "/contents/" + path, {
           method: "PUT",
           headers: { Authorization: "token " + token, Accept: "application/vnd.github.v3+json", "Content-Type": "application/json", "User-Agent": "NavHub" },
@@ -463,6 +479,7 @@ export function createGithubAdapter(opts: GithubAdapterOptions): StorageAdapter 
         if (res.ok) return { ok: true, note: "已提交到 GitHub" };
         const err = await res.json().catch(() => ({})) as { message?: string };
         if (attempt < 3 && String(err.message ?? "").toLowerCase().includes("sha")) {
+          sha = await fetchCurrentSha();
           await new Promise((r) => setTimeout(r, 500 * attempt));
           continue;
         }

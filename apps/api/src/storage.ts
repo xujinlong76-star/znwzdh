@@ -449,6 +449,20 @@ export async function writeNavigationData(
   ctx: AppContext,
   data: NsNavigationData,
   guard: ShrinkGuardOptions = {},
+  /**
+   * 乐观并发校验（W5 2026-11-24，审计 §4(a)）。
+   *
+   * 给出时：事务内先拿串行化锁、再读 `data_version` 比对 —— 不一致抛
+   * `StorageVersionConflictError`（路由层转 409 + currentVersion），本次写回
+   * 整体回滚，调用方重读后重放。校验与写入同处一个写事务，PG 下靠 advisory
+   * 锁串行化、SQLite 下靠 BEGIN IMMEDIATE，见 lockNavigationWrite。
+   *
+   * 不给时保持原行为（盲目覆盖）：导航/站点/资源三处前端写入口今天都不传
+   * `ifVersion`，直接改成「必填」会让全部管理保存 409；把必填收口成前端
+   * 迁移（调用方先 `GET /api/storage/version` 再带上写）是后续工作，
+   * 本轮不改调用方、不改默认语义。残留窗口见 lane 笔记。
+   */
+  opts?: { ifVersion?: number },
 ): Promise<{ categories: number; sites: number }> {
   // 标签同步与向量回填在主事务提交后执行（setSiteTags 自带事务、向量索引在
   // 库外，都不能嵌套进主事务）：事务内只收集待办，提交后逐项落实。
@@ -460,6 +474,18 @@ export async function writeNavigationData(
   // createSiteWithId 直建/复活的站点同等对待：本轮不 heal，下一次写回再补齐。
   const revivedIds = new Set<string>();
   const result = await ctx.repo.withTransaction(async () => {
+    // 先串行化、再校验版本、再做重活：校验失败时事务回滚，不留「改了一半」，
+    // 且失败得足够早（重活之前），不浪费一次全量 diff。
+    await lockNavigationWrite(ctx);
+    if (opts?.ifVersion !== undefined) {
+      const current = await ctx.repo.readNavDataVersion();
+      // 版本号读不到（老库没 data_version 表 / 触发器没建起来）时无法验证，
+      // 宁可拒绝这次覆盖也不盲目写：currentVersion=null 让调用方知道是
+      // 「版本不可用」，而不是「对方没写过」。
+      if (current === null || current !== opts.ifVersion) {
+        throw new StorageVersionConflictError(current);
+      }
+    }
     const input = Array.isArray(data?.navigationItems) ? data.navigationItems : [];
     let categoryCount = 0;
     let siteCount = 0;
@@ -822,7 +848,7 @@ export async function readSiteConfig(ctx: AppContext): Promise<Record<string, un
   return row as Record<string, unknown>;
 }
 
-export async function writeSiteConfig(ctx: AppContext, config: Record<string, unknown>): Promise<void> {
+export async function writeSiteConfig(ctx: AppContext, config: Record<string, unknown>, ifVersion?: number): Promise<void> {
   await ctx.repo.withTransaction(async () => {
     await lockBrandAssets(ctx);
     for (const [path, references] of assetReferences(config)) {
@@ -830,7 +856,9 @@ export async function writeSiteConfig(ctx: AppContext, config: Record<string, un
         throw Object.assign(new Error(`引用的上传资源不存在，请重新上传：${references.join("、")}`), { statusCode: 409 });
       }
     }
-    await writeKv(ctx, "site-config", config);
+    // site.json 就是 KV 行 `site-config`：ifVersion 给出时走 writeKv 的条件
+    // UPDATE（原子 CAS），与 videos.json / 通用文档同款口径。
+    await writeKv(ctx, "site-config", config, ifVersion);
   });
 }
 
@@ -839,8 +867,10 @@ export async function readResourceMetadata(ctx: AppContext): Promise<unknown> {
   return (await readKv(ctx, "resource-metadata")) ?? {};
 }
 
-export async function writeResourceMetadata(ctx: AppContext, data: unknown): Promise<void> {
-  await writeKv(ctx, "resource-metadata", data);
+export async function writeResourceMetadata(ctx: AppContext, data: unknown, ifVersion?: number): Promise<void> {
+  // 与 site.json 同款：KV 行 `resource-metadata` 的条件 UPDATE 本身就是
+  // 原子 CAS，不需要外加事务/锁。
+  await writeKv(ctx, "resource-metadata", data, ifVersion);
 }
 
 /**
@@ -1352,6 +1382,23 @@ async function lockBrandAssets(ctx: AppContext): Promise<void> {
   await ctx.repo.acquireAdvisoryXactLock("navhub:brand-assets");
 }
 
+/**
+ * 导航写回的串行化锁（W5 2026-11-24，审计 §4(a) 修复的一部分）。
+ *
+ * 与 lockBrandAssets 同款口径：PG 下事务级 advisory 锁把所有走
+ * `writeNavigationData` 的整包写回跨进程串行化；SQLite 下 BEGIN IMMEDIATE
+ * 已持写锁，直接返回。
+ *
+ * 锁必须在版本校验之前拿、且在写事务内拿：否则两个实例会同时通过
+ * 「读版本 → 比对」再先后提交，后提交的把先提交的整包覆盖 ——
+ * `ifVersion` 的校验与写入之间仍敞着窗口，409 形同虚设。
+ * 锁只串行化「走本函数的导航写回」；直接改站点行的通道（/api/sites、MCP 等）
+ * 不拿这把锁，见 lane 笔记的残留窗口说明。
+ */
+async function lockNavigationWrite(ctx: AppContext): Promise<void> {
+  await ctx.repo.acquireAdvisoryXactLock("navhub:navigation-write");
+}
+
 function assetReferences(config: unknown): Map<string, string[]> {
   const references = new Map<string, string[]>();
   const pending: Array<{ value: unknown; field: string }> = [{ value: config, field: "" }];
@@ -1515,17 +1562,22 @@ export async function readStoragePath(
 }
 
 /**
- * 读取某个内容路径的当前版本（仅 KV 类路径有版本概念）。
+ * 读取某个内容路径的当前版本（W5 2026-11-24 修正：结构化路径此前一律返回 null）。
  *
  * 供 `GET /api/storage/version` 与写入前的乐观并发校验使用。
- * 结构化路径（navigation.json / site.json / resource-metadata.json）走各自的
- * 关系表，不在此列 —— 返回 null。
+ *  - navigation.json / navigation-default.json：`data_version` 单行表
+ *    （触发器递增，与快照缓存 / ETag 同源）；
+ *  - site.json：KV 行 `site-config` 的 updated_at；
+ *  - resource-metadata.json：KV 行 `resource-metadata` 的 updated_at。
+ * 从未写入过时返回 null（调用方据此不带 ifVersion 写首次版本）。
  */
 export async function readStorageVersion(ctx: AppContext, path: string): Promise<number | null> {
   const name = basename(path);
-  if (name === "navigation.json" || name === "site.json" || name === "resource-metadata.json") {
-    return null;
+  if (name === "navigation.json" || name === "navigation-default.json") {
+    return ctx.repo.readNavDataVersion();
   }
+  if (name === "site.json") return readKvVersion(ctx, "site-config");
+  if (name === "resource-metadata.json") return readKvVersion(ctx, "resource-metadata");
   const key = name === "videos.json" ? "videos" : pathToKey(path);
   return readKvVersion(ctx, key);
 }
@@ -1543,19 +1595,24 @@ export async function writeStoragePath(
       confirmLargeDeletion: opts?.confirmLargeDeletion,
       expectedCount: opts?.expectedCount,
       onLargeDeletionConfirmed: opts?.onLargeDeletionConfirmed,
-    });
+    }, { ifVersion: opts?.ifVersion });
     // 与 server.ts 的 onResponse 失效互为兜底：即便将来有调用方绕过 HTTP 层，
     // 也不会把旧快照继续喂给前端。
     invalidateSnapshotCache();
-    return { ok: true, note: "已写入 " + r.categories + " 个类目 / " + r.sites + " 个站点" };
+    // 写后版本是调用方下一次 CAS 的判据：触发器在写事务里已递增多次，
+    // 这里读提交后的终值（与分片派生读到的同一版本）。
+    const version = await ctx.repo.readNavDataVersion();
+    return { ok: true, note: "已写入 " + r.categories + " 个类目 / " + r.sites + " 个站点", version: version ?? undefined };
   }
   if (basename(path) === "site.json") {
-    await writeSiteConfig(ctx, parsed as Record<string, unknown>);
-    return { ok: true, note: "站点配置已更新" };
+    await writeSiteConfig(ctx, parsed as Record<string, unknown>, opts?.ifVersion);
+    const version = await readKvVersion(ctx, "site-config");
+    return { ok: true, note: "站点配置已更新", version: version ?? undefined };
   }
   if (basename(path) === "resource-metadata.json") {
-    await writeResourceMetadata(ctx, parsed);
-    return { ok: true, note: "资源元数据已更新" };
+    await writeResourceMetadata(ctx, parsed, opts?.ifVersion);
+    const version = await readKvVersion(ctx, "resource-metadata");
+    return { ok: true, note: "资源元数据已更新", version: version ?? undefined };
   }
   if (basename(path) === "videos.json") {
     // 确认参数必须原样透传：写 videos.json 有两条入口（HTTP PUT /api/storage 与 CLI），

@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   evaluateSearch,
+  evaluateSearchDiagnostics,
   mrrAtK,
   ndcgAtK,
   recallAtK,
@@ -88,12 +89,18 @@ const k = explicitK ? args.k : fixtureK ?? args.k;
 const aggregate = evaluateSearch(cases, k);
 
 if (args.json) {
-  console.log(JSON.stringify({ file: args.file, k, aggregate, cases: cases.map((c) => ({
-    query: c.query,
-    ndcgAtK: ndcgAtK(c, k),
-    mrrAtK: mrrAtK(c, k),
-    recallAtK: recallAtK(c, k),
-  })) }, null, 2));
+  console.log(JSON.stringify({
+    file: args.file,
+    k,
+    aggregate,
+    diagnostics,
+    cases: cases.map((c, index) => ({
+      queryIndex: index + 1,
+      ndcgAtK: ndcgAtK(c, k),
+      mrrAtK: mrrAtK(c, k),
+      recallAtK: recallAtK(c, k),
+    })),
+  }, null, 2));
   process.exit(0);
 }
 
@@ -101,9 +108,13 @@ console.log("检索离线评测  file=" + args.file + "  k=" + k + "  queries=" 
 console.log("宏平均  NDCG@" + k + "=" + aggregate.ndcgAtK.toFixed(4) +
   "  MRR@" + k + "=" + aggregate.mrrAtK.toFixed(4) +
   "  Recall@" + k + "=" + aggregate.recallAtK.toFixed(4));
+console.log("诊断  零结果=" + diagnostics.zeroResultQueries +
+  "  无正相关标注=" + diagnostics.queriesWithoutPositiveJudgments +
+  "  已找回相关候选=" + diagnostics.relevantRetrievedAtK + "/" + diagnostics.relevantCandidates +
+  "  微平均覆盖率=" + diagnostics.relevantCandidateCoverage.toFixed(4));
 for (const testCase of cases) {
   console.log(
-    "  " + testCase.query.padEnd(18) +
+    "  query#" + String(cases.indexOf(testCase) + 1).padStart(3, "0") +
     " nDCG=" + ndcgAtK(testCase, k).toFixed(4) +
     " mrr=" + mrrAtK(testCase, k).toFixed(4) +
     " recall=" + recallAtK(testCase, k).toFixed(4),

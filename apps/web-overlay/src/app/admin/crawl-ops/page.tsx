@@ -29,6 +29,9 @@ type ModerationPolicy = {enabled:boolean;mode:'shadow';autoApproveConfidence:num
 type ModelAnalytics = {ok:boolean;days:number;models:Array<{model:string;total:number;completed:number;errors:number;quotaBlocked:number;successRate:number|null;averageConfidence:number|null;verdicts:{autoApprove:number;reject:number;manualReview:number}}>}
 type GoldCase = {id:string;sourceFingerprint:string;title:string|null;description:string|null;category:string|null;sanitizedExcerpt:string|null;status:'pending'|'annotating'|'needs_adjudication'|'gold_ready';annotationCount:number;finalLabel:string|null;finalRisk:boolean|null;createdAt:number;updatedAt:number}
 type GoldAnnotation = {id:string;annotatorId:string;label:'approve'|'reject'|'review';risk:boolean;evidence:string;createdAt:number}
+type GoldAssignmentMetrics = {ok:boolean;claimed:number;completed:number;expired:number;myActive:number}
+type GoldProgress = {ok:boolean;target:number;total:number;pending:number;annotating:number;needsAdjudication:number;goldReady:number;remaining:number;progress:number;distribution:Array<{label:string;risk:boolean;count:number}>}
+type ModelEvaluationRun = {id:string;model:string;datasetVersion:string;sampleSize:number;metrics:{exactMatchRate:number|null;coverage:number|null;riskDetection:{precision:number|null;recall:number|null;falseNegatives:number;falsePositives:number;support:number};alerts?:Array<{severity:'warning'|'critical';code:string;message:string}>;caseDiagnostics?:Array<{id:string;expected:'approve'|'reject'|'review';actual:'approve'|'reject'|'review';expectedRisk:boolean;actualRisk:boolean;labelMismatch:boolean;riskFalseNegative:boolean;riskFalsePositive:boolean}>};createdAt:number}
 const DEFAULT_POLICY:ModerationPolicy={enabled:false,mode:'shadow',autoApproveConfidence:0.93,rejectConfidence:0.97,minQualityScore:70,maxExcerptChars:6000,maxAiReviewsPerRun:5,requireHttps:false}
 
 function Stat({label,value,detail}:{label:string;value:string|number;detail?:string}) {
@@ -46,6 +49,13 @@ export default function CrawlOperationsPage(){
   const [goldCases,setGoldCases]=useState<GoldCase[]>([])
   const [activeGoldId,setActiveGoldId]=useState<string|null>(null)
   const [goldAnnotations,setGoldAnnotations]=useState<GoldAnnotation[]>([])
+  const [goldAssignmentMetrics,setGoldAssignmentMetrics]=useState<GoldAssignmentMetrics|null>(null)
+  const [goldProgress,setGoldProgress]=useState<GoldProgress|null>(null)
+  const [modelEvaluationRuns,setModelEvaluationRuns]=useState<ModelEvaluationRun[]>([])
+  const [evaluationModel,setEvaluationModel]=useState('')
+  const [evaluationPredictions,setEvaluationPredictions]=useState('')
+  const [goldClaimedCaseId,setGoldClaimedCaseId]=useState<string|null>(null)
+  const [goldClaimExpiresAt,setGoldClaimExpiresAt]=useState<number|null>(null)
   const [goldBusy,setGoldBusy]=useState(false)
   const [goldMessage,setGoldMessage]=useState<string|null>(null)
   const [goldTitle,setGoldTitle]=useState('')
@@ -69,16 +79,19 @@ export default function CrawlOperationsPage(){
   const load=useCallback(async()=>{
     setLoading(true);setError(null)
     try{
-      const [stats,queue,registry,moderation,history,analytics,goldQueue]=await Promise.all([
+      const [stats,queue,registry,moderation,history,analytics,goldQueue,assignmentMetrics,goldProgressData,evaluationData]=await Promise.all([
         hubGet<Overview>('/api/hub/admin/crawl/overview'),
         hubGet<CandidatePage>('/api/hub/admin/crawl/candidates?status=pending&limit=50&offset=0'),
         hubGet<{ok:boolean;items:Source[]}>('/api/hub/admin/crawl-sources?limit=100'),
         hubGet<{ok:boolean;policy:ModerationPolicy}>('/api/hub/admin/crawl-moderation/policy'),
         hubGet<{ok:boolean;items:Array<{id:string;candidateId:string;decisionSource:string;verdict:string|null;status:string;createdAt:number;actor:string|null}>}>('/api/hub/admin/crawl/moderation-decisions?limit=10'),
         hubGet<ModelAnalytics>('/api/hub/admin/crawl/moderation-analytics?days=30'),
-        hubGet<{ok:boolean;items:GoldCase[]}>('/api/hub/admin/crawl/moderation-gold-cases?limit=100&offset=0')
+        hubGet<{ok:boolean;items:GoldCase[]}>('/api/hub/admin/crawl/moderation-gold-cases?limit=100&offset=0'),
+        hubGet<GoldAssignmentMetrics>('/api/hub/admin/crawl/moderation-gold-assignments/metrics'),
+        hubGet<GoldProgress>('/api/hub/admin/crawl/moderation-gold-progress'),
+        hubGet<{ok:boolean;items:ModelEvaluationRun[]}>('/api/hub/admin/crawl/moderation-model-evaluations')
       ])
-      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setDecisionHistory(history.items);setModelAnalytics(analytics);setGoldCases(goldQueue.items)
+      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setDecisionHistory(history.items);setModelAnalytics(analytics);setGoldCases(goldQueue.items);setGoldAssignmentMetrics(assignmentMetrics);setGoldProgress(goldProgressData);setModelEvaluationRuns(evaluationData.items)
     }catch(e){setError(e instanceof Error?e.message:'采集运营数据加载失败')}
     finally{setLoading(false)}
   },[])
@@ -141,16 +154,31 @@ export default function CrawlOperationsPage(){
     }catch(e){setGoldMessage(e instanceof Error?e.message:'创建金标样本失败')}
     finally{setGoldBusy(false)}
   }
+  const claimGoldTask=async()=>{
+    if(goldBusy)return
+    setGoldBusy(true);setGoldMessage(null)
+    try{
+      const result=await hubSend<{ok:boolean;assignmentId:string;case:{id:string};slot:number;expiresAt:number}>('/api/hub/admin/crawl/moderation-gold-cases/claim','POST',activeGoldCase?{caseId:activeGoldCase.id}:{})
+      setGoldClaimedCaseId(result.case.id);setGoldClaimExpiresAt(result.expiresAt)
+      const item=goldCases.find(x=>x.id===result.case.id)
+      if(item)await openGoldCase(item)
+      setGoldMessage('已领取第 '+result.slot+' 个独立标注席位，任务有效期至 '+time(result.expiresAt))
+      await load()
+    }catch(e){setGoldMessage(e instanceof Error?e.message:'领取标注任务失败')}
+    finally{setGoldBusy(false)}
+  }
   const submitGoldAnnotation=async()=>{
     if(!activeGoldCase||goldBusy)return
+    if(goldClaimedCaseId!==activeGoldCase.id){setGoldMessage('请先领取当前样本的标注任务');return}
     setGoldBusy(true);setGoldMessage(null)
     try{
       await hubSend('/api/hub/admin/crawl/moderation-gold-cases/'+encodeURIComponent(activeGoldCase.id)+'/annotations','POST',
         {label:goldLabel,risk:goldRisk,evidence:goldEvidence.trim()})
       setGoldEvidence('');setGoldMessage('人工标注已提交');await load()
-      const updated=goldCases.find(item=>item.id===activeGoldCase.id)
-      if(updated)await openGoldCase({...updated,annotationCount:updated.annotationCount+1})
-      else {const latest=await hubGet<{ok:boolean;items:GoldCase[]}>('/api/hub/admin/crawl/moderation-gold-cases?limit=100&offset=0');const item=latest.items.find(x=>x.id===activeGoldCase.id);if(item)await openGoldCase(item)}
+      const latest=await hubGet<{ok:boolean;items:GoldCase[]}>('/api/hub/admin/crawl/moderation-gold-cases?limit=100&offset=0')
+      setGoldCases(latest.items)
+      const updated=latest.items.find(item=>item.id===activeGoldCase.id)
+      if(updated)await openGoldCase(updated)
     }catch(e){setGoldMessage(e instanceof Error?e.message:'提交标注失败')}
     finally{setGoldBusy(false)}
   }
@@ -170,7 +198,7 @@ export default function CrawlOperationsPage(){
     if(goldBusy)return
     setGoldBusy(true);setGoldMessage(null)
     try{
-      const result=await hubGet<{ok:boolean;datasetVersion:string;generatedAt:number;count:number;truncated:boolean;items:unknown[]}>('/api/hub/admin/crawl/moderation-gold-export?limit=5000')
+      const result=await hubGet<{ok:boolean;datasetVersion:string;generatedAt:number;count:number;truncated:boolean;items:unknown[]}>('/api/hub/admin/crawl/moderation-gold-export?limit=4999')
       const blob=new Blob([JSON.stringify(result,null,2)],{type:'application/json;charset=utf-8'})
       const url=URL.createObjectURL(blob);const anchor=document.createElement('a')
       anchor.href=url;anchor.download='moderation-gold-set-'+new Date().toISOString().slice(0,10)+'.json'
@@ -180,6 +208,109 @@ export default function CrawlOperationsPage(){
     finally{setGoldBusy(false)}
   }
 
+  const importCandidatesToGold=async()=>{
+    if(goldBusy)return
+    const candidates=(page?.items??[]).slice(0,20)
+    if(!candidates.length){setGoldMessage('当前没有可导入的采集候选');return}
+    setGoldBusy(true);setGoldMessage(null)
+    let created=0,existing=0,failed=0
+    try{
+      for(const candidate of candidates){
+        try{
+          const result=await hubSend<{ok:boolean;created:boolean}>(
+            '/api/hub/admin/crawl/moderation-gold-cases/from-candidate/'+encodeURIComponent(candidate.id),
+            'POST',{}
+          )
+          if(result.created)created++;else existing++
+        }catch{failed++}
+      }
+      setGoldMessage('候选导入完成：新增 '+created+' 条，已存在 '+existing+' 条，失败 '+failed+' 条。导入样本仍需双人独立标注。')
+      await load()
+    }finally{setGoldBusy(false)}
+  }
+
+  const importStratifiedCandidatesToGold=async()=>{
+    if(goldBusy)return
+    setGoldBusy(true);setGoldMessage(null)
+    try{
+      const result=await hubSend<{ok:boolean;requested:number;scanned:number;selected:number;created:number;existing:number;failed:number;malformed:number;distribution:{categories:Record<string,number>;riskHints:Record<string,number>;sources:Record<string,number>;qualityBands:Record<string,number>}}>(
+        '/api/hub/admin/crawl/moderation-gold-cases/sample-from-candidates','POST',{limit:20}
+      )
+      const categories=Object.entries(result.distribution.categories).map(([key,value])=>key+' '+value).join('、')||'无'
+      const risks=Object.entries(result.distribution.riskHints).map(([key,value])=>key+' '+value).join('、')||'无'
+      setGoldMessage('智能分层抽样完成：扫描 '+result.scanned+' 条，抽中 '+result.selected+' 条；新增 '+result.created+' 条，重复 '+result.existing+' 条，失败 '+result.failed+' 条。类别覆盖：'+categories+'；风险线索分层：'+risks+'。AI 风险线索不是金标结论，所有样本仍需双人独立标注。')
+      await load()
+    }catch(e){setGoldMessage(e instanceof Error?e.message:'智能分层抽样失败')}
+    finally{setGoldBusy(false)}
+  }
+  const runAutomaticModelEvaluation=async()=>{
+    if(goldBusy)return
+    setGoldBusy(true);setGoldMessage(null)
+    try{
+      const result=await hubSend<{ok:boolean;model:string;sampleSize:number;metrics:{exactMatchRate:number|null;riskDetection:{recall:number|null;falseNegatives:number}};alerts:Array<{message:string}>}>(
+        '/api/hub/admin/crawl/moderation-model-evaluations/auto','POST',{limit:20}
+      )
+      setGoldMessage('自动模型实测完成：'+result.model+'，样本 '+result.sampleSize+' 条，标签精确匹配率 '+(result.metrics.exactMatchRate===null?'—':(result.metrics.exactMatchRate*100).toFixed(1)+'%')+'，风险漏报 '+result.metrics.riskDetection.falseNegatives+' 条。预警：'+(result.alerts.length?result.alerts.map(item=>item.message).join('；'):'无'))
+      await load()
+    }catch(e){setGoldMessage(e instanceof Error?e.message:'自动模型实测失败')}
+    finally{setGoldBusy(false)}
+  }
+  const submitModelEvaluation=async()=>{
+    if(goldBusy)return
+    let predictions:unknown
+    try{predictions=JSON.parse(evaluationPredictions)}catch{setGoldMessage('模型预测 JSON 格式不正确');return}
+    if(!evaluationModel.trim()||!Array.isArray(predictions)){setGoldMessage('请填写模型名称，并粘贴预测数组');return}
+    setGoldBusy(true);setGoldMessage(null)
+    try{
+      const result=await hubSend<{ok:boolean;sampleSize:number;metrics:{exactMatchRate:number|null;riskDetection:{recall:number|null;falseNegatives:number}}}>(
+        '/api/hub/admin/crawl/moderation-model-evaluations','POST',{model:evaluationModel.trim(),predictions}
+      )
+      setGoldMessage('模型评测完成：'+result.sampleSize+' 条样本，标签精确匹配率 '+(result.metrics.exactMatchRate===null?'—':(result.metrics.exactMatchRate*100).toFixed(1)+'%')+'，风险漏报 '+result.metrics.riskDetection.falseNegatives+' 条')
+      setEvaluationPredictions('')
+      await load()
+    }catch(e){setGoldMessage(e instanceof Error?e.message:'模型评测失败')}
+    finally{setGoldBusy(false)}
+  }
+  const latestEvaluationByModel=Array.from(modelEvaluationRuns.reduce((map,item)=>{
+    const previous=map.get(item.model)
+    if(!previous||item.createdAt>previous.createdAt)map.set(item.model,item)
+    return map
+  },new Map<string,ModelEvaluationRun>()).values())
+  const latestEvaluationGroups=Array.from(latestEvaluationByModel.reduce((map,item)=>{
+    const group=map.get(item.datasetVersion)??[]
+    group.push(item);map.set(item.datasetVersion,group);return map
+  },new Map<string,ModelEvaluationRun[]>()).entries()).map(([datasetVersion,items])=>({
+    datasetVersion,items:items.sort((a,b)=>(b.metrics.riskDetection.recall??-1)-(a.metrics.riskDetection.recall??-1)||(b.metrics.exactMatchRate??-1)-(a.metrics.exactMatchRate??-1))
+  }))
+  const latestDiagnostics=latestEvaluationByModel.flatMap(run=>run.metrics.caseDiagnostics??[])
+  const errorSummary={
+    labelMismatch:latestDiagnostics.filter(item=>item.labelMismatch).length,
+    riskFalseNegative:latestDiagnostics.filter(item=>item.riskFalseNegative).length,
+    riskFalsePositive:latestDiagnostics.filter(item=>item.riskFalsePositive).length,
+    evaluated:latestDiagnostics.length,
+  }
+  const exportRegressionCases=()=>{
+    // 不同 datasetVersion 代表不同金标快照，必须拆包，禁止把不同快照的案例混成同一回归集。
+    const snapshots=Array.from(new Set(latestEvaluationByModel.map(run=>run.datasetVersion))).sort().map(datasetVersion=>{
+      const runs=latestEvaluationByModel.filter(run=>run.datasetVersion===datasetVersion)
+      const items=runs.flatMap(run=>(run.metrics.caseDiagnostics??[])
+        .filter(row=>row.labelMismatch||row.riskFalseNegative||row.riskFalsePositive)
+        .map(row=>({model:run.model,evaluationId:run.id,datasetVersion,sampleId:row.id,expected:row.expected,actual:row.actual,
+          expectedRisk:row.expectedRisk,actualRisk:row.actualRisk,labelMismatch:row.labelMismatch,
+          riskFalseNegative:row.riskFalseNegative,riskFalsePositive:row.riskFalsePositive})))
+      return {datasetVersion,models:runs.map(run=>({model:run.model,evaluationId:run.id,sampleSize:run.sampleSize,createdAt:run.createdAt})),
+        count:items.length,items}
+    }).filter(snapshot=>snapshot.count>0)
+    const count=snapshots.reduce((sum,snapshot)=>sum+snapshot.count,0)
+    if(!count){setGoldMessage('当前评测记录没有可导出的异常样本');return}
+    const blob=new Blob([JSON.stringify({schemaVersion:'moderation-regression-packs-v2',generatedAt:new Date().toISOString(),
+      snapshotCount:snapshots.length,totalCases:count,policy:{sameDatasetVersionOnly:true,goldLabelsImmutable:true,requiresHumanReview:true},snapshots},null,2)],
+      {type:'application/json;charset=utf-8'})
+    const url=URL.createObjectURL(blob);const anchor=document.createElement('a')
+    anchor.href=url;anchor.download='moderation-regression-packs-'+new Date().toISOString().slice(0,10)+'.json'
+    document.body.appendChild(anchor);anchor.click();anchor.remove();URL.revokeObjectURL(url)
+    setGoldMessage('已导出 '+snapshots.length+' 个独立金标快照、共 '+count+' 条异常案例；各快照未混合，仍需人工复核后才能纳入正式回归集')
+  }
   const tasks=overview?.tasks??{}
   return <div className="mx-auto max-w-7xl space-y-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -209,8 +340,34 @@ export default function CrawlOperationsPage(){
         {!modelAnalytics?.models.length?<p className="text-sm text-muted-foreground">当前时间范围内暂无 AI 审核样本。</p>:<div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="p-2">模型</th><th className="p-2">样本</th><th className="p-2">完成</th><th className="p-2">成功率</th><th className="p-2">平均置信度</th><th className="p-2">建议通过</th><th className="p-2">建议驳回</th><th className="p-2">人工复核</th><th className="p-2">错误/额度跳过</th></tr></thead><tbody>{modelAnalytics.models.map(item=><tr key={item.model} className="border-b last:border-0"><td className="p-2 font-medium">{item.model}</td><td className="p-2 tabular-nums">{item.total}</td><td className="p-2 tabular-nums">{item.completed}</td><td className="p-2 tabular-nums">{item.successRate===null?'—':item.successRate+'%'}</td><td className="p-2 tabular-nums">{item.averageConfidence===null?'—':Math.round(item.averageConfidence*100)+'%'}</td><td className="p-2 tabular-nums">{item.verdicts.autoApprove}</td><td className="p-2 tabular-nums">{item.verdicts.reject}</td><td className="p-2 tabular-nums">{item.verdicts.manualReview}</td><td className="p-2 tabular-nums">{item.errors}/{item.quotaBlocked}</td></tr>)}</tbody></table></div>}
       </CardContent></Card>
 
-      <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4"/>人工金标标注工作台</CardTitle><CardDescription>先提交完成脱敏的样本，再由两位不同管理员独立标注；结论不一致时交给第三位管理员仲裁。AI 输出不参与生成金标。</CardDescription></CardHeader>
+      <Card><CardHeader><CardTitle className="text-base">模型质量排行榜与错误趋势</CardTitle><CardDescription>每个模型仅取最近一次评测，按风险召回率、标签精确匹配率排序；不同金标快照不直接混算。异常统计基于各模型最近一次评测的逐样本诊断。</CardDescription></CardHeader><CardContent className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-muted-foreground">异常案例按 datasetVersion 拆分为独立快照包，避免不同版本金标混测；导出后仍需人工复核。</p><Button size="sm" variant="outline" onClick={exportRegressionCases} disabled={!latestDiagnostics.length}>导出异常回归案例</Button></div>
+        <div className="grid gap-3 sm:grid-cols-4">
+          <Stat label="参与对比模型" value={latestEvaluationByModel.length} detail="有正式评测记录的模型"/>
+          <Stat label="诊断样本数" value={errorSummary.evaluated} detail="各模型最近一次评测样本"/>
+          <Stat label="标签错分" value={errorSummary.labelMismatch} detail="模型标签与人工金标不一致"/>
+          <Stat label="风险漏报" value={errorSummary.riskFalseNegative} detail={"风险误报 "+errorSummary.riskFalsePositive+" 条"}/>
+        </div>
+        {!latestEvaluationGroups.length?<p className="text-xs text-muted-foreground">尚无模型评测数据；完成正式金标并运行模型评测后自动生成排行榜。</p>:latestEvaluationGroups.map(group=><div key={group.datasetVersion} className="space-y-2"><p className="text-xs font-medium">同一数据集快照 · {group.items.length} 个模型 · <span className="font-mono text-muted-foreground">{group.datasetVersion.slice(0,12)}</span></p><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-xs"><thead><tr className="border-b text-left text-muted-foreground"><th className="p-2">排名</th><th className="p-2">模型</th><th className="p-2">样本数</th><th className="p-2">风险召回</th><th className="p-2">精确匹配</th><th className="p-2">风险漏报</th><th className="p-2">预警</th></tr></thead><tbody>{group.items.map((item,index)=><tr key={item.model} className="border-b"><td className="p-2 font-semibold">{index+1}</td><td className="p-2 font-medium">{item.model}</td><td className="p-2">{item.sampleSize}</td><td className="p-2">{item.metrics.riskDetection.recall===null?'不可评估':(item.metrics.riskDetection.recall*100).toFixed(1)+'%'}</td><td className="p-2">{item.metrics.exactMatchRate===null?'—':(item.metrics.exactMatchRate*100).toFixed(1)+'%'}</td><td className="p-2">{item.metrics.riskDetection.falseNegatives}</td><td className="p-2">{item.metrics.alerts?.length??0}</td></tr>)}</tbody></table></div></div>)}
+        <p className="text-xs text-muted-foreground">排行榜是辅助分析，不代表模型已获准上线。样本量、数据集版本和风险正样本覆盖必须同时审查；不得仅凭排名解除 Shadow。</p>
+      </CardContent></Card>
+      <Card><CardHeader><CardTitle className="text-base">真实金标基线进度</CardTitle><CardDescription>目标 100 条正式金标样本；仅统计双人一致或独立第三人仲裁完成的数据。</CardDescription></CardHeader><CardContent className="space-y-3">
+        <div className="flex items-end justify-between gap-3"><div><div className="text-3xl font-semibold tabular-nums">{goldProgress?.goldReady??0}<span className="text-base text-muted-foreground"> / 100</span></div><p className="text-xs text-muted-foreground">还需 {goldProgress?.remaining??100} 条 · 待标注 {goldProgress?.pending??0} · 标注中 {goldProgress?.annotating??0} · 待仲裁 {goldProgress?.needsAdjudication??0}</p></div><div className="text-sm font-medium tabular-nums">{goldProgress?.progress??0}%</div></div>
+        <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{width:(goldProgress?.progress??0)+'%'}}/></div>
+        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">{(goldProgress?.distribution??[]).map((item,index)=><span key={item.label+'-'+item.risk+'-'+index} className="rounded-md border px-2 py-1">{item.label} · {item.risk?'有风险':'无风险'}：{item.count}</span>)}</div>
+      </CardContent></Card>
+      <Card><CardHeader><CardTitle className="text-base">多模型离线横向评测</CardTitle><CardDescription>支持自动调用已配置模型（每次最多 20 条）和手动提交其他模型预测。自动评测只读取脱敏金标文本、记录真实用量并受额度限制，不会触发审核、发布或改写金标。</CardDescription></CardHeader><CardContent className="space-y-3">
+        <input value={evaluationModel} onChange={e=>setEvaluationModel(e.target.value)} maxLength={120} placeholder="模型名称 / 版本，例如 provider/model-v2" className="h-9 w-full rounded-md border bg-background px-3 text-sm"/>
+        <textarea value={evaluationPredictions} onChange={e=>setEvaluationPredictions(e.target.value)} rows={4} placeholder={'粘贴覆盖全部正式金标 ID 的 JSON 数组：\\n[{"id":"金标ID","actual":"approve","actualRisk":false}]'} className="w-full rounded-md border bg-background p-3 font-mono text-xs"/>
+        <div className="flex flex-wrap gap-2"><Button size="sm" onClick={()=>void runAutomaticModelEvaluation()} disabled={goldBusy}>自动实测已配置模型（最多20条）</Button><Button variant="outline" size="sm" onClick={()=>void submitModelEvaluation()} disabled={goldBusy||!evaluationModel.trim()||!evaluationPredictions.trim()}>手动提交离线评测</Button></div>
+        {!modelEvaluationRuns.length?<p className="text-xs text-muted-foreground">暂无已保存的模型评测记录。</p>:<div className="overflow-x-auto"><table className="w-full min-w-[680px] text-xs"><thead><tr className="border-b text-left text-muted-foreground"><th className="p-2">模型</th><th className="p-2">样本</th><th className="p-2">精确匹配</th><th className="p-2">覆盖率</th><th className="p-2">风险召回</th><th className="p-2">风险漏报</th><th className="p-2">质量预警</th><th className="p-2">评测时间</th></tr></thead><tbody>{modelEvaluationRuns.map(item=><><tr key={item.id} className="border-b"><td className="p-2 font-medium">{item.model}</td><td className="p-2">{item.sampleSize}</td><td className="p-2">{item.metrics.exactMatchRate===null?'—':(item.metrics.exactMatchRate*100).toFixed(1)+'%'}</td><td className="p-2">{item.metrics.coverage===null?'—':(item.metrics.coverage*100).toFixed(1)+'%'}</td><td className="p-2">{item.metrics.riskDetection.recall===null?'—':(item.metrics.riskDetection.recall*100).toFixed(1)+'%'}</td><td className="p-2">{item.metrics.riskDetection.falseNegatives}</td><td className="p-2">{item.metrics.alerts?.length?item.metrics.alerts.map(alert=>alert.message).join("；"):"无"}</td><td className="p-2">{time(item.createdAt)}</td></tr><tr key={item.id+'-errors'} className="border-b bg-muted/20"><td colSpan={8} className="px-2 py-2"><details><summary className="cursor-pointer text-xs font-medium">查看逐样本错误分析（{(item.metrics.caseDiagnostics??[]).filter(row=>row.labelMismatch||row.riskFalseNegative||row.riskFalsePositive).length} 条异常）</summary><div className="mt-2 overflow-x-auto"><table className="w-full min-w-[560px] text-xs"><thead><tr className="text-left text-muted-foreground"><th className="p-1">样本 ID</th><th className="p-1">金标标签</th><th className="p-1">模型标签</th><th className="p-1">金标风险</th><th className="p-1">模型风险</th><th className="p-1">错误类型</th></tr></thead><tbody>{(item.metrics.caseDiagnostics??[]).filter(row=>row.labelMismatch||row.riskFalseNegative||row.riskFalsePositive).map(row=><tr key={row.id}><td className="p-1 font-mono">{row.id}</td><td className="p-1">{row.expected}</td><td className="p-1">{row.actual}</td><td className="p-1">{row.expectedRisk?'有':'无'}</td><td className="p-1">{row.actualRisk?'有':'无'}</td><td className="p-1">{[row.labelMismatch?'标签错分':null,row.riskFalseNegative?'风险漏报':null,row.riskFalsePositive?'风险误报':null].filter(Boolean).join('、')}</td></tr>)}</tbody></table></div></details></td></tr></>)}</tbody></table></div>}
+      </CardContent></Card>
+      <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4"/>人工金标标注工作台</CardTitle><CardDescription>先提交完成脱敏的样本，再由两位不同管理员独立盲标；双人提交完成前互相看不到对方的标签和证据，结论不一致时交给第三位管理员仲裁。AI 输出不参与生成金标。</CardDescription></CardHeader>
         <CardContent className="space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+            <div className="text-sm"><div className="font-medium">真实采集候选导入</div><p className="text-xs text-muted-foreground">从当前待审核队列最多导入 20 条；自动脱敏明显 URL、邮箱和电话，并按候选指纹防止重复导入。</p></div>
+            <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={()=>void importStratifiedCandidatesToGold()} disabled={goldBusy}>智能分层抽样（20条）</Button><Button variant="ghost" size="sm" onClick={()=>void importCandidatesToGold()} disabled={goldBusy||!page?.items.length}>导入当前页（最多20条）</Button></div>
+          </div>
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-1 text-sm"><span className="text-muted-foreground">样本标题</span><input value={goldTitle} onChange={e=>setGoldTitle(e.target.value)} maxLength={200} className="h-9 w-full rounded-md border bg-background px-3"/></label>
             <label className="space-y-1 text-sm"><span className="text-muted-foreground">所属类别</span><input value={goldCategory} onChange={e=>setGoldCategory(e.target.value)} maxLength={80} className="h-9 w-full rounded-md border bg-background px-3"/></label>
@@ -218,7 +375,7 @@ export default function CrawlOperationsPage(){
             <label className="space-y-1 text-sm md:col-span-2"><span className="text-muted-foreground">脱敏内容摘要（不得包含 URL、邮箱、电话或个人信息）</span><textarea value={goldExcerpt} onChange={e=>setGoldExcerpt(e.target.value)} maxLength={3000} rows={3} className="w-full rounded-md border bg-background p-3 text-sm"/></label>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-muted-foreground">系统会根据已填写的脱敏内容生成 SHA-256 样本指纹。</p><Button size="sm" onClick={()=>void createGoldCase()} disabled={goldBusy}>加入双人标注队列</Button></div>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4"><div><h3 className="font-medium">金标样本队列</h3><p className="text-xs text-muted-foreground">待标注 {goldCases.filter(x=>x.status==='pending'||x.status==='annotating').length} · 待仲裁 {goldCases.filter(x=>x.status==='needs_adjudication').length} · 已形成金标 {goldCases.filter(x=>x.status==='gold_ready').length}</p></div><Button size="sm" variant="outline" onClick={()=>void exportGoldSet()} disabled={goldBusy}>导出正式金标 JSON</Button></div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4"><div><h3 className="font-medium">金标样本队列</h3><p className="text-xs text-muted-foreground">待标注 {goldCases.filter(x=>x.status==='pending'||x.status==='annotating').length} · 待仲裁 {goldCases.filter(x=>x.status==='needs_adjudication').length} · 已形成金标 {goldCases.filter(x=>x.status==='gold_ready').length}</p><p className="mt-1 text-xs text-muted-foreground">领取中 {goldAssignmentMetrics?.claimed??0} · 已完成 {goldAssignmentMetrics?.completed??0} · 已过期 {goldAssignmentMetrics?.expired??0} · 我的有效任务 {goldAssignmentMetrics?.myActive??0}</p></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={()=>void claimGoldTask()} disabled={goldBusy}>领取任务</Button><Button size="sm" variant="outline" onClick={()=>void exportGoldSet()} disabled={goldBusy}>导出正式金标 JSON</Button></div></div>
           {!goldCases.length?<p className="rounded-lg border p-5 text-center text-sm text-muted-foreground">暂无金标样本。请先添加完成脱敏的真实网站样本。</p>:<div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
             <div className="max-h-[520px] space-y-2 overflow-y-auto">{goldCases.map(item=><button type="button" key={item.id} onClick={()=>void openGoldCase(item)} className={'w-full rounded-lg border p-3 text-left transition-colors '+(activeGoldId===item.id?'border-primary bg-primary/5':'hover:bg-muted/50')}>
               <div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-medium">{item.title||item.id}</span><span className="shrink-0 rounded bg-muted px-2 py-1 text-[11px]">{item.status==='pending'?'待标注':item.status==='annotating'?'标注中':item.status==='needs_adjudication'?'待仲裁':'已形成金标'}</span></div>
@@ -227,8 +384,8 @@ export default function CrawlOperationsPage(){
             <div className="min-w-0 space-y-3 rounded-lg border p-3">
               {!activeGoldCase?<p className="py-8 text-center text-sm text-muted-foreground">选择左侧样本开始标注或仲裁。</p>:<>
                 <div><h3 className="font-semibold">{activeGoldCase.title||'未命名样本'}</h3>{activeGoldCase.description&&<p className="mt-1 text-sm text-muted-foreground">{activeGoldCase.description}</p>}{activeGoldCase.sanitizedExcerpt&&<p className="mt-2 whitespace-pre-wrap rounded bg-muted/50 p-3 text-sm">{activeGoldCase.sanitizedExcerpt}</p>}</div>
-                <div className="space-y-2 border-t pt-3"><h4 className="text-sm font-medium">独立人工标注记录</h4>{goldAnnotations.length?goldAnnotations.map(item=><div key={item.id} className="rounded-lg bg-muted/50 p-3 text-xs"><div className="flex flex-wrap justify-between gap-2"><span className="font-medium">{item.label} · {item.risk?'存在风险':'未标记风险'}</span><span className="text-muted-foreground">{item.annotatorId} · {time(item.createdAt)}</span></div><p className="mt-1 whitespace-pre-wrap">{item.evidence}</p></div>):<p className="text-xs text-muted-foreground">尚无标注记录</p>}</div>
-                {activeGoldCase.status==='pending'||activeGoldCase.status==='annotating'?<div className="space-y-2 border-t pt-3"><h4 className="text-sm font-medium">提交我的独立判断</h4><div className="grid gap-2 sm:grid-cols-2"><select value={goldLabel} onChange={e=>setGoldLabel(e.target.value as 'approve'|'reject'|'review')} className="h-9 rounded-md border bg-background px-3 text-sm"><option value="approve">适合收录</option><option value="reject">不适合收录</option><option value="review">证据不足/需复核</option></select><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={goldRisk} onChange={e=>setGoldRisk(e.target.checked)}/>存在明确风险</label></div><textarea value={goldEvidence} onChange={e=>setGoldEvidence(e.target.value)} rows={3} maxLength={2000} placeholder="填写判断依据（至少 10 个字符）" className="w-full rounded-md border bg-background p-3 text-sm"/><Button size="sm" onClick={()=>void submitGoldAnnotation()} disabled={goldBusy||goldEvidence.trim().length<10}>提交独立标注</Button></div>:null}
+                <div className="space-y-2 border-t pt-3"><h4 className="text-sm font-medium">独立人工标注记录</h4>{goldAnnotations.length?goldAnnotations.map(item=><div key={item.id} className="rounded-lg bg-muted/50 p-3 text-xs"><div className="flex flex-wrap justify-between gap-2"><span className="font-medium">{item.label} · {item.risk?'存在风险':'未标记风险'}</span><span className="text-muted-foreground">{item.annotatorId} · {time(item.createdAt)}</span></div><p className="mt-1 whitespace-pre-wrap">{item.evidence}</p></div>):<p className="text-xs text-muted-foreground">双人提交完成前，标注标签与证据会隐藏，以保护独立判断。</p>}</div>
+                {activeGoldCase.status==='pending'||activeGoldCase.status==='annotating'?<div className="space-y-2 border-t pt-3"><h4 className="text-sm font-medium">提交我的独立判断</h4><p className="text-xs text-muted-foreground">{goldClaimedCaseId===activeGoldCase.id&&goldClaimExpiresAt&&goldClaimExpiresAt>Date.now()?('已领取任务，有效期至 '+time(goldClaimExpiresAt)):'请先领取当前样本的标注任务。'}</p><Button size="sm" variant="outline" onClick={()=>void claimGoldTask()} disabled={goldBusy||goldClaimedCaseId===activeGoldCase.id}>领取当前样本</Button><div className="grid gap-2 sm:grid-cols-2"><select value={goldLabel} onChange={e=>setGoldLabel(e.target.value as 'approve'|'reject'|'review')} className="h-9 rounded-md border bg-background px-3 text-sm"><option value="approve">适合收录</option><option value="reject">不适合收录</option><option value="review">证据不足/需复核</option></select><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={goldRisk} onChange={e=>setGoldRisk(e.target.checked)}/>存在明确风险</label></div><textarea value={goldEvidence} onChange={e=>setGoldEvidence(e.target.value)} rows={3} maxLength={2000} placeholder="填写判断依据（至少 10 个字符）" className="w-full rounded-md border bg-background p-3 text-sm"/><Button size="sm" onClick={()=>void submitGoldAnnotation()} disabled={goldBusy||goldClaimedCaseId!==activeGoldCase.id||goldEvidence.trim().length<10}>提交独立标注</Button></div>:null}
                 {activeGoldCase.status==='needs_adjudication'?<div className="space-y-2 border-t pt-3"><h4 className="text-sm font-medium">分歧仲裁（必须由未参与本样本标注的管理员执行）</h4><div className="grid gap-2 sm:grid-cols-2"><select value={adjudicateLabel} onChange={e=>setAdjudicateLabel(e.target.value as 'approve'|'reject'|'review')} className="h-9 rounded-md border bg-background px-3 text-sm"><option value="approve">仲裁：适合收录</option><option value="reject">仲裁：不适合收录</option><option value="review">仲裁：证据不足</option></select><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={adjudicateRisk} onChange={e=>setAdjudicateRisk(e.target.checked)}/>最终判定存在风险</label></div><textarea value={adjudicateReason} onChange={e=>setAdjudicateReason(e.target.value)} rows={3} maxLength={2000} placeholder="填写仲裁理由（至少 10 个字符）" className="w-full rounded-md border bg-background p-3 text-sm"/><Button size="sm" onClick={()=>void adjudicateGoldCase()} disabled={goldBusy||adjudicateReason.trim().length<10}>提交仲裁</Button></div>:null}
                 {activeGoldCase.status==='gold_ready'?<div className="rounded-lg border border-green-600/30 bg-green-600/5 p-3 text-sm"><strong>正式金标：</strong>{activeGoldCase.finalLabel} · {activeGoldCase.finalRisk?'存在风险':'未标记风险'}</div>:null}
               </>}

@@ -124,11 +124,14 @@ export async function annotateCrawlModerationGoldCase(
     return "annotating";
   }
   if (rows.length !== 2) throw new Error("该样本标注数量异常，需管理员检查");
-  const agrees = String(rows[0].label) === String(rows[1].label) && Boolean(rows[0].risk) === Boolean(rows[1].risk);
+  const first = rows[0];
+  const second = rows[1];
+  if (!first || !second) throw new Error("双人标注记录缺失，需管理员检查");
+  const agrees = String(first.label) === String(second.label) && Boolean(first.risk) === Boolean(second.risk);
   if (agrees) {
     await repo.run(
       "UPDATE crawl_moderation_gold_cases SET status='gold_ready',final_label=?,final_risk=?,updated_at=? WHERE id=?",
-      [String(rows[0].label),goldRiskParam(repo,Boolean(rows[0].risk)),Date.now(),input.caseId],
+      [String(first.label),goldRiskParam(repo,Boolean(first.risk)),Date.now(),input.caseId],
     );
     return "gold_ready";
   }

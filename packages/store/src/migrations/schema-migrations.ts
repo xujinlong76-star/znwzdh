@@ -462,6 +462,31 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     },
     checksum: "v1_crawl_moderation_gold_task_claims",
   },
+  {
+    version: "20261124_crawl_moderation_model_evaluations",
+    name: "审核模型离线金标评测历史",
+    up: async (db: Db) => {
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS crawl_moderation_model_evaluations (
+          id TEXT PRIMARY KEY,
+          model TEXT NOT NULL,
+          dataset_version TEXT NOT NULL,
+          sample_size INTEGER NOT NULL,
+          metrics_json TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          created_at BIGINT NOT NULL
+        )`,
+        "CREATE INDEX IF NOT EXISTS crawl_moderation_model_eval_model_idx ON crawl_moderation_model_evaluations(model,created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS crawl_moderation_model_eval_dataset_idx ON crawl_moderation_model_evaluations(dataset_version,created_at DESC)"
+      ];
+      if (db.dialect === "pg" && db.pg) {
+        for (const statement of statements) await db.pg.query(statement);
+      } else if (db.sqlite) {
+        db.sqlite.exec(statements.join(";"));
+      }
+    },
+    checksum: "v1_crawl_moderation_model_evaluations",
+  },
 ];
 
 /**

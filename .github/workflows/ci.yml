@@ -1039,7 +1039,7 @@ jobs:
   #   --max-age 防 clean:false 的陈旧产物假绿（TESTING-STRATEGY §3.5）。
   coverage:
     timeout-minutes: 30
-    name: 覆盖率门禁（W1 ratchet · coverage-thresholds.json）
+    name: 覆盖率门禁（W1 floor + W3 patch · coverage-thresholds.json）
     runs-on: ubuntu-latest
     steps:
       # U-385: scripts/count-precommit-bypasses.test.ts 要读 06429843 起的 git 历史(--to 锚点)，depth-1 下锚点对象不存在、12 例全灭；有界 depth 会随 HEAD 前进而过期，故用 0。
@@ -1058,10 +1058,12 @@ jobs:
       - name: 全量测试（含覆盖率插桩）
         id: vitest-coverage
         run: pnpm vitest run --coverage --reporter=default
-      - name: 覆盖率阈值判定
+      - name: 覆盖率阈值判定（W1 floor + W3 patch）
         id: coverage-threshold
         if: ${{ !cancelled() && steps.vitest-coverage.outcome != 'skipped' }}
-        run: node scripts/check-coverage.mjs --thresholds coverage-thresholds.json --max-age 60
+        env:
+          NAVHUB_COVERAGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}
+        run: node scripts/check-coverage.mjs --thresholds coverage-thresholds.json --max-age 60 --patch --base "$NAVHUB_COVERAGE_BASE" --min-patch-lines 70
       - name: 撤防账（没跑成的门禁要点名）
         id: defused-gates
         if: ${{ always() }}

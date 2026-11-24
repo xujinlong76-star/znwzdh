@@ -228,11 +228,14 @@ export function evaluateSiteModerationGoldSet(
     confusionMatrix[item.expected][item.actual]++;
     if (item.expected === item.actual) correct++;
     if (item.actual !== "review") covered++;
-    if (item.expectedRisk !== undefined) {
+    if ((item.expectedRisk === undefined) !== (item.actualRisk === undefined)) {
+      throw new Error("风险金标与模型风险结果必须成对提供");
+    }
+    if (item.expectedRisk !== undefined && item.actualRisk !== undefined) {
       riskSupport++;
-      if (item.expectedRisk && item.actualRisk === true) riskTp++;
-      else if (!item.expectedRisk && item.actualRisk === true) riskFp++;
-      else if (item.expectedRisk && item.actualRisk !== true) riskFn++;
+      if (item.expectedRisk && item.actualRisk) riskTp++;
+      else if (!item.expectedRisk && item.actualRisk) riskFp++;
+      else if (item.expectedRisk && !item.actualRisk) riskFn++;
     }
   }
   const perLabel = Object.fromEntries(labels.map(label => {

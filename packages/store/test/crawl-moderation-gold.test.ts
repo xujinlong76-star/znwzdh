@@ -6,6 +6,7 @@ import {
   createCrawlModerationGoldCase,
   getCrawlModerationGoldCase,
   listCrawlModerationGoldAnnotations,
+  listCrawlModerationGoldCases,
 } from "../src/index.ts";
 
 describe("人工金标双人标注与仲裁", () => {
@@ -32,9 +33,7 @@ describe("人工金标双人标注与仲裁", () => {
         createdBy: "admin-creator",
       });
     }
-    const rows = await import("../src/repository/crawl-ai-moderation.ts").then(module =>
-      module.listCrawlModerationGoldCases(repo, { limit: 5000 }),
-    );
+    const rows = await listCrawlModerationGoldCases(repo, { limit: 5000 });
     expect(rows).toHaveLength(105);
   });
 

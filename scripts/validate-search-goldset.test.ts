@@ -33,7 +33,7 @@ describe("validate-search-goldset JSONL", () => {
   it("rejects mixed dataset versions and duplicate normalized queries", () => {
     const first = makeCase(1);
     const second = makeCase(2, "search-gold-v3");
-    second.queryText = "  脱敏真实查询   样本 001 ";
+    second.queryText = "  脱敏真实查询样本   001 ";
     const result = validateSearchGoldJsonl([JSON.stringify(first), JSON.stringify(second)].join("\n"), 2);
     expect(result.errors.join(" ")).toContain("不得混合不同 datasetVersion");
     expect(result.errors.join(" ")).toContain("规范化 queryText 重复");

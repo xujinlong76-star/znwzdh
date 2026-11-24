@@ -26,6 +26,19 @@ function validIsoDate(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value)) && value.includes("T");
 }
 
+/**
+ * 高置信度隐私风险启发式扫描。它是导入前的第二道闸门，不替代数据负责人逐条人工脱敏审查。
+ * 只拦截明显邮箱、疑似电话号码和常见凭据格式，避免把一般短数字/年份误判为个人信息。
+ */
+export function detectSearchGoldenQueryPrivacyRisk(query: string): string[] {
+  const risks: string[] = [];
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/i.test(query)) risks.push("email");
+  if (/(?:\\+?\\d[\\s().-]*){10,}/.test(query)) risks.push("phone_like_number");
+  if (/\\b(?:sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16})\\b/.test(query) ||
+      /\\bBearer\\s+[A-Za-z0-9._~+/=-]{20,}/i.test(query)) risks.push("credential");
+  return risks;
+}
+
 function validateJudgment(
   value: unknown,
   label: string,
@@ -63,6 +76,12 @@ export function validateSearchGoldenRecord(value: unknown, index = 0): SearchGol
   for (const key of ["sampleId", "query", "language", "intent"] as const) {
     if (typeof row[key] !== "string" || !row[key].trim()) throw new Error(label + " 缺少 " + key);
   }
+  if ((row.sampleId as string).length > 128 || (row.query as string).length > 500 ||
+      (row.language as string).length > 32 || (row.intent as string).length > 80) {
+    throw new Error(label + " sampleId/query/language/intent 超出长度限制");
+  }
+  const privacyRisks = detectSearchGoldenQueryPrivacyRisk(row.query as string);
+  if (privacyRisks.length) throw new Error(label + " query 疑似包含未脱敏隐私或凭据：" + privacyRisks.join(", "));
   if (row.sourceType !== "search_telemetry") throw new Error(label + " 必须来自真实搜索遥测");
   if (!validIsoDate(row.sampledAt) || !validIsoDate(row.snapshotAt)) throw new Error(label + " 时间戳必须是 ISO 日期");
   if (row.privacyReviewed !== true || row.queryRedacted !== true) throw new Error(label + " 未通过隐私审查或查询脱敏声明");

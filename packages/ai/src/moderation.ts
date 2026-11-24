@@ -65,9 +65,16 @@ function parseModelResult(raw: string): Omit<SiteModerationResult, "verdict" | "
   const qualityScore = Number(value.qualityScore);
   if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) throw new Error("AI 审核置信度超出范围");
   if (!Number.isFinite(qualityScore) || qualityScore < 0 || qualityScore > 100) throw new Error("AI 审核质量分超出范围");
-  const risks = Array.isArray(value.risks)
-    ? value.risks.filter((risk): risk is SiteModerationRisk => typeof risk === "string" && RISK_VALUES.has(risk as SiteModerationRisk)).slice(0, 12)
-    : [];
+  if (!Array.isArray(value.risks) || value.risks.length === 0 || value.risks.length > 12) {
+    throw new Error("AI 审核模型必须返回 1–12 个明确风险类别");
+  }
+  const risks: SiteModerationRisk[] = [];
+  for (const risk of value.risks) {
+    if (typeof risk !== "string" || !RISK_VALUES.has(risk as SiteModerationRisk)) {
+      throw new Error("AI 审核模型返回了未知风险类别");
+    }
+    risks.push(risk as SiteModerationRisk);
+  }
   const reasons = Array.isArray(value.reasons) ? value.reasons.filter((item): item is string => typeof item === "string").map(item => item.slice(0, 240)).slice(0, 12) : [];
   const evidence = Array.isArray(value.evidence) ? value.evidence.filter((item): item is string => typeof item === "string").map(item => item.slice(0, 300)).slice(0, 8) : [];
   const tags = Array.isArray(value.tags) ? value.tags.filter((item): item is string => typeof item === "string").map(item => item.trim().slice(0, 32)).filter(Boolean).slice(0, 12) : [];
@@ -76,7 +83,7 @@ function parseModelResult(raw: string): Omit<SiteModerationResult, "verdict" | "
     qualityScore: Math.round(qualityScore),
     category: typeof value.category === "string" ? value.category.trim().slice(0, 80) || null : null,
     tags,
-    risks: risks.length ? risks : ["none"],
+    risks,
     reasons,
     evidence,
   };

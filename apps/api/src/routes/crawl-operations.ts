@@ -829,6 +829,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     const body = z.object({ url: z.string().trim().url().max(2048), kind: z.enum(["sitemap", "rss", "page"]), enabled: z.boolean().optional(), priority: z.number().int().min(-100).max(100).optional(), intervalMs: z.number().int().min(300_000).max(30 * 24 * 60 * 60_000).optional(), nextRunAt: z.number().int().min(0).optional() }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { ok: false, error: "采集来源参数无效", details: body.error.issues }; }
     try {
+      await assertSafeCrawlSourceUrl(body.data.url);
       const item = await upsertCrawlSource(ctx.repo, body.data);
       await ctx.repo.audit({ ip: req.ip, actor: String(req.auth.actor ?? "admin"), actorKind: req.auth.kind, action: "crawl.source_upsert", target: item.id, diff: { kind: item.kind, enabled: item.enabled, priority: item.priority } });
       return { ok: true, item };
@@ -841,6 +842,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     if (!params.success) { reply.code(400); return { ok: false, error: "采集来源 ID 无效", details: params.error.issues }; }
     if (!body.success) { reply.code(400); return { ok: false, error: "采集来源更新参数无效", details: body.error.issues }; }
     try {
+      if (body.data.url) await assertSafeCrawlSourceUrl(body.data.url);
       const item = await updateCrawlSource(ctx.repo, params.data.id, body.data);
       if (!item) { reply.code(404); return { ok: false, error: "采集来源不存在" }; }
       await ctx.repo.audit({ ip: req.ip, actor: String(req.auth.actor ?? "admin"), actorKind: req.auth.kind, action: "crawl.source_update", target: item.id, diff: { kind: item.kind, enabled: item.enabled, priority: item.priority } });

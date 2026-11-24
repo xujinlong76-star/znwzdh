@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractCrawlCandidateUrls } from "../src/crawl-source-worker.ts";
+import { extractCrawlCandidateDetails, extractCrawlCandidateUrls } from "../src/crawl-source-worker.ts";
 
 describe("crawl source URL extraction", () => {
   it("extracts and canonicalizes sitemap locations", () => {
@@ -18,6 +18,23 @@ describe("crawl source URL extraction", () => {
       "https://example.com/feed.xml",
     );
     expect(result).toEqual(["https://example.com/post/1", "https://example.com/feed/2"]);
+  });
+
+  it("keeps RSS item metadata and HTML anchor labels attached to their own candidate", () => {
+    const feed = extractCrawlCandidateDetails(
+      "<rss><channel><item><title>First article</title><link>https://example.com/1</link><description>First summary</description></item><item><title>Second article</title><link>https://example.com/2</link></item></channel></rss>",
+      "rss",
+      "https://example.com/feed.xml",
+    );
+    expect(feed).toEqual([
+      { url: "https://example.com/1", title: "First article", description: "First summary" },
+      { url: "https://example.com/2", title: "Second article", description: null },
+    ]);
+    expect(extractCrawlCandidateDetails(
+      '<a href="/docs"><strong>Documentation</strong> portal</a>',
+      "page",
+      "https://example.com/",
+    )).toEqual([{ url: "https://example.com/docs", title: "Documentation portal", description: null }]);
   });
 
   it("rejects unsafe schemes, credential-bearing URLs and malformed links", () => {

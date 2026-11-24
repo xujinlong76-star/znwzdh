@@ -141,6 +141,19 @@ describe("search gold set：双盲人工金标校验", () => {
     }]);
   });
 
+  it("拒绝重复查询，避免重复样本虚增 100 条金标规模", () => {
+    const input = makeSet();
+    const original = (input.cases as Array<Record<string, unknown>>)[0]!;
+    const duplicate = {
+      ...original,
+      id: "case_000002",
+      sampleId: "sample_000002",
+      query: "  AI   图片编辑工具  ",
+    };
+    (input.cases as Array<Record<string, unknown>>).push(duplicate);
+    expect(() => validateSearchGoldSet(input)).toThrow("query 与已有样本重复");
+  });
+
   it("拒绝合成/非生产来源和未完成隐私复核的数据", () => {
     expect(() => validateSearchGoldSet(makeSet({ source: "synthetic" }))).toThrow("真实生产搜索遥测");
     const input = makeSet();

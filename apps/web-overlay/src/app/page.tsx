@@ -1,6 +1,5 @@
 import { cache } from "react";
 import { NavigationContent } from "@/components/navigation-content";
-import type { CanonicalCardDisplayMode } from "@/lib/modular/card-display-modes";
 import { computeHomeTodayBadge } from "@/lib/home-today-summary";
 import { hubGet } from "@/lib/server/hub";
 import type { HubPluginItem } from "@/lib/navhub-api";

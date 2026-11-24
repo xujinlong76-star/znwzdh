@@ -26,6 +26,7 @@ type Candidate = {
 type CandidatePage = {ok:boolean;items:Candidate[];total:number;limit:number;offset:number}
 type Source = {id:string;url:string;kind:'sitemap'|'rss'|'page';enabled:boolean;priority:number;intervalMs:number;nextRunAt:number;lastRunAt:number|null;lastStatus:string|null;lastError:string|null}
 type ModerationPolicy = {enabled:boolean;mode:'shadow';autoApproveConfidence:number;rejectConfidence:number;minQualityScore:number;maxExcerptChars:number;maxAiReviewsPerRun:number;requireHttps:boolean}
+type ModelAnalytics = {ok:boolean;days:number;models:Array<{model:string;total:number;completed:number;errors:number;quotaBlocked:number;successRate:number|null;averageConfidence:number|null;verdicts:{autoApprove:number;reject:number;manualReview:number}}>}
 const DEFAULT_POLICY:ModerationPolicy={enabled:false,mode:'shadow',autoApproveConfidence:0.93,rejectConfidence:0.97,minQualityScore:70,maxExcerptChars:6000,maxAiReviewsPerRun:5,requireHttps:false}
 
 function Stat({label,value,detail}:{label:string;value:string|number;detail?:string}) {
@@ -39,6 +40,7 @@ export default function CrawlOperationsPage(){
   const [sources,setSources]=useState<Source[]>([])
   const [policy,setPolicy]=useState<ModerationPolicy>(DEFAULT_POLICY)
   const [decisionHistory,setDecisionHistory]=useState<Array<{id:string;candidateId:string;decisionSource:string;verdict:string|null;status:string;createdAt:number;actor:string|null}>>([])
+  const [modelAnalytics,setModelAnalytics]=useState<ModelAnalytics|null>(null)
   const [policyBusy,setPolicyBusy]=useState(false)
   const [sourceUrl,setSourceUrl]=useState('')
   const [sourceKind,setSourceKind]=useState<Source['kind']>('sitemap')
@@ -50,14 +52,15 @@ export default function CrawlOperationsPage(){
   const load=useCallback(async()=>{
     setLoading(true);setError(null)
     try{
-      const [stats,queue,registry,moderation,history]=await Promise.all([
+      const [stats,queue,registry,moderation,history,analytics]=await Promise.all([
         hubGet<Overview>('/api/hub/admin/crawl/overview'),
         hubGet<CandidatePage>('/api/hub/admin/crawl/candidates?status=pending&limit=50&offset=0'),
         hubGet<{ok:boolean;items:Source[]}>('/api/hub/admin/crawl-sources?limit=100'),
         hubGet<{ok:boolean;policy:ModerationPolicy}>('/api/hub/admin/crawl-moderation/policy'),
-        hubGet<{ok:boolean;items:Array<{id:string;candidateId:string;decisionSource:string;verdict:string|null;status:string;createdAt:number;actor:string|null}>}>('/api/hub/admin/crawl/moderation-decisions?limit=10')
+        hubGet<{ok:boolean;items:Array<{id:string;candidateId:string;decisionSource:string;verdict:string|null;status:string;createdAt:number;actor:string|null}>}>('/api/hub/admin/crawl/moderation-decisions?limit=10'),
+        hubGet<ModelAnalytics>('/api/hub/admin/crawl/moderation-analytics?days=30')
       ])
-      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setDecisionHistory(history.items)
+      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setDecisionHistory(history.items);setModelAnalytics(analytics)
     }catch(e){setError(e instanceof Error?e.message:'采集运营数据加载失败')}
     finally{setLoading(false)}
   },[])
@@ -121,6 +124,9 @@ export default function CrawlOperationsPage(){
         <Stat label="近 30 天人工推翻" value={overview?.aiModeration.humanOverturns30d??0} detail="AI 建议与后续人工结论不一致的次数"/>
       </div>
       <Card><CardHeader><CardTitle className="text-base">最近审核决策历史</CardTitle><CardDescription>AI 判断与人工最终决定分别追加留档；历史记录不可被新结果覆盖。</CardDescription></CardHeader><CardContent className="space-y-2">{decisionHistory.length?decisionHistory.map(item=><div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm"><div><span className="font-medium">{item.decisionSource==='ai'?'AI 判断':'人工决定'}</span><span className="ml-2 text-muted-foreground">{item.verdict||item.status}</span><div className="text-xs text-muted-foreground">候选 {item.candidateId} · {item.actor||'系统模型'}</div></div><span className="text-xs text-muted-foreground">{time(item.createdAt)}</span></div>):<p className="text-sm text-muted-foreground">暂无审核历史记录</p>}</CardContent></Card>
+      <Card><CardHeader><CardTitle className="text-base">模型审核质量分析（近 {modelAnalytics?.days??30} 天）</CardTitle><CardDescription>按模型统计实际留档结果；成功率是模型完成审核的比例，不代表判断准确率。样本不足时不要据此启用自动审核。</CardDescription></CardHeader><CardContent>
+        {!modelAnalytics?.models.length?<p className="text-sm text-muted-foreground">当前时间范围内暂无 AI 审核样本。</p>:<div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="p-2">模型</th><th className="p-2">样本</th><th className="p-2">完成</th><th className="p-2">成功率</th><th className="p-2">平均置信度</th><th className="p-2">建议通过</th><th className="p-2">建议驳回</th><th className="p-2">人工复核</th><th className="p-2">错误/额度跳过</th></tr></thead><tbody>{modelAnalytics.models.map(item=><tr key={item.model} className="border-b last:border-0"><td className="p-2 font-medium">{item.model}</td><td className="p-2 tabular-nums">{item.total}</td><td className="p-2 tabular-nums">{item.completed}</td><td className="p-2 tabular-nums">{item.successRate===null?'—':item.successRate+'%'}</td><td className="p-2 tabular-nums">{item.averageConfidence===null?'—':Math.round(item.averageConfidence*100)+'%'}</td><td className="p-2 tabular-nums">{item.verdicts.autoApprove}</td><td className="p-2 tabular-nums">{item.verdicts.reject}</td><td className="p-2 tabular-nums">{item.verdicts.manualReview}</td><td className="p-2 tabular-nums">{item.errors}/{item.quotaBlocked}</td></tr>)}</tbody></table></div>}
+      </CardContent></Card>
       <Card><CardHeader><CardTitle className="text-base">采集来源管理</CardTitle><CardDescription>维护 Sitemap、RSS/Atom 和普通网页来源；来源仍受 robots.txt 与 SSRF 安全策略约束。</CardDescription></CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row">

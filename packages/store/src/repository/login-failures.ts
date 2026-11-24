@@ -5,13 +5,19 @@
  * the same lock state. The identifier is normalized and SHA-256 hashed before
  * storage; raw email/username values are never written to this table.
  */
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import type { Repository } from "../repository.ts";
 
 let writesSincePrune = 0;
 
 function identifierDigest(identifier: string): string {
-  return createHash("sha256").update(identifier.trim().toLowerCase()).digest("hex");
+  const key = process.env.NAVHUB_IDENTITY_SECRET || process.env.NAVHUB_SESSION_SECRET || process.env.AUTH_SECRET;
+  if (!key && process.env.NODE_ENV === "production") {
+    throw new Error("A shared identity/session secret is required for distributed login throttling");
+  }
+  return createHmac("sha256", key ?? "navhub-login-failure-development-only")
+    .update(identifier.trim().toLowerCase())
+    .digest("hex");
 }
 
 /**

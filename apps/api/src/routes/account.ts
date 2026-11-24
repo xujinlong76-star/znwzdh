@@ -57,6 +57,7 @@ type AdminMfaState = {
 };
 
 const ADMIN_MFA_STATE_KEY = "auth:admin-mfa:v1";
+const ADMIN_MFA_FAILURE_KEY = "auth:admin-mfa-failure:global";
 const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 function mfaEncryptionKey(): Buffer {
@@ -152,26 +153,55 @@ async function readAdminMfa(ctx: AppContext): Promise<AdminMfaState | null> {
   return ctx.repo.getSystemState<AdminMfaState>(ADMIN_MFA_STATE_KEY);
 }
 
+async function recordAdminMfaFailure(ctx: AppContext): Promise<void> {
+  const result = await ctx.repo.recordLoginFailure(ADMIN_MFA_FAILURE_KEY, Date.now(), LOGIN_FAIL_WINDOW_MS);
+  if (result.count === LOGIN_FAIL_MAX) {
+    await ctx.repo.audit({ actor: "admin-mfa-bff", actorKind: "system", action: "account.admin_mfa_locked" }).catch(() => {});
+  }
+}
+
 async function verifyAdminMfa(ctx: AppContext, supplied: string): Promise<boolean> {
+  const now = Date.now();
+  const failures = await ctx.repo.getLoginFailureState(ADMIN_MFA_FAILURE_KEY);
+  if (failures && failures.count >= LOGIN_FAIL_MAX && now - failures.firstAt <= LOGIN_FAIL_WINDOW_MS) return false;
+
   const state = await readAdminMfa(ctx);
   const required = process.env.NAVHUB_ADMIN_MFA_REQUIRED === "1" || process.env.NAVHUB_ADMIN_MFA_REQUIRED === "true";
-  if (!state?.enabled) return !required;
+  if (!state?.enabled) {
+    if (required) { await recordAdminMfaFailure(ctx); return false; }
+    await ctx.repo.clearLoginFailure(ADMIN_MFA_FAILURE_KEY);
+    return true;
+  }
+
   const secret = decryptMfaSecret(state);
   const matchedCounter = matchingTotpCounter(secret, supplied);
   if (matchedCounter !== null) {
     // TOTP 时间步只可消费一次；共享 DB 原子占坑防止跨副本重放同一验证码。
-    return claimTotpStep(ctx, state.recoveryVersion, matchedCounter);
+    const accepted = await claimTotpStep(ctx, state.recoveryVersion, matchedCounter);
+    if (accepted) {
+      await ctx.repo.clearLoginFailure(ADMIN_MFA_FAILURE_KEY);
+      return true;
+    }
+  } else {
+    const normalized = supplied.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (normalized) {
+      const recoveryHash = hashApiToken(normalized);
+      if (state.recoveryHashes.includes(recoveryHash)) {
+        const accepted = await ctx.repo.claimSystemState(
+          "auth:admin-mfa:recovery:" + state.recoveryVersion + ":" + recoveryHash,
+          true,
+          10 * 365 * 24 * 60 * 60 * 1000,
+        );
+        if (accepted) {
+          await ctx.repo.clearLoginFailure(ADMIN_MFA_FAILURE_KEY);
+          return true;
+        }
+      }
+    }
   }
-  const normalized = supplied.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (!normalized) return false;
-  const recoveryHash = hashApiToken(normalized);
-  if (!state.recoveryHashes.includes(recoveryHash)) return false;
-  // 数据库原子占坑：恢复码只可在任一实例成功消费一次。
-  return ctx.repo.claimSystemState(
-    "auth:admin-mfa:recovery:" + state.recoveryVersion + ":" + recoveryHash,
-    true,
-    10 * 365 * 24 * 60 * 60 * 1000,
-  );
+
+  await recordAdminMfaFailure(ctx);
+  return false;
 }
 
 function internalMfaRequest(ctx: AppContext, req: { headers: Record<string, unknown> }): boolean {
@@ -314,8 +344,13 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
   // 仅供受信任的 Web BFF 调用；不能使用普通浏览器 Bearer token 冒充内部调用。
   app.post("/api/account/admin-mfa/verify", { config: { scope: "public", ...accountRateLimit(30) } }, async (req, reply) => {
     if (!internalMfaRequest(ctx, req as never)) { reply.code(401); return { ok: false }; }
-    const body = z.object({ code: z.string().min(1).max(64) }).safeParse(req.body);
+    const body = z.object({ code: z.string().max(64).default(""), credentialValid: z.boolean().optional() }).safeParse(req.body);
     if (!body.success) { reply.code(400); return { ok: false }; }
+    if (body.data.credentialValid === false) {
+      await recordAdminMfaFailure(ctx);
+      reply.code(401);
+      return { ok: false };
+    }
     const ok = await verifyAdminMfa(ctx, body.data.code);
     reply.header("cache-control", "no-store");
     if (!ok) { reply.code(401); return { ok: false }; }

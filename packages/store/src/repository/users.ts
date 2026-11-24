@@ -132,11 +132,15 @@ export async function updateUserProfileInfo(
   } else {
     const nextUsername = cleanUsername ?? String(existing.username);
     const nextAvatar = patch.avatar === undefined ? (existing.avatar == null ? null : String(existing.avatar)) : patch.avatar;
-    const nextEmail =
-      patch.email === undefined ? (existing.email == null ? null : String(existing.email)) : patch.email;
+    const currentEmail = existing.email == null ? null : String(existing.email);
+    const nextEmail = patch.email === undefined ? currentEmail : patch.email;
+    // 更换为新邮箱后必须重新验证，防止通过资料编辑把账户恢复邮箱转移给未验证地址。
+    // 解绑邮箱时不要求邮箱验证，用户仍可使用用户名登录。
+    const emailChanged = patch.email !== undefined && patch.email !== currentEmail;
+    const nextEmailVerified = nextEmail === null ? 1 : emailChanged ? 0 : Number(existing.email_verified ?? 0);
     await repo.run(
-      "UPDATE users SET username = ?, avatar = ?, email = ? WHERE id = ?",
-      [nextUsername, nextAvatar, nextEmail, identity],
+      "UPDATE users SET username = ?, avatar = ?, email = ?, email_verified = ? WHERE id = ?",
+      [nextUsername, nextAvatar, nextEmail, nextEmailVerified, identity],
     );
   }
 

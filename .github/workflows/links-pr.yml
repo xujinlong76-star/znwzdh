@@ -16,8 +16,13 @@
 name: links-pr
 
 on:
+  # pull_request 不设 branches 过滤：branches 是按 PR 的目标（base）分支匹配的，
+  # 叠加式 PR（#144–#154 以 feature 分支为 base）因此一次都没触发过 links 门禁，零检查。
+  # types 显式列出 GitHub 默认三项（opened / synchronize / reopened），与无过滤等价；
+  # 不写成裸 pull_request:（YAML 解析为 null，会让现有测试的 toBeTruthy 断言误红）。
+  # 本文件无 push 触发条件，不新增。
   pull_request:
-    branches: [main, master]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 # 最小权限：门禁只读内容

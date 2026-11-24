@@ -394,7 +394,50 @@ export async function runVersionedMigrations(
   const migrationsToRun = options?.migrations ?? BUILTIN_MIGRATIONS;
 
   const applied: string[] = [];
-  const skipped: string[] = [];
+  const skipped: string[] = [  {
+    version: "20261124_crawl_moderation_gold_annotation",
+    name: "审核金标样本双人标注与仲裁",
+    up: async (db: Db) => {
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS crawl_moderation_gold_cases (
+          id TEXT PRIMARY KEY,
+          source_fingerprint TEXT NOT NULL,
+          title TEXT,
+          description TEXT,
+          category TEXT,
+          sanitized_excerpt TEXT,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','annotating','needs_adjudication','gold_ready')),
+          final_label TEXT CHECK (final_label IS NULL OR final_label IN ('approve','reject','review')),
+          final_risk BOOLEAN,
+          adjudicator_id TEXT,
+          adjudication_reason TEXT,
+          created_by TEXT NOT NULL,
+          created_at BIGINT NOT NULL,
+          updated_at BIGINT NOT NULL,
+          adjudicated_at BIGINT
+        )`,
+        `CREATE TABLE IF NOT EXISTS crawl_moderation_gold_annotations (
+          id TEXT PRIMARY KEY,
+          case_id TEXT NOT NULL REFERENCES crawl_moderation_gold_cases(id) ON DELETE CASCADE,
+          annotator_id TEXT NOT NULL,
+          label TEXT NOT NULL CHECK (label IN ('approve','reject','review')),
+          risk BOOLEAN NOT NULL,
+          evidence TEXT NOT NULL,
+          created_at BIGINT NOT NULL,
+          UNIQUE(case_id, annotator_id)
+        )`,
+        "CREATE INDEX IF NOT EXISTS crawl_gold_cases_status_idx ON crawl_moderation_gold_cases(status, created_at)",
+        "CREATE INDEX IF NOT EXISTS crawl_gold_annotations_case_idx ON crawl_moderation_gold_annotations(case_id, created_at)"
+      ];
+      if (db.dialect === "pg" && db.pg) {
+        for (const statement of statements) await db.pg.query(statement);
+      } else if (db.sqlite) {
+        db.sqlite.exec(statements.join(";"));
+      }
+    },
+    checksum: "v1_crawl_moderation_gold_annotation",
+  },
+];
 
   for (const m of migrationsToRun) {
     if (appliedSet.has(m.version)) {

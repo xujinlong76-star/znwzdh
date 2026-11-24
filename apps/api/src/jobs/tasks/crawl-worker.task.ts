@@ -229,6 +229,10 @@ async function checkRobotsPolicy(url: string): Promise<RobotsResult> {
       robotsCache.set(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: null, blocked: true });
       return { kind: "blocked", reason: "robots.txt 不允许自动抓取" };
     }
+    if (response.truncated || /text\\/html/i.test(response.contentType ?? "") || /<html\\b/i.test(response.body)) {
+      robotsCache.set(origin, { expiresAt: now + ROBOTS_CACHE_TTL_MS, body: null, blocked: true });
+      return { kind: "blocked", reason: "robots.txt 返回了超限内容或 HTML 页面，无法安全确认抓取许可" };
+    }
     if (response.status === 429 || response.status >= 500 || response.status < 200 || response.status >= 300) {
       return {
         kind: "retry", reason: "robots.txt 暂时不可读取，按 fail-closed 策略稍后重试",

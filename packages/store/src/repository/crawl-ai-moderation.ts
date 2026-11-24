@@ -86,7 +86,7 @@ export async function createCrawlModerationGoldCase(
 export async function listCrawlModerationGoldCases(
   repo: Repository, options: { status?: "pending" | "annotating" | "needs_adjudication" | "gold_ready"; limit?: number; offset?: number } = {},
 ): Promise<Array<Record<string, unknown>>> {
-  const limit = Math.min(100, Math.max(1, Math.floor(options.limit ?? 50)));
+  const limit = Math.min(5000, Math.max(1, Math.floor(options.limit ?? 50)));
   const offset = Math.max(0, Math.floor(options.offset ?? 0));
   const where = options.status ? "WHERE c.status = ?" : "";
   return repo.raw(

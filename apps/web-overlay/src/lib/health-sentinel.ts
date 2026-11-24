@@ -40,7 +40,9 @@ export const DOMAIN_PARKING_KEYWORDS = [
  */
 export function stripHtmlToText(html: string): string {
   return html
-    // CodeQL #46：闭合标签允许 `</script >` 这种带空白的写法（与 core 侧同款修复）。
+    // CodeQL #48：闭合标签允许 `</script >` 这种带空白的写法，否则残留的
+    // `</script >` 会让第一步漏杀（后续 /<[^>]+>/g 虽会清掉标签本身，但
+    // script 内容在第一步漏掉后会被当成正文保留下来）。
     .replace(/<script\b[^<]*(?:(?!<\/script\s*>)<[^<]*)*<\/script\s*>/gi, ' ')
     .replace(/<style\b[^<]*(?:(?!<\/style\s*>)<[^<]*)*<\/style\s*>/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ')

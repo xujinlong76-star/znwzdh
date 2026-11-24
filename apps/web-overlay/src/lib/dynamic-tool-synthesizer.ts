@@ -26,6 +26,11 @@ export interface SynthesizedToolDefinition {
 
 export type SynthesizedToolHandler = (params: Record<string, unknown>) => Promise<unknown> | unknown;
 
+/** 把任意字符串转成正则字面量（CodeQL #150 配套） */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export interface GuardOptions {
   timeoutMs?: number;
   maxResponseBytes?: number;
@@ -257,6 +262,10 @@ export function createGuardedApiExecutor(options: GuardOptions = {}) {
         } else {
           requestInit.body = currentBody;
         }
+        // CodeQL js/request-forgery #149 误报说明：本跳之前已过 isSafeUrl 字符串级校验
+        // （协议/保留域名/等价本机 IP 写法/内嵌私网 IP）+ 逐跳重校验；生产 transport
+        //（agents.ts 的 guardedToolFetch → @navhub/ai guardedFetch）另做 DNS 解析 +
+        // 受保护 IP 校验。CodeQL stock 查询不识别自定义 guard 与注入的 transport，故仍报警。
         const response = await fetchImpl(currentUrl, requestInit);
         if (!REDIRECT_STATUS.has(response.status)) {
           res = response;
@@ -385,7 +394,9 @@ export function synthesizeRestTool(
       if (val === undefined) continue;
 
       if (p.in === 'path') {
-        url = url.replace(new RegExp(`\\{${p.name}\\}`, 'g'), encodeURIComponent(String(val)));
+        // CodeQL #150：p.name 来自工具规格（插件作者可控），直接拼进 RegExp 就是
+        // 正则注入；先转义再构造，占位符仍只匹配字面 `{name}`。
+        url = url.replace(new RegExp(`\\{${escapeRegExp(p.name)}\\}`, 'g'), encodeURIComponent(String(val)));
       } else if (p.in === 'query') {
         queryParams.set(p.name, String(val));
       } else if (p.in === 'header') {

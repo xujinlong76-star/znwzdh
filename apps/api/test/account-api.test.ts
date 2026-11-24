@@ -93,7 +93,7 @@ describe("账号生命周期 API", () => {
     process.env.NAVHUB_MFA_ENCRYPTION_KEY = "ab".repeat(32);
     process.env.NAVHUB_ADMIN_MFA_REQUIRED = "1";
     ctx.config.internalToken = "mfa-test-internal-token";
-    const totp = (secret: string) => {
+    const totp = (secret: string, timeMs = Date.now()) => {
       const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
       let bits = 0, value = 0;
       const bytes: number[] = [];
@@ -102,7 +102,7 @@ describe("账号生命周期 API", () => {
         if (bits >= 8) { bytes.push((value >>> (bits - 8)) & 255); bits -= 8; value &= (1 << bits) - 1; }
       }
       const counter = Buffer.alloc(8);
-      counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+      counter.writeBigUInt64BE(BigInt(Math.floor(timeMs / 30_000)));
       const hmac = requireHmac(Buffer.from(bytes), counter);
       const offset = hmac[hmac.length - 1] & 15;
       const binary = ((hmac[offset] & 127) << 24) | ((hmac[offset + 1] & 255) << 16) | ((hmac[offset + 2] & 255) << 8) | (hmac[offset + 3] & 255);
@@ -125,7 +125,7 @@ describe("账号生命周期 API", () => {
         headers: { "x-navhub-internal-token": "mfa-test-internal-token" },
         payload: { code: value },
       });
-      const currentCode = totp(secret);
+      const currentCode = totp(secret, Date.now() + 30_000);
       expect((await verify(currentCode)).statusCode).toBe(200);
       expect((await verify(currentCode)).statusCode).toBe(401);
       expect((await verify(recovery[0])).statusCode).toBe(200);

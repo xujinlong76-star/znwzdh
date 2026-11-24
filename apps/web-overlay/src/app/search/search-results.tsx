@@ -144,14 +144,14 @@ function RelationBand({
               >
                 {site.title}
               </Link>
-              <span className="text-[11px] text-muted-foreground">对标 {rel.targetTitle}</span>
+              <span className="text-[0.6875rem] text-muted-foreground">对标 {rel.targetTitle}</span>
               {rel.isFreeOrOpenSource ? (
-                <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
+                <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[0.625rem] font-semibold text-emerald-700 dark:text-emerald-400">
                   开源/免费
                 </span>
               ) : null}
               {rel.note ? (
-                <span className="text-[11px] text-muted-foreground">· {rel.note}</span>
+                <span className="text-[0.6875rem] text-muted-foreground">· {rel.note}</span>
               ) : null}
               {isSafeHttpUrl(site.url) ? (
                 <a
@@ -214,11 +214,11 @@ export function ResultRow({
             >
               <Highlight text={site.title} query={q} />
             </Link>
-            {host ? <span className="text-[11px] text-muted-foreground">{host}</span> : null}
+            {host ? <span className="text-[0.6875rem] text-muted-foreground">{host}</span> : null}
             {site.status === 'broken' ? (
               <span
                 title="最近一次健康巡检被对方站点拒绝（常见 401/403 反爬），不代表站点已下线"
-                className="rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400"
+                className="rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[0.625rem] font-medium text-amber-700 dark:text-amber-400"
               >
                 巡检打不开
               </span>
@@ -238,19 +238,19 @@ export function ResultRow({
               <Link
                 key={tag}
                 href={searchHref({ tag, category, facets })}
-                className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary hover:bg-primary/20"
+                className="rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] text-primary hover:bg-primary/20"
               >
                 {tag}
               </Link>
             ))}
             {/* U-191：标签超 4 个时静默丢弃无提示，补 +N 余数标记（仅计数，不跳转）。 */}
             {site.tags && site.tags.length > 4 ? (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[0.6875rem] text-muted-foreground">
                 +{site.tags.length - 4}
               </span>
             ) : null}
             {channels.map((channel) => (
-              <span key={channel} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+              <span key={channel} className="rounded bg-muted px-1.5 py-0.5 text-[0.6875rem] text-muted-foreground">
                 {CHANNEL_LABELS[channel]}命中
               </span>
             ))}
@@ -586,7 +586,7 @@ export function PluginSection({ plugins, q }: { plugins: HubPluginSearchResponse
             <span className="text-xs font-normal text-muted-foreground">共 {plugins.total} 个</span>
           ) : null}
           {plugins.degraded ? (
-            <span className="text-[11px] font-normal text-muted-foreground">语义检索未就绪 · 关键词匹配</span>
+            <span className="text-[0.6875rem] font-normal text-muted-foreground">语义检索未就绪 · 关键词匹配</span>
           ) : null}
         </h2>
         <Link
@@ -610,11 +610,11 @@ export function PluginSection({ plugins, q }: { plugins: HubPluginSearchResponse
               >
                 <Highlight text={plugin.name} query={q} />
               </Link>
-              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
+              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] text-primary">
                 {PLUGIN_KIND_LABELS[plugin.kind] ?? plugin.kind}
               </span>
               {plugin.version ? (
-                <span className="text-[11px] text-muted-foreground">v{plugin.version}</span>
+                <span className="text-[0.6875rem] text-muted-foreground">v{plugin.version}</span>
               ) : null}
             </div>
             {plugin.description ? (
@@ -706,7 +706,7 @@ function SearchRelatedTags({
           title={`${t.count} 个命中站点包含此标签`}
         >
           <span>#{t.name}</span>
-          <span className="text-[10px] opacity-70">({t.count})</span>
+          <span className="text-[0.625rem] opacity-70">({t.count})</span>
         </Link>
       ))}
     </div>
@@ -878,7 +878,7 @@ export function SearchResults({
             </form>
             {/* 检索算子是中枢最有用却最不显眼的能力：不写出来没人会试。
                 示例必须真实可点回结果（#开源 react / @开发工具 编辑器都实测有命中）。 */}
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[0.6875rem] text-muted-foreground">
               支持 <code className="rounded bg-muted px-1 py-0.5">#标签</code>、
               <code className="rounded bg-muted px-1 py-0.5">@分类</code> 限定范围，
               <code className="rounded bg-muted px-1 py-0.5">-词</code> 排除关键词；例如{' '}
@@ -902,7 +902,7 @@ export function SearchResults({
                   <div className="font-semibold text-foreground truncate">
                     在精选技术视频库中搜索 “{q}”
                   </div>
-                  <div className="text-[11px] text-muted-foreground truncate">
+                  <div className="text-[0.6875rem] text-muted-foreground truncate">
                     收录 B站 &amp; YouTube 高保鲜实战课程与优质教程
                   </div>
                 </div>
@@ -1048,7 +1048,7 @@ export function SearchResults({
                             : '站内暂时没有收录匹配的站点'}
                 </p>
                 {semanticsOff && !failed ? (
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-[0.6875rem] text-muted-foreground">
                     语义检索暂不可用，当前按关键词 / 拼音匹配
                   </span>
                 ) : null}
@@ -1057,14 +1057,14 @@ export function SearchResults({
               {failed ? <FailedNotice q={q} page={page} tag={tag} category={category} facets={facets} /> : null}
 
               {!failed && !filterRelaxed && inferred.length > 0 ? (
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[0.6875rem] text-muted-foreground">
                   已理解查询条件：{inferred.join('、')}。
                 </p>
               ) : null}
 
               {/* 负向过滤同样会让结果变少：不说出来用户只会觉得「怎么搜不到」 */}
               {!failed && excluded.length > 0 ? (
-                <p className="text-[11px] text-muted-foreground">已排除关键词：{excluded.join('、')}。</p>
+                <p className="text-[0.6875rem] text-muted-foreground">已排除关键词：{excluded.join('、')}。</p>
               ) : null}
 
               {!failed && correction ? (

@@ -256,7 +256,7 @@ export interface CrawlWorkerSummary {
   retried: number;
   deadLettered: number;
   heldForReview: number;
-  candidatesCreated: number;
+  candidatesUpserted: number;
   feedUrlsEnqueued: number;
   stopped: boolean;
 }
@@ -290,7 +290,7 @@ export async function handleCrawlWorker(
 
   const summary: CrawlWorkerSummary = {
     seedsEnqueued, tasksClaimed: 0, completed: 0, retried: 0, deadLettered: 0,
-    heldForReview: 0, candidatesCreated: 0, feedUrlsEnqueued: 0, stopped: false,
+    heldForReview: 0, candidatesUpserted: 0, feedUrlsEnqueued: 0, stopped: false,
   };
   const maxTasks = Math.max(1, Math.min(25, Math.floor(payload.maxTasks ?? 10)));
   const workerId = "crawl-worker:" + randomUUID();
@@ -400,7 +400,7 @@ export async function handleCrawlWorker(
               exactDuplicateOf: existing[0]?.canonical_url ?? null,
             },
           });
-          summary.candidatesCreated++;
+          summary.candidatesUpserted++;
         }
       }
       await settleCrawlTask(ctx.repo, {

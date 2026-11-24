@@ -28,6 +28,8 @@ export interface EnqueueCrawlTaskInput {
   priority?: number;
   maxAttempts?: number;
   payload?: Record<string, unknown>;
+  /** 定期来源允许重新排队已完成任务；死信/人工复核任务永不因重复发现而自动复活。 */
+  requeueCompleted?: boolean;
   now?: number;
 }
 
@@ -82,13 +84,22 @@ export async function enqueueCrawlTask(repo: Repository, input: EnqueueCrawlTask
        next_run_at, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, 0, ?, ?, ?, ?)
      ON CONFLICT(canonical_url) DO UPDATE SET
-       url = CASE WHEN crawl_tasks.status IN ('queued','retry') THEN excluded.url ELSE crawl_tasks.url END,
-       source = CASE WHEN crawl_tasks.status IN ('queued','retry') THEN excluded.source ELSE crawl_tasks.source END,
-       priority = CASE WHEN crawl_tasks.status IN ('queued','retry') THEN CASE WHEN crawl_tasks.priority > excluded.priority THEN crawl_tasks.priority ELSE excluded.priority END ELSE crawl_tasks.priority END,
-       payload_json = CASE WHEN crawl_tasks.status IN ('queued','retry') THEN excluded.payload_json ELSE crawl_tasks.payload_json END,
-       updated_at = excluded.updated_at`,
+       url = CASE WHEN crawl_tasks.status IN ('queued','retry') OR (crawl_tasks.status='done' AND ?) THEN excluded.url ELSE crawl_tasks.url END,
+       source = CASE WHEN crawl_tasks.status IN ('queued','retry') OR (crawl_tasks.status='done' AND ?) THEN excluded.source ELSE crawl_tasks.source END,
+       priority = CASE WHEN crawl_tasks.status IN ('queued','retry') OR (crawl_tasks.status='done' AND ?) THEN CASE WHEN crawl_tasks.priority > excluded.priority THEN crawl_tasks.priority ELSE excluded.priority END ELSE crawl_tasks.priority END,
+       payload_json = CASE WHEN crawl_tasks.status IN ('queued','retry') OR (crawl_tasks.status='done' AND ?) THEN excluded.payload_json ELSE crawl_tasks.payload_json END,
+       status = CASE WHEN crawl_tasks.status='done' AND ? THEN 'queued' ELSE crawl_tasks.status END,
+       attempts = CASE WHEN crawl_tasks.status='done' AND ? THEN 0 ELSE crawl_tasks.attempts END,
+       max_attempts = CASE WHEN crawl_tasks.status='done' AND ? THEN excluded.max_attempts ELSE crawl_tasks.max_attempts END,
+       next_run_at = CASE WHEN crawl_tasks.status='done' AND ? THEN excluded.next_run_at ELSE crawl_tasks.next_run_at END,
+       last_error = CASE WHEN crawl_tasks.status='done' AND ? THEN NULL ELSE crawl_tasks.last_error END,
+       updated_at = excluded.updated_at
     [id, normalized.url, normalized.url, normalized.host, source,
-      payloadJson, priority, maxAttempts, now, now, now],
+      payloadJson, priority, maxAttempts, now, now, now,
+      input.requeueCompleted === true, input.requeueCompleted === true,
+      input.requeueCompleted === true, input.requeueCompleted === true,
+      input.requeueCompleted === true, input.requeueCompleted === true,
+      input.requeueCompleted === true, input.requeueCompleted === true, input.requeueCompleted === true],
   );
   const rows = await repo.raw("SELECT * FROM crawl_tasks WHERE canonical_url = ? LIMIT 1", [normalized.url]);
   if (!rows[0]) throw new Error("采集任务入队后无法读取");

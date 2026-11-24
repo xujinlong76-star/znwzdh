@@ -99,6 +99,27 @@ node scripts/search-quality-shadow-eval.mts path/to/shadow-fixture.json --json
 
 每行一条 query，字段参考 `search-quality-annotation-template.json`。正式数据必须包含真实 query、候选 siteId、两名独立标注和仲裁状态。模板中的空字段不是有效样本。
 
+## 8.1 真实金标 JSONL 导入校验器
+
+新增 `scripts/import-search-golden.mts`，每行一条 `navhub-search-golden-v1` 记录。必需字段：
+
+- `sampleId`：去标识化样本 ID，整个文件唯一。
+- `query`：来自真实搜索遥测、已脱敏的查询文本；必须由数据负责人确认 `privacyReviewed=true` 与 `queryRedacted=true`。
+- `sourceType`：必须为 `search_telemetry`；合成查询、模型生成查询不能冒充真实样本。
+- `sampledAt`、`snapshotAt`：抽样时间与候选结果快照时间。
+- `hits`：冻结快照中的站点 ID 与严格递增 rank。
+- `judgments`：每个 hit 必须由两名不同标注员独立判断，包含证据 URL、0–3 等级或 `unjudgeable` 状态及理由码。
+- 两人结论不同必须由第三名仲裁员给出最终等级/不可判断状态；不能把不可判断自动记为 0。
+
+正式导入命令：
+
+```bash
+node scripts/import-search-golden.mts private/search-golden.jsonl scripts/fixtures/search-eval.real-golden.json
+node scripts/search-eval.mts scripts/fixtures/search-eval.real-golden.json --k 10 --json
+```
+
+导入器默认要求至少 100 条有效样本；`--allow-below-target` 仅用于开发预览，输出会明确标记未达标。输出 fixture 的 `query` 字段被替换为 `sampleId`，不包含原始查询文本；原始脱敏查询与标注记录应保存在受控数据目录，不要提交到公开仓库。导入器只验证人工记录，不调用 LLM、不推断相关性、不伪造样本。输出文件采用独占创建，避免意外覆盖已有金标资产。
+
 ## 9. 本轮禁止事项
 
 - 不用 LLM 自动生成 relevance 作为最终金标。

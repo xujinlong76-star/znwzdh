@@ -85,6 +85,8 @@ const SECURITY_KEYS_BY_SERVICE: Record<string, string[]> = {
     "NAVHUB_IDENTITY_SIGNATURE_STRICT",
     // 限流豁免凭据：中枢这一侧没有它，web 侧发了头也换不到豁免（收录页照样刷成 noindex 壳）
     "NAVHUB_INTERNAL_TOKEN",
+    "NAVHUB_MFA_ENCRYPTION_KEY",
+    "NAVHUB_ADMIN_MFA_REQUIRED",
     "NAVHUB_SESSION_SECRET",
     "NAVHUB_SESSION_SECRET_PREV",
     "NAVHUB_TRUST_PROXY",
@@ -110,6 +112,7 @@ const SECURITY_KEYS_BY_SERVICE: Record<string, string[]> = {
     "NAVHUB_IDENTITY_SECRET",
     "NAVHUB_IDENTITY_SIGNATURE_STRICT",
     "NAVHUB_INTERNAL_TOKEN",
+    "NAVHUB_ADMIN_MFA_REQUIRED",
     // B 站高清解析：不透传则「面板上能填 key」这件事在容器里永远兑现不了，
     // 而 FORWARD_USER_KEY 是唯一能改变「访客凭据会不会出站」的开关。
     "NAVHUB_BILIBILI_ACCESS_KEY",

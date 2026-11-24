@@ -641,7 +641,7 @@ export async function handleCrawlWorker(
 
           // 默认不产生模型费用；仅在部署显式设置 shadow 时运行影子审核。
           // 本阶段只写审核证据，绝不修改 pending/approved/rejected 状态。
-          if (moderationPolicy.enabled && moderationPolicy.mode === "shadow" &&
+          if (moderationPolicy.enabled && (moderationPolicy.mode === "shadow" || moderationPolicy.mode === "auto_approve") &&
               aiModerationCount < moderationPolicy.maxAiReviewsPerRun && candidate.status === "pending") {
             const resolved = await resolveLlm(ctx);
             if (llmProviderReadyAny(resolved)) {

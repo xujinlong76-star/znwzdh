@@ -97,7 +97,7 @@
     "minPatchLines": 70,
     "minExecutableLines": 10,
     "enabled": true,
-    "_why": "W3 已启用：基于 coverage-final.json 的逐行计数与 git diff --unified=0，只统计 apps/api 与 packages 源码改动中的可执行行；少于 10 行跳过，见 docs/TESTING-STRATEGY.md §3.4"
+    "_why": "W3 已启用：基于 coverage-final.json 的 statementMap/s 计数与 git diff --unified=0，只统计 apps/api 与 packages 源码改动中的可执行行；少于 10 行跳过，见 docs/TESTING-STRATEGY.md §3.4"
   },
   "requireCoveredNew": {
     "enabled": false,

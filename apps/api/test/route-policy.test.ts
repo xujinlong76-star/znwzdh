@@ -491,3 +491,28 @@ describe("策略表与 authz.ts 运行时判定一致", () => {
     }
   });
 });
+describe("AI 采集审核管理路由", () => {
+  it("采集来源、审核策略、金标和模型评测端点均注册为 admin", () => {
+    const required = [
+      "GET /api/admin/crawl/overview",
+      "GET /api/admin/crawl/candidates",
+      "POST /api/admin/crawl/candidates/:id/review",
+      "GET /api/admin/crawl-sources",
+      "POST /api/admin/crawl-sources",
+      "PATCH /api/admin/crawl-sources/:id",
+      "DELETE /api/admin/crawl-sources/:id",
+      "GET /api/admin/crawl-moderation/policy",
+      "PUT /api/admin/crawl-moderation/policy",
+      "GET /api/admin/crawl/moderation-gold-cases",
+      "POST /api/admin/crawl/moderation-gold-cases/:id/annotations",
+      "POST /api/admin/crawl/moderation-gold-cases/:id/adjudicate",
+      "POST /api/admin/crawl/moderation-model-evaluations/auto",
+    ];
+    const inventory = new Map(app.routeInventory.map(route => [keyOf(route), route]));
+    for (const key of required) {
+      const route = inventory.get(key);
+      expect(route, key + " 未注册").toBeTruthy();
+      expect(route!.scope, key).toBe("admin");
+    }
+  });
+});

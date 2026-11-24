@@ -14,7 +14,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { hashToken, secureEqual } from "../auth.ts";
+import { hashToken as hashApiToken, secureEqual } from "../auth.ts";
 import { z } from "zod";
 import { generateToken, hashPassword, hashToken, validatePassword } from "@navhub/core";
 
@@ -41,7 +41,7 @@ let lastLoginFailurePruneAt = 0;
 
 function loginFailureKey(identifier: string): string {
   // 不把邮箱/用户名明文作为 system_states key，避免数据库运维面泄露登录标识。
-  return "auth:login-failure:" + hashToken(identifier.trim().toLowerCase());
+  return "auth:login-failure:" + hashApiToken(identifier.trim().toLowerCase());
 }
 
 
@@ -141,7 +141,7 @@ async function verifyAdminMfa(ctx: AppContext, supplied: string): Promise<boolea
   if (verifyTotp(secret, supplied)) return true;
   const normalized = supplied.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (!normalized) return false;
-  const recoveryHash = hashToken(normalized);
+  const recoveryHash = hashApiToken(normalized);
   if (!state.recoveryHashes.includes(recoveryHash)) return false;
   // 数据库原子占坑：恢复码只可在任一实例成功消费一次。
   return ctx.repo.claimSystemState(
@@ -275,7 +275,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     if (!verifyTotp(secret, body.data.code)) { reply.code(401); return { error: "验证码无效或已过期" }; }
     const codes = newRecoveryCodes();
     await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, {
-      ...state, enabled: true, recoveryHashes: codes.map((code) => hashToken(code.replace(/-/g, ""))),
+      ...state, enabled: true, recoveryHashes: codes.map((code) => hashApiToken(code.replace(/-/g, ""))),
       recoveryVersion: randomBytes(12).toString("hex"), updatedAt: Date.now(),
     } satisfies AdminMfaState);
     await ctx.repo.audit({ actor: req.auth.actor, actorKind: req.auth.kind, action: "account.admin_mfa_enabled" });

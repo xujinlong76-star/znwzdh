@@ -17,6 +17,7 @@ import { sendWebhookAlert, ALERT_DEDUPE_WINDOW_MS } from "./alerts.ts";
 import { createStoreAlertDeduper } from "./alert-dedupe.ts";
 import { reconcileVideoCatalogOnBoot } from "./video-catalog-boot.ts";
 import { ensureNavigationShardsFresh } from "./storage.ts";
+import { startCrawlSourceWorker } from "./crawl-source-worker.ts";
 
 // 本地/容器启动时加载仓库根目录的 .env（Node 原生能力，零依赖）。
 // 注意：dev-all 以 apps/api 为 CWD 启动，默认的 loadEnvFile() 会找 apps/api/.env，
@@ -56,6 +57,12 @@ const runner = jobsEnabled
   : null;
 if (runner) runner.start();
 
+// 采集 Worker 与通用巡检任务隔离：默认关闭，完成灰度配置后显式开启。
+// 多实例通过数据库来源租约避免重复认领；抓取实现只允许 guardedFetch。
+const crawlWorker = process.env.NAVHUB_CRAWL_WORKER_ENABLED === "1"
+  ? startCrawlSourceWorker(ctx, { workerId: "api-" + process.pid, limit: 5 })
+  : null;
+
 // 启动对账（影子表自愈）：见 video-catalog-boot.ts 头注释。fire-and-forget，
 // 绝不阻断/拖慢启动；NAVHUB_VIDEO_CATALOG_RECONCILE_ON_BOOT=0 可关闭。
 if (process.env.NAVHUB_VIDEO_CATALOG_RECONCILE_ON_BOOT !== "0") {
@@ -68,8 +75,9 @@ const shutdown = async (signal: string) => {
   app.log.info({ signal }, "正在关闭");
   try {
     runner?.stop();
+    crawlWorker?.stop();
     // 优雅停机：等 in-flight 任务轮次完成再关连接（最多 30s）
-    await runner?.drain(30_000);
+    await Promise.all([runner?.drain(30_000), crawlWorker?.drain()]);
   } catch { /* 尽力而为 */ }
   try { await app.close(); await ctx.close(); } catch { /* 尽力而为 */ }
   process.exit(0);
@@ -88,6 +96,7 @@ console.info("  语义检索 " + (ctx.capabilities.semantic ? "可用" : "不可
 console.info("  全文检索 " + (ctx.capabilities.fts ? "可用" : "不可用"));
 console.info("  LLM 富化 " + (ctx.capabilities.llm ? "可用" : "不可用（降级为启发式）"));
 console.info("  任务队列 " + (runner ? "已启动（" + Math.round(runner.interval / 1000) + "s 轮询，单实例锁；失败指数退避重试 " + MAX_JOB_ATTEMPTS + " 次）" : "已关闭（NAVHUB_JOBS_ENABLED=0）"));
+console.info("  采集 Worker " + (crawlWorker ? "已启动（60s 轮询，单轮最多 5 个来源；guardedFetch）" : "已关闭（NAVHUB_CRAWL_WORKER_ENABLED=1 才启用）"));
 console.info("  任务告警 " + (config.alertWebhook ? "webhook 已配置" : "未配置（仅 console.error）"));
 // 身份签名默认关闭，且关掉之后没有任何提示：收藏/历史/画像/私有草稿这些
 // 「按身份隔离」的数据，实际隔离强度只是一个可自报的字符串。横幅把它显式化。

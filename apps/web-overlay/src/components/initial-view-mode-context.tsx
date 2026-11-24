@@ -6,9 +6,9 @@ import type { CanonicalCardDisplayMode } from '@/lib/modular/card-display-modes'
 /**
  * 服务端首帧展示模式上下文（Zero-CLS SSR Hydration 桥梁）。
  *
- * `app/page.tsx` 读取 `nav_view_mode` Cookie 并通过 `NavigationContent` 注入此处；
- * 客户端首帧（`mounted === false`）期间，顶栏切换器、分类区块与卡片统一消费此值，
- * 保证 SSR HTML 与客户端首次水合 DOM 100% 一致，杜绝刷新闪烁与水合警告。
+ * 可选的服务端初始值用于保证 SSR 与 hydration 首帧一致；未提供时先用 standard。
+ * 首页为保留 ISR 不再在服务端读取 Cookie，hydrateHomeDiy() 会在客户端挂载时
+ * 从 `nav_view_mode` Cookie 恢复用户偏好，因此不会产生 hydration mismatch。
  */
 const InitialViewModeContext = createContext<CanonicalCardDisplayMode>('standard')
 

@@ -3,7 +3,7 @@ import { openDb, type Db } from "../src/driver.ts";
 import { Repository } from "../src/repository.ts";
 import {
   countSiteDiscoveryCandidates, getSiteDiscoveryCandidate, getSiteDiscoveryCandidateForUpdate,
-  listSiteDiscoveryCandidates, reviewSiteDiscoveryCandidate, upsertSiteDiscoveryCandidate,
+  listSiteDiscoveryCandidates, reviewSiteDiscoveryCandidate, upsertSiteDiscoveryCandidate, overrideAiApprovedCandidate,
 } from "../src/repository/discovery-candidates.ts";
 
 describe("站点发现候选仓储", () => {
@@ -72,6 +72,35 @@ describe("站点发现候选仓储", () => {
       reviewedBy: "ai:model-x",
       evidence: { aiModeration: { mode: "auto_approve", action: "auto_approved", model: "model-x" } },
     });
+  });
+
+  it("人工可以将 AI 自动通过退回待审或驳回，但不能覆盖人工批准", async () => {
+    const candidate = await upsertSiteDiscoveryCandidate(repo, {
+      id: "candidate-ai-override", url: "https://ai-override.example",
+      canonicalUrl: "https://ai-override.example/", source: "sitemap", now: 500,
+    });
+    await reviewSiteDiscoveryCandidate(repo, {
+      id: candidate.id, status: "approved", reviewer: "ai:model-x",
+      evidence: { aiModeration: { mode: "auto_approve", action: "auto_approved" } }, now: 600,
+    });
+    const reopened = await overrideAiApprovedCandidate(repo, {
+      id: candidate.id, decision: "reopen", reviewer: "admin:1", reason: "人工抽查要求重新核验",
+      evidence: { aiModeration: { mode: "auto_approve", action: "human_reopened" } }, now: 700,
+    });
+    expect(reopened).toMatchObject({ status: "pending", reviewedBy: null, evidence: { aiModeration: { action: "human_reopened" } } });
+
+    const manuallyApproved = await upsertSiteDiscoveryCandidate(repo, {
+      id: "candidate-human-approved", url: "https://human-approved.example",
+      canonicalUrl: "https://human-approved.example/", source: "rss", now: 800,
+    });
+    await reviewSiteDiscoveryCandidate(repo, {
+      id: manuallyApproved.id, status: "approved", reviewer: "admin:2", now: 900,
+    });
+    const untouched = await overrideAiApprovedCandidate(repo, {
+      id: manuallyApproved.id, decision: "reject", reviewer: "admin:1", reason: "人工复核发现问题",
+      now: 1000,
+    });
+    expect(untouched).toMatchObject({ status: "approved", reviewedBy: "admin:2" });
   });
 
   it("损坏的历史 JSON 不会让候选审核队列整体 500", async () => {

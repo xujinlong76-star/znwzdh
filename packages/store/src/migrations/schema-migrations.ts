@@ -547,14 +547,6 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     checksum: "v1_crawl_robots_shared_cache",
   },
   {
-    version: "20261125_crawl_source_registry_upgrade",
-    name: "旧版采集来源表补齐持久化 Worker 字段",
-    up: async (db: Db) => {
-      await migrateCrawlSourceRegistryUpgrade(db);
-    },
-    checksum: "v1_crawl_source_registry_upgrade",
-  },
-  {
     // 2026-11-24：site_reports / submission_reviews 曾被追加进 20261015_site_indexes
     // 的语句表（已记账版本不会再跑）→ 存量库缺表、/api/admin/site-reports 500。
     // 单独版本补建；DDL 真相见 migrate.ts 的 SITE_REPORTS_AND_REVIEWS_DDL。
@@ -564,6 +556,14 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
       await migrateSiteReportsAndReviews(db);
     },
     checksum: "v1_site_reports_and_reviews",
+  },
+  {
+    version: "20261125_crawl_source_registry_upgrade",
+    name: "旧版采集来源表补齐持久化 Worker 字段",
+    up: async (db: Db) => {
+      await migrateCrawlSourceRegistryUpgrade(db);
+    },
+    checksum: "v1_crawl_source_registry_upgrade",
   },
 ];
 

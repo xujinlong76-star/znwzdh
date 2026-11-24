@@ -49,6 +49,18 @@ describe("网站 AI 审核引擎", () => {
     expect(result.policyVersion).toBe("site-moderation-v1");
   });
 
+  it("未知风险类别必须失败关闭，不能被静默当成 none", async () => {
+    await expect(moderateSiteWithAi(provider, { url: "https://example.com/" }, {}, {
+      complete: async () => ({ content: modelOutput({ risks: ["credential_theft"] }), model: "mock" }),
+    })).rejects.toThrow(/未知风险类别/);
+  });
+
+  it("模型发明的类别不进入目录分类，回退为 null", async () => {
+    const result = await moderateSiteWithAi(provider, { url: "https://example.com/", knownCategories: ["AI工具"] }, {}, {
+      complete: async () => ({ content: modelOutput({ category: "游戏娱乐" }), model: "mock" }),
+    });
+    expect(result.category).toBeNull();
+  });
   it("模型 JSON 无效时失败关闭，不返回自动通过结论", async () => {
     await expect(moderateSiteWithAi(provider, { url: "https://example.com/" }, {}, {
       complete: async () => ({ content: "not-json", model: "mock" }),

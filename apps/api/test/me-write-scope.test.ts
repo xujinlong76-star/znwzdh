@@ -232,6 +232,22 @@ describe("/api/me 写面：只读令牌一律 403", () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it("验收 14：用户可轮换自己名下的个人令牌，旧明文立即失效", async () => {
+    const rotated = await inject({
+      method: "POST",
+      url: `/api/me/tokens/${revokeTokenId}/rotate`,
+      headers: write(),
+      payload: {},
+    });
+    expect(rotated.statusCode).toBe(200);
+    const body = rotated.json() as { token: string; record: { id: string; tokenPrefix: string | null } };
+    expect(body.token).toMatch(/^nh_/);
+    expect(body.record.id).toBe(revokeTokenId);
+    expect(body.record.tokenPrefix).toBe(body.token.slice(0, 12));
+    expect((await inject({ method: "GET", url: "/api/me", headers: { authorization: "Bearer " + revokeToken } })).statusCode).toBe(401);
+    expect((await inject({ method: "GET", url: "/api/me", headers: { authorization: "Bearer " + body.token } })).statusCode).toBe(200);
+  });
+
   it("验收 13：只读令牌 + 合法 bearer 头但坏 JSON 也是 403（锁定 onRequest 阶段）", async () => {
     const res = await inject({
       method: "PATCH",

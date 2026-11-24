@@ -178,7 +178,7 @@ function moderationEvidenceOf(evidence: Record<string, unknown>): Record<string,
 export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
   app.get("/api/admin/crawl/overview", { config: { scope: "admin", cache: { maxAge: 0 } } }, async () => {
-    const [tasks, sources, candidates, hosts, recent, moderationRows, ledgerCounts, overturnedRows] = await Promise.all([
+    const [tasks, sources, candidates, hosts, recent, moderationRows, ledgerCounts, overturnedRows, circuits] = await Promise.all([
       ctx.repo.raw("SELECT status, COUNT(*) AS total FROM crawl_tasks GROUP BY status"),
       ctx.repo.raw("SELECT enabled, COUNT(*) AS total FROM crawl_sources GROUP BY enabled"),
       ctx.repo.raw("SELECT status, COUNT(*) AS total FROM site_discovery_candidates GROUP BY status"),
@@ -187,6 +187,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       ctx.repo.raw("SELECT evidence_json FROM site_discovery_candidates WHERE updated_at >= ? ORDER BY updated_at DESC LIMIT 1000", [Date.now()-24*60*60_000]),
       ctx.repo.raw("SELECT decision_source, COUNT(*) AS total FROM crawl_ai_moderation_decisions WHERE created_at >= ? GROUP BY decision_source", [Date.now()-24*60*60_000]),
       ctx.repo.raw("SELECT COUNT(DISTINCT ai.candidate_id) AS total FROM crawl_ai_moderation_decisions ai JOIN crawl_ai_moderation_decisions human ON human.candidate_id = ai.candidate_id AND human.decision_source = 'human' AND human.created_at > ai.created_at WHERE ai.decision_source = 'ai' AND ai.verdict IS NOT NULL AND ((ai.verdict = 'auto_approve' AND human.verdict <> 'approve') OR (ai.verdict = 'reject' AND human.verdict <> 'reject')) AND ai.created_at >= ?", [Date.now()-30*24*60*60_000]),
+      ctx.repo.raw("SELECT COUNT(*) AS total, SUM(CASE WHEN opened_until > ? THEN 1 ELSE 0 END) AS open, MAX(consecutive_failures) AS max_failures FROM crawl_domain_circuit", [Date.now()]),
     ]);
     const countMap = (rows: Array<Record<string, unknown>>, key: string) =>
       Object.fromEntries(rows.map(row => [String(row[key]), Number(row.total ?? 0)]));
@@ -221,6 +222,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       candidates: candidateCounts,
       last24Hours: recentCounts,
       aiModeration: { ...aiModeration, ledger24h: ledger, humanOverturns30d: Number(overturnedRows[0]?.total ?? 0) },
+      domainCircuit: { trackedHosts: Number(circuits[0]?.total ?? 0), openHosts: Number(circuits[0]?.open ?? 0), maxConsecutiveFailures: Number(circuits[0]?.max_failures ?? 0), threshold: 5, baseCooldownMs: 5 * 60_000, maxCooldownMs: 60 * 60_000 },
       busiestHosts: hosts.map(row => ({ host: String(row.host), tasks: Number(row.total) })),
     };
   });

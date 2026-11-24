@@ -96,7 +96,7 @@
 
 ### 3.4 防退化四机制
 
-1. **patch 覆盖（W3 已启用）**：CI 执行 `node scripts/check-coverage.mjs --patch --base=origin/main --min-patch-lines 70`。用 `git diff --unified=0` 取新增行 + `coverage-final.json` 的逐行计数；只统计可执行改动行，分母少于 10 行跳过判定；删除行不计。缺失覆盖率文件按未覆盖处理。
+1. **patch 覆盖（W3 已启用）**：CI 执行 `node scripts/check-coverage.mjs --patch --base=origin/main --min-patch-lines 70`。用 `git diff --unified=0` 取新增行 + `coverage-final.json` 的 `statementMap`/`s` 语句覆盖映射；只统计可执行改动行，分母少于 10 行跳过判定；删除行不计。缺失覆盖率文件按未覆盖处理。
 2. **新增零覆盖文件拦截**：PR 新增的 `apps/api/src/**`、`packages/*/src/**` 文件 lines=0 直接 fail；例外仅 `*.d.ts`、纯类型、入口 re-export。
 3. **反「为过门禁写垃圾测试」**：新增测试需在 PR 附 fail-before-pass 证据（`node scripts/verify-guard.mjs`）；审查者每周抽查 1/3；每周随机抽 3 个新增测试检查断言强度；`/* v8 ignore */` 必须带理由 + 审查确认。
 4. **ratchet 本身是主防线**：垃圾测试不增加覆盖，加了也过不了「只升不降」。
@@ -112,7 +112,7 @@
 | `--thresholds coverage-thresholds.json` | ✅ 2026-11-06 新增 | 读外置阈值（全局 floor + 分区域 floor），低于阈值 exit 1 |
 | `::error::` 注解 | ✅ 2026-11-06 新增 | 每条失败一行，PR 文件页可见 |
 | `--max-age <minutes>` | ✅ 2026-11-06 新增 | 产物 mtime 超阈值 exit 2（`clean:false` 的假绿入口） |
-| `--patch --base=... --min-patch-lines 70` | ✅ 2026-11-24 W3 上线 | `coverage-final.json` 的逐行计数映射；仅统计可执行新增行，缺失覆盖条目按未覆盖处理 |
+| `--patch --base=... --min-patch-lines 70` | ✅ 2026-11-24 W3 上线 | `coverage-final.json` 的 `statementMap` + `s` 计数映射；仅统计可执行新增行，缺失覆盖条目按未覆盖处理 |
 | `--require-covered-new` | ⏳ W5 上线 | 新增零覆盖文件拦截（`git diff --diff-filter=A`） |
 | 关键文件 floor（`criticalFiles`） | ⏳ W3 起 | `coverage-thresholds.json` 已登记清单，当前 `enforced:false`（无逐文件基线，不做假门禁） |
 | `--per-area` / `--changed-files` / `--github-summary` / `--json` 增 `uncoveredLines` | P1 待做 | — |

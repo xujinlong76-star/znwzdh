@@ -31,7 +31,7 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
    * 站点质量治理工作台数据。
    * 只读最新影子评分，不触发重算、不执行自动下架或自动排序。
    */
-  app.get("/api/admin/quality/report", { config: { scope: "read" } }, async (req, reply) => {
+  app.get("/api/admin/quality/report", { config: { scope: "admin" } }, async (req, reply) => {
     const query = (req.query ?? {}) as Record<string, unknown>;
     const allowedBands = ["high", "medium", "low", "high_risk", "insufficient_evidence"] as const;
     const band = typeof query.band === "string" && (allowedBands as readonly string[]).includes(query.band)

@@ -549,6 +549,12 @@ export async function handleCrawlWorker(
               });
               if (!quota.ok) {
                 summary.aiModerationQuotaSkipped++;
+                await recordCrawlAiModerationDecision(ctx.repo, {
+                  id: randomUUID(), candidateId: candidate.id, decisionSource: "ai",
+                  mode: "shadow", status: "quota_blocked",
+                  reasons: ["LLM 配额预留未通过，未调用模型"],
+                  createdAt: Date.now(),
+                });
                 await upsertSiteDiscoveryCandidate(ctx.repo, {
                   id: candidate.id, url: candidate.url, canonicalUrl: candidate.canonicalUrl,
                   source: candidate.source,

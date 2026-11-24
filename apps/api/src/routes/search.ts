@@ -4,7 +4,7 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
-import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
+import { MAX_SEARCH_QUERY_LENGTH, rerankBySiteQualityShadow } from "@navhub/core";
 import { recordSearchChannels, recordSearchSuggestionsDegraded, recordSearchWriteFailure } from "../metrics.ts";
 import { refreshUserProfile } from "../profile-service.ts";
 import { badRequest, clampFacets, FACET_MAX_JSON_LENGTH, identityTrusted, requestIdentityOf } from "./shared.ts";
@@ -223,6 +223,52 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
     const q = input.q.trim();
     const isFirstPage = (input.offset ?? 0) === 0;
+
+    // 10% 确定性采样：计算质量影子名次并记录对照，不改写 result.hits 或响应缓存。
+    // 使用查询字符 hash 而不是随机数，保证同一 query 在回归中采样稳定。
+    let sampleHash = 2166136261;
+    for (const char of q) {
+      sampleHash ^= char.charCodeAt(0);
+      sampleHash = Math.imul(sampleHash, 16777619);
+    }
+    const shadowSampled = q.length > 0 && (sampleHash >>> 0) % 10 === 0;
+    if (shadowSampled && isFirstPage && !isProbe && result.hits.length > 0) {
+      try {
+        const topHits = result.hits.slice(0, 20);
+        const qualityRows = await ctx.repo.getSiteQualityAssessmentsBySiteIds(topHits.map((hit) => hit.siteId));
+        const qualityBySiteId = new Map(qualityRows.map((row) => [row.siteId, row]));
+        const shadow = rerankBySiteQualityShadow(topHits.map((hit) => {
+          const quality = qualityBySiteId.get(hit.siteId);
+          return {
+            siteId: hit.siteId,
+            qualityScore: quality?.score ?? null,
+            evidenceCoverage: quality?.evidenceCoverage ?? 0,
+            band: quality?.band ?? "insufficient_evidence",
+          };
+        }));
+        const baselineSiteIds = [...shadow]
+          .sort((a, b) => a.baselineRank - b.baselineRank)
+          .map((item) => item.siteId);
+        await ctx.repo.recordEvent("search_quality_shadow", {
+          query: q,
+          meta: {
+            version: "site-quality-v1",
+            sampleRate: 0.1,
+            qualityWeight: 0.12,
+            minEvidenceCoverage: 40,
+            baselineSiteIds,
+            shadowSiteIds: shadow.map((item) => item.siteId),
+            appliedCount: shadow.filter((item) => item.applied).length,
+            excludedHighRiskCount: shadow.filter((item) => item.excludedReason === "high_risk").length,
+            excludedUnknownCount: shadow.filter((item) => item.excludedReason === "unknown_score").length,
+            excludedLowCoverageCount: shadow.filter((item) => item.excludedReason === "insufficient_coverage").length,
+          },
+        });
+      } catch {
+        // 影子评测是附加遥测：失败绝不影响搜索主链路。
+        recordSearchWriteFailure("quality_shadow");
+      }
+    }
     let suggestions: string[] = [];
     let popular: string[] = [];
     let relationHits: unknown[] = [];

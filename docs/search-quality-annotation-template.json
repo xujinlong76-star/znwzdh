@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "search-quality-golden-v1",
+  "queryId": "",
+  "query": "",
+  "locale": "zh-CN",
+  "intent": "",
+  "sampledAt": "",
+  "candidateSnapshotAt": "",
+  "candidates": [
+    {
+      "siteId": "",
+      "baselineRank": 1,
+      "evidenceUrl": "",
+      "annotatorA": {
+        "grade": null,
+        "reasonCode": "",
+        "notes": ""
+      },
+      "annotatorB": {
+        "grade": null,
+        "reasonCode": "",
+        "notes": ""
+      },
+      "adjudication": {
+        "required": false,
+        "grade": null,
+        "reason": ""
+      }
+    }
+  ],
+  "unjudgeable": false,
+  "unjudgeableReason": "",
+  "privacyReviewed": false
+}

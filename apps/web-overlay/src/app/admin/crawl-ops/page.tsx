@@ -28,6 +28,7 @@ type Source = {id:string;url:string;kind:'sitemap'|'rss'|'page';enabled:boolean;
 type ModerationPolicy = {enabled:boolean;mode:'shadow'|'auto_approve';autoApproveConfidence:number;rejectConfidence:number;minQualityScore:number;maxExcerptChars:number;maxAiReviewsPerRun:number;requireHttps:boolean}
 type AutoApprovalGate = {ready:boolean;models:Array<{model:string;eligible:boolean;reason:string;sampleSize:number;exactMatchRate:number|null;approvePrecision:number|null;riskRecall:number|null}>}
 type ModelAnalytics = {ok:boolean;days:number;models:Array<{model:string;total:number;completed:number;errors:number;quotaBlocked:number;successRate:number|null;averageConfidence:number|null;verdicts:{autoApprove:number;reject:number;manualReview:number}}>}
+type EvaluationProvider = {index:number;name:string;model:string;source:string}
 type GoldCase = {id:string;sourceFingerprint:string;title:string|null;description:string|null;category:string|null;sanitizedExcerpt:string|null;status:'pending'|'annotating'|'needs_adjudication'|'gold_ready';annotationCount:number;finalLabel:string|null;finalRisk:boolean|null;createdAt:number;updatedAt:number}
 type GoldAnnotation = {id:string;annotatorId:string;label:'approve'|'reject'|'review';risk:boolean;evidence:string;createdAt:number}
 const DEFAULT_POLICY:ModerationPolicy={enabled:false,mode:'shadow',autoApproveConfidence:0.93,rejectConfidence:0.97,minQualityScore:70,maxExcerptChars:6000,maxAiReviewsPerRun:5,requireHttps:false}
@@ -45,6 +46,11 @@ export default function CrawlOperationsPage(){
   const [autoApprovalGate,setAutoApprovalGate]=useState<AutoApprovalGate>({ready:false,models:[]})
   const [decisionHistory,setDecisionHistory]=useState<Array<{id:string;candidateId:string;decisionSource:string;verdict:string|null;status:string;createdAt:number;actor:string|null}>>([])
   const [modelAnalytics,setModelAnalytics]=useState<ModelAnalytics|null>(null)
+  const [evaluationProviders,setEvaluationProviders]=useState<EvaluationProvider[]>([])
+  const [evaluationProviderIndex,setEvaluationProviderIndex]=useState(0)
+  const [evaluationLimit,setEvaluationLimit]=useState(100)
+  const [evaluationBusy,setEvaluationBusy]=useState(false)
+  const [evaluationMessage,setEvaluationMessage]=useState<string|null>(null)
   const [goldCases,setGoldCases]=useState<GoldCase[]>([])
   const [activeGoldId,setActiveGoldId]=useState<string|null>(null)
   const [goldAnnotations,setGoldAnnotations]=useState<GoldAnnotation[]>([])
@@ -71,16 +77,17 @@ export default function CrawlOperationsPage(){
   const load=useCallback(async()=>{
     setLoading(true);setError(null)
     try{
-      const [stats,queue,registry,moderation,history,analytics,goldQueue]=await Promise.all([
+      const [stats,queue,registry,moderation,history,analytics,providers,goldQueue]=await Promise.all([
         hubGet<Overview>('/api/hub/admin/crawl/overview'),
         hubGet<CandidatePage>('/api/hub/admin/crawl/candidates?status=pending&limit=50&offset=0'),
         hubGet<{ok:boolean;items:Source[]}>('/api/hub/admin/crawl-sources?limit=100'),
         hubGet<{ok:boolean;policy:ModerationPolicy;autoApprovalGate?:AutoApprovalGate}>('/api/hub/admin/crawl-moderation/policy'),
         hubGet<{ok:boolean;items:Array<{id:string;candidateId:string;decisionSource:string;verdict:string|null;status:string;createdAt:number;actor:string|null}>}>('/api/hub/admin/crawl/moderation-decisions?limit=10'),
         hubGet<ModelAnalytics>('/api/hub/admin/crawl/moderation-analytics?days=30'),
+        hubGet<{ok:boolean;items:EvaluationProvider[]}>('/api/hub/admin/crawl/moderation-model-evaluations/providers'),
         hubGet<{ok:boolean;items:GoldCase[]}>('/api/hub/admin/crawl/moderation-gold-cases?limit=100&offset=0')
       ])
-      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setAutoApprovalGate(moderation.autoApprovalGate??{ready:false,models:[]});setDecisionHistory(history.items);setModelAnalytics(analytics);setGoldCases(goldQueue.items)
+      setOverview(stats);setPage(queue);setSources(registry.items);setPolicy(moderation.policy);setAutoApprovalGate(moderation.autoApprovalGate??{ready:false,models:[]});setDecisionHistory(history.items);setModelAnalytics(analytics);setEvaluationProviders(providers.items);if(!providers.items.some(item=>item.index===evaluationProviderIndex))setEvaluationProviderIndex(providers.items[0]?.index??0);setGoldCases(goldQueue.items)
     }catch(e){setError(e instanceof Error?e.message:'采集运营数据加载失败')}
     finally{setLoading(false)}
   },[])
@@ -106,6 +113,19 @@ export default function CrawlOperationsPage(){
     if(policyBusy)return;setPolicyBusy(true);setError(null)
     try{const result=await hubSend<{ok:boolean;policy:ModerationPolicy;autoApprovalGate?:AutoApprovalGate}>('/api/hub/admin/crawl-moderation/policy','PUT',policy);setPolicy(result.policy);setAutoApprovalGate(result.autoApprovalGate??{ready:false,models:[]})}
     catch(e){setError(e instanceof Error?e.message:'保存 AI 审核规则失败')}finally{setPolicyBusy(false)}
+  }
+  const runModelEvaluation=async()=>{
+    if(evaluationBusy||!evaluationProviders.length)return
+    setEvaluationBusy(true);setEvaluationMessage(null);setError(null)
+    try{
+      const result=await hubSend<{ok:boolean;model:string;sampleSize:number;datasetVersion:string;alerts:Array<{severity:string;code:string;message:string}>}>(
+        '/api/hub/admin/crawl/moderation-model-evaluations/auto','POST',
+        {limit:evaluationLimit,providerIndex:evaluationProviderIndex}
+      )
+      setEvaluationMessage(result.model+' 已完成 '+result.sampleSize+' 条金标评测；告警 '+result.alerts.length+' 条。')
+      await load()
+    }catch(e){setEvaluationMessage(e instanceof Error?e.message:'模型金标评测失败')}
+    finally{setEvaluationBusy(false)}
   }
   const review=async(item:Candidate,decision:'approve'|'reject')=>{
     if(busy)return
@@ -211,6 +231,16 @@ export default function CrawlOperationsPage(){
         {!modelAnalytics?.models.length?<p className="text-sm text-muted-foreground">当前时间范围内暂无 AI 审核样本。</p>:<div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="p-2">模型</th><th className="p-2">样本</th><th className="p-2">完成</th><th className="p-2">成功率</th><th className="p-2">平均置信度</th><th className="p-2">建议通过</th><th className="p-2">建议驳回</th><th className="p-2">人工复核</th><th className="p-2">错误/额度跳过</th></tr></thead><tbody>{modelAnalytics.models.map(item=><tr key={item.model} className="border-b last:border-0"><td className="p-2 font-medium">{item.model}</td><td className="p-2 tabular-nums">{item.total}</td><td className="p-2 tabular-nums">{item.completed}</td><td className="p-2 tabular-nums">{item.successRate===null?'—':item.successRate+'%'}</td><td className="p-2 tabular-nums">{item.averageConfidence===null?'—':Math.round(item.averageConfidence*100)+'%'}</td><td className="p-2 tabular-nums">{item.verdicts.autoApprove}</td><td className="p-2 tabular-nums">{item.verdicts.reject}</td><td className="p-2 tabular-nums">{item.verdicts.manualReview}</td><td className="p-2 tabular-nums">{item.errors}/{item.quotaBlocked}</td></tr>)}</tbody></table></div>}
       </CardContent></Card>
 
+      <Card><CardHeader><CardTitle className="text-base">运行模型金标评测</CardTitle><CardDescription>使用已配置的大模型对正式金标样本进行独立预测。评测会消耗模型额度；只有覆盖当前完整金标集的评测才能作为自动通过门槛。</CardDescription></CardHeader><CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="min-w-[220px] flex-1 space-y-1 text-sm"><span className="text-muted-foreground">评测模型</span><select value={evaluationProviderIndex} onChange={e=>setEvaluationProviderIndex(Number(e.target.value))} className="h-9 w-full rounded-md border bg-background px-3" disabled={!evaluationProviders.length}>{evaluationProviders.map(item=><option key={item.index} value={item.index}>{item.name} · {item.model}{item.source==='fallback'?'（备用）':''}</option>)}</select></label>
+          <label className="space-y-1 text-sm"><span className="text-muted-foreground">评测样本数</span><select value={evaluationLimit} onChange={e=>setEvaluationLimit(Number(e.target.value))} className="h-9 rounded-md border bg-background px-3"><option value={20}>20 条（抽样）</option><option value={50}>50 条（抽样）</option><option value={100}>100 条（自动门槛评测）</option></select></label>
+          <Button size="sm" onClick={()=>void runModelEvaluation()} disabled={evaluationBusy||!evaluationProviders.length}>{evaluationBusy?'正在评测…':'运行模型评测'}</Button>
+        </div>
+        <p className="text-xs text-muted-foreground">若正式金标集超过 100 条，100 条抽样评测不会解锁自动通过；必须提交覆盖完整当前数据集的评测。自动通过仍只标记候选为已审核，不会发布网站。</p>
+        {evaluationMessage&&<p className="text-sm text-muted-foreground">{evaluationMessage}</p>}
+        {!evaluationProviders.length&&<p className="text-xs text-muted-foreground">尚未配置可用的大模型供应商。</p>}
+      </CardContent></Card>
       <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4"/>人工金标标注工作台</CardTitle><CardDescription>先提交完成脱敏的样本，再由两位不同管理员独立标注；结论不一致时交给第三位管理员仲裁。AI 输出不参与生成金标。</CardDescription></CardHeader>
         <CardContent className="space-y-5">
           <div className="grid gap-3 md:grid-cols-2">

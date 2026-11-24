@@ -255,22 +255,33 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       if (!title && !description && !sanitizedExcerpt) {
         reply.code(422); return { ok: false, error: "候选缺少可用于人工判断的标题、描述或摘要" };
       }
-      const sourceFingerprint = createHash("sha256").update("crawl-candidate:" + candidate.id).digest("hex");
+      const sourceFingerprint = "candidate:" + createHash("sha256").update(candidate.id).digest("hex");
       const actor = String(req.auth.actor ?? "admin");
-      const result = await ctx.repo.withTransaction(async () => {
+      let result: { id: string; created: boolean };
+      try {
+        result = await ctx.repo.withTransaction(async () => {
+          const existing = await ctx.repo.raw(
+            "SELECT id FROM crawl_moderation_gold_cases WHERE source_fingerprint = ? LIMIT 1",
+            [sourceFingerprint],
+          );
+          if (existing[0]) return { id: String(existing[0].id), created: false };
+          const id = randomUUID();
+          await createCrawlModerationGoldCase(ctx.repo, {
+            id, sourceFingerprint, title, description,
+            category: candidate.categoryId ?? undefined, sanitizedExcerpt,
+            createdBy: actor,
+          });
+          return { id, created: true };
+        });
+      } catch (error) {
+        // 唯一索引兜底并发竞争：若另一请求已完成相同候选导入，则返回既有记录。
         const existing = await ctx.repo.raw(
           "SELECT id FROM crawl_moderation_gold_cases WHERE source_fingerprint = ? LIMIT 1",
           [sourceFingerprint],
         );
-        if (existing[0]) return { id: String(existing[0].id), created: false };
-        const id = randomUUID();
-        await createCrawlModerationGoldCase(ctx.repo, {
-          id, sourceFingerprint, title, description,
-          category: candidate.categoryId ?? undefined, sanitizedExcerpt,
-          createdBy: actor,
-        });
-        return { id, created: true };
-      });
+        if (!existing[0]) throw error;
+        result = { id: String(existing[0].id), created: false };
+      }
       if (result.created) {
         await ctx.repo.audit({
           ip: req.ip, actor, actorKind: req.auth.kind,

@@ -256,7 +256,7 @@ export async function listSiteQualityAssessments(
   repo: Repository,
   options: { band?: SiteQualityResult["band"]; limit?: number; offset?: number } = {},
 ): Promise<SiteQualityListItem[]> {
-  const where = ["s.deleted_at IS NULL"];
+  const where = ["s.deleted_at IS NULL", "s.status <> 'archived'"];
   const params: unknown[] = [];
   if (options.band) {
     where.push("q.band = ?");
@@ -291,7 +291,7 @@ export async function listSiteQualityAssessments(
 /** 质量总览把「尚未评估」单独列出，不把缺少快照的站点当作零分。 */
 export async function siteQualityOverview(repo: Repository): Promise<SiteQualityOverview> {
   const [siteRows, rows] = await Promise.all([
-    repo.raw("SELECT COUNT(*) AS total FROM sites WHERE deleted_at IS NULL"),
+    repo.raw("SELECT COUNT(*) AS total FROM sites WHERE deleted_at IS NULL AND status <> 'archived'"),
     repo.raw(`SELECT
       COUNT(*) AS assessed,
       SUM(CASE WHEN band = 'high_risk' THEN 1 ELSE 0 END) AS high_risk,

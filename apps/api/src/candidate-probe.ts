@@ -272,7 +272,9 @@ export function rankCandidate(c: StructuredReplacementCandidate): number {
   const base = (GRADE_RANK[c.grade ?? "dead"] ?? 0) * 1000 + (c.confidence?.total ?? 0)
   const quality = c.catalogQuality
   // 目录质量仅作同档、同可信度候选的次级打破并列信号；证据不足/高风险不参与。
-  const eligible = quality &&
+  let qualityBonus = 0
+  if (
+    quality &&
     quality.score !== null &&
     Number.isFinite(quality.score) &&
     quality.score >= 0 &&
@@ -281,7 +283,10 @@ export function rankCandidate(c: StructuredReplacementCandidate): number {
     quality.evidenceCoverage >= 40 &&
     quality.band !== "high_risk" &&
     quality.band !== "insufficient_evidence"
-  return base + (eligible ? quality.score / 101 : 0)
+  ) {
+    qualityBonus = quality.score / 101
+  }
+  return base + qualityBonus
 }
 
 /**

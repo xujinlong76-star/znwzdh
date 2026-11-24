@@ -218,6 +218,8 @@ function RankingsBody({
                 key={t.kind}
                 type="button"
                 role="tab"
+                id={`drama-tab-${t.kind}`}
+                aria-controls="drama-tabpanel"
                 aria-selected={tab === t.kind}
                 tabIndex={tab === t.kind ? 0 : -1}
                 onClick={() => onTab(t.kind)}
@@ -232,42 +234,51 @@ function RankingsBody({
               </button>
             ))}
           </div>
-          {list === undefined || list.entries.length === 0 ? (
-            <p className="mt-4 rounded-xl border border-dashed border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900 p-4 text-sm text-zinc-600 dark:text-zinc-400">
-              这个榜今日暂无数据，稍后再来。
-            </p>
-          ) : (
-            <>
-              {list.status === "stale" && (
-                <p className="mt-3 text-sm text-amber-800 dark:text-amber-200">
-                  {list.label}今日未更新，展示上一日快照。
-                </p>
-              )}
-              <ol className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {list.entries.map((entry) => (
-                  <RankingRow
-                    key={entry.key}
-                    entry={entry}
-                    watching={watchingTitles.has(entry.key)}
-                  />
-                ))}
-              </ol>
-              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-                共 {list.entries.length} 部 · 来源：
-                <a
-                  href={safeHref(list.sourceUrl)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline"
-                >
-                  {list.sourceName}
-                </a>
-                {list.droppedTitles > 0
-                  ? ` · ${list.droppedTitles} 行疑似截断标题未计入`
-                  : ""}
+          {/* A-3：三榜共用一个面板（quick-dock 同款单面板结构，W6 坑 2）：
+              aria-labelledby 须随当前 tab 动取，不写死，否则读屏恒报同一榜。
+              面板只在 tablist 存在时渲染（status empty 时无 tablist、无面板）。 */}
+          <div
+            role="tabpanel"
+            id="drama-tabpanel"
+            aria-labelledby={`drama-tab-${tab}`}
+          >
+            {list === undefined || list.entries.length === 0 ? (
+              <p className="mt-4 rounded-xl border border-dashed border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900 p-4 text-sm text-zinc-600 dark:text-zinc-400">
+                这个榜今日暂无数据，稍后再来。
               </p>
-            </>
-          )}
+            ) : (
+              <>
+                {list.status === "stale" && (
+                  <p className="mt-3 text-sm text-amber-800 dark:text-amber-200">
+                    {list.label}今日未更新，展示上一日快照。
+                  </p>
+                )}
+                <ol className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {list.entries.map((entry) => (
+                    <RankingRow
+                      key={entry.key}
+                      entry={entry}
+                      watching={watchingTitles.has(entry.key)}
+                    />
+                  ))}
+                </ol>
+                <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+                  共 {list.entries.length} 部 · 来源：
+                  <a
+                    href={safeHref(list.sourceUrl)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    {list.sourceName}
+                  </a>
+                  {list.droppedTitles > 0
+                    ? ` · ${list.droppedTitles} 行疑似截断标题未计入`
+                    : ""}
+                </p>
+              </>
+            )}
+          </div>
         </>
       )}
     </div>

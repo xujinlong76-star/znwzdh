@@ -623,3 +623,28 @@ describe('tablist A-2：其余 tablist 按 plugin-detail-view 模板补 roving t
     expect(handler).not.toContain('.click()')
   })
 })
+
+describe('tablist A-3：drama 榜单面板补 role="tabpanel" + aria-labelledby（2026-11-24 19:22 轮）', () => {
+  // 模板：plugin-detail-view + detail-tab-panels.tsx 6/6 完整 wiring。
+  // drama 为单面板三 tab 共用（quick-dock 同款结构，W6 坑 2）：三 tab 的
+  // aria-controls 均指同一面板 id，面板 aria-labelledby 须随当前 tab 动取，
+  // 写死则读屏恒报同一榜。面板只在 tablist 存在时渲染（status empty 时
+  // 无 tablist、无面板），无悬空引用。B-3 已裁决：不加 inline-flex。
+
+  it('三 tab 各有唯一 id 且 aria-controls 均指 drama-tabpanel，面板 aria-labelledby 随当前 tab 动取', () => {
+    const src = read('src/components/drama-rankings-section.tsx')
+    // tab 由 TABS.map 渲染：id 模板一处文本，三榜运行时各得唯一 id
+    expect(src).toContain('id={`drama-tab-${t.kind}`}')
+    expect(count(src, 'id={`drama-tab-${t.kind}`}')).toBe(1)
+    expect(src).toContain('aria-controls="drama-tabpanel"')
+    expect(count(src, 'aria-controls="drama-tabpanel"')).toBe(1)
+    // 面板：role + id 各一处，aria-labelledby 动取当前 tab
+    expect(src).toContain('role="tabpanel"')
+    expect(count(src, 'role="tabpanel"')).toBe(1)
+    expect(src).toContain('id="drama-tabpanel"')
+    expect(count(src, 'id="drama-tabpanel"')).toBe(1)
+    expect(src).toContain('aria-labelledby={`drama-tab-${tab}`}')
+    // 面板 id 全仓唯一：drama-tabpanel 作为 id 值只出现一次
+    expect(count(src, 'id="drama-tabpanel"')).toBe(1)
+  })
+})

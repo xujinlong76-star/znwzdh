@@ -84,7 +84,7 @@
 |---|---|---|---|---|---|
 | W0 基线 | 10/25–10/31 | 只出数不判定 | 只记录 | 跑 `pnpm coverage`，基线写入 `coverage-thresholds.json` | ✅ 2026-11-06 实测完成（lines 85.68 / functions 86.35 / branches 71.68） |
 | W1 钉住 | 11/03–11/14 | 基线 − 2（容差） | = 实测 | CI 硬门禁上线 | ✅ 2026-11-06 落地：独立 `coverage` 作业 + `coverage-thresholds.json` 单一事实源 + `--max-age` |
-| W3 | 11/17–11/28 | 基线 + 2 | 实测 + 3 | patch 覆盖 ≥70% 同步上线 |
+| W3 | 11/17–11/28 | 基线 + 2 | 实测 + 3 | ✅ 2026-11-24 启用 patch 可执行改动行覆盖 ≥70%（少于 10 行跳过） |
 | W5 | 12/01–12/12 | 基线 + 4 | 实测 + 6 | 新增零覆盖文件拦截上线 |
 | W7 | 12/15–12/26 | 基线 + 6 | 实测 + 9 | 分区域 floor 独立判定 |
 | W9 | 12/29–01/09 | 基线 + 8 | 实测 + 12 | 全局 ≥基线+8，关键文件 ≥实测+12 |
@@ -96,7 +96,7 @@
 
 ### 3.4 防退化四机制
 
-1. **patch 覆盖**：`node scripts/check-coverage.mjs --patch --base=origin/main --min-patch-lines 70`。用 `git diff --unified=0` 取改动行 + `coverage-final.json` 的 statementMap 映射；分母 <10 行跳过判定；删除行不计；纯 re-export / 类型文件进 ignore 清单（逐条列出，不许通配）。
+1. **patch 覆盖（W3 已启用）**：CI 执行 `node scripts/check-coverage.mjs --patch --base=origin/main --min-patch-lines 70`。用 `git diff --unified=0` 取新增行 + `coverage-final.json` 的逐行计数；只统计可执行改动行，分母少于 10 行跳过判定；删除行不计。缺失覆盖率文件按未覆盖处理。
 2. **新增零覆盖文件拦截**：PR 新增的 `apps/api/src/**`、`packages/*/src/**` 文件 lines=0 直接 fail；例外仅 `*.d.ts`、纯类型、入口 re-export。
 3. **反「为过门禁写垃圾测试」**：新增测试需在 PR 附 fail-before-pass 证据（`node scripts/verify-guard.mjs`）；审查者每周抽查 1/3；每周随机抽 3 个新增测试检查断言强度；`/* v8 ignore */` 必须带理由 + 审查确认。
 4. **ratchet 本身是主防线**：垃圾测试不增加覆盖，加了也过不了「只升不降」。

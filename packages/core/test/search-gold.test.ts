@@ -52,6 +52,12 @@ describe("human search gold-set protocol", () => {
     expect(validateSearchGoldCase(disputed).errors.join(" ")).toContain("仲裁人必须独立于两名标注员");
   });
 
+  it("does not produce final labels from a case that failed privacy or adjudication validation", () => {
+    const item = validCase("query_000006");
+    item.privacyReviewed = false;
+    expect(finalSearchGoldLabels(item)).toEqual({});
+  });
+
   it("rejects malformed runtime values without throwing", () => {
     expect(validateSearchGoldCase(null).valid).toBe(false);
     expect(validateSearchGoldCase({ queryId: 7, candidates: [null], annotations: [] }).valid).toBe(false);

@@ -134,6 +134,142 @@ export function extractCrawlCandidateUrls(body: string, kind: CrawlSource["kind"
   return extractCrawlCandidateDetails(body, kind, baseUrl).map(item => item.url);
 }
 
+type CrawlShadowModerationRuntime = {
+  policy: CrawlAiModerationPolicy;
+  resolved: Awaited<ReturnType<typeof resolveLlm>>;
+  reviewed: number;
+};
+
+/** AI 结论只写 Shadow 审核账本；绝不改变候选状态或触发发布。 */
+async function moderateCandidateShadow(
+  ctx: AppContext,
+  candidate: SiteDiscoveryCandidate,
+  runtime: CrawlShadowModerationRuntime,
+): Promise<void> {
+  if (candidate.status !== "pending" || runtime.reviewed >= runtime.policy.maxAiReviewsPerRun) return;
+  const recent = await ctx.repo.raw(
+    "SELECT id FROM crawl_ai_moderation_decisions WHERE candidate_id=? AND decision_source='ai' AND mode='shadow' AND status='completed' AND created_at>=? LIMIT 1",
+    [candidate.id, Date.now() - 24 * 60 * 60_000],
+  );
+  if (recent.length) return;
+  runtime.reviewed++;
+
+  const record = async (input: {
+    status: "completed" | "error" | "quota_blocked";
+    verdict?: string | null;
+    confidence?: number | null;
+    qualityScore?: number | null;
+    risks?: string[];
+    reasons?: string[];
+    model?: string | null;
+    policyVersion?: string | null;
+  }) => recordCrawlAiModerationDecision(ctx.repo, {
+    id: randomUUID(), candidateId: candidate.id, decisionSource: "ai", mode: "shadow",
+    status: input.status, verdict: input.verdict, confidence: input.confidence,
+    qualityScore: input.qualityScore, risks: input.risks, reasons: input.reasons,
+    model: input.model, policyVersion: input.policyVersion, actor: "crawl-worker",
+  });
+
+  const readyProviders = [runtime.resolved.provider, ...runtime.resolved.fallbacks].filter(llmProviderReady);
+  if (readyProviders.length === 0) {
+    await record({ status: "error", reasons: ["未配置可用的大模型；候选保持待审核"] });
+    return;
+  }
+  const quota = await reserveLlmQuota(ctx, null, {
+    source: runtime.resolved.source, estimatedTokens: 1800,
+  });
+  if (!quota.ok) {
+    await record({ status: "quota_blocked", reasons: [quota.error.message.slice(0, 240)] });
+    return;
+  }
+
+  try {
+    const result = await moderateSiteWithAi(runtime.resolved.provider, {
+      url: candidate.url,
+      title: candidate.title,
+      description: candidate.description,
+      evidence: {
+        provenance: "crawl_source_item_metadata",
+        warnings: ["尚未安全抓取候选页面正文；审核证据仅包含来源条目元数据"],
+      },
+    }, {
+      autoApproveConfidence: runtime.policy.autoApproveConfidence,
+      rejectConfidence: runtime.policy.rejectConfidence,
+      minQualityScore: runtime.policy.minQualityScore,
+      maxExcerptChars: runtime.policy.maxExcerptChars,
+      requireHttps: runtime.policy.requireHttps,
+    }, {
+      deadlineAt: Date.now() + 30_000,
+      complete: async (_provider, request) => {
+        const response = await callLlm(ctx, runtime.resolved, {
+          scenario: "crawl_moderation_shadow",
+          identity: candidate.id,
+          messages: request.messages,
+          temperature: request.temperature,
+          maxTokens: request.maxTokens,
+          json: request.json,
+          thinking: false,
+          signal: request.signal,
+          deadlineAt: request.deadlineAt,
+          fetchImpl: request.fetchImpl,
+        });
+        return { content: response.content, model: response.model };
+      },
+    });
+    await record({
+      status: "completed", verdict: result.verdict, confidence: result.confidence,
+      qualityScore: result.qualityScore, risks: result.risks, reasons: result.reasons,
+      model: result.model, policyVersion: result.policyVersion,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await record({ status: "error", reasons: [message.slice(0, 240)] });
+  } finally {
+    await settleLlmQuota(ctx, quota.hold);
+  }
+}
+
+/** 只抓取已注册来源；任何网络请求都经过逐跳 DNS/重定向校验的 guardedFetch。 */
+async function processSource(
+  ctx: AppContext,
+  source: CrawlSource,
+  now: number,
+): Promise<SiteDiscoveryCandidate[]> {
+  const response = await guardedFetch(source.url, {
+    timeoutMs: 8_000,
+    maxBytes: MAX_SOURCE_BODY_BYTES,
+    maxRedirects: 3,
+    allowPrivateNetworks: false,
+  }, {
+    accept: "application/xml,application/rss+xml,application/atom+xml,text/html;q=0.9,*/*;q=0.1",
+  });
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error("采集来源返回 HTTP " + response.status);
+  }
+  if (response.truncated) throw new Error("采集来源响应体超过 1 MiB 安全上限");
+  const details = extractCrawlCandidateDetails(response.body, source.kind, response.finalUrl);
+  const discovered: SiteDiscoveryCandidate[] = [];
+  for (const detail of details) {
+    const candidate = await upsertSiteDiscoveryCandidate(ctx.repo, {
+      id: randomUUID(),
+      url: detail.url,
+      canonicalUrl: detail.url,
+      title: detail.title,
+      description: detail.description,
+      source: "crawl_source:" + source.id,
+      evidence: {
+        sourceUrl: response.finalUrl,
+        sourceKind: source.kind,
+        discoveredAt: now,
+        parser: source.kind === "sitemap" ? "sitemap_xml" : source.kind === "rss" ? "rss_atom" : "html_anchor",
+      },
+      now,
+    });
+    discovered.push(candidate);
+  }
+  return discovered;
+}
+
 /**
  * 单轮只认领有限来源；来源抓取统一走 guardedFetch，禁止在 Worker 中使用原生 fetch。
  * 默认不开启调度，需显式设置 NAVHUB_CRAWL_WORKER_ENABLED=1。

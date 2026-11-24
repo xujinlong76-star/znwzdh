@@ -34,6 +34,8 @@ import {
   Bot,
   DatabaseBackup,
   HeartPulse,
+  ShieldCheck,
+  ClipboardCheck,
 } from "lucide-react"
 import { cn } from '@/lib/utils'
 import {
@@ -122,6 +124,16 @@ const menuItems = [
     title: "站点纠错",
     href: "/admin/site-reports",
     icon: Flag
+  },
+  {
+    title: "质量治理",
+    href: "/admin/site-quality",
+    icon: ShieldCheck
+  },
+  {
+    title: "采集审核",
+    href: "/admin/discovery",
+    icon: ClipboardCheck
   },
   {
     title: "插件市场",

@@ -37,6 +37,7 @@ function isTest(): boolean {
 /** 登录失败锁定：数据库共享固定窗口，跨 API 副本统一计数。 */
 const LOGIN_FAIL_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_FAIL_MAX = 5;
+let lastLoginFailurePruneAt = 0;
 
 function loginFailureKey(identifier: string): string {
   // 不把邮箱/用户名明文作为 system_states key，避免数据库运维面泄露登录标识。
@@ -626,6 +627,11 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       // 失败计数先查：已锁定的标识不再查密码（M15），避免锁定期间继续烧 scrypt。
       const identifier = body.data.identifier.trim();
       const failureKey = loginFailureKey(identifier);
+      const loginNow = Date.now();
+      if (loginNow - lastLoginFailurePruneAt > 60_000) {
+        lastLoginFailurePruneAt = loginNow;
+        await ctx.repo.pruneSystemStatePrefix("auth:login-failure:", loginNow - LOGIN_FAIL_WINDOW_MS).catch(() => 0);
+      }
       const failureState = await ctx.repo.getLoginFailureState(failureKey);
       if (failureState && failureState.count >= LOGIN_FAIL_MAX && Date.now() - failureState.firstAt <= LOGIN_FAIL_WINDOW_MS) {
         reply.code(429);

@@ -156,14 +156,15 @@ export function validateSearchGoldSet(input: unknown): SearchGoldValidationResul
     }
 
     if (conflicts.length > 0) {
-      if (!isRecord(item.adjudication) ||
-          typeof item.adjudication.reviewerId !== "string" ||
-          !ID_PATTERN.test(item.adjudication.reviewerId) ||
-          parsed.some((annotation) => annotation.annotatorId === item.adjudication!.reviewerId)) {
+      const adjudication = item.adjudication;
+      if (!isRecord(adjudication) ||
+          typeof adjudication.reviewerId !== "string" ||
+          !ID_PATTERN.test(adjudication.reviewerId) ||
+          parsed.some((annotation) => annotation.annotatorId === adjudication.reviewerId)) {
         throw new Error(prefix + " 存在重大分歧或不可判断项，必须由第三人仲裁");
       }
       const adjudicated = assertJudgments(
-        item.adjudication.judgments,
+        adjudication.judgments,
         new Set(conflicts),
         prefix + " 仲裁",
       );

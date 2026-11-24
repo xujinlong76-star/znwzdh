@@ -2,7 +2,7 @@
  * Shared login-failure counters.
  *
  * Counts are persisted in the application database, so every API replica sees
- * the same lock state. The identifier is normalized and SHA-256 hashed before
+ * the same lock state. The identifier is normalized and HMAC-SHA-256 hashed before
  * storage; raw email/username values are never written to this table.
  */
 import { createHmac } from "node:crypto";

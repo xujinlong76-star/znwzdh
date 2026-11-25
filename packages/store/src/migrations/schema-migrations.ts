@@ -13,6 +13,7 @@ import type { Db } from "../driver.ts";
 import {
   migrateColumns,
   dedupeUserEmails,
+  migrateNormalizedUserEmailUnique,
   migrateSiteIndexes,
   migrateEventIdentity,
   migrateCategorySlugs,
@@ -212,6 +213,15 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
       await dedupeUserEmails(db);
     },
     checksum: "v1_dedupe_emails",
+  },
+  {
+    // 2026-11-25：历史 OAuth 邮箱可能保留大小写差异，新增规范化唯一索引前先按 LOWER(email) 去重。
+    version: "20261125_normalized_email_unique",
+    name: "邮箱大小写不敏感唯一约束",
+    up: async (db: Db) => {
+      await migrateNormalizedUserEmailUnique(db);
+    },
+    checksum: "v1_normalized_email_unique",
   },
   {
     version: "20261015_site_indexes",

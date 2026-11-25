@@ -1066,6 +1066,38 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   'lingxi.kdocs.cn=lingxip',
   'workbuddy.cn=workbuddys',
   'dumate.baidu.com=dumatep',
+  // 2026-11-25（剩余图标 W10：AI 工具 + 效率办公组，6 站）。
+  // 全部 curl 实测（200 + image MIME + 魔数 + 像素目视核对）后本地落盘。
+  // - Descript：首页声明的 apple-touch-icon.png（180×180，与声明的
+  //   favicon-96x96.png 同一暗紫圆角方块 + 红波形标，源更大故取 180 版；
+  //   站根 /favicon.ico 仅 459 B 非图像文件，不可用），LANCZOS 180→128
+  //   落盘 descript.png（3,957 B，md5 c2eb26287ebb5b7b2d15de9143889476）。
+  // - Make：首页声明的最大档 512×512 PNG（与 48×48 档同一品红渐变缎带 M
+  //   标；站根 /favicon.ico 404 不可用），LANCZOS 512→128 落盘 make.png
+  //   （12,530 B，md5 159d065b8e12bd7e79eeea87f1ee129b）。
+  // - SkyReels：首页声明 /favicon.png（71×96 非方、同一金色 S 标）；
+  //   选用站根 /favicon.ico 的内容（实为 PNG 128×128、黑底圆角方块 +
+  //   金色 S 标 #FFCF00，2,449 B），方形更适卡片，原样落盘 skyreels.png
+  //   （md5 1e407229e15e2cbc00e8b531a0619f2f）。
+  // - 讯飞绘镜：首页无 icon 声明；站根 /favicon.ico 为 ICO 单帧 256×256
+  //  （紫 #8E4BFF + 珊瑚红 #FF5A53 抽象标，透明底），LANCZOS 256→128
+  //   落盘 typemovie.png（6,077 B，md5 4efc13e1b569e1c3c4cae3a55b74c821）。
+  // - Todoist：首页声明 /static/favicon-32x32.png；选用站根 /favicon.ico
+  //   的最大帧 48×48（红圆角方块 #E44332 + 白勾，ICO 3 帧 16/32/48），
+  //   原样落盘 todoist.png（1,963 B，md5 03f7e5d29329731aa83d08fc5e0e8c9e）。
+  // - OpusClip（远端直链本地化）：navigation.json 的 icon 字段即
+  //   Webflow CDN _ico-final.png（32×32、527 B）；首页另声明同源
+  //   apple-touch-icon webclip.png（256×256，同一黑底白 O 形标、源更大），
+  //   按 C7“取官方最大档”先例取 webclip 版，LANCZOS 256→128 落盘
+  //   opusclip.png（7,226 B，md5 c48623e0ffdf12f34e0ad43898dd2b8e），
+  //   不再热链。六键全库各只命中一站，无后缀串站、无标题规则拦截；
+  //   六标浅/深主题均可辨，按规范 §9 不做单站底块补丁、不配 LOGO_TILE_MAP。
+  'descript.com=descriptp',
+  'make.com=makep',
+  'skyreels.ai=skyreelsp',
+  'typemovie.art=typemoviep',
+  'todoist.com=todoistp',
+  'opus.pro=opusclipp',
  ];
 
 /**

@@ -44,6 +44,18 @@ export interface RestParameterSpec {
   default?: string | number | boolean;
 }
 
+/**
+ * 转义正则元字符（CodeQL js/regex-injection 的认可清理方式）。
+ *
+ * 路径参数名来自调用方提供的 OpenAPI 文档（MCP developer-tools 入口），
+ * 未转义就拼进 `new RegExp(`\{${name}\}`)` 会改变正则本身（注入）。
+ * 与 metadata.ts / highlight.ts 用的同一标准转义。
+ */
+const REGEX_SPECIALS = /[.*+?^${}()|[\]\\]/g;
+function escapeRegExp(value: string): string {
+  return value.replace(REGEX_SPECIALS, "\\$&");
+}
+
 export interface RestEndpointSpec {
   name: string;
   description: string;
@@ -385,7 +397,7 @@ export function synthesizeRestTool(
       if (val === undefined) continue;
 
       if (p.in === 'path') {
-        url = url.replace(new RegExp(`\\{${p.name}\\}`, 'g'), encodeURIComponent(String(val)));
+        url = url.replace(new RegExp(`\\{${escapeRegExp(p.name)}\\}`, 'g'), encodeURIComponent(String(val)));
       } else if (p.in === 'query') {
         queryParams.set(p.name, String(val));
       } else if (p.in === 'header') {

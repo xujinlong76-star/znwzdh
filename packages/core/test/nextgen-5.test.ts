@@ -199,6 +199,54 @@ describe("Next-Gen 5.0: 2. 动态工具合成与 SSRF 沙箱执行 (Dynamic Tool
     expect(requestedUrl).toBe("https://api.github.com/repos/facebook/react?branch=main");
   });
 
+  it("路径参数名含正则元字符时按字面处理（CodeQL js/regex-injection）", async () => {
+    // 参数名来自调用方提供的 OpenAPI 文档，未转义拼进 new RegExp 会改变正则
+    // 本身：`x|y` 会被当成 alternation，把 {x 与 y} 分别替换掉。
+    let requestedUrl = "";
+    const mockFetch = async (input: RequestInfo | URL) => {
+      requestedUrl = String(input);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const { handler } = synthesizeRestTool(
+      {
+        name: "weird_param",
+        description: "t",
+        url: "https://api.example.com/{x}/{y}",
+        method: "GET",
+        parameters: [{ name: "x|y", type: "string", in: "path", required: true }],
+      },
+      { fetchFn: mockFetch as unknown as typeof fetch },
+    );
+    await handler({ "x|y": "ZZ" });
+    // 字面处理：不存在名为 x|y 的模板变量，URL 原样保留，不被注入改写
+    expect(requestedUrl).toBe("https://api.example.com/{x}/{y}");
+
+    // 带点的参数名仍能正常替换自己的模板变量
+    let requestedUrl2 = "";
+    const mockFetch2 = async (input: RequestInfo | URL) => {
+      requestedUrl2 = String(input);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const { handler: handler2 } = synthesizeRestTool(
+      {
+        name: "dot_param",
+        description: "t",
+        url: "https://api.example.com/files/{a.b}",
+        method: "GET",
+        parameters: [{ name: "a.b", type: "string", in: "path", required: true }],
+      },
+      { fetchFn: mockFetch2 as unknown as typeof fetch },
+    );
+    await handler2({ "a.b": "v1" });
+    expect(requestedUrl2).toBe("https://api.example.com/files/v1");
+  });
+
   it("将站点检索动作合成为 WebMCP 工具并正确生成跳转指令", async () => {
     const { definition, handler } = synthesizeSiteSearchTool({
       siteId: "github",

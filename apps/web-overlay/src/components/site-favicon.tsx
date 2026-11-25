@@ -1133,6 +1133,68 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   'scs.gov.cn=scsp',
   'bm.scs.gov.cn=scsp',
   'subb.scs.gov.cn=scsp',
+  // 2026-11-25（剩余图标补齐 W7，学习成长组 6 站落地 + 1 站阻塞）。
+  // 来源均经 curl（Chrome UA）逐站验证（200 + image MIME + 魔数 + 尺寸）：
+  // - 廖雪峰教程：站根 /favicon.ico 不存在（返回首页 HTML 壳）；站方
+  //   页眉 logo 即 /static/logo.svg（裸域 https://liaoxuefeng.com/static/logo.svg
+  //   200、image/svg+xml、3,963 B，md5 ea8a12b461ebae6d69c6641bfa35ae61；
+  //   www 域会 302 跳回首页，必须用裸域取；SVG 文件头自注出自 SVG Repo，
+  //   但确为官网页眉在用的 logo 文件本身）。800×800 方形帆船标（深青
+  //   #334D5C 圆底 + 橙帆 + 黄星），ImageMagick -background none 渲染
+  //   128×128 落盘 liaoxuefeng.png（8,568 B，md5
+  //   955d0d94b9b511a0e6e2f94a539b9157，四角透明）。
+  // - The Odin Project：首页声明 apple-touch-icon 180×180
+  //   https://www.theodinproject.com/apple-touch-icon.png（200、image/png、
+  //   11,333 B，md5 b3f8ddff210b08bdb2eaa88c18071ba4）；根 favicon.ico
+  //   最大帧仅 48×48 未用。金棕 #E2B167 奥丁标、四角透明；LANCZOS
+  //   180→128 落盘 theodinproject.png（9,305 B，md5
+  //   0b764bff8fb8beac7a98b1c3f13dd8d2）。
+  // - 网易云课堂：站方 favicon 仅 16×16（1,150 B）不达标、绝不放大；
+  //   官网首页唯一 logo 图为吉祥物
+  //   https://s2.stu.126.net/res/images/common/logo/logo_mascot.png
+  //   （200、image/png、204×137、7,009 B，md5
+  //   b6e90fc0ed857b6f3210f16136a19bf3）；站点头衔“网易云课堂”为 HTML
+  //   文字、无图片 logo。吉祥物全身等比缩至最长边 128 落盘 study-163.png
+  //   （128×86、7,722 B，md5 e0dd4fb501129e08d22fc6a33ba3fe18，四角透明，
+  //   不裁切）。16×16 红 favicon（#F8232B）未用。
+  // - edX：首页只声明 /favicon.ico（sizes=16x16），/apple-touch-icon.png
+  //   404；favicon.ico（200、image/x-icon、26,283 B，md5
+  //   936bf0a6f8450c13df9e7cfff5c5c7db）为 4 帧 ICO（16/32/48/256），
+  //   最大帧 256×256 为 PNG 帧（6,544 B，md5
+  //   fc2fb5efbe3f7745a02c0dbf38b0c94a），即官方 edX 标（白字 edX +
+  //   深青 #02262B 平行四边形底，bbox y56–200）。LANCZOS 256→128 整幅
+  //   落盘 edx.png（8,779 B，md5 a1cd8289db569e983ecfba8958ab2e20，四角透明）。
+  // - Internet Archive：新版首页声明 /offshoot_assets/apple-touch-icon.png
+  //   （200、image/png、180×180、1,313 B，md5
+  //   43a6e2892f24dbaab688293b607d0fd1）与 /offshoot_assets/favicon.ico
+  //   （与根 /favicon.ico 同文件，md5 55ffa49961256cb4512e5c77ff6a1fd3，
+  //   3 帧最大 32×32 未用）。灰阶圆柱廊柱标（底 #222222 + 白柱，四角
+  //   不透明深灰）；LANCZOS 180→128 落盘 archive.png（灰阶 L、2,191 B，
+  //   md5 0df9f9d7028ba8c00f231ace05530437）。
+  // - Open Library：首页声明 apple-touch-icon
+  //   /static/images/openlibrary-128x128.png（前两次取回 nginx 500、
+  //   第三次 200、image/png、128×128、3,405 B，md5
+  //   bf25e3b64ae4af435fc1df672d92ba80）；米底 #E2DCC5 + 蓝 #518ABE
+  //   书标，原样落盘 openlibrary.png（3,405 B，同 md5）。根 favicon.ico
+  //   仅 16×16 未用；宽版 wordmark SVG（openlibrary-logo-tighter.svg）
+  //   非方形标未用。
+  // - Project Gutenberg：阻塞（见 EVIDENCE-w7.md）：全站 503 维护页，
+  //   首页/裸域/favicon 三路三次复测均为 503、913 B，本轮无官方图标可取，
+  //   不造假、不接线。'github.com' / 'adobe.com' 键绝不加。
+  // 全库 388 站核对：6 键各只命中 1 站，无后缀串站、无子域站（163.com
+  //   另有天音站 tianyin.163.com，不命中 'study.163.com' 键）。
+  // 6 标浅/深主题均可辨（archive 深灰底 + 白柱；edx 白字 + 深青底；
+  //   其余透明底彩色标），按规范 §9 不做单站底块补丁、不配
+  //   LOGO_TILE_MAP（resolveLogoTile 为 null），留待统一处理轮。
+  // navigation.json 不动（7 站 icon 字段均为远端 …/favicon.ico，
+  // 被 isRemoteRawFavicon 拦截后走 map；廖雪峰站 icon 字段同款远端
+  // favicon.ico，站方实际无此文件，同样走 map）。
+  'liaoxuefeng.com=liaoxuefengp',
+  'theodinproject.com=theodinprojectp',
+  'study.163.com=study-163p',
+  'edx.org=edxp',
+  'archive.org=archivep',
+  'openlibrary.org=openlibraryp',
  ];
 
 /**

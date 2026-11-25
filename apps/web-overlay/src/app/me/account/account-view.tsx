@@ -203,7 +203,7 @@ export function AccountView() {
                   <Edit3 className="h-4 w-4 shrink-0 text-primary" aria-hidden />
                   展示资料
                 </h2>
-                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
                   昵称用于账号展示；头像支持 https:// 或站内 / 路径。
                 </p>
               </div>
@@ -222,15 +222,15 @@ export function AccountView() {
             {!editing ? (
               <dl className="mt-4 grid gap-2 sm:grid-cols-2">
                 <div className="rounded-xl border border-border/60 bg-background/50 px-3 py-2">
-                  <dt className="text-[11px] text-muted-foreground">昵称</dt>
+                  <dt className="text-[0.6875rem] text-muted-foreground">昵称</dt>
                   <dd className="mt-0.5 truncate text-xs font-medium">{overview.user?.username ?? '—'}</dd>
                 </div>
                 <div className="rounded-xl border border-border/60 bg-background/50 px-3 py-2">
-                  <dt className="text-[11px] text-muted-foreground">邮箱</dt>
+                  <dt className="text-[0.6875rem] text-muted-foreground">邮箱</dt>
                   <dd className="mt-0.5 truncate text-xs font-medium">{overview.user?.email ?? '未绑定'}</dd>
                 </div>
                 <div className="min-w-0 rounded-xl border border-border/60 bg-background/50 px-3 py-2 sm:col-span-2">
-                  <dt className="text-[11px] text-muted-foreground">头像</dt>
+                  <dt className="text-[0.6875rem] text-muted-foreground">头像</dt>
                   <dd className="mt-0.5 truncate text-xs font-medium" title={overview.user?.avatar ?? undefined}>
                     {overview.user?.avatar ?? '未设置'}
                   </dd>
@@ -274,7 +274,7 @@ export function AccountView() {
                     placeholder="you@example.com"
                     className="h-9 text-xs"
                   />
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-[0.6875rem] text-muted-foreground">
                     邮箱只用于账号识别与找回参考；当前部署未配置邮件服务，不做验证回执。
                   </p>
                 </div>
@@ -305,7 +305,7 @@ export function AccountView() {
             <dl className="mt-3 space-y-2 text-xs">
               <div className="flex items-center justify-between gap-3">
                 <dt className="text-muted-foreground">当前身份</dt>
-                <dd className="min-w-0 truncate font-mono text-[11px]" title={overview.identity}>
+                <dd className="min-w-0 truncate font-mono text-[0.6875rem]" title={overview.identity}>
                   {overview.identity}
                 </dd>
               </div>
@@ -318,7 +318,7 @@ export function AccountView() {
                 <dd className="font-medium">{(overview.aliases ?? []).length} 个</dd>
               </div>
             </dl>
-            <p className="mt-3 border-t border-border/60 pt-3 text-[11px] leading-relaxed text-muted-foreground">
+            <p className="mt-3 border-t border-border/60 pt-3 text-[0.6875rem] leading-relaxed text-muted-foreground">
               登录后本机匿名收藏、历史与画像会自动合并到账号（幂等，只执行一次）。合并结果会体现在上方数量与最近操作里。
             </p>
           </section>
@@ -330,7 +330,7 @@ export function AccountView() {
                   <Activity className="h-4 w-4 shrink-0 text-primary" aria-hidden />
                   账户数据自检
                 </h2>
-                <p className="mt-1 text-[11px] text-muted-foreground">本机存储结构 + 云端数据引用联合校验</p>
+                <p className="mt-1 text-[0.6875rem] text-muted-foreground">本机存储结构 + 云端数据引用联合校验</p>
               </div>
               <Button
                 size="sm"
@@ -346,7 +346,7 @@ export function AccountView() {
 
             {diagChecks && (
               <div className="mt-3 space-y-2">
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[0.6875rem] text-muted-foreground">
                   {diagChecks.length} 项检查 · 自动修复 {diagRepaired} 项
                 </p>
                 <ul className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/60">
@@ -371,7 +371,7 @@ export function AccountView() {
                         )}
                         <span className="min-w-0">
                           <span className="block break-words font-medium">{check.label}</span>
-                          <span className="block break-words text-[11px] text-muted-foreground">{check.detail}</span>
+                          <span className="block break-words text-[0.6875rem] text-muted-foreground">{check.detail}</span>
                         </span>
                       </span>
                     </li>

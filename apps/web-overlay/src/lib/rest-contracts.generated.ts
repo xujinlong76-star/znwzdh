@@ -1383,6 +1383,7 @@ export interface ComparisonShareUpdateResponse {
  * DELETE /api/search-history/{id}
  * DELETE /api/search-history
  * POST /api/events
+ * POST /api/account/admin-mfa/disable
  */
 export interface OkResponse {
   ok: true;
@@ -3163,6 +3164,29 @@ export interface MeTokenCreateResponse {
 }
 
 /**
+ * POST /api/me/tokens/{id}/rotate
+ */
+export interface MeTokenRotateResponse {
+  ok: true;
+  token: string;
+  record: {
+    id: string;
+    name: string;
+    scopes: string[];
+    ownerIdentity: string | null;
+    expiresAt: number | null;
+    lastUsedAt: number | null;
+    createdAt: number;
+    revokedAt: number | null;
+    rotatedAt: number | null;
+    tokenPrefix: string | null;
+    [key: string]: unknown;
+  };
+  note: string;
+  [key: string]: unknown;
+}
+
+/**
  * POST /api/me/sessions/check
  */
 export interface MeSessionCheckResponse {
@@ -3611,6 +3635,44 @@ export interface AccountLoginResponse {
   [key: string]: unknown;
 }
 
+/**
+ * GET /api/account/admin-mfa/status
+ */
+export interface AdminMfaStatusResponse {
+  enabled: boolean;
+  required: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/account/admin-mfa/setup
+ */
+export interface AdminMfaSetupResponse {
+  ok: true;
+  secret: string;
+  otpauthUrl: string;
+  message: string;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/account/admin-mfa/confirm
+ */
+export interface AdminMfaConfirmResponse {
+  ok: true;
+  recoveryCodes: string[];
+  message: string;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/account/admin-mfa/verify
+ */
+export interface AdminMfaVerifyResponse {
+  ok: boolean;
+  [key: string]: unknown;
+}
+
 /** 路由键 -> 响应类型（前端按端点取类型，避免自己再抄一份接口） */
 export interface RestContractRoutes {
   "DELETE /api/admin/client-errors": OkResponse;
@@ -3643,6 +3705,7 @@ export interface RestContractRoutes {
   "DELETE /api/tokens/{id}": undefined;
   "DELETE /api/trash/{id}": undefined;
   "DELETE /api/workspaces/{id}/members/{userId}": WorkspaceMembersResponse;
+  "GET /api/account/admin-mfa/status": AdminMfaStatusResponse;
   "GET /api/admin/ai/prices": AdminAiPricesResponse;
   "GET /api/admin/link-health": LinkHealthOverviewResponse;
   "GET /api/admin/maintenance/status": MaintenanceStatusResponse;
@@ -3718,6 +3781,10 @@ export interface RestContractRoutes {
   "PATCH /api/submissions/{number}": SubmissionReviewResponse;
   "PATCH /api/tags/{id}": OkResponse;
   "PATCH /api/tokens/{id}": ApiTokenPayload;
+  "POST /api/account/admin-mfa/confirm": AdminMfaConfirmResponse;
+  "POST /api/account/admin-mfa/disable": OkResponse;
+  "POST /api/account/admin-mfa/setup": AdminMfaSetupResponse;
+  "POST /api/account/admin-mfa/verify": AdminMfaVerifyResponse;
   "POST /api/account/forgot-password": OkMessageResponse;
   "POST /api/account/login": AccountLoginResponse;
   "POST /api/account/register": AccountRegisterResponse;
@@ -3760,6 +3827,7 @@ export interface RestContractRoutes {
   "POST /api/me/prune": MePruneResponse;
   "POST /api/me/sessions/check": MeSessionCheckResponse;
   "POST /api/me/tokens": MeTokenCreateResponse;
+  "POST /api/me/tokens/{id}/rotate": MeTokenRotateResponse;
   "POST /api/me/wanted": MeWantedSearchItemResponse;
   "POST /api/me/watchlist/sync": MeWatchlistSyncResponse;
   "POST /api/plugins/author/profile": PluginAuthorProfileResponse;

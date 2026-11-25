@@ -125,8 +125,11 @@ describe("dedupeUserEmails：为部分唯一索引清路", () => {
     const db = await openDb({ dialect: "sqlite", sqlitePath: ":memory:" });
     try {
       const repo = new Repository(db);
-      // 模拟旧库：索引尚未建（否则根本插不进重复值）
+      // 模拟旧库：索引尚未建（否则根本插不进重复值）。两个索引都要撤：
+      // users_email_unique_idx 是旧的大小写敏感索引，
+      // users_email_lower_unique_idx 是邮箱大小写规范化后新增的 LOWER(email) 索引。
       db.sqlite!.exec("DROP INDEX IF EXISTS users_email_unique_idx");
+      db.sqlite!.exec("DROP INDEX IF EXISTS users_email_lower_unique_idx");
       const insert = (id: string, username: string, email: string | null, createdAt: number) =>
         repo.run(
           "INSERT INTO users (id, username, password_hash, role, email, source, created_at) VALUES (?,?,?,?,?,?,?)",

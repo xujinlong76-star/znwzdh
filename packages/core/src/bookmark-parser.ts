@@ -46,7 +46,7 @@ export function stripHtmlTags(text: string): string {
   const n = text.length
   let i = 0
   while (i < n) {
-    const ch = text[i]
+    const ch = text[i]! // i < n 已保证下标有效（core 开 noUncheckedIndexedAccess）
     if (ch !== '<') {
       out.push(ch)
       i++

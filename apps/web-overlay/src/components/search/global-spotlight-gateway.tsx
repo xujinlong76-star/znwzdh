@@ -40,6 +40,13 @@ export function GlobalSpotlightGateway({
           e.preventDefault()
           input.focus()
           input.select()
+        } else {
+          // 冷启动兜底：顶栏搜索框是 ssr:false 的懒挂载组件，首屏 DOM 里只有占位
+          // button（navigation-toolbar 的 LazySearchPalette）。此时直接派发挂载事件，
+          // 面板 mount 后由 autoFocus 接管输入框——否则引导卡承诺的「⌘K 随时搜索」
+          // 在第一次按下时静默失灵（/ 键走另一条常驻监听，所以此前没被发现）。
+          e.preventDefault()
+          window.dispatchEvent(new CustomEvent('navhub:focus-search'))
         }
         return
       }

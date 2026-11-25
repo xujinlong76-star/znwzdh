@@ -43,3 +43,19 @@ test.describe('核心旅程 1：首页检索与 0-RTT 意图微部件', () => {
     await expect(recipeCard).toBeVisible();
   });
 });
+
+test.describe('冷启动搜索快捷键：首访第一次 ⌘K 不应静默失灵', () => {
+  test('冷启动直接按 ⌘/Ctrl+K，懒挂载的顶栏搜索框应出现并获得焦点', async ({ page }) => {
+    // 刚 goto 完不做任何点击/等待交互：顶栏搜索框此时是 ssr:false 的懒占位 button，
+    // [data-search-input] 还不在 DOM 里——这正是此前静默失灵的触发条件。
+    await page.goto('/');
+    // 等 React 水合把全局网守的 keydown 监听挂上（网守在 useEffect 里注册）。
+    // 仍不点击搜索框，[data-search-input] 保持未挂载——测的正是兜底路径。
+    await expect(page.getByRole('button', { name: /搜索站点、标签或拼音/ })).toBeVisible();
+    await page.waitForTimeout(800);
+    await page.keyboard.press('ControlOrMeta+k');
+    const input = page.locator('[data-search-input]');
+    await expect(input).toBeVisible({ timeout: 10_000 });
+    await expect(input).toBeFocused();
+  });
+});

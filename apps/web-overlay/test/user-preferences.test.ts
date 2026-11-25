@@ -408,6 +408,9 @@ describe('接线守卫：这五项偏好各自都有真实消费者', () => {
     const gateway = overlayCode('src/components/search/global-spotlight-gateway.tsx')
     expect(gateway).toContain('spotlightModalHotkeyMatches')
     expect(gateway).toContain('topSearchHotkeyMatches')
+    // 冷启动第一次 ⌘K：顶栏搜索框还是懒占位（ssr:false），网守必须派发
+    // navhub:focus-search 让面板挂载，不能因为查不到 input 就静默 return。
+    expect(gateway).toContain("window.dispatchEvent(new CustomEvent('navhub:focus-search'))")
     const modal = overlayCode('src/components/search/spotlight-modal.tsx')
     expect(modal).toContain('spotlightModalHotkeyMatches')
     expect(modal).toContain('topSearchHotkeyMatches')

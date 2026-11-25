@@ -133,7 +133,10 @@ async function claimTotpStep(ctx: AppContext, version: string, counter: number):
   const now = Date.now();
   if (now - lastTotpReplayPruneAt > 60_000) {
     lastTotpReplayPruneAt = now;
-    await ctx.repo.pruneSystemStatePrefix("auth:admin-mfa:totp:", now - 5 * 60 * 1000).catch(() => 0);
+    await ctx.repo.pruneSystemStatePrefix("auth:admin-mfa:totp:", now - 5 * 60 * 1000).catch(() => {
+      /* 过期重放清理是尽力而为：失败只让旧记录多留一轮，不影响本次验证码校验。 */
+      return 0;
+    });
   }
   return ctx.repo.claimSystemState(
     "auth:admin-mfa:totp:" + version + ":" + counter,
@@ -170,7 +173,9 @@ async function readAdminMfa(ctx: AppContext): Promise<AdminMfaState | null> {
 async function recordAdminMfaFailure(ctx: AppContext): Promise<void> {
   const result = await ctx.repo.recordLoginFailure(ADMIN_MFA_FAILURE_KEY, Date.now(), LOGIN_FAIL_WINDOW_MS);
   if (result.count === LOGIN_FAIL_MAX) {
-    await ctx.repo.audit({ actor: "admin-mfa-bff", actorKind: "system", action: "account.admin_mfa_locked" }).catch(() => {});
+    await ctx.repo.audit({ actor: "admin-mfa-bff", actorKind: "system", action: "account.admin_mfa_locked" }).catch(() => {
+      /* 审计/遥测类写库是尽力而为：锁定已生效，失败不阻断主操作，写失败即丢弃。 */
+    });
   }
 }
 
@@ -323,7 +328,9 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, {
       ...encrypted, enabled: false, recoveryHashes: [], recoveryVersion: randomBytes(12).toString("hex"), updatedAt: Date.now(),
     } satisfies AdminMfaState);
-    await ctx.repo.audit({ actor: _req.auth.actor, actorKind: _req.auth.kind, action: "account.admin_mfa_setup_started" }).catch(() => {});
+    await ctx.repo.audit({ actor: _req.auth.actor, actorKind: _req.auth.kind, action: "account.admin_mfa_setup_started" }).catch(() => {
+      /* 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。 */
+    });
     reply.header("cache-control", "no-store");
     const issuer = "山羊胡管理后台";
     return {
@@ -394,7 +401,9 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     const state = await readAdminMfa(ctx);
     if (!state?.enabled || !(await verifyAdminMfa(ctx, body.data.code))) { reply.code(401); return { error: "验证码无效" }; }
     await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, { ...state, enabled: false, recoveryHashes: [], updatedAt: Date.now() });
-    await ctx.repo.audit({ actor: req.auth.actor, actorKind: req.auth.kind, action: "account.admin_mfa_disabled" }).catch(() => {});
+    await ctx.repo.audit({ actor: req.auth.actor, actorKind: req.auth.kind, action: "account.admin_mfa_disabled" }).catch(() => {
+      /* 审计/遥测类写库是尽力而为：禁用已生效，失败不阻断主操作，写失败即丢弃。 */
+    });
     return { ok: true };
   });
 
@@ -732,7 +741,10 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       const loginNow = Date.now();
       if (loginNow - lastLoginFailurePruneAt > 60_000) {
         lastLoginFailurePruneAt = loginNow;
-        await ctx.repo.pruneSystemStatePrefix("auth:login-failure:", loginNow - LOGIN_FAIL_WINDOW_MS).catch(() => 0);
+        await ctx.repo.pruneSystemStatePrefix("auth:login-failure:", loginNow - LOGIN_FAIL_WINDOW_MS).catch(() => {
+          /* 过期失败计数清理是尽力而为：失败只让旧记录多留一轮，不影响本次登录限流判定。 */
+          return 0;
+        });
       }
       const attempt = await ctx.repo.recordLoginFailure(failureKey, loginNow, LOGIN_FAIL_WINDOW_MS);
       if (attempt.count > LOGIN_FAIL_MAX) {

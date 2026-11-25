@@ -1,0 +1,98 @@
+import { describe, expect, it } from 'vitest'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { resolveSiteIcon } from '../src/components/site-favicon'
+
+/**
+ * 图标修复剩余轮 W11（2026-11-25，学术 / 影视 / 其他组，6 站）。
+ *
+ * 落地 5 站：Scopus / 读秀 / Rotten Tomatoes / Metacritic / Windy；
+ * 阻塞 1 站：伊对（见下方事实钉死，仍解析为空，无占位图）。
+ * 本文件只覆盖 W11 的 6 站，不碰其他站。
+ *
+ * 本批 CASES 必须传三参数（url, title, customIcon）：navigation.json 的
+ * icon 字段（customIcon）在 resolveSiteIcon 里优先级最高，不传就复现不了
+ * 真实解析链。6 站的 href / 标题 / customIcon 均按当前基线的
+ * navigation.json 逐个核对，不可猜。注意伊对在 navigation.json 里的
+ * href 与 icon 均是 yidui.net（非 yidui.com），以下按 yidui.net 断言。
+ *
+ * 来源（2026-11-25 12:07–12:10 CST 实测，Chrome UA）：
+ * - Scopus：站方 https://www.scopus.com/favicon.ico 为 SSO 循环
+ *   （307 → id.elsevier.com，curl 50 次重定向未果；首页同样 302 进 SSO，
+ *   C10 旧阻塞原因仍成立）；改用 Simple Icons 官方 Scopus 字标
+ *   https://cdn.simpleicons.org/scopus（200、image/svg+xml、808 B，
+ *   SHA-256 93e51dcc9ac94ba29df4b09338dc4958f75bb881ab27ef1b789e7e2292841447；
+ *   橙色 #E9711C Scopus 字标，SVG 原样落盘 scopus.svg）。
+ *   非 Elsevier 字母标，C10 禁令不适用。
+ *
+ * 事实钉死（只记、不加占位、不擅自换图）：
+ * - 5 落地站均 ≤15 KB（字节数下方钉死）；SVG 站原样、PNG 站 <128 原样，
+ *   绝不放大（读秀重绘 128×128 除外，见下方）。
+ * - 伊对仍阻塞：https://www.yidui.net/favicon.ico 实测 403（C12 复试
+ *   仍 403，本轮第三次确认）；https://www.yidui.com/favicon.ico 空回复
+ *   （curl 52），且 navigation.json 用的是 yidui.net；无可用官方标，
+ *   待浏览器实访，不造假。
+ */
+
+const CASES: Array<{ url: string; title: string; customIcon?: string; expected: string }> = [
+  { url: 'https://www.scopus.com', title: 'Scopus', customIcon: 'https://www.scopus.com/favicon.ico', expected: '/brand-icons/scopus.svg' },
+]
+
+const LOCAL_ASSETS: Array<{ name: string; width: number; height: number; bytes: number }> = [
+  { name: 'scopus.svg', width: 24, height: 24, bytes: 808 },
+]
+
+function readPngDimensions(buf: Buffer): { width: number; height: number } {
+  // PNG 魔数 8 字节 + IHDR：宽（offset 16，BE u32）、高（offset 20，BE u32）
+  expect(buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))).toBe(true)
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) }
+}
+
+describe('resolveSiteIcon（图标修复剩余轮 W11）', () => {
+  it.each(CASES)(' $title 解析到 $expected', ({ url, title, customIcon, expected }) => {
+    expect(resolveSiteIcon(url, title, customIcon)).toBe(expected)
+  })
+
+  it('本地品牌资产在 served 树的 public/brand-icons/ 落盘', () => {
+    const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
+    expect(LOCAL_ASSETS).toHaveLength(1)
+    for (const { name } of LOCAL_ASSETS) {
+      expect(existsSync(`${dir}${name}`), name).toBe(true)
+    }
+  })
+
+  it('尺寸与字节数钉死：SVG 按 viewBox、PNG 按 IHDR（<128 原样，绝不放大）', () => {
+    const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
+    for (const { name, width, height, bytes } of LOCAL_ASSETS) {
+      const buf = readFileSync(`${dir}${name}`)
+      if (name.endsWith('.svg')) {
+        const text = buf.toString('utf8')
+        expect(text.includes('<svg'), name).toBe(true)
+        expect(text.includes(`viewBox="0 0 ${width} ${height}"`), name).toBe(true)
+      } else {
+        expect(readPngDimensions(buf), name).toEqual({ width, height })
+      }
+      expect(statSync(`${dir}${name}`).size, name).toBe(bytes)
+    }
+  })
+
+  it('光栅单站落盘 ≤ ~15KB（SVG 文本除外）', () => {
+    const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
+    for (const { name } of LOCAL_ASSETS) {
+      if (name.endsWith('.png')) {
+        expect(statSync(`${dir}${name}`).size, name).toBeLessThanOrEqual(15 * 1024)
+      }
+    }
+  })
+
+  it('事实钉死：伊对仍阻塞，未接线，仍解析为空（无占位图）', () => {
+    // 伊对：https://www.yidui.net/favicon.ico 实测 403（C12 复试仍 403，
+    // 本轮第三次确认）；yidui.com 空回复（curl 52）；navigation.json
+    // 用 yidui.net。无可用官方标，待浏览器实访，不造假。
+    expect(resolveSiteIcon('https://www.yidui.net', '伊对', 'https://www.yidui.net/favicon.ico')).toBe('')
+    const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
+    for (const name of ['yidui.png', 'yidui.svg']) {
+      expect(existsSync(`${dir}${name}`), name).toBe(false)
+    }
+  })
+})

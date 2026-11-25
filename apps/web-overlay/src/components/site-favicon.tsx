@@ -1066,6 +1066,15 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   'lingxi.kdocs.cn=lingxip',
   'workbuddy.cn=workbuddys',
   'dumate.baidu.com=dumatep',
+  // 2026-11-25（图标剩余轮 W11：学术 / 影视 / 其他组）。
+  // - Scopus：站方 https://www.scopus.com/favicon.ico 实测 SSO 循环
+  //   （307 → id.elsevier.com，50 次重定向未果，C10 旧阻塞原因仍成立，
+  //   故不用站方 favicon）；改用 Simple Icons 官方 Scopus 字标 SVG
+  //   https://cdn.simpleicons.org/scopus（200、image/svg+xml、808 B，
+  //   SHA-256 93e51dcc…；橙色 #E9711C Scopus 字标，非 Elsevier 字母标，
+  //   C10“Elsevier 字母标不是 Scopus”禁令不适用），SVG 原样落盘
+  //   scopus.svg。'scopus.com' 全库只命中 Scopus 一站，无后缀串站。
+  'scopus.com=scopuss',
  ];
 
 /**

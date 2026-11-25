@@ -66,3 +66,18 @@
 ## 测试与 typecheck（待填）
 - 定向测试：（跑完后填）
 - typecheck：（跑完后填）
+
+## 收尾复测（W7 接续 worker，2026-11-25 19:54 CST）
+
+### Project Gutenberg — 仍阻塞（第 4 轮复测）
+- 复测时间：2026-11-25 19:54 CST（11:54 UTC），curl，Chrome UA（同前）。
+- 四路均 503、913 B、text/html；charset=utf-8，正文同前一维护页（`<title>Temporarily Down for Maintenance</title>`，"Project Gutenberg is temporarily unavailable while we perform maintenance."）：
+  - `https://www.gutenberg.org/` — 503、913 B
+  - `https://gutenberg.org/`（裸域）— 503、913 B
+  - `https://www.gutenberg.org/favicon.ico` — 503、913 B
+  - `https://www.gutenberg.org/apple-touch-icon.png` — 503、913 B
+- 处理：不造假、不从第三方找图、不接线；`brand-icons/gutenberg.png` 不存在（测试已断言）；待站方恢复后另行取材。
+
+### 步骤 1 核实（接续 worker，2026-11-25 19:54 CST）
+- 6 图标 md5 与本文件记录逐一核对一致（archive 0df9f9d7…、edx a1cd8289…、liaoxuefeng 955d0d94…、openlibrary bf25e3b6…、study-163 e0dd4fb5…、theodinproject 0b764bff…）；尺寸与测试断言一致（study-163 为 128×86，其余 128×128）；映射 6 键已在 site-favicon.tsx（LOCAL_LOGO_ENTRIES 末尾追加）；node_modules/ 不存在，无需清理；工作区与任务描述一致（HEAD bef26ed，零提交）。
+- 现状已提交：`ff51c482`（"W7 进度落袋"）。

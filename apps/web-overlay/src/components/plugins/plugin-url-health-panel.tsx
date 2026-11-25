@@ -1957,7 +1957,7 @@ export function PluginUrlHealthPanel() {
             totalReplaced += healRes.autoApplied.replacedCount
             totalRemoved += healRes.autoApplied.removedCount
             healedPackCount++
-            const names = healRes.autoApplied.items.slice(0, 3).map((it) => it.newTitle).join('、')
+            const names = (healRes.autoApplied.items ?? []).slice(0, 3).map((it) => it.newTitle).join('、')
             markPackUrlsHealed(
               pack.slug,
               /*
@@ -2218,7 +2218,7 @@ export function PluginUrlHealthPanel() {
             healRes.autoApplied.removedCount,
             healRes.autoApplied.remainingSites,
           )
-          const names = healRes.autoApplied.items.slice(0, 3).map((i) => i.newTitle).join('、')
+          const names = (healRes.autoApplied.items ?? []).slice(0, 3).map((i) => i.newTitle).join('、')
           setFixSuccessPacks((prev) => ({
             ...prev,
             [slug]: `⚡ 全自动 AI 智愈完成：已自动采纳 ${healRes.autoApplied!.replacedCount} 处高分权威平替${names ? `（${names}等）` : ''}${healRes.autoApplied!.removedCount > 0 ? `，清理 ${healRes.autoApplied!.removedCount} 条死链` : ''}，包内现有 ${healRes.autoApplied!.remainingSites} 条健康站点！`,

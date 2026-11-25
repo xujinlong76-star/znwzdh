@@ -315,7 +315,7 @@ export function AccountView() {
               </div>
               <div className="flex items-center justify-between gap-3">
                 <dt className="text-muted-foreground">已合并匿名身份</dt>
-                <dd className="font-medium">{overview.aliases.length} 个</dd>
+                <dd className="font-medium">{(overview.aliases ?? []).length} 个</dd>
               </div>
             </dl>
             <p className="mt-3 border-t border-border/60 pt-3 text-[11px] leading-relaxed text-muted-foreground">

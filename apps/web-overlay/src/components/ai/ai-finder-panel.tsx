@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowUpRight, Loader2, RefreshCw, Search, Sparkles } from 'lucide-react'
+import { ArrowUpRight, Loader2, Radar, RefreshCw, Search, Sparkles } from 'lucide-react'
 import { getApiToken, hubUrl } from '@/lib/navhub-api'
 import {
   SCENE_PAGE_SIZE,
@@ -84,27 +84,80 @@ const FALLBACK_SCENES: Array<{ id: string; title: string; query: string }> = [
   { id: 'exam-prep', title: '考公考研', query: '我在准备考公考研' },
 ]
 
-function SiteCard({ site }: { site: FinderSite }) {
+function safeSiteHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
+
+function SiteCard({
+  site,
+  onFindSimilar,
+}: {
+  site: FinderSite
+  onFindSimilar?: (query: string) => void
+}) {
+  if (!onFindSimilar) {
+    return (
+      <a
+        href={safeHref(site.url)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-start gap-3 rounded-xl border border-border bg-card p-3.5 text-left transition-colors hover:border-primary/50 hover:bg-accent/40"
+      >
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-base font-semibold text-foreground">
+            <span className="truncate">{site.title}</span>
+            <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </p>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{site.reason}</p>
+        </div>
+      </a>
+    )
+  }
+
+  const host = safeSiteHost(site.url)
   return (
-    <a
-      href={safeHref(site.url)}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="flex items-start gap-3 rounded-xl border border-border bg-card p-3.5 text-left transition-colors hover:border-primary/50 hover:bg-accent/40"
-    >
-      <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-1.5 text-base font-semibold text-foreground">
+    <div className="flex flex-col justify-between gap-2 rounded-xl border border-border bg-card p-3.5 text-left transition-colors hover:border-primary/50">
+      <div className="min-w-0">
+        <a
+          href={safeHref(site.url)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex max-w-full items-center gap-1.5 text-base font-semibold text-foreground hover:text-primary"
+        >
           <span className="truncate">{site.title}</span>
           <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-        </p>
+        </a>
         <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{site.reason}</p>
       </div>
-    </a>
+      <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2 text-xs">
+        <span className="truncate font-mono text-muted-foreground">{host}</span>
+        <button
+          type="button"
+          onClick={() => onFindSimilar(host || site.title)}
+          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1 font-medium text-primary hover:bg-primary/20 cursor-pointer"
+          title={`查找与「${site.title}」相似的平替网站`}
+        >
+          <Radar className="h-3.5 w-3.5" />
+          <span>找相似平替</span>
+        </button>
+      </div>
+    </div>
   )
 }
 
-export function AiFinderPanel() {
-  const [query, setQuery] = useState('')
+export interface AiFinderPanelProps {
+  /** 从首页融合条放大到弹窗时透传的初始查询词，挂载后自动跑一次 */
+  initialQuery?: string
+  /** 融合弹窗下点击推荐站点上的「找相似平替」回调，一键切到相似站雷达 */
+  onFindSimilar?: (query: string) => void
+}
+
+export function AiFinderPanel({ initialQuery, onFindSimilar }: AiFinderPanelProps = {}) {
+  const [query, setQuery] = useState(initialQuery?.trim() ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<FinderResponse | null>(null)
@@ -155,7 +208,16 @@ export function AiFinderPanel() {
         body: JSON.stringify({ query: q, ...(sceneId ? { sceneId } : {}) }),
       })
       if (!res.ok) throw new Error('找站服务暂时不可用，请稍后再试')
-      setResult((await res.json()) as FinderResponse)
+      const raw = await res.json()
+      setResult((() => {
+        const body = raw as FinderResponse
+        return {
+          ...body,
+          steps: Array.isArray(body.steps) ? body.steps : [],
+          recommendations: Array.isArray(body.recommendations) ? body.recommendations : [],
+          categorySuggestions: Array.isArray(body.categorySuggestions) ? body.categorySuggestions : [],
+        }
+      })())
     } catch {
       setError('找站没成功，可能是网络或服务暂时不可用。你可以换个说法再试，或先从下方分类里找。')
     } finally {
@@ -163,25 +225,29 @@ export function AiFinderPanel() {
     }
   }
 
-  // 落地页 CTA 回跳（/?scene={id}#ai-finder）：场景清单就绪后自动展开一次，
-  // 计数与成长事件与手动点开一致（recordSceneUse + scene_open）。
+  // 落地页 CTA 回跳（/?scene={id}#ai-finder）或从首页融合条携带 initialQuery 打开：只自动展开一次
   useEffect(() => {
     if (autoRanRef.current) return
     const targetId = new URLSearchParams(window.location.search).get('scene')
-    if (!targetId) {
+    if (targetId) {
+      const target = scenes.find((s) => s.id === targetId)
+      if (!target) return // 清单还没换成服务端的，等下一次渲染再判
       autoRanRef.current = true
+      setUsage(recordSceneUse(target.id))
+      recordGrowthEvent('scene_open', { sceneId: target.id })
+      setQuery(target.query)
+      void run(target.query, target.id)
+      document.getElementById('ai-finder')?.scrollIntoView({ block: 'start' })
       return
     }
-    const target = scenes.find((s) => s.id === targetId)
-    if (!target) return // 清单还没换成服务端的，等下一次渲染再判
     autoRanRef.current = true
-    setUsage(recordSceneUse(target.id))
-    recordGrowthEvent('scene_open', { sceneId: target.id })
-    setQuery(target.query)
-    void run(target.query, target.id)
-    document.getElementById('ai-finder')?.scrollIntoView({ block: 'start' })
+    const seeded = initialQuery?.trim()
+    if (seeded) {
+      setQuery(seeded)
+      void run(seeded)
+    }
     // run 每次渲染重建，这里只以「目标场景是否已就绪」为触发条件
-  }, [scenes])
+  }, [scenes, initialQuery])
 
   return (
     <section
@@ -302,7 +368,7 @@ export function AiFinderPanel() {
                   <h3 className="mb-2 text-sm font-semibold text-foreground">{step.label}</h3>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {step.sites.map((site) => (
-                      <SiteCard key={site.siteId} site={site} />
+                      <SiteCard key={site.siteId} site={site} onFindSimilar={onFindSimilar} />
                     ))}
                   </div>
                 </div>
@@ -311,7 +377,7 @@ export function AiFinderPanel() {
           {result.steps.length === 0 && result.recommendations.length > 0 ? (
             <div className="grid gap-2 sm:grid-cols-2">
               {result.recommendations.map((site) => (
-                <SiteCard key={site.siteId} site={site} />
+                <SiteCard key={site.siteId} site={site} onFindSimilar={onFindSimilar} />
               ))}
             </div>
           ) : null}

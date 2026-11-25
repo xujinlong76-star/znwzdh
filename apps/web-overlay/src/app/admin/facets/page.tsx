@@ -304,7 +304,7 @@ export default function AdminFacetsPage() {
       {/* 分面维度 Tabs */}
       <div className="flex items-center gap-2 border-b pb-3 overflow-x-auto no-scrollbar touch-pan-x flex-nowrap shrink-0">
         {data?.facets.map((f) => {
-          const sum = f.options.reduce((acc, o) => acc + o.count, 0)
+          const sum = (f.options ?? []).reduce((acc: number, o: { count: number }) => acc + o.count, 0)
           const isActive = activeTab === f.key
           return (
             <button

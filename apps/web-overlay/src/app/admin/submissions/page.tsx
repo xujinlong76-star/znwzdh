@@ -34,6 +34,7 @@ import {
     TableRow,
 } from "@/registry/new-york/ui/table"
 import { Badge } from "@/registry/new-york/ui/badge"
+import { safeHref } from '@/lib/safe-url'
 import {
     Loader2,
     CheckCircle,
@@ -232,7 +233,7 @@ export default function SubmissionsPage() {
                                                 <TableCell>
                                                     {submission.submissionData?.url ? (
                                                         <a
-                                                            href={submission.submissionData.url}
+                                                            href={safeHref(submission.submissionData.url, '#')}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             className="text-primary hover:underline flex items-center gap-1 max-w-[200px] truncate"
@@ -263,15 +264,16 @@ export default function SubmissionsPage() {
                                                         >
                                                             <Eye className="h-4 w-4" />
                                                         </Button>
-                                                        <a
-                                                            href={submission.html_url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                        >
-                                                            <Button variant="ghost" size="sm">
+                                                        <Button variant="ghost" size="sm" asChild>
+                                                            <a
+                                                                href={submission.html_url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                aria-label="查看原始投稿"
+                                                            >
                                                                 <ExternalLink className="h-4 w-4" />
-                                                            </Button>
-                                                        </a>
+                                                            </a>
+                                                        </Button>
                                                     </div>
                                                 </TableCell>
                                             </TableRow>
@@ -307,7 +309,7 @@ export default function SubmissionsPage() {
                                     <label className="text-sm font-medium text-muted-foreground">网站地址</label>
                                     <p className="mt-1">
                                         <a
-                                            href={selectedSubmission.submissionData.url}
+                                            href={safeHref(selectedSubmission.submissionData.url, '#')}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="text-primary hover:underline flex items-center gap-1"
@@ -397,6 +399,7 @@ export default function SubmissionsPage() {
 
                     <div className="space-y-4">
                         <Textarea
+                            aria-label="拒绝理由"
                             placeholder="请输入拒绝理由..."
                             value={rejectReason}
                             onChange={(e) => setRejectReason(e.target.value)}

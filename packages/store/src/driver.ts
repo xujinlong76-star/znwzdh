@@ -409,6 +409,23 @@ CREATE TABLE IF NOT EXISTS user_sync_state (
   PRIMARY KEY (identity, domain)
 );
 
+CREATE TABLE IF NOT EXISTS crawl_sources (
+  id TEXT PRIMARY KEY,
+  url TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'sitemap',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  priority INTEGER NOT NULL DEFAULT 0,
+  interval_ms INTEGER NOT NULL DEFAULT 3600000,
+  next_run_at INTEGER NOT NULL,
+  last_run_at INTEGER,
+  last_status TEXT,
+  last_error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS crawl_sources_url_idx ON crawl_sources(url);
+CREATE INDEX IF NOT EXISTS crawl_sources_enabled_next_idx ON crawl_sources(enabled, next_run_at);
+
 CREATE TABLE IF NOT EXISTS watch_entries (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -1193,6 +1210,23 @@ CREATE TABLE IF NOT EXISTS user_sync_state (
   PRIMARY KEY (identity, domain)
 );
 
+CREATE TABLE IF NOT EXISTS crawl_sources (
+  id TEXT PRIMARY KEY,
+  url TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'sitemap',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  priority INTEGER NOT NULL DEFAULT 0,
+  interval_ms BIGINT NOT NULL DEFAULT 3600000,
+  next_run_at BIGINT NOT NULL,
+  last_run_at BIGINT,
+  last_status TEXT,
+  last_error TEXT,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS crawl_sources_url_idx ON crawl_sources(url);
+CREATE INDEX IF NOT EXISTS crawl_sources_enabled_next_idx ON crawl_sources(enabled, next_run_at);
+
 CREATE TABLE IF NOT EXISTS watch_entries (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -1677,6 +1711,13 @@ export async function openDb(config: {
       raw.exec(DDL_SQLITE);
     }
 
+    // 结构修复（2026-11-25）：列迁移不能只在 DDL 抛错时跑——DDL 全是 IF NOT EXISTS，
+    // 表与索引都齐全时 exec 成功、migrateColumns 永不执行；而版本化迁移
+    // 20261001_column_alters 早已记账只跑一次，之后新登记的列（consecutive_failures /
+    // helpful_count 等）在存量库上永远补不上，读路径直接 "no such column"。
+    // migrateColumns 自身按 PRAGMA 判重、幂等，每次启动无条件跑一次才符合其设计意图。
+    await migrateColumns(db);
+
     // 先清空重复 email，再建 users_email_unique_idx（索引在 migrateSiteIndexes 里）。
     // 顺序不能反：存量重复会让 CREATE UNIQUE INDEX 失败，而那里是逐语句 try/catch，
     // 失败等于静默跳过索引 —— 看起来迁移成功，实际约束从未生效。
@@ -1733,6 +1774,9 @@ export async function openDb(config: {
 
     await pool.query(DDL_PG);
   }
+
+  // 同 sqlite 分支的结构修复：无条件跑幂等列迁移，兜住版本化迁移记账后新增的列。
+  await migrateColumns(db);
 
   // 同 sqlite 分支：dedupe 必须早于 users_email_unique_idx 的创建（在 migrateSiteIndexes 内）。
   await runVersionedMigrations(db);

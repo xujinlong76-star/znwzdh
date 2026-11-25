@@ -171,14 +171,23 @@ function sanitizeBookmarkIcon(rawIcon: string | undefined): string | undefined {
 // 2. Netscape Bookmark HTML 解析算法 (Chrome / Edge / Safari / Firefox)
 // =========================================================================
 
+/**
+ * 单遍解实体：一次正则 + 查表替换，正则引擎不回扫替换结果。
+ * 链式 `.replace(/&amp;/g, '&').replace(/&lt;/g, '<')…` 会双重解码
+ * （`&amp;lt;` 先变 `&lt;` 再变 `<`，CodeQL「双重解实体」），所以不要拆开写。
+ * 实体集合与旧链一致（`&amp; &lt; &gt; &quot; &#39; &nbsp;`）。
+ */
+const HTML_ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&nbsp;': ' ',
+}
+
 function decodeHtmlEntities(str: string): string {
-  return str
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
+  return str.replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (entity) => HTML_ENTITIES[entity] ?? entity)
 }
 
 /**

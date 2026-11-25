@@ -118,6 +118,29 @@ describe('多平台视频采集与搜索引擎收录 (SEO) 深度套件', () => 
       expect(extracted.views).toBe(128000)
       expect(extracted.keywords).toEqual(['DeepSeek', 'LLM', 'vLLM', '模型部署'])
     })
+
+    it('解实体只做单遍：双重转义 `&amp;lt;` 不得再解成 `<`（R7 判别项）', () => {
+      const sampleHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <script type="application/ld+json">
+              {
+                "@context": "https://schema.org",
+                "@type": "VideoObject",
+                "name": "A &amp;lt;tag&amp;gt; B",
+                "description": "Fish &amp; Chips — It&#x27;s &#X27;quoted&#x27; — A &amp;nbsp; B"
+              }
+            </script>
+          </head>
+        </html>
+      `
+      const extracted = extractOpenGraphAndJsonLdFromHtml(sampleHtml)
+      // 判别项：旧链式 replace 会把 `&amp;lt;` 两次解成 `<`、把 `&amp;nbsp;`
+      // 先解成 `&nbsp;` 再解成空格，单遍只解一层
+      expect(extracted.title).toBe('A &lt;tag&gt; B')
+      expect(extracted.description).toBe(`Fish & Chips — It's 'quoted' — A &nbsp; B`)
+    })
   })
 
   describe('3. 多平台单链解析与主题词批量采集', () => {

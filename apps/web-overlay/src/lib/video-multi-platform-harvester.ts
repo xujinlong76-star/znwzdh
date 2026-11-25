@@ -262,15 +262,27 @@ export function parseIso8601DurationToSeconds(iso?: string | number | null): num
   return days * 86400 + hours * 3600 + minutes * 60 + seconds
 }
 
+/**
+ * 单遍解实体：一次正则 + 查表替换，正则引擎不回扫替换结果。
+ * 链式 `.replace(/&amp;/g, '&').replace(/&lt;/g, '<')…` 会双重解码
+ * （`&amp;lt;` 先变 `&lt;` 再变 `<`，CodeQL「双重解实体」），所以不要拆开写。
+ * 实体集合与旧链一致（`&amp; &lt; &gt; &quot; &#39; &#x27; &nbsp;`）；
+ * `&#x27;` 旧链是 /gi（大小写 X 均可），这里用 `#x27|#X27` 保持等价。
+ */
+const HTML_ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&#x27;': "'",
+  '&#X27;': "'",
+  '&nbsp;': ' ',
+}
+
 function decodeHtmlEntities(input: string): string {
   return input
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x27;/gi, "'")
-    .replace(/&nbsp;/g, ' ')
+    .replace(/&(amp|lt|gt|quot|#39|#x27|#X27|nbsp);/g, (entity) => HTML_ENTITIES[entity] ?? entity)
     .trim()
 }
 

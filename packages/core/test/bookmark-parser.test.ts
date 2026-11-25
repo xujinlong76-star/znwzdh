@@ -65,6 +65,27 @@ describe('全格式书签智能解析与语义去重清洗引擎 (Universal Book
     expect(aiFolder?.items[0]?.title).toBe('Claude 3.7')
   })
 
+  it('解实体只做单遍：双重转义 `&amp;lt;` 不得再解成 `<`（R7 判别项）', () => {
+    const mockHtml = `
+      <!DOCTYPE NETSCAPE-Bookmark-file-1>
+      <DL><p>
+        <DT><A HREF="https://example.com/a">A &amp;lt;tag&amp;gt; B</A>
+        <DT><A HREF="https://example.com/b">Fish &amp;amp; Chips</A>
+        <DT><A HREF="https://example.com/c">Tom &amp; Jerry &amp;nbsp; Spaced</A>
+        <DT><A HREF="https://example.com/d">It&#39;s &quot;quoted&quot;</A>
+      </DL><p>
+    `
+    const folders = parseNetscapeBookmarksHtml(mockHtml)
+    const items = folders[0]?.items ?? []
+    expect(items).toHaveLength(4)
+    // 判别项：旧链式 replace 会把 `&amp;lt;` 两次解成 `<`，单遍只解一层
+    expect(items[0]?.title).toBe('A &lt;tag&gt; B')
+    expect(items[1]?.title).toBe('Fish &amp; Chips')
+    expect(items[2]?.title).toBe('Tom & Jerry &nbsp; Spaced')
+    // pin 项：单层实体照常解，与旧链行为相同
+    expect(items[3]?.title).toBe(`It's "quoted"`)
+  })
+
   it('OneTab 文本解析：正确提取 URL | 标题格式与纯 URL 格式', () => {
     const rawOneTab = `
       https://nextjs.org | Next.js 应用框架

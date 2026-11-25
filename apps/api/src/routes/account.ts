@@ -97,8 +97,19 @@ function totpAt(secret: string, timeMs: number): string {
   const msg = Buffer.alloc(8);
   msg.writeBigUInt64BE(counter);
   const digest = createHmac("sha1", base32Decode(secret)).update(msg).digest();
-  const offset = digest[digest.length - 1] & 15;
-  const binary = ((digest[offset] & 127) << 24) | ((digest[offset + 1] & 255) << 16) | ((digest[offset + 2] & 255) << 8) | (digest[offset + 3] & 255);
+  // SHA-1 摘要恒为 20 字节，offset ∈ [0,15]，故 offset+3 ≤ 18 恒有定义；
+  // 仍做显式守卫，满足 noUncheckedIndexedAccess，不依赖隐式下标假设。
+  const lastByte = digest[digest.length - 1];
+  if (lastByte === undefined) throw new Error("TOTP digest unavailable");
+  const offset = lastByte & 15;
+  const b0 = digest[offset];
+  const b1 = digest[offset + 1];
+  const b2 = digest[offset + 2];
+  const b3 = digest[offset + 3];
+  if (b0 === undefined || b1 === undefined || b2 === undefined || b3 === undefined) {
+    throw new Error("TOTP digest unavailable");
+  }
+  const binary = ((b0 & 127) << 24) | ((b1 & 255) << 16) | ((b2 & 255) << 8) | (b3 & 255);
   return String(binary % 1_000_000).padStart(6, "0");
 }
 
@@ -668,6 +679,10 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(400);
         return { error: "重置链接已失效，请重新申请密码重置" };
       }
+      // 重置链接本身就是发到该邮箱的一次性所有权证明：密码改掉的同时把该邮箱
+      // 标为已验证，否则登录侧的“未验证不得建会话”会让刚重置完的账号立刻 401，
+      // 形成“重置成功却登不进”的死路。若邮箱在此期间已被改走则不阻塞重置本身。
+      await ctx.repo.setUserEmailVerifiedForEmail(String(row.user_id), String(row.target_email));
     // 密码重置后吊销该用户全部已登录会话：旧的 next-auth JWT (sid) 即便未过期，
     // BFF 也会在下一个 /api/me/* 请求上经 isSessionRevoked 拦下 (401)。
     // row.user_id 是 users 表原始 id——凭据用户为裸 UUID，而 sessions 表按 canonical

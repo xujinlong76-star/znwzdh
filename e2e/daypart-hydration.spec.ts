@@ -42,6 +42,12 @@ test.describe('时段提示不写进服务端 HTML（水合安全）', () => {
       if (looksLikeHydration(err.message)) hydrationErrors.push(err.message);
     });
 
+    // 时段提示只在 ≥1536px 渲染：首页只挂载 HomeCapsuleRow 那一份
+    //（home-capsule-row.tsx: `hidden min-[1536px]:flex`，1280–1535px 有意
+    // 让位给工作区与高频直达坞；WorkspaceFilter 未挂载在首页）。
+    // 默认 1280px 视口下该 span 在 DOM 内但 display:none，toBeVisible
+    // 15 秒始终 hidden——CI run 45570267982 :32 即因此而红。用 1600px 测。
+    await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto('/');
 
     // 挂载后必须是三句真实文案之一（auto-wait 到水合完成）

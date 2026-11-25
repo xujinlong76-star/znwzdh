@@ -136,7 +136,7 @@ export const hasGithubAuth = Boolean(
 async function verifyAdminSecondFactor(code: string, credentialValid = true): Promise<boolean> {
   const internalToken = process.env.NAVHUB_INTERNAL_TOKEN
   const required = process.env.NAVHUB_ADMIN_MFA_REQUIRED === '1' || process.env.NAVHUB_ADMIN_MFA_REQUIRED === 'true'
-  if (!internalToken) return !required
+  if (!internalToken) return false
   const apiBase =
     process.env.NAVHUB_STORAGE_BASE_URL ||
     process.env.NAVHUB_API_BASE_URL ||

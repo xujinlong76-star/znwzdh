@@ -118,7 +118,7 @@ export async function updateUserProfileInfo(
   // 邮箱唯一性先查后写（库里的部分唯一索引兜底并发，这里负责给出可读的失败原因）
   if (normalizedEmail !== undefined && normalizedEmail !== null) {
     const conflict = (
-      await repo.raw("SELECT id FROM users WHERE email = ? AND id <> ? LIMIT 1", [normalizedEmail, identity])
+      await repo.raw("SELECT id FROM users WHERE LOWER(email) = ? AND id <> ? LIMIT 1", [normalizedEmail, identity])
     )[0];
     if (conflict) {
       return { ok: false, reason: "email_taken" };

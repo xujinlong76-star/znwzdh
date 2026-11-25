@@ -1066,6 +1066,45 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   'lingxi.kdocs.cn=lingxip',
   'workbuddy.cn=workbuddys',
   'dumate.baidu.com=dumatep',
+  // 2026-11-25（剩余图标 W5 短剧组：ShortMax / GoodShort / NetShort /
+  // FlexTV / MoboReels / Melolo，6 站新键；ReelShort 键 'reelshort.com'
+  // 已在 2b 批建好，本批不重复建键，见下方 resolveSiteIcon 的直通绕过）。
+  // 全部 curl 重新验证（200 + image MIME + 魔数 + 尺寸，见 W5 测试事实钉死）：
+  // - ShortMax：首页声明 apple-touch-icon /images/logo.png（200、2,835 B、
+  //   PNG 71×71，黑底白 S + 橙色 TV 带），与 /favicon.ico 32×32 同标（底行
+  //   橙色占比一致），取较大的 71 版原样落盘 shortmax.png（71<128 不放大）。
+  // - GoodShort：首页声明 /public/favicon.ico（200、1,286 B，内容实为 PNG
+  //   40×40，白底红橙播放三角标），与根 /favicon.ico 逐字节相同，原样落盘
+  //   goodshort.png（40<128 不放大）。
+  // - NetShort：首页声明 apple-touch-icon /a2hs/apple-touch-icon.png（200、
+  //   10,179 B，PNG 180×180，红橙渐变圆角方块 + 白色胶片标）；根 /favicon.ico
+  //   内容实为 WebP 300×300 全幅渐变同标、未用（路径与内容类型不符）。
+  //   Pillow LANCZOS 180→128 落盘 netshort.png（11,670 B）。
+  // - FlexTV：首页声明 apple-touch-icon
+  //   https://www.flextv.cc/apple-touch-icon.png（200、14,875 B，PNG 672×672，
+  //   粉 #FB3867 圆角方块 + 白色电视播放标），与根 /favicon.ico 256×256 帧
+  //   同标（64 档均值差异 3.70，仅重采样差）；根 ICO 270,398 B 未用。
+  //   Pillow LANCZOS 672→128 落盘 flextv.png（2,976 B）。
+  // - MoboReels：首页仅声明 /favicon.ico（200、4,286 B，ICO 32×32 单帧，
+  //   粉红渐变方块 + 深红爱心，无白字——32px 下白电视描边已丢失的简化版）；
+  //   站内页头/页脚同源站方 logo /_nuxt/img/logo.1733fb4.png（200、1,586 B，
+  //   PNG 80×80，同品牌粉红渐变方块 + 白电视 + 白爱心完整标），原样落盘
+  //   moboreels.png（80<128 不放大）。favicon 32 版为同标简化版未用，见
+  //   EVIDENCE-w5.md（复审如改用 32 版只需换文件一行）。
+  // - Melolo：首页声明 /favicon.ico?favicon.1jo7br0ifgqa8.ico（200、16,958 B，
+  //   ICO 64×64 单帧，红 #B90004 圆角方块 + 白电视 M 标），与 /icon.png
+  //   56×56 同标（64 档均值差异 3.92，仅重采样差）；声明的 /favicon.png
+  //   200 回 HTML 壳页不可用。ICO 64 帧解码原样落盘 melolo.png（64<128 不放大）。
+  // 键的精确性：6 键在 navigation.json 全库 388 站 href 中各只命中 1 站，
+  // 无后缀串站、无子域站；navigation.json 不动。6 标均为不透明底或透明底
+  // 真实品牌标，浅/深主题均可见，按规范 §9 不做单站底块补丁、不配
+  // LOGO_TILE_MAP（resolveLogoTile 为 null），留待统一处理轮。
+  'shorttv.live=shortmaxp',
+  'goodshort.com=goodshortp',
+  'netshort.com=netshortp',
+  'flextv.cc=flextvp',
+  'moboreels.com=moboreelsp',
+  'melolo.com=melolop',
  ];
 
 /**
@@ -1242,13 +1281,34 @@ export function resolveSiteIcon(
   title?: string,
   customIcon?: string | null
 ): string {
+  // 2026-11-25（剩余图标 W5 短剧组）：ReelShort 的 navigation.json icon
+  // 是站方自有 CDN（v-mps.crazymaplestudios.com，Crazy Maple Studios
+  // 官方 CDN）直链——既非第三方图标服务、又非 /favicon.ico 盲猜路径，
+  // 故 customIcon 优先分支会直接热链回传，LOCAL_LOGO_MAP 已有的
+  // 'reelshort.com' 键永不可达（缺口清单误记 map_key 为 null 即源于此）。
+  // 本批已把该官方图标重新下载本地化：源
+  // https://v-mps.crazymaplestudios.com/images/211d3420-d721-11f0-84ad-6b5693b490dc.png
+  // （200、image/png、14,425 B、PNG 204×204，红粉渐变圆角方块 + 白 R +
+  // 播放三角标；首页 head 三处声明同源同文件），204→128 LANCZOS 与既有
+  // reelshort.png 逐字节一致（md5 0cd48cd0ba550cf52a474cbb8db749bf，
+  // 12,804 B），故不改文件、只修可达性：本站跳过 customIcon 直通、回落
+  // map；navigation.json 本批不动，清空 icon 字段留待合流方按 R1 裁决处理。
+  // 作用域：仅 reelshort.com 一站（www 归一后同键），其余站行为不变。
+  let skipCustomIcon = false
+  try {
+    const siteHost = parseSiteUrl((url || '').trim())?.hostname.toLowerCase()
+    skipCustomIcon = siteHost === 'reelshort.com' || siteHost === 'www.reelshort.com'
+  } catch {
+    skipCustomIcon = false
+  }
   // 自定义 icon 优先，但第三方图标服务与远端盲猜 favicon 探测地址除外
   if (
     customIcon &&
     typeof customIcon === 'string' &&
     customIcon.trim().length > 0 &&
     !isThirdPartyIcon(customIcon.trim()) &&
-    !isRemoteRawFavicon(customIcon.trim())
+    !isRemoteRawFavicon(customIcon.trim()) &&
+    !skipCustomIcon
   ) {
     return customIcon.trim()
   }

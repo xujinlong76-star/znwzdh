@@ -93,12 +93,15 @@ describe('首页极简结构与小窗懒加载边界', () => {
   // 它们只在「今日中心」小窗打开时才需要，现由 NavigationContent 以
   // dynamic(ssr:false) 按需加载；page.tsx 只把 todayBadge 摘要传给导航中心，
   // 首屏上方不直接堆叠渲染。
+  // M-01（2026-11-25）：插件精选区不在此列——44394500 随极简首屏重构撤下它后，
+  // 四视口首页无可见插件区块（只剩页脚链接与胶囊下拉小窗入口），多视口验收
+  // 判为 P2；本用例的插件断言按新行为改写为「必须挂载可见区」，小窗接线不动。
   it('page.tsx 不再注入今日内容（改由导航中心 dynamic 懒加载），不在首屏上方直接堆叠渲染', () => {
     const src = readOverlay('src/app/page.tsx')
     expect(src).not.toContain('todaySlots={{')
     expect(src).toContain('todayBadge={todayBadge}')
     expect(src).not.toContain('<HomeTodayMore>')
-    expect(src).not.toContain('<HomePluginSpotlight')
+    expect(src).toContain('<HomePluginSpotlight')
     const nav = readOverlay('src/components/navigation-content.tsx')
     expect(nav).toContain('todayContent={<TodayZoneContent />}')
     expect(nav).toContain('briefContent={<BriefStripContent />}')

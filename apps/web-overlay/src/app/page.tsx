@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { NavigationContent } from "@/components/navigation-content";
+import { HomePluginSpotlight } from "@/components/home-plugin-spotlight";
 import { normalizeCardDisplayMode, type CanonicalCardDisplayMode } from "@/lib/modular/card-display-modes";
 import { computeHomeTodayBadge } from "@/lib/home-today-summary";
 import { hubGet } from "@/lib/server/hub";
@@ -355,6 +356,11 @@ export default async function HomePage({ params }: { params?: Promise<{ mode?: s
 
   return (
     <>
+      {/* M-01（2026-11-25 多视口验收）：恢复首页可见的插件精选区。44394500
+          极简首屏重构把它从 page.tsx 撤下、只留胶囊下拉里的小窗入口与页脚链接，
+          致四视口首页均无可见区块；取数（featuredRes）与小窗接线原样保留，
+          这里只把同一份数据再挂回导航内容之前的可视区。 */}
+      <HomePluginSpotlight items={featuredRes ? featuredRes.items : null} />
       <NavigationContent
       navigationData={navigationData}
       siteData={siteData}

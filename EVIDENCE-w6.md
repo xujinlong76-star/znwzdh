@@ -194,19 +194,57 @@
 
 ## 10. typecheck 与 390px 渲染验证（接手工 W6）
 
-- typecheck：`node scripts/check-frontend-typecheck.mjs` 前两次执行被运行时中断
-  （机器负载 29–32，疑似守护重启/高负载），第三次转后台运行，
-  日志 `/tmp/w6-tsc.log`，结果：**0 error，exit 0**（2026-11-25 19:44 CST 完成）。
+- typecheck：`node scripts/check-frontend-typecheck.mjs`（2026-11-25 19:57–20:06 CST，
+  后台跑完，GATE_EXIT=1）：**13 个错误，全部是既存环境问题、与 W6 改动无关**——
+  `packages/core/src/job-payloads.ts`、`json-schema.ts`、`mcp-schemas.ts`、
+  `modular.ts`、`pinyin.ts`、`rest-responses.ts`（`Cannot find module 'zod' /
+  'pinyin-pro'`，TS2307，+ 2 处 TS7006 隐式 any）与
+  `packages/store/src/driver.ts`（`Cannot find module 'drizzle-orm' /
+  'better-sqlite3' / 'pg'`，TS2307）。**0 条错误指向 site-favicon.tsx 或本组
+  测试文件**。根因：本 worktree 的 pnpm 安装不完整——`zod@4.6.7` 等包在
+  `node_modules/.pnpm` 里存在，但根 `node_modules/zod` 软链缺失，tsc 解析不到；
+  非代码问题，不在本组修复范围（不碰依赖安装、不改无关文件）。
 - 390px 渲染验证（C7 替代法：真实卡片 28px + object-contain + Playwright +
-  本地 Chromium 截图，浅/深双主题）：见 `/tmp/w6-render/`（`scs-light-390.png`、
+  本地 Chromium 截图，浅/深双主题，2026-11-25 19:45 CST）：见 `/tmp/w6-render/`（`scs-light-390.png`、
   `scs-dark-390.png`）；结果：**双主题均清晰可辨**——红底圆徽 + 金色星穗在
   28px 下完整呈现，四角透明、无裁切、无拉伸；浅色底与深色底均无“红块糊成一团”，
   与 EVIDENCE §1 像素实测一致。截图为临时取证（/tmp），不进仓库。
 
+## 11. 复测轮（本任 W6，2026-11-25 19:45 CST，curl，Chrome UA）
+
+- 目的：前任 worker 丢失后从现场接手；先审 diff、先提交落袋（4071f6a1），
+  再独立复测全部 5 站（scs 源 + 3 阻塞站），不沿用前人结论。
+- 复测原始响应体：`/tmp/w6-retest2/`（01–18.bin + results.tsv）。
+
+| 站 | URL | HTTP | 体字节 | 体判定 |
+|---|---|---|---|---|
+| 中公教育 | `https://www.offcn.com` | 403 | 552 B | 同款 403 openresty WAF，未变 |
+| 中公教育 | `https://www.offcn.com/favicon.ico` | 403 | 552 B | 同上 |
+| 中公教育 | `https://www.offcn.com/apple-touch-icon.png` | 403 | 552 B | 同上 |
+| 中公教育 | `http://www.offcn.com/favicon.ico` | 403 | 552 B | 同上 |
+| 中公教育 | `https://m.offcn.com/favicon.ico` | 403 | 552 B | m 站同款 403 |
+| 中公教育 | `https://www.offcn.com/manifest.json` | 403 | 552 B | 新增路径：同款 403 |
+| 12377 | `https://www.12377.cn` | 403 | 7,412 B | 同款加速乐挑战页（`notice-jiasule` / `getOffsetLimit`），未变 |
+| 12377 | `https://www.12377.cn/favicon.ico` | 403 | 7,412 B | 同上 |
+| 12377 | `https://www.12377.cn/apple-touch-icon.png` | 403 | 7,412 B | 同上 |
+| 12377 | `https://www.12377.cn/manifest.json` | 403 | 7,412 B | 新增路径：同款挑战页 |
+| 12377 | `http://www.12377.cn/favicon.ico` | 403 | 7,412 B | 同上 |
+| 公安部 | `https://www.mps.gov.cn` | 521 | 865 B | 同款 `__jsl_clearance` 挑战脚本（逐字混淆拼接），未变 |
+| 公安部 | `https://www.mps.gov.cn/favicon.ico` | 521 | 849 B | 同上 |
+| 公安部 | `https://www.mps.gov.cn/apple-touch-icon.png` | 521 | 911 B | 同上 |
+| 公安部 | `https://www.mps.gov.cn/manifest.json` | 521 | 892 B | 新增路径：同款挑战脚本 |
+| 公安部 | `http://www.mps.gov.cn/favicon.ico` | 521 | 742 B | 同上 |
+| scs 源 | `http://dl.scs.gov.cn/pp/gkweb/core/web/ui/images/common/logo.png` | 200 | 16,233 B | `image/png`，md5 `bc05012735ab6609bdccd258de168d20`，与落地 scs.png **字节一致**（cmp 通过） |
+| scs 墙 | `http://www.scs.gov.cn/favicon.ico` | 200 | 983 B | 仍为 EO_Bot_Ssid 挑战页（假 200），未变 |
+
+- 结论：3 阻塞站状态与前两轮完全一致，仍阻塞待浏览器实访，不建键、不落盘；
+  scs.png 线上源未变，落地资产有效。本轮无新增落地站。
+
 ## 8. 原始取证保存位置
 
 - curl 原始响应体：`/tmp/w6-probe/`（01–35.bin + results.tsv）、
-  `/tmp/w6-probe2/`（01–10.bin + results.tsv）、`/tmp/w6-probe3/`（CSS 与 logo.png 原文件）。
+  `/tmp/w6-probe2/`（01–10.bin + results.tsv）、`/tmp/w6-probe3/`（CSS 与 logo.png 原文件）、
+  `/tmp/w6-retest2/`（本任 W6 复测轮，01–18.bin + results.tsv）。
   注意 /tmp 会被周期清理；关键数值（状态码、字节数、md5、尺寸、像素实测）已全部钉死
   在本文件与测试 `site-favicon-iconbatch-remaining-w6.test.ts` 内。
 - 落地资产：`apps/web-overlay/public/brand-icons/scs.png`

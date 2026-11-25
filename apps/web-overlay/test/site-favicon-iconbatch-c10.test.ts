@@ -54,11 +54,12 @@ import { resolveLogoTile, resolveSiteIcon } from '../src/components/site-favicon
  *   （hash 路径仅下载本地化，不进代码；favicon.ico 仅 32×32 未用）。
  *
  * 事实钉死（只记、不加占位、不擅自换图）：
- * - 阻塞 2 站未接线：读秀（站方 favicon.ico 是微软 IE
- *   蓝色“e”错标，绝不能用）、Project Gutenberg（站点维护中、全 503，
- *   待维护结束重试）。2 站仍解析为空（字母徽标兜底），无落盘文件。
+ * - 阻塞 1 站未接线：Project Gutenberg（站点维护中、全 503，
+ *   待维护结束重试）。1 站仍解析为空（字母徽标兜底），无落盘文件。
  *   Scopus 已于 2026-11-25 剩余轮 W11 解堵：站方 favicon 仍 SSO 循环，
  *   改用 Simple Icons 官方 Scopus 字标 SVG（scopus.svg），详见 W11 测试。
+ *   读秀已于同轮解堵：站方 favicon 是 IE 蓝色“e”错标，改按官网品牌
+ *   重绘（主品牌蓝 #2872E2 + 白色“读”字，duxiu.png），详见 W11 测试。
  * - CNKI 白色反白宽版标：cnki.svg 须配 LOGO_TILE_MAP 'dark' 深色底块
  *   （Haiper 白字标同款机制），否则白字在浅色主题下不可见；
  *   底块色值为 LOGO_TILE_CLASSES.dark 的 bg-neutral-900（Tailwind
@@ -167,13 +168,11 @@ describe('resolveSiteIcon（图标修复 C 类第 10 批）', () => {
     }
   })
 
-  it('事实钉死：阻塞 2 站未接线，仍解析为空（无占位图）', () => {
-    // 读秀：站方 favicon.ico 是微软 IE 蓝色“e”错标，绝不能用。
-    expect(resolveSiteIcon('https://www.duxiu.com', '读秀', 'https://www.duxiu.com/favicon.ico')).toBe('')
+  it('事实钉死：阻塞 1 站未接线，仍解析为空（无占位图）', () => {
     // Project Gutenberg：站点维护中、全 503，待维护结束重试。
     expect(resolveSiteIcon('https://www.gutenberg.org', 'Project Gutenberg', 'https://www.gutenberg.org/favicon.ico')).toBe('')
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
-    for (const name of ['duxiu.png', 'duxiu.svg', 'gutenberg.png', 'gutenberg.svg']) {
+    for (const name of ['gutenberg.png', 'gutenberg.svg']) {
       expect(existsSync(`${dir}${name}`), name).toBe(false)
     }
   })

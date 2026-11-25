@@ -1075,6 +1075,17 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   //   C10“Elsevier 字母标不是 Scopus”禁令不适用），SVG 原样落盘
   //   scopus.svg。'scopus.com' 全库只命中 Scopus 一站，无后缀串站。
   'scopus.com=scopuss',
+  // - 读秀：站方 favicon.ico 是微软 IE 蓝色“e”错标（16×16，1150 B，
+  //   目视确认为蓝 e + 金环，绝不能用，C10 旧阻塞原因仍成立）；登录页
+  //   https://www.duxiu.com（login.jsp）全站无任何 logo 图片资产
+  //   （仅 1 张 gab.png 备案小图标；images/logo.png 实为“图书馆联合
+  //   参考咨询服务中心”拼图标志，与读秀无关，未用）。故按任务要求重绘：
+  //   以官网主视觉为源——登录页主品牌蓝 #2872E2（login.css 出现 7 次，
+  //   辅蓝 #0066cc 链接色 3 次）、标题“读秀学术搜索”首字“读”——画
+  //   128×128 圆角方块 + 白色“读”字（Noto Sans CJK SC Bold），四角透明，
+  //   落盘 duxiu.png（3,693 B）。重绘依据与来源见 W11 测试与 EVIDENCE。
+  //   'duxiu.com' 全库只命中读秀一站，无后缀串站。
+  'duxiu.com=duxiup',
  ];
 
 /**

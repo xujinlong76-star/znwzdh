@@ -24,6 +24,14 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
  *   SHA-256 93e51dcc9ac94ba29df4b09338dc4958f75bb881ab27ef1b789e7e2292841447；
  *   橙色 #E9711C Scopus 字标，SVG 原样落盘 scopus.svg）。
  *   非 Elsevier 字母标，C10 禁令不适用。
+ * - 读秀：站方 https://www.duxiu.com/favicon.ico 是微软 IE 蓝色“e”
+ *   错标（16×16，1,150 B，目视确认为蓝 e + 金环，绝不能用）；登录页
+ *   全站无任何 logo 图片资产（仅 gab.png 备案小图标；images/logo.png
+ *   实为“图书馆联合参考咨询服务中心”拼图标志，与读秀无关，未用）。
+ *   故按官网品牌重绘：登录页主品牌蓝 #2872E2（login.css 7 处）圆角
+ *   方块 + 白色“读”字（Noto Sans CJK SC Bold，标题“读秀学术搜索”
+ *   首字），128×128、四角透明，落盘 duxiu.png（3,693 B）。
+ *   重绘依据与来源见 EVIDENCE-w11.md。
  *
  * 事实钉死（只记、不加占位、不擅自换图）：
  * - 5 落地站均 ≤15 KB（字节数下方钉死）；SVG 站原样、PNG 站 <128 原样，
@@ -36,10 +44,12 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
 
 const CASES: Array<{ url: string; title: string; customIcon?: string; expected: string }> = [
   { url: 'https://www.scopus.com', title: 'Scopus', customIcon: 'https://www.scopus.com/favicon.ico', expected: '/brand-icons/scopus.svg' },
+  { url: 'https://www.duxiu.com', title: '读秀', customIcon: 'https://www.duxiu.com/favicon.ico', expected: '/brand-icons/duxiu.png' },
 ]
 
 const LOCAL_ASSETS: Array<{ name: string; width: number; height: number; bytes: number }> = [
   { name: 'scopus.svg', width: 24, height: 24, bytes: 808 },
+  { name: 'duxiu.png', width: 128, height: 128, bytes: 3693 },
 ]
 
 function readPngDimensions(buf: Buffer): { width: number; height: number } {
@@ -55,7 +65,7 @@ describe('resolveSiteIcon（图标修复剩余轮 W11）', () => {
 
   it('本地品牌资产在 served 树的 public/brand-icons/ 落盘', () => {
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
-    expect(LOCAL_ASSETS).toHaveLength(1)
+    expect(LOCAL_ASSETS).toHaveLength(2)
     for (const { name } of LOCAL_ASSETS) {
       expect(existsSync(`${dir}${name}`), name).toBe(true)
     }

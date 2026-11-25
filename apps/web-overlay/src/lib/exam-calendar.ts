@@ -1449,8 +1449,9 @@ export interface GuokaoAdmissionReminder {
   stripLine: string
   /** /exam 卡片文案（A 版全句） */
   cardLine: string
-  /** 开放期卡片瘦身行（U-236）：只留节点行没有的增量（入场新规 + 多打两份），
-   *  11-23–11-29 开放期（open / last-call）才有；11-15–11-22 不设，行为不变。 */
+  /** 开放期卡片瘦身行（U-236）：只留节点行没有的增量（入场新规 + 多打两份 +
+   *  N1 紧迫感一句），11-23–11-29 开放期（open / last-call）才有；
+   *  11-15–11-22 不设，行为不变。 */
   slimCardLine?: string
   url: string
   /** 专题网站门户（备用链）：http://bm.scs.gov.cn/kl2027，读 GUOKAO_PORTAL_URL 常量 */
@@ -1460,9 +1461,11 @@ export interface GuokaoAdmissionReminder {
 /**
  * 开放期卡片瘦身行（U-236）：只留节点行没有的增量——入场新规 + 多打两份备用；
  * 窗口（11 月 29 日 15:00 截止）与打印入口已在时间轴节点行完整出现，这里不再重复。
+ * N1：首句加一句紧迫感提醒（别拖到最后一天 + 截止日就是笔试当天的理由），
+ * 不写具体日期时刻，不与 U-236 的去重口径冲突。
  */
 const GUOKAO_ADMISSION_SLIM_CARD_LINE =
-  '多打两份备用。今年新规（据国家公务员局 2027 年度招考公告）：开考 15 分钟后不得入场（去年为 30 分钟）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。'
+  '别拖到最后一天：截止日就是公共科目笔试当天，逾期无法补打。多打两份备用。今年新规（据国家公务员局 2027 年度招考公告）：开考 15 分钟后不得入场（去年为 30 分钟）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。'
 
 const GUOKAO_ADMISSION_COPY: Record<
   Exclude<GuokaoAdmissionPhase, 'countdown'>,
@@ -1473,7 +1476,7 @@ const GUOKAO_ADMISSION_COPY: Record<
     card: '2027 国考准考证明天（11 月 23 日）0:00 开放打印，11 月 29 日 15:00 截止——报名确认成功的考生，带报名序号登录专题网站 bm.scs.gov.cn/kl2027，选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn），多打两份备用。笔试 11 月 28–29 日：专业科目 11 月 28 日 14:00–16:00（部分职位），公共科目 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。今年新规：开考 15 分钟后不得入场（去年为 30 分钟，据国家公务员局 2027 年度招考公告）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。',
   },
   open: {
-    strip: '国考准考证打印已开放，11 月 29 日 15:00 截止，逾期无法补打；登录专题网站 bm.scs.gov.cn/kl2027，选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn）',
+    strip: '国考准考证打印已开放，11 月 29 日 15:00 截止，逾期无法补打；别拖到当天，截止日就是公共科目笔试当天；登录专题网站 bm.scs.gov.cn/kl2027，选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn）',
     card: '2027 国考准考证打印已开放，11 月 29 日 15:00 截止，逾期系统关闭、无法补打——报名确认成功的考生，带报名序号登录专题网站 bm.scs.gov.cn/kl2027，选「考生考务入口」进入打印系统（直达 gwy.cpta.com.cn），多打两份备用。笔试 11 月 28–29 日：专业科目 11 月 28 日 14:00–16:00（部分职位），公共科目 11 月 29 日（行测 9:00–11:00、申论 14:00–17:00）。今年新规：开考 15 分钟后不得入场（去年为 30 分钟，据国家公务员局 2027 年度招考公告）——行测最晚 8:45 入场，申论、专业科目最晚 13:45 入场；考试期间不得提前退场（考场规则）。',
   },
   'last-call': {
@@ -1510,6 +1513,50 @@ export function admissionReminderFor(
     slimCardLine,
     url: GUOKAO_ADMISSION_URL,
     portalUrl: GUOKAO_PORTAL_URL,
+  }
+}
+
+/**
+ * 国家电网 2027 第一批接力行（N1，2026-11-25 落地）。
+ *
+ * 事实源：0222-W3 已核实——各单位报名 11-25 截止（8 家单位公告一致，
+ * 全国总公告称截止日以各单位公告为准）、统一笔试初定 2026-12-06
+ * （全国总公告原文“初定”，“时间如有调整，以招聘平台发布的考试公告为准”）。
+ * 落点在 /exam 国考卡片内（清单页入口行之后、note 之前），不进 EXAMS
+ * 数组——国网是跨考试回访钩子，不是第 13 场考试。
+ *
+ * 相位（北京时间；只按自然日切，不用时刻）：
+ *  - 11-25 当天：'today'（草稿 A：报名截至今天 11-25）；
+ *  - 11-26–12-06：'closed'（草稿 B：报名已截止（11-25），笔试初定 12-06）；
+ *  - 11-25 之前与 12-07 之后：null（行下线；笔试已过，文案过期）。
+ * 链接门禁：https://zhaopin.sgcc.com.cn 抓取端 HTTP 412（2026-11-25
+ * 复测仍为 412），真人浏览器可达性未核实——行内只留文字、不挂链；
+ * 复核通过后方可改为外链（走 safeHref，只链首页，绝不链深链）。
+ * 不写“约 1.95 万人”（非官方汇总口径）、不写截止时刻（未核实）、
+ * 不写省市考点。
+ */
+export type SgccBatch1Phase = 'today' | 'closed'
+
+export function sgccBatch1Phase(nowMs: number = Date.now()): SgccBatch1Phase | null {
+  const deadlineDay = shanghaiMidnightMs('2026-11-25')
+  const dayAfterExam = shanghaiMidnightMs('2026-12-07')
+  if (nowMs < deadlineDay || nowMs >= dayAfterExam) return null
+  if (nowMs < shanghaiMidnightMs('2026-11-26')) return 'today'
+  return 'closed'
+}
+
+export function sgccBatch1Copy(nowMs: number = Date.now()): { phase: SgccBatch1Phase; line: string } | null {
+  const phase = sgccBatch1Phase(nowMs)
+  if (!phase) return null
+  if (phase === 'today') {
+    return {
+      phase,
+      line: '国家电网 2027 第一批：报名截至今天 11-25，统一笔试初定 12-06。唯一官方报名入口：国家电网有限公司人力资源招聘平台 https://zhaopin.sgcc.com.cn ，谨防虚假招聘（国网声明：未授权其他网站、社交媒体、个人发布招聘信息，招聘不收取任何费用）。',
+    }
+  }
+  return {
+    phase,
+    line: '国家电网 2027 第一批：报名已截止（11-25），统一笔试初定 12-06，具体时间以招聘平台考试公告为准。唯一官方入口：国家电网有限公司人力资源招聘平台 https://zhaopin.sgcc.com.cn ，谨防虚假招聘。',
   }
 }
 

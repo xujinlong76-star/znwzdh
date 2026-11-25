@@ -33,6 +33,7 @@ import {
 } from '@/lib/exam-calendar'
 import { ExamCountdown } from './exam-countdown'
 import { GuokaoAdmissionReminderIsland } from '@/components/guokao-admission-reminder'
+import { SgccBatch1Row } from '@/components/sgcc-batch1-row'
 import { MyExamTracker } from './my-exam-tracker'
 
 /**
@@ -218,6 +219,11 @@ export default async function ExamPage() {
                       </Link>
                     </p>
                   ) : null}
+                  {/* N1：国家电网 2027 第一批接力行（国考卡片内、清单页入口行
+                      之后、note 之前）。客户端岛按日期切草稿 A（11-25 当天）/
+                      B（11-26 起）；链接门禁未过（zhaopin.sgcc.com.cn 抓取端
+                      412，真人浏览器未复核），行内只留文字、不挂链。 */}
+                  {exam.id === 'guokao' ? <SgccBatch1Row /> : null}
                   {exam.note ? (
                     <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{exam.note}</p>
                   ) : null}

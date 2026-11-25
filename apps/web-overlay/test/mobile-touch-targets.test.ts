@@ -643,4 +643,29 @@ describe('tablist A-3：tablist 对应面板补 role="tabpanel" / aria-labelledb
     expect(src).toContain('id="bookmark-input-tabpanel-paste"')
     expect(src).toContain('aria-labelledby="bookmark-input-tab-paste"')
   })
+
+  it('bookmark-importer #11 收藏来源：social 激活时 tab/面板三方一致，切到 browser 后引用消失', () => {
+    const src = read('src/components/bookmark-importer.tsx')
+    // tab 侧：共用 .map 模板，id 由 key 派生；aria-controls 是条件式
+    expect(src).toContain('id={`bookmark-source-tab-${key}`}')
+    expect(src).toContain(
+      "aria-controls={key === 'social' && sourceKind === 'social' ? 'bookmark-source-tabpanel-social' : undefined}",
+    )
+    // 无静态挂法、无 browser 面板 id：防有人把条件改成无条件
+    expect(src).not.toContain('aria-controls="bookmark-source-tabpanel-social"')
+    expect(src).not.toContain('bookmark-source-tabpanel-browser')
+    // 面板侧：social 说明块根 div 补 tabpanel 三件套，且在 social 条件门内
+    expect(src).toContain("{sourceKind === 'social' && (")
+    expect(src).toContain('id="bookmark-source-tabpanel-social"')
+    expect(src).toContain('aria-labelledby="bookmark-source-tab-social"')
+    expect(src.indexOf('id="bookmark-source-tabpanel-social"')).toBeGreaterThan(
+      src.indexOf("{sourceKind === 'social' && ("),
+    )
+    // browser 无面板的回归锁：全文件 browser 门控块仅 #12 面板内的两处示例按钮
+    expect(count(src, "sourceKind === 'browser' &&")).toBe(2)
+    // 面板总数哨兵：#12 两处 + #11 一处 = 3
+    expect(count(src, 'role="tabpanel"')).toBe(3)
+    // 不与 #12 交叉：#11 的面板 id 不得出现在 #12 的 aria-controls 里
+    expect(src).not.toContain('aria-controls={`bookmark-input-tabpanel-${key}`} aria-controls="bookmark-source-tabpanel-social"')
+  })
 })

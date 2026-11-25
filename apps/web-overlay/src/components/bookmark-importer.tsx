@@ -1592,6 +1592,8 @@ export function BookmarkImporter({
                 key={key}
                 type="button"
                 role="tab"
+                id={`bookmark-source-tab-${key}`}
+                aria-controls={key === 'social' && sourceKind === 'social' ? 'bookmark-source-tabpanel-social' : undefined}
                 aria-selected={active}
                 tabIndex={active ? 0 : -1}
                 onClick={() => switchSourceKind(key)}
@@ -1606,7 +1608,12 @@ export function BookmarkImporter({
           })}
         </div>
         {sourceKind === 'social' && (
-          <div className="space-y-2">
+          <div
+            role="tabpanel"
+            id="bookmark-source-tabpanel-social"
+            aria-labelledby="bookmark-source-tab-social"
+            className="space-y-2"
+          >
             <label htmlFor="social-platform" className="text-xs font-semibold text-foreground">平台（自动识别失败时请手动选）</label>
             <select
               id="social-platform"

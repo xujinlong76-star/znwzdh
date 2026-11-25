@@ -486,13 +486,16 @@ export function GrowthPanel() {
         )}
       </section>
 
-      {/* 独立分段控制器（Segmented Control）：置于档案大卡与下方任务内容区之间，建立清晰视觉归属 */}
+      {/* 独立分段控制器（Segmented Control）：置于档案大卡与下方任务内容区之间，建立清晰视觉归属。
+          桌面档右侧留出挂件安全区：小猫猫固定 right:16px / 48px 宽，会压住撑满内容区的
+          最右「图鉴与指南」Tab（1366×768 实测重叠 13×12px）；移动端挂件抬高到底部导航
+          之上、与 Tab 行不同区，故只在 md+ 生效。 */}
       <div
         role="tablist"
         aria-label="成长档案分区"
         data-growth-segmented-control="true"
         onKeyDown={handleTabKeyDown}
-        className="flex items-center gap-1 overflow-x-auto rounded-2xl border border-border/70 bg-card/85 p-1.5 shadow-xs [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex items-center gap-1 overflow-x-auto rounded-2xl border border-border/70 bg-card/85 p-1.5 shadow-xs md:pr-14 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {tabs.map(({ id, label, badge, icon: Icon }) => {
           const selected = activeTab === id

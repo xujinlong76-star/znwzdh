@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/registry/new-york/ui/dialog'
 import { Sparkles } from 'lucide-react'
@@ -62,6 +62,22 @@ export function VideoAiLearningDialog({
   conceptAvailable,
 }: VideoAiLearningDialogProps) {
   const [tab, setTab] = useState<AiLearningTab>('copilot')
+
+  // A-3 前置修复：conceptAvailable 翻转为 false 时重置陈旧 tab。
+  // concept tab 只在 conceptAvailable 时渲染、concept 面板双重门控，
+  // 若 tab 仍为 'concept'，三个面板全部缺席，且两可见 tab 的
+  // aria-selected 全 false、tabIndex 全 -1（键盘 Tab 跳过整个 tablist）。
+  // 可达路径两条：关 dialog → 换无章节视频 → 重开（组件保持挂载、state 保留）；
+  // concept 面板内 onJumpToTarget 切到无章节视频（dialog 打开态当场翻转）。
+  // 本修复覆盖两条路径，不是纯防御。
+  // 重置目标为 'copilot'，即 visibleTabs[0]：过滤只删中间的 'concept'，
+  // 'copilot' 在 conceptAvailable 的两种取值下恒为首项、恒渲染、且是初始值
+  // 与 Home 键落点，三者同一；'flashcards' 不是默认入口，不可作重置目标。
+  useEffect(() => {
+    if (tab === 'concept' && !conceptAvailable) {
+      setTab('copilot')
+    }
+  }, [conceptAvailable, tab])
 
   // A-2：标准 ARIA Tabs 键盘交互。照抄 plugin-detail-view.tsx:143-170
   // 骨架 + A-1 的 disabled 跳过（全量列表保下标映射，步进跳 disabled；

@@ -668,4 +668,13 @@ describe('tablist A-3：tablist 对应面板补 role="tabpanel" / aria-labelledb
     // 不与 #12 交叉：#11 的面板 id 不得出现在 #12 的 aria-controls 里
     expect(src).not.toContain('aria-controls={`bookmark-input-tabpanel-${key}`} aria-controls="bookmark-source-tabpanel-social"')
   })
+
+  it('video-ai-learning-dialog #13 前置修复：conceptAvailable 翻 false 时陈旧 tab 重置为 copilot', () => {
+    const src = read('src/components/video-ai-learning-dialog.tsx')
+    // R2 根因：effect 存在——conceptAvailable 翻 false 时陈旧 tab 重置为 copilot
+    expect(src).toContain("import React, { useEffect, useState } from 'react'")
+    expect(src).toContain('useEffect(() => {')
+    expect(src).toContain("if (tab === 'concept' && !conceptAvailable) {")
+    expect(src).toContain("setTab('copilot')")
+  })
 })

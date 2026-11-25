@@ -1253,6 +1253,69 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   'javaguide.cn=javaguidep',
   'w3schools.com=w3schoolsp',
   'exercism.org=exercismp',
+  // 2026-11-25（剩余图标补齐 W9，设计与创意组 6 站）。
+  // 来源均经 curl 重新验证（200 + image MIME + 魔数 + 尺寸，Chrome UA）：
+  // - Pexels：站方主域 www.pexels.com 全路径 403/000（Cloudflare
+  //   “Just a moment...”机器人墙，首页/favicon.ico/favicon-32x32.png/
+  //   /images/favicon.ico 均被墙，见 EVIDENCE-w9.md）；但站方自有图片
+  //   CDN images.pexels.com 未墙：官方 API 品牌资产
+  //   /lib/api/pexels.png（1010×446 RGBA，200、image/png、24,726 B，
+  //   md5 fa5df91be27d70e447150875f2e6b8f3）目视确认即 Pexels 手写体
+  //   黑色 wordmark（非第三方图标库，系站方 API 文档指定署名资产）。
+  //   Pillow LANCZOS 等比 1010×446→256×113 落盘 pexels.png（13,890 B，
+  //   md5 85ff250e3d2ce2f64b38711249f9ba20）。宽 wordmark 先例见库内
+  //   chinatax/ncpssd/nmc 三站；黑字标深色弱与 Khroma 同款已知局限，
+  //   只加普通 map 条目、不做单站底块补丁，留待统一处理轮。其 nav
+  //   icon 字段为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
+  //   map 生效，navigation.json 不动。2026-11-25 W9 接续核实：源站
+  //   重新 curl 复测 md5/尺寸与上一致；本地文件与源等比缩放像素
+  //   逐点一致（max abs diff 0），ASCII 渲染确认 “pexels” 手写体 +
+  //   右上 P 形 swoosh 标完整，故补接线、由阻塞改落地。
+  // - Paletton：首页声明的最大档 img/favicon-128.png（128×128 RGBA，
+  //   200、image/png、4,345 B，md5 f23476c6715214726e096a8d3cf8275f；彩色
+  //   色轮标，ASCII 渲染确认圆环色轮完整）；根 /favicon.ico 仅 16×16
+  //   ICO（1,150 B）未用。原样落盘 paletton.png（4,244 B，像素与源一致）。
+  //   其 nav icon 字段为远端 …/favicon.ico，被 isRemoteRawFavicon 拦截，
+  //   map 生效，navigation.json 不动。
+  // - Colormind：首页声明 /favicon32.gif（32×32 GIF，200、image/gif、
+  //   2,389 B，md5 2bc31481c2048290cd453d873c7b0d29；圆环 + 圆点品牌标，
+  //   ASCII 渲染确认）；根 /favicon.ico 404 未用。GIF 转 RGBA PNG 原样
+  //   32×32 落盘 colormind.png（1,509 B，像素与源一致），绝不放大。
+  //   其 nav icon 字段即该 GIF（路径含 favicon，被拦截），map 生效，
+  //   navigation.json 不动。
+  // - Photopea：首页声明 promo/icon512.png（512×512 RGBA，200、
+  //   image/png、17,293 B，md5 59b6b69a426e8232fbbbed410badc879；青绿
+  //   #00A591 + 白字标，四角透明），Pillow LANCZOS 512→128 落盘
+  //   photopea.png（11,480 B，md5 edb41c65fb239d86ba3ff469b03d5dc2）。
+  //   注意：其 nav icon 字段为同一远端 URL（路径不含 favicon，不触发
+  //   isRemoteRawFavicon），customIcon 优先于 map，单加本键在运行时
+  //   不可达——须由协调方按 R1 裁决（B2a/B3a 先例）清空该站 icon 字段
+  //   才能真正停热链；本任务禁改 navigation.json，故此处只记事实，
+  //   测试内钉死“带真实 customIcon 时仍走远端直链”这一现状，不谎称
+  //   已停热链。无 customIcon 时 map 正确解析到本地（测试已断言）。
+  // - Khroma：首页声明 ../assets/icons/fav.png（31×32 RGBA，200、
+  //   image/png、358 B，md5 4cd5d47db8d104df49627f4e7e44e34b；纯黑斜杠
+  //   标，alpha 渲染确认斜向色带完整），字节原样落盘 khroma.png
+  //   （358 B，md5 与源一致），31×32 原样不放大。纯黑标按 Ollama /
+  //   SourceHut / Radix 先例：只加普通 map 条目，不做单站底块补丁，
+  //   深色模式对比度弱是已知局限、留待统一处理轮。nav icon 字段为同
+  //   一远端 URL（不触发拦截），与 Photopea 同款截胡现状，见上。
+  // - Happy Hues：首页声明的 Webflow CDN happy-hues-fav.png
+  //   （32×32 RGBA，200、image/png、1,179 B，md5
+  //   43924ea552e27ebba0a2e2add953ccf2；珊瑚红 #F25A4E 圆徽 + 深紫
+  //   #1F1135 标，ASCII 渲染确认圆徽完整），字节原样落盘
+  //   happyhues.png（1,179 B，md5 与源一致），32×32 原样不放大。
+  //   nav icon 字段为同一远端 URL（不触发拦截），与 Photopea 同款
+  //   截胡现状，见上。
+  // 键的精确性：6 键在 388 站库中各只命中 1 站（逐站核对），无后缀串站、
+  // 无子域站；navigation.json 不动。6 标浅/深主题均见 EVIDENCE-w9.md
+  // 的 390px 渲染截图（Khroma 纯黑标、Pexels 黑字标深色弱除外，已注明）。
+  'paletton.com=palettonp',
+  'pexels.com=pexelsp',
+  'colormind.io=colormindp',
+  'photopea.com=photopeap',
+  'khroma.co=khromap',
+  'happyhues.co=happyhuesp',
  ];
 
 /**

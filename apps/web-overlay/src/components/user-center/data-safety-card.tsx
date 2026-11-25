@@ -90,18 +90,18 @@ function Row({
           <span aria-hidden className={STATUS_DOT[status]} />
           <span className="truncate">{label}</span>
         </span>
-        {sub ? <span className="pl-3.5 text-[11px] leading-relaxed text-muted-foreground">{sub}</span> : null}
+        {sub ? <span className="pl-3.5 text-[0.6875rem] leading-relaxed text-muted-foreground">{sub}</span> : null}
         {next && status !== 'ok' ? (
           <span className="flex min-w-0 pl-3.5">
             <a
               href={safeHref(next.href, '/')}
-              className="inline-flex min-h-6 items-center gap-1 rounded-sm text-[11px] text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex min-h-6 items-center gap-1 rounded-sm text-[0.6875rem] text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {next.label}
             </a>
           </span>
         ) : null}
-        <span className="pl-3.5 text-[11px] text-muted-foreground">来源：{source}</span>
+        <span className="pl-3.5 text-[0.6875rem] text-muted-foreground">来源：{source}</span>
       </span>
       <span className={`shrink-0 text-right text-xs font-medium ${STATUS_TEXT[status]}`}>
         {value}
@@ -278,7 +278,7 @@ export function DataSafetyCard({
           数据安全
         </h2>
         {safety ? (
-          <span className={`rounded-full border border-border/60 px-2 py-0.5 text-[11px] font-medium ${STATUS_TEXT[overall]}`}>
+          <span className={`rounded-full border border-border/60 px-2 py-0.5 text-[0.6875rem] font-medium ${STATUS_TEXT[overall]}`}>
             {overallTitle(overall)}
           </span>
         ) : null}
@@ -309,7 +309,7 @@ export function DataSafetyCard({
               }
             >
               <p className="font-semibold">{overallTitle(overall)}</p>
-              <p className="mt-0.5 text-[11px] leading-relaxed">
+              <p className="mt-0.5 text-[0.6875rem] leading-relaxed">
                 {lastExport?.at == null
                   ? '近一年内没有导出记录；现在导一份只要几秒，导完这里就变绿。'
                   : `上次导出是 ${formatRelativeTime(lastExport.at, now)}，之后新增的数据还没进备份；现在导一份就能刷新。`}
@@ -388,7 +388,7 @@ export function DataSafetyCard({
           </ul>
 
           {safety.sync.unreadSyncFailures > 0 ? (
-            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+            <p className="mt-2 text-[0.6875rem] leading-relaxed text-muted-foreground">
               另有 {safety.sync.unreadSyncFailures} 条未读同步失败通知，
               <a href="/me/notifications" className="underline underline-offset-2 hover:text-foreground">
                 去通知页查看
@@ -431,14 +431,14 @@ export function DataSafetyCard({
           </div>
 
           {syncMessage ? (
-            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground" role="status">
+            <p className="mt-2 text-[0.6875rem] leading-relaxed text-muted-foreground" role="status">
               {syncMessage}
             </p>
           ) : null}
 
           {diagChecks ? (
             <div className="mt-3 space-y-2">
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[0.6875rem] text-muted-foreground">
                 自检结果（{diagChecks.length} 项，只读检查，不修复、不删数）
               </p>
               <ul className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/60">
@@ -448,7 +448,7 @@ export function DataSafetyCard({
                       <CheckIcon status={check.status} />
                       <span className="min-w-0">
                         <span className="block break-words font-medium">{check.label}</span>
-                        <span className="block break-words text-[11px] text-muted-foreground">{check.detail}</span>
+                        <span className="block break-words text-[0.6875rem] text-muted-foreground">{check.detail}</span>
                       </span>
                     </span>
                   </li>
@@ -457,7 +457,7 @@ export function DataSafetyCard({
             </div>
           ) : null}
 
-          <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="mt-3 flex items-start gap-1.5 text-[0.6875rem] leading-relaxed text-muted-foreground">
             <CircleDashed className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
             以上状态来自云端最近一次写入；断网时可能滞后，不代表数据丢失。全站冷备不在此列。
           </p>

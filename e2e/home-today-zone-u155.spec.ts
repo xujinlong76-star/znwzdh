@@ -2,10 +2,11 @@ import { test, expect } from '@playwright/test'
 import { todayFollowUpNodes, todayNodes } from '../apps/web-overlay/src/lib/exam-calendar'
 import { safeHref } from '../apps/web-overlay/src/lib/safe-url'
 
-/** 2026-11-21 顶栏收口：今日中心从独立按钮移入「通知与插件聚合」菜单。 */
+/** 2026-11-24 顶栏融合瘦身：今日中心入口就是工具栏上的「打开今日中心小窗」按钮，直接点开对话框（此前经「通知与插件聚合」菜单中转，该菜单已不存在）。 */
 async function openTodayCenter(page: import('@playwright/test').Page): Promise<void> {
-  await page.getByRole('button', { name: /通知与插件聚合/ }).first().click({ timeout: 60_000 })
-  await page.getByText('今日中心', { exact: true }).click({ timeout: 10_000 })
+  await page
+    .getByRole('button', { name: '打开今日中心小窗', exact: true })
+    .click({ timeout: 60_000 })
 }
 
 
@@ -56,36 +57,39 @@ test.describe('U-155 今日中心入口可见文字标签（2026-11-19 01:22 轮
   // 标签会把搜索容器压到 298px、输入框只剩 18px）。本用例随新行为改写：1280px
   // 与 390px 档断言标签隐藏（按钮本身仍可见），并补 1600px（2xl）档的标签可见
   // 用例；断言未删，只改断言方向。e2e2 分支的 toolbar-360-overflow 同款改写。
+  // 2026-11-24 顶栏融合瘦身：今日中心不再经「通知与插件聚合」菜单进入，
+  // 工具栏上就是「打开今日中心小窗」按钮本身（aria-label 不变），标签 span
+  // 为 `hidden min-[1536px]:inline`——旧用例按已不存在的聚合菜单定位，
+  // CI run 45570267982 上 :59/:75「按钮找不到」即因此而红。定位改为按钮本身。
   test('首屏按钮「今日 N 项」标签按 2xl 断点隐藏（1280px 与 390px 移动端）', async ({
     page,
   }) => {
+    const nowMs = Date.now()
+    const todayCount = todayNodes(nowMs).length
+    const expected = todayCount > 0 ? `今日 ${todayCount} 项` : '今日效率'
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 800 })
       await page.goto('/')
-      const trigger = page.getByRole('button', { name: /通知与插件聚合/ }).first()
+      const trigger = page.getByRole('button', { name: '打开今日中心小窗', exact: true })
       await expect(trigger).toBeVisible({ timeout: 60_000 })
-      // 旧版独立按钮上的「今日 N 项」标签已移入聚合菜单的次级文案；
-      // 首屏工具栏不再有独立今日中心按钮（顶栏收口）。
-      await expect(
-        page.getByRole('button', { name: '打开今日中心小窗', exact: true }),
-      ).toHaveCount(0)
+      // 标签 span 在 <1536px 为 display:none：按钮本身可见、文字标签隐藏。
+      // 在按钮内定位，避免页面别处同文案干扰。
+      await expect(trigger.getByText(expected, { exact: true })).toBeHidden({
+        timeout: 10_000,
+      })
     }
   })
 
   test('首屏按钮含可见「今日 N 项」标签（1600px，2xl）', async ({ page }) => {
     const nowMs = Date.now()
     const todayCount = todayNodes(nowMs).length
-    const expected = todayCount > 0 ? `今日 ${todayCount} 项` : '今日'
+    const expected = todayCount > 0 ? `今日 ${todayCount} 项` : '今日效率'
     await page.setViewportSize({ width: 1600, height: 800 })
     await page.goto('/')
-    // 1600px：聚合菜单项的次级文案优先显示倒计时，无倒计时时才显示今日条数
-    //（navigation-toolbar.tsx:308 countdownLabel ?? 今日 N 项）。两种都由真实数据决定。
-    await page.getByRole('button', { name: /通知与插件聚合/ }).first().click({ timeout: 60_000 })
-    const item = await page.getByText('今日中心', { exact: true }).locator('..').locator('..').innerText()
-    expect(
-      item.includes(expected) || item.includes('倒计时'),
-      `菜单次级文案应含「${expected}」或倒计时，实际：${item}`,
-    ).toBe(true)
+    // 1600px（≥1536px）：标签 span 直接显示在今日按钮内，不经任何菜单。
+    const trigger = page.getByRole('button', { name: '打开今日中心小窗', exact: true })
+    await expect(trigger).toBeVisible({ timeout: 60_000 })
+    await expect(trigger.getByText(expected, { exact: true })).toBeVisible({ timeout: 10_000 })
   })
 })
 

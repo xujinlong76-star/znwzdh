@@ -67,12 +67,18 @@ export function HarvestPolicyDialog({
         .map(k => k.trim())
         .filter(Boolean)
 
+      // 本弹窗不是 <form>，HTML min/max 不会触发原生校验；BFF 又不跑 zod，
+      // 所以越界值必须在这里 clamp，否则 100000/-30 会被写进策略并在采集时误用。
+      const clampInt = (v: unknown, lo: number, hi: number, fallback: number) => {
+        const n = Math.trunc(Number(v))
+        return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback
+      }
       const updatedPolicy: VideoHarvestPolicy = {
         enabled,
         keywords: parsedKeywords,
         platforms: selectedPlatforms.length > 0 ? selectedPlatforms : ['bilibili'],
-        maxItems: Number(maxItems) || 12,
-        minDurationSec: Number(minDurationSec) || 180,
+        maxItems: clampInt(maxItems, 3, 50, 12),
+        minDurationSec: clampInt(minDurationSec, 30, 3600, 180),
         autoReplaceOutdated,
       }
 

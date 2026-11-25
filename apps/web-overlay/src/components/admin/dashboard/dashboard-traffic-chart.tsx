@@ -311,8 +311,13 @@ export function DashboardTrafficChart({
                   width={colW}
                   height={effH}
                   fill="transparent"
-                  className="cursor-crosshair"
+                  className="cursor-crosshair focus:outline-none focus-visible:stroke-primary"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${p.hour} 时段：请求 ${p.requests}，QPS ${p.qps}，P95 ${p.p95Ms}ms，5xx ${p.error5xx}`}
                   onMouseEnter={() => setHoverIndex(idx)}
+                  onFocus={() => setHoverIndex(idx)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setHoverIndex(idx) }}
                 />
               )
             })}

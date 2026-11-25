@@ -508,9 +508,12 @@ export function AiObservabilityPanel() {
                   <div
                     key={idx}
                     className="group relative flex flex-1 flex-col items-center h-full justify-end"
+                    tabIndex={0}
+                    role="img"
+                    aria-label={`${pt.time}：调用 ${pt.calls} 次，耗时 ${pt.latencyMs}ms`}
                   >
-                    {/* Hover Tooltip */}
-                    <div className="pointer-events-none absolute -top-12 z-20 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md group-hover:block border">
+                    {/* Hover/Focus Tooltip */}
+                    <div className="pointer-events-none absolute -top-12 z-20 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md group-hover:block group-focus-within:block border">
                       <div className="font-semibold">{pt.time}</div>
                       <div>调用: {pt.calls} 次 · 耗时: {pt.latencyMs}ms</div>
                     </div>

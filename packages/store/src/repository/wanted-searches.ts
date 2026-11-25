@@ -72,18 +72,23 @@ export async function createWantedSearch(
 ): Promise<{ item: WantedSearchRecord; duplicate: boolean } | null> {
   const query = normalizeWantedQuery(input.query);
   if (!query) return null;
-  const existing = await repo.raw("SELECT * FROM wanted_searches WHERE identity = ? AND query = ?", [input.identity, query]);
-  if (existing[0]) return { item: rowToWantedSearch(existing[0]), duplicate: true };
-  if ((await countOpenWantedSearches(repo, input.identity)) >= WANTED_SEARCHES_MAX_OPEN_PER_USER) return null;
-  const now = Date.now();
-  const id = randomUUID();
-  const corrected = input.correctedQuery ? normalizeWantedQuery(input.correctedQuery) : null;
-  await repo.run(
-    "INSERT INTO wanted_searches (id, identity, query, corrected_query, status, notified_site_id, notified_at, created_at) VALUES (?,?,?,?, 'open', NULL, NULL, ?)",
-    [id, input.identity, query, corrected || null, now],
-  );
-  const rows = await repo.raw("SELECT * FROM wanted_searches WHERE id = ?", [id]);
-  return rows[0] ? { item: rowToWantedSearch(rows[0]), duplicate: false } : null;
+  // 查重 → 计数 → 插入三步必须原子：否则同一身份并发 POST 同一 query 时
+  // 两个请求都读到空，后到者撞 (identity,query) 唯一键 → 全局错误处理器回 500。
+  // withTransaction 在 SQLite 走 BEGIN IMMEDIATE + 写锁，PG 独占连接串行化。
+  return repo.withTransaction(async () => {
+    const existing = await repo.raw("SELECT * FROM wanted_searches WHERE identity = ? AND query = ?", [input.identity, query]);
+    if (existing[0]) return { item: rowToWantedSearch(existing[0]), duplicate: true };
+    if ((await countOpenWantedSearches(repo, input.identity)) >= WANTED_SEARCHES_MAX_OPEN_PER_USER) return null;
+    const now = Date.now();
+    const id = randomUUID();
+    const corrected = input.correctedQuery ? normalizeWantedQuery(input.correctedQuery) : null;
+    await repo.run(
+      "INSERT INTO wanted_searches (id, identity, query, corrected_query, status, notified_site_id, notified_at, created_at) VALUES (?,?,?,?, 'open', NULL, NULL, ?)",
+      [id, input.identity, query, corrected || null, now],
+    );
+    const rows = await repo.raw("SELECT * FROM wanted_searches WHERE id = ?", [id]);
+    return rows[0] ? { item: rowToWantedSearch(rows[0]), duplicate: false } : null;
+  });
 }
 
 export async function deleteWantedSearch(repo: Repository, identity: string, id: string): Promise<boolean> {

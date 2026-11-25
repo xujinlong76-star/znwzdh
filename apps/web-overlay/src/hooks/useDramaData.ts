@@ -18,6 +18,9 @@ export type DramaDataState<T> =
   | { kind: "ready"; data: T };
 
 const cache = new Map<string, Promise<unknown>>();
+// 榜单/日历是每 30 秒级更新的数据：成功结果只缓存一小段时间，离开页面再回来
+// 能拿到新数据；此前永久缓存要硬刷新才更新，列表陈旧。同会话内并发挂载仍共享同一请求。
+const CACHE_TTL_MS = 30_000;
 
 function fetchJsonOnce<T>(url: string): Promise<T> {
   const hit = cache.get(url) as Promise<T> | undefined;
@@ -33,6 +36,12 @@ function fetchJsonOnce<T>(url: string): Promise<T> {
   promise.catch(() => {
     if (cache.get(url) === promise) cache.delete(url);
   });
+  // 成功后按 TTL 失效：只删仍属于自己的那一项，避免误删后来覆盖的新请求。
+  promise.then(() => {
+    setTimeout(() => {
+      if (cache.get(url) === promise) cache.delete(url);
+    }, CACHE_TTL_MS).unref?.();
+  }).catch(() => { /* 失败分支上面已清理，这里仅避免 then 链未处理拒绝 */ });
   cache.set(url, promise);
   return promise;
 }

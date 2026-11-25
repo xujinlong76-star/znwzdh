@@ -91,7 +91,14 @@ export function buildAskCandidateBlock(candidates: readonly AskCandidate[]): str
     const desc = (c.description ?? "").replace(/\s+/g, " ").trim().slice(0, 60);
     const note = (c.note ?? "").replace(/\s+/g, " ").trim().slice(0, 100);
     const tags = c.tags.length > 0 ? `标签：${c.tags.join("、")}` : "无标签";
-    const date = new Date(c.createdAt).toISOString().slice(0, 10);
+    // 日期口径与全站一致（Asia/Shanghai），但保持 YYYY-MM-DD 稳定格式：
+    // 直接用 toISOString（UTC）会让当地 00:00–08:00 收藏的条目早一天；
+    // 用 toLocaleDateString("zh-CN") 又会输出 2026/11/25 这种随 locale 漂移的格式。
+    const dateParts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+    }).formatToParts(new Date(c.createdAt));
+    const part = (type: string) => dateParts.find((p) => p.type === type)?.value ?? "";
+    const date = `${part("year")}-${part("month")}-${part("day")}`;
     const parts = [`- [id:${c.siteId}] ${c.title}`];
     if (desc) parts.push(`描述：${desc}`);
     if (note) parts.push(`收藏备注：${note}`);

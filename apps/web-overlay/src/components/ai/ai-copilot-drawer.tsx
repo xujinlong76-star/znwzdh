@@ -157,6 +157,8 @@ export function AiCopilotDrawer() {
   const abortRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const drawerRef = useRef<HTMLDivElement | null>(null)
+  const prevFocusRef = useRef<HTMLElement | null>(null)
   // 事件监听只挂一次，而 handleSend 每次渲染都会重建（依赖 messages/loading 等）。
   // ref 指向最新实现，避免监听器调用到首帧的 stale closure。
   const sendRef = useRef<((text?: string) => Promise<void>) | null>(null)
@@ -208,6 +210,27 @@ export function AiCopilotDrawer() {
         setIsOpen((prev) => !prev)
       } else if (e.key === 'Escape' && isOpen) {
         setIsOpen(false)
+      } else if (e.key === 'Tab' && isOpen && drawerRef.current) {
+        // 焦点圈养：Tab/Shift+Tab 在抽屉内循环，别漏到背后的主页链接。
+        const items = Array.from(
+          drawerRef.current.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((el) => el.getClientRects().length > 0)
+        if (items.length === 0) return
+        const first = items[0]!
+        const last = items[items.length - 1]!
+        const active = document.activeElement
+        if (!drawerRef.current.contains(active)) {
+          e.preventDefault()
+          ;(e.shiftKey ? last : first).focus({ preventScroll: true })
+        } else if (e.shiftKey && active === first) {
+          e.preventDefault()
+          last.focus({ preventScroll: true })
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault()
+          first.focus({ preventScroll: true })
+        }
       }
     }
 
@@ -237,12 +260,17 @@ export function AiCopilotDrawer() {
     }
   }, [isOpen])
 
-  // 展开抽屉时聚焦输入框
+  // 展开抽屉时聚焦输入框；关闭后把焦点还给打开前的元素。
   useEffect(() => {
     if (isOpen) {
+      prevFocusRef.current = document.activeElement as HTMLElement | null
       setTimeout(() => {
         inputRef.current?.focus()
       }, 150)
+    } else if (prevFocusRef.current) {
+      const target = prevFocusRef.current
+      prevFocusRef.current = null
+      if (document.contains(target)) target.focus({ preventScroll: true })
     }
   }, [isOpen])
 
@@ -451,7 +479,7 @@ export function AiCopilotDrawer() {
 
     // 抽屉（模态框）层级须高于小猫猫挂件根容器（K1 后 z-index 60），否则它会压住发送按钮致点击超时。
   return (
-    <div className="fixed inset-0 z-[100000] overflow-hidden" role="dialog" aria-modal="true" aria-label="智能导航伴侣">
+    <div ref={drawerRef} className="fixed inset-0 z-[100000] overflow-hidden" role="dialog" aria-modal="true" aria-label="智能导航伴侣" tabIndex={-1}>
       {/* 遮罩背景 */}
       <div
         className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity"

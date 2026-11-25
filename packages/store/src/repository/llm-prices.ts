@@ -82,17 +82,21 @@ export async function replaceLlmModelPrices(
   // 不要改成 `FROM (VALUES ...) AS keep` 的 NOT EXISTS 派生表：该写法在
   // W4 验证的 SQLite 上报 `near "(": syntax error`（即使字面量也一样），
   // 会让 PUT /api/admin/ai/prices 直接 500、单价永远存不进去。
-  const placeholders = models.map(() => "?").join(",");
-  await repo.run(`DELETE FROM llm_model_prices WHERE model NOT IN (${placeholders})`, models);
+  // 清扫 + 写入必须在同一事务里：中途任何一条 INSERT 失败都不能让价目簿停在
+  // 「旧价已删、新价只写了一半」的状态（PUT /api/admin/ai/prices 会按残缺价目计费）。
+  await repo.withTransaction(async () => {
+    const placeholders = models.map(() => "?").join(",");
+    await repo.run(`DELETE FROM llm_model_prices WHERE model NOT IN (${placeholders})`, models);
 
-  const now = Date.now();
-  for (const [model, price] of byModel) {
-    await repo.run(
-      "INSERT INTO llm_model_prices (model, prompt_per_1k_rmb, completion_per_1k_rmb, updated_at) VALUES (?,?,?,?) " +
-        "ON CONFLICT(model) DO UPDATE SET prompt_per_1k_rmb = EXCLUDED.prompt_per_1k_rmb, " +
-        "completion_per_1k_rmb = EXCLUDED.completion_per_1k_rmb, updated_at = EXCLUDED.updated_at",
-      [model, price.promptPer1kRmb, price.completionPer1kRmb, now],
-    );
-  }
+    const now = Date.now();
+    for (const [model, price] of byModel) {
+      await repo.run(
+        "INSERT INTO llm_model_prices (model, prompt_per_1k_rmb, completion_per_1k_rmb, updated_at) VALUES (?,?,?,?) " +
+          "ON CONFLICT(model) DO UPDATE SET prompt_per_1k_rmb = EXCLUDED.prompt_per_1k_rmb, " +
+          "completion_per_1k_rmb = EXCLUDED.completion_per_1k_rmb, updated_at = EXCLUDED.updated_at",
+        [model, price.promptPer1kRmb, price.completionPer1kRmb, now],
+      );
+    }
+  });
   return byModel.size;
 }

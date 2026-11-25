@@ -939,15 +939,20 @@ export default function FavoritesPage() {
     let errCount = 0
     const targetFolder = visibleFolders.find((f) => f.id === target)
     const targetName = targetFolder ? targetFolder.name : '未分组'
+    // 本地更新同步逐条推撤销记录；云端 PATCH 互不依赖，并发发出避免 N×RTT。
+    const cloudIds: string[] = []
     for (const siteId of selectedSiteIds) {
       favorites.updateMeta(siteId, { folderId: target }, {
         undoLabel: `已将 1 条收藏移至「${targetName}」`,
         undoDetail: targetName,
       })
-      if (cloudIdentity) {
-        const ok = await updateFavoriteMeta(cloudIdentity, siteId, { folderId: target })
-        if (!ok) errCount++
-      }
+      if (cloudIdentity) cloudIds.push(siteId)
+    }
+    if (cloudIdentity) {
+      const results = await Promise.all(
+        cloudIds.map((siteId) => updateFavoriteMeta(cloudIdentity, siteId, { folderId: target })),
+      )
+      errCount = results.filter((ok) => !ok).length
     }
     setManageBusy(false)
     setSyncNote(`已将 ${selectedSiteIds.size} 项移至「${targetName}」` + (errCount > 0 ? ` (云端有 ${errCount} 项待同步)` : ''))

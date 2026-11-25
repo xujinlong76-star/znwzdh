@@ -284,7 +284,7 @@ export function useWatchlist(): WatchlistApi {
         // 同一部剧重复加入 = 更新它的标注（节奏/优先级/进度），不生成第二条
         const next: WatchEntry = {
           ...existed,
-          episode: draft.episode !== undefined ? Math.max(0, Math.trunc(draft.episode)) : existed.episode,
+          episode: draft.episode !== undefined ? Math.min(100000, Math.max(0, Math.trunc(draft.episode))) : existed.episode,
           cadence: draft.cadence ?? existed.cadence,
           priority: draft.priority ?? existed.priority,
           updatedAt: now,
@@ -328,7 +328,7 @@ export function useWatchlist(): WatchlistApi {
         platformTitle: platform.title,
         playUrl: platform.href,
         icon: platform.icon,
-        episode: Math.max(0, Math.trunc(draft.episode ?? 0)),
+        episode: Math.min(100000, Math.max(0, Math.trunc(draft.episode ?? 0))),
         priority: draft.priority ?? 'normal',
         cadence: draft.cadence ?? { kind: 'unknown' },
         remind: true,

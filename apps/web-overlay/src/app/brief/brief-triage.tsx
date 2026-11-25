@@ -78,7 +78,7 @@ export default function BriefTriage() {
         共 {inboxCount} 条待读，{picks.length} 条 24 小时内到期——这些是快过期的新收，
         和「今日重温」里好久没翻的旧藏方向不同。点标题就能打开（打开即算已读）。
       </p>
-      {notice ? <p className="mb-3 rounded-md bg-muted px-2 py-1.5 text-xs text-muted-foreground">{notice}</p> : null}
+      {notice ? <p role="status" aria-live="polite" className="mb-3 rounded-md bg-muted px-2 py-1.5 text-xs text-muted-foreground">{notice}</p> : null}
       <ul className="space-y-2">
         {picks.map((item) => (
           <TriageInboxRow

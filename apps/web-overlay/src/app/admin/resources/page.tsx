@@ -255,8 +255,14 @@ export default function ResourceManagement() {
     }
 
     setSelectedFile(file); // 保存文件对象
-    const base64Image = await toBase64(file);
-    setSelectedImage(base64Image);
+    try {
+      const base64Image = await toBase64(file);
+      setSelectedImage(base64Image);
+    } catch {
+      // FileReader 可能因文件被占用/权限失败；给可见提示，不让 Promise rejection 逃逸。
+      setSelectedFile(null);
+      toast({ title: "读取失败", description: "图片读取失败，请重新选择文件", variant: "destructive" });
+    }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {

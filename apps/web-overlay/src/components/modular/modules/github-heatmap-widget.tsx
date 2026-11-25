@@ -295,9 +295,14 @@ export function GithubHeatmapWidget({ config }: GithubHeatmapWidgetProps) {
                         key={`${cell.date}-${dIndex}`}
                         onMouseEnter={() => setHoveredCell({ date: cell.date, count: cell.count })}
                         onMouseLeave={() => setHoveredCell(null)}
+                        onFocus={() => setHoveredCell({ date: cell.date, count: cell.count })}
+                        onBlur={() => setHoveredCell(null)}
                         className={`w-2.5 h-2.5 rounded-2xs border transition-transform hover:scale-125 cursor-pointer ${
                           themeClasses[cell.level]
                         }`}
+                        tabIndex={0}
+                        role="img"
+                        aria-label={`${cell.date}：${cell.count} 次提交`}
                         title={`${cell.date}：${cell.count} 次提交`}
                       />
                     ),
@@ -316,7 +321,7 @@ export function GithubHeatmapWidget({ config }: GithubHeatmapWidgetProps) {
               ) : render.totalCommits === 0 ? (
                 <span>窗口内的公开事件里没有 push 记录</span>
               ) : (
-                <span>悬浮方块查看单日提交</span>
+                <span>悬浮或聚焦方块查看单日提交</span>
               )}
             </div>
             <div className="flex items-center gap-1 shrink-0">

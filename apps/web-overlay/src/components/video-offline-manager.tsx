@@ -35,16 +35,25 @@ export function VideoOfflineManager({
   const [quota, setQuota] = useState<StorageQuotaInfo>({ usageBytes: 0, quotaBytes: 1, percentUsed: 0 })
   const [isSaving, setIsSaving] = useState<boolean>(false)
 
+  const [storageError, setStorageError] = useState<string | null>(null)
+
   const reload = async () => {
-    const q = await getStorageQuotaEstimate()
-    setQuota(q)
-    const pkgs = await listOfflinePackages()
-    setPackages(pkgs)
+    // IndexedDB 可能因为配额/隐私模式拒绝请求；吞掉并给可见提示，
+    // 避免 useEffect 里裸调用产生未捕获 Promise rejection。
+    try {
+      const q = await getStorageQuotaEstimate()
+      setQuota(q)
+      const pkgs = await listOfflinePackages()
+      setPackages(pkgs)
+      setStorageError(null)
+    } catch {
+      setStorageError('本机存储不可用，离线缓存列表暂时无法读取')
+    }
   }
 
   useEffect(() => {
     if (open) {
-      reload()
+      void reload()
     }
   }, [open])
 
@@ -66,14 +75,27 @@ export function VideoOfflineManager({
       encrypted: false,
     }
 
-    await saveVideoPackageMetadata(newPkg)
+    try {
+      await saveVideoPackageMetadata(newPkg)
+      setStorageError(null)
+    } catch {
+      setStorageError('保存失败：本机存储不可用或空间不足')
+      setIsSaving(false) // 失败也必须解除 busy，否则按钮永久卡死
+      return
+    }
     setIsSaving(false)
-    reload()
+    void reload()
   }
 
   const handleDelete = async (videoId: string) => {
-    await deleteOfflineVideo(videoId)
-    reload()
+    try {
+      await deleteOfflineVideo(videoId)
+      setStorageError(null)
+    } catch {
+      setStorageError('删除失败：本机存储不可用')
+      return
+    }
+    void reload()
   }
 
   const formatSize = (bytes: number) => {
@@ -94,6 +116,7 @@ export function VideoOfflineManager({
         </DialogHeader>
 
         <div className="space-y-4 pt-2 text-xs">
+          {storageError ? <p role="alert" className="rounded-md bg-destructive/15 px-2 py-1.5 text-destructive-text">{storageError}</p> : null}
           {/* Storage Quota Card */}
           <div className="p-3 rounded-lg border bg-muted/40 space-y-2">
             <div className="flex items-center justify-between text-[11px] font-medium text-foreground">

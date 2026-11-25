@@ -71,7 +71,7 @@ export default function BriefResurface() {
           ? '这些收藏超过 90 天没有在任何设备上打开过——按你的账号记录算。今天翻一个？'
           : '这些收藏超过 90 天没有在本机打开过——按本机记录算，另一台设备上打开的不计入。今天翻一个？'}
       </p>
-      {notice ? <p className="mb-3 rounded-md bg-muted px-2 py-1.5 text-xs text-muted-foreground">{notice}</p> : null}
+      {notice ? <p role="status" aria-live="polite" className="mb-3 rounded-md bg-muted px-2 py-1.5 text-xs text-muted-foreground">{notice}</p> : null}
       <ul className="space-y-2">
         {picks.map((item) => (
           <ResurfaceRow key={item.siteId} item={item} isLoggedIn={isLoggedIn} onReopen={handleReopen} onArchive={handleArchive} />

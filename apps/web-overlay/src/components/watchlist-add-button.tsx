@@ -11,10 +11,11 @@
  *    出处是用户本人，不冒充平台官方排播。
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { Check, Clapperboard, X } from 'lucide-react'
 import { useWatchlist } from '@/hooks/useWatchlist'
+import { useOverlayBehavior } from '@/components/ui/overlay'
 import {
   cadenceLabel,
   type WatchCadence,
@@ -75,7 +76,7 @@ export function WatchlistFields({
           max={100000}
           inputMode="numeric"
           value={draft.episode}
-          onChange={(e) => onChange({ ...draft, episode: Math.max(0, Math.trunc(Number(e.target.value) || 0)) })}
+          onChange={(e) => onChange({ ...draft, episode: Math.min(100000, Math.max(0, Math.trunc(Number(e.target.value) || 0))) })}
           className="mt-1 w-full rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-rose-500 dark:border-zinc-700"
         />
       </div>
@@ -167,19 +168,14 @@ export function WatchlistAddButton({
   })
   const [added, setAdded] = useState<string | null>(null)
   const titleRef = useRef<HTMLInputElement | null>(null)
-
-  useEffect(() => {
-    if (open) titleRef.current?.focus()
-  }, [open ])
-
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open ])
+  const close = () => setOpen(false)
+  // 统一浮层行为层：初始焦点（标题框）、Esc 关闭、Tab 圈养、关闭还原焦点
+  const { containerProps, scrimProps } = useOverlayBehavior({
+    open,
+    onClose: close,
+    ariaLabel: `加入追剧清单（${platform.title}）`,
+    initialFocusRef: titleRef,
+  })
 
   const existing = title.trim() ? watchlist.findByPlatformAndTitle(platform.siteId, title) : undefined
 
@@ -226,16 +222,9 @@ export function WatchlistAddButton({
       )}
 
       {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-3 sm:items-center"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`加入追剧清单（${platform.title}）`}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setOpen(false)
-          }}
-        >
-          <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow-2xl dark:bg-zinc-900 dark:text-zinc-100">
+        <div className="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center">
+          <div {...scrimProps} className="absolute inset-0 bg-black/50" />
+          <div {...containerProps} className="relative w-full max-w-md rounded-2xl bg-white p-4 shadow-2xl dark:bg-zinc-900 dark:text-zinc-100">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-base font-bold">在{platform.title}追剧</h3>

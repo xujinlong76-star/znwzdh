@@ -12,6 +12,7 @@
  */
 import { useEffect } from 'react'
 import { AlertTriangle, ArrowLeftRight, Check, Copy, X } from 'lucide-react'
+import { useOverlayBehavior } from '@/components/ui/overlay'
 import type { ConflictFieldKey, ConflictResolution, SyncConflictItem } from '@/lib/favorites-sync'
 import { LOCAL_COPY_SUFFIX, recommendResolution } from '@/lib/favorites-sync'
 
@@ -60,17 +61,20 @@ export function ConflictDrawer({ conflicts, onResolve, onClose, onUnconfirmedCha
     onUnconfirmedChange?.(true)
     return () => onUnconfirmedChange?.(false)
   }, [onUnconfirmedChange])
+  // 键盘可达性：Esc 关闭、Tab 焦点圈养、关闭还原焦点——统一复用浮层行为层，
+  // 不再手搓 role/aria-modal（此前焦点会漏到抽屉背后、Esc 无反应）。
+  const { containerProps, scrimProps } = useOverlayBehavior({
+    open: conflicts.length > 0,
+    onClose,
+    ariaLabel: '冲突裁决',
+  })
   if (conflicts.length === 0) return null
   const multi = conflicts.length >= 3
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/20 backdrop-blur-[1px]"
-      role="dialog"
-      aria-modal="true"
-      aria-label="冲突裁决"
-    >
-      <div className="flex h-full w-full max-w-lg flex-col overflow-hidden border-l border-border/60 bg-background shadow-2xl">
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div {...scrimProps} className="absolute inset-0 bg-black/20 backdrop-blur-[1px]" />
+      <div {...containerProps} className="relative flex h-full w-full max-w-lg flex-col overflow-hidden border-l border-border/60 bg-background shadow-2xl">
         {/* 头部 */}
         <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
           <div className="flex items-center gap-2">

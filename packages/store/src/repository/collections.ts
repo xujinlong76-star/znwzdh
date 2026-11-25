@@ -58,10 +58,15 @@ export async function upsertCollection(repo: Repository, input: {
     if (input.sites && Array.isArray(input.sites)) {
       await repo.run("DELETE FROM collection_items WHERE collection_id = ?", [id]);
       let itemSort = 0;
+      // 前端多选/恢复包可能带来重复 siteId；collection_items 只有普通索引，
+      // 不去重会写出同专题同站点多行，列表与 site_count 出现幽灵重复。
+      const seenSiteIds = new Set<string>();
       for (const item of input.sites) {
         const siteRef = typeof item === "string" ? item : item.site;
         const note = typeof item === "object" && item.note ? item.note : null;
         const assignedSort = typeof item === "object" && typeof item.sort === "number" ? item.sort : itemSort++;
+        if (seenSiteIds.has(siteRef)) continue;
+        seenSiteIds.add(siteRef);
         const site = await repo.getSite(siteRef);
         if (site) {
           await repo.run(

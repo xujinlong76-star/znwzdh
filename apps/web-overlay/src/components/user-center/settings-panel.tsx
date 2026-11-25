@@ -610,20 +610,24 @@ function QuickDialSettingsSection({
     for (const id of ids) fetchedRef.current.add(id)
     let cancelled = false
     void (async () => {
-      for (const id of ids) {
-        let degraded = false
-        const site = await fetchSite(id, () => {
-          degraded = true
-        })
-        if (cancelled) return
-        if (site?.title) {
-          setRemoteTitles((prev) => ({ ...prev, [id]: site.title }))
-        } else if (degraded) {
-          setUnreachable((prev) => new Set([...prev, id]))
-        } else {
-          setRemoteTitles((prev) => ({ ...prev, [id]: null }))
-        }
+      // 10 个快拨位互不依赖，并发取详情（与 /pack 页同口径），省去 10×RTT。
+      const results = await Promise.all(
+        ids.map(async (id) => {
+          let degraded = false
+          const site = await fetchSite(id, () => { degraded = true })
+          return { id, site, degraded }
+        }),
+      )
+      if (cancelled) return
+      const titles: Record<string, string | null> = {}
+      const down = new Set<string>()
+      for (const { id, site, degraded } of results) {
+        if (site?.title) titles[id] = site.title
+        else if (degraded) down.add(id)
+        else titles[id] = null
       }
+      setRemoteTitles((prev) => ({ ...prev, ...titles }))
+      if (down.size) setUnreachable((prev) => new Set([...prev, ...down]))
     })()
     return () => {
       cancelled = true

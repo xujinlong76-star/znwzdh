@@ -433,6 +433,12 @@ export async function createFavoriteFolder(repo: Repository, userId: string, nam
   // 取号 + 插入必须原子：并发创建文件夹时裸跑会都读到同一个 MAX(sort) 生成重复
   // 排序值，拖拽/上移下移重排后顺序不稳定（同 custom-sites 的 sort 竞态）。
   return repo.withTransaction(async () => {
+    // 同名去重必须进事务：路由层「先查后建」在并发 POST 下会双双重名。
+    // 放进事务后 SQLite 的 BEGIN IMMEDIATE 写锁让检查与插入串行。
+    const existing = (await repo.raw("SELECT * FROM favorite_folders WHERE user_id = ?", [userId])).find(
+      (row: any) => String(row.name ?? "").trim().toLowerCase() === name.trim().toLowerCase(),
+    );
+    if (existing) return rowToFolder(existing);
     // 追加到队尾而不是恒写 0：sort 是拖拽/上移下移重排的依据，
     // 恒 0 会让所有夹子同权、顺序退化为创建序（T16 修复）。
     const maxRow = (

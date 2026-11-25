@@ -1659,9 +1659,11 @@ export function SiteDetailView({
                   className="group rounded-xl border border-border/70 bg-card overflow-hidden hover:border-violet-500/40 hover:shadow-md transition-all flex flex-col justify-between"
                 >
                   <div className="relative aspect-video w-full bg-muted overflow-hidden">
-                    {video.icon ? (
+                    {video.icon || video.mediaProxyIconUrl ? (
+                      // /api/videos?q=... 已下发预签名代理封面；B 站 hdslb 直链常被 ORB/403
+                      // 拦截成破图（与速览面板同口径），优先用代理、无代理再回落直链。
                       <img
-                        src={video.icon}
+                        src={video.mediaProxyIconUrl || (video.icon?.startsWith('//') ? `https:${video.icon}` : video.icon)}
                         alt={video.title}
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"

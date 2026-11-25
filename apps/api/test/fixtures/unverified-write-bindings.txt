@@ -73,6 +73,7 @@ PATCH /api/me/settings | 需要登录身份与设置持久化，在 me 路由用
 PATCH /api/me/profile | 昵称/邮箱唯一性需要账号表前置，在 me 路由用例覆盖
 POST /api/me/tokens | 个人令牌明文只在创建响应出现一次，在 me-tokens 用例覆盖
 DELETE /api/me/tokens/{id} | 需要已创建的个人令牌前置，在 me-tokens 用例覆盖
+POST /api/me/tokens/{id}/rotate | 轮换回执含一次性明文（只出现一次）；在 me-write-scope.test.ts 验收 14 跑过成功回执（CAS 并发轮换、旧明文立即失效）
 DELETE /api/me/sessions/{id} | 需要会话登记（sidHash）前置，在 me-sessions 用例覆盖
 POST /api/me/sessions/check | 会登记会话并影响吊销核对，在 me-sessions 用例覆盖
 POST /api/me/diagnostics | 会修复数据并刷新画像，契约测试不执行自修复
@@ -105,6 +106,11 @@ POST /api/account/resend-verification | 需要「已注册未验证」状态与�
 POST /api/account/forgot-password | 需要已验证账号并会真发信；在 account-api.test.ts 覆盖「不泄露账号是否存在」分支
 POST /api/account/reset-password | 需要重置令牌；在 account-api.test.ts 覆盖令牌校验与改密后旧密码失效
 POST /api/account/login | 需要注册完成态与邮箱验证态；在 account-api.test.ts 覆盖 200/401/403 三支
+# 管理员 MFA 4 条写绑定（#184 phase 2；响应体已由 account-api.test.ts 真实跑过完整流程，不走本文件的 expectRoutedContract）。
+POST /api/account/admin-mfa/setup | 需要管理员身份，待确认密钥只出现一次；在 account-api.test.ts 跑过 setup→confirm→verify→disable 全流程
+POST /api/account/admin-mfa/confirm | 需要 setup 下发的密钥与实时 TOTP 码；在 account-api.test.ts 跑过成功启用与恢复码回执
+POST /api/account/admin-mfa/verify | 需要已启用 MFA 的管理员身份；在 account-api.test.ts 跑过成功/失败与锁定分支
+POST /api/account/admin-mfa/disable | 需要恢复码或 TOTP 码；在 account-api.test.ts 跑过恢复码禁用分支
 POST /api/me/custom-sites | 需签名身份前置状态；由 apps/api/test/me-custom-sites.test.ts 全流程用例覆盖（增删改查/排序/隔离）
 PATCH /api/me/custom-sites/{id} | 同上：me-custom-sites.test.ts 覆盖改名与跨用户 404
 DELETE /api/me/custom-sites/{id} | 同上：me-custom-sites.test.ts 覆盖删除与删后清单

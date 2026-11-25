@@ -715,7 +715,10 @@ export async function buildServer(ctx: AppContext) {
       acceptReplay: async (signature, nowMs, ttlMs) => {
         if (nowMs - lastIdentityReplayPruneAt > 60_000) {
           lastIdentityReplayPruneAt = nowMs;
-          await ctx.repo.pruneSystemStatePrefix("identity-replay:", nowMs - ttlMs).catch(() => 0);
+          await ctx.repo.pruneSystemStatePrefix("identity-replay:", nowMs - ttlMs).catch(() => {
+            /* 重放记录清理是 best-effort：失败只留过期记录，不影响本次重放校验 */
+            return 0;
+          });
         }
         return ctx.repo.claimSystemState(
           "identity-replay:" + createHash("sha256").update(signature).digest("hex"),

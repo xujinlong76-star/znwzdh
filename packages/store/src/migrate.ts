@@ -178,7 +178,7 @@ export async function dedupeUserEmails(db: { dialect: string; sqlite?: any; pg?:
     };
 
     const dupGroups = await read(
-      "SELECT email, COUNT(*) AS c FROM users WHERE email IS NOT NULL AND email <> '' GROUP BY email HAVING COUNT(*) > 1",
+      "SELECT LOWER(email) AS email, COUNT(*) AS c FROM users WHERE email IS NOT NULL AND email <> '' GROUP BY LOWER(email) HAVING COUNT(*) > 1",
     );
     if (dupGroups.length === 0) return 0;
 
@@ -186,7 +186,7 @@ export async function dedupeUserEmails(db: { dialect: string; sqlite?: any; pg?:
     for (const group of dupGroups) {
       const email = String(group.email);
       const ids = (await read(
-        "SELECT id FROM users WHERE email = ? ORDER BY created_at ASC, id ASC",
+        "SELECT id FROM users WHERE LOWER(email) = ? ORDER BY created_at ASC, id ASC",
         [email],
       )).map((r) => String(r.id));
       if (ids.length < 2) continue;
@@ -226,6 +226,15 @@ async function execSql(db: { dialect: string; sqlite?: any; pg?: any }, sqlText:
   } else if (db.pg) {
     await db.pg.query(sqlText);
   }
+}
+
+/** 以大小写不敏感的邮箱语义清洗存量账号，并建立 LOWER(email) 唯一约束。 */
+export async function migrateNormalizedUserEmailUnique(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  await dedupeUserEmails(db);
+  await execSql(
+    db,
+    "CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_unique_idx ON users(LOWER(email)) WHERE email IS NOT NULL AND email <> ''",
+  );
 }
 
 async function ensureMigrationFailures(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {

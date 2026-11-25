@@ -65,6 +65,7 @@ import * as notificationsRepo from "./repository/notifications.ts";
 import * as dramaCheckRepo from "./repository/drama-check.ts";
 import * as usersRepo from "./repository/users.ts";
 import * as authTokensRepo from "./repository/auth-tokens.ts";
+import * as loginFailuresRepo from "./repository/login-failures.ts";
 import * as tokensRepo from "./repository/tokens.ts";
 import * as collectionsRepo from "./repository/collections.ts";
 import * as submissionReviewsRepo from "./repository/submission-reviews.ts";
@@ -1415,7 +1416,7 @@ async revokeAllSessions(userId: string): Promise<number> {
     return usersRepo.createUserWithPassword(this, input);
   }
 
-  /** 校验口令登录；返回 null = 用户不存在或密码错误（不区分，防账号枚举） */
+  /** 校验口令登录；返回 null = 用户不存在、密码错误或邮箱未验证（不区分，防账号枚举） */
   async verifyUserPassword(identifier: string, password: string): Promise<UserRecord | null> {
     return usersRepo.verifyUserPassword(this, identifier, password);
   }
@@ -1424,8 +1425,16 @@ async revokeAllSessions(userId: string): Promise<number> {
     return usersRepo.updateUserPassword(this, userId, newPassword);
   }
 
+  async updateUserPasswordForEmail(userId: string, newPassword: string, email: string): Promise<boolean> {
+    return usersRepo.updateUserPasswordForEmail(this, userId, newPassword, email);
+  }
+
   async setUserEmailVerified(userId: string): Promise<boolean> {
     return usersRepo.setUserEmailVerified(this, userId);
+  }
+
+  async setUserEmailVerifiedForEmail(userId: string, email: string): Promise<boolean> {
+    return usersRepo.setUserEmailVerifiedForEmail(this, userId, email);
   }
 
   /* ------------------------- 认证令牌（邮箱验证/密码重置） ------------------------- */
@@ -1435,8 +1444,12 @@ async revokeAllSessions(userId: string): Promise<number> {
   }
 
   /** 原子消费一次性令牌；成功 true，失败（不存在/已用/过期/用途不符）false */
-  async consumeAuthToken(input: { userId: string; purpose: authTokensRepo.AuthTokenPurpose; tokenHash: string; now?: number }): Promise<boolean> {
+  async consumeAuthToken(input: { userId: string; purpose: authTokensRepo.AuthTokenPurpose; tokenHash: string; targetEmail: string; now?: number }): Promise<boolean> {
     return authTokensRepo.consumeAuthToken(this, input);
+  }
+
+  async revokeAuthTokens(userId: string, purpose: authTokensRepo.AuthTokenPurpose, now?: number): Promise<number> {
+    return authTokensRepo.revokeAuthTokens(this, userId, purpose, now);
   }
 
   async hasActiveAuthToken(userId: string, purpose: authTokensRepo.AuthTokenPurpose, now?: number): Promise<boolean> {
@@ -1445,6 +1458,16 @@ async revokeAllSessions(userId: string): Promise<number> {
 
   async pruneAuthTokens(before: number): Promise<number> {
     return authTokensRepo.pruneAuthTokens(this, before);
+  }
+
+  /* ------------------------- 跨实例登录失败计数 ------------------------- */
+
+  async reserveLoginAttempt(identifier: string, sharedSecret: string, now: number, windowMs: number): Promise<{ count: number; identifierHash: string }> {
+    return loginFailuresRepo.reserveLoginAttempt(this, identifier, sharedSecret, now, windowMs);
+  }
+
+  async clearLoginAttempts(identifier: string, sharedSecret: string): Promise<void> {
+    return loginFailuresRepo.clearLoginAttempts(this, identifier, sharedSecret);
   }
 
   /* ------------------------- 投稿收录汇报 ------------------------- */

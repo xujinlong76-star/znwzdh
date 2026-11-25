@@ -326,6 +326,8 @@ export const authTokens = sqliteTable("auth_tokens", {
   userId: text("user_id").notNull(),
   purpose: text("purpose").notNull(),
   tokenHash: text("token_hash").notNull(),
+  /** 令牌发放时绑定的邮箱；验证/重置时必须仍是当前邮箱。 */
+  targetEmail: text("target_email"),
   expiresAt: integer("expires_at").notNull(),
   consumedAt: integer("consumed_at"),
   createdAt: integer("created_at").notNull().$defaultFn(now),

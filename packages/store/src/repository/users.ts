@@ -111,10 +111,14 @@ export async function updateUserProfileInfo(
     }
   }
 
+  // 邮箱统一 trim + lowercase，唯一性检查与最终写入使用同一规范值。
+  const normalizedEmail = patch.email === undefined || patch.email === null
+    ? patch.email
+    : patch.email.trim().toLowerCase();
   // 邮箱唯一性先查后写（库里的部分唯一索引兜底并发，这里负责给出可读的失败原因）
-  if (patch.email !== undefined && patch.email !== null) {
+  if (normalizedEmail !== undefined && normalizedEmail !== null) {
     const conflict = (
-      await repo.raw("SELECT id FROM users WHERE email = ? AND id <> ? LIMIT 1", [patch.email, identity])
+      await repo.raw("SELECT id FROM users WHERE email = ? AND id <> ? LIMIT 1", [normalizedEmail, identity])
     )[0];
     if (conflict) {
       return { ok: false, reason: "email_taken" };
@@ -127,16 +131,25 @@ export async function updateUserProfileInfo(
     const defaultName = cleanUsername || (identity.includes(":") ? identity.split(":").slice(1).join(":") : identity);
     await repo.run(
       "INSERT INTO users (id, username, password_hash, role, email, avatar, source, email_verified, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-      [identity, defaultName, "", "user", patch.email ?? null, patch.avatar ?? null, source, 0, Date.now()],
+      [identity, defaultName, "", "user", normalizedEmail ?? null, patch.avatar ?? null, source, 0, Date.now()],
     );
   } else {
     const nextUsername = cleanUsername ?? String(existing.username);
     const nextAvatar = patch.avatar === undefined ? (existing.avatar == null ? null : String(existing.avatar)) : patch.avatar;
-    const nextEmail =
-      patch.email === undefined ? (existing.email == null ? null : String(existing.email)) : patch.email;
+    const currentEmail = existing.email == null ? null : String(existing.email).trim().toLowerCase();
+    const nextEmail = patch.email === undefined ? currentEmail : normalizedEmail;
+    // 更换为新邮箱后必须重新验证，防止通过资料编辑把账户恢复邮箱转移给未验证地址。
+    // 解绑邮箱时不要求邮箱验证，用户仍可使用用户名登录。大小写/首尾空格规范化不视为更换邮箱。
+    const emailChanged = patch.email !== undefined && nextEmail !== currentEmail;
+    const nextEmailVerified = nextEmail === null ? 1 : emailChanged ? 0 : Number(existing.email_verified ?? 0);
+    // 先撤销旧邮箱的所有待验证链接，再更新邮箱；更新失败最多要求用户重发，不会留下旧链接可用。
+    if (emailChanged) {
+      await repo.revokeAuthTokens(identity, "email_verification");
+      await repo.revokeAuthTokens(identity, "password_reset");
+    }
     await repo.run(
-      "UPDATE users SET username = ?, avatar = ?, email = ? WHERE id = ?",
-      [nextUsername, nextAvatar, nextEmail, identity],
+      "UPDATE users SET username = ?, avatar = ?, email = ?, email_verified = ? WHERE id = ?",
+      [nextUsername, nextAvatar, nextEmail, nextEmailVerified, identity],
     );
   }
 
@@ -283,7 +296,26 @@ export async function verifyUserPassword(
   const hash = row?.password_hash;
   if (!hash) return null;
   const ok = await verifyPassword(password, String(hash));
-  return ok ? user : null;
+  // 未完成邮箱验证的密码账号不得建立正式会话。仍先执行 scrypt 校验，
+  // 让「未验证」与「密码错误」保持近似成本，并统一返回 null 防止状态枚举。
+  return ok && user.emailVerified ? user : null;
+}
+
+/** 仅当当前邮箱仍等于重置链接发放时的邮箱，才允许更新密码。 */
+export async function updateUserPasswordForEmail(
+  repo: Repository,
+  userId: string,
+  newPassword: string,
+  email: string,
+): Promise<boolean> {
+  const pwError = validatePassword(newPassword);
+  if (pwError) return false;
+  const passwordHash = await hashPassword(newPassword);
+  const changes = await repo.runCount(
+    "UPDATE users SET password_hash = ? WHERE id = ? AND LOWER(email) = ?",
+    [passwordHash, userId, email.trim().toLowerCase()],
+  );
+  return changes > 0;
 }
 
 /** 更新密码（找回密码流程用）：先哈希再写，明文不落库 */
@@ -298,6 +330,15 @@ export async function updateUserPassword(
   const changes = await repo.runCount(
     "UPDATE users SET password_hash = ? WHERE id = ?",
     [passwordHash, userId],
+  );
+  return changes > 0;
+}
+
+/** 仅当当前邮箱仍等于令牌发放时绑定的邮箱，才允许标记已验证。 */
+export async function setUserEmailVerifiedForEmail(repo: Repository, userId: string, email: string): Promise<boolean> {
+  const changes = await repo.runCount(
+    "UPDATE users SET email_verified = 1 WHERE id = ? AND LOWER(email) = ?",
+    [userId, email.trim().toLowerCase()],
   );
   return changes > 0;
 }

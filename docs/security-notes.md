@@ -120,3 +120,29 @@
 | 验证 | 路由守卫 14 条 + 解析器 A3 组 9 条 + compose 透传守卫 8 条；14 条消融逐条变红并按 md5 还原。真人浏览器 + 独立进程实测：query 带 key ⇒ 400；页面里 `fetch` 拦截器记到 `POST /api/videos/bili-parse`（无 query，key 在 body）；同调用方 12 次后 429 + `retry-after: 10`，换一个 XFF 立刻回 200；额度打满后页面出现「解析太频繁…等十几秒再点【立即换源】」而非静默降画质；`NAVHUB_BILI_FORWARD_USER_KEY=1` 下两把 key 各自重新出站、同 key 命中同桶。机制与残留见 [`BILI-PARSE-CREDENTIAL-BUDGET-2026-11-01.md`](BILI-PARSE-CREDENTIAL-BUDGET-2026-11-01.md) |
 | 实测中修出的第二条 | 兜底的 `iframe_fallback` 结果原先不带 `accessKeyIgnored` ⇒ 被限流后徽标继续显示「VIP 密钥已启用」，而请求根本没进解析器。已改为「未被使用」，并由消融第 14 条钉住 |
 | 已知残留 | 预算按**进程**计，多副本总量 ≈ 副本数 × 阈值；`callerKey` 取自 `x-forwarded-for` 首段，未经信任反代时**可伪造**，只当限流桶、绝不当身份（前反代必须覆写该头，与 `bili-stream` 同一前提）；桶摘要不是加密承诺，不可当可公开的反查依据 |
+
+
+---
+
+## 七、2026-11-24：认证系统专项加固
+
+| 问题 | 处置 | 回归验证 |
+| --- | --- | --- |
+| 注册账号在邮箱未验证时仍可使用正确密码登录 | 在仓储层完成 scrypt 校验后检查 `emailVerified`；未验证账号与错误密码统一返回 null/401，避免状态枚举 | `packages/store/test/auth-accounts.test.ts`、`apps/api/test/account-api.test.ts` |
+| 用户资料编辑更换邮箱后仍保留已验证状态 | 更换为新邮箱时将 `email_verified` 重置为 false；解绑邮箱允许用户名登录；重新验证后恢复密码登录 | `packages/store/test/auth-accounts.test.ts` |
+| Storage / Bootstrap / MCP 静态凭据可被输入到 Web 登录框并提升为管理员 Session | Web Credentials 登录只接受专用 `NAVHUB_ADMIN_TOKEN`；其它服务凭据保留各自服务边界 | 由 `apps/web-overlay/test/auth-guard.test.ts` 的凭据边界守卫锁定 |
+| 生产默认仍允许 v1 恒定身份签名兼容 | `identitySignatureStrict` 默认跟随 `NODE_ENV=production`；`.env.example` 改为严格模式；只有显式设 0 才进入迁移兼容窗口 | `apps/api/test/identity-replay.test.ts`、`apps/api/test/security-readiness.test.ts` |
+| 管理员与用户中心会话核对故障时读请求 fail-open | 管理员守卫返回 503；`/api/hub/*` 与 `/api/me/*` 在吊销状态无法确认时 fail-closed；生产登录会话登记失败时拒绝签发 | 需运行 Web 集成测试与生产构建验证 |
+
+### 部署说明
+
+- 生产环境请将 `NAVHUB_IDENTITY_SIGNATURE_STRICT=1` 同时透传至 API 与 Web 相关服务。当前 BFF 已同时生成 v1/v2 头，但严格 API 只接受 v2。
+- 若存在绕过 BFF 的旧客户端，升级前可临时显式设置 `NAVHUB_IDENTITY_SIGNATURE_STRICT=0`；迁移完成后恢复 1。不要把该兼容值长期用于公网。
+- `NAVHUB_ADMIN_TOKEN` 是 Web 管理员静态凭据；`NAVHUB_STORAGE_TOKEN`、`NAVHUB_BOOTSTRAP_TOKEN`、`NAVHUB_MCP_TOKEN` 不再作为 Web 登录口令。请勿把这些值混用。
+- 会话核对服务不可用时，相关用户会看到 503，而不是被错误地当成有效会话。恢复 API/数据库后可重试登录。
+
+### 尚需独立实施的安全能力
+
+本轮新增跨 API 实例共享的数据库登录失败计数：SQLite/PostgreSQL 均使用原子 UPSERT 预留登录尝试，达到 5 次失败后第 6 次请求在 scrypt 校验前返回 429；成功登录清除计数。标识以 `NAVHUB_IDENTITY_SECRET`、`NAVHUB_SESSION_SECRET` 或 `AUTH_SECRET` 之一进行 HMAC-SHA256 摘要，生产环境缺少共享密钥时拒绝执行计数，不把原始邮箱/用户名写入计数表或登录失败审计。部署多副本时，各副本必须连接同一数据库并配置相同密钥；独立数据库不会共享锁定状态。\n\n仍未实现：跨实例共享 nonce 重放缓存、管理员 TOTP 与恢复码、API Token 自助轮换工作流。这些涉及密钥恢复和部署依赖，应作为后续独立变更设计并测试，不能仅靠改环境变量宣称完成。
+
+- 升级前已签发、尚未消费但没有 `target_email` 绑定的旧验证/重置链接会被拒绝；用户需重新发送验证邮件或重新申请密码重置。这是为了避免旧邮箱链接作用于新邮箱。

@@ -33,49 +33,11 @@ function isTest(): boolean {
 }
 
 /**
- * 登录失败计数（M15）：路由级 20 次/小时只限「请求数」，挡不住对着一个账号
- * 慢速撞密码（每小时 20 次、每天 480 次，弱口令早晚被撞开）。
- *
- * 同一标识连续失败 5 次 → 15 分钟内再试直接 429，不再查密码（也不再烧 scrypt）。
- * 成功登录清零；窗口外首败重新计数。进程内 Map：单进程部署够用，与
- * @fastify/rate-limit 的默认内存桶同一口径；多副本部署下每副本独立计数，
- * 仍比「只有限流」多一道按账号的闸。
- * 注意：失败计数按「归一化后的标识」分桶，`Foo@Example.com` 与 `foo@example.com`
- * 是同一个账号，必须共用一个计数器。
+ * 登录失败计数使用数据库共享表，跨 API 副本原子计数。
+ * 原始邮箱/用户名只在当前请求内使用；持久化与审计只保存 SHA-256 标识摘要。
  */
 const LOGIN_FAIL_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_FAIL_MAX = 5;
-const loginFailures = new Map<string, { count: number; firstAt: number }>();
-
-function loginFailureKey(identifier: string): string {
-  return identifier.trim().toLowerCase();
-}
-
-function isLoginLocked(identifier: string, now: number): boolean {
-  const entry = loginFailures.get(loginFailureKey(identifier));
-  if (!entry) return false;
-  if (now - entry.firstAt > LOGIN_FAIL_WINDOW_MS) {
-    loginFailures.delete(loginFailureKey(identifier));
-    return false;
-  }
-  return entry.count >= LOGIN_FAIL_MAX;
-}
-
-/** 记一次失败；返回累计次数（到阈值时调用方记锁定审计） */
-function recordLoginFailure(identifier: string, now: number): number {
-  const key = loginFailureKey(identifier);
-  const entry = loginFailures.get(key);
-  if (!entry || now - entry.firstAt > LOGIN_FAIL_WINDOW_MS) {
-    loginFailures.set(key, { count: 1, firstAt: now });
-    return 1;
-  }
-  entry.count += 1;
-  return entry.count;
-}
-
-function clearLoginFailures(identifier: string): void {
-  loginFailures.delete(loginFailureKey(identifier));
-}
 
 /** 路由级限流：测试环境放开，真实环境限制为「小时级若干次」 */
 function accountRateLimit(max: number) {
@@ -219,6 +181,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         userId: result.user.id,
         purpose: "email_verification",
         tokenHash: hashToken(token),
+        targetEmail: email,
         expiresAt: Date.now() + VERIFY_TTL_MS,
       });
       // P0-3：username 用户可控 → HTML escape 防邮件内容注入/钓鱼（与 resend 路径同口径）
@@ -257,27 +220,38 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       // 令牌哈希无法反查用户，故先按哈希找到候选行，再校验归属
       const row = (
         await ctx.repo.raw(
-          "SELECT user_id, purpose, expires_at, consumed_at FROM auth_tokens WHERE token_hash = ? AND purpose = 'email_verification' LIMIT 1",
-          [hashToken(body.data.token)],
+          "SELECT user_id, target_email FROM auth_tokens WHERE token_hash = ? AND purpose = 'email_verification' AND consumed_at IS NULL AND expires_at > ? AND target_email IS NOT NULL LIMIT 1",
+          [hashToken(body.data.token), Date.now()],
         )
       )[0];
-      if (!row) {
+      if (!row || !row.target_email) {
         reply.code(400);
         return { error: "验证链接无效或已失效" };
       }
-      const consumed = await ctx.repo.consumeAuthToken({
-        userId: String(row.user_id),
-        purpose: "email_verification",
-        tokenHash: hashToken(body.data.token),
+      // 消费、验证邮箱与撤销同账号的兄弟令牌必须原子提交。
+      const verifyOutcome = await ctx.repo.withTransaction(async () => {
+        if (ctx.db.dialect === "pg") {
+          // 同一用户的不同验证链接串行化，避免两个并发请求分别消费不同令牌。
+          await ctx.repo.raw("SELECT id FROM users WHERE id = ? FOR UPDATE", [String(row.user_id)]);
+        }
+        const consumed = await ctx.repo.consumeAuthToken({
+          userId: String(row.user_id),
+          purpose: "email_verification",
+          tokenHash: hashToken(body.data.token),
+          targetEmail: String(row.target_email),
+        });
+        if (!consumed) return "used" as const;
+        const verified = await ctx.repo.setUserEmailVerifiedForEmail(String(row.user_id), String(row.target_email));
+        if (!verified) return "stale" as const;
+        await ctx.repo.runCount(
+          "UPDATE auth_tokens SET consumed_at = ? WHERE user_id = ? AND purpose = 'email_verification' AND consumed_at IS NULL",
+          [Date.now(), String(row.user_id)],
+        );
+        return "ok" as const;
       });
-      if (!consumed) {
+      if (verifyOutcome !== "ok") {
         reply.code(400);
-        return { error: "验证链接无效或已使用" };
-      }
-      const verified = await ctx.repo.setUserEmailVerified(String(row.user_id));
-      if (!verified) {
-        reply.code(500);
-        return { error: "验证状态更新失败" };
+        return { error: verifyOutcome === "used" ? "验证链接无效或已使用" : "验证链接已失效，请重新发送验证邮件" };
       }
       await ctx.repo.audit({
         actor: String(row.user_id),
@@ -329,6 +303,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         userId: user.id,
         purpose: "email_verification",
         tokenHash: hashToken(token),
+        targetEmail: email,
         expiresAt: Date.now() + VERIFY_TTL_MS,
       });
       // P0-3：username 用户可控 → HTML escape 防邮件内容注入/钓鱼
@@ -360,6 +335,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
           userId: user.id,
           purpose: "password_reset",
           tokenHash: hashToken(token),
+          targetEmail: email,
           expiresAt: Date.now() + RESET_TTL_MS,
         });
         await sendResetMail(ctx, ctx.mail, email, buildResetUrl(ctx, token));
@@ -404,27 +380,45 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       const tokenHash = hashToken(body.data.token);
       const row = (
         await ctx.repo.raw(
-          "SELECT user_id FROM auth_tokens WHERE token_hash = ? AND purpose = 'password_reset' LIMIT 1",
-          [tokenHash],
+          "SELECT user_id, target_email FROM auth_tokens WHERE token_hash = ? AND purpose = 'password_reset' AND consumed_at IS NULL AND expires_at > ? AND target_email IS NOT NULL LIMIT 1",
+          [tokenHash, Date.now()],
         )
       )[0];
-      if (!row) {
+      if (!row || !row.target_email) {
         reply.code(400);
         return { error: "重置链接无效或已失效" };
       }
-      const consumed = await ctx.repo.consumeAuthToken({
-        userId: String(row.user_id),
-        purpose: "password_reset",
-        tokenHash,
+      // 同一用户的密码重置必须串行化：否则两条不同令牌可能并发通过各自的一次性消费。
+      // PostgreSQL 先锁用户行；SQLite 的 withTransaction 使用 BEGIN IMMEDIATE。
+      const resetOutcome = await ctx.repo.withTransaction(async () => {
+        if (ctx.db.dialect === "pg") {
+          await ctx.repo.raw("SELECT id FROM users WHERE id = ? FOR UPDATE", [String(row.user_id)]);
+        }
+        const consumed = await ctx.repo.consumeAuthToken({
+          userId: String(row.user_id),
+          purpose: "password_reset",
+          tokenHash,
+          targetEmail: String(row.target_email),
+        });
+        if (!consumed) return "used" as const;
+        const updated = await ctx.repo.updateUserPasswordForEmail(
+          String(row.user_id), body.data.password, String(row.target_email),
+        );
+        if (!updated) return "stale" as const;
+        // 重置链接本身就是发到该邮箱的一次性所有权证明：密码改掉的同时把该邮箱
+        // 标为已验证，否则登录侧的“未验证不得建会话”会让刚重置完的账号立刻 401，
+        // 形成“重置成功却登不进”的死路。若邮箱在此期间已被改走则不阻塞重置本身。
+        await ctx.repo.setUserEmailVerifiedForEmail(String(row.user_id), String(row.target_email));
+        // 与密码更新在同一事务内撤销兄弟令牌；并发请求拿到用户锁后会看到令牌已失效。
+        await ctx.repo.runCount(
+          "UPDATE auth_tokens SET consumed_at = ? WHERE user_id = ? AND purpose = 'password_reset' AND consumed_at IS NULL",
+          [Date.now(), String(row.user_id)],
+        );
+        return "ok" as const;
       });
-      if (!consumed) {
+      if (resetOutcome !== "ok") {
         reply.code(400);
-        return { error: "重置链接无效或已使用" };
-      }
-      const updated = await ctx.repo.updateUserPassword(String(row.user_id), body.data.password);
-      if (!updated) {
-        reply.code(400);
-        return { error: "密码不符合要求" };
+        return { error: resetOutcome === "used" ? "重置链接无效或已使用" : "重置链接已失效，请重新申请密码重置" };
       }
     // 密码重置后吊销该用户全部已登录会话：旧的 next-auth JWT (sid) 即便未过期，
     // BFF 也会在下一个 /api/me/* 请求上经 isSessionRevoked 拦下 (401)。
@@ -469,26 +463,25 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(400);
         return { error: "参数无效" };
       }
-      // 返回 null = 用户不存在或密码错误（不区分，防账号枚举）；
-      // next-auth 的 authorize 收到 null 即登录失败。
-      // 失败计数先查：已锁定的标识不再查密码（M15），避免锁定期间继续烧 scrypt。
+      // 先原子预留一次尝试：所有 API 实例共享同一数据库计数，
+      // 第 6 次请求在任何 scrypt 校验前即被拒绝，避免多副本绕过锁定。
       const identifier = body.data.identifier.trim();
-      if (isLoginLocked(identifier, Date.now())) {
+      const attempt = await ctx.repo.reserveLoginAttempt(identifier, ctx.config.sessionSecret, Date.now(), LOGIN_FAIL_WINDOW_MS);
+      if (attempt.count > LOGIN_FAIL_MAX) {
         reply.code(429);
         return { error: "登录失败次数过多，请 15 分钟后再试" };
       }
+      // 返回 null = 用户不存在、密码错误或邮箱未验证（不区分，防账号枚举）。
       const user = await ctx.repo.verifyUserPassword(identifier, body.data.password);
       if (!user) {
-        // 每次失败都记审计（M15）：只靠 429 计数看不见「谁在被撞」；
-        // 审计 target 只放标识本身，不放密码、不区分「账号不存在 / 密码错误」。
-        const failures = recordLoginFailure(identifier, Date.now());
+        // 审计只记录由共享身份密钥生成的 HMAC 摘要，不持久化邮箱/用户名或密码。
         await ctx.repo
           .audit({
             actor: "anonymous",
             actorKind: "anonymous",
-            action: failures >= LOGIN_FAIL_MAX ? "account.login_locked" : "account.login_failed",
-            target: identifier,
-            diff: { failures },
+            action: attempt.count >= LOGIN_FAIL_MAX ? "account.login_locked" : "account.login_failed",
+            target: `hmac-sha256:${attempt.identifierHash}`,
+            diff: { failures: attempt.count },
           })
           .catch(() => {
             // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
@@ -496,12 +489,12 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(401);
         return { error: "邮箱/用户名或密码错误" };
       }
-      clearLoginFailures(identifier);
+      await ctx.repo.clearLoginAttempts(identifier, ctx.config.sessionSecret);
       await ctx.repo.audit({
         actor: user.id,
         actorKind: "user",
         action: "account.login",
-        target: user.email ?? undefined,
+        target: user.id,
       });
       return {
         ok: true,

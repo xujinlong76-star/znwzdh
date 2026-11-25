@@ -106,8 +106,8 @@ services:
       # 与 api 同一道生产身份签名总闸（语义见 api 服务）；standard 模式漏透传
       # 会导致内网开放模式无法显式 opt-out，只能改 compose 本身。
       NAVHUB_ALLOW_UNSIGNED_IDENTITY: ${NAVHUB_ALLOW_UNSIGNED_IDENTITY:-0}
-      # 与 api 同值（C-1 严格签名模式 / C-4 cron 凭据）
-      NAVHUB_IDENTITY_SIGNATURE_STRICT: ${NAVHUB_IDENTITY_SIGNATURE_STRICT:-0}
+      # 与 api 同值：生产默认严格 v2；仅旧代理迁移窗口显式设 0，迁移后恢复 1（C-1 / C-4）。
+      NAVHUB_IDENTITY_SIGNATURE_STRICT: ${NAVHUB_IDENTITY_SIGNATURE_STRICT:-1}
       CRON_SECRET: ${CRON_SECRET:-}
       # 限流豁免凭据（standard 模式同样要有，否则 web 侧 SSR 取数会撞 300/min 桶）
       NAVHUB_INTERNAL_TOKEN: ${NAVHUB_INTERNAL_TOKEN:-}

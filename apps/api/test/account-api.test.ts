@@ -161,6 +161,42 @@ describe("账号生命周期 API", () => {
     ).toBe(400);
   });
 
+  it("登录失败锁定跨两个 API 实例共享，且审计不保存原始标识", async () => {
+    const replicaCtx = await createContext(
+      loadConfig({ ...base, sqlitePath: join(dir, "account.db") }),
+    );
+    const replicaApp = await buildServer(replicaCtx);
+    await replicaApp.ready();
+    const identifier = "shared-lock@example.com";
+    try {
+      for (let i = 0; i < 5; i += 1) {
+        const target = i % 2 === 0 ? app : replicaApp;
+        const bad = await target.inject({
+          method: "POST",
+          url: "/api/account/login",
+          payload: { identifier, password: "wrong" },
+        });
+        expect(bad.statusCode).toBe(401);
+      }
+      const blocked = await replicaApp.inject({
+        method: "POST",
+        url: "/api/account/login",
+        payload: { identifier, password: "anything" },
+      });
+      expect(blocked.statusCode).toBe(429);
+
+      const audit = await ctx.repo.raw(
+        "SELECT target FROM audit_logs WHERE action = ? AND target LIKE 'hmac-sha256:%' ORDER BY created_at DESC LIMIT 1",
+        ["account.login_locked"],
+      );
+      expect(String(audit[0]?.target ?? "")).toMatch(/^hmac-sha256:[a-f0-9]{64}$/);
+      expect(String(audit[0]?.target ?? "")).not.toContain(identifier);
+    } finally {
+      await replicaApp.close();
+      await replicaCtx.close();
+    }
+  });
+
   it("注册：单字符 TLD 不是真实邮箱", async () => {
     const res = await post("/api/account/register", {
       username: "tld",
@@ -195,22 +231,35 @@ describe("账号生命周期 API", () => {
     expect(res.json().error).toContain("邮箱格式");
   });
 
-  // 注：锁定用例只保留一份。登录失败计数是进程内共享状态（见 routes/account.ts
-  // loginFailures），同一标识的第二份相同用例会在第一次错误登录时就拿到 429，
-  // 永远跑不绿——不是生产行为错了，是用例被粘贴重复了（2026-11-15 删重复）。
-
-  it("登录：正确口令返回用户，错误口令 401", async () => {
+  it("登录：未验证邮箱拒绝；完成验证后正确口令通过", async () => {
+    captured.length = 0;
     await post("/api/account/register", {
       username: "dave",
       email: "dave@example.com",
       password: "S3cret-Passw0rd!",
     });
+    const unverified = await post("/api/account/login", {
+      identifier: "dave@example.com",
+      password: "S3cret-Passw0rd!",
+    });
+    expect(unverified.statusCode).toBe(401);
+
+    const verificationToken = extractToken(captured[0], "verify-email");
+    const verified = await post("/api/account/verify-email", { token: verificationToken });
+    expect(verified.statusCode).toBe(200);
+
     const ok = await post("/api/account/login", {
       identifier: "dave@example.com",
       password: "S3cret-Passw0rd!",
     });
     expect(ok.statusCode).toBe(200);
     expect(ok.json().user.email).toBe("dave@example.com");
+    const loginAudit = await ctx.repo.raw(
+      "SELECT target FROM audit_logs WHERE action = ? AND target = ? LIMIT 1",
+      ["account.login", ok.json().user.id],
+    );
+    expect(loginAudit).toHaveLength(1);
+    expect(String(loginAudit[0]?.target ?? "")).not.toBe("dave@example.com");
 
     const bad = await post("/api/account/login", {
       identifier: "dave@example.com",
@@ -248,6 +297,9 @@ describe("账号生命周期 API", () => {
       email: "erin@example.com",
       password: "OldPassw0rd!",
     });
+    const verifyToken = extractToken(captured[0], "verify-email");
+    expect((await post("/api/account/verify-email", { token: verifyToken })).statusCode).toBe(200);
+    captured.length = 0;
     await post("/api/account/forgot-password", { email: "erin@example.com" });
     const resetMsg = captured.find((m) => m.text.includes("reset-password"));
     expect(resetMsg).toBeDefined();
@@ -335,6 +387,60 @@ describe("账号生命周期 API", () => {
       password: "NewPassw0rd!",
     });
     expect(login.statusCode).toBe(200);
+  });
+
+  it("重置密码：成功后撤销该账号其他尚未使用的重置令牌", async () => {
+    captured.length = 0;
+    await post("/api/account/register", {
+      username: "multi-reset",
+      email: "multi-reset@example.com",
+      password: "OldPassw0rd!",
+    });
+    await post("/api/account/forgot-password", { email: "multi-reset@example.com" });
+    await post("/api/account/forgot-password", { email: "multi-reset@example.com" });
+    const resetMessages = captured.filter((m) => m.text.includes("reset-password"));
+    expect(resetMessages).toHaveLength(2);
+    const firstToken = extractToken(resetMessages[0], "reset-password");
+    const secondToken = extractToken(resetMessages[1], "reset-password");
+    expect((await post("/api/account/reset-password", {
+      token: firstToken, password: "NewPassw0rd!",
+    })).statusCode).toBe(200);
+    expect((await post("/api/account/reset-password", {
+      token: secondToken, password: "Another1!",
+    })).statusCode).toBe(400);
+    const login = await post("/api/account/login", {
+      identifier: "multi-reset@example.com", password: "NewPassw0rd!",
+    });
+    expect(login.statusCode).toBe(200);
+  });
+
+  it("并发使用同一账号的不同重置令牌时只允许一个事务成功", async () => {
+    captured.length = 0;
+    await post("/api/account/register", {
+      username: "concurrent-reset",
+      email: "concurrent-reset@example.com",
+      password: "OldPassw0rd!",
+    });
+    await post("/api/account/forgot-password", { email: "concurrent-reset@example.com" });
+    await post("/api/account/forgot-password", { email: "concurrent-reset@example.com" });
+    const messages = captured.filter((m) => m.text.includes("reset-password"));
+    expect(messages).toHaveLength(2);
+    const tokens = messages.map((m) => extractToken(m, "reset-password"));
+    const results = await Promise.all(tokens.map((token, index) =>
+      post("/api/account/reset-password", {
+        token,
+        password: index === 0 ? "FirstNewPass1!" : "SecondNewPass1!",
+      }),
+    ));
+    expect(results.filter((result) => result.statusCode === 200)).toHaveLength(1);
+    expect(results.filter((result) => result.statusCode === 400)).toHaveLength(1);
+    const firstLogin = await post("/api/account/login", {
+      identifier: "concurrent-reset@example.com", password: "FirstNewPass1!",
+    });
+    const secondLogin = await post("/api/account/login", {
+      identifier: "concurrent-reset@example.com", password: "SecondNewPass1!",
+    });
+    expect([firstLogin.statusCode, secondLogin.statusCode].sort()).toEqual([200, 401]);
   });
 
   it("重置密码：令牌一次性", async () => {

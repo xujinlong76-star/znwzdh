@@ -27,6 +27,18 @@
  * 目标行），按指令换替补文件 admin/plugins/page.tsx，不得碰
  * search-palette.tsx。Top 1（data-safety-card）与 Top 2
  * （account-view）均未合入 main，其行暂缓登记，见下方注释。
+ *
+ * 五家合流（2026-11-25 13:22 进化轮，rebase 到 main fe3e1311）：
+ * 本分支只落地 admin/plugins 一切片，故只有它一行激活；其余四家
+ * （spotlight-modal 33/px10:19、settings-panel 32/px10:14、
+ * account-view 10、data-safety-card 10）的转换仍在各自的分
+ * 支上、未合入 main，在本分支上仍是 px 形态——其行保持注释，
+ * 数字已按各家分支守卫文件逐一核对（1022 分支登记 spotlight-modal
+ * { rem11: 33, px10: 19 }、1122 分支登记 settings-panel
+ * { rem11: 32, px10: 14 }、0922/1022 两分支注释行均登记
+ * account-view 与 data-safety-card 各 { rem11: 10 }），合流只合并
+ * 登记表，不丢弃他分支登记；待各家分支合入 main 后按落地文件实测
+ * 数取消注释再登记——现在激活会红。
  */
 import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
@@ -52,6 +64,18 @@ const CONVERTED: Array<{ file: string; rem10: number; rem11: number; rem12?: num
   // 本轮 Top 3 替补（E1）：admin/plugins/page.tsx，38 处 text-[11px] → text-[0.6875rem]；
   // 15 处 text-[10px] 未动（本轮范围外），px10: 15 精确钉住。
   { file: 'src/app/admin/plugins/page.tsx', rem10: 0, rem11: 38, px10: 15 },
+  // 1022 轮（E1）：spotlight-modal.tsx 未合入 main，其行暂缓登记。
+  // 待其分支合入 main 后，按落地文件实测数取消注释再登记——
+  // 现在登记会红（该文件在本分支上仍是 px 形态）。
+  // 1022 轮（E1）：spotlight-modal.tsx，33 处 text-[11px] → text-[0.6875rem]；
+  // 19 处 text-[10px] 未动，px10: 19 精确钉住。
+  // { file: 'src/components/search/spotlight-modal.tsx', rem10: 0, rem11: 33, px10: 19 },
+  // 1122 轮（E1）：settings-panel.tsx 未合入 main，其行暂缓登记。
+  // 待其分支合入 main 后，按落地文件实测数取消注释再登记——
+  // 现在登记会红（该文件在本分支上仍是 px 形态）。
+  // 1122 轮（E1）：settings-panel.tsx，32 处 text-[11px] → text-[0.6875rem]；
+  // 14 处 text-[10px] 未动，px10: 14 精确钉住。
+  // { file: 'src/components/user-center/settings-panel.tsx', rem10: 0, rem11: 32, px10: 14 },
   // Top 2（account-view.tsx）未合入 main，其行暂缓登记。
   // 待其分支合入 main 后，按落地文件实测数取消注释再登记——
   // 现在登记会红（该文件在 main 上仍是 px 形态）。

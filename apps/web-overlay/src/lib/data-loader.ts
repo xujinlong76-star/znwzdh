@@ -71,7 +71,13 @@ export function processNavigationSubItem(item: NavigationSubItemRaw): Navigation
         // （site-peek-dialog.tsx）永远看不到 health；卡片上的死链徽标
         // 已于 2026-11-12 移除，不再消费本字段（见 dead-link.ts 文件头）。
         // 没有该字段时仍为 undefined，不影响其它渲染。
-        health: item.health,
+        // 首屏瘦身（2026-11-25 实测）：4823 条站点记录里每条都带一个全空的
+        // health 对象 {ok:false,httpStatus:null,latencyMs:null,redirectTo:null,error:null,
+        // lastCheckedAt:null}，合计 527KB（RSC flight 2.03MB 的 26%）。
+        // siteHealthState()（site-health.ts:106）对 lastCheckedAt 为空的输入直接返回 null
+        //（无徽标、无 title、不进「只看失效」筛选），所以「未巡检」的 health 在任何
+        // 消费方眼里都等价于「不存在」。这里只在真有巡检事实时才透传，省掉纯零值。
+        health: item.health?.lastCheckedAt ? item.health : undefined,
         // 透传中枢站点 id（03 §2.3 步骤 2）：与 health 同款原样透传，
         // 不做转换、不做归一化；hubId = id（情况一，W1 实测），
         // 卡片健康徽标靠它把分片条目与中枢巡检 health 对上。

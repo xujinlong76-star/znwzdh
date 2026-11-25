@@ -142,7 +142,9 @@ export function CategoryQuickJumpBar({
               aria-label={isAllCollapsed ? "展开全部类目" : "折叠全部类目"}
             >
               <ChevronsUpDown className="h-3 w-3" />
-              <span>{isAllCollapsed ? "展开全部" : "折叠全部"}</span>
+              {/* 首屏瘦身（2026-11-25）：文字标签只在 ≥sm 出现；<sm 仅图标（有 title/aria-label），
+                  省出的宽度留给分类芯片——「折叠全部」是低频操作，不该占移动端一整颗胶囊。 */}
+              <span className="hidden sm:inline">{isAllCollapsed ? "展开全部" : "折叠全部"}</span>
             </button>
           )}
 

@@ -91,7 +91,35 @@ export interface NavigationCategorySectionProps {
   dialDigitById?: ReadonlyMap<string, number>
   /** 全站标题索引（id → 标题）：卡片 ⋯ 菜单绑定快拨位时，报出被顶掉站点的站名 */
   siteTitleById?: ReadonlyMap<string, string>
+  /** 点击左侧分类进入直达聚焦视图时，直接完整展示该分类全部子分类与全部站点（不截断折叠） */
+  showCompleteContent?: boolean
+  /** 点击左侧二级分类直达时，默认选中并完整展示对应子分类 */
+  initialSelectedSubCatId?: string | null
+  /** 子分类标签切换回调（用于同步顶部聚焦面包屑与左侧栏激活态） */
+  onSubCategoryChange?: (subCatId: string | null) => void
 }
+
+/**
+ * 子分类较多的分类默认只展开第一个子类（2026-11-25 首屏优化，用户拍板「默认折叠子类」）。
+ *
+ * 背景：「AI 工具」有 17 个子分类 96 张卡，在「全部」视图下 17 组全部平铺，单个分类区块
+ * 高 4,645px（整页 42 屏）。子分类切换条（role=tablist）本来就存在，选中某个 tab 即
+ * 全量展开该组——所以「默认选中第一个子类」就能把 96 卡收成一组，其余 16 组收在切换条里，
+ * 不新增任何 UI，也不改数据。
+ *
+ * 水合安全：判定只依赖 props（category.subCategories），服务端与客户端首帧结论一致，
+ * 不读 mount / 视口 / localStorage。阈值取 8：≤8 个子类的分类保持「全部」视图不变。
+ * 筛选态、聚焦直达（initialSelectedSubCatId）、编辑态都不受影响——它们各自显式传值。
+ */
+const MANY_SUBCATEGORIES_THRESHOLD = 8
+
+function defaultSubCatIdFor(category: { subCategories?: Array<{ id: string; enabled?: boolean; items?: unknown[] }> | null }): string | null {
+  const subs = category.subCategories
+  if (!subs || subs.length <= MANY_SUBCATEGORIES_THRESHOLD) return null
+  const first = subs.find((sub) => (sub.items?.length ?? 0) > 0 && sub.enabled !== false)
+  return first ? first.id : null
+}
+
 
 export const NavigationCategorySection = memo(function NavigationCategorySection({
   category,
@@ -110,6 +138,9 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   cardsPerGroup = 0,
   dialDigitById,
   siteTitleById,
+  showCompleteContent = false,
+  initialSelectedSubCatId = null,
+  onSubCategoryChange,
 }: NavigationCategorySectionProps) {
   const { toast } = useToast()
   const {
@@ -403,13 +434,27 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
    * 那个按钮本来就在编辑态可用，功能没有丢，只是不再默认一次性铺开。
    * 多选态仍然解除：批量操作的前提是「看得见才能选」。
    */
-  const forceFull = selectionMode
+  const forceFull = selectionMode || Boolean(showCompleteContent)
 
   // 类目内秒级精准筛选状态
   const [filterKeyword, setFilterKeyword] = useState('')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
-  const [selectedSubCatId, setSelectedSubCatId] = useState<string | null>(null)
+  const [selectedSubCatId, setSelectedSubCatId] = useState<string | null>(
+    initialSelectedSubCatId ?? defaultSubCatIdFor(category),
+  )
   const [isFilterOpen, setIsFilterOpen] = useState(false)
+
+  useEffect(() => {
+    setSelectedSubCatId(initialSelectedSubCatId ?? defaultSubCatIdFor(category))
+  }, [initialSelectedSubCatId, category])
+
+  const handleSelectSubCat = useCallback(
+    (nextSubCatId: string | null) => {
+      setSelectedSubCatId(nextSubCatId)
+      onSubCategoryChange?.(nextSubCatId)
+    },
+    [onSubCategoryChange],
+  )
   /**
    * 热门标签工具的 roving tabindex 游标（2026-11-09 首页 Tab 停留点收敛）。
    *
@@ -802,19 +847,21 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                         {/* 一级分类标题头 */}
                         <div className="flex items-center justify-between pb-1 border-b border-border/50">
                           <div className="flex items-center gap-2 flex-wrap">
-                            {/* 手风琴折叠展开按钮 */}
-                            <button
-                              type="button"
-                              onClick={() => toggleCollapseCategory(category.id)}
-                              /* 视觉 28px，::before 扩 44px 触摸热区——视觉变小不拿可用性换。 */
-                              className="relative -ml-1 flex h-7 w-7 items-center justify-center rounded-md p-0 text-muted-foreground transition-all before:absolute before:-inset-2 before:content-[''] hover:bg-muted/80 hover:text-foreground cursor-pointer"
-                              title={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
-                              aria-label={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
-                              aria-expanded={!isCollapsed}
-                              aria-controls={categoryContentId}
-                            >
-                              <ChevronDown className={cn("w-4 h-4 transition-transform duration-200", isCollapsed && "-rotate-90")} />
-                            </button>
+                            {/* 手风琴折叠展开按钮（单分类直达聚焦完整展示态不显示无意义的折叠按钮） */}
+                            {!showCompleteContent && (
+                              <button
+                                type="button"
+                                onClick={() => toggleCollapseCategory(category.id)}
+                                /* 视觉 28px，::before 扩 44px 触摸热区——视觉变小不拿可用性换。 */
+                                className="relative -ml-1 flex h-7 w-7 items-center justify-center rounded-md p-0 text-muted-foreground transition-all before:absolute before:-inset-2 before:content-[''] hover:bg-muted/80 hover:text-foreground cursor-pointer"
+                                title={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
+                                aria-label={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
+                                aria-expanded={!isCollapsed}
+                                aria-controls={categoryContentId}
+                              >
+                                <ChevronDown className={cn("w-4 h-4 transition-transform duration-200", isCollapsed && "-rotate-90")} />
+                              </button>
+                            )}
 
                             <span className={cn(
                               "w-1.5 h-5 rounded-full",
@@ -1101,7 +1148,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                   role="tab"
                                   aria-selected={selectedSubCatId === null}
                                   tabIndex={selectedSubCatId === null ? 0 : -1}
-                                  onClick={() => setSelectedSubCatId(null)}
+                                  onClick={() => handleSelectSubCat(null)}
                                   className={cn(
                                     /* 子分类 chip：min-h-11(44px) → h-7(28px)。这是「切换查看哪一组」的快筛，
                                            不是主操作；横向滚动 + 渐隐箭头保证可达性。 */
@@ -1120,7 +1167,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                     role="tab"
                                     aria-selected={selectedSubCatId === '__direct__'}
                                     tabIndex={selectedSubCatId === '__direct__' ? 0 : -1}
-                                    onClick={() => setSelectedSubCatId(selectedSubCatId === '__direct__' ? null : '__direct__')}
+                                    onClick={() => handleSelectSubCat(selectedSubCatId === '__direct__' ? null : '__direct__')}
                                     className={cn(
                                       /* 子分类 chip：min-h-11(44px) → h-7(28px)。这是「切换查看哪一组」的快筛，
                                            不是主操作；横向滚动 + 渐隐箭头保证可达性。 */
@@ -1144,7 +1191,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                       role="tab"
                                       aria-selected={isCurrent}
                                       tabIndex={isCurrent ? 0 : -1}
-                                      onClick={() => setSelectedSubCatId(isCurrent ? null : sub.id)}
+                                      onClick={() => handleSelectSubCat(isCurrent ? null : sub.id)}
                                       className={cn(
                                         /* 子分类 chip：min-h-11(44px) → h-7(28px)。这是「切换查看哪一组」的快筛，
                                            不是主操作；横向滚动 + 渐隐箭头保证可达性。 */

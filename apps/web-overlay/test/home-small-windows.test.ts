@@ -96,12 +96,16 @@ describe('首页极简结构与小窗懒加载边界', () => {
   // M-01（2026-11-25）：插件精选区不在此列——44394500 随极简首屏重构撤下它后，
   // 四视口首页无可见插件区块（只剩页脚链接与胶囊下拉小窗入口），多视口验收
   // 判为 P2；本用例的插件断言按新行为改写为「必须挂载可见区」，小窗接线不动。
+  // 2026-11-25 首屏优化：精选区从「内容之前」移到「内容之后」——实测它在移动端
+  // 占首屏 324px（38%），把第一张站卡挤到 y=653。可见性与入口不变，只改顺序。
   it('page.tsx 不再注入今日内容（改由导航中心 dynamic 懒加载），不在首屏上方直接堆叠渲染', () => {
     const src = readOverlay('src/app/page.tsx')
     expect(src).not.toContain('todaySlots={{')
     expect(src).toContain('todayBadge={todayBadge}')
     expect(src).not.toContain('<HomeTodayMore>')
     expect(src).toContain('<HomePluginSpotlight')
+    // 顺序契约：精选区在导航内容之后（首屏优先给站卡）
+    expect(src.indexOf('<HomePluginSpotlight')).toBeGreaterThan(src.indexOf('<NavigationContent'))
     const nav = readOverlay('src/components/navigation-content.tsx')
     expect(nav).toContain('todayContent={<TodayZoneContent />}')
     expect(nav).toContain('briefContent={<BriefStripContent />}')

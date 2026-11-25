@@ -10,7 +10,7 @@ import { Button } from '@/registry/new-york/ui/button'
 import { ScrollArea } from '@/registry/new-york/ui/scroll-area'
 import type { NavigationData } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
-import { ChevronDown, ChevronRight, SlidersHorizontal, X } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, SlidersHorizontal, X } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { NavIcon } from '@/components/nav-icon'
 import { NAV_ICON_FALLBACK, isIconUrl, resolveNavIcon } from '@/lib/nav-icons'
@@ -70,6 +70,12 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   /** 品牌标题是否渲染为 h1。默认 true；移动抽屉传 false，保证同一页面
       DOM 内恰好一个 h1（复核 2026-11-20 首屏瘦身第 1 项）。 */
   brandAsHeading?: boolean
+  /** 当前直达聚焦的一级分类 ID（点击左侧分类后直接完整展示该分类全部内容） */
+  focusedCategoryId?: string | null
+  /** 当前直达聚焦的二级子分类 ID */
+  focusedSubCategoryId?: string | null
+  /** 点击侧栏分类/子分类的统一回调；传 null 回到全部探索全景 */
+  onSelectCategory?: (categoryId: string | null, subCategoryId?: string | null) => void
 }
 
 // P0-2：包 memo——navigationData 已 memo 化、onClose 已 useCallback 化。
@@ -96,7 +102,16 @@ function shortBrandName(full: string): string {
   return trimmed.length > 6 ? trimmed.slice(0, 6) : trimmed
 }
 
-export const Sidebar = memo(function Sidebar({ className, navigationData, siteInfo, onClose, brandAsHeading = true }: SidebarProps) {
+export const Sidebar = memo(function Sidebar({
+  className,
+  navigationData,
+  siteInfo,
+  onClose,
+  brandAsHeading = true,
+  focusedCategoryId = null,
+  focusedSubCategoryId = null,
+  onSelectCategory,
+}: SidebarProps) {
   /* 侧栏不再渲染通知铃铛：订阅源只保留顶栏一处（见页脚注释）。 */
   /* 2026-11-21：侧栏铃铛已移除，未读订阅与角标文案随之删掉——
      同一个订阅源现在只服务顶栏铃铛一处，避免两处红点不同步。 */
@@ -139,9 +154,16 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
 
   const handleCategoryClick = (categoryId: string) => {
     setActiveCategoryId(categoryId)
+    if (onSelectCategory) {
+      onSelectCategory(categoryId, null)
+      onClose?.()
+      // 切换不同分类时自动收起其他无关分类已展开的子分类列表，保持侧栏清爽不撑高
+      setExpandedCategories((prev) => (prev[categoryId] ? { [categoryId]: true } : {}))
+      return
+    }
     scrollToSection(categoryId)
 
-    // 如果有子分类，切换展开/收起状态
+    // 如果有子分类，切换展开/收起状态（手风琴模式：展开新类时自动收起其他类）
     const category = navigationData.navigationItems.find(cat => cat.id === categoryId)
     if (category?.subCategories && category.subCategories.length > 0) {
       toggleCategory(categoryId)
@@ -230,14 +252,38 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
   }, [navigationData.navigationItems])
 
   const toggleCategory = (categoryId: string) => {
-    setExpandedCategories(prev => ({
-      ...prev,
-      [categoryId]: !prev[categoryId]
-    }))
+    // 手风琴自动收起：展开某一分类子列表时，自动收起其他无关分类的子列表
+    setExpandedCategories((prev) => (prev[categoryId] ? {} : { [categoryId]: true }))
   }
 
   const [sidebarWidth, setSidebarWidth] = useState<number | null>(null)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
+  // 2026-11-25 左侧栏自由折叠为「仅显示图标」模式（持久化本机，水合安全，仅桌面端生效）
+  const SIDEBAR_COLLAPSED_KEY = 'navhub_sidebar_collapsed_v1'
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const collapsed = !onClose && isCollapsed
+
+  useEffect(() => {
+    try {
+      if (window.localStorage?.getItem(SIDEBAR_COLLAPSED_KEY) === '1') {
+        setIsCollapsed(true)
+      }
+    } catch {
+      // 忽略本地存储读取失败
+    }
+  }, [])
+
+  const toggleCollapsed = useCallback(() => {
+    setIsCollapsed((prev) => {
+      const next = !prev
+      try {
+        window.localStorage?.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0')
+      } catch {
+        // 忽略写入失败
+      }
+      return next
+    })
+  }, [])
   // P1-1 残留（2026-11-21）：侧栏最大宽随视口钳制。工具栏最小需 ~704px
   //（搜索 min 260 + 右侧工具组 ~430 + gap）+ 头部 padding 48px，主区至少留
   // 780px；420px 侧栏在 1024px 档只剩 604px，工具栏溢出约 148px
@@ -385,14 +431,24 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
 
   return (
     <div
-      style={!onClose && sidebarWidth ? { width: `${sidebarWidth}px` } : undefined}
+      data-sidebar-collapsed={collapsed ? 'true' : 'false'}
+      style={
+        !onClose
+          ? collapsed
+            ? { width: '64px' }
+            : sidebarWidth
+              ? { width: `${sidebarWidth}px` }
+              : undefined
+          : undefined
+      }
       className={cn(
         "relative group/sidebar w-full md:w-64 h-full bg-background border-r border-border/40 flex flex-col",
+        !isResizingSidebar && "transition-[width] duration-200 ease-out",
         className
       )}
     >
-      {/* 桌面端侧边栏右边缘左右拖拉调整宽度手柄（P1-18：可聚焦按钮 + role=slider，键盘可用） */}
-      {!onClose && (
+      {/* 桌面端侧边栏右边缘左右拖拉调整宽度手柄（P1-18：可聚焦按钮 + role=slider，键盘可用；收起图标模式时隐藏） */}
+      {!onClose && !collapsed && (
         <button
           type="button"
           role="slider"
@@ -415,15 +471,44 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
         >
           <div
             className={cn(
-              "w-1 h-12 rounded-full transition-all duration-[--duration-fast]",
-              isResizingSidebar
-                ? "bg-primary h-24 shadow-md shadow-primary/50"
-                : "bg-border/80 hover:bg-primary hover:h-16"
+              "w-[2px] h-full transition-colors duration-[--duration-fast]",
+              isResizingSidebar ? "bg-primary" : "bg-transparent hover:bg-primary/50"
             )}
           />
         </button>
       )}
-      <div className="flex min-h-[3.5rem] items-center justify-between px-3.5 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 gap-2">
+
+      {/* 桌面端分割线正中：极简无边框 < / > 收放图标（去边框去阴影，零视觉干扰） */}
+      {!onClose && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              data-testid="sidebar-collapse-toggle"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={toggleCollapsed}
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? '展开完整侧边栏' : '收起侧边栏为仅显示图标'}
+              className="hidden md:flex absolute top-1/2 -right-3 -translate-y-1/2 z-40 h-11 w-6 items-center justify-center bg-transparent text-muted-foreground transition-colors duration-150 hover:text-primary cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+            >
+              {collapsed ? (
+                <ChevronRight className="h-4 w-4 stroke-[2]" aria-hidden />
+              ) : (
+                <ChevronLeft className="h-4 w-4 stroke-[2]" aria-hidden />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={6}>
+            {collapsed ? '展开侧边栏' : '收起为仅显示图标'}
+          </TooltipContent>
+        </Tooltip>
+      )}
+      <div
+        className={cn(
+          "flex min-h-[3.5rem] items-center pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40",
+          collapsed ? "justify-center px-2" : "justify-between px-3.5 gap-2"
+        )}
+      >
         {/* 2026-11-21 修品牌名截断（「山羊胡网址导航...」）：
             210px 侧栏里 图标 24px + gap 6px + 28px 边距 = 58px，剩约 150px。
             「山羊胡网址导航大全」9 个汉字按 14px 需 ~126px，但字重 700 + 字间距
@@ -434,7 +519,17 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
           href="/"
           title={siteInfo.basic.title}
           aria-label={siteInfo.basic.title}
-          className="flex min-w-0 items-center gap-1.5 font-bold text-sm tracking-tight transition-opacity hover:opacity-90"
+          onClick={(e) => {
+            if (focusedCategoryId && onSelectCategory) {
+              e.preventDefault()
+              onSelectCategory(null, null)
+              onClose?.()
+            }
+          }}
+          className={cn(
+            "flex min-w-0 items-center font-bold text-sm tracking-tight transition-opacity hover:opacity-90",
+            collapsed ? "justify-center" : "gap-1.5"
+          )}
         >
           {siteInfo.appearance.logo ? (
             <Image
@@ -453,8 +548,8 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
               className="h-6 w-6 rounded-md object-contain shrink-0"
             />
           )}
-          <div className="flex min-w-0 flex-col">
-            {/* 侧边栏品牌为页面唯一 h1（主内容区大号 H1 已移除；不走 sr-only）。
+          <div className={cn("min-w-0 flex-col", collapsed ? "sr-only" : "flex")}>
+            {/* 侧边栏品牌为页面唯一 h1（主内容区大号 H1 已移除；收起图标模式时保留 sr-only h1 维持单 h1 SEO 契约）。
                 移动抽屉传 brandAsHeading={false} 渲染为 span，保证 DOM 内恰好一个 h1。 */}
             {brandAsHeading ? (
               <h1 className="truncate text-sm font-bold leading-tight tracking-tight text-foreground">
@@ -468,10 +563,6 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
             <span className="truncate font-mono text-[10px] font-normal text-muted-foreground">AI-Native Hub</span>
           </div>
         </Link>
-
-        <span className="shrink-0 hidden min-[1536px]:inline-flex text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium">
-          v5.0
-        </span>
 
         {/* 移动模式下的关闭按钮 */}
         {onClose && (
@@ -487,13 +578,20 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
         )}
       </div>
 
-      <div className="px-3 py-2 border-b border-border/40">
-        <WorkspaceSwitcher />
-      </div>
+      {!collapsed && (
+        <div className="px-3 py-2 border-b border-border/40">
+          <WorkspaceSwitcher />
+        </div>
+      )}
 
       <div className="relative flex-1 min-h-0 flex flex-col">
-        <ScrollArea className="flex-1 px-2.5 py-2 [&_[data-radix-scroll-area-viewport]>div]:!block">
-          <div className="space-y-0.5 pb-6">
+        <ScrollArea
+          className={cn(
+            "flex-1 py-2 [&_[data-radix-scroll-area-viewport]>div]:!block",
+            collapsed ? "px-2" : "px-2.5"
+          )}
+        >
+          <div className={cn("pb-6", collapsed ? "flex flex-col items-center space-y-1" : "space-y-0.5")}>
           {navigationData.navigationItems
             .filter((category) => {
               if (!bypassMaskTemporarily && (hiddenCategoryIds.includes(category.id) || isCategoryHidden(category.id))) {
@@ -513,8 +611,47 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
               const directCount = category.items?.length || 0;
               const subTotalCount = visibleSubCategories.reduce((acc, sub) => acc + (sub.items?.length || 0), 0);
               const totalSiteCount = directCount + subTotalCount;
-              const isActive = activeCategoryId === category.id;
+              const isActive = (focusedCategoryId ?? activeCategoryId) === category.id;
               const isExpanded = Boolean(expandedCategories[category.id]);
+
+              if (collapsed) {
+                return (
+                  <Tooltip key={category.id}>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleCategoryClick(category.id)}
+                        aria-label={totalSiteCount > 0 ? `${category.title}（${totalSiteCount} 站）` : category.title}
+                        aria-current={isActive ? 'location' : undefined}
+                        className={cn(
+                          "relative h-10 w-10 rounded-xl transition-all duration-150 cursor-pointer",
+                          isActive
+                            ? "bg-primary/[0.10] text-primary ring-1 ring-inset ring-primary/25 shadow-2xs dark:bg-primary/[0.16]"
+                            : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                        )}
+                      >
+                        {isActive && (
+                          <span
+                            aria-hidden="true"
+                            className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-primary"
+                          />
+                        )}
+                        {renderIcon(category.icon)}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={10} className="flex items-center gap-1.5">
+                      <span className="font-medium">{category.title}</span>
+                      {totalSiteCount > 0 && (
+                        <span className="rounded-full bg-background/20 px-1.5 py-0.2 font-mono text-[10px] tabular-nums opacity-85">
+                          {totalSiteCount}
+                        </span>
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              }
 
               return (
             <div key={category.id} className="py-0">
@@ -535,7 +672,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                 <Button
                   variant="ghost"
                   className={cn(
-                    "min-w-0 flex-1 justify-start gap-2 h-8 px-2 rounded-xl text-[12.5px] transition-colors cursor-pointer hover:bg-transparent",
+                    "min-w-0 flex-1 justify-start gap-1.5 h-8 px-1.5 rounded-xl text-[12.5px] transition-colors cursor-pointer hover:bg-transparent",
                     isActive
                       ? "font-semibold text-foreground"
                       : "font-medium text-foreground/80 group-hover:text-foreground"
@@ -544,7 +681,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                 >
                   <span
                     className={cn(
-                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border transition-all",
+                      "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md border transition-all",
                       isActive
                         ? "border-primary/30 bg-primary/15 text-primary shadow-2xs"
                         : "border-border/50 bg-muted/45 text-muted-foreground group-hover:border-primary/25 group-hover:bg-primary/10 group-hover:text-primary"
@@ -555,11 +692,16 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                   <span className="truncate min-w-0 flex-1 text-left">{category.title}</span>
                   {totalSiteCount > 0 && (
                     <span
+                      /* 2026-11-25 阶段 C（UI 评审 P0-2 ②）：计数降噪——非当前类目的
+                         站数徽章默认隐形，悬停 / 键盘聚焦 / 触屏（无 hover 能力）时显示。
+                         用 opacity 而不是 hidden：① 只为视觉让位给类目名，读屏与
+                         aria 照读；② 宽度不塌缩，行高与右侧内边距不抖动。
+                         当前类目恒显（你正在看它，量级是位置感知的一部分）。 */
                       className={cn(
-                        "ml-1 shrink-0 rounded-full px-1.5 py-0.2 font-mono text-[10px] tabular-nums transition-colors",
+                        "ml-0.5 shrink-0 rounded-full px-1.5 py-0.2 font-mono text-[10px] tabular-nums transition-[opacity,background-color,color] duration-[--duration-fast]",
                         isActive
-                          ? "bg-primary/15 font-semibold text-primary"
-                          : "bg-muted/70 text-muted-foreground group-hover:bg-muted group-hover:text-foreground/80"
+                          ? "bg-primary/15 font-semibold text-primary opacity-100"
+                          : "bg-muted/70 text-muted-foreground group-hover:bg-muted group-hover:text-foreground/80 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100"
                       )}
                     >
                       {totalSiteCount}
@@ -572,7 +714,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                     variant="ghost"
                     size="sm"
                     className={cn(
-                      "h-7 w-6 shrink-0 px-0 mr-0.5 rounded-lg hover:bg-muted/70 cursor-pointer transition-colors",
+                      "h-7 w-5 shrink-0 px-0 mr-0.5 rounded-lg hover:bg-muted/70 cursor-pointer transition-colors",
                       isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
                     )}
                     onClick={() => toggleCategory(category.id)}
@@ -600,14 +742,26 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                   <div className="mt-0.5 mb-1 ml-4 pl-2.5 border-l border-border/60 space-y-0.5 overflow-hidden">
                     {visibleSubCategories.map((subCategory) => {
                       const subCount = subCategory.items?.length || 0;
+                      const isSubActive = focusedCategoryId === category.id && focusedSubCategoryId === subCategory.id;
                       return (
                         <Button
                           key={subCategory.id}
                           variant="ghost"
-                          className="w-full justify-between h-7 px-2 text-xs rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 cursor-pointer"
+                          className={cn(
+                            "w-full justify-between h-7 px-2 text-xs rounded-lg cursor-pointer transition-colors",
+                            isSubActive
+                              ? "bg-primary/10 font-semibold text-primary"
+                              : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                          )}
                           onClick={() => {
                             setActiveCategoryId(category.id)
-                            scrollToSection(subCategory.id, category.id)
+                            setExpandedCategories({ [category.id]: true })
+                            if (onSelectCategory) {
+                              onSelectCategory(category.id, subCategory.id)
+                              onClose?.()
+                            } else {
+                              scrollToSection(subCategory.id, category.id)
+                            }
                           }}
                         >
                           <span className="truncate min-w-0 text-left">{subCategory.title}</span>
@@ -632,14 +786,21 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
         />
       </div>
 
-      <div className="p-2.5 pb-[max(env(safe-area-inset-bottom,0px),0.625rem)] border-t border-border/40 flex items-center justify-between">
-        {!isModuleHidden('mod:crdt-pill') ? (
-          <div data-feature-id="mod:crdt-pill">
-            <CrdtSyncStatusPill />
-          </div>
-        ) : (
-          <span />
+      <div
+        className={cn(
+          "p-2.5 pb-[max(env(safe-area-inset-bottom,0px),0.625rem)] border-t border-border/40 flex items-center",
+          collapsed ? "justify-center" : "justify-between"
         )}
+      >
+        {!collapsed ? (
+          !isModuleHidden('mod:crdt-pill') ? (
+            <div data-feature-id="mod:crdt-pill">
+              <CrdtSyncStatusPill />
+            </div>
+          ) : (
+            <span />
+          )
+        ) : null}
         {/* 2026-11-21 清理重复入口：**移除侧栏这枚铃铛**。
             全站通知入口统一收口到右上角顶栏铃铛（它自带未读红点）。
             两处铃铛曾是同一订阅源的两个消费者，视觉重复且角标可能不同步；
@@ -657,7 +818,7 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
                 <SlidersHorizontal className="h-4 w-4" aria-hidden />
               </Link>
             </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={6}>
+            <TooltipContent side={collapsed ? 'right' : 'top'} sideOffset={collapsed ? 10 : 6}>
               个性化偏好设置
             </TooltipContent>
           </Tooltip>

@@ -356,11 +356,9 @@ export default async function HomePage({ params }: { params?: Promise<{ mode?: s
 
   return (
     <>
-      {/* M-01（2026-11-25 多视口验收）：恢复首页可见的插件精选区。44394500
-          极简首屏重构把它从 page.tsx 撤下、只留胶囊下拉里的小窗入口与页脚链接，
-          致四视口首页均无可见区块；取数（featuredRes）与小窗接线原样保留，
-          这里只把同一份数据再挂回导航内容之前的可视区。 */}
-      <HomePluginSpotlight items={featuredRes ? featuredRes.items : null} />
+      {/* 插件精选区（M-01 要求「首页有可见区块」）2026-11-25 位置调整：从内容之前
+          移到内容之后。实测它占首屏 桌面 174px / 移动 324px（38%），把第一张站卡挤到
+          y=653；精选是「发现型」内容，排在找站结果之后更符合任务顺序。可见性不变。 */}
       <NavigationContent
       navigationData={navigationData}
       siteData={siteData}
@@ -372,6 +370,7 @@ export default async function HomePage({ params }: { params?: Promise<{ mode?: s
       pluginItems={featuredRes ? featuredRes.items : null}
       todayBadge={todayBadge}
     />
+      <HomePluginSpotlight items={featuredRes ? featuredRes.items : null} />
       {origin ? (
         <>
           <JsonLd

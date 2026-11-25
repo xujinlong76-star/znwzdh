@@ -303,27 +303,40 @@ export async function guardedFetch(
     // CI 2026-11-25 ISR 阶段 4 的 502×60 就是这么来的；裸 fetch 有 Happy Eyeballs
     // 兜底才没事）。逐个候选尝试、仅连接级失败换下一个 IP——每个候选都是解析后
     // 校验过的地址，防重绑定语义不变；取消/超时立即向上传递，不重试。
+    //
+    // 写法刻意沿用 6f3ad68b 的 let + 条件赋值形态：ad7b235a 的 pinTargets
+    // 数组 + for-of 写法被 CodeQL js/request-forgery 标为新告警
+    // （ssrf-guard.ts:328，3 个来源），而 6f3ad68b 的同款 let 形态在 PR
+    // #187 首轮 CodeQL 全绿、0 条告警；不要再把 fetch 参数改成数组/循环变量。
     const headers: Record<string, string> = {
       'User-Agent': opts.userAgent,
       ...carriedHeaders,
     }
-    const pinTargets: string[] = []
-    if (!isLiteralIp && current.protocol === 'http:') {
-      for (const ip of resolvedIps) {
-        const pinned = new URL(current.toString())
-        pinned.hostname = isIP(ip) === 6 ? `[${ip}]` : ip
-        pinTargets.push(pinned.toString())
-      }
-      if (pinTargets.length > 0 && !headers['Host'] && !headers['host']) {
+    let fetchTarget = current.toString()
+    if (!isLiteralIp && current.protocol === 'http:' && resolvedIps[0]) {
+      const pinned = new URL(current.toString())
+      const ip = resolvedIps[0]
+      pinned.hostname = isIP(ip) === 6 ? `[${ip}]` : ip
+      fetchTarget = pinned.toString()
+      if (!headers['Host'] && !headers['host']) {
         headers['Host'] = current.host
       }
     }
-    if (pinTargets.length === 0) pinTargets.push(current.toString())
 
     const CONNECTION_ERRORS = new Set(['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE'])
+    const attempts =
+      !isLiteralIp && current.protocol === 'http:' ? Math.max(resolvedIps.length, 1) : 1
     let response: Response | undefined
     let lastError: unknown
-    for (const fetchTarget of pinTargets) {
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      if (attempt > 0) {
+        const ip = resolvedIps[attempt]
+        if (ip) {
+          const pinned = new URL(current.toString())
+          pinned.hostname = isIP(ip) === 6 ? `[${ip}]` : ip
+          fetchTarget = pinned.toString()
+        }
+      }
       try {
         response = await fetch(fetchTarget, {
           ...init,

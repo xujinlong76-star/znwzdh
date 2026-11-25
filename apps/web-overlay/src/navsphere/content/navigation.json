@@ -1305,7 +1305,7 @@
               "title": "OpusClip",
               "href": "https://www.opus.pro",
               "description": "AI 长视频一键剪成短视频，自动配字幕与高光片段",
-              "icon": "https://cdn.prod.website-files.com/6388604483b03a9ecb34d695/64351a9e4e9223f5e0f46d64_ico-final.png",
+              "icon": "",
               "enabled": true,
               "tags": [
                 "免费额度",
@@ -3079,7 +3079,7 @@
               "title": "Photopea",
               "href": "https://www.photopea.com",
               "description": "免费在线修图工具，浏览器里直接用，免安装可做基础修图",
-              "icon": "https://www.photopea.com/promo/icon512.png",
+              "icon": "",
               "enabled": true,
               "tags": [
                 "免费额度",
@@ -3276,7 +3276,7 @@
               "title": "Khroma",
               "href": "https://www.khroma.co",
               "description": "AI 学习偏好生成个性配色组合",
-              "icon": "https://www.khroma.co/assets/icons/fav.png",
+              "icon": "",
               "enabled": true,
               "tags": [
                 "免费",
@@ -3304,7 +3304,7 @@
               "title": "Happy Hues",
               "href": "https://www.happyhues.co",
               "description": "精选配色方案的真实场景应用示例，点击复制色值",
-              "icon": "https://cdn.prod.website-files.com/5dd40aa8049df8748c72d0ee/5dd9b94105da589ba59c4907_happy-hues-fav.png",
+              "icon": "",
               "enabled": true,
               "tags": [
                 "免费",

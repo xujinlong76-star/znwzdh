@@ -242,6 +242,11 @@ for (const vp of ACTIVE_VIEWPORTS) {
         await page.goto(pg.path)
         await settle(page)
 
+        // PR #186 E2E #11–13（2026-11-25）：挂件脚本是 lazyOnload，settle（networkidle）
+        // 时 #xiaomaomao 往往还没挂上——zones 为空导致首屏检查被整段跳过、本地恒过、
+        // CI 冷启动时猫已挂上才真跑检查。等猫挂上再量矩形，让检查确定性执行而非看时序。
+        await page.locator('#xiaomaomao').waitFor({ state: 'attached', timeout: 15_000 }).catch(() => {})
+
         // 首屏：浮坞（挂件 + 回顶钮）与页面内核心 CTA 不得重叠
         const dock = await rectOf(page, '[data-testid="global-floating-dock"]')
         const cat = await rectOf(page, '#xiaomaomao')

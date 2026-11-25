@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
+import { Sparkles } from 'lucide-react'
 import { Container } from '@/components/ui/container'
+import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { GrowthPanelLazy } from '@/components/user-center/growth-panel-lazy'
 
 /**
@@ -22,6 +24,13 @@ export default function MeGrowthPage() {
       id="main-content"
       className="space-y-4 pb-28 pt-3 sm:space-y-5 sm:pb-24 sm:pt-4 md:pr-20 lg:pr-20 xl:pr-12"
     >
+      <CenterPageHeader
+        title="成长与任务"
+        icon={Sparkles}
+        back={{ href: '/me', label: '用户中心' }}
+        description="等级、每日任务、宝箱、赛季与成就徽章——每天来一点点，陪小猫一起长大。"
+        compact
+      />
       <GrowthPanelLazy />
     </Container>
   )

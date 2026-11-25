@@ -126,6 +126,7 @@ export function VideoAiLearningDialog({
       key={id}
       type="button"
       role="tab"
+      id={`ai-learning-tab-${id}`} aria-controls={`ai-learning-tabpanel-${id}`}
       aria-selected={tab === id}
       tabIndex={tab === id ? 0 : -1}
       onClick={() => setTab(id)}
@@ -160,12 +161,12 @@ export function VideoAiLearningDialog({
         </div>
 
         {tab === 'copilot' && (
-          <div className="flex-1 overflow-y-auto py-2">
+          <div role="tabpanel" id="ai-learning-tabpanel-copilot" aria-labelledby="ai-learning-tab-copilot" className="flex-1 overflow-y-auto py-2">
             <VideoAssistantCopilot transcripts={transcripts} onSeek={onSeek} />
           </div>
         )}
         {tab === 'concept' && conceptAvailable && (
-          <div className="flex-1 overflow-y-auto py-2 pr-1">
+          <div role="tabpanel" id="ai-learning-tabpanel-concept" aria-labelledby="ai-learning-tab-concept" className="flex-1 overflow-y-auto py-2 pr-1">
             <VideoConceptGraphPanel
               navigationData={navigationData}
               onJumpToTarget={onJumpToTarget}
@@ -174,7 +175,7 @@ export function VideoAiLearningDialog({
           </div>
         )}
         {tab === 'flashcards' && (
-          <div className="flex-1 overflow-y-auto py-2 pr-1">
+          <div role="tabpanel" id="ai-learning-tabpanel-flashcards" aria-labelledby="ai-learning-tab-flashcards" className="flex-1 overflow-y-auto py-2 pr-1">
             <VideoFlashcardPanel cards={cards} videoTitle={videoTitle} />
           </div>
         )}

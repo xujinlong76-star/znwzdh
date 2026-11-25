@@ -677,4 +677,36 @@ describe('tablist A-3：tablist 对应面板补 role="tabpanel" / aria-labelledb
     expect(src).toContain("if (tab === 'concept' && !conceptAvailable) {")
     expect(src).toContain("setTab('copilot')")
   })
+
+  it('video-ai-learning-dialog #13：三 tab 与三面板三方一致，concept 缺席时无悬空', () => {
+    const src = read('src/components/video-ai-learning-dialog.tsx')
+    // tab 侧：tabButton helper 一处改动覆盖三 tab，id / aria-controls 由 id 派生
+    expect(src).toContain('id={`ai-learning-tab-${id}`} aria-controls={`ai-learning-tabpanel-${id}`}')
+    // 面板侧：三面板根 div 各补 role / id / aria-labelledby
+    expect(count(src, 'role="tabpanel"')).toBe(3)
+    expect(src).toContain('id="ai-learning-tabpanel-copilot"')
+    expect(src).toContain('aria-labelledby="ai-learning-tab-copilot"')
+    expect(src).toContain('id="ai-learning-tabpanel-concept"')
+    expect(src).toContain('aria-labelledby="ai-learning-tab-concept"')
+    expect(src).toContain('id="ai-learning-tabpanel-flashcards"')
+    expect(src).toContain('aria-labelledby="ai-learning-tab-flashcards"')
+    // 计数闭环：ai-learning-tabpanel- 共 4 处（helper 模板 1 + 面板 id 3）；
+    // ai-learning-tab- 共 4 处（helper 模板 1 + 面板 labelledby 3；
+    // 注意 'ai-learning-tabpanel-' 里 'tab' 后是 'panel' 而非 '-'，
+    // 故不含 'ai-learning-tab-' 这一子串，不参与此计数）
+    expect(count(src, 'ai-learning-tabpanel-')).toBe(4)
+    expect(count(src, 'ai-learning-tab-')).toBe(4)
+    // R2：conceptAvailable=false 时 concept tab 与面板同时不存在，无悬空引用
+    expect(src).toContain("{conceptAvailable && tabButton('concept', '概念图谱')}")
+    expect(src).toContain("{tab === 'concept' && conceptAvailable && (")
+    // R2 根因：前置修复 effect——conceptAvailable 翻 false 时陈旧 tab 重置为 copilot
+    expect(src).toContain("import React, { useEffect, useState } from 'react'")
+    expect(src).toContain('useEffect(() => {')
+    expect(src).toContain("if (tab === 'concept' && !conceptAvailable) {")
+    expect(src).toContain("setTab('copilot')")
+    // flashcards tab 文本含动态计数，面板标题与 tab 文本逐字一致是预期
+    expect(src).toContain("tabButton('flashcards', `抽认卡 (${cards.length})`)")
+    // B-3 裁决：不加 inline-flex
+    expect(src).not.toContain('inline-flex')
+  })
 })

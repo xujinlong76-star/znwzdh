@@ -709,4 +709,41 @@ describe('tablist A-3：tablist 对应面板补 role="tabpanel" / aria-labelledb
     // B-3 裁决：不加 inline-flex
     expect(src).not.toContain('inline-flex')
   })
+
+  it('video-auto-harvest-dialog #14：manual/autonomous 两 tab 与两面板三方一致，操作栏留在面板外', () => {
+    const src = read('src/components/video-auto-harvest-dialog.tsx')
+    // tab 侧：两 tab 各有唯一 id，aria-controls 各指自己的面板（模板 plugin-detail-view 写法）
+    expect(src).toContain('id="harvest-tab-manual"')
+    expect(src).toContain('aria-controls="harvest-tabpanel-manual"')
+    expect(src).toContain('id="harvest-tab-autonomous"')
+    expect(src).toContain('aria-controls="harvest-tabpanel-autonomous"')
+    expect(count(src, 'id="harvest-tab-manual"')).toBe(1)
+    expect(count(src, 'id="harvest-tab-autonomous"')).toBe(1)
+    // 面板侧：两内容 div 各补 role="tabpanel" + id + aria-labelledby，全文件恰好 2 处面板
+    expect(count(src, 'role="tabpanel"')).toBe(2)
+    expect(src).toContain('id="harvest-tabpanel-manual"')
+    expect(src).toContain('aria-labelledby="harvest-tab-manual"')
+    expect(src).toContain('id="harvest-tabpanel-autonomous"')
+    expect(src).toContain('aria-labelledby="harvest-tab-autonomous"')
+    // 切 tab 后面板切换：条件块与面板的从属关系按源码顺序成立
+    expect(count(src, "{tab === 'manual' && (")).toBe(2) // :303 内容块 + :579 操作栏块
+    expect(count(src, "{tab === 'autonomous' && (")).toBe(1)
+    const manualCond = src.indexOf("{tab === 'manual' && (")
+    const manualPanel = src.indexOf('id="harvest-tabpanel-manual"')
+    const autoCond = src.indexOf("{tab === 'autonomous' && (")
+    const autoPanel = src.indexOf('id="harvest-tabpanel-autonomous"')
+    const actionBar = src.indexOf("{tab === 'manual' && (", autoCond)
+    expect(manualPanel).toBeGreaterThan(manualCond)
+    expect(manualPanel).toBeLessThan(autoCond)
+    expect(autoPanel).toBeGreaterThan(autoCond)
+    expect(autoPanel).toBeLessThan(actionBar)
+    // 操作栏留在面板之外：根 div 保持原样、无 role="tabpanel"，且位于 autonomous 面板之后
+    expect(src).toContain('<div className="flex items-center justify-between pt-3 border-t">')
+    const actionBarDiv = src.indexOf('<div className="flex items-center justify-between pt-3 border-t">')
+    expect(actionBarDiv).toBeGreaterThan(autoPanel)
+    expect(src).not.toContain('role="tabpanel" id="harvest-tabpanel-manual" aria-labelledby="harvest-tab-manual" className="flex items-center justify-between pt-3 border-t"')
+    // B-3 裁决：tablist 区域不加 inline-flex（只查 tablist 切片）
+    const tablist = src.slice(src.indexOf('role="tablist"'), src.indexOf("{tab === 'manual' && ("))
+    expect(tablist).not.toContain('inline-flex')
+  })
 })

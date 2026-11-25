@@ -271,8 +271,10 @@ export function VideoAutoHarvestDialog({
           <button
             type="button"
             role="tab"
+            id="harvest-tab-manual"
             aria-selected={tab === 'manual'}
             tabIndex={tab === 'manual' ? 0 : -1}
+            aria-controls="harvest-tabpanel-manual"
             onClick={() => setTab('manual')}
             className={cn(
               'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors',
@@ -286,8 +288,10 @@ export function VideoAutoHarvestDialog({
           <button
             type="button"
             role="tab"
+            id="harvest-tab-autonomous"
             aria-selected={tab === 'autonomous'}
             tabIndex={tab === 'autonomous' ? 0 : -1}
+            aria-controls="harvest-tabpanel-autonomous"
             onClick={() => setTab('autonomous')}
             className={cn(
               'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors',
@@ -301,7 +305,7 @@ export function VideoAutoHarvestDialog({
         </div>
 
         {tab === 'manual' && (
-        <div className="flex-1 overflow-y-auto space-y-3.5 py-2 text-xs">
+        <div role="tabpanel" id="harvest-tabpanel-manual" aria-labelledby="harvest-tab-manual" className="flex-1 overflow-y-auto space-y-3.5 py-2 text-xs">
           {/* 流水线阶段状态指示器 */}
           <div className="grid grid-cols-4 gap-1.5 p-2 rounded-xl border bg-muted/30">
             {[
@@ -571,7 +575,7 @@ export function VideoAutoHarvestDialog({
         </div>
         )}
         {tab === 'autonomous' && (
-          <div className="flex-1 overflow-y-auto py-2 pr-1">
+          <div role="tabpanel" id="harvest-tabpanel-autonomous" aria-labelledby="harvest-tab-autonomous" className="flex-1 overflow-y-auto py-2 pr-1">
             <VideoAutonomousHarvestPanel onCycleFinished={onHarvestCompleted} />
           </div>
         )}

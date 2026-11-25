@@ -963,22 +963,30 @@ export function EcosystemGraph() {
                 ))}
               </div>
             )}
-
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs px-2.5 rounded-lg shrink-0 gap-1.5"
-              title="重新抽取另一批高连通生态簇（同类簇结构，不退回随机抽样）"
-              disabled={radarCenter !== null || dataSource !== 'live'}
-              onClick={() => { setSampleRound((r) => r + 1); setSelectedNode(null); }}
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              换一批生态簇
-            </Button>
           </div>
 
+          {/*
+            M-03：换一批按钮必须放在横向滚动条带之外（shrink-0 直属第 2 行）。
+            原先它在 overflow-x-auto 条带内，chips 异步落定后被推到 x≈551，
+            768 视口下条带可视宽不足、按钮被裁出可视区，中心还被搜索框覆盖，
+            真实点击 5 次图都不变；390 视口同样被裁到视口外。移出条带后按钮
+            位置不再随 chips 落定而移位（O-B04 的异步移位只影响条带内部），
+            各视口始终完整可见、可点。抽样逻辑本身未动。
+          */}
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs px-2.5 rounded-lg shrink-0 gap-1.5"
+            title="重新抽取另一批高连通生态簇（同类簇结构，不退回随机抽样）"
+            disabled={radarCenter !== null || dataSource !== 'live'}
+            onClick={() => { setSampleRound((r) => r + 1); setSelectedNode(null); }}
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            换一批生态簇
+          </Button>
+
           {/* 全站检索：搜全部收录站点，选中后进入平替雷达 */}
-          <div className="relative w-36 sm:w-48 shrink-0">
+          <div className="relative w-28 sm:w-40 md:w-48 shrink-0">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-muted-foreground" />
             <Input aria-label="搜索图谱节点"
               placeholder="搜索图谱节点..."

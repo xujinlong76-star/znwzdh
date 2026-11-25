@@ -315,15 +315,15 @@ function OnboardingReplayField() {
         <p className="text-xs font-medium">新手引导</p>
         <p className="text-[11px] leading-relaxed text-muted-foreground">
           {dismissed === null
-            ? '首页的三步引导（导入书签 / 搜索 / 收藏），关掉后可从这里重新查看。'
+            ? '三步引导（导入书签 / 搜索 / 收藏）在首页顶栏「DIY 排版 → 外观与向导」里；关掉后可从这里重置。'
             : dismissed
-              ? '你之前关掉了首页的三步引导。点这里清除关闭记录，回到首页即可重新查看。'
-              : '首页的三步引导还没关过，回到首页就能看到。'}
+              ? '你之前关掉了三步引导。点这里清除关闭记录后回到首页，再从「DIY 排版 → 外观与向导」打开。'
+              : '三步引导在首页顶栏「DIY 排版 → 外观与向导」里，点下面的按钮回到首页即可打开。'}
         </p>
       </div>
       <Button asChild size="sm" variant="outline" className="h-7 shrink-0 text-[11px]">
         <Link href="/" onClick={replay}>
-          {dismissed ? '重新查看新手引导' : '去首页查看引导'}
+          {dismissed ? '重置并回到首页' : '去首页打开引导'}
         </Link>
       </Button>
     </div>

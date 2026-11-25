@@ -20,8 +20,11 @@ import { test, expect, type Page } from '@playwright/test';
  *
  * 猫底距现行值（xiaomaomao.js，与四边界期望逐字对齐；K1 2026-11-17 修正，
  * f0283bb8：猫底边 96px→112px，640–1023px 档与桌面同值；旧值 640/1023→90px、
- * 1024→96px 是 K1 前的过期期望）：<640px 为 68px
- *（@media max-width:640px；640px 整点以 640–1023px 规则为准）；
+ * 1024→96px 是 K1 前的过期期望）：<640px 为 88px
+ *（c9955d7f 2026-11-22：为让开 56px 移动端底部导航，≤640px 规则由 68px 改为
+ * calc(3.5rem + 32px) = 88px；本文件此前写的 68px 是该提交前的过期期望，
+ * CI run 45570267982 上 639px 实测 88px 即因此而红——CSS 是有意抬高，
+ * 改 spec 不改 CSS，改回去会重现 c9955d7f 修掉的导航遮挡）；
  * 640–1023px 为 112px；≥1024px 为桌面默认 112px。改挂件 CSS 时须同步改本文件期望值。
  *
  * 注意：elementFromPoint 返回的是最上层元素——按钮中心是 lucide <svg>，
@@ -100,7 +103,7 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
 
   test('四边界：639/640/1023/1024 栏显隐符合 [640,1024)，猫底距同步切换', async ({ page }) => {
     const cases: Array<{ width: number; dockVisible: boolean; catBottom: string }> = [
-      { width: 639, dockVisible: false, catBottom: '68px' },
+      { width: 639, dockVisible: false, catBottom: '88px' },
       { width: 640, dockVisible: true, catBottom: '112px' },
       { width: 1023, dockVisible: true, catBottom: '112px' },
       { width: 1024, dockVisible: false, catBottom: '112px' },

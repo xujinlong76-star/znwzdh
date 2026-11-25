@@ -3984,10 +3984,21 @@
       /* v12：850ms 招呼多半还没手势——先出气泡不读；首次手势后补读一次（且仅当气泡还在时）。 */
       var greetText = composeGreeting();
       /* c3001：先把文案放进未显示的气泡再量——会盖住正文卡片就跳过本次自动招呼（猫还在，点猫照常聊天）。 */
-      bubbleEl.textContent = greetText;
-      if (autoGreetWouldCoverContent()) {
-        bubbleEl.textContent = '';
-      } else {
+      /* PR #186 E2E #10（2026-11-25）：水合期间版式未定、门控可能被瞬时重叠
+         误拦——一次判定就放弃会让本次招呼永久消失（CI 冷启动 3/3 失败）。
+         门控拦住时 1s 后重测，最多 3 次（最晚 init+2.85s，仍在用例 15s 窗口内）；
+         版式定下来且门控放行就出气泡，真正盖正文时每次都拦、绝不出。 */
+      var greetTries = 0;
+      var tryGreet = function () {
+        if (userActed) return;
+        if (root.classList.contains('xm-open') || root.classList.contains('xm-closed')) return;
+        bubbleEl.textContent = greetText;
+        if (autoGreetWouldCoverContent()) {
+          bubbleEl.textContent = '';
+          greetTries += 1;
+          if (greetTries < 3) window.setTimeout(tryGreet, 1000);
+          return;
+        }
         showBubble(greetText, hasUserActivation());
         if (!hasUserActivation()) {
           var speakGreet = function () {
@@ -3998,7 +4009,8 @@
           document.addEventListener('pointerdown', speakGreet, { passive: true });
           document.addEventListener('keydown', speakGreet);
         }
-      }
+      };
+      tryGreet();
       window.setTimeout(function () { if (currentPose === 'waking' && !sleeping) setPose('main'); }, 3400);
     }
   }, 850);

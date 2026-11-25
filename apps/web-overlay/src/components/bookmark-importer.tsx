@@ -1650,7 +1650,7 @@ export function BookmarkImporter({
               onKeyDown={(e) => handleTabListKeyDown(e, ['file', 'paste'] as const, setInputTab)}
             >
               {([['file', '文件上传'], ['paste', '直接粘贴文本 / URL']] as const).map(([key, label]) => (
-                <button key={key} type="button" role="tab" aria-selected={inputTab === key}
+                <button key={key} type="button" role="tab" id={`bookmark-input-tab-${key}`} aria-controls={`bookmark-input-tabpanel-${key}`} aria-selected={inputTab === key}
                   tabIndex={inputTab === key ? 0 : -1}
                   onClick={() => setInputTab(key)}
                   className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
@@ -1668,6 +1668,9 @@ export function BookmarkImporter({
 
           {inputTab === 'file' ? (
             <div
+              role="tabpanel"
+              id="bookmark-input-tabpanel-file"
+              aria-labelledby="bookmark-input-tab-file"
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={onDrop}
@@ -1714,7 +1717,7 @@ export function BookmarkImporter({
               </div>
             </div>
           ) : (
-            <div className="space-y-2.5">
+            <div className="space-y-2.5" role="tabpanel" id="bookmark-input-tabpanel-paste" aria-labelledby="bookmark-input-tab-paste">
               <label htmlFor="bookmark-paste" className="text-xs font-semibold text-foreground">
                 {sourceKind === 'social' ? '粘贴社交收藏文本 / URL 列表' : '粘贴书签文本 / URL 列表'}
               </label>

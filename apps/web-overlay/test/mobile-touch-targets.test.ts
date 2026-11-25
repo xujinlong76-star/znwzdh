@@ -623,3 +623,24 @@ describe('tablist A-2：其余 tablist 按 plugin-detail-view 模板补 roving t
     expect(handler).not.toContain('.click()')
   })
 })
+
+describe('tablist A-3：tablist 对应面板补 role="tabpanel" / aria-labelledby（2026-11-24 19:22 轮，C 组）', () => {
+  // C 组 5 处（apps/web-overlay/src 下）：bookmark-importer ×3（#10 导入目标
+  // 模式 / #11 收藏来源 / #12 输入方式）、video-ai-learning-dialog（#13）、
+  // video-auto-harvest-dialog（#14）。模板：plugin-detail-view 6 面板
+  // （plugin-tab-* / plugin-tabpanel-*，role + id + aria-labelledby 三方一致）。
+  // 每处只补关联属性，不改行为逻辑；无面板的处不编造面板，见 #10 的 it。
+  // 守卫写法照抄 A-2：读源码断言 wiring 字符串，不渲染组件。
+
+  it('bookmark-importer #12 输入方式：file/paste 两 tab 与两面板三方一致', () => {
+    const src = read('src/components/bookmark-importer.tsx')
+    // tab 侧：共用 .map 模板，id / aria-controls 由 key 派生
+    expect(src).toContain('id={`bookmark-input-tab-${key}`} aria-controls={`bookmark-input-tabpanel-${key}`}')
+    // 面板侧：file 面板是拖拽区 div，paste 面板是粘贴区 div，均为条件渲染
+    expect(src).toContain("{inputTab === 'file' ? (")
+    expect(src).toContain('id="bookmark-input-tabpanel-file"')
+    expect(src).toContain('aria-labelledby="bookmark-input-tab-file"')
+    expect(src).toContain('id="bookmark-input-tabpanel-paste"')
+    expect(src).toContain('aria-labelledby="bookmark-input-tab-paste"')
+  })
+})

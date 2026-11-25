@@ -1066,6 +1066,64 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   'lingxi.kdocs.cn=lingxip',
   'workbuddy.cn=workbuddys',
   'dumate.baidu.com=dumatep',
+  // 2026-11-25（剩余图标补齐 W8，开发者资源组 6 站：V2EX / 百度知道 /
+  // CS自学指南 / JavaGuide / W3Schools / Exercism）。
+  // 来源均经 curl 重新验证（200 + image MIME + 魔数 + 尺寸，Chrome UA）：
+  // - V2EX：首页声明的最大尺寸 icon
+  //   https://www.v2ex.com/static/icon-192.png（200、image/png、13,257 B、
+  //   192×192 RGBA，与根 favicon 同一 V 标；根 /static/favicon.ico 为
+  //   32×32 PNG 内容 1,313 B 未用）。Pillow LANCZOS 192→128 落盘
+  //   v2ex.png（5,091 B，md5 e7bbea518f98769a149ece0b76eaba2c）。
+  //   白底不透明浅灰渐变方块 + V 标，浅/深主题均可见。
+  // - 百度知道：站方自有 favicon
+  //   https://zhidao.baidu.com/favicon.ico（200、image/x-icon、5,686 B、
+  //   ICO 双帧 16×16 8bpp + 32×32 32bpp；首页声明的
+  //   //www.baidu.com/favicon.ico 是百度主标 64×64 白底蓝标，未用——
+  //   本站用知道自有蓝底白标版）。最大帧 32×32 原样落盘 zhidao.png
+  //   （1,067 B，md5 2f5126e5d17f5b72a1e90cf4c79ed727），绝不放大。
+  //   蓝底 #2932E1 + 白色百度“du”爪标，不透明实色方块，双主题均可见。
+  // - CS自学指南：站方唯一官方源
+  //   https://csdiy.wiki/images/favicon.ico（200、image/vnd.microsoft.icon、
+  //   4,286 B、ICO 单帧 32×32 32bpp；首页无 icon 声明）。32×32 原样
+  //   落盘 csdiy.png（1,610 B，md5 da3720eb5ac301834ee78d62157dd0ed），
+  //   绝不放大。透明底 + 蓝色 #3F8CB9 学位帽标。
+  // - JavaGuide：首页声明 /favicon.ico
+  //   https://javaguide.cn/favicon.ico（200、image/x-icon、19,184 B、
+  //   ICO 单帧 256×256 PNG 内嵌）。内容 bbox (41,50,213,187)，仅去透明
+  //   留白（+4px 边，180×145，不重绘）后 LANCZOS 宽缩至 128 落盘
+  //   javaguide.png（128×103，11,740 B，md5
+  //   87e5f1352ed8c8f8a221d7753b8bab9b）。红 #D32F2F 图形 + 蓝
+  //   #006699/#1E88E5 + 底部 JavaGuide 字标，透明底。
+  // - W3Schools：首页声明的最大尺寸 icon
+  //   https://www.w3schools.com/apple-touch-icon.png（200、image/png、
+  //   3,065 B、180×180 8-bit colormap，白底；根 /favicon.ico 最大帧
+  //   48×48 透明底同标未用，见测试事实钉死留待复审裁决）。LANCZOS
+  //   180→128 落盘 w3schools.png（5,377 B，md5
+  //   82ad7e2882548b4cd179958883982c92）。白底不透明 + 绿 #009A68 W3 标。
+  // - Exercism：首页声明的最大尺寸 icon
+  //   https://assets.exercism.org/meta/apple-touch-icon.png（200、image/png、
+  //   21,752 B、180×180 RGBA；nav icon 字段的 favicon-32x32.png 为同标
+  //   透明底 32×32 未用）。128 版 19,778 B 超 ~15KB 参考线，故取
+  //   96×96 LANCZOS 落盘 exercism.png（11,537 B，md5
+  //   3dcd62acf771f088a0396490fb784047；96px 在 28px 卡片与 64px 详情
+  //   徽标下均 ≥1.5× 仍清晰，非放大、非重绘）。深紫渐变底 + 白色 E 形标，
+  //   不透明，双主题均可见。
+  // 键的精确性：6 键在 navigation.json 全库 388 站中各只命中 1 站
+  // （v2ex.com→V2EX、zhidao.baidu.com→百度知道、csdiy.wiki→CS自学指南、
+  // javaguide.cn→JavaGuide、w3schools.com→W3Schools、
+  // exercism.org→Exercism），无后缀串站、无子域站；'baidu.com' 裸域键
+  // 绝不加（map 内已有 yiyan/wenxin/comate/map/dumate 五个 *.baidu.com
+  // 精确键，精确查找优先于后缀循环）。6 站 icon 字段均为远端 favicon
+  // （含 exercism 的 …/favicon-32x32.png，路径含 favicon），均被
+  // isRemoteRawFavicon 拦截后回落 map；navigation.json 不动。
+  // 浅/深主题：6 标 ASCII 渲染均为真实品牌标；按规范 §9 不做单站底块
+  // 补丁、不配 LOGO_TILE_MAP（resolveLogoTile 为 null），留待统一处理轮。
+  'v2ex.com=v2exp',
+  'zhidao.baidu.com=zhidaop',
+  'csdiy.wiki=csdiyp',
+  'javaguide.cn=javaguidep',
+  'w3schools.com=w3schoolsp',
+  'exercism.org=exercismp',
  ];
 
 /**

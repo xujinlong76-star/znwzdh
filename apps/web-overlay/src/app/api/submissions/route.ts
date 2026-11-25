@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth'
 import { canonicalUserId } from '@/lib/me-identity'
 import { hubIdentitySecret, identitySignatureHeaders } from '@/lib/identity-signature'
 import { sanitizeForwardedFor } from '@/lib/hub-proxy'
+import { guardedFetch, hubGuardOptions } from '@/lib/ssrf-guard'
 import {
     SubmissionData,
     SubmissionIssue,
@@ -119,6 +120,9 @@ async function submitToHub(data: SubmissionData, request: NextRequest): Promise<
     })
 }
 
+/** 投稿状态白名单（SSRF 2026-11-25）：status 进中枢查询串前先过白名单，未列入的值不进 URL。 */
+const ALLOWED_SUBMISSION_STATUS = new Set(['pending', 'approved', 'rejected', 'all'])
+
 /** 中枢回退：获取待审核/已审核投稿并转成 SubmissionIssue 形状。
  * 走中枢的 GET /api/submissions（返回与 GitHub 通道同形状 success+submissions，
  * 且只含 source=submission 的站点、number 由中枢按与本端一致的 hash 规则算出）。 */
@@ -131,7 +135,13 @@ async function getSubmissionsFromHub(status: string): Promise<NextResponse> {
         if (token) {
             headers['Authorization'] = `Bearer ${token}`
         }
-        const res = await fetch(url.toString(), {
+        // SSRF 2026-11-25：status 已在 GET 入口过白名单；出站走 guardedFetch，
+        // host 钉死到 HUB_BASE 的 hostname，重定向逐跳复验。
+        const { response: res } = await guardedFetch(url.toString(), {
+            ...hubGuardOptions(HUB_BASE),
+            timeoutMs: 10_000,
+            maxBytes: 16 * 1024 * 1024,
+        }, {
             headers,
             cache: 'no-store',
         })
@@ -248,6 +258,15 @@ export async function GET(request: NextRequest) {
         }
         const { searchParams } = new URL(request.url)
         const status = searchParams.get('status') || 'pending' // pending, approved, rejected, all
+
+        // SSRF 2026-11-25：status 白名单校验（两条通道共用入口，未列入的值直接 400，
+        // 不进中枢查询串、也不进 GitHub 标签过滤）。
+        if (!ALLOWED_SUBMISSION_STATUS.has(status)) {
+            return NextResponse.json(
+                { success: false, message: '无效的投稿状态' },
+                { status: 400 }
+            )
+        }
 
         // NavHub 部署（无 GitHub 配置）走中枢查询
         if (!hasGithubChannel()) {

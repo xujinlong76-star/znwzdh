@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { auth } from '@/lib/auth'
 import { hubIdentitySecret, identitySignatureHeaders, signIdentity } from '@/lib/identity-signature'
+import { buildPinnedHubUrl, guardedFetch, hubGuardOptions, SsrfBlockedError } from '@/lib/ssrf-guard'
 import { ANON_COOKIE, encodeAnonCookie, parseAnonCookie } from '@/lib/hub-identity-guard'
 import { canonicalUserId, isAnonId } from '@/lib/me-identity'
 
@@ -300,18 +301,22 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
     )
   }
 
-  const search = request.nextUrl.search || ''
-  const suffix = path.length > 0 ? '/' + path.join('/') : ''
-  const target = HUB_BASE + '/api/me' + suffix + search
-
+  // SSRF 2026-11-25：path 段（[[...path]]，用户可控）逐段编码拼进中枢 URL，
+  // host 钉死到 HUB_BASE 的 hostname，不再字符串拼接 + 默认跟随重定向的裸 fetch。
+  // path 已在入口滤掉 '.'/'..'，这里再由 buildPinnedHubUrl 纵深校验一次。
+  // :126/:234/:282 三处固定 HUB_BASE 路径无用户污点，保持原样不动。
   try {
-    const upstream = await fetch(target, {
-      method,
-      headers,
-      body: rawBody === undefined ? undefined : rawBody,
-      cache: 'no-store',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    })
+    const target = buildPinnedHubUrl(HUB_BASE, ['me', ...path], request.nextUrl.search || '').toString()
+    const { response: upstream } = await guardedFetch(
+      target,
+      { ...hubGuardOptions(HUB_BASE), timeoutMs: TIMEOUT_MS, maxBytes: 16 * 1024 * 1024 },
+      {
+        method,
+        headers,
+        body: rawBody === undefined ? undefined : rawBody,
+        cache: 'no-store',
+      },
+    )
     const text = await upstream.text()
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
     // 协商缓存（T18）：中枢声明了 etag 的 GET 响应，透传 etag 并以
@@ -341,6 +346,13 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
       headers: responseHeaders,
     })
   } catch (error) {
+    // SSRF 2026-11-25：非法路径段或重定向逃离钉死的 host，403 明说，不写成 502 上游故障。
+    if (error instanceof SsrfBlockedError) {
+      return NextResponse.json(
+        { error: '上游重定向目标不在允许范围内' },
+        { status: 403, headers: { 'cache-control': 'no-store' } },
+      )
+    }
     const timedOut =
       error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')
     return NextResponse.json(

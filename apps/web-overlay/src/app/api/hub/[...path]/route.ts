@@ -20,6 +20,12 @@ import {
   upstreamTimeoutMs,
 } from '@/lib/hub-proxy'
 import { hubIdentitySecret, identityFromRequest, identitySignatureHeaders, signIdentity } from '@/lib/identity-signature'
+import {
+  buildPinnedHubUrl,
+  guardedFetch,
+  hubGuardOptions,
+  SsrfBlockedError,
+} from '@/lib/ssrf-guard'
 import { decideHubRequest } from '@/lib/hub-route-policy'
 
 /**
@@ -66,7 +72,6 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   const cleanPath = path[0] === 'api' ? path.slice(1) : path
   const method = request.method.toUpperCase()
   const normalizedBase = HUB_BASE.endsWith('/api') ? HUB_BASE.slice(0, -4) : HUB_BASE
-  const target = normalizedBase + '/api/' + cleanPath.join('/') + url.search
 
   // 能力判决（安全边界）：此前只护住 /admin/*，其余路径在枢纽「开放模式」
   // （匿名=全量 scope）下可被匿名直达——实测可下载全站备份、读 Token 名册、
@@ -251,13 +256,29 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   const upstreamSignal = AbortSignal.any([deadline.signal, request.signal])
 
   try {
-    const upstream = await fetch(target, {
-      method,
-      headers,
-      body,
-      cache: 'no-store',
-      signal: upstreamSignal,
-    })
+    // SSRF 2026-11-25：路径段逐段编码拼进中枢 URL，host 钉死到 HUB_BASE 的 hostname。
+    // cleanPath 来自路由 [...path]（用户可控）：'..' 段与 '//' 绝对形式在拼之前就拒，
+    // 不再用字符串拼接 + 默认跟随重定向的裸 fetch（中枢一个 302 就能把响应带离 host）。
+    // 注意：不用默认 guardedFetch——中枢本就是 localhost:8787/docker 内网主机名，
+    // 私网拦截会自断代理；hubGuardOptions 钉死 host+端口并显式放行私网。
+    // 放在 try 内：非法路径抛 SsrfBlockedError，由下方 catch 统一转 403。
+    const target = buildPinnedHubUrl(normalizedBase, cleanPath, url.search).toString()
+    const { response: upstream } = await guardedFetch(
+      target,
+      {
+        ...hubGuardOptions(normalizedBase),
+        timeoutMs,
+        // 备份下载走流式透传、不进内存；上限只拦声明长度，512MB 覆盖全量备份体量。
+        maxBytes: 512 * 1024 * 1024,
+        signal: upstreamSignal,
+      },
+      {
+        method,
+        headers,
+        body,
+        cache: 'no-store',
+      },
+    )
 
     // 写成功即失效中枢取数的 Data Cache。为什么需要：hubGet 的收录面取数带
     // revalidate=60，收藏/审核/投稿/安装之后，公开页面最多还会按窗口继续展示旧数据。
@@ -308,6 +329,15 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     // 中枢返回空体时给 {}，避免前端 JSON.parse 炸裂
     return finish(new NextResponse(text || '{}', { status: upstream.status, headers: responseHeaders }))
   } catch (error) {
+    // SSRF 2026-11-25：非法路径段或重定向逃离钉死的 host——不是上游故障，403 明说。
+    if (error instanceof SsrfBlockedError) {
+      return finish(
+        NextResponse.json(
+          { error: '上游重定向目标不在允许范围内', code: 'hub_upstream_redirect_blocked' },
+          { status: 403, headers: { 'cache-control': 'no-store' } },
+        ),
+      )
+    }
     /**
      * 三态分不开就会说谎：合并信号后 `deadline.signal.aborted` 不再等价于「等到期限」——
      * 用户按「停止」也会走到这里，此前一律记成 504 + console.error，

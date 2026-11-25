@@ -9,6 +9,7 @@
  */
 import { HUB_CACHE_TAG } from '@/lib/server/hub-cache'
 import { hubIdentitySecret, identitySignatureHeaders } from '@/lib/identity-signature'
+import { buildHubUrl } from '@/lib/ssrf-guard'
 
 const HUB_BASE = (
   process.env.NAVHUB_STORAGE_BASE_URL ??
@@ -71,7 +72,11 @@ export async function hubGet<T>(
     // 没有 tags 的 Data Cache 条目只能等 revalidate 窗口自然过期。
     if (revalidate > 0) init.next = { revalidate, tags: [HUB_CACHE_TAG] }
     if (timeoutMs > 0) init.signal = AbortSignal.timeout(timeoutMs)
-    const res = await fetch(`${HUB_BASE}${path}`, init)
+    // SSRF 2026-11-25：path 至少一处调用方带用户污点（admin/audit 的 searchParams），
+    // 拼之前先校验并钉死 host。故意不用 guardedFetch：这里依赖 Next Data Cache
+    //（next.revalidate/tags），守卫的 redirect 循环不透传 next 选项，改走它会改 ISR 语义；
+    // host 已由 buildHubUrl 钉死，path 只能改同 host 下的路径与查询串。
+    const res = await fetch(buildHubUrl(HUB_BASE, path).toString(), init)
     if (!res.ok) return null
     return (await res.json()) as T
   } catch {
@@ -104,7 +109,8 @@ export async function hubGetProbe<T>(
     }
     if (revalidate > 0) init.next = { revalidate }
     if (timeoutMs > 0) init.signal = AbortSignal.timeout(timeoutMs)
-    const res = await fetch(`${HUB_BASE}${path}`, init)
+    // SSRF 2026-11-25：同 hubGet，path 校验 + host 钉死（见上）；失败收敛为 failed。
+    const res = await fetch(buildHubUrl(HUB_BASE, path).toString(), init)
     if (res.status === 404) return { status: 'miss' }
     if (!res.ok) return { status: 'failed' }
     return { status: 'ok', data: (await res.json()) as T }

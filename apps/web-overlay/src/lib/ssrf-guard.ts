@@ -22,6 +22,22 @@ export interface GuardOptions {
   /** 显式放行私网（仅本地开发/内网导航站需要） */
   allowPrivateNetworks: boolean
   userAgent: string
+  /**
+   * 允许的主机白名单（undefined = 不限制）。
+   * 中枢代理类调用方用它把出站 host 钉死到 env 配置的 HUB_BASE hostname：
+   * 用户可控的路径/查询串再也改不了 host，重定向逐跳复验，302 逃逸即拦。
+   */
+  allowedHosts?: readonly string[]
+  /**
+   * 允许的端口白名单（undefined = 不限制，仅拦高危端口表）。
+   * 与 allowedHosts 联用时，每一跳的端口也要落在表内。
+   */
+  allowedPorts?: readonly number[]
+  /**
+   * 调用方传入的取消信号（与内部超时信号合并后交给 fetch）。
+   * 代理路由用它把「客户端断开」穿透到上游，不加则取消只能等超时。
+   */
+  signal?: AbortSignal
 }
 
 export const DEFAULT_GUARD: GuardOptions = {
@@ -265,6 +281,16 @@ export async function guardedFetch(
   let carriedHeaders: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) }
   let prevOrigin = current.origin
   for (let hop = 0; hop <= opts.maxRedirects; hop++) {
+    // 逐跳 host/端口钉死（SSRF 2026-11-25）：只在调用方给了白名单时才收紧，
+    // 未给的调用方（favicon/rss 等）行为与历史逐字一致。
+    const hopHost = current.hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '')
+    if (!isHostAllowed(hopHost, opts.allowedHosts)) {
+      throw new SsrfBlockedError(`主机 ${hopHost} 不在域名白名单内`)
+    }
+    const hopPort = current.port ? Number(current.port) : current.protocol === 'https:' ? 443 : 80
+    if (opts.allowedPorts && !opts.allowedPorts.includes(hopPort)) {
+      throw new SsrfBlockedError(`端口 ${hopPort} 不在允许范围内`)
+    }
     const resolvedIps = await resolveAndCheckAddresses(current, opts)
     const rawHost = current.hostname.replace(/^\[|\]$/g, '')
     const isLiteralIp = isIP(rawHost) !== 0
@@ -290,7 +316,10 @@ export async function guardedFetch(
     const response = await fetch(fetchTarget, {
       ...init,
       redirect: 'manual',
-      signal: AbortSignal.timeout(opts.timeoutMs),
+      // 调用方信号（客户端断开）与内部超时合并：任一路 abort 都掐断上游。
+      signal: opts.signal
+        ? AbortSignal.any([AbortSignal.timeout(opts.timeoutMs), opts.signal])
+        : AbortSignal.timeout(opts.timeoutMs),
       headers,
     })
 
@@ -531,4 +560,98 @@ async function finishSafe(
     pinnedIp,
     redirects,
   }
+}
+
+/* ==========================================================================
+ * 中枢代理专用：host 钉死（SSRF 2026-11-25）
+ * ========================================================================== */
+
+/**
+ * 中枢代理的守卫配置：把出站 host 钉死到 HUB_BASE 的 hostname、端口钉死到
+ * HUB_BASE 的端口（另放行 80/443，容纳同 host 的 http↔https 跳转）。
+ *
+ * 为什么 allowPrivateNetworks: true 在这里是安全的：
+ * 中枢本就是 localhost:8787 / docker 内网主机名，默认的私网拦截会自断代理。
+ * host 来自服务端 env（不是用户输入），用户只能改路径与查询串；host 被
+ * allowedHosts 钉死后，解析目标只能是该 hostname 自己的地址——攻击者无法
+ * 借此让服务端去解析/连接任意内网地址（含 169.254.169.254 云元数据）。
+ * 注意：allowPrivateNetworks 会连带放行云元数据段（2026-11-21 发现），
+ * 所以本配置**只许**与 allowedHosts 联用，绝不单独传给用户可控 host 的调用。
+ */
+export function hubGuardOptions(base: string): Partial<GuardOptions> {
+  const u = new URL(base)
+  const port = u.port ? Number(u.port) : u.protocol === 'https:' ? 443 : 80
+  return {
+    allowPrivateNetworks: true,
+    allowedHosts: [u.hostname],
+    allowedPorts: [...new Set([port, 80, 443])],
+  }
+}
+
+/** 路径段校验：拒绝空段、'.'/'..'、反斜杠与 '?/#'（编进段里会改写 URL 结构）。 */
+function assertHubPathSegment(seg: string): void {
+  if (
+    !seg ||
+    seg === '.' ||
+    seg === '..' ||
+    seg.includes('\\') ||
+    seg.includes('?') ||
+    seg.includes('#')
+  ) {
+    throw new SsrfBlockedError(`非法路径段: ${seg}`)
+  }
+}
+
+/**
+ * 把用户可控路径段拼进中枢 URL（host 钉死版）。
+ *
+ * 每段单独 encodeURIComponent 后再拼——段里的 '/'、'%'、'?'、'#' 都失去结构意义；
+ * '.'/'..' 段在编码前就拒绝（URL 解析器会把 %2E 也当成 dot 段规范化，单靠
+ * 编码拦不住穿越）。拼完断言 hostname 仍等于 base 的 hostname。
+ * search 只能是查询串（可带或不带前导 '?'），含 '#' 即拒。
+ */
+export function buildPinnedHubUrl(base: string, segments: readonly string[], search = ''): URL {
+  const baseUrl = new URL(base)
+  for (const seg of segments) assertHubPathSegment(seg)
+  if (search.includes('#')) {
+    throw new SsrfBlockedError('查询串含非法字符')
+  }
+  const url = new URL('/api/' + segments.map((s) => encodeURIComponent(s)).join('/'), baseUrl)
+  if (url.hostname.toLowerCase() !== baseUrl.hostname.toLowerCase()) {
+    throw new SsrfBlockedError('目标主机不在允许范围内')
+  }
+  if (search) url.search = search.startsWith('?') ? search.slice(1) : search
+  return url
+}
+
+/**
+ * 校验 hubGet/hubGetProbe 的 path（调用方传入，至少一处带用户污点）并拼成 URL。
+ *
+ * 必须以单个 '/' 开头：'//evil.com/x' 会被 URL 解析成跨 host，绝对 URL 与
+ * 反斜杠（http(s) 下解析器把 '\' 当 '/'）同理拒绝；'.'/'..' 段在解码后逐段
+ * 检查（'%2e%2e' 也算穿越）；拼完断言 hostname 未变。
+ * 抛 SsrfBlockedError，由 hubGet/hubGetProbe 的既有 catch 收敛为 null/failed。
+ */
+export function buildHubUrl(base: string, path: string): URL {
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\') || path.includes('#')) {
+    throw new SsrfBlockedError('非法中枢路径')
+  }
+  const rawPath = path.split('?')[0] ?? ''
+  for (const seg of rawPath.split('/')) {
+    let decoded = seg
+    try {
+      decoded = decodeURIComponent(seg)
+    } catch {
+      throw new SsrfBlockedError('非法中枢路径')
+    }
+    if (decoded === '.' || decoded === '..') {
+      throw new SsrfBlockedError('非法中枢路径')
+    }
+  }
+  const baseUrl = new URL(base)
+  const url = new URL(path, baseUrl)
+  if (url.hostname.toLowerCase() !== baseUrl.hostname.toLowerCase()) {
+    throw new SsrfBlockedError('目标主机不在允许范围内')
+  }
+  return url
 }

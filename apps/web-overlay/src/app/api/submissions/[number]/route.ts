@@ -3,6 +3,7 @@ import { auth, getServerGithubToken } from '@/lib/auth'
 import { requireAdmin } from '@/lib/admin-guard'
 import { SUBMISSION_LABELS, parseSubmissionFromIssueBody } from '@/types/submission'
 import { getFileContent, commitFile } from '@/lib/github'
+import { guardedFetch, hubGuardOptions, SsrfBlockedError } from '@/lib/ssrf-guard'
 
 export const runtime = 'nodejs'
 
@@ -86,11 +87,30 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             if (token) {
                 headers['Authorization'] = `Bearer ${token}`
             }
-            const patchRes = await fetch(`${HUB_BASE}/api/submissions/${encodeURIComponent(issueNumber)}`, {
-                method: 'PATCH',
-                headers,
-                body: JSON.stringify({ action, reason }),
-            })
+            // SSRF 2026-11-25：中枢回退走 guardedFetch，host 钉死到 HUB_BASE，
+            // 重定向逃离即拦（issueNumber 已在入口过 /^\d+$/，这里再编码一次纵深防御）。
+            let patchRes: Response
+            try {
+                patchRes = (
+                    await guardedFetch(
+                        `${HUB_BASE}/api/submissions/${encodeURIComponent(issueNumber)}`,
+                        { ...hubGuardOptions(HUB_BASE), timeoutMs: 10_000, maxBytes: 16 * 1024 * 1024 },
+                        {
+                            method: 'PATCH',
+                            headers,
+                            body: JSON.stringify({ action, reason }),
+                        },
+                    )
+                ).response
+            } catch (err) {
+                if (err instanceof SsrfBlockedError) {
+                    return NextResponse.json(
+                        { success: false, message: '上游重定向目标不在允许范围内' },
+                        { status: 403 }
+                    )
+                }
+                throw err
+            }
             const body = await patchRes.json().catch(() => ({} as Record<string, unknown>))
             if (!patchRes.ok) {
                 return NextResponse.json(
@@ -286,9 +306,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
 // 辅助函数：更新 Issue 标签
 async function updateIssueLabels(issueNumber: string, addLabel: string, removeLabel: string) {
+    // SSRF 2026-11-25：helper 入口各自校验——调用方（PATCH）虽已校验，但 helper
+    // 是直接拼 URL 调 GitHub API（带服务端 PAT）的最后关口，不能只信上游已验过。
+    if (!/^\d+$/.test(issueNumber)) {
+        throw new Error('无效的投稿编号')
+    }
     // 先获取当前标签
     const issueResponse = await fetch(
-        `${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues/${issueNumber}`,
+        `${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues/${encodeURIComponent(issueNumber)}`,
         {
             headers: {
                 'Authorization': `Bearer ${GITHUB_PAT}`,
@@ -308,7 +333,7 @@ async function updateIssueLabels(issueNumber: string, addLabel: string, removeLa
         .concat(addLabel)
 
     await fetch(
-        `${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues/${issueNumber}`,
+        `${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues/${encodeURIComponent(issueNumber)}`,
         {
             method: 'PATCH',
             headers: {
@@ -324,8 +349,12 @@ async function updateIssueLabels(issueNumber: string, addLabel: string, removeLa
 
 // 辅助函数：添加评论
 async function addIssueComment(issueNumber: string, body: string) {
+    // SSRF 2026-11-25：helper 入口各自校验（见 updateIssueLabels 注释）。
+    if (!/^\d+$/.test(issueNumber)) {
+        throw new Error('无效的投稿编号')
+    }
     await fetch(
-        `${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues/${issueNumber}/comments`,
+        `${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues/${encodeURIComponent(issueNumber)}/comments`,
         {
             method: 'POST',
             headers: {
@@ -341,8 +370,12 @@ async function addIssueComment(issueNumber: string, body: string) {
 
 // 辅助函数：关闭 Issue
 async function closeIssue(issueNumber: string) {
+    // SSRF 2026-11-25：helper 入口各自校验（见 updateIssueLabels 注释）。
+    if (!/^\d+$/.test(issueNumber)) {
+        throw new Error('无效的投稿编号')
+    }
     await fetch(
-        `${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues/${issueNumber}`,
+        `${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues/${encodeURIComponent(issueNumber)}`,
         {
             method: 'PATCH',
             headers: {

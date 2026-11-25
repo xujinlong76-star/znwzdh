@@ -67,6 +67,19 @@ describe('navigation-toolbar：顶栏 Flex 布局', () => {
     expect(src).toContain('todayBadge.todayCount')
     expect(src).toContain('hasTodayAlert')
   })
+
+  it('热榜直达入口在顶栏常驻可见（M-02：不只在探索下拉与页脚）', () => {
+    // M-02 根因：首页 2 个 /hot 链接其一 0×0、其一在约 57k px 页底，
+    // 首屏无“热榜”字样；手机底部 tab 按 mobile-touch-targets 锁死不放热榜。
+    // 修复：顶栏探索下拉旁加直达按钮，图标 + 可见“热榜”文字（非仅 title/aria-label）。
+    // href="/hot" 本就存在于探索下拉里，须锚定到新按钮周围才算锁死。
+    const btn = windowAround(src, 'aria-label="热榜"', 200, 400)
+    expect(btn).toContain('href="/hot"')
+    expect(btn).toContain('热榜')
+    expect(src).toContain('aria-label="热榜"')
+    // 宽度账（360px 档）：行内 7×44 + 6×2 = 320px ≤ 336px，仍在预算内
+    expect(src).toContain('7×44 + 6×2 = 320px')
+  })
 })
 
 describe('search-palette：搜索框 Flex 内布局', () => {

@@ -38,7 +38,7 @@ const ITEMS = [
   // 分类总览的真实路由是 /category（app/category/page.tsx），不是 /categories
   { href: '/category', label: '分类', Icon: LayoutGrid },
   // 短剧专区是真实路由 app/drama/page.tsx；/hot 不进底栏（mobile-touch-targets
-  // 锁死：底栏不放热榜，热榜走顶栏罗盘下拉与页脚）
+  // 锁死：底栏不放热榜，热榜走顶栏直达入口与页脚，见 M-02 修复）
   { href: '/drama', label: '短剧', Icon: Clapperboard },
   { href: '/favorites', label: '收藏', Icon: Heart },
   { href: '/me', label: '我的', Icon: User },

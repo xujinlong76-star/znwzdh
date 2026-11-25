@@ -172,8 +172,8 @@ export const NavigationToolbar = memo(function NavigationToolbar({
         </div>
 
         {/* 右侧工具组（2026-11-24 融合瘦身）：
-            360px/390px 移动端行内固定 6 个 44px 按钮（今日 / 探索 / 字号 / 外观 / DIY 排版 / 菜单），
-            6×44 + 5×2 = 274px ≤ 336px，宽裕零溢出；桌面端仅保留 6 组核心控台。 */}
+            360px/390px 移动端行内固定 7 个 44px 按钮（今日 / 探索 / 热榜 / 字号 / 外观 / DIY 排版 / 菜单），
+            7×44 + 6×2 = 320px ≤ 336px，宽裕零溢出；桌面端仅保留 7 组核心控台。 */}
         <div data-testid="nav-toolbar-actions" className="flex shrink-0 flex-wrap items-center justify-end">
           <div data-testid="toolbar-button-row" className="shrink-0 flex items-center gap-0.5 sm:gap-1.5">
             {/* 📅 效率三合一入口（今日中心 + 桌面小组件盒 + 极客微工具箱统一收纳） */}
@@ -403,6 +403,25 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                 </div>
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {/* 🔥 热榜直达（M-02）：首屏/顶栏可见入口。原入口只在探索下拉与页脚——
+                首页 2 个 /hot 链接其一 0×0、其一在约 57k px 页底，首屏无“热榜”字样；
+                手机底部 tab 按 mobile-touch-targets 锁死不放热榜，故入口放顶栏。
+                宽度账：移动端行内 7×44 + 6×2 = 320px ≤ 336px（360px 档），仍在预算内。 */}
+            <Button
+              asChild
+              variant="ghost"
+              className="relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-0 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors sm:w-auto sm:flex-row sm:gap-1.5 sm:px-2.5"
+              title="热榜：全站高频与新品趋势"
+              aria-label="热榜"
+            >
+              <Link href="/hot">
+                <Flame className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
+                <span className="text-center text-[10px] leading-none whitespace-nowrap tracking-tight sm:text-xs sm:tracking-normal">
+                  热榜
+                </span>
+              </Link>
+            </Button>
 
             <Button
               asChild

@@ -146,8 +146,16 @@ export const DEFAULT_CONFIG: HomeDIYConfig = {
   accentColor: 'default',
   heroDeckCollapsed: false,
   heroDeckWidgets: DEFAULT_HERO_WIDGETS,
-  enableAdaptiveRanking: false,
-  rankingMode: 'default',
+  // P0 D：默认开启现成的自适应排序（computeAdaptiveSiteRanking）。
+  // 冷启动安全：无个人数据且无置顶/权重/趋势/星标时四项分数全 0，
+  // 排序比较器恒返回 0、稳定排序保住文件顺序（对话助手仍为 ChatGPT 1 /
+  // DeepSeek 2 / Claude 3）；频次项只在 visitStats 真有记录时才加分。
+  // 老用户已落盘的显式值不受影响（清洗器只认已存的布尔值），仍可用开关关掉。
+  enableAdaptiveRanking: true,
+  // P0-B + P0-D 合并：rankingMode 显式值优先于布尔派生（见 resolveRankingMode），
+  // 故默认须与 enableAdaptiveRanking 同步写 'adaptive'，否则默认仍为「站内综合」、
+  // P0-D 的默认开启会被静默关掉；用户仍可在胶囊下拉里切回「站内综合」。
+  rankingMode: 'adaptive',
   categoryOrder: [],
   pinnedCategoryIds: [],
   hiddenCategoryIds: [],

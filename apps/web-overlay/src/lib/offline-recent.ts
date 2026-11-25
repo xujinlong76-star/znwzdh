@@ -47,11 +47,57 @@ const LS_KEY = 'navhub:recent-offline:v1'
  */
 export const VISIT_COUNTS_KEY = 'navhub_visit_counts_v1'
 
+/** 个人访问频次表（与 `diy-presets.ts` 的 `visitStats` 形状对齐）。
+ * P0-B + P0-D 合并：`VisitStats` 已是 P0-B 的单条记录类型
+ * `{ count, lastVisitedAt }`（见下），故整表另名 `VisitStatsMap`，
+ * 避免与之重名（重复标识符 TS2300）。 */
+export type VisitStatsMap = Record<string, VisitStats>
+
+/**
+ * 同页通知事件：`bumpVisitCount` 每次写盘后派发。
+ * 同一标签页内的点击不会触发 `storage` 事件，排序订阅方只靠 `storage`
+ * 会等到刷新才重排；此事件让调用点在同次点击后即时刷新频次。
+ */
+export const VISIT_COUNTS_UPDATED_EVENT = 'navhub:visit-counts-updated'
+
+/**
+ * 同步读个人访问频次（P0 D：自适应排序调用点的数据来源）。
+ *
+ * 读 `navhub_visit_counts_v1`（唯一写入口是 `bumpVisitCount`，卡片 /
+ * 搜索 / spotlight 三路点击都走 `recordOfflineVisit` 同次累加）。
+ * 永不抛错：键缺失 / 坏 JSON / 非对象旧值一律返回 `{}`；畸形条目
+ * （count 不是有限正数）整条丢弃，`lastVisitedAt` 非法只丢时间、不丢计数。
+ */
+export function readVisitStats(): VisitStatsMap {
+  try {
+    if (typeof localStorage === 'undefined') return {}
+    const raw = localStorage.getItem(VISIT_COUNTS_KEY)
+    if (!raw) return {}
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const stats: VisitStatsMap = {}
+    for (const [siteId, entry] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+      const record = entry as { count?: unknown; lastVisitedAt?: unknown }
+      const count = record.count
+      if (typeof count !== 'number' || !Number.isFinite(count) || count <= 0) continue
+      const lastVisitedAt = record.lastVisitedAt
+      stats[siteId] =
+        typeof lastVisitedAt === 'number' && Number.isFinite(lastVisitedAt)
+          ? { count, lastVisitedAt }
+          : { count }
+    }
+    return stats
+  } catch {
+    return {}
+  }
+}
+
 /** 同步累加一次点击计数（永不抛错；存储不可用即跳过，不阻断主流程）。 */
 export function bumpVisitCount(siteId: string): void {
   try {
     if (typeof localStorage === 'undefined') return
-    let stats: Record<string, { count: number; lastVisitedAt?: number }> = {}
+    let stats: VisitStatsMap = {}
     try {
       const raw = localStorage.getItem(VISIT_COUNTS_KEY)
       if (raw) {
@@ -64,6 +110,13 @@ export function bumpVisitCount(siteId: string): void {
     const prev = stats[siteId]
     stats[siteId] = { count: (prev?.count ?? 0) + 1, lastVisitedAt: Date.now() }
     localStorage.setItem(VISIT_COUNTS_KEY, JSON.stringify(stats))
+    try {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event(VISIT_COUNTS_UPDATED_EVENT))
+      }
+    } catch {
+      // 事件派发失败不影响计数本身：订阅方下次挂载/跨标签 storage 事件仍能读到
+    }
   } catch {
     // 计数写失败不阻断主流程：快照仍在，调优降级为空
   }

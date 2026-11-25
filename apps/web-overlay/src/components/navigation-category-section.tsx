@@ -41,7 +41,7 @@ import {
 } from '@/lib/modular/diy-presets'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import type { CategoryRankingMode } from '@/lib/modular/home-diy-storage'
-import { readVisitCounts, sortItemsByVisitFrequency, type VisitStats } from '@/lib/offline-recent'
+import { sortItemsByVisitFrequency, type VisitStats } from '@/lib/offline-recent'
 import { useHomeDiyGrid } from '@/lib/modular/use-home-diy-grid'
 import type { CardMoveDirection, DiyCardDragData } from '@/lib/modular/diy-drag'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
@@ -159,7 +159,9 @@ export function sortCategoryItemsByMode<T extends { id: string }>(
   mode: CategoryRankingMode,
   visitStats: Readonly<Record<string, VisitStats>> = {},
 ): T[] {
-  if (mode === 'adaptive') return computeAdaptiveSiteRanking(items, { pinnedItemIds })
+  // P0-B + P0-D 合并：自适应分支须把 visitStats 透传给 computeAdaptiveSiteRanking，
+  // 否则频次项恒为 {}、P0-D 接通的个人频次在自适应模式下静默失效。
+  if (mode === 'adaptive') return computeAdaptiveSiteRanking(items, { pinnedItemIds, visitStats })
   if (mode === 'frequent') return sortItemsByVisitFrequency(items, visitStats, pinnedItemIds)
   return sortCategoryItemsWithPinned(items, pinnedItemIds)
 }
@@ -192,6 +194,12 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     isEditingLayout,
     rankingMode,
     setRankingMode,
+    // P0 D：个人访问频次（navhub_visit_counts_v1），调用点传给自适应排序；
+    // 无数据时为 {}，分数全 0、稳定排序保住冷启动文件顺序。
+    // （P0-B + P0-D 合并：取 useHomeDIY 的 visitStats——与组件本地
+    // readVisitCounts() 同键同形，且挂载 + 同页事件 + 跨标签事件即时刷新，
+    // 比仅 focus 时重读更新；本地 state 已删，见下。）
+    visitStats,
     categoryOrder,
     pinnedCategoryIds,
     hiddenCategoryIds,
@@ -207,18 +215,10 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     quickDialSlots,
   } = useHomeDIY()
 
-  // 「我的常用」排序用的本机点击次数（P0-B）：localStorage 同步读，SSR 下为空对象；
-  // 只在该模式下才读（其余模式不碰存储），窗口获焦时重读（与速览坞同口径，
-  // 点开站点回来后次数已变）。首帧与 SSR 一致（空表 = 置顶优先原序），
-  // 挂载后读到真实次数再重排，不产生水合分叉。
-  const [visitStats, setVisitStats] = useState<Readonly<Record<string, VisitStats>>>({})
-  useEffect(() => {
-    if (rankingMode !== 'frequent') return
-    const sync = () => setVisitStats(readVisitCounts())
-    sync()
-    window.addEventListener('focus', sync)
-    return () => window.removeEventListener('focus', sync)
-  }, [rankingMode])
+  // （P0-B + P0-D 合并：本机点击次数改取 useHomeDIY 的 visitStats——与下
+  // 面原本地 readVisitCounts() 同键（navhub_visit_counts_v1）同形，且挂载 +
+  // 同页事件 + 跨标签 storage 事件即时刷新；本地 state 与 focus 重读已删，
+  // 避免与解构出的 visitStats 重名。首帧与 SSR 一致（空表 = 置顶优先原序）。）
 
   /** 自定义快拨位反查（站点 id → Ctrl+Shift+数字）：卡片 aria-keyshortcuts 用 */
   const quickDigitBySiteId = useMemo(() => {

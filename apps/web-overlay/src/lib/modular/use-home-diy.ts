@@ -70,6 +70,12 @@ import {
   publishSharedLayoutSync,
   subscribeSharedLayoutSyncChannel,
 } from './use-home-diy-grid'
+import {
+  VISIT_COUNTS_KEY,
+  VISIT_COUNTS_UPDATED_EVENT,
+  readVisitStats,
+  type VisitStatsMap,
+} from '../offline-recent'
 
 // 保持既有导入路径可用：所有从 '@/lib/modular/use-home-diy' 导入
 // DEFAULT_CONFIG / STORAGE_KEY / 存储函数 / 类型的调用方无需改动。
@@ -163,6 +169,26 @@ export function useHomeDIY(initialCardDisplayMode?: CanonicalCardDisplayMode) {
     hydrateHomeDiy(initialCardDisplayMode)
     setMounted(true)
   }, [initialCardDisplayMode])
+
+  // 1.1 个人访问频次（P0 D）：自适应排序的 visitStats 来源。
+  //     首帧 {}（SSR 与水合首帧一致，顺序即文件顺序）；挂载后读一次
+  //     localStorage，之后靠 bumpVisitCount 的同页事件与跨标签 storage
+  //     事件即时刷新——点击后不用等刷新就重排。
+  const [visitStats, setVisitStats] = useState<VisitStatsMap>({})
+  useEffect(() => {
+    if (!mounted) return
+    const refresh = () => setVisitStats(readVisitStats())
+    refresh()
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === VISIT_COUNTS_KEY) refresh()
+    }
+    window.addEventListener(VISIT_COUNTS_UPDATED_EVENT, refresh)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener(VISIT_COUNTS_UPDATED_EVENT, refresh)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [mounted])
 
   // 2. 动态同步强调色到文档根元素属性
   // 皮肤 accent 优先（resolveDiyDataAccent）：当前有带 accent 的插件皮肤
@@ -1058,6 +1084,8 @@ export function useHomeDIY(initialCardDisplayMode?: CanonicalCardDisplayMode) {
     addSitesToCustomCategory,
     removeSitesFromCustomCategories,
     isAdaptiveRankingEnabled: resolveRankingMode(config) === 'adaptive',
+    /** 个人访问频次（P0 D）：调用点传给 computeAdaptiveSiteRanking 的 visitStats */
+    visitStats,
     toggleAdaptiveRanking,
     rankingMode: resolveRankingMode(config),
     setRankingMode,

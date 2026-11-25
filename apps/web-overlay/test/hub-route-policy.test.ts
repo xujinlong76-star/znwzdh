@@ -41,6 +41,8 @@ describe('hub-route-policy：以枢纽 scope 声明为准', () => {
       ['POST', 'categories'],
       ['PATCH', 'submissions/1'],
       ['POST', 'warmup'],
+      ['GET', 'admin/crawl-moderation/policy'],
+      ['PUT', 'admin/crawl-moderation/policy'],
     ]
     for (const [method, path] of forbidden) {
       const decision = decideHubRequest(path.split('/'), method)

@@ -34,6 +34,8 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "DELETE", path: "/api/admin/client-errors", scope: "admin" },
   { method: "GET", path: "/api/admin/client-errors", scope: "admin" },
   { method: "GET", path: "/api/admin/copilot/events", scope: "read" },
+  { method: "GET", path: "/api/admin/crawl-moderation/policy", scope: "admin" },
+  { method: "PUT", path: "/api/admin/crawl-moderation/policy", scope: "admin" },
   { method: "GET", path: "/api/admin/crawl-sources", scope: "admin" },
   { method: "POST", path: "/api/admin/crawl-sources", scope: "admin" },
   { method: "DELETE", path: "/api/admin/crawl-sources/:id", scope: "admin" },

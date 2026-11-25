@@ -177,7 +177,9 @@ describe('小猫猫挂件一直动态与性能/布局优化守卫', () => {
     // 防拖猫时误选字 / iOS 长按唤出图片菜单（长按摸猫要用）
     expect(WIDGET).toContain('-webkit-touch-callout:none')
     // 第四轮错误修复：Radix 弹窗（[role="dialog"][data-state="open"]）降层、Esc 关窗不反弹出坞、更多展开不跳键、换形象可切换、圆标不裁猫耳、靠顶气泡下翻
-    expect(WIDGET).toContain('document.querySelectorAll(\'[role="dialog"][data-state="open"]\')')
+    // Radix 弹窗降层选择器实际覆盖 dialog + menu（xiaomaomao.js:2585），比旧断言
+    // 只匹配 dialog 更强；按真实源码同步字面量，保留「降层逻辑存在」的核心意图。
+    expect(WIDGET).toContain('document.querySelectorAll(\'[role="dialog"][data-state="open"], [role="menu"][data-state="open"]\')')
     expect(WIDGET).toContain('var suppressFocusCtl = false;')
     expect(WIDGET).toContain('#xiaomaomao .xm-dock .xm-chat-btn{order:1}#xiaomaomao .xm-dock .xm-fish-btn{order:2}#xiaomaomao .xm-dock .xm-game-btn{order:3}#xiaomaomao .xm-dock .xm-more-btn{order:4}#xiaomaomao .xm-dock .xm-dock-sec{order:5}')
     expect(WIDGET).toContain("if (panelEl.classList.contains('xm-looking')) closeLook();")

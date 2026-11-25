@@ -13,7 +13,11 @@ import type { AppContext } from "../context.ts";
 import { resolveLlm, llmProviderReady, type LlmSource } from "../llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota, replyQuotaBlocked } from "../llm-quota.ts";
 import { callLlm } from "../llm-usage.ts";
-import { loadCrawlAiModerationPolicy } from "../crawl-moderation-policy.ts";
+import {
+  loadCrawlAiModerationPolicy,
+  saveCrawlAiModerationPolicy,
+  CrawlModerationPolicyInputSchema,
+} from "../crawl-moderation-policy.ts";
 
 /** 对正式金标集做稳定抽样：相同数据集重复运行时选中相同样本。 */
 export function selectGoldEvaluationSample<T extends Record<string, unknown>>(rows: readonly T[], limit = 20): T[] {
@@ -811,6 +815,24 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     await ctx.repo.audit({ip:req.ip,actor,actorKind:req.auth.kind,action:"crawl.moderation_model_evaluation",target:id,
       diff:{model:body.data.model,datasetVersion,sampleSize:metrics.sampleSize,exactMatchRate:metrics.exactMatchRate,alertCount:alerts.length}});
     return {ok:true,id,model:body.data.model,datasetVersion,sampleSize:metrics.sampleSize,metrics:evaluation,alerts,createdAt};
+  });
+
+
+  /* ------------------------- AI 审核策略（管理端） ------------------------- */
+  // 前端 /admin/crawl-ops 通过 hub 网关 GET/PUT 本路径；持久化走 system_states KV。
+  app.get("/api/admin/crawl-moderation/policy", { config: { scope: "admin", cache: { maxAge: 0 } } }, async () => {
+    const policy = await loadCrawlAiModerationPolicy(ctx);
+    return { ok: true, policy };
+  });
+
+  app.put("/api/admin/crawl-moderation/policy", { config: { scope: "admin", cache: { maxAge: 0 } } }, async (req, reply) => {
+    const parsed = CrawlModerationPolicyInputSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      reply.code(400);
+      return { ok: false, error: "策略参数无效", detail: parsed.error.issues };
+    }
+    const policy = await saveCrawlAiModerationPolicy(ctx, parsed.data, String(req.auth.actor ?? "admin"), req.ip);
+    return { ok: true, policy };
   });
 
 };

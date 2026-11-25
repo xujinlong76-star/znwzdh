@@ -17,18 +17,36 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-function parseYaml(text: string): any {
-  const res = spawnSync("python3", ["-c", "import sys, yaml, json; print(json.dumps(yaml.safe_load(sys.stdin.read())))"],
-    { input: text, encoding: "utf8" });
-  expect(res.status, res.stderr).toBe(0);
+// Windows 上 python3 常是 Microsoft Store 占位 stub（exit 9009），python/py -3
+// 才是真解释器。探测一次可用命令，避免环境差异造成假红（本文件只做格式解析）。
+// Windows 中文区域 locale=cp936：spawnSync 用 UTF-8 写 stdin，Python 却按
+// cp936 读 → 工作流里的中文字符变 mojibake，PyYAML 报 ReaderError。强制 UTF-8 模式。
+const PY_ENV = { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" };
+interface PyCmd { cmd: string; prefix: string[] }
+function resolvePython(): PyCmd {
+  const candidates: PyCmd[] = [
+    { cmd: "python3", prefix: [] },
+    { cmd: "python", prefix: [] },
+    { cmd: "py", prefix: ["-3"] },
+  ];
+  for (const c of candidates) {
+    const probe = spawnSync(c.cmd, [...c.prefix, "-c", "import yaml, tomllib"], { encoding: "utf8", env: PY_ENV });
+    if (probe.status === 0) return c;
+  }
+  throw new Error("未找到带 yaml/tomllib 的 Python 解释器（试过 python3/python/py -3）");
+}
+const PY = resolvePython();
+function pyEval(code: string, input: string): any {
+  const res = spawnSync(PY.cmd, [...PY.prefix, "-c", code], { input, encoding: "utf8", env: PY_ENV });
+  expect(res.status, PY.cmd + " stderr: " + res.stderr).toBe(0);
   return JSON.parse(res.stdout);
+}
+function parseYaml(text: string): any {
+  return pyEval("import sys, yaml, json; print(json.dumps(yaml.safe_load(sys.stdin.read())))", text);
 }
 
 function parseToml(text: string): any {
-  const res = spawnSync("python3", ["-c", "import sys, tomllib, json; print(json.dumps(tomllib.loads(sys.stdin.read())))"],
-    { input: text, encoding: "utf8" });
-  expect(res.status, res.stderr).toBe(0);
-  return JSON.parse(res.stdout);
+  return pyEval("import sys, tomllib, json; print(json.dumps(tomllib.loads(sys.stdin.read())))", text);
 }
 
 function workflowText(name: string): string {

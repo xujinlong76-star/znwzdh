@@ -17,7 +17,7 @@
  * 断言只保证修 key 没有顺手把重复行吞掉（同名行必须都渲染出来）。
  */
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
@@ -33,7 +33,9 @@ import type { WatchEntry } from "../src/lib/watchlist";
 const HERE = dirname(fileURLToPath(import.meta.url));
 function overlayRoot(): string {
   const candidates = [resolve(HERE, ".."), resolve(HERE, "..", "..", "web-overlay")];
-  const isOverlayDir = (p: string) => p.includes("/web-overlay/") || p.endsWith("/web-overlay");
+  // 跨平台判定：Windows 路径分隔符是反斜杠，历史只用 "/web-overlay/" 匹配
+  // 导致在 Windows 上永远定位不到根目录。用 basename 判定目录名，兼容两种分隔符。
+  const isOverlayDir = (p: string) => basename(p) === "web-overlay";
   const hit = candidates.find((p) => isOverlayDir(p) && existsSync(p));
   if (!hit) throw new Error("无法定位 web-overlay 根目录");
   return hit;

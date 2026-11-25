@@ -112,3 +112,4 @@ POST /api/admin/crawl/moderation-gold-cases/{id}/annotations | 标注回执含�
 POST /api/admin/crawl/moderation-gold-cases/{id}/adjudicate | 仲裁回执固定为 gold_ready，但错误分支多样，待补 schema
 POST /api/admin/crawl/moderation-model-evaluations/auto | 自动评测含模型指标/告警/用量，随金标集与模型变化
 POST /api/admin/crawl/moderation-model-evaluations | 手工评测回执同上，随模型输出变化
+PUT /api/admin/crawl-moderation/policy | 策略回执固定为 {ok,policy} 形状，待补 CrawlModerationPolicyResponse schema 后删除本行

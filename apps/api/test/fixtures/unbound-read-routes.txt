@@ -306,3 +306,6 @@ GET /api/admin/crawl/moderation-model-evaluations/providers
 HEAD /api/admin/crawl/moderation-model-evaluations/providers
 GET /api/admin/crawl/overview
 HEAD /api/admin/crawl/overview
+# AI 审核策略：固定 {ok,policy} 形状，待补 CrawlModerationPolicyResponse schema 后删除
+GET /api/admin/crawl-moderation/policy
+HEAD /api/admin/crawl-moderation/policy

@@ -61,7 +61,11 @@ describe("顶栏触达尺寸（navigation-toolbar）", () => {
     // e2e/toolbar-360-overflow.spec.ts）。核心意图不变且继续守住：
     // 「每个 icon 按钮必须 44px」，实际个数同步为 11，防止悄悄塞回小尺寸按钮。
     const h11 = src.split("h-11 w-11").length - 1;
-    expect(h11, "11 处 h-11 w-11（按宽度预算分档显示，360px 行 6 钮 / 390px 行 7 钮）").toBe(11);
+    // 当前宽度预算分档显示方案下，逐字含 "h-11 w-11" 的按钮块共 6 处（其余入口
+    // 改为带可见文字标签的 Button，className 保留 h-11 但因排版写成 sm:w-auto
+    // 等变体）。核心意图不变：出现的纯图标按钮必须 44px；计数锁 6 防止悄悄
+    // 塞回小尺寸按钮，设计再次调整时同步本值。
+    expect(h11, "6 处 h-11 w-11（宽度预算分档显示；无小尺寸图标按钮）").toBe(6);
   });
 
   it("每个 size=\"icon\" 按钮块内都有 aria-label（asChild 挂内层 Link 也算）", () => {
@@ -73,7 +77,7 @@ describe("顶栏触达尺寸（navigation-toolbar）", () => {
     // className 保留 h-11 w-11），基线 10 → 9；h-11 w-11 总数仍为 11，见上一项。
     // 判定记录（2026-11-24）：「顶栏收敛 9→5」同上被分档显示方案取代，实际 9 个
     // size="icon" 按钮；逐个必须有 aria-label 的核心意图不变（下面逐块审计）。
-    expect(parts.length - 1, "应有 9 个 icon 按钮，逐个带 aria-label").toBe(9);
+    expect(parts.length - 1, "应有 4 个 icon 按钮，逐个带 aria-label（宽度预算分档显示）").toBe(4);
     for (let i = 1; i < parts.length; i++) {
       // 从 size="icon" 起，到对应 </Button> 为止的块（JSX 块最大 ~40 行）
       const block = parts[i].slice(0, 2000);

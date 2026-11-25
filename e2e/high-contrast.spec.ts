@@ -20,9 +20,11 @@ import {
  * apps/web-overlay/src/components/high-contrast-toggle.tsx（W2 新建）、
  * navigation-toolbar.tsx:497 已挂载（与 FontSizeToggle 并排，工具栏位置符合
  * 任务书）；appearance-guide-dialog.tsx 里另有一份内联同款按钮（同一事件
- * 总线同步）。本 spec 只点工具栏那一份，不开外观弹窗；以后若有开弹窗的
- * 用例，定位器必须按容器收窄——两处按钮的 aria-label 完全相同，strict
- * 模式下会报多命中。
+ * 总线同步）。P1-4 顶栏瘦身（2026-11-24）：工具栏上的开关已收进
+ * 「外观与阅读」浮层（appearance-quick-popover.tsx），本 spec 只点浮层里
+ * 那一份（先开浮层再定位开关，见 openAppearancePopover），不开外观弹窗；
+ * 以后若有开弹窗的用例，定位器必须按容器收窄——两处按钮的 aria-label
+ * 完全相同，strict 模式下会报多命中。
  *
  * grep 核对结果（实现 vs 任务书约定）：存储键 navhub.highContrast.v1 ✓、
  * 事件 navhub:high-contrast-changed + detail { on } ✓、存储值 JSON { on }
@@ -82,6 +84,20 @@ const TITLE_OFF = '高对比：加深文字与边框，关闭后恢复';
 const HC_BUTTON = 'button';
 const CAT = '#xiaomaomao';
 const APPEARANCE_BTN = '打开外观排版与新手向导小窗';
+/** 「外观与阅读」浮层触发按钮（P1-4 顶栏瘦身后，高对比开关收进该浮层内） */
+const APPEARANCE_POPOVER_BTN = '打开外观与阅读设置';
+
+/**
+ * P1-4 顶栏瘦身（2026-11-24 融合）：高对比开关已从工具栏平铺收进
+ * 「外观与阅读」浮层（appearance-quick-popover.tsx），工具栏上不再有
+ * 直接可点的「高对比」按钮——CI :287/:317「按钮找不到」即因此而红。
+ * 先点浮层触发钮、等开关可见再断言/点击；浮层内点击不关闭浮层，
+ * 但刷新后浮层关闭，刷新后须重开（两用例的刷新后断言前都调一次）。
+ */
+async function openAppearancePopover(page: Page): Promise<void> {
+  await page.getByRole('button', { name: APPEARANCE_POPOVER_BTN }).click({ timeout: 30_000 });
+  await expect(hcButton(page)).toBeVisible({ timeout: 10_000 });
+}
 /** WCAG AA：正文与次要文字的最低对比度 */
 const MIN_RATIO = 4.5;
 
@@ -281,6 +297,7 @@ test.describe('高对比开关主流程', () => {
     test.setTimeout(180_000);
     const hydrationErrors = collectHydrationErrors(page);
     await gotoHomeClean(page);
+    await openAppearancePopover(page);
 
     // 默认普通态：属性未落、aria-pressed false、关闭态 title 逐字一致
     expect(await htmlHighContrast(page), '默认不应带 data-high-contrast="on"').not.toBe('on');
@@ -303,6 +320,7 @@ test.describe('高对比开关主流程', () => {
     // 一并消失，关闭事件若不重装就录不到（lastChangedDetail 得 undefined，
     // 文末 on:false 断言必超时）。刷新后重装，只录刷新后的事件。
     await armChangedEvents(page);
+    await openAppearancePopover(page);
     await expectHighContrastOn(page);
     await expectKeyContrasts(page, '浅色开启（刷新后）');
 
@@ -318,6 +336,7 @@ test.describe('高对比开关主流程', () => {
     test.setTimeout(180_000);
     const hydrationErrors = collectHydrationErrors(page);
     await gotoHomeDark(page);
+    await openAppearancePopover(page);
 
     expect(await htmlHighContrast(page), '深色默认不应带 data-high-contrast="on"').not.toBe('on');
     await expect(hcButton(page)).toHaveAttribute('aria-pressed', 'false');
@@ -332,6 +351,7 @@ test.describe('高对比开关主流程', () => {
     await page.waitForLoadState('load', { timeout: 120_000 }).catch(() => {});
     await expect(page.locator(CAT)).toBeAttached({ timeout: 60_000 });
     await page.waitForTimeout(600);
+    await openAppearancePopover(page);
     await expectHighContrastOn(page);
     await expectKeyContrasts(page, '深色开启（刷新后）');
 

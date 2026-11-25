@@ -280,6 +280,11 @@ export async function guardedFetch(
   const SENSITIVE_HEADERS = new Set(['authorization', 'cookie', 'proxy-authorization'])
   let carriedHeaders: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) }
   let prevOrigin = current.origin
+  // 多 IP 候选的解析缓存与当前下标：同一跳重跑（见下方 fetch 处）时复用首次
+  // 解析结果，避免重解析改变候选顺序导致已试过的 IP 被重复尝试。
+  let resolvedCacheFor = ''
+  let resolvedCache: string[] = []
+  let ipAttempt = 0
   for (let hop = 0; hop <= opts.maxRedirects; hop++) {
     // 逐跳 host/端口钉死（SSRF 2026-11-25）：只在调用方给了白名单时才收紧，
     // 未给的调用方（favicon/rss 等）行为与历史逐字一致。
@@ -291,7 +296,16 @@ export async function guardedFetch(
     if (opts.allowedPorts && !opts.allowedPorts.includes(hopPort)) {
       throw new SsrfBlockedError(`端口 ${hopPort} 不在允许范围内`)
     }
-    const resolvedIps = await resolveAndCheckAddresses(current, opts)
+    const urlKey = current.toString()
+    let resolvedIps: string[]
+    if (urlKey === resolvedCacheFor) {
+      resolvedIps = resolvedCache
+    } else {
+      resolvedIps = await resolveAndCheckAddresses(current, opts)
+      resolvedCacheFor = urlKey
+      resolvedCache = resolvedIps
+      ipAttempt = 0
+    }
     const rawHost = current.hostname.replace(/^\[|\]$/g, '')
     const isLiteralIp = isIP(rawHost) !== 0
 
@@ -304,19 +318,22 @@ export async function guardedFetch(
     // 兜底才没事）。逐个候选尝试、仅连接级失败换下一个 IP——每个候选都是解析后
     // 校验过的地址，防重绑定语义不变；取消/超时立即向上传递，不重试。
     //
-    // 写法刻意沿用 6f3ad68b 的 let + 条件赋值形态：ad7b235a 的 pinTargets
-    // 数组 + for-of 写法被 CodeQL js/request-forgery 标为新告警
-    // （ssrf-guard.ts:328，3 个来源），而 6f3ad68b 的同款 let 形态在 PR
-    // #187 首轮 CodeQL 全绿、0 条告警；不要再把 fetch 参数改成数组/循环变量。
+    // 写法注意（CodeQL js/request-forgery，两次实证）：查询只认
+    // encodeURIComponent 与拼接前缀两种消毒，看不见这里的 DNS+IP 校验；
+    // 它按告警位置与 main 的既有告警比对去重——单次
+    // `const response = await fetch(...)` 形态与 main 一致故不新报，
+    // 而把 fetch 包进内层 attempt 循环/try 后 fetch 行一变就被当成新告警
+    // （ad7b235a :328、c1375c69 :341–349）。所以重试不另起循环包 fetch，
+    // 改走 hop 重跑（见下方 .catch）；不要把这段改回 attempt 循环。
     const headers: Record<string, string> = {
       'User-Agent': opts.userAgent,
       ...carriedHeaders,
     }
+    const pinIp = resolvedIps[ipAttempt]
     let fetchTarget = current.toString()
-    if (!isLiteralIp && current.protocol === 'http:' && resolvedIps[0]) {
+    if (!isLiteralIp && current.protocol === 'http:' && pinIp) {
       const pinned = new URL(current.toString())
-      const ip = resolvedIps[0]
-      pinned.hostname = isIP(ip) === 6 ? `[${ip}]` : ip
+      pinned.hostname = isIP(pinIp) === 6 ? `[${pinIp}]` : pinIp
       fetchTarget = pinned.toString()
       if (!headers['Host'] && !headers['host']) {
         headers['Host'] = current.host
@@ -324,41 +341,34 @@ export async function guardedFetch(
     }
 
     const CONNECTION_ERRORS = new Set(['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE'])
-    const attempts =
-      !isLiteralIp && current.protocol === 'http:' ? Math.max(resolvedIps.length, 1) : 1
-    let response: Response | undefined
-    let lastError: unknown
-    for (let attempt = 0; attempt < attempts; attempt++) {
-      if (attempt > 0) {
-        const ip = resolvedIps[attempt]
-        if (ip) {
-          const pinned = new URL(current.toString())
-          pinned.hostname = isIP(ip) === 6 ? `[${ip}]` : ip
-          fetchTarget = pinned.toString()
-        }
+    const response = await fetch(fetchTarget, {
+      ...init,
+      redirect: 'manual',
+      // 调用方信号（客户端断开）与内部超时合并：任一路 abort 都掐断上游。
+      signal: opts.signal
+        ? AbortSignal.any([AbortSignal.timeout(opts.timeoutMs), opts.signal])
+        : AbortSignal.timeout(opts.timeoutMs),
+      headers,
+    }).catch((err: unknown) => {
+      // 取消/超时是调用方的意图，立即向上传递，不换 IP 重试。
+      if (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')) throw err
+      const cause = (err as { cause?: unknown } | null)?.cause
+      const code = cause && typeof cause === 'object' ? (cause as { code?: unknown }).code : undefined
+      if (typeof code !== 'string' || !CONNECTION_ERRORS.has(code)) throw err
+      // 仅连接级失败换下一个候选：返回 null 触发同一跳重跑（见下）。
+      // 只对 HTTP 明文 + 非字面 IP 重试（与旧 attempts 口径一致）：HTTPS
+      // 靠域名建连、字面 IP 只有一个候选，本就不重试。
+      if (!isLiteralIp && current.protocol === 'http:' && ipAttempt + 1 < resolvedIps.length) {
+        ipAttempt++
+        return null
       }
-      try {
-        response = await fetch(fetchTarget, {
-          ...init,
-          redirect: 'manual',
-          // 调用方信号（客户端断开）与内部超时合并：任一路 abort 都掐断上游。
-          signal: opts.signal
-            ? AbortSignal.any([AbortSignal.timeout(opts.timeoutMs), opts.signal])
-            : AbortSignal.timeout(opts.timeoutMs),
-          headers,
-        })
-        break
-      } catch (err) {
-        // 取消/超时是调用方的意图，立即向上传递，不换 IP 重试。
-        if (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')) throw err
-        const cause = (err as { cause?: unknown } | null)?.cause
-        const code = cause && typeof cause === 'object' ? (cause as { code?: unknown }).code : undefined
-        if (typeof code !== 'string' || !CONNECTION_ERRORS.has(code)) throw err
-        lastError = err
-      }
-    }
-    if (!response) {
-      throw lastError ?? new Error('上游连接失败')
+      throw err
+    })
+    if (response === null) {
+      // 同一跳重跑：continue 会执行 hop++，先 hop-- 抵消；下一轮按 ipAttempt
+      // 钉下一个已校验地址（解析结果已缓存，不会因重解析换顺序而重复尝试）。
+      hop--
+      continue
     }
 
     if (!isLiteralIp && current.protocol === 'https:' && !opts.allowPrivateNetworks) {

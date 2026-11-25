@@ -10,7 +10,7 @@
  * 新增常驻作业未入 needs 必须红；显式声明为手动/定时则允许不聚合。
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -141,5 +141,27 @@ describe("CI 合并门禁", () => {
       scripts: Record<string, string>;
     };
     expect(pkg.scripts["check:ci-gate"]).toContain("check-ci-gate.mjs");
+  });
+
+  it("本地 verify 登记的生成链条数与 check:generated 的 4 条一致", () => {
+    // 2026-11-26：verify 原本只登记 3 条（core 镜像 / 路由策略 / overlay 镜像），
+    // 漏了 REST 契约。本地一路绿、推上去才在 CI 的 check:generated 红——
+    // 这里按「聚合入口声明了几条链」动态核对，防止以后再加链又漏登记。
+    const aggregate = readFileSync(resolve(ROOT, "scripts/check-generated-all.mjs"), "utf8");
+    const chainCount = (aggregate.match(/^\s*id: "/gm) ?? []).length;
+    expect(chainCount).toBeGreaterThanOrEqual(4);
+    const verify = readFileSync(resolve(ROOT, "scripts/verify.mjs"), "utf8");
+    const gateLabels = ["core 镜像一致", "网关路由策略新鲜度", "REST 契约一致", "覆盖层同步"];
+    for (const label of gateLabels) expect(verify).toContain(`gate("${label}"`);
+    // 每个 gate 都要指向真实存在的脚本，防止只补了标签没补执行
+    for (const script of [
+      "scripts/sync-core-mirrors.mjs",
+      "scripts/gen-hub-route-policy.mjs",
+      "scripts/generate-rest-contract-types.mjs",
+      "scripts/check-web-overlay.mjs",
+    ]) {
+      expect(verify).toContain(script);
+      expect(existsSync(resolve(ROOT, script))).toBe(true);
+    }
   });
 });

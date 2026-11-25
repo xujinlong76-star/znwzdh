@@ -334,6 +334,14 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     if (matchedCounter === null) { reply.code(401); return { error: "验证码无效或已过期" }; }
     const consumed = await claimTotpStep(ctx, state.recoveryVersion, matchedCounter);
     if (!consumed) { reply.code(401); return { error: "验证码已使用，请等待下一组验证码" }; }
+    // A TOTP window accepts adjacent counters; claim the enrollment version itself as a
+    // single-winner transition so concurrent valid codes cannot return competing recovery sets.
+    const enrollmentClaimed = await ctx.repo.claimSystemState(
+      "auth:admin-mfa-confirm:" + state.recoveryVersion,
+      { confirmedAt: Date.now() },
+      10 * 60 * 1000,
+    );
+    if (!enrollmentClaimed) { reply.code(409); return { error: "该 MFA 密钥已被其他确认请求启用，请重新查询状态" }; }
     const codes = newRecoveryCodes();
     await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, {
       ...state, enabled: true, recoveryHashes: codes.map((code) => hashApiToken(code.replace(/-/g, ""))),

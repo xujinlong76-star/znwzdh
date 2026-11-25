@@ -41,6 +41,10 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
  *   （200、1,381 B）原样落盘 metacritic.svg：深海军蓝圆 #001B36 +
  *   黄圈 #FC0 + 白色 M 字标（width/height 88，无 viewBox）。
  *   未用 favicon.ico（16/32 两帧 ICO）。
+ * - Windy：站方 https://www.windy.com/img/favicon.png（200、3,629 B）
+ *   原样落盘 windy.png：128×128 调色板 PNG，红圆底 + 白色风形 W 标，
+ *   四角透明，目视确认。未用 favicon.ico（16/32 两帧 ICO）与
+ *   logo-full.png（180×180 宽版字标，28px 卡片内不可读）。
  *
  * 事实钉死（只记、不加占位、不擅自换图）：
  * - 5 落地站均 ≤15 KB（字节数下方钉死）；SVG 站原样、PNG 站 <128 原样，
@@ -56,6 +60,7 @@ const CASES: Array<{ url: string; title: string; customIcon?: string; expected: 
   { url: 'https://www.duxiu.com', title: '读秀', customIcon: 'https://www.duxiu.com/favicon.ico', expected: '/brand-icons/duxiu.png' },
   { url: 'https://www.rottentomatoes.com', title: 'Rotten Tomatoes', customIcon: 'https://www.rottentomatoes.com/assets/pizza-pie/images/favicon.ico', expected: '/brand-icons/rottentomatoes.png' },
   { url: 'https://www.metacritic.com', title: 'Metacritic', customIcon: 'https://www.metacritic.com/favicon.ico', expected: '/brand-icons/metacritic.svg' },
+  { url: 'https://www.windy.com', title: 'Windy', customIcon: 'https://www.windy.com/favicon.ico', expected: '/brand-icons/windy.png' },
 ]
 
 const LOCAL_ASSETS: Array<{ name: string; width: number; height: number; bytes: number }> = [
@@ -63,6 +68,7 @@ const LOCAL_ASSETS: Array<{ name: string; width: number; height: number; bytes: 
   { name: 'duxiu.png', width: 128, height: 128, bytes: 3693 },
   { name: 'rottentomatoes.png', width: 96, height: 96, bytes: 3310 },
   { name: 'metacritic.svg', width: 88, height: 88, bytes: 1381 },
+  { name: 'windy.png', width: 128, height: 128, bytes: 3629 },
 ]
 
 function readPngDimensions(buf: Buffer): { width: number; height: number } {
@@ -78,7 +84,7 @@ describe('resolveSiteIcon（图标修复剩余轮 W11）', () => {
 
   it('本地品牌资产在 served 树的 public/brand-icons/ 落盘', () => {
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
-    expect(LOCAL_ASSETS).toHaveLength(4)
+    expect(LOCAL_ASSETS).toHaveLength(5)
     for (const { name } of LOCAL_ASSETS) {
       expect(existsSync(`${dir}${name}`), name).toBe(true)
     }

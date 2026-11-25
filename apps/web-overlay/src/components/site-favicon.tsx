@@ -1101,6 +1101,12 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   //   按规范 §9 不配 LOGO_TILE_MAP，留待统一处理轮。
   //   'metacritic.com' 全库只命中一站，无后缀串站。
   'metacritic.com=metacritics',
+  // - Windy：站方 https://www.windy.com/img/favicon.png
+  //   （200、image/png、3,629 B）原样落盘 windy.png：128×128 调色板 PNG，
+  //   红圆底 + 白色风形 W 标，四角透明，目视确认。未用 favicon.ico
+  //   （16/32 两帧 ICO，15,086 B）与 logo-full.png（180×180 宽版字标，
+  //   28px 卡片内不可读）。'windy.com' 全库只命中一站，无后缀串站。
+  'windy.com=windyp',
  ];
 
 /**

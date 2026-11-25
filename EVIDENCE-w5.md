@@ -132,12 +132,28 @@
   `flextv.cc=flextvp` / `moboreels.com=moboreelsp` / `melolo.com=melolop`），
   另 `resolveSiteIcon` 顶部加 ReelShort 单站绕过（见 §7）。`navigation.json` 未改。
 
-## 390px 渲染验证（待填）
+## 390px 渲染验证（2026-11-25 19:44–19:45 CST，C7 替代法）
 
-- 方法：C7 替代法——真实卡片 28px + object-contain + Playwright + 本地 Chromium 截图，浅/深双主题。
-- 结果：（跑完后填）
+- 方法：真实卡片 28px + object-contain + Playwright 1.65.1 + 本地 Chromium
+  （`~/.cache/ms-playwright`），视口 390×844，浅/深双主题；脚本 `/tmp/w5-render.mjs`
+  （图标以 data URI 内联，不改仓库；截图 `/tmp/w5-render-light.png`、`/tmp/w5-render-dark.png`）。
+- 结果：**双主题 7/7 加载成功，渲染尺寸均为 28×28**（natural 尺寸与 §8 一致）；
+  截图目视 7 标在浅/深主题下均清晰可辨、无裁切、无不可见。
+  GoodShort 白底在深色主题下呈白方块——是真实品牌标原貌，按规范 §9 不做单站底块补丁。
 
-## 测试与 typecheck（待填）
+## 测试与 typecheck（2026-11-25 19:41–19:43 CST）
 
-- 定向测试：（跑完后填）
-- typecheck：（跑完后填）
+- 定向测试：`apps/web-overlay/test/site-favicon-iconbatch-remaining-w5.test.ts`，
+  **15/15 通过**（7 站解析 + 文件落盘 + 尺寸钉死 + 字节数/md5 钉死 + ≤15KB +
+  ReelShort 不热链 + 不串站 + 不配底块 + 禁加键）。
+  说明：根 `vitest.config.ts` 的 include 不含 `apps/web-overlay/test/**`，
+  直接跑报 `No test files found`；用临时配置 `vitest.w5.tmp.config.ts`
+  （只收本文件，`@/` 指回 `apps/web-overlay/src`，react/clsx/tailwind-merge
+  指向根 `node_modules/.pnpm` 仓现成包，未装新依赖）跑通；临时配置已删除，不提交。
+  首次跑失败原因为根 `node_modules` 未提升 react（overlay 被 pnpm workspace 排除），
+  属环境问题、非代码问题，加别名后通过。
+- typecheck：`apps/web-overlay` 下 `tsc --noEmit`，全仓 37,721 个 `error TS`——
+  全部为环境级既存错误（react 模块缺失、`@types/node` 缺失致 `node:crypto`/`Buffer` 找不到），
+  与基线 `bef26ed3` 逐项比对（stash 前后各跑一次）：**总数、site-favicon.tsx 的 10 处、
+  W5 测试文件的 6 处完全一致，本批新增 0 个类型错误**；我改动的行区间
+  （1066–1115、1281–1310）无任何报错。未修全仓既存错误（超出本批范围）。

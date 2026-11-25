@@ -311,10 +311,17 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   // → unsplash.png；figma.com → figma.svg。以下 2 个为新键，另起本块追加：
   // fonts.adobe.com → adobe-fonts.png；helpx.adobe.com → adobe-xd.svg
   //（精确键优先于 adobe.com 后缀匹配）。Illustrator 无 hostname 键，改走
-  // map 查找前的标题规则（复审裁决 (a)）。Adobe Color 阻塞未落盘：资产、
-  // map 值、测试用例均未合入，待 429 冷却后重取验过再补（复审裁决 (c)）。
+  // map 查找前的标题规则（复审裁决 (a)）。Adobe Color 原阻塞未落盘
+  //（2026-11-17 候选源 Wikimedia / Wayback 多次回 429，复审裁决 (c)）；
+  // 2026-11-25 用户拍板改用 App Store 版图标（黑底圆角方块 + 12 色三角
+  // 楔形色轮），源为 App Store CDN 方形原图 1024×1024（见
+  // EVIDENCE-adobe.md），LANCZOS 缩至 128×128 落盘 adobe-color.png，
+  // 本键为新键追加。navigation.json 的 Adobe Color icon 字段为远端
+  // https://color.adobe.com/favicon.ico（实测 404），被 isRemoteRawFavicon
+  // 拦截后回落 map，本键可达，无需清空 icon 字段、navigation.json 不动。
   'fonts.adobe.com=adobe-fontsp',
   'helpx.adobe.com=adobe-xds',
+  'color.adobe.com=adobe-colorp',
   // 2026-11-17（图标 B 类第 1 批 b1a）：DeepSeek / Kimi / 文心一言 / Kimi 搜索。
   // 旧键替换（勿重复落键）：'deepseek.com' / 'chat.deepseek.com' /
   // 'kimi.moonshot.cn' 原为热链值，本批改为本地路径；'kimi.com' /

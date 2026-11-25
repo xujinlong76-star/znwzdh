@@ -153,7 +153,7 @@ function FunnelPanel({ funnel }: { funnel: HubPluginFunnel }) {
           <Gauge className="w-4 h-4 text-primary" aria-hidden />
           <h2 className="text-sm font-semibold text-foreground">近 {funnel.days} 天市场漏斗</h2>
         </div>
-        <span className="text-[11px] font-mono text-muted-foreground">
+        <span className="text-[0.6875rem] font-mono text-muted-foreground">
           {summary ?? '浏览埋点为 0，转化率不可用'}
         </span>
       </div>
@@ -161,7 +161,7 @@ function FunnelPanel({ funnel }: { funnel: HubPluginFunnel }) {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {cells.map((cell) => (
           <div key={cell.key} className="rounded-xl border border-border/60 bg-background/40 p-3">
-            <div className={`flex items-center gap-1.5 text-[11px] ${cell.tone}`}>
+            <div className={`flex items-center gap-1.5 text-[0.6875rem] ${cell.tone}`}>
               <cell.icon className="w-3.5 h-3.5" aria-hidden />
               <span>{cell.label}</span>
             </div>
@@ -172,10 +172,10 @@ function FunnelPanel({ funnel }: { funnel: HubPluginFunnel }) {
 
       {last7.some((d) => d.views > 0 || d.installs > 0) && (
         <div className="space-y-1">
-          <p className="text-[11px] text-muted-foreground">近 7 天按日（条长按当日浏览量归一）：</p>
+          <p className="text-[0.6875rem] text-muted-foreground">近 7 天按日（条长按当日浏览量归一）：</p>
           <div className="space-y-1">
             {last7.map((day) => (
-              <div key={day.date} className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
+              <div key={day.date} className="flex items-center gap-2 text-[0.6875rem] font-mono text-muted-foreground">
                 <span className="w-20 shrink-0">{day.date.slice(5)}</span>
                 <span className="h-2 rounded-full bg-sky-500/40" style={{ width: `${Math.round((day.views / peakViews) * 40) + 2}%` }} aria-hidden />
                 <span className="tabular-nums">浏览 {day.views}</span>
@@ -209,12 +209,12 @@ function GovernancePanel({
           <MessageSquareWarning className="w-4 h-4 text-amber-500" aria-hidden />
           <h2 className="text-sm font-semibold text-foreground">治理预警</h2>
           {!failed && alerts.length > 0 && (
-            <span className="text-[11px] font-mono text-muted-foreground">
+            <span className="text-[0.6875rem] font-mono text-muted-foreground">
               超 SLA {counts.pending_sla} · 插件举报 {counts.reported} · 评价举报 {counts.review_reported}
             </span>
           )}
         </div>
-        <span className="text-[11px] font-mono text-muted-foreground">
+        <span className="text-[0.6875rem] font-mono text-muted-foreground">
           {/* generatedAt===0 是中枢没答上来，不是「没有预警」；两种状态不能共用一个空态 */}
           {failed ? '预警数据本次未取回' : `生成于 ${new Date(generatedAt).toLocaleString('zh-CN')}`}
         </span>
@@ -240,11 +240,11 @@ function GovernancePanel({
                 >
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${meta.chip}`}>{meta.label}</span>
                   <span className="text-xs font-medium text-foreground truncate max-w-[240px]">{alert.name}</span>
-                  <span className="text-[11px] text-muted-foreground">{alert.detail}</span>
+                  <span className="text-[0.6875rem] text-muted-foreground">{alert.detail}</span>
                   <button
                     type="button"
                     onClick={() => onFocus(alert)}
-                    className="ml-auto text-[11px] px-2 py-0.5 rounded-md border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                    className="ml-auto text-[0.6875rem] px-2 py-0.5 rounded-md border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
                   >
                     在队列中定位
                   </button>
@@ -253,7 +253,7 @@ function GovernancePanel({
             })}
           </ul>
           {alerts.length > 12 && (
-            <p className="text-[11px] text-muted-foreground">只列出按严重度排序的前 12 条（本次共 {alerts.length} 条）。</p>
+            <p className="text-[0.6875rem] text-muted-foreground">只列出按严重度排序的前 12 条（本次共 {alerts.length} 条）。</p>
           )}
         </>
       )}
@@ -843,7 +843,7 @@ export default function AdminPluginsPage() {
                   <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20">已就绪</Badge>
                 )}
               </div>
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
+              <p className="text-[0.6875rem] text-muted-foreground leading-relaxed">
                 {seedStatus ? (
                   <>代码库内置收录 {seedStatus.totalCatalog} 个官方精选插件（当前已就绪 {seedStatus.upToDateCount} 个）。</>
                 ) : (
@@ -965,14 +965,14 @@ export default function AdminPluginsPage() {
               <div className="rounded-2xl border border-border/80 bg-card/60 p-4 space-y-1">
                 <div className="text-xs text-muted-foreground flex items-center justify-between">
                   <span>总收录插件</span>
-                  <span className="text-[11px] px-1.5 py-0.2 rounded-md bg-muted/60 text-muted-foreground font-mono">
+                  <span className="text-[0.6875rem] px-1.5 py-0.2 rounded-md bg-muted/60 text-muted-foreground font-mono">
                     {telemetry.publishedCount} 已上架
                   </span>
                 </div>
                 <div className="text-2xl font-bold font-mono text-foreground">
                   {telemetry.totalPlugins}
                 </div>
-                <div className="text-[11px] text-muted-foreground pt-0.5">
+                <div className="text-[0.6875rem] text-muted-foreground pt-0.5">
                   待审: <strong className="text-amber-500 font-medium">{telemetry.pendingCount}</strong> · 驳回/下架: {telemetry.rejectedCount + telemetry.delistedCount}
                 </div>
               </div>
@@ -980,14 +980,14 @@ export default function AdminPluginsPage() {
               <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4 space-y-1">
                 <div className="text-xs text-sky-700 dark:text-sky-400 flex items-center justify-between">
                   <span>累计安装总量</span>
-                  <span className="text-[11px] px-1.5 py-0.2 rounded-md bg-sky-500/10 font-mono font-medium">
+                  <span className="text-[0.6875rem] px-1.5 py-0.2 rounded-md bg-sky-500/10 font-mono font-medium">
                     {telemetry.activeInstalls} 活跃
                   </span>
                 </div>
                 <div className="text-2xl font-bold font-mono text-foreground">
                   {telemetry.totalInstalls}
                 </div>
-                <div className="text-[11px] text-muted-foreground pt-0.5">
+                <div className="text-[0.6875rem] text-muted-foreground pt-0.5">
                   活跃留存率: {telemetry.totalInstalls > 0 ? Math.round((telemetry.activeInstalls / telemetry.totalInstalls) * 100) : 100}%
                 </div>
               </div>
@@ -995,7 +995,7 @@ export default function AdminPluginsPage() {
               <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4 space-y-1">
                 <div className="text-xs text-violet-600 dark:text-violet-400 flex items-center justify-between">
                   <span>类型构成分布</span>
-                  <span className="text-[11px] font-mono">5 大类别</span>
+                  <span className="text-[0.6875rem] font-mono">5 大类别</span>
                 </div>
                 <div className="text-xs font-medium text-foreground flex flex-wrap items-center gap-x-2 gap-y-1 pt-1">
                   <span>包: <strong className="font-mono">{telemetry.kindDistribution.sitePack}</strong></span>
@@ -1008,7 +1008,7 @@ export default function AdminPluginsPage() {
                   <span>·</span>
                   <span>组合: <strong className="font-mono">{telemetry.kindDistribution.bundle ?? 0}</strong></span>
                 </div>
-                <div className="text-[11px] text-muted-foreground pt-1">
+                <div className="text-[0.6875rem] text-muted-foreground pt-1">
                   覆盖网址、个人工作台、视觉主题、搜索直达与组合包
                 </div>
               </div>
@@ -1016,14 +1016,14 @@ export default function AdminPluginsPage() {
               <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 space-y-1">
                 <div className="text-xs text-amber-700 dark:text-amber-400 flex items-center justify-between">
                   <span>社区星标与合规</span>
-                  <span className="text-[11px] font-mono font-medium">
+                  <span className="text-[0.6875rem] font-mono font-medium">
                     ⭐ {telemetry.totalStars}
                   </span>
                 </div>
                 <div className="text-2xl font-bold font-mono text-foreground">
                   {telemetry.totalReports}
                 </div>
-                <div className="text-[11px] text-muted-foreground pt-0.5">
+                <div className="text-[0.6875rem] text-muted-foreground pt-0.5">
                   社区违规举报次数（需核查）
                 </div>
               </div>
@@ -1083,7 +1083,7 @@ export default function AdminPluginsPage() {
           </div>
         ) : plugins.length > 0 ? (
           <div className="space-y-3">
-            <p className="text-[11px] font-mono text-muted-foreground">
+            <p className="text-[0.6875rem] font-mono text-muted-foreground">
               共 {listTotal} 个 · 已显示 {plugins.length} 个
             </p>
             {plugins.map((item) => (
@@ -1096,7 +1096,7 @@ export default function AdminPluginsPage() {
                     <span className="p-1 rounded-md bg-muted/60 border border-border/40">
                       {renderKindIcon(item.kind)}
                     </span>
-                    <Badge variant="outline" className="text-[11px] font-medium">
+                    <Badge variant="outline" className="text-[0.6875rem] font-medium">
                       {pluginKindLabel(item.kind)}
                     </Badge>
                     <span className="font-semibold text-sm text-foreground">
@@ -1130,7 +1130,7 @@ export default function AdminPluginsPage() {
                     {item.description || '暂无描述'}
                   </p>
 
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem] text-muted-foreground">
                     <span>
                       作者: <strong className="text-foreground">{item.author || '匿名'}</strong>
                     </span>
@@ -1250,7 +1250,7 @@ export default function AdminPluginsPage() {
                         }}
                         disabled={!item.featured || isRowBusy(`plugin:${item.slug}:featured`)}
                         title={item.featured ? '位次越大越靠前（同分按发布时间）' : '设为精选后可编辑位次'}
-                        className="w-16 px-1.5 py-1 text-[11px] font-mono rounded-lg border border-border/60 bg-background text-foreground disabled:opacity-50 focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                        className="w-16 px-1.5 py-1 text-[0.6875rem] font-mono rounded-lg border border-border/60 bg-background text-foreground disabled:opacity-50 focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                       />
                       <button
                         type="button"
@@ -1375,7 +1375,7 @@ export default function AdminPluginsPage() {
                     onClick={() => setReviewStatus(tab)}
                     aria-pressed={reviewStatus === tab}
                     className={cn(
-                      'px-2 py-0.5 text-[11px] font-medium rounded-md transition-colors',
+                      'px-2 py-0.5 text-[0.6875rem] font-medium rounded-md transition-colors',
                       reviewStatus === tab ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
                     )}
                   >
@@ -1384,7 +1384,7 @@ export default function AdminPluginsPage() {
                 ))}
               </div>
               {!reviewsFailed && (
-                <span className="text-[11px] font-mono text-muted-foreground">共 {reviewsTotal} 条</span>
+                <span className="text-[0.6875rem] font-mono text-muted-foreground">共 {reviewsTotal} 条</span>
               )}
             </div>
             <button
@@ -1400,7 +1400,7 @@ export default function AdminPluginsPage() {
                 refocusSoon(el)
               }}
               disabled={reviewsLoading}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-60"
+              className="inline-flex items-center gap-1 px-2 py-1 text-[0.6875rem] rounded-md border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-60"
             >
               {reviewsLoading ? (
                 <Loader2 className="w-3 h-3 animate-spin" aria-hidden />
@@ -1432,7 +1432,7 @@ export default function AdminPluginsPage() {
               <ul className="space-y-2">
                 {adminReviews.map((review) => (
                   <li key={review.id} className="rounded-xl border border-border/60 bg-background/40 p-3 space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <div className="flex flex-wrap items-center gap-2 text-[0.6875rem]">
                       <Link
                         href={pluginDetailHref(review.pluginSlug)}
                         target="_blank"
@@ -1464,7 +1464,7 @@ export default function AdminPluginsPage() {
                       </p>
                     )}
                     {review.status === 'hidden' && review.moderationNote && (
-                      <p className="text-[11px] text-muted-foreground">隐藏理由：{review.moderationNote}</p>
+                      <p className="text-[0.6875rem] text-muted-foreground">隐藏理由：{review.moderationNote}</p>
                     )}
                     <div className="flex flex-wrap items-center gap-2">
                       {review.status !== 'hidden' && (
@@ -1474,7 +1474,7 @@ export default function AdminPluginsPage() {
                           onChange={(e) => setReviewNoteDrafts((prev) => ({ ...prev, [review.id]: e.target.value }))}
                           placeholder="隐藏理由（可选，留痕用）"
                           maxLength={200}
-                          className="flex-1 min-w-[180px] px-2 py-1 text-[11px] rounded-md border border-border/60 bg-background text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                          className="flex-1 min-w-[180px] px-2 py-1 text-[0.6875rem] rounded-md border border-border/60 bg-background text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                         />
                       )}
                       <button
@@ -1482,7 +1482,7 @@ export default function AdminPluginsPage() {
                         onClick={() => handleModerateReview(review, review.status === 'hidden' ? 'restore' : 'hide')}
                         disabled={isRowBusy(`review:${review.id}:${review.status === 'hidden' ? 'restore' : 'hide'}`)}
                         className={cn(
-                          'inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-md border transition-colors disabled:opacity-60',
+                          'inline-flex items-center gap-1 px-2.5 py-1 text-[0.6875rem] font-medium rounded-md border transition-colors disabled:opacity-60',
                           review.status === 'hidden'
                             ? 'border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10'
                             : 'border-destructive/30 text-destructive-text hover:bg-destructive/15',
@@ -1501,7 +1501,7 @@ export default function AdminPluginsPage() {
                         onClick={() => void handleDeleteReview(review)}
                         disabled={isRowBusy(`review:${review.id}:delete`)}
                         title="彻底删除这条评价（不可恢复；只是违规内容建议改用隐藏）"
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-md border border-destructive/30 text-destructive-text hover:bg-destructive/15 transition-colors disabled:opacity-60"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[0.6875rem] font-medium rounded-md border border-destructive/30 text-destructive-text hover:bg-destructive/15 transition-colors disabled:opacity-60"
                       >
                         {isRowBusy(`review:${review.id}:delete`) && (
                           <Loader2 className="w-3 h-3 animate-spin" aria-hidden />
@@ -1513,7 +1513,7 @@ export default function AdminPluginsPage() {
                 ))}
               </ul>
               {reviewsMoreFailed && (
-                <p role="status" className="text-[11px] text-center text-amber-700 dark:text-amber-400">
+                <p role="status" className="text-[0.6875rem] text-center text-amber-700 dark:text-amber-400">
                   加载更多失败，已加载的评价仍可用，可重试。
                 </p>
               )}
@@ -1614,19 +1614,19 @@ export default function AdminPluginsPage() {
                 {/* 概览指标 */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                   <div className="rounded-lg bg-muted/40 p-2.5 border border-border/50">
-                    <span className="text-muted-foreground block text-[11px]">类型</span>
+                    <span className="text-muted-foreground block text-[0.6875rem]">类型</span>
                     <span className="font-semibold">{pluginKindLabel(auditPluginItem.kind)}</span>
                   </div>
                   <div className="rounded-lg bg-muted/40 p-2.5 border border-border/50">
-                    <span className="text-muted-foreground block text-[11px]">提交作者</span>
+                    <span className="text-muted-foreground block text-[0.6875rem]">提交作者</span>
                     <span className="font-semibold truncate block">{auditPluginItem.author || '匿名'}</span>
                   </div>
                   <div className="rounded-lg bg-muted/40 p-2.5 border border-border/50">
-                    <span className="text-muted-foreground block text-[11px]">唯一标识</span>
-                    <span className="font-mono text-[11px] truncate block">{auditPluginItem.slug}</span>
+                    <span className="text-muted-foreground block text-[0.6875rem]">唯一标识</span>
+                    <span className="font-mono text-[0.6875rem] truncate block">{auditPluginItem.slug}</span>
                   </div>
                   <div className="rounded-lg bg-muted/40 p-2.5 border border-border/50">
-                    <span className="text-muted-foreground block text-[11px]">包含资源</span>
+                    <span className="text-muted-foreground block text-[0.6875rem]">包含资源</span>
                     <span className="font-semibold">
                       {auditManifest?.payload?.sites?.length
                         ? `${auditManifest.payload.sites.length} 个站点`
@@ -1686,7 +1686,7 @@ export default function AdminPluginsPage() {
                     <summary className="cursor-pointer font-medium hover:text-foreground">
                       查看待审完整清单 JSON
                     </summary>
-                    <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-background p-3 text-[11px] font-mono text-foreground border border-border/50">
+                    <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-background p-3 text-[0.6875rem] font-mono text-foreground border border-border/50">
                       {JSON.stringify(auditManifest, null, 2)}
                     </pre>
                   </details>
@@ -1780,7 +1780,7 @@ export default function AdminPluginsPage() {
                 </div>
 
                 {syncResult.details.length > 0 && (
-                  <div className="max-h-48 overflow-y-auto rounded-xl border border-border/60 bg-muted/20 p-2 space-y-1.5 font-mono text-[11px]">
+                  <div className="max-h-48 overflow-y-auto rounded-xl border border-border/60 bg-muted/20 p-2 space-y-1.5 font-mono text-[0.6875rem]">
                     {syncResult.details.map((d, i) => (
                       <div key={i} className="flex items-center justify-between py-0.5 px-1">
                         <span className="truncate max-w-[200px] text-foreground">{d.slug}</span>

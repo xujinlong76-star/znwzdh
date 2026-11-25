@@ -196,6 +196,15 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     checksum: "v1_col_alters",
   },
   {
+    // 2026-11-25：已执行旧列迁移的存量数据库仍需补齐 auth_tokens.target_email。
+    version: "20261125_auth_token_target_email",
+    name: "认证令牌目标邮箱绑定列补齐",
+    up: async (db: Db) => {
+      await migrateColumns(db);
+    },
+    checksum: "v1_auth_token_target_email",
+  },
+  {
     version: "20261010_dedupe_user_emails",
     name: "用户唯一邮箱清洗与多账号冲突处理",
     up: async (db: Db) => {

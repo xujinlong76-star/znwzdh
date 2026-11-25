@@ -3,7 +3,7 @@
  *
  * 业务路由已按域拆分至 ./routes/*.ts（升级改造方案 P1-3：原 2600+ 行单体按域拆为
  * 24 个路由插件 + shared/metrics，行为逐字节一致，OpenAPI 由 onRoute hook 同源收集，
- * 插件 register 顺序即原 server.ts 路由顺序；后陆续增至 57 个路由插件，截至 2026-11-14）。
+ * 插件 register 顺序即原 server.ts 路由顺序；后陆续增至 59 个路由插件，截至 2026-11-14）。
  * 本文件只保留：
  *   - Fastify 实例与横切插件装配（cors / rate-limit）
  *   - 指标采集 hook（数据与文本渲染在 ./metrics.ts）
@@ -102,6 +102,9 @@ import { dramaCalendarRoutes } from "./routes/drama-calendar.ts";
 import { dramaRankingsRoutes } from "./routes/drama-rankings.ts";
 import { accountRoutes } from "./routes/account.ts";
 import { assetRoutes } from "./routes/assets.ts";
+import { similarRoutes } from "./routes/similar.ts";
+import { crawlSourcesRoutes } from "./routes/crawl-sources.ts";
+import { crawlOperationsRoutes } from "./routes/crawl-operations.ts";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -778,6 +781,9 @@ export async function buildServer(ctx: AppContext) {
   await app.register(dramaRankingsRoutes, { ctx });
   await app.register(accountRoutes, { ctx });
   await app.register(assetRoutes, { ctx });
+  await app.register(similarRoutes, { ctx });
+  await app.register(crawlSourcesRoutes, { ctx });
+  await app.register(crawlOperationsRoutes, { ctx });
 
   // 统一 JSON 404：默认响应也是 JSON，但这里显式补上 error 码与 requestId，
   // 便于客户端/排障区分「路由不存在」与「业务 404」（例如 site not found）。

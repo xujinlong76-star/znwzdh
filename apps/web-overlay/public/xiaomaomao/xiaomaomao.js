@@ -2582,9 +2582,13 @@
       for (var i = 0; i < els.length; i++) {
         if (!root.contains(els[i])) return true;
       }
-      var openDialogs = document.querySelectorAll('[role="dialog"][data-state="open"]');
+      var openDialogs = document.querySelectorAll('[role="dialog"][data-state="open"], [role="menu"][data-state="open"]');
       for (var j = 0; j < openDialogs.length; j++) {
         if (!root.contains(openDialogs[j])) return true;
+      }
+      /* 顶部三合一搜索窗展开时同样暂隐小猫，避免桌面/移动端右下角遮住搜索结果按钮 */
+      if (document.querySelector('#navhub-search-suggest-panel, #navhub-search-results-panel, #navhub-search-ai-panel, #navhub-search-similar-panel')) {
+        return true;
       }
     } catch (e) { /* 忽略 */ }
     return false;

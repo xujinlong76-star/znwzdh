@@ -13,6 +13,9 @@ export * from "./repository.ts";
 export { pluginOwnerKey, normalizePluginReviewSort, type PluginReviewSort } from "./repository/plugins.ts";
 export * from "./repository/videos.ts";
 export { computeTagLongTailStats, type TagLongTailStats } from "./repository/taxonomy-governance.ts";
+// 采集审核运营面：候选队列与双人金标标注的仓储函数（历史实现回归后重新导出）
+export * from "./repository/discovery-candidates.ts";
+export * from "./repository/crawl-ai-moderation.ts";
 
 // 数据治理（events / audit_logs 的保留与聚合）：被 apps/api 的 data_retention
 // 任务复用，与 scripts/data-retention.mjs 共用同一份实现（方言无关）

@@ -10,15 +10,7 @@ import { Button } from '@/registry/new-york/ui/button'
 import { ScrollArea } from '@/registry/new-york/ui/scroll-area'
 import type { NavigationData } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
-import { ChevronDown, ChevronRight, Compass, X, Clapperboard, Store, Flame, Layers, Network, Tags } from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/registry/new-york/ui/dropdown-menu'
+import { ChevronDown, ChevronRight, Compass, SlidersHorizontal, X } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { NavIcon } from '@/components/nav-icon'
 import { NAV_ICON_FALLBACK, isIconUrl, resolveNavIcon } from '@/lib/nav-icons'
@@ -495,8 +487,9 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
         <WorkspaceSwitcher />
       </div>
 
-      <ScrollArea className="flex-1 px-2.5 py-2 [&_[data-radix-scroll-area-viewport]>div]:!block">
-        <div className="space-y-0.5 pb-6">
+      <div className="relative flex-1 min-h-0 flex flex-col">
+        <ScrollArea className="flex-1 px-2.5 py-2 [&_[data-radix-scroll-area-viewport]>div]:!block">
+          <div className="space-y-0.5 pb-6">
           {navigationData.navigationItems
             .filter((category) => {
               if (!bypassMaskTemporarily && (hiddenCategoryIds.includes(category.id) || isCategoryHidden(category.id))) {
@@ -627,8 +620,13 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
               )}
             </div>
           )})}
-        </div>
-      </ScrollArea>
+          </div>
+        </ScrollArea>
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-background to-transparent"
+        />
+      </div>
 
       <div className="p-2.5 pb-[max(env(safe-area-inset-bottom,0px),0.625rem)] border-t border-border/40 flex items-center justify-between">
         {!isModuleHidden('mod:crdt-pill') ? (
@@ -642,73 +640,23 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
             全站通知入口统一收口到右上角顶栏铃铛（它自带未读红点）。
             两处铃铛曾是同一订阅源的两个消费者，视觉重复且角标可能不同步；
             现在只保留顶栏一处。这里只留下小猫猫开关。 */}
+        {/* 2026-11-24 入口收口：移除侧栏重复的第二个「探索与专题 🧭」指南针下拉
+            （顶栏探索矩阵已升级为 2 列网格全站枢纽，不再双处重复），保留纯净的偏好设置直达。 */}
         <div className="flex items-center gap-1">
-          {/* 「探索与专题」（2026-11-21 P0-3）：承接从第二行胶囊栏移出的运营入口。
-              短剧热榜原先混在「角色视角切换」行里，既让该行语义变浑、又逼出横向滚动；
-              收进这里后第二行回归纯粹的角色切换，而短剧/插件/热度等入口一个都没丢。 */}
-          <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="探索与专题"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <Compass className="h-4 w-4" aria-hidden />
-                  </button>
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={6}>
-                探索与专题
-              </TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent side="top" align="start" className="w-56 p-1.5">
-              <DropdownMenuLabel className="px-2 py-1 text-xs font-semibold text-muted-foreground">
-                探索与专题
-              </DropdownMenuLabel>
-              <DropdownMenuItem asChild className="min-h-9">
-                <Link href="/drama" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
-                  <Clapperboard className="h-4 w-4 shrink-0 text-rose-500" />
-                  <span className="font-medium text-foreground">短剧热榜</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild className="min-h-9">
-                <Link href="/marketplace" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
-                  <Store className="h-4 w-4 shrink-0 text-emerald-500" />
-                  <span className="font-medium text-foreground">插件精选</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild className="min-h-9">
-                <Link href="/hot" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
-                  <Flame className="h-4 w-4 shrink-0 text-amber-500" />
-                  <span className="font-medium text-foreground">热度趋势榜</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild className="min-h-9">
-                <Link href="/collections" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
-                  <Layers className="h-4 w-4 shrink-0 text-violet-500" />
-                  <span className="font-medium text-foreground">精选专题合集</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator className="my-1" />
-              <DropdownMenuItem asChild className="min-h-9">
-                <Link href="/graph" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
-                  <Network className="h-4 w-4 shrink-0 text-pink-500" />
-                  <span className="font-medium text-foreground">技术生态图谱</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild className="min-h-9">
-                <Link href="/tags" className="flex items-center gap-2.5 px-2 py-1.5 text-xs">
-                  <Tags className="h-4 w-4 shrink-0 text-indigo-500" />
-                  <span className="font-medium text-foreground">全景标签云</span>
-                </Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {/* 2026-11-21：原此处有第二个小猫挂件开关（XiaomaomaoToggle），
-              与右下角浮坞里的挂件重复。全站统一为唯一入口——右下角浮坞。
-              侧栏这里保留位置给未来可能的其它状态徽标。 */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link
+                href="/preferences"
+                aria-label="个性化偏好设置"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <SlidersHorizontal className="h-4 w-4" aria-hidden />
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={6}>
+              个性化偏好设置
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </div>

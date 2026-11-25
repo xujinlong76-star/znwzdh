@@ -58,16 +58,20 @@ export default function BriefWatch() {
     )
   }
 
-  if (watch.due.length === 0 && watch.check.length === 0 && watch.premieringToday.length === 0) return null
+  const due = Array.isArray(watch.due) ? watch.due : []
+  const check = Array.isArray(watch.check) ? watch.check : []
+  const premieringToday = Array.isArray(watch.premieringToday) ? watch.premieringToday : []
+
+  if (due.length === 0 && check.length === 0 && premieringToday.length === 0) return null
 
   return (
     <section aria-label="在追的剧今日提醒" className="rounded-xl border border-amber-300/60 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-950/30">
       <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">
         <BellRing className="h-4 w-4 text-amber-700 dark:text-amber-400" aria-hidden /> 在追的剧 · 今日提醒
       </h2>
-      {watch.premieringToday.length > 0 ? (
+      {premieringToday.length > 0 ? (
         <ul className="space-y-1.5">
-          {watch.premieringToday.map((item) => (
+          {premieringToday.map((item) => (
             <li key={item.key} className="flex flex-wrap items-baseline gap-x-2 text-sm">
               <Link href="/me/watchlist" className="font-medium hover:text-primary">
                 {item.title}
@@ -79,9 +83,9 @@ export default function BriefWatch() {
           ))}
         </ul>
       ) : null}
-      {watch.due.length > 0 ? (
+      {due.length > 0 ? (
         <ul className="space-y-1.5">
-          {watch.due.map((item) => (
+          {due.map((item) => (
             <li key={item.key} className="flex flex-wrap items-baseline gap-x-2 text-sm">
               <a href={safeHref(item.playUrl)} target="_blank" rel="noopener noreferrer" className="font-medium hover:text-primary">
                 {item.title}
@@ -93,9 +97,9 @@ export default function BriefWatch() {
           ))}
         </ul>
       ) : null}
-      {watch.check.length > 0 ? (
+      {check.length > 0 ? (
         <ul className="mt-1.5 space-y-1.5">
-          {watch.check.map((item) => (
+          {check.map((item) => (
             <li key={item.key} className="flex flex-wrap items-baseline gap-x-2 text-sm">
               <a href={safeHref(item.playUrl)} target="_blank" rel="noopener noreferrer" className="font-medium hover:text-primary">
                 {item.title}

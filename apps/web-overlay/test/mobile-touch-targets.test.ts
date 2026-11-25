@@ -166,13 +166,13 @@ describe('P1 #10 触控目标：首页常驻控件', () => {
 })
 
 describe('P1 #10 触控目标：顶部工具栏与开关', () => {
-  it('navigation-toolbar：44×44 按钮 11 处（按宽度预算分档显示），菜单项 44px', () => {
+  it('navigation-toolbar：融合瘦身后 44×44 直接按钮 6 处 + 外观浮层触发器 44×44，零 h-9 w-9 回退', () => {
     const src = read('src/components/navigation-toolbar.tsx')
-    // 判定记录（2026-11-24）：2026-11-21「顶栏收口 11→6」方案已被 U-155/C-W7-5/
-    // U-382 的「按宽度预算分档显示」取代（360px 行 6 钮 / 390px 行 7 钮 /
-    // ≥1536 全量 11 钮，宽度账见 u155-diy-entry-guard.test.ts 与
-    // e2e/toolbar-360-overflow.spec.ts）。触控目标不变：全部 h-11 w-11 = 44px。
-    expect(count(src, 'h-11 w-11')).toBe(11)
+    // 2026-11-24 首页融合瘦身：AI 找站并入三合一搜索框，桌面微件与极客工具并入
+    // 「今日与效率中心」6 标签弹窗，字号/高对比/深浅/长辈/密度收口进 AppearanceQuickPopover，
+    // 顶栏直接保留 6 处 h-11 w-11（今日效率/探索矩阵/用户中心/多选/DIY排版/移动菜单）
+    // + 外观浮层与移动端 AA 字号各 44×44，全宽零溢出且全部维持 44px 触控目标。
+    expect(count(src, 'h-11 w-11')).toBe(6)
     expect(src).not.toContain('h-9 w-9')
     // 收口后单行菜单项改走 min-h-11 px-2.5 text-xs rounded-lg
     // 收口后菜单触发器走 h-9 w-auto rounded-lg px-2（视觉紧凑），
@@ -180,8 +180,9 @@ describe('P1 #10 触控目标：顶部工具栏与开关', () => {
     expect(src).toContain('h-9 w-auto gap-1.5 rounded-lg px-2 text-xs')
   })
 
-  it('六个开关触发器 44px（字号/长辈/皮肤/密度/主题/视图）', () => {
+  it('七个开关触发器 44px（外观聚合/字号/长辈/皮肤/密度/主题/视图）', () => {
     for (const f of [
+      'src/components/appearance-quick-popover.tsx',
       'src/components/mode-toggle.tsx',
       'src/components/font-size-toggle.tsx',
       'src/components/elder-mode-toggle.tsx',

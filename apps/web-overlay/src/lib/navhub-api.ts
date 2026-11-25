@@ -973,6 +973,169 @@ export async function fetchSimilarByTags(
   )
 }
 
+/* ---------------------- SimilarSites 多信号相似发现 ---------------------- */
+
+export type HubSimilarScopeFilter = 'all' | 'same-category' | 'cross-category'
+export type HubSimilarSortBy = 'similarity' | 'popularity' | 'latency' | 'tags'
+
+export interface HubSimilarSignalBreakdown {
+  tags: number
+  semantic: number
+  category: number
+  facets: number
+  graph: number
+}
+
+export interface HubSimilarSiteMatch {
+  site: HubSite
+  categoryName: string | null
+  parentCategoryName: string | null
+  similarityPercent: number
+  siteRank: number
+  categoryRank: number
+  sameCategory: boolean
+  sameParentCategory: boolean
+  relationType: string | null
+  relationNote: string | null
+  isOpenSource: boolean
+  isHealthy: boolean
+  isSameBrand: boolean
+  sharedTags: string[]
+  uniqueTags: string[]
+  sharedFacets: string[]
+  reasons: string[]
+  breakdown: HubSimilarSignalBreakdown
+}
+
+export interface HubSimilarTargetProfile {
+  site: HubSite
+  categoryName: string | null
+  parentCategoryName: string | null
+  siteRank: number
+  totalActiveSites: number
+  categoryRank: number
+  categoryTotal: number
+  isOpenSource: boolean
+}
+
+export interface HubSimilarSitesSummary {
+  totalFound: number
+  sameCategoryCount: number
+  crossCategoryCount: number
+  openSourceCount: number
+  healthyCount: number
+  sameBrandCount: number
+  topSharedTags: Array<{ tag: string; count: number }>
+  categories: Array<{ id: string; name: string; count: number }>
+  signalMode: 'hybrid-vector' | 'hybrid-lexical'
+}
+
+export interface HubSimilarSitesReport {
+  matchType: 'exact-site' | 'matched-site' | 'topic-discovery'
+  query: string
+  target: HubSimilarTargetProfile | null
+  summary: HubSimilarSitesSummary
+  items: HubSimilarSiteMatch[]
+}
+
+export interface HubSimilarQueryParams {
+  limit?: number
+  scope?: HubSimilarScopeFilter
+  categoryId?: string
+  openSource?: boolean
+  healthyOnly?: boolean
+  excludeSameBrand?: boolean
+  tag?: string
+  sort?: HubSimilarSortBy
+}
+
+export interface HubSimilarSuggestion {
+  id: string
+  title: string
+  url: string
+  iconKey: string | null
+  description: string | null
+  categoryName: string | null
+  tags: string[]
+}
+
+function buildSimilarSearchParams(params?: HubSimilarQueryParams): string {
+  const sp = new URLSearchParams()
+  if (params?.limit) sp.set('limit', String(params.limit))
+  if (params?.scope && params.scope !== 'all') sp.set('scope', params.scope)
+  if (params?.categoryId) sp.set('categoryId', params.categoryId)
+  if (params?.openSource) sp.set('openSource', '1')
+  if (params?.healthyOnly) sp.set('healthyOnly', '1')
+  if (params?.excludeSameBrand) sp.set('excludeSameBrand', '1')
+  if (params?.tag) sp.set('tag', params.tag)
+  if (params?.sort && params.sort !== 'similarity') sp.set('sort', params.sort)
+  return sp.toString()
+}
+
+/** 指定站点的多信号相似站分析报告（走 Next BFF：原生中枢优先 + 零停机无缝降级） */
+export async function fetchSiteSimilarInsights(
+  siteId: string,
+  params?: HubSimilarQueryParams,
+  onDegraded?: DegradedHandler,
+): Promise<HubSimilarSitesReport | null> {
+  return degrade<HubSimilarSitesReport | null>(
+    null,
+    async () => {
+      const sp = new URLSearchParams(buildSimilarSearchParams(params))
+      sp.set('mode', 'insights')
+      sp.set('siteId', siteId)
+      const res = await fetch(`/api/similar?${sp.toString()}`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return (await res.json()) as HubSimilarSitesReport
+    },
+    onDegraded,
+  )
+}
+
+/** 输入任意网址/域名/站点名/关键词查找相似站点（SimilarSites 风格） */
+export async function lookupSimilarSites(
+  query: string,
+  params?: HubSimilarQueryParams,
+  onDegraded?: DegradedHandler,
+): Promise<HubSimilarSitesReport | null> {
+  const q = query.trim()
+  if (!q) return null
+  return degrade<HubSimilarSitesReport | null>(
+    null,
+    async () => {
+      const sp = new URLSearchParams(buildSimilarSearchParams(params))
+      sp.set('mode', 'lookup')
+      sp.set('q', q)
+      const res = await fetch(`/api/similar?${sp.toString()}`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return (await res.json()) as HubSimilarSitesReport
+    },
+    onDegraded,
+  )
+}
+
+/** 获取 /similar 发现页精选种子站 */
+export async function fetchSimilarSuggestions(
+  limit = 12,
+  onDegraded?: DegradedHandler,
+): Promise<{ totalActiveSites: number; items: HubSimilarSuggestion[] }> {
+  return degrade(
+    { totalActiveSites: 0, items: [] },
+    async () => {
+      const res = await fetch(`/api/similar?mode=suggestions&limit=${limit}`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return (await res.json()) as { totalActiveSites: number; items: HubSimilarSuggestion[] }
+    },
+    onDegraded,
+  )
+}
+
 /* ------------------------------ 收藏夹 ------------------------------ */
 
 /**

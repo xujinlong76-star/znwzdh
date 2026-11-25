@@ -79,6 +79,7 @@ import { safeHref } from '@/lib/safe-url'
 import { cn } from '@/lib/utils'
 import { useSiteViewModel } from '@/components/site-view-context'
 import { SaveAnnotationPanel } from '@/components/save-annotation-panel'
+import { SimilarSitesExplorer } from '@/components/similar-sites-explorer'
 import { externalLinkRelAttr } from '@/lib/site-settings'
 import { useToast } from '@/components/ui/use-toast'
 import {
@@ -1421,6 +1422,14 @@ export function SiteDetailView({
             </div>
           </section>
         )}
+
+        {/* SimilarSites 级 5 维多信号相似站点发现与竞品雷达 */}
+        <SimilarSitesExplorer
+          mode="embedded"
+          siteId={site.id}
+          siteTitle={site.title}
+          siteUrl={site.url}
+        />
 
         {/* 相关站点：服务端下发的站内 /site 内链（爬虫可见），
             与客户端 KNN 外链推荐分开——前者补内链图，后者做发现。

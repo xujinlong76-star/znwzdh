@@ -13,14 +13,14 @@ import {
   SiteItemTitle,
   type SiteItemController,
 } from '@/components/site-item-shell'
-import { Eye, EyeOff, Star, Zap, Pin, Copy, ArrowUpToLine, Globe } from 'lucide-react'
+import { Eye, EyeOff, Star, Zap, Pin, Copy, ArrowUpToLine, Globe, ArrowUpRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { tagSlug } from '@/lib/seo/tag-slug'
 import type { CanonicalCardDisplayMode } from '@/lib/modular/card-display-modes'
 
 export type ExtendedCardVariantMode = Extract<
   CanonicalCardDisplayMode,
-  'icon-wall' | 'list' | 'minimal' | 'directory'
+  'icon-wall' | 'list' | 'minimal' | 'directory' | 'bento' | 'glass-dock' | 'magazine' | 'terminal'
 >
 
 export interface NavigationCardVariantProps {
@@ -695,7 +695,640 @@ function DirectoryRowItemView({ controller }: { controller: SiteItemController }
 }
 
 /**
- * 4 种扩展网址展示范式的纯 UI 分发入口：全部共享 `SiteItemShell` 无头交互壳。
+ * 模式 E：灵动磁贴（`bento` — Apple Keynote / Bento Grid 品牌微光磁贴纯 UI 表现层）
+ */
+function BentoTileItemView({ controller }: { controller: SiteItemController }) {
+  const {
+    item,
+    hostname,
+    isPinnedInCategory,
+    isEditingLayout,
+    dialDigit,
+    effectiveCardElements,
+    handleTagClick,
+    handlePruneSite,
+    handleCopyLink,
+    onPeek,
+    renderDragControls,
+    detailAction,
+  } = controller
+
+  const gradient = getDeterministicGradient(item.title || 'navhub')
+
+  return (
+    <SiteItemShell
+      mode="bento"
+      controller={controller}
+      linkClassName="rounded-2xl"
+      className={cn(
+        'nav-card-deferred group/card relative flex h-full min-h-[132px] min-w-0 flex-col justify-between overflow-hidden rounded-2xl border border-border/70 bg-card p-3.5 shadow-2xs transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/45 hover:shadow-[var(--depth-float)] dark:bg-card/85',
+        isPinnedInCategory && 'border-pinned/45 ring-1 ring-inset ring-pinned/35',
+        isEditingLayout && 'border-dashed border-border/75',
+      )}
+    >
+      {/* 顶部品牌彩条 + 左上角柔和径向微光 */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-[3px] opacity-85 transition-opacity duration-200 group-hover/card:opacity-100"
+        style={{ background: gradient.cssGradient }}
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-10 -left-10 h-28 w-28 rounded-full opacity-[0.10] blur-2xl transition-opacity duration-300 group-hover/card:opacity-[0.20] dark:opacity-[0.16] dark:group-hover/card:opacity-[0.28]"
+        style={{ background: gradient.cssGradient }}
+      />
+
+      {/* 顶部行：40×40 浮雕品牌图标 + 右上角贴边域名/星标（悬浮无缝切为快捷动作） */}
+      <div className="relative z-10 flex items-start justify-between gap-2">
+        <div className="pointer-events-none relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-background p-1.5 shadow-xs transition-transform duration-200 group-hover/card:scale-105 dark:bg-white/[0.10]">
+          <SiteFavicon
+            title={item.title}
+            url={item.href}
+            icon={item.icon}
+            useDefaultIcon={item.useDefaultIcon}
+            className="h-full w-full rounded-md object-contain"
+          />
+          <NumberDialBadge digit={dialDigit} className="-right-1.5 -bottom-1.5 z-20" />
+        </div>
+
+        <div className="relative z-20 flex min-w-0 shrink items-center justify-end gap-1">
+          {isEditingLayout ? (
+            <div
+              data-diy-inline-controls="bento"
+              className="flex items-center gap-0.5 rounded-lg border border-border/60 bg-background/95 p-0.5 shadow-2xs"
+            >
+              {renderDragControls('h-6 w-6 rounded-md')}
+              <Button
+                type="button"
+                tabIndex={-1}
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-md text-destructive-text hover:bg-destructive/15"
+                title="🙈 隐藏此站点（移入回收站）"
+                aria-label={`隐藏站点：${item.title}`}
+                onClick={handlePruneSite}
+              >
+                <EyeOff className="h-3 w-3" />
+              </Button>
+            </div>
+          ) : (
+            <>
+              {item.liveMetrics?.githubStars ? (
+                <span className="pointer-events-none inline-flex items-center gap-0.5 rounded-full border border-pinned/30 bg-pinned/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-pinned-foreground group-hover/card:hidden group-focus-within/card:hidden pointer-coarse:hidden">
+                  <Star className="h-2.5 w-2.5 fill-pinned text-pinned" />
+                  {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
+                </span>
+              ) : hostname ? (
+                <span className="pointer-events-none hidden max-w-[160px] truncate rounded-full border border-border/50 bg-muted/50 px-2 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline-block group-hover/card:hidden group-focus-within/card:hidden pointer-coarse:hidden">
+                  {hostname}
+                </span>
+              ) : null}
+
+              <div className="hidden items-center gap-0.5 group-hover/card:flex group-focus-within/card:flex pointer-coarse:flex">
+                {detailAction('h-6 w-6 rounded-md')}
+                <Button
+                  type="button"
+                  tabIndex={-1}
+                  data-card-action=""
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                  title="速览与行动 (Space)"
+                  aria-label={`速览与行动：${item.title}`}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onPeek?.(item)
+                  }}
+                >
+                  <Eye className="h-3 w-3" />
+                </Button>
+                <Button
+                  type="button"
+                  tabIndex={-1}
+                  data-card-action=""
+                  variant="ghost"
+                  size="icon"
+                  className="hidden h-6 w-6 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground sm:inline-flex"
+                  title="复制网址链接"
+                  aria-label={`复制链接：${item.title}`}
+                  onClick={handleCopyLink}
+                >
+                  <Copy className="h-3 w-3" />
+                </Button>
+                <FavoriteButton
+                  tabIndex={-1}
+                  cardAction
+                  site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* 中部：标题 + 两行简介 */}
+      <div className="pointer-events-none relative z-10 mt-2.5 min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <SiteItemTitle
+            controller={controller}
+            className="truncate text-[13.5px] font-bold tracking-tight text-foreground transition-colors group-hover/card:text-primary"
+          />
+          {isPinnedInCategory && (
+            <Pin className="h-3 w-3 shrink-0 fill-pinned text-pinned" />
+          )}
+        </div>
+        {effectiveCardElements.showDescription && (
+          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+            {item.description || hostname}
+          </p>
+        )}
+      </div>
+
+      {/* 底部：微标签行 */}
+      {effectiveCardElements.showTags && item.tags && item.tags.length > 0 && (
+        <div className="relative z-20 mt-2.5 flex flex-wrap items-center gap-1">
+          {item.tags.slice(0, 2).map((tag) => (
+            <Link
+              key={tag}
+              href={'/tags/' + encodeURIComponent(tagSlug(tag))}
+              onClick={handleTagClick}
+              tabIndex={-1}
+              data-card-action=""
+              className="pointer-events-auto inline-flex items-center rounded-md border border-border/50 bg-muted/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+            >
+              #{tag}
+            </Link>
+          ))}
+        </div>
+      )}
+    </SiteItemShell>
+  )
+}
+
+/**
+ * 模式 F：磨砂晶格（`glass-dock` — visionOS 空间浮雕晶格 + 居中圆标底座纯 UI 表现层）
+ */
+function GlassDockItemView({ controller }: { controller: SiteItemController }) {
+  const {
+    item,
+    hostname,
+    isPinnedInCategory,
+    isEditingLayout,
+    dialDigit,
+    handlePruneSite,
+    onPeek,
+    renderDragControls,
+  } = controller
+
+  return (
+    <SiteItemShell
+      mode="glass-dock"
+      controller={controller}
+      withTooltip
+      linkClassName="rounded-2xl"
+      className={cn(
+        'nav-card-deferred group/card relative flex min-w-0 flex-col items-center justify-center rounded-2xl border border-border/70 bg-gradient-to-b from-card via-card to-muted/45 px-3 py-4 text-center shadow-xs ring-1 ring-inset ring-white/60 transition-all duration-200 hover:-translate-y-1 hover:border-primary/45 hover:shadow-lg dark:to-muted/20 dark:ring-white/[0.06]',
+        isPinnedInCategory && 'border-pinned/45 bg-pinned/[0.05] ring-pinned/30',
+        isEditingLayout && 'border-dashed border-border/75',
+      )}
+    >
+      {/* 左上角轻量动作 / DIY 手柄 */}
+      <div
+        className={cn(
+          'absolute top-1.5 left-1.5 z-20 flex items-center gap-0.5 transition-opacity duration-150',
+          isEditingLayout
+            ? 'pointer-events-auto opacity-100'
+            : 'pointer-events-none opacity-0 group-hover/card:pointer-events-auto group-hover/card:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100',
+        )}
+      >
+        {isEditingLayout ? (
+          <>
+            {renderDragControls('h-6 w-6 rounded-full bg-background/95 border border-border/60 shadow-2xs')}
+            <Button
+              type="button"
+              tabIndex={-1}
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 rounded-full border border-border/60 bg-background/95 text-destructive-text shadow-2xs hover:bg-destructive/15"
+              title="🙈 隐藏此站点（移入回收站）"
+              aria-label={`隐藏站点：${item.title}`}
+              onClick={handlePruneSite}
+            >
+              <EyeOff className="h-3 w-3" />
+            </Button>
+          </>
+        ) : (
+          <Button
+            type="button"
+            tabIndex={-1}
+            data-card-action=""
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 rounded-full border border-border/60 bg-background/95 text-muted-foreground shadow-2xs hover:text-foreground"
+            title="速览与行动 (Space)"
+            aria-label={`速览与行动：${item.title}`}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onPeek?.(item)
+            }}
+          >
+            <Eye className="h-3 w-3" />
+          </Button>
+        )}
+      </div>
+
+      {/* 右上角收藏 */}
+      <div
+        className={cn(
+          'absolute top-1.5 right-1.5 z-20 transition-opacity duration-150',
+          isEditingLayout
+            ? 'opacity-100'
+            : 'opacity-0 group-hover/card:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100',
+        )}
+      >
+        <FavoriteButton
+          tabIndex={-1}
+          cardAction
+          className="pointer-events-auto border border-border/60 bg-background/95 shadow-2xs"
+          site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
+        />
+      </div>
+
+      {/* 居中内凹圆形晶格底座 */}
+      <div className="pointer-events-none relative z-10 flex h-12 w-12 items-center justify-center rounded-full border border-border/60 bg-background p-2.5 shadow-inner ring-4 ring-muted/45 transition-all duration-200 group-hover/card:scale-105 group-hover/card:ring-primary/15 dark:bg-white/[0.10] dark:ring-muted/25">
+        <SiteFavicon
+          title={item.title}
+          url={item.href}
+          icon={item.icon}
+          useDefaultIcon={item.useDefaultIcon}
+          className="h-full w-full rounded-full object-contain"
+        />
+        {isPinnedInCategory && (
+          <span
+            title="当前分类已置顶"
+            className="absolute -top-1 -left-1 z-20 flex h-4 w-4 items-center justify-center rounded-full border border-pinned/40 bg-background shadow-xs"
+          >
+            <Pin className="h-2.5 w-2.5 fill-pinned text-pinned" />
+          </span>
+        )}
+        <NumberDialBadge digit={dialDigit} className="-right-1.5 -bottom-1.5 z-20" />
+      </div>
+
+      {/* 站名与精简域名 */}
+      <div className="pointer-events-none relative z-10 mt-2.5 w-full min-w-0 px-1">
+        <SiteItemTitle
+          controller={controller}
+          className="block truncate text-[13px] font-semibold tracking-tight text-foreground transition-colors group-hover/card:text-primary"
+        />
+        {hostname && (
+          <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+            {hostname}
+          </p>
+        )}
+      </div>
+    </SiteItemShell>
+  )
+}
+
+/**
+ * 模式 G：杂志社论（`magazine` — Readwise / Editorial 左侧品牌彩带 + 舒朗导读三段式纯 UI 表现层）
+ */
+function MagazineCardItemView({ controller }: { controller: SiteItemController }) {
+  const {
+    item,
+    hostname,
+    isPinnedInCategory,
+    isEditingLayout,
+    isSpeedDialPinned,
+    dialDigit,
+    effectiveCardElements,
+    handleTagClick,
+    handlePruneSite,
+    handleToggleSpeedDial,
+    handleCopyLink,
+    onPeek,
+    renderDragControls,
+    detailAction,
+  } = controller
+
+  const gradient = getDeterministicGradient(item.title || 'navhub')
+
+  return (
+    <SiteItemShell
+      mode="magazine"
+      controller={controller}
+      linkClassName="rounded-2xl"
+      className={cn(
+        'nav-card-deferred group/card relative flex h-full min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-2xs transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[var(--depth-float)] dark:bg-card/85',
+        isPinnedInCategory && 'border-pinned/45 ring-1 ring-inset ring-pinned/30',
+        isEditingLayout && 'border-dashed border-border/75',
+      )}
+    >
+      {/* 左侧品牌垂直彩带 */}
+      <div
+        aria-hidden="true"
+        className="w-1.5 shrink-0 opacity-80 transition-opacity duration-200 group-hover/card:opacity-100"
+        style={{ background: gradient.cssGradient }}
+      />
+
+      <div className="flex min-w-0 flex-1 flex-col justify-between p-3.5">
+        {/* 头部：图标 + 杂志标题 + 域名芯片 */}
+        <div>
+          <div className="pointer-events-none relative z-10 flex items-center gap-2.5">
+            <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/40 p-1 dark:bg-white/[0.10]">
+              <SiteFavicon
+                title={item.title}
+                url={item.href}
+                icon={item.icon}
+                useDefaultIcon={item.useDefaultIcon}
+                className="h-full w-full rounded-sm object-contain"
+              />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <SiteItemTitle
+                  controller={controller}
+                  className="truncate text-[14px] font-bold tracking-tight text-foreground transition-colors group-hover/card:text-primary"
+                />
+                <NumberDialBadge digit={dialDigit} inline />
+                {isPinnedInCategory && (
+                  <Pin className="h-3 w-3 shrink-0 fill-pinned text-pinned" />
+                )}
+              </div>
+              <div className="mt-0.5 flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
+                {hostname && (
+                  <span className="inline-flex min-w-0 items-center gap-0.5 truncate">
+                    <span className="truncate">{hostname}</span>
+                    <ArrowUpRight className="h-2.5 w-2.5 shrink-0" />
+                  </span>
+                )}
+                {item.liveMetrics?.githubStars && (
+                  <span className="inline-flex shrink-0 items-center gap-0.5 text-pinned-foreground">
+                    <Star className="h-2.5 w-2.5 fill-pinned text-pinned" />
+                    {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 舒朗导读正文 */}
+          {effectiveCardElements.showDescription && (
+            <p className="pointer-events-none relative z-10 mt-2.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+              {item.description || '点击直达官方站点，探索完整内容与工具能力。'}
+            </p>
+          )}
+        </div>
+
+        {/* 底部细线页脚：左侧单行标签（防两行撑高破坏等高对齐）+ 右侧动作 / DIY 编排 */}
+        <div className="relative z-20 mt-3 flex items-center justify-between gap-2 border-t border-border/50 pt-2">
+          <div className="flex min-w-0 flex-nowrap items-center gap-1 overflow-hidden">
+            {effectiveCardElements.showTags && item.tags && item.tags.length > 0 ? (
+              item.tags.slice(0, 2).map((tag) => (
+                <Link
+                  key={tag}
+                  href={'/tags/' + encodeURIComponent(tagSlug(tag))}
+                  onClick={handleTagClick}
+                  tabIndex={-1}
+                  data-card-action=""
+                  className="pointer-events-auto inline-flex max-w-[96px] shrink-0 items-center truncate rounded-full bg-muted/65 px-2 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                >
+                  #{tag}
+                </Link>
+              ))
+            ) : (
+              <span className="pointer-events-none font-mono text-[10px] text-muted-foreground">
+                {hostname || '精选收录'}
+              </span>
+            )}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-0.5">
+            {isEditingLayout ? (
+              <div
+                data-diy-inline-controls="magazine"
+                className="flex items-center gap-0.5"
+              >
+                {renderDragControls('h-6 w-6 rounded-md')}
+                <Button
+                  type="button"
+                  tabIndex={-1}
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    'h-6 w-6 rounded-md transition-colors',
+                    isSpeedDialPinned ? 'bg-pinned/15 text-pinned' : 'text-muted-foreground hover:text-pinned',
+                  )}
+                  title={isSpeedDialPinned ? '从首屏速览坞取消固定' : '📌 钉入首屏速览坞'}
+                  aria-label={isSpeedDialPinned ? `从速览坞取消固定：${item.title}` : `钉入速览坞：${item.title}`}
+                  onClick={handleToggleSpeedDial}
+                >
+                  <Zap className={cn('h-3 w-3', isSpeedDialPinned && 'fill-pinned')} />
+                </Button>
+                <Button
+                  type="button"
+                  tabIndex={-1}
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-md text-destructive-text hover:bg-destructive/15"
+                  title="🙈 隐藏此站点（移入回收站）"
+                  aria-label={`隐藏站点：${item.title}`}
+                  onClick={handlePruneSite}
+                >
+                  <EyeOff className="h-3 w-3" />
+                </Button>
+              </div>
+            ) : (
+              <>
+                {detailAction('h-6 w-6 rounded-md')}
+                <Button
+                  type="button"
+                  tabIndex={-1}
+                  data-card-action=""
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                  title="速览与行动 (Space)"
+                  aria-label={`速览与行动：${item.title}`}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onPeek?.(item)
+                  }}
+                >
+                  <Eye className="h-3 w-3" />
+                </Button>
+                <Button
+                  type="button"
+                  tabIndex={-1}
+                  data-card-action=""
+                  variant="ghost"
+                  size="icon"
+                  className="hidden h-6 w-6 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground sm:inline-flex"
+                  title="复制网址链接"
+                  aria-label={`复制链接：${item.title}`}
+                  onClick={handleCopyLink}
+                >
+                  <Copy className="h-3 w-3" />
+                </Button>
+                <FavoriteButton
+                  tabIndex={-1}
+                  cardAction
+                  site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
+                />
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </SiteItemShell>
+  )
+}
+
+/**
+ * 模式 H：终端索引（`terminal` — Warp / CLI 等宽命令行索引纯 UI 表现层）
+ */
+function TerminalRowItemView({ controller }: { controller: SiteItemController }) {
+  const {
+    item,
+    hostname,
+    isPinnedInCategory,
+    isEditingLayout,
+    dialDigit,
+    handlePruneSite,
+    handleCopyLink,
+    onPeek,
+    renderDragControls,
+    detailAction,
+  } = controller
+
+  return (
+    <SiteItemShell
+      mode="terminal"
+      controller={controller}
+      withTooltip
+      linkClassName="rounded-lg"
+      className={cn(
+        'nav-card-deferred group/card relative flex h-10 min-w-0 items-center justify-between gap-2 overflow-hidden rounded-lg border border-border/70 bg-muted/30 px-2.5 transition-all duration-150 hover:border-primary/50 hover:bg-card hover:shadow-2xs dark:bg-card/70',
+        isPinnedInCategory && 'border-pinned/45 bg-pinned/[0.05]',
+        isEditingLayout && 'border-dashed border-border/75',
+      )}
+    >
+      {/* 左侧终端激活指示条 */}
+      <span
+        aria-hidden="true"
+        className={cn(
+          'pointer-events-none absolute inset-y-1.5 left-0 w-[3px] rounded-r-full transition-colors duration-150',
+          isPinnedInCategory ? 'bg-pinned' : 'bg-transparent group-hover/card:bg-primary',
+        )}
+      />
+
+      {/* 等宽命令流：› + favicon + 站名 + 点状引导线 + 域名 */}
+      <div className="pointer-events-none relative z-10 flex min-w-0 flex-1 items-center gap-2">
+        <span
+          aria-hidden="true"
+          className="shrink-0 font-mono text-xs font-bold text-emerald-700 dark:text-emerald-400"
+        >
+          ›
+        </span>
+        <div className="relative flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-xs dark:bg-white/[0.10] dark:p-0.5">
+          <SiteFavicon
+            title={item.title}
+            url={item.href}
+            icon={item.icon}
+            useDefaultIcon={item.useDefaultIcon}
+            className="h-full w-full rounded-xs object-contain"
+          />
+        </div>
+        <SiteItemTitle
+          controller={controller}
+          className="truncate font-mono text-[12.5px] font-semibold text-foreground transition-colors group-hover/card:text-primary"
+        />
+        <NumberDialBadge digit={dialDigit} inline />
+        {isPinnedInCategory && (
+          <Pin className="h-2.5 w-2.5 shrink-0 fill-pinned text-pinned" />
+        )}
+        {hostname && !isEditingLayout && (
+          <>
+            <span
+              aria-hidden="true"
+              className="hidden min-w-3 flex-1 border-b border-dotted border-border/80 sm:block"
+            />
+            <span className="hidden max-w-[135px] shrink-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
+              {hostname}
+            </span>
+          </>
+        )}
+      </div>
+
+      {/* 右侧动作区：DIY 紧凑内联 / 常态悬浮渐隐 */}
+      {isEditingLayout ? (
+        <div
+          data-diy-inline-controls="terminal"
+          className="relative z-20 flex shrink-0 items-center gap-0.5"
+        >
+          {renderDragControls('h-6 w-6 rounded-md')}
+          <Button
+            type="button"
+            tabIndex={-1}
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 rounded-md text-destructive-text hover:bg-destructive/15"
+            title="🙈 隐藏此站点"
+            aria-label={`隐藏站点：${item.title}`}
+            onClick={handlePruneSite}
+          >
+            <EyeOff className="h-3 w-3" />
+          </Button>
+        </div>
+      ) : (
+        <div className="pointer-events-none absolute right-1.5 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-r-md bg-gradient-to-l from-card via-card to-transparent pl-8 pr-1 py-0.5 opacity-0 transition-opacity sm:group-hover/card:pointer-events-auto sm:group-hover/card:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100">
+          {detailAction('h-6 w-6 rounded-md')}
+          <Button
+            type="button"
+            tabIndex={-1}
+            data-card-action=""
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            title="速览与行动"
+            aria-label={`速览与行动：${item.title}`}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onPeek?.(item)
+            }}
+          >
+            <Eye className="h-3 w-3" />
+          </Button>
+          <Button
+            type="button"
+            tabIndex={-1}
+            data-card-action=""
+            variant="ghost"
+            size="icon"
+            className="hidden h-6 w-6 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground sm:inline-flex"
+            title="复制网址链接"
+            aria-label={`复制链接：${item.title}`}
+            onClick={handleCopyLink}
+          >
+            <Copy className="h-3 w-3" />
+          </Button>
+          <FavoriteButton
+            tabIndex={-1}
+            cardAction
+            site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
+          />
+        </div>
+      )}
+    </SiteItemShell>
+  )
+}
+
+/**
+ * 8 种扩展网址展示范式的纯 UI 分发入口：全部共享 `SiteItemShell` 无头交互壳。
  */
 export function NavigationCardVariant({ mode, controller }: NavigationCardVariantProps) {
   switch (mode) {
@@ -705,6 +1338,14 @@ export function NavigationCardVariant({ mode, controller }: NavigationCardVarian
       return <ListRowItemView controller={controller} />
     case 'minimal':
       return <MinimalChipItemView controller={controller} />
+    case 'bento':
+      return <BentoTileItemView controller={controller} />
+    case 'glass-dock':
+      return <GlassDockItemView controller={controller} />
+    case 'magazine':
+      return <MagazineCardItemView controller={controller} />
+    case 'terminal':
+      return <TerminalRowItemView controller={controller} />
     case 'directory':
     default:
       return <DirectoryRowItemView controller={controller} />

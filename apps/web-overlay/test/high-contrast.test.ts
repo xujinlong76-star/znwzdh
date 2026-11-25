@@ -394,65 +394,47 @@ describe("高对比开关接线（源码守卫：组件需 DOM，无法挂载，
   });
 });
 
-describe("工具栏挂载（源码守卫）：与字号开关并排，全尺寸可见，不收进探索菜单（W3 补）", () => {
+describe("工具栏挂载（源码守卫）：2026-11-24 外观与阅读聚合浮层收口（全尺寸一键可达，零宽度溢出）", () => {
   const toolbar = readFileSync(join(ROOT, "src/components/navigation-toolbar.tsx"), "utf8");
+  const popover = readFileSync(join(ROOT, "src/components/appearance-quick-popover.tsx"), "utf8");
 
-  it("引入并挂在字号切换旁、主题切换前", () => {
-    expect(toolbar).toContain("import { HighContrastToggle } from '@/components/high-contrast-toggle'");
-    expect(toolbar).toContain("<HighContrastToggle />");
-    const fontSizeAt = toolbar.indexOf('<div className="inline-flex"><FontSizeToggle /></div>');
-    const contrastAt = toolbar.indexOf("<HighContrastToggle />");
-    const modeAt = toolbar.indexOf("<ModeToggle />");
+  it("工具栏挂载 AppearanceQuickPopover，浮层内按顺序集成字号 / 高对比 / 深浅主题", () => {
+    expect(toolbar).toContain("import { AppearanceQuickPopover } from '@/components/appearance-quick-popover'");
+    expect(toolbar).toContain("<AppearanceQuickPopover");
+    expect(popover).toContain("import { HighContrastToggle } from '@/components/high-contrast-toggle'");
+    expect(popover).toContain("<HighContrastToggle />");
+    const fontSizeAt = popover.indexOf("<FontSizeToggle />");
+    const contrastAt = popover.indexOf("<HighContrastToggle />");
+    const modeAt = popover.indexOf("<ModeToggle />");
     expect(fontSizeAt).toBeGreaterThan(-1);
     expect(contrastAt).toBeGreaterThan(fontSizeAt);
     expect(modeAt).toBeGreaterThan(contrastAt);
   });
 
-  it("挂载容器沿用字号开关的 inline-flex 形态，不带 hidden，不在菜单内", () => {
-    const line = toolbar.split("\n").find((l) => l.includes("<HighContrastToggle />"));
-    expect(line).toBeDefined();
-    expect(line as string).toContain('className="inline-flex"');
-    expect(line as string).not.toContain("hidden");
+  it("高对比与深浅主题在外观聚合浮层内全尺寸直出（不隐藏）", () => {
+    expect(popover).toContain("高对比度");
+    expect(popover).toContain("深色 / 浅色");
+    expect(popover).toContain('aria-label="打开外观与阅读设置"');
   });
 
-  it("W8：ModeToggle 包在 hidden sm:inline-flex 容器内，<sm 隐藏、≥sm 恢复显示", () => {
-    const line = toolbar.split("\n").find((l) => l.includes("<ModeToggle />"));
-    expect(line).toBeDefined();
-    expect(line as string).toContain('className="hidden sm:inline-flex"');
-    expect(line as string).toContain("<ModeToggle />");
-    // 高对比开关那一行不动：仍是 inline-flex、无 hidden
-    const contrastLine = toolbar.split("\n").find((l) => l.includes("<HighContrastToggle />"));
-    expect(contrastLine as string).toContain('className="inline-flex"');
-    expect(contrastLine as string).not.toContain("hidden");
-  });
-
-  it("W8：探索菜单内有仅 <sm 可见的「切换主题」条目，setTheme 三元式与 ModeToggle 一致", () => {
+  it("移动端探索菜单仍保留 <sm 可见的「切换深色 / 浅色」条目，setTheme 三元式与 ModeToggle 一致", () => {
     expect(toolbar).toContain("import { useTheme } from 'next-themes'");
     expect(toolbar).toContain("const { resolvedTheme, setTheme } = useTheme()");
     expect(toolbar).toContain("setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')");
-    expect(toolbar).toContain("切换主题");
-    expect(toolbar).toContain("深色 / 浅色");
-    // 图标按当前主题：深色 Moon、浅色 Sun（与 ModeToggle 的 Sun/Moon 对应）
+    expect(toolbar).toContain("切换深色 / 浅色");
     expect(toolbar).toContain("Sun,");
     expect(toolbar).toContain("Moon,");
     expect(toolbar).toContain("resolvedTheme === 'dark' ? (");
-    // 条目仅 <sm 可见：className 沿用多选条目的 sm:hidden 形态，且在多选条目之后
-    // （用「切换主题</span>」定位条目本体，不取上方注释里的同名字面量）
-    const themeAt = toolbar.indexOf("切换主题</span>");
-    const selectAt = toolbar.indexOf("多选模式</span>");
+    const themeAt = toolbar.indexOf("切换深色 / 浅色</span>");
+    const selectAt = toolbar.indexOf("多选模式 (M)</span>");
     expect(themeAt).toBeGreaterThan(selectAt);
     const itemStart = toolbar.lastIndexOf("<DropdownMenuItem", themeAt);
     const itemChunk = toolbar.slice(itemStart, themeAt + 200);
     expect(itemChunk).toContain("sm:hidden");
-    // 工具栏内 ModeToggle 仍在 HighContrastToggle 之后（挂载顺序守卫）
-    expect(toolbar.indexOf("<ModeToggle />")).toBeGreaterThan(toolbar.indexOf("<HighContrastToggle />"));
   });
 
-  it("W8：360/390 宽度账注释与实测按钮数一致，不留「需协调方裁决」过期文字", () => {
+  it("360/390 宽度账：融合后移动端固定 6 钮 274px ≤ 336px，不留过期文字", () => {
     expect(toolbar).not.toContain("需协调方裁决");
-    // 360px 可见钮：今日、探索、字号、高对比、DIY、打开菜单 = 6 钮
-    expect(toolbar).toContain("360px 行 6 钮 6×44+5×6 = 294px ≤ 336px");
-    // 390px 多一个小组件盒 = 7 钮
-    expect(toolbar).toContain("390px 行 7 钮 7×44+6×6 = 344px ≤ 366px");
+    expect(toolbar).toContain("6×44 + 5×2 = 274px ≤ 336px");
   });
 });

@@ -49,6 +49,7 @@ export function Footer({ siteInfo }: FooterProps) {
             <li><Link href="/brief" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">今日简报</Link></li>
           </ul>
           <ul className="flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 md:justify-start">
+            <li><Link href="/similar" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">相似网站发现</Link></li>
             <li><Link href="/graph" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">技术生态图谱</Link></li>
             <li><Link href="/algorithms" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">前沿算法实验室<span className="ml-1 rounded-full border border-primary/20 bg-primary/10 px-1.5 py-px text-[10px] font-semibold text-primary">Lab</span></Link></li>
             <li><Link href="/drama" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">短剧专区</Link></li>

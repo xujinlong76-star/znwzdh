@@ -184,10 +184,10 @@ export const HomeQuickDock = memo(function HomeQuickDock({
         id="quick-access-tray"
         data-speed-dial="true"
         aria-label="高频直达与常用访问"
-        className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-border/60 bg-card/75 px-3 py-2 backdrop-blur-xs sm:h-12 sm:flex-nowrap sm:py-0"
+        className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-border/60 bg-card/85 px-2.5 py-1.5 sm:h-10 sm:flex-nowrap sm:py-0"
       >
-        {/* 首屏瘦身：单行 48px（h-12）——左紧凑 tab + 中间横向滚动胶囊区 +
-            右「展开全部」。胶囊区已接入 HorizontalScrollFade 横向滚动渐隐
+        {/* 首屏瘦身：单行 40px（h-10，与左侧工作区胶囊行像素级同高对齐）——左紧凑 tab +
+            中间横向滚动胶囊区 + 右「展开全部」。胶囊区已接入 HorizontalScrollFade 横向滚动渐隐
             （2026-11-20 合入合并：首屏单行布局 + 顶栏渐隐包装，两者都保留）。 */}
         <div className="flex shrink-0 items-center gap-1" role="tablist" aria-label="高频直达分类">
             <button
@@ -210,7 +210,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
               aria-selected={activeTab === 'frequent'}
               disabled={!mounted || frequentVisits.length === 0}
               onClick={() => chooseTab('frequent')}
-              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
+              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed ${
                 activeTab === 'frequent'
                   ? 'bg-primary/12 text-primary'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -225,7 +225,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
               aria-selected={activeTab === 'recent'}
               disabled={!mounted || recentVisits.length === 0}
               onClick={() => chooseTab('recent')}
-              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
+              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed ${
                 activeTab === 'recent'
                   ? 'bg-primary/12 text-primary'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -257,7 +257,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
                   icon: item.icon,
                 })
               }
-              className="group relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border/50 bg-background/80 px-2.5 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent/50"
+              className="group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border/50 bg-background px-2 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent/50"
             >
               <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
                 <SiteFavicon

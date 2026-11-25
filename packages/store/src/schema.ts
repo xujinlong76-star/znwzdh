@@ -368,6 +368,25 @@ export const wantedSearches = sqliteTable("wanted_searches", {
   index("wanted_searches_identity_status_idx").on(t.identity, t.status, t.createdAt),
 ]);
 
+/** 采集来源注册表：管理台 GET/POST/PATCH/DELETE /api/admin/crawl-sources 的存储底座。 */
+export const crawlSources = sqliteTable("crawl_sources", {
+  id: text("id").primaryKey(),
+  url: text("url").notNull(),
+  kind: text("kind").notNull().default("sitemap"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  priority: integer("priority").notNull().default(0),
+  intervalMs: integer("interval_ms").notNull().default(3_600_000),
+  nextRunAt: integer("next_run_at").notNull(),
+  lastRunAt: integer("last_run_at"),
+  lastStatus: text("last_status"),
+  lastError: text("last_error"),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+}, (t) => [
+  uniqueIndex("crawl_sources_url_idx").on(t.url),
+  index("crawl_sources_enabled_next_idx").on(t.enabled, t.nextRunAt),
+]);
+
 /** 匿名身份 -> 登录身份的别名；合并后旧 anonId 仍能解析到 canonical id */
 export const identityAliases = sqliteTable("identity_aliases", {
   alias: text("alias").primaryKey(),

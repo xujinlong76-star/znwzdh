@@ -279,3 +279,30 @@ GET /api/sites/{id}/radar
 HEAD /api/sites/{id}/radar
 GET /api/intent/action
 HEAD /api/intent/action
+# 采集来源列表：固定 {ok,items} 形状，待补 CrawlSourceListResponse schema 后删除
+GET /api/admin/crawl-sources
+HEAD /api/admin/crawl-sources
+# 采集运营读面（2026-11-24 注册 crawlOperationsRoutes 后带出）：动态统计/队列/金标进度，
+# 形状随数据量与审核状态变化，暂无稳定核心字段可承诺；补 schema 后逐条删除
+GET /api/admin/crawl/candidates
+HEAD /api/admin/crawl/candidates
+GET /api/admin/crawl/moderation-analytics
+HEAD /api/admin/crawl/moderation-analytics
+GET /api/admin/crawl/moderation-decisions
+HEAD /api/admin/crawl/moderation-decisions
+GET /api/admin/crawl/moderation-gold-assignments/metrics
+HEAD /api/admin/crawl/moderation-gold-assignments/metrics
+GET /api/admin/crawl/moderation-gold-cases
+HEAD /api/admin/crawl/moderation-gold-cases
+GET /api/admin/crawl/moderation-gold-cases/{id}/annotations
+HEAD /api/admin/crawl/moderation-gold-cases/{id}/annotations
+GET /api/admin/crawl/moderation-gold-export
+HEAD /api/admin/crawl/moderation-gold-export
+GET /api/admin/crawl/moderation-gold-progress
+HEAD /api/admin/crawl/moderation-gold-progress
+GET /api/admin/crawl/moderation-model-evaluations
+HEAD /api/admin/crawl/moderation-model-evaluations
+GET /api/admin/crawl/moderation-model-evaluations/providers
+HEAD /api/admin/crawl/moderation-model-evaluations/providers
+GET /api/admin/crawl/overview
+HEAD /api/admin/crawl/overview

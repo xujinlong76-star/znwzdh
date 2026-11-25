@@ -590,7 +590,11 @@ export const NavigationCard = memo(function NavigationCard({
     normalizedDisplayMode === 'icon-wall' ||
     normalizedDisplayMode === 'list' ||
     normalizedDisplayMode === 'minimal' ||
-    normalizedDisplayMode === 'directory'
+    normalizedDisplayMode === 'directory' ||
+    normalizedDisplayMode === 'bento' ||
+    normalizedDisplayMode === 'glass-dock' ||
+    normalizedDisplayMode === 'magazine' ||
+    normalizedDisplayMode === 'terminal'
   ) {
     return (
       <NavigationCardVariant

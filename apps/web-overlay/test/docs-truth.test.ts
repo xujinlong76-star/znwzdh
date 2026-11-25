@@ -118,21 +118,21 @@ describe("B13-3 REST 路由数 / 表数：文档与 metrics.json 事实源一致
   });
 
   it("概览 §5.4 表合计与 metrics 一致，§9 对照表实际值已更新", () => {
-    expect(OVERVIEW).toContain(`### 5.4 \`apps/api\`：${REST} 个端点 / 57 个路由插件`);
+    expect(OVERVIEW).toContain(`### 5.4 \`apps/api\`：${REST} 个端点 / 59 个路由插件`);
     expect(OVERVIEW).toContain(`| **合计** | **${REST}** |`);
     expect(OVERVIEW).not.toContain("117 个端点");
-    expect(OVERVIEW).toContain(`**${REST} 个端点**（57 个路由插件`);
-    expect(OVERVIEW).toContain("**57 个**（`server.ts` 的 register 调用）");
+    expect(OVERVIEW).toContain(`**${REST} 个端点**（59 个路由插件`);
+    expect(OVERVIEW).toContain("**59 个**（`server.ts` 的 register 调用）");
     expect(OVERVIEW).toContain(`**${TABLES} 张**`);
     expect(OVERVIEW).not.toContain("25 张表");
   });
 
-  it("FILE_INDEX 与 server.ts 头注释称 57 个路由插件、表数与 metrics 一致", () => {
-    expect(FILE_INDEX).toContain("注册 57 个路由插件");
+  it("FILE_INDEX 与 server.ts 头注释称 59 个路由插件、表数与 metrics 一致", () => {
+    expect(FILE_INDEX).toContain("注册 59 个路由插件");
     expect(FILE_INDEX).toContain(`共 ${TABLES} 张表`);
     expect(FILE_INDEX).not.toContain("24 个路由插件");
     expect(FILE_INDEX).not.toContain("19 张核心表");
-    expect(read("apps/api/src/server.ts")).toContain("57 个路由插件");
+    expect(read("apps/api/src/server.ts")).toContain("59 个路由插件");
   });
 });
 

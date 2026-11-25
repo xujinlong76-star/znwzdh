@@ -561,6 +561,8 @@ export interface PaletteNavGroups {
   toolIds: string[]
   pluginIds: string[]
   siteIds: string[]
+  /** 存在精确名称/域名命中站点时（如搜 gitlab/github），把站点排在插件包之前 */
+  sitesFirst?: boolean
 }
 
 /**
@@ -605,7 +607,12 @@ export function buildPaletteNavItems(groups: PaletteNavGroups): PaletteNavEntry[
   for (const id of groups.favoriteIds) entries.push({ id, kind: 'favorite' })
   for (const id of groups.actionIds) entries.push({ id, kind: 'action' })
   for (const id of groups.toolIds) entries.push({ id, kind: 'tool' })
-  for (const id of groups.pluginIds) entries.push({ id, kind: 'plugin' })
-  for (const id of groups.siteIds) entries.push({ id, kind: 'site' })
+  if (!groups.sitesFirst) {
+    for (const id of groups.pluginIds) entries.push({ id, kind: 'plugin' })
+    for (const id of groups.siteIds) entries.push({ id, kind: 'site' })
+  } else {
+    for (const id of groups.siteIds) entries.push({ id, kind: 'site' })
+    for (const id of groups.pluginIds) entries.push({ id, kind: 'plugin' })
+  }
   return entries
 }

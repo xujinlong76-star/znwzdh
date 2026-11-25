@@ -82,51 +82,40 @@ describe("U-155：外观按钮是图标 + 可见文字「DIY 排版」", () => {
   });
 });
 
-describe("U-155：360px 宽度账（小组件盒 <390px 收进菜单；C-W7-5：多选 <640px 收进菜单）", () => {
-  it("360px 行内 6 个 44px 按钮：6×44 + 5×6 间隙 = 294 ≤ 336 可用宽", () => {
+describe("U-155：360px/390px 融合宽度账（小组件盒并入今日效率中心，外观收进聚合浮层）", () => {
+  it("360px/390px 行内统一 6 个 44px 按钮：6×44 + 5×2 间隙 = 274 ≤ 336 可用宽", () => {
     const src = overlayFile("src/components/navigation-toolbar.tsx");
-    // 7 个按钮源码仍在（今日、探索矩阵、多选、字号、主题、菜单 + 外观/DIY），
-    // 但多选按钮 <640px 已隐藏，360px 行内可见只剩 6 个
     for (const marker of [
       'aria-label="打开今日中心小窗"',
       'aria-label="探索矩阵与导航工具箱"',
       'aria-label="多选模式"',
       "<FontSizeToggle",
-      "<ModeToggle",
+      "<AppearanceQuickPopover",
       'aria-label="打开菜单"',
       'aria-label="打开外观排版与新手向导小窗"',
     ]) {
-      expect(src, `360px 行内应有 ${marker}`).toContain(marker);
+      expect(src, `顶栏应有 ${marker}`).toContain(marker);
     }
     // C-W7-5：多选按钮 <640px 隐藏（hidden sm:inline-flex），入口在探索菜单内
     const multi = buttonBlock(src, "多选模式");
     expect(multi, "多选按钮 <640px 应隐藏").toContain("hidden");
     expect(multi, "多选按钮 ≥640px 应恢复显示").toContain("sm:inline-flex");
-    // 第 8 个（小组件盒）<390px 不在行内：按钮本身带 min-[390px]:inline-flex
-    const widget = buttonBlock(src, "打开桌面小组件盒");
-    expect(widget, "小组件盒按钮 <390px 应隐藏").toContain("hidden");
-    expect(widget, "小组件盒按钮 ≥390px 应恢复显示").toContain("min-[390px]:inline-flex");
-    // 整数算术：容器 px-3 两侧共 24px，行内间隙 gap-1.5 = 6px
-    expect(6 * 44 + 5 * 6).toBe(294);
-    expect(294).toBeLessThanOrEqual(360 - 24);
+    // 2026-11-24 效率三合一：小组件盒已并入今日中心小窗 + 探索 2 列菜单，顶栏不再单占一格
+    expect(src).not.toContain('aria-label="打开桌面小组件盒"');
+    expect(6 * 44 + 5 * 2).toBe(274);
+    expect(274).toBeLessThanOrEqual(360 - 24);
   });
 
-  it("390px 行内 7 个 44px 按钮：7×44 + 6×6 间隙 = 344 ≤ 366 可用宽", () => {
-    expect(7 * 44 + 6 * 6).toBe(344);
-    expect(344).toBeLessThanOrEqual(390 - 24);
-  });
-
-  it("小组件盒 <390px 有菜单内替代入口（≥390px 条目隐藏），受 onOpenWidgetBox 守卫", () => {
+  it("桌面小组件盒仍保留在探索菜单内（受 onOpenWidgetBox 守卫）及今日效率中心 Tab 内", () => {
     const src = overlayFile("src/components/navigation-toolbar.tsx");
     const spanIdx = src.indexOf(">桌面小组件盒<");
     expect(spanIdx, "探索菜单里应有「桌面小组件盒」条目").toBeGreaterThan(-1);
     const itemStart = src.lastIndexOf("<DropdownMenuItem", spanIdx);
-    expect(itemStart, "应能定位菜单条目起始").toBeGreaterThan(-1);
     const item = src.slice(itemStart, spanIdx + 20);
     expect(item, "菜单条目应调 onOpenWidgetBox").toContain("onOpenWidgetBox()");
-    expect(item, "菜单条目 ≥390px 应隐藏（按钮恢复显示）").toContain("min-[390px]:hidden");
-    // 条目只在 onOpenWidgetBox 存在时渲染（该 prop 可选，不可裸调）
-    const guards = src.split("{onOpenWidgetBox ? (").length - 1;
-    expect(guards, "工具栏按钮与菜单条目两处都应受 onOpenWidgetBox 守卫").toBe(2);
+    expect(src.split("{onOpenWidgetBox ? (").length - 1).toBe(1);
+    const todayDlg = overlayFile("src/components/home-windows/today-center-dialog.tsx");
+    expect(todayDlg).toContain("桌面微件");
+    expect(todayDlg).toContain("极客工具");
   });
 });

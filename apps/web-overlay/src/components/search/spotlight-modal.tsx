@@ -55,6 +55,7 @@ import {
   Star,
   Tag,
   PlusCircle,
+  Radar,
 } from 'lucide-react'
 import type { NavigationSubItem } from '@/types/navigation'
 import { formatDuration } from '@/lib/video-format'
@@ -98,6 +99,7 @@ import { WantedActions } from '@/components/search/wanted-actions'
 import { searchChannelStatus } from '@/lib/search-degrade'
 import { searchHref } from '@/lib/search-page'
 import { rankSearchHits } from '@/lib/search-rerank'
+import { resolveSimilarModeInput } from '@/lib/search-discovery-intent'
 import { getModifierKey } from '@/lib/platform'
 import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
 import { recordOfflineVisit, readOfflineVisits, type RecentVisit } from '@/lib/offline-recent'
@@ -513,6 +515,17 @@ export function SpotlightModal({
       handler: () => {
         setOpen(false)
         router.push('/ask')
+      },
+    },
+    {
+      id: 'cmd-similar',
+      title: '相似网站发现雷达 (SimilarSites)',
+      description: '输入任意网址/域名秒查 5 维相似平替与 VS 横评',
+      icon: Radar,
+      category: '页面直达',
+      handler: () => {
+        setOpen(false)
+        router.push('/similar')
       },
     },
     {
@@ -949,6 +962,13 @@ export function SpotlightModal({
       return
     }
 
+    const simResolved = resolveSimilarModeInput(query)
+    if (simResolved.similarMode) {
+      setOpen(false)
+      router.push(`/similar?q=${encodeURIComponent(simResolved.query)}`)
+      return
+    }
+
     if (isAiMode) {
       if (!cleanAiPrompt) return
       setOpen(false)
@@ -995,7 +1015,7 @@ export function SpotlightModal({
         router.push(`/marketplace/${encodeURIComponent(plugin.slug)}`)
       }
     }
-  }, [isCommandMode, isAiMode, filteredCommands, selectedIndex, cleanAiPrompt, displayHits, videoHits, pluginHits, router, openSite, quicklinkActive, quicklinkMatch, quicklinkOffset, openQuicklink])
+  }, [isCommandMode, isAiMode, query, filteredCommands, selectedIndex, cleanAiPrompt, displayHits, videoHits, pluginHits, router, openSite, quicklinkActive, quicklinkMatch, quicklinkOffset, openQuicklink])
 
   // 9. 键盘导航 (上下箭头 / 回车)
   const totalItemCount = useMemo(() => {

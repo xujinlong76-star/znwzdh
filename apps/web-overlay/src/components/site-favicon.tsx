@@ -1451,7 +1451,6 @@ export function SiteFavicon({
 }: SiteFaviconProps) {
   const [imgError, setImgError] = useState(false)
   const [imgLoaded, setImgLoaded] = useState(false)
-  const prevIconRef = React.useRef(icon)
   const imgRef = React.useRef<HTMLImageElement | null>(null)
 
   // 1. 综合计算有效图标地址
@@ -1462,9 +1461,10 @@ export function SiteFavicon({
     effectiveIcon = `/api/hub/assets/icon?url=${encodeURIComponent(url)}${title ? `&title=${encodeURIComponent(title)}` : ''}`
   }
 
-  // 当 icon 变化时重置状态
-  if (prevIconRef.current !== icon) {
-    prevIconRef.current = icon
+  // 当有效图标地址变化时重置状态（不仅仅跟踪 icon，防止同位切换 url/title 时沿用旧的 imgLoaded）
+  const prevEffectiveIconRef = React.useRef(effectiveIcon)
+  if (prevEffectiveIconRef.current !== effectiveIcon) {
+    prevEffectiveIconRef.current = effectiveIcon
     if (imgError) setImgError(false)
     if (imgLoaded) setImgLoaded(false)
   }

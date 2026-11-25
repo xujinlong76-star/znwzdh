@@ -51,6 +51,22 @@ export const CARD_GRID_RICH =
 export const CARD_GRID_DIRECTORY =
   'grid grid-cols-1 gap-x-4 gap-y-0.5 @md:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4 @6xl:grid-cols-5'
 
+/** 灵动磁贴网格（Apple Bento / 品牌微光方格）：1 → 2 → 3 → 4 列 */
+export const CARD_GRID_BENTO =
+  'grid grid-cols-1 gap-[var(--density-grid-gap,0.875rem)] @xl:grid-cols-2 @4xl:grid-cols-3 @6xl:grid-cols-4'
+
+/** 磨砂晶格网格（visionOS 立体晶格圆标方阵）：2 → 3 → 4 → 5 列 */
+export const CARD_GRID_GLASS_DOCK =
+  'grid grid-cols-2 gap-3 @xl:grid-cols-3 @4xl:grid-cols-4 @6xl:grid-cols-5'
+
+/** 杂志社论网格（左侧彩带 + 舒朗导读大卡）：1 → 2 → 3 列 */
+export const CARD_GRID_MAGAZINE =
+  'grid grid-cols-1 gap-[var(--density-grid-gap,0.875rem)] @xl:grid-cols-2 @5xl:grid-cols-3'
+
+/** 终端索引网格（CLI 等宽命令流）：1 → 2 → 3 列 */
+export const CARD_GRID_TERMINAL =
+  'grid grid-cols-1 gap-1.5 @3xl:grid-cols-2 @6xl:grid-cols-3'
+
 /** 紧凑变体：小卡片/插件卡，起步更早进 2 列 */
 export const CARD_GRID_COMPACT =
   'grid grid-cols-1 gap-3 @md:grid-cols-2 @3xl:grid-cols-3 @6xl:grid-cols-4'

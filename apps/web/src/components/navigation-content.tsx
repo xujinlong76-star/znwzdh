@@ -16,6 +16,7 @@ import { HomeDIYTrigger } from '@/components/home-diy-trigger'
 import { HomeCapsuleRow } from '@/components/home-capsule-row'
 import { HomeSubtitleHint } from '@/components/home-subtitle-hint'
 import { HomeQuickDock } from '@/components/home-quick-dock'
+import type { TodayCenterTab } from '@/components/home-windows/today-center-dialog'
 import type { HomeTodayBadgeSummary } from '@/lib/home-today-summary'
 import type { HubPluginItem } from '@/lib/navhub-api'
 import { usePinnedCornerWidgets } from '@/lib/modular/pinned-widgets-store'
@@ -298,10 +299,13 @@ export function NavigationContent({
     return () => clearTimeout(t)
   }, [isSidebarOpen])
   const [todayOpen, setTodayOpen] = useState(false)
+  const [todayTab, setTodayTab] = useState<TodayCenterTab>('focus')
   const [widgetBoxOpen, setWidgetBoxOpen] = useState(false)
   const [appearanceOpen, setAppearanceOpen] = useState(false)
   const [appearanceTab, setAppearanceTab] = useState<'appearance' | 'guide'>('appearance')
   const [toolbarAiOpen, setToolbarAiOpen] = useState(false)
+  const [toolbarAiMode, setToolbarAiMode] = useState<'ai' | 'similar'>('ai')
+  const [toolbarAiQuery, setToolbarAiQuery] = useState('')
   /* 顶栏铃铛红点（2026-11-21 顶栏收敛）：与侧栏通知铃共用同一个订阅源，
      没有第二份轮询。eligibility 交给 useIdentityReady，匿名/未登录时不请求。 */
   const identityState = useIdentityReady()
@@ -726,13 +730,23 @@ export function NavigationContent({
   const handleCloseSidebar = useCallback(() => setIsSidebarOpen(false), [])
   const handleOpenTools = useCallback(() => setIsToolsOpen(true), [])
   const handleOpenShortcuts = useCallback(() => setIsShortcutsOpen(true), [])
-  const handleOpenTodayCenter = useCallback(() => setTodayOpen(true), [])
-  const handleOpenWidgetBox = useCallback(() => setWidgetBoxOpen(true), [])
+  const handleOpenTodayCenter = useCallback(() => {
+    setTodayTab('focus')
+    setTodayOpen(true)
+  }, [])
+  const handleOpenWidgetBox = useCallback(() => {
+    setTodayTab('widgets')
+    setTodayOpen(true)
+  }, [])
   const handleOpenAppearanceGuide = useCallback(() => {
     setAppearanceTab('appearance')
     setAppearanceOpen(true)
   }, [])
-  const handleOpenAiFinder = useCallback(() => setToolbarAiOpen(true), [])
+  const handleOpenAiFinder = useCallback((mode?: 'ai' | 'similar', initialQuery?: string) => {
+    setToolbarAiMode(mode ?? 'ai')
+    setToolbarAiQuery(initialQuery ?? '')
+    setToolbarAiOpen(true)
+  }, [])
 
   /**
    * P0-2：Sidebar 的 navigationData 对象字面量每轮新建会击穿 memo，
@@ -1300,17 +1314,6 @@ export function NavigationContent({
         )}
 
         <div className="px-3 sm:px-6 md:px-8 pt-2 sm:pt-2 pb-8 flex-1">
-          {/* 移动端品牌主标题（U-263）：桌面侧边栏品牌 h1 在移动端被 hidden，
-              首页主内容区又无其它 h1，致移动端无可见主标题（mobile-layout
-              冒烟红）。此处补一个移动端专用的紧凑标题（短标题「山羊胡导航」），
-              仅移动端可见；桌面端仍由侧边栏品牌担任唯一 h1。
-
-              2026-11-24 ISR 门禁修复：原为 <h1>，与侧边栏品牌 h1 在 HTML 里
-              同时存在（md:hidden 只是 CSS 隐藏，DOM 仍有 2 个 h1），
-              ISR 首页 SEO 契约要求恰好 1 个 h1 因此失败。
-              改为 <p role="heading" aria-level={1}>：视觉与语义层级不变，
-              但不再产生第二个 h1 元素。 */}
-          <p role="heading" aria-level={1} className="md:hidden text-lg font-bold tracking-tight text-foreground pb-3">山羊胡导航</p>
           {/* 增量掩码与时间轴回收站快捷感知条（当用户存在已删减功能或处于 DIY 编辑态时呈现） */}
           {(totalPrunedCount > 0 || isEditingLayout) && (
             <div
@@ -1402,14 +1405,13 @@ export function NavigationContent({
             tagline={homeControl.basic.tagline || siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
           />
 
-          {/* 首屏瘦身：工作区胶囊行与运营胶囊行合并为一行（HomeCapsuleRow，
-              2026-11-20）：原来上下两行（工作区 ~63px + 运营 ~46px）压成单行
-              约 44px；<1024px 只留「全部探索」＋「AI 找站」，其余进「更多」折叠菜单。
-              首屏露出冲 40%（2026-11-21）：1536px+ 胶囊行与高频直达坞并排一行，
-              省一整行约 40px；窄屏保持上下叠放不变。 */}
+          {/* P1-3 首屏再瘦身（2026-11-24）：HomeCapsuleRow 剥离重复运营胶囊回归纯粹角色切换后，
+              <1400px 保持 6px 纵向呼吸间距（消除 1024px 贴边与 1280px 双栏拥挤）；
+              ≥1400px 宽屏严格单行并排：左侧工作区按自然内容宽度紧贴（零 80px 空隙），
+              右侧高频直达坞 flex-1 吃满剩余空间以展示更多置顶站点。 */}
           {viewMode !== 'workbench' ? (
-            <div className="min-[1536px]:flex min-[1536px]:items-center min-[1536px]:gap-3">
-              <div className="min-w-0 min-[1536px]:flex-[1.3]">
+            <div className="mb-2 flex flex-col gap-1.5 min-[1400px]:flex-row min-[1400px]:items-center min-[1400px]:gap-2.5">
+              <div className="min-w-0 min-[1400px]:shrink-0">
                 <HomeCapsuleRow
                   cinemaInitial={cinemaInitial}
                   pluginItems={pluginItems}
@@ -1427,7 +1429,7 @@ export function NavigationContent({
               </div>
               {/* 三合一单行高频直达坞（A4：合并 SpeedDialDock / 常用 / 最近访问） */}
               {!isModuleHidden('mod:speed-dial') && (
-                <div data-feature-id="mod:speed-dial" className="relative min-w-0 min-[1536px]:flex-1">
+                <div data-feature-id="mod:speed-dial" className="relative min-w-0 min-[1400px]:flex-1">
                   <HomeQuickDock
                     dialDigitById={mounted ? dialMap.digitById : undefined}
                     // P2-14：速拨顺序由父级 dialSites 一次算好透传，坞不再自己重算。
@@ -1440,6 +1442,8 @@ export function NavigationContent({
 
           {viewMode === 'workbench' ? (
             <div className="space-y-6">
+              {/* 移动端品牌主标题（P2-5：常规目录融合在 HomeCapsuleRow 单行顶栏，工作台模式由此承接） */}
+              <p role="heading" aria-level={1} className="md:hidden text-lg font-bold tracking-tight text-foreground">山羊胡导航</p>
               <div className="flex items-center justify-between pb-1">
                 <div>
                   <h2 className="text-base sm:text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
@@ -1756,6 +1760,8 @@ export function NavigationContent({
             }
             countdownLabel={todayBadge?.countdownLabel}
             todayCount={todayBadge?.todayCount}
+            pinnedWidgetCount={pinnedMounted ? pinnedCornerWidgets.length : 0}
+            defaultTab={todayTab}
           />
         ) : null}
 
@@ -1778,6 +1784,8 @@ export function NavigationContent({
           <AiFinderDialog
             open={toolbarAiOpen}
             onOpenChange={setToolbarAiOpen}
+            defaultMode={toolbarAiMode}
+            initialQuery={toolbarAiQuery}
           />
         ) : null}
 

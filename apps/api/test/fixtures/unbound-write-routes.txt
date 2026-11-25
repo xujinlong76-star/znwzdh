@@ -96,3 +96,19 @@ POST /api/recipes/scaffold | 配方脚手架：按配方层级生成 .env 模板
 POST /api/public-pages | 创建回执是固定形状 {page, url}（201），Batch 3 第 6 项收尾时未及在 core 登记 PublicPage 响应 schema，纯拖欠，补 schema + RESPONSE_SCHEMA_BINDINGS 后删除本行
 PATCH /api/public-pages/{slug} | 改状态回执是固定形状 {page}，同上，纯拖欠，待补 schema 后删除本行
 DELETE /api/public-pages/{slug} | 删除回执是固定形状 {ok: true}，同上，纯拖欠，待补 schema 后删除本行
+
+# ---- 采集来源管理（2026-11-24 新增，待补 schema）----
+POST /api/admin/crawl-sources | 创建回执是固定形状 {ok,item}，待补 CrawlSourceResponse schema 后删除本行
+PATCH /api/admin/crawl-sources/{id} | 更新回执同创建，待补 schema 后删除本行
+DELETE /api/admin/crawl-sources/{id} | 删除回执是固定形状 {ok:true}，待补 schema 后删除本行
+
+# ---- 采集运营写面（2026-11-24 注册 crawlOperationsRoutes 后带出，待补 schema）----
+POST /api/admin/crawl/candidates/{id}/review | 人工审核回执含候选状态与账本写入结果，随审核链路变化
+POST /api/admin/crawl/moderation-gold-cases/sample-from-candidates | 分层抽样导入结果逐批统计，随候选池变化
+POST /api/admin/crawl/moderation-gold-cases/from-candidate/{id} | 单候选导入回执含脱敏字段预览，随候选内容变化
+POST /api/admin/crawl/moderation-gold-cases | 手工新增金标回执逐字段回显，待补 schema
+POST /api/admin/crawl/moderation-gold-cases/claim | 领取结果为租约状态与槽位，随并发领取变化
+POST /api/admin/crawl/moderation-gold-cases/{id}/annotations | 标注回执含状态推进结果，随双人一致性判定变化
+POST /api/admin/crawl/moderation-gold-cases/{id}/adjudicate | 仲裁回执固定为 gold_ready，但错误分支多样，待补 schema
+POST /api/admin/crawl/moderation-model-evaluations/auto | 自动评测含模型指标/告警/用量，随金标集与模型变化
+POST /api/admin/crawl/moderation-model-evaluations | 手工评测回执同上，随模型输出变化

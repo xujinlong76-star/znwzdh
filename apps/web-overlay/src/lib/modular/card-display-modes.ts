@@ -9,46 +9,64 @@
  */
 import {
   CARD_GRID,
+  CARD_GRID_BENTO,
   CARD_GRID_COMPACT_BAR,
   CARD_GRID_DIRECTORY,
+  CARD_GRID_GLASS_DOCK,
   CARD_GRID_ICON_WALL,
   CARD_GRID_LIST,
+  CARD_GRID_MAGAZINE,
   CARD_GRID_MINIMAL,
   CARD_GRID_RICH,
+  CARD_GRID_TERMINAL,
 } from '../responsive-grid'
 
 export type CanonicalCardDisplayMode =
   | 'standard'
-  | 'icon-wall'
-  | 'list'
-  | 'minimal'
-  | 'compact'
+  | 'bento'
+  | 'glass-dock'
+  | 'magazine'
   | 'rich'
+  | 'icon-wall'
+  | 'terminal'
+  | 'list'
+  | 'compact'
   | 'directory'
+  | 'minimal'
 
 /** 包含历史别名 `'mini-chip'`（运行时与保存路径均兼容并归一为 `'minimal'`） */
 export type CardDisplayMode = CanonicalCardDisplayMode | 'mini-chip'
 
 export const VIEW_MODE_IDS: readonly CanonicalCardDisplayMode[] = [
   'standard',
-  'directory',
-  'icon-wall',
-  'list',
-  'minimal',
-  'compact',
+  'bento',
+  'glass-dock',
+  'magazine',
   'rich',
+  'icon-wall',
+  'terminal',
+  'list',
+  'compact',
+  'directory',
+  'minimal',
 ] as const
 
 export const VALID_CARD_DISPLAY_MODES: readonly CardDisplayMode[] = [
   'standard',
-  'icon-wall',
-  'list',
-  'minimal',
-  'compact',
+  'bento',
+  'glass-dock',
+  'magazine',
   'rich',
+  'icon-wall',
+  'terminal',
+  'list',
+  'compact',
   'directory',
+  'minimal',
   'mini-chip',
 ] as const
+
+export type ViewModeGroup = 'featured' | 'visual' | 'productivity' | 'dense'
 
 export type ViewModeDiyHandleStyle = 'inline-compact' | 'overlay-corner' | 'bottom-dock'
 
@@ -101,6 +119,10 @@ export interface ViewModeConfig {
   diyCompatible: ViewModeDiyBehavior
   /** 是否使用用户密度变量 `--density-grid-gap` 控制外层间距 */
   usesDensityGap: boolean
+  /** 画廊分组（对称 2 列排布：默认推荐 / 视觉与质感 / 高效与桌面 / 极简与高密） */
+  group: ViewModeGroup
+  /** 是否为新上架特色模式（切换画廊显示轻徽标） */
+  isNew?: boolean
 }
 
 /** 兼容既有类型导出名 */
@@ -119,7 +141,7 @@ function createDefaultItemsCalculator(previewRows: number, maxPreviewItems: numb
 }
 
 /**
- * 7 大网址展示模式强类型注册表（Single Source of Truth）。
+ * 11 大网址展示模式强类型注册表（Single Source of Truth）。
  */
 export const VIEW_MODE_REGISTRY: Readonly<Record<CanonicalCardDisplayMode, ViewModeConfig>> = {
   standard: {
@@ -147,110 +169,91 @@ export const VIEW_MODE_REGISTRY: Readonly<Record<CanonicalCardDisplayMode, ViewM
       note: '底部通栏显式拖拽与微动作',
     },
     usesDensityGap: true,
+    group: 'featured',
   },
-  'icon-wall': {
-    id: 'icon-wall',
-    name: '图标启动台',
-    shortName: '图标',
-    label: '图标启动台',
-    shortLabel: '图标墙',
-    compactLabel: '图标',
-    enLabel: 'App Dock',
-    badge: 'iTab 桌面',
-    description: '大图标方阵 · 桌面直觉秒开',
-    densityLabel: '高密度 · 一屏 ~24 站',
+  bento: {
+    id: 'bento',
+    name: '灵动磁贴',
+    shortName: '磁贴',
+    label: '灵动磁贴',
+    shortLabel: '灵动磁贴',
+    compactLabel: '磁贴',
+    enLabel: 'Bento Tile',
+    badge: 'Apple 质感',
+    description: '品牌微光磁贴 · 灵动层次质感',
+    densityLabel: '均衡 · 一屏 ~12 站',
     previewRows: 2,
-    maxPreviewItems: 16,
-    gridClassName: CARD_GRID_ICON_WALL,
-    gridClass: CARD_GRID_ICON_WALL,
-    mediumGridClass: 'grid grid-cols-3 gap-2.5 @xl:grid-cols-4',
-    narrowGridClass: 'grid grid-cols-2 gap-2.5 @sm:grid-cols-3',
-    defaultItemsPerSubcategory: createDefaultItemsCalculator(2, 16),
+    maxPreviewItems: 8,
+    gridClassName: CARD_GRID_BENTO,
+    gridClass: CARD_GRID_BENTO,
+    mediumGridClass: 'grid grid-cols-1 gap-[var(--density-grid-gap,0.875rem)] @xl:grid-cols-2',
+    narrowGridClass: 'grid grid-cols-1 gap-[var(--density-grid-gap,0.875rem)]',
+    defaultItemsPerSubcategory: createDefaultItemsCalculator(2, 8),
     mobileFallbackId: null,
     diyCompatible: {
       supported: true,
       handleStyle: 'overlay-corner',
-      note: '左上角紧凑手柄，零遮挡图标与标题',
+      note: '右上角轻量手柄，完整保留品牌微光与顶条',
+    },
+    usesDensityGap: true,
+    group: 'visual',
+    isNew: true,
+  },
+  'glass-dock': {
+    id: 'glass-dock',
+    name: '磨砂晶格',
+    shortName: '晶格',
+    label: '磨砂晶格',
+    shortLabel: '磨砂晶格',
+    compactLabel: '晶格',
+    enLabel: 'Crystal Tile',
+    badge: '空间浮雕',
+    description: '晶格圆标方阵 · 立体浮雕视感',
+    densityLabel: '高密度 · 一屏 ~15 站',
+    previewRows: 2,
+    maxPreviewItems: 10,
+    gridClassName: CARD_GRID_GLASS_DOCK,
+    gridClass: CARD_GRID_GLASS_DOCK,
+    mediumGridClass: 'grid grid-cols-2 gap-2.5 @xl:grid-cols-3',
+    narrowGridClass: 'grid grid-cols-2 gap-2.5',
+    defaultItemsPerSubcategory: createDefaultItemsCalculator(2, 10),
+    mobileFallbackId: null,
+    diyCompatible: {
+      supported: true,
+      handleStyle: 'overlay-corner',
+      note: '左上角紧凑手柄，零遮挡圆标与站名',
     },
     usesDensityGap: false,
+    group: 'visual',
+    isNew: true,
   },
-  list: {
-    id: 'list',
-    name: '极客清单',
-    shortName: '清单',
-    label: '极客清单',
-    shortLabel: '清单列表',
-    compactLabel: '清单',
-    enLabel: 'List View',
-    badge: '高可读',
-    description: '表格明细流 · 简介域名同扫',
-    densityLabel: '明细流 · 一屏 ~12 站',
-    previewRows: 6,
+  magazine: {
+    id: 'magazine',
+    name: '杂志社论',
+    shortName: '社论',
+    label: '杂志社论',
+    shortLabel: '杂志社论',
+    compactLabel: '社论',
+    enLabel: 'Editorial',
+    badge: '深度导读',
+    description: '左侧彩带社论 · 杂志导读排版',
+    densityLabel: '舒朗导读 · 一屏 ~6 站',
+    previewRows: 2,
     maxPreviewItems: 6,
-    gridClassName: CARD_GRID_LIST,
-    gridClass: CARD_GRID_LIST,
-    mediumGridClass: CARD_GRID_LIST,
-    narrowGridClass: CARD_GRID_LIST,
-    defaultItemsPerSubcategory: createDefaultItemsCalculator(6, 6),
-    mobileFallbackId: 'standard',
-    diyCompatible: {
-      supported: true,
-      handleStyle: 'inline-compact',
-      note: '右侧紧凑内联拖拽手柄，不遮挡标题与简介',
-    },
-    usesDensityGap: false,
-  },
-  minimal: {
-    id: 'minimal',
-    name: '极速胶囊',
-    shortName: '胶囊',
-    label: '极速胶囊',
-    shortLabel: '极速胶囊',
-    compactLabel: '胶囊',
-    enLabel: 'Mini Chip',
-    badge: '超高密度',
-    description: '极速药丸流 · 单屏超高密度',
-    densityLabel: '极高密 · 一屏 ~45 站',
-    previewRows: 3,
-    maxPreviewItems: 15,
-    gridClassName: CARD_GRID_MINIMAL,
-    gridClass: CARD_GRID_MINIMAL,
-    mediumGridClass: 'grid grid-cols-2 gap-2 @xl:grid-cols-3',
-    narrowGridClass: 'grid grid-cols-2 gap-2',
-    defaultItemsPerSubcategory: createDefaultItemsCalculator(3, 15),
+    gridClassName: CARD_GRID_MAGAZINE,
+    gridClass: CARD_GRID_MAGAZINE,
+    mediumGridClass: 'grid grid-cols-1 gap-[var(--density-grid-gap,0.875rem)] @xl:grid-cols-2',
+    narrowGridClass: 'grid grid-cols-1 gap-[var(--density-grid-gap,0.875rem)]',
+    defaultItemsPerSubcategory: createDefaultItemsCalculator(2, 6),
     mobileFallbackId: null,
     diyCompatible: {
       supported: true,
-      handleStyle: 'inline-compact',
-      note: '胶囊尾部紧凑内联拖拽手柄，标题零遮挡',
+      handleStyle: 'bottom-dock',
+      note: '底栏轻量编辑操作，保留左侧彩带与正版导读区',
     },
-    usesDensityGap: false,
-  },
-  compact: {
-    id: 'compact',
-    name: '紧凑条形',
-    shortName: '紧凑',
-    label: '紧凑条形',
-    shortLabel: '紧凑条形',
-    compactLabel: '紧凑',
-    enLabel: 'Compact',
-    badge: '高效均衡',
-    description: '精炼单行条 · 高效省屏空间',
-    densityLabel: '高密度 · 一屏 ~24 站',
-    previewRows: 3,
-    maxPreviewItems: 12,
-    gridClassName: CARD_GRID_COMPACT_BAR,
-    gridClass: CARD_GRID_COMPACT_BAR,
-    mediumGridClass: 'grid grid-cols-1 gap-2 @xl:grid-cols-2',
-    narrowGridClass: 'grid grid-cols-1 gap-2',
-    defaultItemsPerSubcategory: createDefaultItemsCalculator(3, 12),
-    mobileFallbackId: null,
-    diyCompatible: {
-      supported: true,
-      handleStyle: 'inline-compact',
-      note: '右侧渐隐紧凑内联手柄，保留单行清晰度',
-    },
-    usesDensityGap: false,
+    usesDensityGap: true,
+    group: 'visual',
+    isNew: true,
   },
   rich: {
     id: 'rich',
@@ -277,6 +280,116 @@ export const VIEW_MODE_REGISTRY: Readonly<Record<CanonicalCardDisplayMode, ViewM
       note: '底部通栏编辑操作，不遮挡封面横幅',
     },
     usesDensityGap: true,
+    group: 'visual',
+  },
+  'icon-wall': {
+    id: 'icon-wall',
+    name: '图标启动台',
+    shortName: '图标',
+    label: '图标启动台',
+    shortLabel: '图标墙',
+    compactLabel: '图标',
+    enLabel: 'App Dock',
+    badge: 'iTab 桌面',
+    description: '大图标方阵 · 桌面直觉秒开',
+    densityLabel: '高密度 · 一屏 ~24 站',
+    previewRows: 2,
+    maxPreviewItems: 16,
+    gridClassName: CARD_GRID_ICON_WALL,
+    gridClass: CARD_GRID_ICON_WALL,
+    mediumGridClass: 'grid grid-cols-3 gap-2.5 @xl:grid-cols-4',
+    narrowGridClass: 'grid grid-cols-2 gap-2.5 @sm:grid-cols-3',
+    defaultItemsPerSubcategory: createDefaultItemsCalculator(2, 16),
+    mobileFallbackId: null,
+    diyCompatible: {
+      supported: true,
+      handleStyle: 'overlay-corner',
+      note: '左上角紧凑手柄，零遮挡图标与标题',
+    },
+    usesDensityGap: false,
+    group: 'productivity',
+  },
+  terminal: {
+    id: 'terminal',
+    name: '终端索引',
+    shortName: '终端',
+    label: '终端索引',
+    shortLabel: '终端索引',
+    compactLabel: '终端',
+    enLabel: 'Terminal CLI',
+    badge: '极客命令',
+    description: '等宽命令索引 · 开发者极客风',
+    densityLabel: '高密度 · 一屏 ~24 站',
+    previewRows: 3,
+    maxPreviewItems: 9,
+    gridClassName: CARD_GRID_TERMINAL,
+    gridClass: CARD_GRID_TERMINAL,
+    mediumGridClass: 'grid grid-cols-1 gap-1.5 @xl:grid-cols-2',
+    narrowGridClass: 'grid grid-cols-1 gap-1.5',
+    defaultItemsPerSubcategory: createDefaultItemsCalculator(3, 9),
+    mobileFallbackId: null,
+    diyCompatible: {
+      supported: true,
+      handleStyle: 'inline-compact',
+      note: '右侧紧凑内联拖拽手柄，零遮挡命令行索引',
+    },
+    usesDensityGap: false,
+    group: 'productivity',
+    isNew: true,
+  },
+  list: {
+    id: 'list',
+    name: '极客清单',
+    shortName: '清单',
+    label: '极客清单',
+    shortLabel: '清单列表',
+    compactLabel: '清单',
+    enLabel: 'List View',
+    badge: '高可读',
+    description: '表格明细流 · 简介域名同扫',
+    densityLabel: '明细流 · 一屏 ~12 站',
+    previewRows: 6,
+    maxPreviewItems: 6,
+    gridClassName: CARD_GRID_LIST,
+    gridClass: CARD_GRID_LIST,
+    mediumGridClass: CARD_GRID_LIST,
+    narrowGridClass: CARD_GRID_LIST,
+    defaultItemsPerSubcategory: createDefaultItemsCalculator(6, 6),
+    mobileFallbackId: 'standard',
+    diyCompatible: {
+      supported: true,
+      handleStyle: 'inline-compact',
+      note: '右侧紧凑内联拖拽手柄，不遮挡标题与简介',
+    },
+    usesDensityGap: false,
+    group: 'productivity',
+  },
+  compact: {
+    id: 'compact',
+    name: '紧凑条形',
+    shortName: '紧凑',
+    label: '紧凑条形',
+    shortLabel: '紧凑条形',
+    compactLabel: '紧凑',
+    enLabel: 'Compact',
+    badge: '高效均衡',
+    description: '精炼单行条 · 高效省屏空间',
+    densityLabel: '高密度 · 一屏 ~24 站',
+    previewRows: 3,
+    maxPreviewItems: 12,
+    gridClassName: CARD_GRID_COMPACT_BAR,
+    gridClass: CARD_GRID_COMPACT_BAR,
+    mediumGridClass: 'grid grid-cols-1 gap-2 @xl:grid-cols-2',
+    narrowGridClass: 'grid grid-cols-1 gap-2',
+    defaultItemsPerSubcategory: createDefaultItemsCalculator(3, 12),
+    mobileFallbackId: null,
+    diyCompatible: {
+      supported: true,
+      handleStyle: 'inline-compact',
+      note: '右侧渐隐紧凑内联手柄，保留单行清晰度',
+    },
+    usesDensityGap: false,
+    group: 'productivity',
   },
   directory: {
     id: 'directory',
@@ -303,18 +416,50 @@ export const VIEW_MODE_REGISTRY: Readonly<Record<CanonicalCardDisplayMode, ViewM
       note: '右侧紧凑内联拖拽手柄，零悬浮遮挡标题',
     },
     usesDensityGap: false,
+    group: 'dense',
+  },
+  minimal: {
+    id: 'minimal',
+    name: '极速胶囊',
+    shortName: '胶囊',
+    label: '极速胶囊',
+    shortLabel: '极速胶囊',
+    compactLabel: '胶囊',
+    enLabel: 'Mini Chip',
+    badge: '超高密度',
+    description: '极速药丸流 · 单屏超高密度',
+    densityLabel: '极高密 · 一屏 ~45 站',
+    previewRows: 3,
+    maxPreviewItems: 15,
+    gridClassName: CARD_GRID_MINIMAL,
+    gridClass: CARD_GRID_MINIMAL,
+    mediumGridClass: 'grid grid-cols-2 gap-2 @xl:grid-cols-3',
+    narrowGridClass: 'grid grid-cols-2 gap-2',
+    defaultItemsPerSubcategory: createDefaultItemsCalculator(3, 15),
+    mobileFallbackId: null,
+    diyCompatible: {
+      supported: true,
+      handleStyle: 'inline-compact',
+      note: '胶囊尾部紧凑内联拖拽手柄，标题零遮挡',
+    },
+    usesDensityGap: false,
+    group: 'dense',
   },
 } as const
 
-/** 按展示顺序排列的全部 7 种模式列表（兼容既有调用方） */
+/** 按分组展示顺序排列的全部 11 种模式列表（1 默认 + 视觉 4 + 高效 4 + 极简 2，2 列画廊严格对称零孤项） */
 export const CARD_DISPLAY_MODE_OPTIONS: readonly ViewModeConfig[] = [
   VIEW_MODE_REGISTRY.standard,
-  VIEW_MODE_REGISTRY['icon-wall'],
-  VIEW_MODE_REGISTRY.list,
-  VIEW_MODE_REGISTRY.minimal,
-  VIEW_MODE_REGISTRY.compact,
+  VIEW_MODE_REGISTRY.bento,
+  VIEW_MODE_REGISTRY['glass-dock'],
+  VIEW_MODE_REGISTRY.magazine,
   VIEW_MODE_REGISTRY.rich,
+  VIEW_MODE_REGISTRY['icon-wall'],
+  VIEW_MODE_REGISTRY.terminal,
+  VIEW_MODE_REGISTRY.list,
+  VIEW_MODE_REGISTRY.compact,
   VIEW_MODE_REGISTRY.directory,
+  VIEW_MODE_REGISTRY.minimal,
 ] as const
 
 /** 规范化任意卡片展示模式值（兼容历史 `'mini-chip'` 别名与非法值回退 `'standard'`） */

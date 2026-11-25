@@ -35,18 +35,22 @@ function overlaySource(rel: string): string {
 }
 
 describe('强类型单一真相模式注册表（VIEW_MODE_REGISTRY）', () => {
-  it('覆盖 7 大主流网址展示范式且每个模式均具备完整强类型元信息', () => {
+  it('覆盖 11 种网址展示范式且每个模式均具备完整强类型元信息', () => {
     const ids = CARD_DISPLAY_MODE_OPTIONS.map((o) => o.id)
     expect(ids).toEqual([
       'standard',
-      'icon-wall',
-      'list',
-      'minimal',
-      'compact',
+      'bento',
+      'glass-dock',
+      'magazine',
       'rich',
+      'icon-wall',
+      'terminal',
+      'list',
+      'compact',
       'directory',
+      'minimal',
     ])
-    expect(new Set(ids).size).toBe(7)
+    expect(new Set(ids).size).toBe(11)
     expect(new Set(VIEW_MODE_IDS)).toEqual(new Set(ids))
     expect(VALID_CARD_DISPLAY_MODES).toContain('mini-chip')
 
@@ -55,7 +59,9 @@ describe('强类型单一真相模式注册表（VIEW_MODE_REGISTRY）', () => {
       expect(cfg.id).toBe(id)
       expect(cfg.name.length).toBeGreaterThanOrEqual(2)
       expect(cfg.shortName.length).toBeGreaterThanOrEqual(2)
-      expect(cfg.description.length).toBeLessThanOrEqual(14)
+      // 切换面板以 11px + truncate 渲染，16 字内可在主流卡片宽度完整显示；
+      // 上限放宽自 14 是为了容纳「X · Y」格式的新模式文案（最长 15 字）。
+      expect(cfg.description.length).toBeLessThanOrEqual(16)
       expect(cfg.densityLabel).toContain('一屏')
       expect(cfg.gridClassName).toContain('grid')
       expect(cfg.diyCompatible.supported).toBe(true)
@@ -69,8 +75,8 @@ describe('强类型单一真相模式注册表（VIEW_MODE_REGISTRY）', () => {
       }
     }
 
-    // 极简列表 / 书签目录 / 紧凑条形 / 极速胶囊均声明使用紧凑内联 DIY 手柄
-    for (const inlineMode of ['list', 'minimal', 'compact', 'directory'] as const) {
+    // 极简列表 / 书签目录 / 紧凑条形 / 极速胶囊 / 终端索引均声明使用紧凑内联 DIY 手柄
+    for (const inlineMode of ['list', 'minimal', 'compact', 'directory', 'terminal'] as const) {
       expect(VIEW_MODE_REGISTRY[inlineMode].diyCompatible.handleStyle).toBe('inline-compact')
     }
   })
@@ -80,6 +86,10 @@ describe('强类型单一真相模式注册表（VIEW_MODE_REGISTRY）', () => {
     expect(normalizeCardDisplayMode('icon-wall')).toBe('icon-wall')
     expect(normalizeCardDisplayMode('list')).toBe('list')
     expect(normalizeCardDisplayMode('directory')).toBe('directory')
+    expect(normalizeCardDisplayMode('bento')).toBe('bento')
+    expect(normalizeCardDisplayMode('glass-dock')).toBe('glass-dock')
+    expect(normalizeCardDisplayMode('magazine')).toBe('magazine')
+    expect(normalizeCardDisplayMode('terminal')).toBe('terminal')
     expect(normalizeCardDisplayMode('unknown-mode')).toBe('standard')
     expect(normalizeCardDisplayMode(undefined)).toBe('standard')
   })
@@ -91,7 +101,7 @@ describe('强类型单一真相模式注册表（VIEW_MODE_REGISTRY）', () => {
     // 切回桌面端：自动恢复 list
     expect(resolveEffectiveViewMode('list', false)).toBe('list')
     // 原生适配移动端的模式不受影响
-    for (const nativeMode of ['standard', 'icon-wall', 'minimal', 'compact', 'rich', 'directory'] as const) {
+    for (const nativeMode of ['standard', 'bento', 'glass-dock', 'magazine', 'rich', 'icon-wall', 'terminal', 'minimal', 'compact', 'directory'] as const) {
       expect(resolveEffectiveViewMode(nativeMode, true)).toBe(nativeMode)
       expect(resolveEffectiveViewMode(nativeMode, false)).toBe(nativeMode)
     }
@@ -99,6 +109,10 @@ describe('强类型单一真相模式注册表（VIEW_MODE_REGISTRY）', () => {
 
   it('每种模式都具备专属响应式容器网格与合理的折叠行数', () => {
     expect(getGridClassForCardMode('standard', 12)).toContain('@4xl:grid-cols-3')
+    expect(getGridClassForCardMode('bento', 12)).toContain('@4xl:grid-cols-3')
+    expect(getGridClassForCardMode('glass-dock', 12)).toContain('@4xl:grid-cols-4')
+    expect(getGridClassForCardMode('magazine', 12)).toContain('@5xl:grid-cols-3')
+    expect(getGridClassForCardMode('terminal', 12)).toContain('@3xl:grid-cols-2')
     expect(getGridClassForCardMode('icon-wall', 12)).toContain('@4xl:grid-cols-6')
     expect(getGridClassForCardMode('icon-wall', 12)).toContain('@6xl:grid-cols-8')
     expect(getGridClassForCardMode('list', 12)).toBe('grid grid-cols-1 gap-1.5')
@@ -110,6 +124,10 @@ describe('强类型单一真相模式注册表（VIEW_MODE_REGISTRY）', () => {
 
     expect(getPreviewRowsForCardMode('list')).toBe(6)
     expect(getPreviewRowsForCardMode('standard')).toBe(2)
+    expect(getPreviewRowsForCardMode('bento')).toBe(2)
+    expect(getPreviewRowsForCardMode('glass-dock')).toBe(2)
+    expect(getPreviewRowsForCardMode('magazine')).toBe(2)
+    expect(getPreviewRowsForCardMode('terminal')).toBe(3)
     expect(getPreviewRowsForCardMode('icon-wall')).toBe(2)
     expect(getPreviewRowsForCardMode('minimal')).toBe(3)
     expect(getPreviewRowsForCardMode('directory')).toBe(3)
@@ -117,6 +135,10 @@ describe('强类型单一真相模式注册表（VIEW_MODE_REGISTRY）', () => {
     expect(computePreviewCountForMode('directory', 3)).toBe(9)
     expect(computePreviewCountForMode('directory', 4)).toBe(12)
     expect(computePreviewCountForMode('directory', 5)).toBe(10)
+    expect(computePreviewCountForMode('bento', 4)).toBe(8)
+    expect(computePreviewCountForMode('glass-dock', 5)).toBe(10)
+    expect(computePreviewCountForMode('magazine', 3)).toBe(6)
+    expect(computePreviewCountForMode('terminal', 3)).toBe(9)
     expect(computePreviewCountForMode('list', 1)).toBe(6)
     expect(computePreviewCountForMode('icon-wall', 6)).toBe(12)
     expect(computePreviewCountForMode('icon-wall', 8)).toBe(16)
@@ -184,7 +206,12 @@ describe('Cookie + localStorage 双写零闪烁 SSR 契约（view-mode-cookie）
 
     const vmSrc = overlaySource('src/app/vm/[mode]/page.tsx')
     expect(vmSrc).toContain('generateStaticParams')
-    expect(vmSrc).toContain('export { default, generateMetadata } from "../../page"')
+    // 默认导出仍与首页同源；generateMetadata 改成显式包装，让 route-titles 守卫
+    // 能看到可见的标题来源（单纯重导出扫不到），title/description 仍取首页运行时值。
+    expect(vmSrc).toContain('export { default } from "../../page"')
+    expect(vmSrc).toContain('export async function generateMetadata')
+    expect(vmSrc).toContain('title: base.title')
+    expect(vmSrc).toContain('description: base.description')
 
     const storageSrc = overlaySource('src/lib/modular/home-diy-storage.ts')
     expect(storageSrc).toContain('writeViewModeCookie(next.cardDisplayMode)')
@@ -197,8 +224,20 @@ describe('Cookie + localStorage 双写零闪烁 SSR 契约（view-mode-cookie）
   })
 })
 
-describe('持久化清洗、Zod 校验与快捷指令对 7 种展示模式的完整支持', () => {
-  it.each(['standard', 'icon-wall', 'list', 'minimal', 'compact', 'rich', 'directory'] as const)(
+describe('持久化清洗、Zod 校验与快捷指令对 11 种展示模式的完整支持', () => {
+  it.each([
+    'standard',
+    'bento',
+    'glass-dock',
+    'magazine',
+    'rich',
+    'icon-wall',
+    'terminal',
+    'list',
+    'compact',
+    'directory',
+    'minimal',
+  ] as const)(
     'validateAndCleanDIYConfig 与 sanitizeDiyLayoutInput 放行模式「%s」',
     (mode) => {
       const cleaned = validateAndCleanDIYConfig({
@@ -222,12 +261,16 @@ describe('持久化清洗、Zod 校验与快捷指令对 7 种展示模式的完
     },
   )
 
-  it('快捷指令能识别新模式关键词（图标墙 / 清单 / 目录 / 画廊）', () => {
+  it('快捷指令能识别新模式关键词（图标墙 / 清单 / 目录 / 画廊 / 磁贴 / 晶格 / 杂志 / 终端）', () => {
     const opts = { allCategoryIds: ['ai'], categoryTitleMap: { ai: 'AI 工具' } }
     expect(parseDiyShortcut('图标启动台', opts).cardDisplayMode).toBe('icon-wall')
     expect(parseDiyShortcut('极客清单', opts).cardDisplayMode).toBe('list')
     expect(parseDiyShortcut('书签目录', opts).cardDisplayMode).toBe('directory')
     expect(parseDiyShortcut('视觉画廊', opts).cardDisplayMode).toBe('rich')
+    expect(parseDiyShortcut('灵动磁贴', opts).cardDisplayMode).toBe('bento')
+    expect(parseDiyShortcut('磨砂晶格', opts).cardDisplayMode).toBe('glass-dock')
+    expect(parseDiyShortcut('杂志社论', opts).cardDisplayMode).toBe('magazine')
+    expect(parseDiyShortcut('终端索引', opts).cardDisplayMode).toBe('terminal')
   })
 })
 
@@ -279,15 +322,20 @@ describe('无头交互壳（SiteItemShell）与升级版可视化模式切换面
     expect(cardSrc).toContain('controller={controller}')
 
     const variantSrc = overlaySource('src/components/navigation-card-variants.tsx')
-    for (const mode of ['icon-wall', 'list', 'minimal', 'directory'] as const) {
+    for (const mode of ['icon-wall', 'list', 'minimal', 'directory', 'bento', 'glass-dock', 'magazine', 'terminal'] as const) {
       expect(variantSrc).toContain(`mode="${mode}"`)
     }
     expect(variantSrc).toContain('<SiteItemShell')
     expect(variantSrc).toContain('data-diy-inline-controls="list"')
     expect(variantSrc).toContain('data-diy-inline-controls="minimal"')
     expect(variantSrc).toContain('data-diy-inline-controls="directory"')
+    expect(variantSrc).toContain('data-diy-inline-controls="terminal"')
     expect(variantSrc).toContain('bg-gradient-to-l from-card via-card to-transparent')
     expect(variantSrc).toContain('<NumberDialBadge digit={dialDigit} inline />')
     expect(getCardDisplayModeMeta('icon-wall').name).toBe('图标启动台')
+    expect(getCardDisplayModeMeta('bento').name).toBe('灵动磁贴')
+    expect(getCardDisplayModeMeta('glass-dock').name).toBe('磨砂晶格')
+    expect(getCardDisplayModeMeta('magazine').name).toBe('杂志社论')
+    expect(getCardDisplayModeMeta('terminal').name).toBe('终端索引')
   })
 })

@@ -812,11 +812,15 @@ export function describeCorruptHomeDiyConfig(backupKey: string | null): string {
 export async function hydrateHomeDiy(initialCardDisplayMode?: CanonicalCardDisplayMode): Promise<void> {
   if (sharedHydrated) return
   sharedHydrated = true
-  const cookieFallbackMode = initialCardDisplayMode ?? readClientViewModeCookie()
+  // Cookie 是 SSR 模式（proxy → /vm/[mode]）的权威来源；软导航没有新首帧时，
+  // 客户端 Cookie 比路由参数更贴近当前偏好。Cookie 缺失则以 SSR 注入值为准，
+  // 避免挂载后 localStorage 旧模式覆盖首帧、闪一下再跳模式。
+  const clientCookieMode = readClientViewModeCookie()
+  const authoritativeMode = clientCookieMode ?? initialCardDisplayMode
   const storage = safeLocalStorage()
   if (!storage) {
-    if (cookieFallbackMode && cookieFallbackMode !== DEFAULT_CONFIG.cardDisplayMode) {
-      const seeded: HomeDIYConfig = { ...DEFAULT_CONFIG, cardDisplayMode: cookieFallbackMode }
+    if (authoritativeMode && authoritativeMode !== DEFAULT_CONFIG.cardDisplayMode) {
+      const seeded: HomeDIYConfig = { ...DEFAULT_CONFIG, cardDisplayMode: authoritativeMode }
       commitSharedState({ config: seeded, history: createLayoutHistory(seeded) })
     }
     return
@@ -831,17 +835,21 @@ export async function hydrateHomeDiy(initialCardDisplayMode?: CanonicalCardDispl
   }
   const stored = readStoredHomeDiyConfig(raw)
   if (stored.status === 'ok') {
-    commitSharedState({ config: stored.config, history: createLayoutHistory(stored.config) })
-    // 老用户只有 localStorage 还没有 Cookie 时立即回填，下一次刷新即刻实现 0 CLS
-    writeViewModeCookie(stored.config.cardDisplayMode)
+    // Cookie 缺失时以 SSR 首帧为准，只纠正模式字段，其余 DIY 配置仍来自本地存储。
+    const config = authoritativeMode
+      ? { ...stored.config, cardDisplayMode: normalizeCardDisplayMode(authoritativeMode) }
+      : stored.config
+    commitSharedState({ config, history: createLayoutHistory(config) })
+    // 回填/纠正 Cookie：SSR 首帧与内存模式同源，下一次刷新也不会闪。
+    writeViewModeCookie(config.cardDisplayMode)
   } else if (
     stored.status === 'absent' &&
-    cookieFallbackMode &&
-    normalizeCardDisplayMode(cookieFallbackMode) !== DEFAULT_CONFIG.cardDisplayMode
+    authoritativeMode &&
+    normalizeCardDisplayMode(authoritativeMode) !== DEFAULT_CONFIG.cardDisplayMode
   ) {
     const seeded: HomeDIYConfig = {
       ...DEFAULT_CONFIG,
-      cardDisplayMode: normalizeCardDisplayMode(cookieFallbackMode),
+      cardDisplayMode: normalizeCardDisplayMode(authoritativeMode),
     }
     commitSharedState({ config: seeded, history: createLayoutHistory(seeded) })
   }

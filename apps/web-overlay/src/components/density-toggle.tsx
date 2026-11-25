@@ -61,7 +61,7 @@ export function DensityToggle({ className, menuSide = 'bottom' }: { className?: 
           {currentIcon()}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" side={menuSide} className="w-56 p-1.5 shadow-xl bg-popover/95 backdrop-blur-md border border-border/80">
+      <DropdownMenuContent align="end" side={menuSide} className="w-56 p-1.5 bg-popover text-popover-foreground border border-border shadow-2xl ring-1 ring-black/5 dark:ring-white/10">
         <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1">
           内容排版密度矩阵
         </DropdownMenuLabel>

@@ -1106,6 +1106,18 @@ export function parseDiyShortcut(
   if (q.includes('胶囊') || q.includes('mini')) {
     match.cardDisplayMode = 'minimal'
     feedback.push('极速胶囊')
+  } else if (q.includes('磁贴') || q.includes('bento')) {
+    match.cardDisplayMode = 'bento'
+    feedback.push('灵动磁贴')
+  } else if (q.includes('晶格') || q.includes('磨砂') || q.includes('glass')) {
+    match.cardDisplayMode = 'glass-dock'
+    feedback.push('磨砂晶格')
+  } else if (q.includes('杂志') || q.includes('社论') || q.includes('editorial') || q.includes('magazine')) {
+    match.cardDisplayMode = 'magazine'
+    feedback.push('杂志社论')
+  } else if (q.includes('终端') || q.includes('命令行') || q.includes('terminal') || q.includes('cli')) {
+    match.cardDisplayMode = 'terminal'
+    feedback.push('终端索引')
   } else if (q.includes('图标') || q.includes('启动台') || q.includes('桌面')) {
     match.cardDisplayMode = 'icon-wall'
     feedback.push('图标启动台')

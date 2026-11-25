@@ -20,6 +20,10 @@ import {
   AlignLeft,
   RotateCcw,
   Monitor,
+  LayoutDashboard,
+  Gem,
+  BookOpen,
+  Terminal,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/registry/new-york/ui/popover'
@@ -52,6 +56,14 @@ import { cn } from '@/lib/utils'
 function ModeIcon({ mode, className }: { mode: CanonicalCardDisplayMode; className?: string }) {
   const cls = cn('h-4 w-4 shrink-0', className)
   switch (mode) {
+    case 'bento':
+      return <LayoutDashboard className={cls} />
+    case 'glass-dock':
+      return <Gem className={cls} />
+    case 'magazine':
+      return <BookOpen className={cls} />
+    case 'terminal':
+      return <Terminal className={cls} />
     case 'icon-wall':
       return <Grid3X3 className={cls} />
     case 'list':
@@ -196,6 +208,85 @@ export function ModeSvgWireframe({
                 <rect x={x + 5} y={y + 1} width="13.5" height="1.8" rx="0.9" className={strong} />
                 <rect x={x + 5} y={y + 4.2} width="10.5" height="1.3" rx="0.65" className={soft} />
                 <line x1={x} y1={y + 7.2} x2={x + 19.5} y2={y + 7.2} className={divider} strokeWidth="0.65" />
+              </g>
+            )),
+          )}
+        </>
+      )}
+
+      {mode === 'bento' && (
+        <>
+          {[4, 27.5].map((x) => (
+            <g key={x}>
+              <rect x={x} y="4.5" width="20.5" height="25" rx="3" className={surface} strokeWidth="0.75" />
+              <rect x={x + 0.6} y="5.1" width="19.3" height="2.4" rx="1.2" className={strong} />
+              <rect x={x + 2.4} y="9.8" width="5.2" height="5.2" rx="1.5" className={strong} />
+              <rect x={x + 12.2} y="10.6" width="6" height="2.2" rx="1.1" className={soft} />
+              <rect x={x + 2.4} y="17.6" width="12" height="2" rx="1" className={strong} />
+              <rect x={x + 2.4} y="21.2" width="15" height="1.4" rx="0.7" className={soft} />
+              <rect x={x + 2.4} y="24.5" width="5.5" height="2.2" rx="1" className={soft} />
+              <rect x={x + 9} y="24.5" width="5.5" height="2.2" rx="1" className={soft} />
+            </g>
+          ))}
+        </>
+      )}
+
+      {mode === 'glass-dock' && (
+        <>
+          {[4, 19.5, 35].map((x) =>
+            [4.2, 18.2].map((y) => (
+              <g key={`${x}-${y}`}>
+                <rect x={x} y={y} width="13" height="11.6" rx="2.6" className={surface} strokeWidth="0.75" />
+                <circle cx={x + 6.5} cy={y + 4.4} r="2.6" className={strong} />
+                <rect x={x + 2.6} y={y + 8.4} width="7.8" height="1.5" rx="0.75" className={soft} />
+              </g>
+            )),
+          )}
+        </>
+      )}
+
+      {mode === 'magazine' && (
+        <>
+          {[4, 27.5].map((x) => (
+            <g key={x}>
+              <rect x={x} y="4.5" width="20.5" height="25" rx="2.8" className={surface} strokeWidth="0.75" />
+              <rect x={x + 0.5} y="5" width="2.4" height="24" rx="1.2" className={strong} />
+              <rect x={x + 4.8} y="7.4" width="3.6" height="3.6" rx="1" className={strong} />
+              <rect x={x + 9.6} y="8.2" width="8.5" height="1.9" rx="0.95" className={strong} />
+              <rect x={x + 4.8} y="13.8" width="13.5" height="1.5" rx="0.75" className={soft} />
+              <rect x={x + 4.8} y="16.8" width="11" height="1.5" rx="0.75" className={soft} />
+              <line x1={x + 4.5} y1="21.5" x2={x + 19} y2="21.5" className={divider} strokeWidth="0.65" />
+              <rect x={x + 4.8} y="24" width="5.5" height="2" rx="1" className={soft} />
+              <circle cx={x + 17.5} cy="25" r="1.2" className={soft} />
+            </g>
+          ))}
+        </>
+      )}
+
+      {mode === 'terminal' && (
+        <>
+          {[4, 27].map((x) =>
+            [4.5, 13.5, 22.5].map((y) => (
+              <g key={`${x}-${y}`}>
+                <rect x={x} y={y} width="21" height="6.8" rx="1.8" className={surface} strokeWidth="0.75" />
+                <path
+                  d={`M${x + 2.4} ${y + 2.2} L${x + 4.2} ${y + 3.4} L${x + 2.4} ${y + 4.6}`}
+                  className={active ? 'stroke-primary' : 'stroke-emerald-700 dark:stroke-emerald-400'}
+                  strokeWidth="1.1"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <rect x={x + 5.8} y={y + 2.5} width="6.2" height="1.8" rx="0.8" className={strong} />
+                <line
+                  x1={x + 13}
+                  y1={y + 3.4}
+                  x2={x + 16}
+                  y2={y + 3.4}
+                  className={divider}
+                  strokeWidth="0.9"
+                  strokeDasharray="1.1 1.1"
+                />
+                <rect x={x + 16.6} y={y + 2.5} width="2.8" height="1.8" rx="0.8" className={soft} />
               </g>
             )),
           )}
@@ -378,7 +469,12 @@ export function SiteDisplayModeSwitcher({
   }
 
   const featuredOption = CARD_DISPLAY_MODE_OPTIONS[0]!
-  const specialtyOptions = CARD_DISPLAY_MODE_OPTIONS.slice(1)
+  const modeGroups: Array<{ key: 'visual' | 'productivity' | 'dense'; label: string; hint: string }> = [
+    { key: 'visual', label: '视觉与质感', hint: '微光磁贴 · 立体晶格 · 社论画廊' },
+    { key: 'productivity', label: '高效与桌面', hint: '图标启动台 · 终端命令行 · 清单条形' },
+    { key: 'dense', label: '极简与高密', hint: '去框化目录 · 超高密药丸流' },
+  ]
+  const indexById = new Map(CARD_DISPLAY_MODE_OPTIONS.map((opt, idx) => [opt.id, idx]))
 
   const renderModeOptionButton = (
     opt: ViewModeConfig,
@@ -427,6 +523,11 @@ export function SiteDisplayModeSwitcher({
               {options.featured && (
                 <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.2 text-[10px] font-medium text-muted-foreground">
                   {opt.badge}
+                </span>
+              )}
+              {!options.featured && opt.isNew && (
+                <span className="shrink-0 rounded-full bg-primary/12 px-1.5 py-0.2 font-mono text-[9px] font-semibold text-primary">
+                  NEW
                 </span>
               )}
               {isDesktopFirst && (
@@ -498,16 +599,37 @@ export function SiteDisplayModeSwitcher({
         </div>
       )}
 
-      {/* WAI-ARIA radiogroup：桌面端 1 + 2×3 对称网格，移动端底部抽屉单列触控友好列表 */}
+      {/* WAI-ARIA radiogroup：1 默认推荐 + 3 分组严格对称 2 列网格（视觉 4 + 高效 4 + 极简 2，零孤项） */}
       <div
         role="radiogroup"
         aria-label="选择网址展示样式"
-        className={cn(sheet ? 'grid grid-cols-1 gap-2' : 'grid grid-cols-1 sm:grid-cols-2 gap-1.5')}
+        className="space-y-2.5"
       >
-        {renderModeOptionButton(featuredOption, 0, { featured: true, sheet, compact })}
-        {specialtyOptions.map((opt, i) =>
-          renderModeOptionButton(opt, i + 1, { featured: false, sheet, compact }),
-        )}
+        <div className={cn(sheet ? 'grid grid-cols-1 gap-2' : 'grid grid-cols-1 sm:grid-cols-2 gap-1.5')}>
+          {renderModeOptionButton(featuredOption, 0, { featured: true, sheet, compact })}
+        </div>
+
+        {modeGroups.map((grp) => {
+          const items = CARD_DISPLAY_MODE_OPTIONS.filter((opt) => opt.group === grp.key)
+          if (items.length === 0) return null
+          return (
+            <div key={grp.key} className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2 px-0.5">
+                <span className="text-[11px] font-semibold text-foreground">{grp.label}</span>
+                <span className="truncate text-[10px] text-muted-foreground">{grp.hint}</span>
+              </div>
+              <div className={cn(sheet ? 'grid grid-cols-1 gap-2' : 'grid grid-cols-1 sm:grid-cols-2 gap-1.5')}>
+                {items.map((opt) =>
+                  renderModeOptionButton(opt, indexById.get(opt.id) ?? 0, {
+                    featured: false,
+                    sheet,
+                    compact,
+                  }),
+                )}
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       {/* 底部快捷联动：间距密度 + 恢复默认 */}
@@ -574,7 +696,7 @@ export function SiteDisplayModeSwitcher({
       aria-haspopup="dialog"
       onClick={mounted && isBelowMd ? () => handleOpenChange(true) : undefined}
       className={cn(
-        'relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-0 transition-colors sm:w-auto sm:flex-row sm:gap-1.5 sm:px-2.5',
+        'relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-0 transition-colors sm:w-auto sm:flex-row sm:gap-1.5 sm:px-2.5 md:w-11 md:px-0 xl:w-auto xl:px-2.5',
         isCustomMode
           ? 'border border-primary/30 bg-primary/[0.08] text-primary hover:bg-primary/[0.14]'
           : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
@@ -584,12 +706,12 @@ export function SiteDisplayModeSwitcher({
       <ModeIcon mode={currentMode} className="h-4 w-4 shrink-0" />
       <span className="whitespace-nowrap text-[10px] leading-none sm:text-xs sm:font-medium">
         <span className="sm:hidden">展示</span>
-        <span className="hidden sm:inline xl:hidden">{currentMeta.shortName}</span>
+        <span className="hidden sm:inline md:hidden">{currentMeta.shortName}</span>
         <span className="hidden xl:inline">{currentMeta.shortLabel}</span>
       </span>
       <ChevronDown
         className={cn(
-          'hidden h-3 w-3 shrink-0 opacity-65 transition-transform duration-150 sm:inline-block',
+          'hidden h-3 w-3 shrink-0 opacity-65 transition-transform duration-150 sm:inline-block md:hidden xl:inline-block',
           open && 'rotate-180',
         )}
       />
@@ -630,7 +752,7 @@ export function SiteDisplayModeSwitcher({
     )
   }
 
-  // 桌面端（>= 768px）：452px 宽 2 列卡片网格 Popover
+  // 桌面端（>= 768px）：540px 宽对称分组 2 列卡片网格 Popover（实底防透字 + collisionPadding 防贴边）
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <Tooltip>
@@ -638,18 +760,19 @@ export function SiteDisplayModeSwitcher({
           <PopoverTrigger asChild>{triggerButton}</PopoverTrigger>
         </TooltipTrigger>
         <TooltipContent side="bottom" sideOffset={6}>
-          切换网址展示样式（当前：{currentMeta.name} · 7 种模式可选）
+          切换网址展示样式（当前：{currentMeta.name} · {CARD_DISPLAY_MODE_OPTIONS.length} 种模式可选）
         </TooltipContent>
       </Tooltip>
 
       <PopoverContent
         align="end"
         sideOffset={8}
+        collisionPadding={8}
         onCloseAutoFocus={(e) => {
           e.preventDefault()
           restoreTriggerFocus()
         }}
-        className="w-[min(452px,calc(100vw-1.5rem))] rounded-2xl border border-border/80 bg-popover/98 p-3 shadow-2xl backdrop-blur-xl"
+        className="w-[min(540px,calc(100vw-1.5rem))] max-h-[min(82vh,640px)] overflow-y-auto rounded-2xl border border-border bg-popover p-3.5 text-popover-foreground shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
       >
         {renderGalleryBody({ compact: false, sheet: false })}
       </PopoverContent>

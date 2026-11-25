@@ -548,7 +548,9 @@ export function HomeDIYToolbar({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56 p-1.5">
-                <DropdownMenuLabel className="text-xs text-muted-foreground">全局网址展示风格（7 种）</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-xs text-muted-foreground">
+                  全局网址展示风格（{CARD_DISPLAY_MODE_OPTIONS.length} 种）
+                </DropdownMenuLabel>
                 <DropdownMenuSeparator className="my-1" />
                 {CARD_DISPLAY_MODE_OPTIONS.map((opt) => {
                   const active = normalizeCardDisplayMode(cardDisplayMode) === opt.id

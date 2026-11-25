@@ -22,7 +22,7 @@ interface QuickToolsDrawerProps {
 
 type ToolTab = 'json' | 'base64' | 'uuid-time' | 'url' | 'jwt' | 'cron' | 'curl'
 
-export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) {
+export function QuickToolsBody() {
   const [activeTab, setActiveTab] = useState<ToolTab>('json')
   const [copied, setCopied] = useState<string | null>(null)
   const [copyError, setCopyError] = useState<string | null>(null)
@@ -173,21 +173,8 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[calc(100%-2rem)] max-w-3xl max-h-[calc(100dvh-2.5rem)] overflow-y-auto p-4 sm:p-7 glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl">
-        <DialogHeader className="pb-3 border-b border-border/50 pr-8 sm:pr-6">
-          <DialogTitle className="flex items-center gap-2.5 text-lg sm:text-xl font-bold">
-            <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
-              <Wrench className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <span>开发者极速微工具箱</span>
-          </DialogTitle>
-          <DialogDescription className="text-xs sm:text-sm text-muted-foreground mt-1">
-            端侧零延迟运行高频微工具，无需离开导航站即可极速格式化与编解码。
-          </DialogDescription>
-        </DialogHeader>
-
-        {/* 复制失败必须说出来（以前写入被拒 / 非安全上下文时，按钮点了毫无反应） */}
+    <div className="space-y-2">
+      {/* 复制失败必须说出来（以前写入被拒 / 非安全上下文时，按钮点了毫无反应） */}
         {copyError && (
           <div
             role="status"
@@ -600,6 +587,26 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
             </div>
           )
         })()}
+    </div>
+  )
+}
+
+export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[calc(100%-2rem)] max-w-3xl max-h-[calc(100dvh-2.5rem)] overflow-y-auto p-4 sm:p-7 glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl">
+        <DialogHeader className="pb-3 border-b border-border/50 pr-8 sm:pr-6">
+          <DialogTitle className="flex items-center gap-2.5 text-lg sm:text-xl font-bold">
+            <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
+              <Wrench className="w-4 h-4 sm:w-5 sm:h-5" />
+            </div>
+            <span>开发者极速微工具箱</span>
+          </DialogTitle>
+          <DialogDescription className="text-xs sm:text-sm text-muted-foreground mt-1">
+            端侧零延迟运行高频微工具，无需离开导航站即可极速格式化与编解码。
+          </DialogDescription>
+        </DialogHeader>
+        <QuickToolsBody />
       </DialogContent>
     </Dialog>
   )

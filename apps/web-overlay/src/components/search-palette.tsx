@@ -19,7 +19,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList } from '@/registry/new-york/ui/command'
-import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download, ExternalLink, PencilLine, Share2, Upload, RotateCcw, LayoutTemplate, Sun, Moon, Accessibility, Plus, Wrench, Calculator, Braces, Binary, Link2, KeyRound, Timer, Terminal, Hash, Globe, Network, Palette, CalendarDays, Regex, Scale, Activity, Ruler, Fingerprint } from 'lucide-react'
+import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download, ExternalLink, PencilLine, Share2, Upload, RotateCcw, LayoutTemplate, Sun, Moon, Accessibility, Plus, Wrench, Calculator, Braces, Binary, Link2, KeyRound, Timer, Terminal, Hash, Globe, Network, Palette, CalendarDays, Regex, Scale, Activity, Ruler, Fingerprint, Radar, Maximize2 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
   searchSites,
@@ -58,6 +58,13 @@ import {
   resolveAiModeInput,
   writeSearchAiMode,
 } from '@/lib/search-ai-mode'
+import {
+  detectDiscoveryIntent,
+  resolveSimilarModeInput,
+  type SearchDiscoveryTab,
+} from '@/lib/search-discovery-intent'
+import { SearchPaletteAiTab, AI_FALLBACK_SCENES } from '@/components/search/search-palette-ai-tab'
+import { SearchPaletteSimilarTab, SIMILAR_QUICK_SEEDS } from '@/components/search/search-palette-similar-tab'
 import { getIdentity } from '@/lib/identity'
 import { relaxedPricingNotice, searchHref } from '@/lib/search-page'
 import { useFavorites } from '@/hooks/useFavorites'
@@ -233,6 +240,8 @@ interface SearchPaletteProps {
   /** 类目筛选（侧栏点击类目时带入） */
   categoryId?: string
   placeholder?: string
+  /** 三合一搜索窗「大窗工作台 / VS 深度横评」回调，由首页顶栏透传打开 AiFinderDialog */
+  onOpenDiscoveryDialog?: (mode?: 'ai' | 'similar', initialQuery?: string) => void
 }
 
 /**
@@ -285,22 +294,85 @@ export function PaletteFooterHint() {
   )
 }
 
-export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导航…（中文 / 拼音 / 语义）（按 / 快速搜索）' }: SearchPaletteProps) {
+export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导航…（中文 / 拼音 / 语义）（按 / 快速搜索）', onOpenDiscoveryDialog }: SearchPaletteProps) {
   const [query, setQuery] = useState('')
   const [isFocused, setIsFocused] = useState(false)
   /**
-   * AI 模式：打开后回车不再打开第一条站内结果，而是把整句查询直接发给
-   * AI 找站（全局抽屉）。模式记在本地，下次打开搜索框还在；只影响回车
-   * 去向，不动站内检索本身（方向键照常挑结果）。
+   * 三合一融合搜索模式（站内检索 / AI 找站 / 找相似）：
+   *   - `aiMode`：问 AI 找站（保留原 localStorage 记忆、? / ai 前缀与回车直达 AI）；
+   *   - `similarMode`：SimilarSites 级 5 维找相似平替（支持 sim / 相似 前缀与回车直查）；
+   *   - 两者均关时为默认「全站检索」。
    */
   const [aiMode, setAiMode] = useState<boolean>(() => readSearchAiMode())
-  const effectivePlaceholder = aiMode ? SEARCH_AI_PLACEHOLDER : placeholder
+  const [similarMode, setSimilarMode] = useState<boolean>(false)
+  const [aiAutoRun, setAiAutoRun] = useState<{ query: string; sceneId?: string; seq: number } | null>(null)
+  const [similarSubmitReq, setSimilarSubmitReq] = useState<{ query: string; resetTrail?: boolean; seq: number } | null>(null)
+  const similarKeyNavRef = useRef<((key: 'ArrowDown' | 'ArrowUp' | 'Enter') => boolean) | null>(null)
+
+  const activeDiscoveryTab: SearchDiscoveryTab = aiMode ? 'ai' : similarMode ? 'similar' : 'search'
+  const basePlaceholder = aiMode ? SEARCH_AI_PLACEHOLDER : placeholder
+  const effectivePlaceholder = similarMode ? '输入网址、域名或站名找相似平替…' : basePlaceholder
+
+  const selectDiscoveryTab = useCallback((tab: SearchDiscoveryTab) => {
+    if (tab === 'ai') {
+      setSimilarMode(false)
+      setAiMode(true)
+      writeSearchAiMode(true)
+    } else if (tab === 'similar') {
+      setAiMode(false)
+      writeSearchAiMode(false)
+      setSimilarMode(true)
+    } else {
+      setAiMode(false)
+      writeSearchAiMode(false)
+      setSimilarMode(false)
+    }
+    setIsFocused(true)
+    inputRef.current?.focus()
+  }, [])
+
   const toggleAiMode = useCallback(() => {
+    setSimilarMode(false)
     setAiMode((prev) => {
       const next = !prev
       writeSearchAiMode(next)
       return next
     })
+    setIsFocused(true)
+    inputRef.current?.focus()
+  }, [])
+
+  const toggleSimilarMode = useCallback(() => {
+    setAiMode(false)
+    writeSearchAiMode(false)
+    setSimilarMode((prev) => !prev)
+    setIsFocused(true)
+    inputRef.current?.focus()
+  }, [])
+
+  const switchToSimilarWithQuery = useCallback((targetQuery: string) => {
+    const q = targetQuery.trim()
+    setAiMode(false)
+    writeSearchAiMode(false)
+    setSimilarMode(true)
+    setQuery(q)
+    setIsFocused(true)
+    if (q) {
+      setSimilarSubmitReq((prev) => ({ query: q, resetTrail: true, seq: (prev?.seq ?? 0) + 1 }))
+    }
+    inputRef.current?.focus()
+  }, [])
+
+  const switchToAiWithQuery = useCallback((nextQuery: string, sceneId?: string) => {
+    const q = nextQuery.trim()
+    setSimilarMode(false)
+    setAiMode(true)
+    writeSearchAiMode(true)
+    setQuery(q)
+    setIsFocused(true)
+    if (q) {
+      setAiAutoRun((prev) => ({ query: q, sceneId, seq: (prev?.seq ?? 0) + 1 }))
+    }
     inputRef.current?.focus()
   }, [])
   /**
@@ -408,11 +480,17 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
    */
   useEffect(() => {
     const onFocusSearch = (e: Event) => {
-      const detail = (e as CustomEvent<{ ai?: boolean }>).detail
-      if (detail?.ai) {
+      const detail = (e as CustomEvent<{ ai?: boolean; similar?: boolean }>).detail
+      if (detail?.similar) {
+        setAiMode(false)
+        writeSearchAiMode(false)
+        setSimilarMode(true)
+      } else if (detail?.ai) {
+        setSimilarMode(false)
         setAiMode(true)
         writeSearchAiMode(true)
       }
+      setIsFocused(true)
       inputRef.current?.focus()
     }
     window.addEventListener('navhub:focus-search', onFocusSearch as EventListener)
@@ -690,15 +768,17 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
      第二个按键还会把刚开的弹窗 toggle 掉 —— 用户看到的是快捷键失灵。
      内联面板只保留「在自己有焦点时 Esc 收起」。 */
   useEffect(() => {
+    if (!isFocused) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      if (document.activeElement !== inputRef.current) return
+      if (e.key !== 'Escape' && e.code !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
       setIsFocused(false)
       inputRef.current?.blur()
     }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [])
+    window.addEventListener('keydown', onKey, { capture: true })
+    return () => window.removeEventListener('keydown', onKey, { capture: true })
+  }, [isFocused])
 
   /* 防抖检索 + 取消在途请求 */
   useEffect(() => {
@@ -1364,6 +1444,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const rankedHits = useMemo(() => rankSearchHits(hits, query), [hits, query])
   const displayHits = rankedHits.ordered
   const relatedStartIndex = rankedHits.exact.length + rankedHits.keyword.length
+  const exactSiteFirst = rankedHits.exact.length > 0
 
   const navItems = useMemo(() => {
     if (!showResults) return [] as Array<{ id: string; kind: 'plugin' | 'site' | 'diy' | 'suggestion' | 'favorite' | 'action' | 'tool' | 'quicklink' }>
@@ -1377,8 +1458,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       toolIds: matchedPaletteTools.map((t) => `tool-${t.id}`),
       pluginIds: pluginItems.map((p) => `plugin-${p.id}`),
       siteIds: displayHits.map((h) => `site-${h.siteId}`),
+      sitesFirst: exactSiteFirst,
     })
-  }, [showResults, suggestionGroups, matchedPaletteQuicklinks, matchedDiyActions, matchedSceneActions, matchedPaletteFavorites, matchedPaletteActions, matchedPaletteTools, pluginItems, displayHits])
+  }, [showResults, suggestionGroups, matchedPaletteQuicklinks, matchedDiyActions, matchedSceneActions, matchedPaletteFavorites, matchedPaletteActions, matchedPaletteTools, pluginItems, displayHits, exactSiteFirst])
 
   const navIndexById = useMemo(() => {
     const map = new Map<string, number>()
@@ -1414,6 +1496,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       // 不 preventDefault。写法照抄 batch-keyboard.ts 与 cmdk 源码守卫
       // 的同一条件（isComposing || keyCode === 229）。
       if (e.nativeEvent.isComposing || e.keyCode === 229) return
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setIsFocused(false)
+        inputRef.current?.blur()
+        return
+      }
       if (e.key === 'Enter' && aiMode) {
         // AI 模式：回车不打开站内结果，直接把整句查询发给 AI 找站。
         // 空查询不发（抽屉打开却没问题，等于白点一下）。
@@ -1422,6 +1510,24 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         e.preventDefault()
         setIsFocused(false)
         openCopilot({ query: q, source: 'programmatic' })
+        return
+      }
+      if (similarMode && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        if (similarKeyNavRef.current?.(e.key)) {
+          e.preventDefault()
+        }
+        return
+      }
+      if (e.key === 'Enter' && similarMode) {
+        if (similarKeyNavRef.current?.('Enter')) {
+          e.preventDefault()
+          return
+        }
+        const q = query.trim()
+        if (!q) return
+        e.preventDefault()
+        setIsFocused(true)
+        setSimilarSubmitReq((prev) => ({ query: q, resetTrail: true, seq: (prev?.seq ?? 0) + 1 }))
         return
       }
       if (!showResults) return
@@ -1509,7 +1615,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         inputRef.current?.blur()
       }
     },
-    [showResults, navItems.length, activeIndex, findOptionElement, aiMode, query, quicklinkMatch, openQuicklink, toast],
+    [showResults, navItems.length, activeIndex, findOptionElement, aiMode, similarMode, query, quicklinkMatch, openQuicklink, toast],
   )
 
   const panel = planSearchPanel({
@@ -1535,6 +1641,183 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   })
 
   const omniCommand = useMemo(() => parseOmniCommand(query), [query])
+  const searchIntentHint = useMemo(
+    () => (activeDiscoveryTab === 'search' ? detectDiscoveryIntent(query) : null),
+    [activeDiscoveryTab, query],
+  )
+
+  const unifiedModeHeader = (
+    <div className="sticky top-0 z-20 flex items-center justify-between gap-1.5 border-b border-border/70 bg-popover px-2.5 py-2">
+      <div
+        role="tablist"
+        aria-label="三合一融合搜索模式"
+        className="inline-flex min-w-0 items-center rounded-lg border border-border/70 bg-muted/50 p-0.5"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeDiscoveryTab === 'search'}
+          onClick={() => selectDiscoveryTab('search')}
+          className={`inline-flex h-7 items-center gap-1 rounded-md px-2 sm:px-2.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
+            activeDiscoveryTab === 'search'
+              ? 'bg-primary text-primary-foreground shadow-2xs'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Search className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>全站检索</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeDiscoveryTab === 'ai'}
+          onClick={() => selectDiscoveryTab('ai')}
+          className={`inline-flex h-7 items-center gap-1 rounded-md px-2 sm:px-2.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
+            activeDiscoveryTab === 'ai'
+              ? 'bg-primary text-primary-foreground shadow-2xs'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>AI 找站</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeDiscoveryTab === 'similar'}
+          onClick={() => selectDiscoveryTab('similar')}
+          className={`inline-flex h-7 items-center gap-1 rounded-md px-2 sm:px-2.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
+            activeDiscoveryTab === 'similar'
+              ? 'bg-primary text-primary-foreground shadow-2xs'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Radar className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>找相似</span>
+        </button>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1">
+        {onOpenDiscoveryDialog ? (
+          <button
+            type="button"
+            onClick={() => {
+              const targetMode: 'ai' | 'similar' = activeDiscoveryTab === 'similar' ? 'similar' : 'ai'
+              setIsFocused(false)
+              onOpenDiscoveryDialog(targetMode, query.trim() || undefined)
+            }}
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-border/70 bg-card px-2 text-[11px] font-medium text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors cursor-pointer whitespace-nowrap"
+            title="在宽屏独立工作台弹窗中深度探索与 VS 横评"
+            aria-label="打开宽屏独立工作台弹窗"
+          >
+            <Maximize2 className="h-3 w-3 shrink-0" />
+            <span className="hidden sm:inline">大窗工作台</span>
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => {
+            setIsFocused(false)
+            inputRef.current?.blur()
+          }}
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+          title="收起搜索面板 (Esc)"
+          aria-label="收起搜索面板"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  )
+
+  const pluginSectionNode = (
+    <>
+      {pluginItems.length > 0 && (
+        <div className="border-b border-border/60">
+          <div className="px-3.5 py-2 flex items-center justify-between gap-2 bg-primary/5">
+            <span className="text-xs font-semibold text-primary flex items-center gap-1.5">
+              <Store className="h-3.5 w-3.5" />
+              插件市场
+              {pluginLoading && <Loader2 className="h-3 w-3 animate-spin opacity-60" />}
+              {pluginSemanticFallback && (
+                <span className="text-[10px] font-normal text-muted-foreground">语义未就绪 · 关键词匹配</span>
+              )}
+            </span>
+            <Link
+              href={`/marketplace?q=${encodeURIComponent(query.trim())}`}
+              onClick={() => setIsFocused(false)}
+              className="text-[11px] text-primary/80 hover:text-primary hover:underline"
+            >
+              查看全部插件结果
+            </Link>
+          </div>
+          <div className="p-1.5 space-y-1">
+            {pluginItems.map((p) => (
+              <Link
+                key={p.id}
+                id={`navhub-search-opt-${navIndexById.get('plugin-' + p.id) ?? -1}`}
+                data-nav-index={navIndexById.get('plugin-' + p.id) ?? -1}
+                data-nav-item="plugin"
+                aria-current={navIndexById.get('plugin-' + p.id) === activeIndex ? 'true' : undefined}
+                href={`/marketplace/${encodeURIComponent(p.slug)}`}
+                onClick={() => setIsFocused(false)}
+                className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors ${
+                  navIndexById.get('plugin-' + p.id) === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                }`}
+              >
+                <NavDigitBadge index={navIndexById.get('plugin-' + p.id) ?? -1} />
+                <span className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/15 flex items-center justify-center shrink-0">
+                  <Store className="h-4 w-4 text-primary" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-sm font-medium truncate">
+                      <Highlighted text={p.name} query={query} />
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground shrink-0">
+                      {pluginKindLabel(p.kind)}
+                    </span>
+                  </span>
+                  {p.description && (
+                    <span className="block text-xs text-muted-foreground truncate mt-0.5">
+                      <Highlighted text={p.description} query={query} />
+                    </span>
+                  )}
+                </span>
+                <span className="flex items-center gap-2 text-[10px] text-muted-foreground shrink-0 font-mono">
+                  {(p.installCount ?? 0) > 0 && (
+                    <span className="inline-flex items-center gap-0.5">
+                      <Download className="h-3 w-3" />
+                      {p.installCount}
+                    </span>
+                  )}
+                  {(p.reviewCount ?? 0) > 0 && (
+                    <span className="inline-flex items-center gap-0.5 text-amber-500">
+                      <Star className="h-3 w-3 fill-amber-400" />
+                      {(p.ratingAvg ?? 0).toFixed(1)}
+                    </span>
+                  )}
+                  <ArrowRight className="h-3 w-3 opacity-40" />
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+      {pluginFailed && pluginItems.length === 0 && (
+        <div className="px-3.5 py-2 text-[11px] text-amber-700 dark:text-amber-400 border-b flex items-center gap-1.5">
+          <Store className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>插件结果本次没有取回（不是插件市场没有匹配），站点结果不受影响。</span>
+          <button
+            className="underline underline-offset-2 hover:no-underline shrink-0"
+            onClick={() => setRetryToken((n) => n + 1)}
+          >
+            重试
+          </button>
+        </div>
+      )}
+    </>
+  )
 
   return (
     <div ref={searchRef} className="relative w-full max-w-2xl min-w-0 mx-auto">
@@ -1587,9 +1870,21 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           定位——旧实现里 absolute 簇 + 固定右 padding 在 1024px 档会被
           根节点的 lg 档 420px 最小宽度顶出父容器，与「AI 找站」「今日」按钮叠在一起。 */}
       <div
-        className={`flex items-center gap-2 rounded-xl border bg-background/90 pl-3 pr-2 shadow-xs transition-all focus-within:ring-2 hover:border-border-strong dark:bg-muted/20 ${aiMode ? 'border-violet-400/70 focus-within:border-violet-400/80 focus-within:ring-violet-400/30' : 'border-border-strong focus-within:border-primary/50 focus-within:ring-primary/20'}`}
+        className={`flex items-center gap-2 rounded-xl border bg-background/90 pl-3 pr-2 shadow-xs transition-all focus-within:ring-2 hover:border-border-strong dark:bg-muted/20 ${
+          aiMode
+            ? 'border-violet-400/70 focus-within:border-violet-400/80 focus-within:ring-violet-400/30'
+            : similarMode
+              ? 'border-sky-500/70 focus-within:border-sky-500/80 focus-within:ring-sky-500/30'
+              : 'border-border-strong focus-within:border-primary/50 focus-within:ring-primary/20'
+        }`}
       >
-        <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        {aiMode ? (
+          <Sparkles className="h-4 w-4 shrink-0 text-violet-700 dark:text-violet-300" aria-hidden="true" />
+        ) : similarMode ? (
+          <Radar className="h-4 w-4 shrink-0 text-sky-700 dark:text-sky-300" aria-hidden="true" />
+        ) : (
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        )}
         <Input aria-label={effectivePlaceholder}
           data-search-input
           ref={inputRef}
@@ -1605,7 +1900,17 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           role="combobox"
           aria-expanded={isFocused}
           aria-autocomplete="list"
-          aria-controls={showResults ? 'navhub-search-results-panel' : isFocused ? 'navhub-search-suggest-panel' : undefined}
+          aria-controls={
+            isFocused && aiMode
+              ? 'navhub-search-ai-panel'
+              : isFocused && similarMode
+                ? 'navhub-search-similar-panel'
+                : showResults
+                  ? 'navhub-search-results-panel'
+                  : isFocused
+                    ? 'navhub-search-suggest-panel'
+                    : undefined
+          }
           aria-activedescendant={
             activeIndex >= 0 && navItems.length > 0 ? `navhub-search-opt-${activeIndex}` : undefined
           }
@@ -1613,9 +1918,19 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           placeholder={effectivePlaceholder}
           value={query}
           onChange={(e) => {
-            // 与 Spotlight 同一约定：行首 `?` / `ai ` 自动进 AI 模式并去掉前缀。
+            // 与 Spotlight 同一约定：行首 `?` / `ai ` 自动进 AI 模式；`sim ` / `相似 ` 自动进找相似模式。
+            const resolvedSimilar = resolveSimilarModeInput(e.target.value)
+            if (resolvedSimilar.similarMode) {
+              setAiMode(false)
+              writeSearchAiMode(false)
+              setSimilarMode(true)
+              setQuery(resolvedSimilar.query)
+              setIsFocused(true)
+              return
+            }
             const resolved = resolveAiModeInput(e.target.value)
             if (resolved.aiMode && !aiMode) {
+              setSimilarMode(false)
               setAiMode(true)
               writeSearchAiMode(true)
             }
@@ -1637,11 +1952,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             skipDebounceRef.current = true
           }}
           onFocus={() => setIsFocused(true)}
-          className="h-9.5 min-w-0 flex-1 border-0 bg-transparent px-0 py-1 shadow-none focus-visible:ring-0 text-base sm:text-sm"
+          className="h-9.5 min-w-0 flex-1 border-0 bg-transparent px-0 py-1 shadow-none focus-visible:ring-0 text-base sm:text-sm placeholder:text-[13px] sm:placeholder:text-sm [&::-webkit-search-cancel-button]:hidden"
         />
         <div className="flex shrink-0 items-center gap-1.5">
-          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-          {!query && !aiMode && (
+          {loading && !aiMode && !similarMode && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+          {!query && !aiMode && !similarMode && (
             <kbd
               aria-hidden="true"
               title="按 / 快速搜索"
@@ -1656,11 +1971,23 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             onClick={toggleAiMode}
             aria-pressed={aiMode}
             aria-label={aiMode ? '退出 AI 模式' : '切换到 AI 模式'}
-            title={aiMode ? 'AI 模式开：回车直接问 AI 找站' : 'AI 模式：回车直接问 AI 找站'}
+            title={aiMode ? 'AI 模式开：场景找站或回车问 AI' : 'AI 找站：场景推荐或回车直接问 AI'}
             className={`h-6 px-1.5 rounded-full text-[11px] font-semibold gap-0.5 ${aiMode ? 'bg-violet-500/15 text-violet-600 dark:text-violet-300 ring-1 ring-violet-400/60' : 'text-muted-foreground hover:bg-muted'}`}
           >
-            <Sparkles className="h-3 w-3" />
-            AI
+            <Sparkles className="h-3 w-3 shrink-0" />
+            <span className="md:hidden xl:inline">AI</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleSimilarMode}
+            aria-pressed={similarMode}
+            aria-label={similarMode ? '退出找相似模式' : '切换到找相似模式'}
+            title={similarMode ? '找相似模式开：输入网址或站名查平替' : '找相似网站：输入网址或站名查 5 维相似平替（也可输入 sim 域名）'}
+            className={`h-6 px-1.5 rounded-full text-[11px] font-semibold gap-0.5 ${similarMode ? 'bg-sky-500/15 text-sky-700 dark:text-sky-300 ring-1 ring-sky-400/60' : 'text-muted-foreground hover:bg-muted'}`}
+          >
+            <Radar className="h-3 w-3 shrink-0" />
+            <span className="md:hidden xl:inline">相似</span>
           </Button>
           {query && (
             <Button variant="ghost" size="sm" onClick={() => { setQuery(''); inputRef.current?.focus() }} className="h-6 w-6 p-0 rounded-full hover:bg-muted" aria-label="清空搜索词" title="清空搜索词">
@@ -1704,8 +2031,107 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             : ''}
       </p>
 
-      {isFocused && !query.trim() && (
-        <div id="navhub-search-suggest-panel" className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-0 mt-0 sm:mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto divide-y divide-border/60 animate-in fade-in-50 zoom-in-95 duration-150">
+      {isFocused && (aiMode || similarMode) && (
+        <div
+          id={aiMode ? 'navhub-search-ai-panel' : 'navhub-search-similar-panel'}
+          className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:w-[min(660px,calc(100vw-2rem))] md:w-[min(700px,calc(100vw-19rem))] mt-0 sm:mt-2.5 bg-popover text-popover-foreground border border-border rounded-xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 z-50 max-h-[min(78vh,calc(100dvh-110px))] flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150"
+        >
+          {unifiedModeHeader}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {aiMode ? (
+              <SearchPaletteAiTab
+                query={query}
+                onQueryChange={setQuery}
+                autoRun={aiAutoRun}
+                onSwitchToSimilar={switchToSimilarWithQuery}
+                onAskCopilot={(q) => {
+                  setIsFocused(false)
+                  openCopilot({ query: q, source: 'programmatic' })
+                }}
+                onOpenExpandedDialog={
+                  onOpenDiscoveryDialog
+                    ? (q) => {
+                        setIsFocused(false)
+                        onOpenDiscoveryDialog('ai', q)
+                      }
+                    : undefined
+                }
+                onClosePanel={() => setIsFocused(false)}
+              />
+            ) : (
+              <SearchPaletteSimilarTab
+                query={query}
+                onQueryChange={setQuery}
+                submitRequest={similarSubmitReq}
+                keyNavRef={similarKeyNavRef}
+                onSwitchToAi={(q) => switchToAiWithQuery(q)}
+                onOpenExpandedDialog={
+                  onOpenDiscoveryDialog
+                    ? (q) => {
+                        setIsFocused(false)
+                        onOpenDiscoveryDialog('similar', q)
+                      }
+                    : undefined
+                }
+                onClosePanel={() => setIsFocused(false)}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {isFocused && !aiMode && !similarMode && !query.trim() && (
+        <div id="navhub-search-suggest-panel" className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:w-[min(660px,calc(100vw-2rem))] md:w-[min(680px,calc(100vw-19rem))] mt-0 sm:mt-2.5 bg-popover text-popover-foreground border border-border rounded-xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 z-50 max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto divide-y divide-border/60 animate-in fade-in-50 zoom-in-95 duration-150">
+          {unifiedModeHeader}
+          {/* 融合快启条：在默认空面板顶部一键直达 AI 场景找站或热门站点找相似 */}
+          <div className="p-2.5 bg-gradient-to-r from-primary/6 via-transparent to-sky-500/6 space-y-2">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-700 dark:text-violet-300 shrink-0">
+                <Sparkles className="h-3 w-3" />
+                <span>AI 找站：</span>
+              </span>
+              {AI_FALLBACK_SCENES.slice(0, 4).map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => switchToAiWithQuery(s.query, s.id)}
+                  className="inline-flex h-6 items-center rounded-full border border-border/70 bg-background px-2 text-[11px] font-medium text-foreground hover:border-primary/50 hover:text-primary transition-colors cursor-pointer"
+                >
+                  {s.title}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => selectDiscoveryTab('ai')}
+                className="inline-flex h-6 items-center rounded-full px-1.5 text-[11px] font-medium text-primary hover:underline cursor-pointer"
+              >
+                全部 24 场景 →
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 dark:text-sky-300 shrink-0">
+                <Radar className="h-3 w-3" />
+                <span>找相似：</span>
+              </span>
+              {SIMILAR_QUICK_SEEDS.slice(0, 5).map((seed) => (
+                <button
+                  key={seed.q}
+                  type="button"
+                  onClick={() => switchToSimilarWithQuery(seed.q)}
+                  className="inline-flex h-6 items-center rounded-full border border-border/70 bg-background px-2 text-[11px] font-medium text-foreground hover:border-primary/50 hover:text-primary transition-colors cursor-pointer"
+                >
+                  {seed.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => selectDiscoveryTab('similar')}
+                className="inline-flex h-6 items-center rounded-full px-1.5 text-[11px] font-medium text-primary hover:underline cursor-pointer"
+              >
+                查任意网址 →
+              </button>
+            </div>
+          </div>
           {/* DIY 排版快捷操作（8c）：空查询时直接展示全部操作；有查询词时改走匹配行 */}
           <div className="p-2.5">
             <div className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1.5 mb-2 px-1">
@@ -2035,8 +2461,65 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         </div>
       )}
 
-      {showResults && (
-        <div id="navhub-search-results-panel" ref={resultsPanelRef} className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-0 mt-0 sm:mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
+      {showResults && !aiMode && !similarMode && (
+        <div id="navhub-search-results-panel" ref={resultsPanelRef} className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:w-[min(660px,calc(100vw-2rem))] md:w-[min(680px,calc(100vw-19rem))] mt-0 sm:mt-2.5 bg-popover text-popover-foreground border border-border rounded-xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 z-50 max-h-[min(75vh,calc(100dvh-120px))] flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
+          {unifiedModeHeader}
+          {/* 智能跨模式直达微条：输网址一键查相似 / 输需求句一键 AI 找站 / 命中站点一键找同类平替 */}
+          {searchIntentHint === 'similar' ? (
+            <div className="px-3 py-2 bg-sky-500/10 border-b border-sky-500/25 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="text-foreground truncate">
+                <Radar className="mr-1 inline h-3.5 w-3.5 text-sky-700 dark:text-sky-300" />
+                检测到网址/域名「<strong className="font-semibold">{query.trim()}</strong>」
+              </span>
+              <button
+                type="button"
+                onClick={() => switchToSimilarWithQuery(query.trim())}
+                className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-primary px-2.5 text-[11px] font-semibold text-primary-foreground hover:opacity-95 cursor-pointer"
+              >
+                <span>一键查相似网站与平替</span>
+                <ArrowRight className="h-3 w-3" />
+              </button>
+            </div>
+          ) : searchIntentHint === 'ai' ? (
+            <div className="px-3 py-2 bg-violet-500/10 border-b border-violet-500/25 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="text-foreground truncate">
+                <Sparkles className="mr-1 inline h-3.5 w-3.5 text-violet-700 dark:text-violet-300" />
+                检测到任务需求句，可让 AI 直接匹配站单
+              </span>
+              <button
+                type="button"
+                onClick={() => switchToAiWithQuery(query.trim())}
+                className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-primary px-2.5 text-[11px] font-semibold text-primary-foreground hover:opacity-95 cursor-pointer"
+              >
+                <span>切到「AI 找站」推荐</span>
+                <ArrowRight className="h-3 w-3" />
+              </button>
+            </div>
+          ) : displayHits.length > 0 && displayHits[0]?.site ? (
+            <div className="px-3 py-1.5 bg-muted/35 border-b border-border/50 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+              <span className="text-muted-foreground truncate">
+                想探索与「<strong className="text-foreground font-semibold">{displayHits[0].site.title}</strong>」同类的平替网站？
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const first = displayHits[0]?.site
+                  if (!first) return
+                  let host = first.title
+                  try {
+                    host = new URL(first.url).hostname.replace(/^www\./, '')
+                  } catch {
+                    host = first.title
+                  }
+                  switchToSimilarWithQuery(host || first.title)
+                }}
+                className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-primary/35 bg-primary/10 px-2.5 font-semibold text-primary hover:bg-primary/20 cursor-pointer"
+              >
+                <Radar className="h-3 w-3" />
+                <span>找「{displayHits[0].site.title}」的相似站</span>
+              </button>
+            </div>
+          ) : null}
           {/* 未知前缀明示行（04 §2.2）：静默 null 改为一行明示，置于列表顶部、
               quicklink 行之上；Enter 走普通搜索，不拦截、不外跳 */}
           {quicklinkMatch.kind === 'unknown-prefix' && (
@@ -2683,90 +3166,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 </div>
               )}
 
-              {pluginItems.length > 0 && (
-                <div className="border-b border-border/60">
-                  <div className="px-3.5 py-2 flex items-center justify-between gap-2 bg-primary/5">
-                    <span className="text-xs font-semibold text-primary flex items-center gap-1.5">
-                      <Store className="h-3.5 w-3.5" />
-                      插件市场
-                      {pluginLoading && <Loader2 className="h-3 w-3 animate-spin opacity-60" />}
-                      {pluginSemanticFallback && (
-                        <span className="text-[10px] font-normal text-muted-foreground">语义未就绪 · 关键词匹配</span>
-                      )}
-                    </span>
-                    <Link
-                      href={`/marketplace?q=${encodeURIComponent(query.trim())}`}
-                      onClick={() => setIsFocused(false)}
-                      className="text-[11px] text-primary/80 hover:text-primary hover:underline"
-                    >
-                      查看全部插件结果
-                    </Link>
-                  </div>
-                  <div className="p-1.5 space-y-1">
-                    {pluginItems.map((p) => (
-                      <Link
-                        key={p.id}
-                        id={`navhub-search-opt-${navIndexById.get('plugin-' + p.id) ?? -1}`}
-                        data-nav-index={navIndexById.get('plugin-' + p.id) ?? -1}
-                        data-nav-item="plugin"
-                        aria-current={navIndexById.get('plugin-' + p.id) === activeIndex ? 'true' : undefined}
-                        href={`/marketplace/${encodeURIComponent(p.slug)}`}
-                        onClick={() => setIsFocused(false)}
-                        className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors ${
-                          navIndexById.get('plugin-' + p.id) === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
-                        }`}
-                      >
-                        <NavDigitBadge index={navIndexById.get('plugin-' + p.id) ?? -1} />
-                        <span className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/15 flex items-center justify-center shrink-0">
-                          <Store className="h-4 w-4 text-primary" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-1.5">
-                            <span className="text-sm font-medium truncate">
-                              <Highlighted text={p.name} query={query} />
-                            </span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground shrink-0">
-                              {pluginKindLabel(p.kind)}
-                            </span>
-                          </span>
-                          {p.description && (
-                            <span className="block text-xs text-muted-foreground truncate mt-0.5">
-                              <Highlighted text={p.description} query={query} />
-                            </span>
-                          )}
-                        </span>
-                        <span className="flex items-center gap-2 text-[10px] text-muted-foreground shrink-0 font-mono">
-                          {(p.installCount ?? 0) > 0 && (
-                            <span className="inline-flex items-center gap-0.5">
-                              <Download className="h-3 w-3" />
-                              {p.installCount}
-                            </span>
-                          )}
-                          {(p.reviewCount ?? 0) > 0 && (
-                            <span className="inline-flex items-center gap-0.5 text-amber-500">
-                              <Star className="h-3 w-3 fill-amber-400" />
-                              {(p.ratingAvg ?? 0).toFixed(1)}
-                            </span>
-                          )}
-                          <ArrowRight className="h-3 w-3 opacity-40" />
-                        </span>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {pluginFailed && pluginItems.length === 0 && (
-                <div className="px-3.5 py-2 text-[11px] text-amber-700 dark:text-amber-400 border-b flex items-center gap-1.5">
-                  <Store className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                  <span>插件结果本次没有取回（不是插件市场没有匹配），站点结果不受影响。</span>
-                  <button
-                    className="underline underline-offset-2 hover:no-underline shrink-0"
-                    onClick={() => setRetryToken((n) => n + 1)}
-                  >
-                    重试
-                  </button>
-                </div>
-              )}
+              {/* 精确命中站点时（如搜 gitlab/github），把站点结果排在插件包之前；否则插件包在前 */}
+              {!exactSiteFirst ? pluginSectionNode : null}
               {panel.mode !== 'hidden' ? (
                 <div className="py-6 px-3 text-center">
                   <div className="text-muted-foreground text-sm">{panel.title}</div>
@@ -2877,6 +3278,26 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           </button>
                         ),
                       )}
+                    </div>
+                  )}
+                  {!degraded && query.trim().length >= 2 && (
+                    <div className="mt-2.5 flex flex-wrap justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => switchToAiWithQuery(query.trim())}
+                        className="inline-flex items-center gap-1 rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 text-xs font-medium text-violet-700 dark:text-violet-300 hover:bg-violet-500/20 transition-colors cursor-pointer"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        <span>切到同窗「AI 找站」推荐</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => switchToSimilarWithQuery(query.trim())}
+                        className="inline-flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-xs font-medium text-sky-700 dark:text-sky-300 hover:bg-sky-500/20 transition-colors cursor-pointer"
+                      >
+                        <Radar className="h-3 w-3" />
+                        <span>去「找相似」挖掘同类平替</span>
+                      </button>
                     </div>
                   )}
                   {wantedNote ? (
@@ -3002,29 +3423,52 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           ))}
                         </div>
                       </div>
-                      <button
-                        className="flex-shrink-0 p-1 rounded hover:bg-muted"
-                        title={faved ? '取消收藏' : '收藏'}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          // 存储读不出来时写入会被拒绝（为了不覆盖原数据）：必须说出来
-                          if (favorites.storageBlocked) {
-                            toast({ title: '这一下没能保存', description: favorites.storageBlocked, variant: 'destructive' })
-                            return
-                          }
-                          void favorites.toggle({
-                            siteId: site.id, title: site.title, href: site.url,
-                            icon: site.iconKey ?? undefined, description: site.description ?? undefined,
-                          })
-                        }}
-                      >
-                        <Star className={'h-4 w-4 ' + (faved ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />
-                      </button>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          className="p-1.5 rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer"
+                          title={`查找与「${site.title}」相似的网站与平替`}
+                          aria-label={`查找与 ${site.title} 相似的网站`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            let host = site.title
+                            try {
+                              host = new URL(site.url).hostname.replace(/^www\./, '')
+                            } catch {
+                              host = site.title
+                            }
+                            switchToSimilarWithQuery(host || site.title)
+                          }}
+                        >
+                          <Radar className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="p-1.5 rounded-md hover:bg-muted cursor-pointer"
+                          title={faved ? '取消收藏' : '收藏'}
+                          aria-label={faved ? `取消收藏 ${site.title}` : `收藏 ${site.title}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // 存储读不出来时写入会被拒绝（为了不覆盖原数据）：必须说出来
+                            if (favorites.storageBlocked) {
+                              toast({ title: '这一下没能保存', description: favorites.storageBlocked, variant: 'destructive' })
+                              return
+                            }
+                            void favorites.toggle({
+                              siteId: site.id, title: site.title, href: site.url,
+                              icon: site.iconKey ?? undefined, description: site.description ?? undefined,
+                            })
+                          }}
+                        >
+                          <Star className={'h-4 w-4 ' + (faved ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />
+                        </button>
+                      </div>
                       </div>
                     </Fragment>
                   )
                 })
               )}
+              {exactSiteFirst ? pluginSectionNode : null}
               {/* 键盘提示：能力存在但没人知道，等于不存在（桌面端才显示） */}
               {(displayHits.length > 0 || pluginItems.length > 0 || matchedPaletteFavorites.length > 0 || matchedPaletteActions.length > 0 || matchedPaletteTools.length > 0) && (
                 <div className="hidden sm:flex sm:pointer-coarse:hidden items-center gap-3 border-t border-border/60 bg-muted/20 px-3 py-1.5 text-[10px] text-muted-foreground">

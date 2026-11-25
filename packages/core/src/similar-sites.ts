@@ -277,7 +277,7 @@ export function computeSiteRankings(sites: readonly Site[]): {
   };
 }
 
-function buildTagIdfMap(sites: readonly Site[]): Map<string, number> {
+function buildTagIdfMap(sites: readonly Site[]): { idf: Map<string, number>; df: Map<string, number> } {
   const df = new Map<string, number>();
   const total = Math.max(1, sites.length);
   for (const s of sites) {
@@ -291,9 +291,12 @@ function buildTagIdfMap(sites: readonly Site[]): Map<string, number> {
   }
   const idf = new Map<string, number>();
   for (const [tag, count] of df.entries()) {
-    idf.set(tag, Math.log(1 + total / (1 + count)));
+    // 泛属性标签（在全库出现比例 > 4%，如 #开源 / #免费 / #工具）大幅降权，避免跨领域的无关站点靠单个泛标签冲到榜首
+    const rawIdf = Math.log(1 + total / (1 + count));
+    const isGenericTag = total >= 50 && count / total > 0.04;
+    idf.set(tag, isGenericTag ? rawIdf * 0.35 : rawIdf);
   }
-  return idf;
+  return { idf, df };
 }
 
 function diceSimilarity(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
@@ -413,7 +416,7 @@ export function computeSimilarSitesForTarget(
   };
 
   const rankings = computeSiteRankings(activeSites);
-  const tagIdf = buildTagIdfMap(activeSites);
+  const { idf: tagIdf } = buildTagIdfMap(activeSites);
 
   const targetCatInfo = resolveCategoryNames(target.categoryId);
   const targetTags = (target.tags ?? []).map((t) => t.trim()).filter(Boolean);
@@ -483,9 +486,11 @@ export function computeSimilarSitesForTarget(
     }
     sharedTagPairs.sort((a, b) => b.idf - a.idf);
     const sharedTags = sharedTagPairs.map((p) => p.label);
+    // 特异性衰减因子：避免两站仅共享 1 个泛标签（如 #开源）时 Jaccard = 1.0 虚高
+    const specificityScale = Math.min(1, interWeight / (activeSites.length >= 50 ? 5.2 : 1.4));
     const tagScore =
       unionWeight > 0 && sharedTags.length > 0
-        ? Math.min(1, (interWeight / unionWeight) * 1.45 + Math.min(0.25, sharedTags.length * 0.06))
+        ? Math.min(1, (interWeight / unionWeight) * specificityScale * 1.35 + Math.min(0.22, sharedTags.length * 0.05))
         : 0;
 
     // 2. 语义与文本亲和度（向量余弦 + 中英词元 Dice）
@@ -549,26 +554,26 @@ export function computeSimilarSitesForTarget(
     const isSameBrand = isSameBrandSite(target, cand);
     const graphScore = Math.min(1, Math.max(relScore, audienceOverlap * 0.9));
 
-    // 无任何有效信号（不同类目、无共享标签、无图谱边、文本极弱）直接跳过，避免垃圾噪声
+    // 无任何有效信号（不同类目、仅凭泛标签或极弱文本）直接跳过，杜绝跨领域噪声污染榜首
     if (
       categoryScore === 0 &&
-      tagScore === 0 &&
       graphScore === 0 &&
-      semanticScore < 0.24
+      tagScore < 0.25 &&
+      semanticScore < 0.32
     ) {
       continue;
     }
 
     const rawScore =
-      tagScore * 0.32 +
-      semanticScore * 0.28 +
-      categoryScore * 0.18 +
-      facetScore * 0.10 +
-      graphScore * 0.12;
+      categoryScore * 0.28 +
+      semanticScore * 0.27 +
+      tagScore * 0.23 +
+      graphScore * 0.14 +
+      facetScore * 0.08;
 
     const hasStrongSignal =
       rel?.relationType === "alternative" ||
-      (sameCategory && sharedTags.length >= 2) ||
+      (sameCategory && (sharedTags.length >= 1 || semanticScore >= 0.35)) ||
       (vecSim !== null && vecSim >= 0.72);
 
     const basePercent = calibrateSimilarityPercent(rawScore, hasStrongSignal);

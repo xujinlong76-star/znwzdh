@@ -357,6 +357,18 @@ describe('读本地配置：坏数据先备份，不能当「没有配置」直�
     expect(getHomeDiySnapshot().storageWarning).toBeNull()
   })
 
+  it('SSR 首帧模式优先：Cookie 丢失时 localStorage 旧模式不在挂载后覆盖', () => {
+    browser = installBrowser({
+      [STORAGE_KEY]: JSON.stringify({ ...DEFAULT_CONFIG, cardDisplayMode: 'directory', accentColor: 'violet' }),
+    })
+    resetHomeDiySharedState()
+    hydrateHomeDiy('standard')
+    const config = getHomeDiySnapshot().config
+    expect(config.cardDisplayMode).toBe('standard')
+    // 只纠正模式字段，不牵连用户的其它 DIY 配置
+    expect(config.accentColor).toBe('violet')
+  })
+
   it('v2 迁移：保留能认的字段并写回 v3 键', () => {
     browser = installBrowser({
       navhub_home_diy_config_v2: JSON.stringify({

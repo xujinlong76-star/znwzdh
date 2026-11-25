@@ -349,6 +349,10 @@ export const USER_DATA_EXEMPT_TABLES: readonly string[] = [
   // （site-detail / search），不是用户身份；contact 是可选自由文本，不与账号
   // 挂钩，注销无法按用户映射行；复核队列本身属于公共治理数据，不随注销删除。
   "site_reports",
+  // 采集治理队列（2026-11-24 回归）：source 是采集来源枚举（sitemap/rss/page），
+  // 不是用户身份；候选与任务属于公共采集流水线，注销账号无法也不应逐行删除。
+  "site_discovery_candidates",
+  "crawl_tasks",
 ];
 
 /** 注销时走通用精确删除的表（custom/key-prefix/nullify 由 deleteUserData 单独处理） */

@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { evaluateSiteModerationGoldSet, moderateSiteWithAi } from "@navhub/ai";
+import { evaluateSiteModerationGoldSet, moderateSiteWithAi, type ChatMessage, type LlmProvider } from "@navhub/ai";
 import {
   countSiteDiscoveryCandidates, getSiteDiscoveryCandidateForUpdate,
   recordCrawlAiModerationDecision, listCrawlAiModerationDecisions,
@@ -10,13 +10,13 @@ import {
   listSiteDiscoveryCandidates, reviewSiteDiscoveryCandidate,
 } from "@navhub/store";
 import type { AppContext } from "../context.ts";
-import { resolveLlm, llmProviderReady } from "../llm-config.ts";
+import { resolveLlm, llmProviderReady, type LlmSource } from "../llm-config.ts";
 import { reserveLlmQuota, settleLlmQuota, replyQuotaBlocked } from "../llm-quota.ts";
 import { callLlm } from "../llm-usage.ts";
 import { loadCrawlAiModerationPolicy } from "../crawl-moderation-policy.ts";
 
 /** 对正式金标集做稳定抽样：相同数据集重复运行时选中相同样本。 */
-export function selectGoldEvaluationSample<T extends { id: unknown; category?: unknown; final_risk?: unknown }>(rows: readonly T[], limit = 20): T[] {
+export function selectGoldEvaluationSample<T extends Record<string, unknown>>(rows: readonly T[], limit = 20): T[] {
   const bounded = Math.max(1, Math.min(20, Math.floor(limit)));
   const keyed = rows.map(row => ({ row, hash:createHash("sha256").update(String(row.id)).digest("hex"),
     risk:row.final_risk === true || row.final_risk === 1 ? "positive" : row.final_risk === false || row.final_risk === 0 ? "negative" : "unknown",
@@ -306,7 +306,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     const params = z.object({ id: z.string().min(1).max(64) }).safeParse(req.params ?? {});
     const body = z.object({ decision: z.enum(["approve","reject"]), reason: z.string().trim().max(1000).optional() })
       .refine(v => v.decision !== "reject" || Boolean(v.reason?.trim()), "驳回时必须填写原因").safeParse(req.body ?? {});
-    if (!params.success || !body.success) { reply.code(400); return { ok:false,error:"审核参数无效",details:!params.success?params.error.issues:body.error.issues }; }
+    if (!params.success || !body.success) { reply.code(400); return { ok:false,error:"审核参数无效",details:!params.success?params.error.issues:(body.error?.issues ?? []) }; }
     const reviewer = String(req.auth.actor ?? "admin");
     const result = await ctx.repo.withTransaction(async () => {
       const current = await getSiteDiscoveryCandidateForUpdate(ctx.repo, params.data.id);
@@ -679,7 +679,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       if (!selectedProvider) { reply.code(409); return { ok: false, error: "所选模型不可用或配置已变更，请刷新模型列表" }; }
       const provider = selectedProvider.provider;
       // 固定本轮实际模型和来源，避免同一评测集混入不同模型或错误计入备用池用量。
-      const evaluationResolved = { ...resolved, provider, source: selectedProvider.source, fallbacks: [] };
+      const evaluationResolved = { ...resolved, provider, source: selectedProvider.source as LlmSource, fallbacks: [] };
       const policy = await loadCrawlAiModerationPolicy(ctx);
       const predictions: Array<{ id: string; actual: "approve" | "reject" | "review"; actualRisk: boolean }> = [];
       const actualModels = new Set<string>();
@@ -703,7 +703,10 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
             minQualityScore: policy.minQualityScore, maxExcerptChars: policy.maxExcerptChars, requireHttps: policy.requireHttps,
           }, {
             deadlineAt: Date.now() + 45_000,
-            complete: async (_provider, request) => {
+            complete: async (_provider: LlmProvider, request: {
+              messages: ChatMessage[]; temperature: number; maxTokens: number; json: true;
+              signal?: AbortSignal; deadlineAt?: number; fetchImpl?: typeof fetch;
+            }) => {
               const result = await callLlm(ctx, evaluationResolved, {
                 scenario: "crawl_moderation_gold_eval", identity: evaluationId, messages: request.messages,
                 temperature: request.temperature, maxTokens: request.maxTokens, json: request.json,
@@ -743,7 +746,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
       const previous = previousRows[0]?.metrics_json ? JSON.parse(String(previousRows[0].metrics_json)) as {exactMatchRate?:number|null;riskDetection?:{recall?:number|null}} : null;
       const alerts: Array<{severity:"warning"|"critical";code:string;message:string}> = [];
       if (metrics.exactMatchRate !== null && metrics.exactMatchRate < 0.9) alerts.push({severity:"warning",code:"low_exact_match",message:"标签精确匹配率低于 90%，建议保持 Shadow 并检查错分样本"});
-      if (metrics.riskDetection.positiveSupport === 0) alerts.push({severity:"warning",code:"risk_support_missing",message:"当前评测样本没有风险正样本，风险召回率无法评估"});
+      if (metrics.riskDetection.support === 0) alerts.push({severity:"warning",code:"risk_support_missing",message:"当前评测样本没有风险正样本，风险召回率无法评估"});
       else if (metrics.riskDetection.recall !== null && metrics.riskDetection.recall < 0.95) alerts.push({severity:"critical",code:"low_risk_recall",message:"风险召回率低于 95%，存在漏检风险，不应启用自动审核"});
       if (metrics.riskDetection.falseNegatives > 0) alerts.push({severity:"critical",code:"risk_false_negative",message:"本轮出现 "+metrics.riskDetection.falseNegatives+" 条风险漏报，必须复核对应样本"});
       if (previous?.exactMatchRate != null && metrics.exactMatchRate !== null && previous.exactMatchRate-metrics.exactMatchRate > 0.05) alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次同快照评测，标签精确匹配率下降超过 5 个百分点"});
@@ -795,7 +798,7 @@ export const crawlOperationsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = as
     const previous=previousRows[0]?.metrics_json?JSON.parse(String(previousRows[0].metrics_json)) as {exactMatchRate?:number|null;riskDetection?:{recall?:number|null}}:null;
     const alerts:Array<{severity:"warning"|"critical";code:string;message:string}>=[];
     if(metrics.exactMatchRate!==null&&metrics.exactMatchRate<0.9)alerts.push({severity:"warning",code:"low_exact_match",message:"标签精确匹配率低于 90%，建议保持 Shadow 并检查错分样本"});
-    if(metrics.riskDetection.positiveSupport===0)alerts.push({severity:"warning",code:"risk_support_missing",message:"当前金标集没有正向风险样本，风险召回率无法评估"});
+    if(metrics.riskDetection.support===0)alerts.push({severity:"warning",code:"risk_support_missing",message:"当前金标集没有正向风险样本，风险召回率无法评估"});
     else if(metrics.riskDetection.recall!==null&&metrics.riskDetection.recall<0.95)alerts.push({severity:"critical",code:"low_risk_recall",message:"风险召回率低于 95%，存在漏检风险，不应启用自动审核"});
     if(metrics.riskDetection.falseNegatives>0)alerts.push({severity:"critical",code:"risk_false_negative",message:"本轮出现 "+metrics.riskDetection.falseNegatives+" 条风险漏报，必须复核对应样本"});
     if(previous?.exactMatchRate!=null&&metrics.exactMatchRate!==null&&previous.exactMatchRate-metrics.exactMatchRate>0.05)alerts.push({severity:"warning",code:"exact_match_regression",message:"相较该模型上一次评测，标签精确匹配率下降超过 5 个百分点"});

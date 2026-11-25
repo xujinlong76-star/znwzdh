@@ -95,13 +95,14 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
           `${b.label} 右缘出视口（right=${b.right} > innerWidth=${m.innerWidth}）`,
         ).toBeLessThanOrEqual(m.innerWidth);
       }
-      // U-382（2026-11-21，基底 52e919e2）：窄屏溢出由 d28b4b84 收多选按钮进
-      // 探索菜单解决，行 gap 保持 1.5（6px）未动；此处锁定 gap 仍为 6px，
-      // 防止后人以挤间距代替减入口修溢出（桌面档由下方 1280px 用例锁定）。
+      // 4058b8f1「宽度预算分档显示」后行容器为 gap-0.5 sm:gap-1.5：
+      // 360/390px 档 gap=2px（6×44 + 5×2 = 274px ≤ 336px，零溢出），
+      // ≥640px 档仍为 6px（由下方 1280px 用例锁定）。此处随现行设计同步，
+      // 仍守住「溢出靠减入口解决、不靠进一步挤窄间距」的意图（2px 已是下限）。
       const gap = await page
         .getByTestId('toolbar-button-row')
         .evaluate((el) => getComputedStyle(el).columnGap);
-      expect(gap, `${width}px 行 gap 应仍为 6px（gap-1.5），溢出靠减入口解决`).toBe('6px');
+      expect(gap, `${width}px 行 gap 应为 2px（gap-0.5 窄屏分档）`).toBe('2px');
       // U-382：390px 菜单按钮曾被裁 16px、右缘 406 > 390 点不到；右缘在视口内
       // 还不够，须真点一次验证可点：点开后 aria-expanded 翻为 true、
       // 移动端抽屉 #mobile-nav-drawer 滑入（translate-x-0）。
@@ -177,13 +178,13 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     // 第二入口仍在，但已折叠（U-383，2026-11-21）：c5a83877「胶囊行合并」后
     // 行内胶囊按钮为 hidden lg:inline-flex，360px 下 display:none、不在无障碍树里，
     // 旧定位 getByRole('button', { name: '向导与设首页' }) 在此宽度恒为 not found；
-    // 360px 下唯一入口是 home-capsule-row.tsx:367 藏在「更多」菜单内的同名
-    // DropdownMenuItem（role=menuitem）。本用例随新行为改写定位方式：先点
-    // 「更多工作区与快捷功能」开菜单、再点其中条目；不断言行内按钮（产品侧
-    // 不把入口搬回行内，与首屏批目标一致）。只改测试，零产品风险。
+    // 360px 下入口是 home-capsule-row.tsx 的「切换工作区与快捷功能」下拉内的
+    // 同名 DropdownMenuItem（role=menuitem）。触发器 aria-label 在 2dbd63a8 由
+    // 「更多工作区与快捷功能」改为「切换工作区与快捷功能」，本用例同步新文案；
+    // 不断言行内按钮（产品侧不把入口搬回行内，与首屏批目标一致）。只改测试。
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    const moreMenu = page.getByRole('button', { name: '更多工作区与快捷功能', exact: true });
+    const moreMenu = page.getByRole('button', { name: '切换工作区与快捷功能', exact: true });
     await expect(moreMenu).toBeVisible({ timeout: 60_000 });
     await moreMenu.click();
     // 菜单条目由客户端水合后据 localStorage 决定是否渲染（guidePending 默认 false，

@@ -47,7 +47,7 @@ interface FinderResponse {
   degraded?: string | null
   notice: string
   recommendations: FinderSite[]
-  steps: Array<{ label: string; sites: FinderSite[] }>
+  steps: Array<{ label: string; fallback?: boolean; sites: FinderSite[] }>
   categorySuggestions: Array<{ id: string; title: string; slug: string | null }>
   scene?: { id: string; title: string }
 }
@@ -365,7 +365,14 @@ export function AiFinderPanel({ initialQuery, onFindSimilar }: AiFinderPanelProp
           {result.steps.length > 0
             ? result.steps.map((step) => (
                 <div key={step.label}>
-                  <h3 className="mb-2 text-sm font-semibold text-foreground">{step.label}</h3>
+                  <h3 className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
+                    {step.label}
+                    {step.fallback ? (
+                      <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-foreground">
+                        相关推荐
+                      </span>
+                    ) : null}
+                  </h3>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {step.sites.map((site) => (
                       <SiteCard key={site.siteId} site={site} onFindSimilar={onFindSimilar} />

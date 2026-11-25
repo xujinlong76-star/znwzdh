@@ -54,7 +54,7 @@ interface FinderResponse {
   degraded?: string | null
   notice: string
   recommendations: FinderSite[]
-  steps: Array<{ label: string; sites: FinderSite[] }>
+  steps: Array<{ label: string; fallback?: boolean; sites: FinderSite[] }>
   categorySuggestions: Array<{ id: string; title: string; slug: string | null }>
   scene?: { id: string; title: string }
 }
@@ -349,7 +349,14 @@ export function SearchPaletteAiTab({
           {result.steps.length > 0
             ? result.steps.map((step) => (
                 <div key={step.label} className="space-y-1.5">
-                  <h3 className="text-xs font-bold text-foreground">{step.label}</h3>
+                  <h3 className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-foreground">
+                    {step.label}
+                    {step.fallback ? (
+                      <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-px text-[10px] font-medium text-foreground">
+                        相关推荐
+                      </span>
+                    ) : null}
+                  </h3>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {step.sites.map((site) => (
                       <div

@@ -4,7 +4,7 @@
  * 锁住三件事：
  *   1. 灌入判定是纯函数、可枚举：0 = 空、(0, 基线) = 低于基线、≥ 基线 = 已灌入。
  *   2. 基线数字不是拍脑袋的：每次跑测试都重数一遍仓库事实源——
- *      navigation.json（388 站 / 48 二级 / 14 一级）与 videos.json（2265 条）。
+ *      navigation.json（392 站 / 49 二级 / 14 一级）与 videos.json（2265 条）。
  *      仓库扩容时这里会先红，提醒人同步改基线，而不是页面悄悄拿旧数比较。
  *      2026-11-15 T5 元宝收录：新增「AI 搜索」二级与元宝搜索一站。
  *      2026-11-15 卸载合集：补 github.com/trending 一站，基线 334→335。
@@ -27,6 +27,7 @@
  *      2026-11-20 进化轮 08:22：补站 U-08（容器与编排：OpenShift 1 站），基线 379→383。
  *      2026-11-20 进化轮 11:22：补站 U-08（气象与环境：彩云天气；图标与字体：Iconfont；官方文档：Microsoft Learn，3 站），基线 380→383。
  *      2026-11-20 进化轮 21:22：补站 U-288（AI 写作办公：千问办公/WPS 灵犀/豆包工作；智能体与自动化：WorkBuddy/百度搭子，5 站），基线 383→388。
+ *      2026-11-26 P0 A 线：新增「创作者分发与变现」二级（爱奇艺号/优酷内容合作平台/抖音创作者中心/快手创作者服务平台，4 站），基线 388→392、二级 48→49。
  *   3. 页面只展示从中枢取回的 live 数：页面源码里不许出现 346/2265 的
  *      字面量（基线只能来自 lib 常量），两个计数端点与三个管理入口必须在位，
  *      冷备导出必须走带 token 的 hubGet（普通 <a href> 带不上 admin token）。
@@ -106,7 +107,7 @@ describe('灌入判定 seedStatus', () => {
 })
 
 describe('基线数字钉住仓库事实源', () => {
-  it('站点基线 = navigation.json 实测（14 一级 / 48 二级 / 388 站）', () => {
+  it('站点基线 = navigation.json 实测（14 一级 / 49 二级 / 392 站）', () => {
     const nav = overlayJson('src/navsphere/content/navigation.json') as {
       navigationItems: Array<{ subCategories?: unknown[] }>
     }
@@ -116,9 +117,9 @@ describe('基线数字钉住仓库事实源', () => {
       0,
     )
     expect(nav.navigationItems.length).toBe(14)
-    expect(subs).toBe(48)
-    expect(sites).toBe(388)
-    expect(BASELINE_SITES).toBe(388)
+    expect(subs).toBe(49)
+    expect(sites).toBe(392)
+    expect(BASELINE_SITES).toBe(392)
   })
 
   it('视频基线 = videos.json 实测 2265 条', () => {

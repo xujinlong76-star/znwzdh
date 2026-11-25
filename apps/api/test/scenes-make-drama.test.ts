@@ -6,14 +6,18 @@
  *  4. 门控召回为空时整步回落关键词召回并标 fallback（相关推荐）；
  *  5. 锚点置顶且只认门控内真实在用站点；
  *  6. reason = 本步用途 + 简介：简介文字在 reason 里只出现一次；
- *  7. 与 POST /api/ai/find 场景展开同口径。
+ *  7. 与 POST /api/ai/find 场景展开同口径；
+ *  8. 分发子分类 scrub：标题/简介/站文案里不得出现「短剧」「投稿」，reason 也不得带出；
+ *  9. 全场景多轮 dump：4 个分发站只出现在 make-drama 第六步（并集/交集双判定，
+ *     单次 dump 曾互不一致，不足以支撑「零泄漏」强主张）；
+ * 10. POST /api/ai/find 的 steps 透传 fallback（与 GET 同值），回落步可标「相关推荐」。
  *
  * 用合成种子 + 真实分类 id（reg-ai-drama-creation 等）测机制与真实定义，
  * 不依赖 navigation.json 全量数据（全量召回由本机 API 实测另行核对）。
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
@@ -55,7 +59,7 @@ beforeAll(async () => {
     [AUDIO, "AI 音频语音"],
     [WATCH_FREE, "免费短剧"],
     [WATCH_PLATFORM, "平台短剧"],
-    [DISTRIBUTE, "短剧分发与变现"],
+    [DISTRIBUTE, "创作者分发与变现"],
     [EMPTY, "空分类"],
   ] as const) {
     await ctx.repo.createCategory({ id, title, slug: id });
@@ -94,6 +98,27 @@ beforeAll(async () => {
   // 生图
   await seedSite("Leonardo AI", "AI 生图平台，游戏与创意资产专用", IMAGE, "https://leonardo.example.com/");
   await seedSite("Midjourney", "AI 绘画与图像生成工具", IMAGE, "https://midjourney.example.com/");
+  // 设计灵感（design-poster 第一步的对口站：没有它们时「作品集」只命中
+  // 分发站简介里的「管理作品」三元组，全量库里设计站会排在前面；种子须
+  // 复现全量库的竞争格局，否则多轮 dump 的零泄漏断言测的是种子贫瘠而非机制）
+  await ctx.repo.createCategory({ id: "reg-design-inspiration", title: "设计灵感", slug: "reg-design-inspiration" });
+  await seedSite("站酷", "设计师作品集与灵感社区：平面、UI、插画设计灵感，发布作品集", "reg-design-inspiration", "https://zcool.example.com/");
+  await seedSite("Behance", "全球设计师作品集平台：平面、摄影与插画设计灵感展示", "reg-design-inspiration", "https://behance.example.com/");
+  await seedSite("Dribbble", "设计师作品集与灵感社区：UI 与品牌设计灵感", "reg-design-inspiration", "https://dribbble.example.com/");
+  await seedSite("花瓣网", "设计灵感采集站：图片、插画与平面设计灵感，建画板收作品集", "reg-design-inspiration", "https://huaban.example.com/");
+  // 小说平台（write-novel 的对口站：没有它们时「小说平台」只凭
+  // 「平台」三元组命中分发站；同上，种子须复现有「投稿/小说」字面的对口站。
+  // 两套各 4 站必须分开：第一步（小说/网文）先取走阅读站，第二步（投稿/
+  // 小说平台）才有投稿站可取——同一批 4 站会被跨步去重耗尽，第二步仍漏）
+  await ctx.repo.createCategory({ id: "reg-novel-platform", title: "小说平台", slug: "reg-novel-platform" });
+  await seedSite("番茄小说", "免费小说阅读平台：海量小说免费看", "reg-novel-platform", "https://fanqie.example.com/");
+  await seedSite("晋江文学城", "原创网络小说阅读：言情、玄幻、都市题材连载", "reg-novel-platform", "https://jjwxc.example.com/");
+  await seedSite("七猫免费小说", "免费小说阅读：玄幻、言情小说在线看", "reg-novel-platform", "https://qimao.example.com/");
+  await seedSite("飞卢小说网", "网络小说阅读：同人、玄幻小说连载与榜单", "reg-novel-platform", "https://feilu.example.com/");
+  await seedSite("起点中文网", "网络小说投稿平台：作者投稿签约，玄幻、仙侠小说连载", "reg-novel-platform", "https://qidian.example.com/");
+  await seedSite("17K小说网", "小说作者投稿签约平台：玄幻、都市小说投稿入口", "reg-novel-platform", "https://17k.example.com/");
+  await seedSite("纵横中文网", "网络小说投稿签约平台：玄幻、都市题材，作者投稿通道", "reg-novel-platform", "https://zongheng.example.com/");
+  await seedSite("塔读小说", "小说投稿平台：免费小说阅读，作者投稿签约", "reg-novel-platform", "https://tadu.example.com/");
 });
 
 afterAll(async () => {
@@ -213,11 +238,121 @@ describe("GET /api/scenes/make-drama 门控召回", () => {
       payload: { query: def.intro, sceneId: "make-drama" },
     });
     expect(post.statusCode).toBe(200);
-    const postBody = post.json() as { steps: Array<{ label: string; sites: Array<{ siteId: string }> }> };
+    const postBody = post.json() as { steps: Array<{ label: string; fallback: boolean; sites: Array<{ siteId: string }> }> };
     const byLabel = (steps: Array<{ label: string; sites: Array<{ siteId: string }> }>) =>
       new Map(steps.map((s) => [s.label, s.sites.map((x) => x.siteId).sort()]));
     expect(byLabel(postBody.steps)).toEqual(byLabel(detail.steps));
   });
+
+  it("POST /api/ai/find 的 steps 透传 fallback（与 GET 同值，均为 false）", async () => {
+    const def = scenePackById("make-drama")!;
+    const detail = await getMakeDrama();
+    const post = await app.inject({
+      method: "POST",
+      url: "/api/ai/find",
+      payload: { query: def.intro, sceneId: "make-drama" },
+    });
+    expect(post.statusCode).toBe(200);
+    const postBody = post.json() as { steps: Array<{ label: string; fallback: unknown }> };
+    expect(postBody.steps.length).toBe(detail.steps.length);
+    for (const postStep of postBody.steps) {
+      expect(typeof postStep.fallback, postStep.label).toBe("boolean");
+      const getStep = detail.steps.find((s) => s.label === postStep.label)!;
+      expect(postStep.fallback, postStep.label).toBe(getStep.fallback);
+    }
+    // 种子库里 make-drama 六步门控均命中，无回落：全 false（回落为 true 的
+    // 情形由「门控为空回落」一组在 GET 侧覆盖，POST 与 GET 共用同一展开）。
+    expect(postBody.steps.every((s) => s.fallback === false)).toBe(true);
+  });
+});
+
+describe("分发子分类 scrub 与多轮全场景 dump 零泄漏", () => {
+  const DISTRIBUTE_TITLES = ["爱奇艺号", "优酷内容合作平台", "抖音创作者中心", "快手创作者服务平台"];
+  const FORBIDDEN = ["短剧", "投稿"];
+
+  it("navigation.json 实测：分发子分类标题/简介与 4 站文案里不含「短剧」「投稿」", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const navPath = join(dirname(fileURLToPath(import.meta.url)), "../../web-overlay/src/navsphere/content/navigation.json");
+    const nav = JSON.parse(readFileSync(navPath, "utf-8")) as {
+      navigationItems: Array<{
+        subCategories?: Array<{
+          id: string;
+          title: string;
+          description?: string | null;
+          items?: Array<{ title: string; description?: string | null; tags?: string[] }>;
+        }>;
+      }>;
+    };
+    const sub = nav.navigationItems.flatMap((c) => c.subCategories ?? []).find((s) => s.id === DISTRIBUTE);
+    expect(sub, "navigation.json 须有 reg-short-drama-distribute 子分类").toBeDefined();
+    for (const word of FORBIDDEN) {
+      expect(sub!.title).not.toContain(word);
+      expect(sub!.description ?? "").not.toContain(word);
+    }
+    expect(sub!.items?.length).toBe(4);
+    for (const item of sub!.items ?? []) {
+      for (const word of FORBIDDEN) {
+        expect(item.title).not.toContain(word);
+        expect(item.description ?? "").not.toContain(word);
+        for (const tag of item.tags ?? []) expect(tag).not.toContain(word);
+      }
+    }
+    expect(sub!.items?.map((i) => i.title).sort()).toEqual([...DISTRIBUTE_TITLES].sort());
+  });
+
+  it("种子库：分发子分类标题与第六步 reason 里不含「短剧」「投稿」", async () => {
+    const cats = await ctx.repo.listCategories();
+    const cat = cats.find((c) => c.id === DISTRIBUTE)!;
+    expect(cat).toBeDefined();
+    for (const word of FORBIDDEN) expect(cat.title).not.toContain(word);
+    const scene = await getMakeDrama();
+    const step6 = scene.steps.find((s) => s.label.startsWith("第六步"))!;
+    for (const site of step6.sites) {
+      for (const word of FORBIDDEN) {
+        expect(site.title).not.toContain(word);
+        expect(site.description ?? "").not.toContain(word);
+        expect(site.reason).not.toContain(word);
+      }
+    }
+  });
+
+  it("三轮全场景 dump：4 个分发站只出现在 make-drama 第六步（并集/交集双判定）", async () => {
+    async function dumpAll(): Promise<Map<string, Map<string, string[]>>> {
+      const out = new Map<string, Map<string, string[]>>();
+      for (const pack of SCENE_PACKS) {
+        const { detail } = await resolveSceneDetail(ctx, pack);
+        out.set(pack.id, new Map(detail.steps.map((s) => [s.label, s.sites.map((x) => x.title)])));
+      }
+      return out;
+    }
+    function locationsOf(dump: Map<string, Map<string, string[]>>): Set<string> {
+      const locs = new Set<string>();
+      for (const [sceneId, steps] of dump) {
+        for (const [label, titles] of steps) {
+          if (titles.some((t) => DISTRIBUTE_TITLES.includes(t))) locs.add(`${sceneId} / ${label}`);
+        }
+      }
+      return locs;
+    }
+    const runs = [await dumpAll(), await dumpAll(), await dumpAll()];
+    const unions = new Set<string>();
+    let intersection: Set<string> | null = null;
+    for (const run of runs) {
+      const locs = locationsOf(run);
+      for (const l of locs) unions.add(l);
+      intersection = intersection === null ? new Set(locs) : new Set([...intersection].filter((l) => locs.has(l)));
+    }
+    // 并集：三轮里任何一轮出现过的位置都只许是 make-drama 第六步；
+    // 交集：三轮每一轮都出现的位置同样只许是它（双判定防单次 dump 偶然干净）。
+    expect([...unions].sort()).toEqual(["make-drama / 第六步：发布与变现"]);
+    expect([...(intersection ?? new Set<string>())].sort()).toEqual(["make-drama / 第六步：发布与变现"]);
+    // 且第六步每轮都含全部 4 站（不是“恰好有一站漏网才显得干净”）。
+    for (const run of runs) {
+      const step6 = run.get("make-drama")!.get("第六步：发布与变现")!;
+      expect([...step6].sort()).toEqual([...DISTRIBUTE_TITLES].sort());
+    }
+  }, 600_000);
 });
 
 describe("门控为空回落与锚点", () => {

@@ -39,6 +39,8 @@ const FLAT_LIMIT = 6;
 
 interface CandidateGroup {
   label: string | null;
+  /** 本步是否走了关键词回落：与 resolveSceneGroups 的 fallback 同值，下发给前端标「相关推荐」 */
+  fallback: boolean;
   sites: NavSite[];
 }
 
@@ -88,11 +90,11 @@ export const aiFindRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           // 跨步去重、每步上限），避免落地页与交互找站两条链路漂移。
           const resolved = await resolveSceneGroups(ctx, scene);
           if (resolved.retrievalFailed) retrievalFailed = true;
-          for (const g of resolved.groups) groups.push({ label: g.label, sites: g.sites });
+          for (const g of resolved.groups) groups.push({ label: g.label, fallback: g.fallback, sites: g.sites });
         } else {
           const r = await retrieveCopilotCandidates(ctx, retrievalQueryOf(query));
           retrievalFailed = r.failed;
-          if (r.sites.length > 0) groups.push({ label: null, sites: r.sites.slice(0, 12) });
+          if (r.sites.length > 0) groups.push({ label: null, fallback: false, sites: r.sites.slice(0, 12) });
         }
 
         const allSites = [...new Map(groups.flatMap((g) => g.sites).map((s) => [s.id, s])).values()];
@@ -172,7 +174,7 @@ export const aiFindRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
         const steps: FinderStep[] = groups
           .filter((g) => g.label)
-          .map((g) => ({ label: g.label!, sites: g.sites.map(toFinder) }));
+          .map((g) => ({ label: g.label!, fallback: g.fallback, sites: g.sites.map(toFinder) }));
 
         let recommendations: FinderSite[];
         if (scene) {

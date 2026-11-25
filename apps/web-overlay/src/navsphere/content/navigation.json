@@ -5900,8 +5900,8 @@
         },
         {
           "id": "reg-short-drama-distribute",
-          "title": "短剧分发与变现",
-          "description": "短剧创作者的分发与变现后台：投稿上架、分账结算、数据与商单",
+          "title": "创作者分发与变现",
+          "description": "创作者的分发与变现后台：内容上架、分账结算、数据与商单",
           "parentId": "reg-short-drama",
           "enabled": true,
           "items": [

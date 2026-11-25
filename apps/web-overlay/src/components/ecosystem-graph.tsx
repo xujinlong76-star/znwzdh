@@ -200,7 +200,7 @@ export function EcosystemGraph() {
   const [liveTotal, setLiveTotal] = useState(0)
   /** 图谱数据来源：'live' = 真实站点库；'sample' = 内置示例集（必须在界面上如实标注） */
   const [dataSource, setDataSource] = useState<'live' | 'sample' | 'loading'>('loading')
-  /** 全站展平数据（navigation.json 388 站）：抽样母体 + 全站检索池，取到后常驻 */
+  /** 全站展平数据（navigation.json 392 站）：抽样母体 + 全站检索池，取到后常驻 */
   const [allSites, setAllSites] = useState<FlatSite[]>([])
   /** 换一批生态簇的轮次：同一 round 输出完全确定 */
   const [sampleRound, setSampleRound] = useState(0)

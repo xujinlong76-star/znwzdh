@@ -22,6 +22,11 @@ export interface FinderSite {
 export interface FinderStep {
   /** 步骤名，如「第一步：做稿件」；非场景模式为空数组不下发 */
   label: string;
+  /**
+   * 本步是否走了关键词回落（门控召回为空）：为 true 时调用方须标为「相关推荐」，
+   * 与 GET /api/scenes 的 SceneStepView.fallback 同口径，不得冒充本步工具。
+   */
+  fallback: boolean;
   sites: FinderSite[];
 }
 
@@ -160,7 +165,7 @@ export const SCENE_PACKS: ScenePack[] = [
         label: "第六步：发布与变现",
         queries: ["创作者平台", "分账"],
         purpose: "把成片发到平台上架，分账变现",
-        // 只留 B 端分发与变现后台（「短剧分发与变现」子分类）：C 端看剧页再热门也不进这一步。
+        // 只留 B 端分发与变现后台（「创作者分发与变现」子分类）：C 端看剧页再热门也不进这一步。
         // 查询词不用「短剧」：这 4 站的标题/简介里不写「短剧」，避免它们反串进追短剧等看剧场景。
         categories: ["reg-short-drama-distribute"],
       },

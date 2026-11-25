@@ -225,9 +225,32 @@ const UPSTREAM_CANCEL_NOTICES = new Set([
   "operation canceled",
 ]);
 
+/** 尾部取消提示标点：与旧正则尾部字符类等价的字符集（线性扫描用） */
+const CANCEL_TRAILING_PUNCT = new Set(["。", ".", "!", "！", "?", "？"]);
+
+/**
+ * 线性剥离尾部标点与空白（O(n)，无回溯）。
+ *
+ * 旧实现 `content.trim().replace(/…+$/g, "")` 对「N 个 。 后接一个非标点
+ * 字符」的输入要 O(N²) 回溯（本机实测 N=5000 时 349ms、N=20000 时 2747ms，
+ * 翻倍输入耗时翻 4 倍）——模型输出是上游可控串，单次恶意输出即可拖垮
+ * Node 事件循环（CodeQL js/polynomial-redos 同类）。
+ * 倒序单遍扫描，与旧正则逐字符等价：空白判定沿用 String.prototype.trim
+ * 对单个字符的语义，其字符集与 JS `\s` 相同；孤立代理项半区两边都不认。
+ */
+export function stripTrailingCancelPunct(value: string): string {
+  let end = value.length;
+  while (end > 0) {
+    const ch = value[end - 1]!;
+    if (CANCEL_TRAILING_PUNCT.has(ch) || ch.trim() === "") end--;
+    else break;
+  }
+  return value.slice(0, end);
+}
+
 /** 判断一段模型输出是否只是上游的「取消」提示（整段相等才算） */
 export function isUpstreamCancelNotice(content: string): boolean {
-  const normalized = content.trim().replace(/[。.!！?？\s]+$/g, "").toLowerCase();
+  const normalized = stripTrailingCancelPunct(content.trim()).toLowerCase();
   if (!normalized || normalized.length > 32) return false;
   return UPSTREAM_CANCEL_NOTICES.has(normalized);
 }

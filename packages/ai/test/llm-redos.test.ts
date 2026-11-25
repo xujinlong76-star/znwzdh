@@ -16,10 +16,12 @@ import {
   chatCompletionsUrl,
   createVideoTask,
   generateImage,
+  isUpstreamCancelNotice,
   LlmError,
   MAX_BASE_URL_LENGTH,
   normalizeBaseUrl,
   pollVideoTask,
+  stripTrailingCancelPunct,
   stripTrailingSlashes,
 } from "../src/llm.ts";
 
@@ -89,6 +91,64 @@ describe("ReDoS 对抗：恶意串现快速完成", () => {
     }
     expect(caught).toBeInstanceOf(LlmError);
     expect((caught as LlmError).code).toBe("config");
+  });
+});
+
+describe("stripTrailingCancelPunct：与旧尾部标点剥离逐字符等价", () => {
+  it("边界用例输出与旧实现一致", () => {
+    const cases: Array<[input: string, expected: string]> = [
+      ["用户已取消。。。", "用户已取消"],
+      ["用户已取消。！？ \n\t", "用户已取消"],
+      ["用户已取消a", "用户已取消a"],
+      ["。。。", ""],
+      ["", ""],
+      ["abc 。 def", "abc 。 def"],
+      ["abc\u00A0", "abc"],
+      ["abc\u3000。", "abc"],
+      ["a/b/c", "a/b/c"],
+      ["用户已取消。" + "。".repeat(100) + "x", "用户已取消。" + "。".repeat(100) + "x"],
+    ];
+    for (const [input, expected] of cases) {
+      expect(stripTrailingCancelPunct(input)).toBe(expected);
+    }
+  });
+});
+
+describe("isUpstreamCancelNotice：取消哨兵判定不变 + 对抗输入线性完成", () => {
+  it("带尾部标点/空白的取消提示仍命中，含标点的非提示仍不命中", () => {
+    const yes = [
+      "用户已取消",
+      "用户已取消。。。",
+      "用户已取消。！？",
+      "  用户已取消  ",
+      "user cancelled...",
+      "User Cancelled!",
+      "request canceled？？",
+    ];
+    for (const s of yes) expect(isUpstreamCancelNotice(s)).toBe(true);
+    const no = [
+      "用户已取消啊",
+      "用户已取消x",
+      "长回答里解释用户已取消是正常内容",
+      "用户已取消" + "啊".repeat(30),
+      "",
+      "。。。",
+    ];
+    for (const s of no) expect(isUpstreamCancelNotice(s)).toBe(false);
+  });
+
+  it("3 万个 。 后接非标点：线性扫描瞬时完成（旧实现 N=20000 时已 2747ms）", () => {
+    const adversarial = "。".repeat(30000) + "a";
+    const start = Date.now();
+    expect(isUpstreamCancelNotice(adversarial)).toBe(false);
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+
+  it("取消提示 + 3 万个尾部 。：仍命中且瞬时完成", () => {
+    const adversarial = "用户已取消" + "。".repeat(30000);
+    const start = Date.now();
+    expect(isUpstreamCancelNotice(adversarial)).toBe(true);
+    expect(Date.now() - start).toBeLessThan(1000);
   });
 });
 

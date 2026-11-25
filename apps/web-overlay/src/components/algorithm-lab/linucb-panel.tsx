@@ -356,8 +356,8 @@ runAbCompareRef.current = runAbCompare
                       Tailwind v4 容器断点：@2xl=672 / @3xl=768 / @4xl=896 / @5xl=1024 / @6xl=1152。
                       首版写 @6xl(1152) 导致 1070px 只落 3 列——5 张卡被挤成 3+2。
                       改 @5xl(1024)：1070 ≥ 1024 → 5 列；窄屏仍是 2 → 3 列递进。 */}
-                  /* 2026-11-23：640-1023px 给右下角浮坞让位——猫占 right 12px + 48px，
-                       网格右列按钮 w-full 会伸到其下方（实测 768px 下重叠 10px）。 */
+                  {/* 2026-11-23：640-1023px 给右下角浮坞让位——猫占 right 12px + 48px，
+                       网格右列按钮 w-full 会伸到其下方（实测 768px 下重叠 10px）。 */}
                    <div className="grid grid-cols-2 gap-3 min-[640px]:max-[1023px]:pr-12 @3xl:grid-cols-3 @5xl:grid-cols-5">
                   {(Object.keys(predictedWeights) as (keyof typeof predictedWeights)[]).map((ch) => {
                     const bd = armBreakdown[ch as RetrievalChannel]

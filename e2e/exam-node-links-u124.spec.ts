@@ -16,8 +16,8 @@ import { EXAMS, GUOKAO_PORTAL_URL } from '../apps/web-overlay/src/lib/exam-calen
  *
  * U-154：E3 的期望不再写死数字，从 EXAMS 数据派生——总数 = 全部带 url
  * 的节点数 + 全部带 portalUrl 的节点数，「去官网打印准考证」数 = 带 url
- * 节点数 − 5 个例外 label（与 my-exam-tracker.tsx 的 nodeLinkCopy 映射
- * 一一对应）。写死 16 曾在 U-144 G5（c06c567d，广东自考「成绩查询」挂直链
+ * 节点数 − 10 个例外 label（与 my-exam-tracker.tsx 的 nodeLinkCopy 映射
+ * 一一对应；C4 广东自考 5 节点后由 5 个增至 10 个）。写死 16 曾在 U-144 G5（c06c567d，广东自考「成绩查询」挂直链
  * 成第 17 个带 url 节点）后滞后致 E3 红（实测 17，期望 16）；派生后数据
  * 增长不再打断断言。U-426：门户备用链（c7f84da9）只在国考准考证行多渲染
  * 一条「专题网站门户」链接，旧口径（只数带 url 节点）期望 18、实测 19
@@ -26,9 +26,12 @@ import { EXAMS, GUOKAO_PORTAL_URL } from '../apps/web-overlay/src/lib/exam-calen
  * 页内只有 tracker 渲染「（新窗口打开）」aria-label（提醒卡不渲染），
  * 派生口径与断言口径一致。
  */
-// nodeLinkCopy 的 5 个例外 label（其余带 url 节点文案均为「去官网打印准考证」）。
+// nodeLinkCopy 的 10 个例外 label（其余带 url 节点文案均为「去官网打印准考证」）。
 // U-395：京考「缴费」是第 5 个例外（去官网缴费），军队文职缴费节点无 url 不渲染。
-const NON_PRINT_LABELS = ['报名', '缴费', '公共科目笔试', '江西成绩复核', '成绩查询']
+// C4（2026-11-23）：广东自考 5 节点同理映射为非打印文案（报名/报考/缴费/查看），
+// 是第 6–10 个例外；此前只列 5 个致 E3 期望 18、实测 13（CI run 45570267982）——
+// 5 条差值恰为这 5 个节点。
+const NON_PRINT_LABELS = ['报名', '缴费', '公共科目笔试', '江西成绩复核', '成绩查询', '新生预报名', '正式报名', '考生报考', '网上缴费', '考试']
 const JINGKAO_APPLY_URL = 'http://rsj.beijing.gov.cn/bm/ztzl/gwy/'
 const JINGKAO_NOTICE_URL =
   'https://www.beijing.gov.cn/gongkai/rsxx/gwyzk/202611/t20261109_4938196.html'

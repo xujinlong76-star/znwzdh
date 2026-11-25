@@ -433,8 +433,10 @@ describe("工具栏挂载（源码守卫）：2026-11-24 外观与阅读聚合�
     expect(itemChunk).toContain("sm:hidden");
   });
 
-  it("360/390 宽度账：融合后移动端固定 6 钮 274px ≤ 336px，不留过期文字", () => {
+  it("360/390 宽度账：融合后移动端固定 7 钮 320px ≤ 336px，不留过期文字", () => {
     expect(toolbar).not.toContain("需协调方裁决");
-    expect(toolbar).toContain("6×44 + 5×2 = 274px ≤ 336px");
+    // M-02（2026-11-25）：顶栏加第 7 个 44px 热榜按钮，宽度账由
+    // 6×44 + 5×2 = 274px 更新为 7×44 + 6×2 = 320px，仍 ≤ 336px 预算，CDP 390 零溢出。
+    expect(toolbar).toContain("7×44 + 6×2 = 320px ≤ 336px");
   });
 });

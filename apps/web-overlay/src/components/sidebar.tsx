@@ -10,7 +10,7 @@ import { Button } from '@/registry/new-york/ui/button'
 import { ScrollArea } from '@/registry/new-york/ui/scroll-area'
 import type { NavigationData } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
-import { ChevronDown, ChevronRight, Compass, SlidersHorizontal, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, SlidersHorizontal, X } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { NavIcon } from '@/components/nav-icon'
 import { NAV_ICON_FALLBACK, isIconUrl, resolveNavIcon } from '@/lib/nav-icons'
@@ -445,9 +445,13 @@ export const Sidebar = memo(function Sidebar({ className, navigationData, siteIn
               className="h-6 w-6 rounded-md object-contain shrink-0"
             />
           ) : (
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary shadow-2xs">
-              <Compass className="h-3.5 w-3.5 text-primary" />
-            </div>
+            <Image
+              src="/logo.png"
+              alt={siteInfo.basic.title}
+              width={24}
+              height={24}
+              className="h-6 w-6 rounded-md object-contain shrink-0"
+            />
           )}
           <div className="flex min-w-0 flex-col">
             {/* 侧边栏品牌为页面唯一 h1（主内容区大号 H1 已移除；不走 sr-only）。

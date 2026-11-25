@@ -408,7 +408,7 @@ describe('rose/sky 残留 32 处：正文小字 -600→-700 配 dark:-400', () =
   it('搜索弹窗徽章与百度外链：R30/R31/R32；第二档 R29 纯图标亦已 -700（残留 rose-600 为 0）', () => {
     expect(spotlight).toContain('text-[10px] bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20')
     expect(spotlight).toContain('text-xs px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-700 dark:text-rose-400')
-    expect(spotlight).toContain('px-2 py-0.5 rounded text-[11px] bg-rose-500/10 text-rose-700 dark:text-rose-400')
+    expect(spotlight).toContain('px-2 py-0.5 rounded text-[0.6875rem] bg-rose-500/10 text-rose-700 dark:text-rose-400')
     // 第二档轮次改写：R29 Store 图标 tile（w-8 h-8）亦 -700（4.12→5.52，图标 3:1 档），残留 rose-600 为 0
     expect(spotlight).toContain('bg-rose-500/10 text-rose-700 dark:text-rose-400 flex items-center justify-center shrink-0')
     expect(spotlight).not.toContain('text-rose-600')

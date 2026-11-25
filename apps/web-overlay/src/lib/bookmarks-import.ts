@@ -34,9 +34,23 @@ export function bookmarkId(href: string): string {
  * 脱标签用单遍状态机 stripHtmlTags，不用单次正则 `.replace(/<[^>]+>/g, '')`：
  * 后者对嵌套标签一次删除后外层残片会拼成新标签（CodeQL「不完整的多字符
  * 清理」），且属性内 `>` 会提前截断（见 html-text.ts）。
+ *
+ * 解实体同样只做单遍：五个实体一次正则 + 查表替换，正则引擎不回扫替换
+ * 结果。链式 `.replace(/&amp;/g, '&').replace(/&lt;/g, '<')…` 会双重解码
+ * （`&amp;lt;` 先变 `&lt;` 再变 `<`，CodeQL「双重解实体」），所以不要拆开写。
  */
+const HTML_ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+}
+
 function stripTags(text: string): string {
-  return stripHtmlTags(text).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim()
+  return stripHtmlTags(text)
+    .replace(/&(amp|lt|gt|quot|#39);/g, (entity) => HTML_ENTITIES[entity] ?? entity)
+    .trim()
 }
 
 /** 单次上限与 parseUniversalBookmarks 对齐（总协调人决策 1：5000） */

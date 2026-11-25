@@ -295,6 +295,21 @@ describe('超限 totalMatched 诚实', () => {
     expect(items).toHaveLength(2)
     expect(totalMatched).toBe(2)
   })
+
+  it('解实体只解一层：&amp;lt; 得到 &lt; 而不是 <（CodeQL 双重解实体回归）', () => {
+    const html = [
+      '<DL><p>',
+      '<DT><A HREF="https://a.example.com/">A &amp;lt;tag&amp;gt; &amp; B</A>',
+      '<DT><A HREF="https://b.example.com/">Tom &amp; Jerry &lt;script&gt;</A>',
+      '<DT><A HREF="https://c.example.com/">it&#39;s</A>',
+      '</DL><p>',
+    ].join('\n')
+    const { items } = parseNetscapeBookmarks(html)
+    expect(items).toHaveLength(3)
+    expect(items[0]!.title).toBe('A &lt;tag&gt; & B')
+    expect(items[1]!.title).toBe('Tom & Jerry <script>')
+    expect(items[2]!.title).toBe("it's")
+  })
 })
 
 describe('B-2：汇总跳过数从冻结 plan / 报告派生（不再拿 writePrivate 的 alreadyExisted）', () => {

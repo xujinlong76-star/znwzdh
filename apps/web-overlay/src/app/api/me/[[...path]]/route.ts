@@ -234,7 +234,11 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
       const checkRes = await fetch(HUB_BASE + '/api/me/sessions/check', {
         method: 'POST',
         // 核对固定发 JSON：GET 无体时转发头缺 content-type
-        headers: { ...headers, 'content-type': 'application/json' },
+        headers: {
+          ...headers,
+          'content-type': 'application/json',
+          ...(process.env.NAVHUB_INTERNAL_TOKEN ? { 'x-navhub-internal-token': process.env.NAVHUB_INTERNAL_TOKEN } : {}),
+        },
         body: JSON.stringify({
           sid: sessionSid,
           userAgent: request.headers.get('user-agent') ?? null,

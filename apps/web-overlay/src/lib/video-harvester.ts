@@ -11,6 +11,7 @@ import {
   checkHarvestEligibility,
 } from './video-harvest-guard'
 import { recordHarvestRun } from '@/lib/video-harvest-metrics'
+import { stripHtmlTags } from './html-text'
 import { BILI_HEADERS, getWbiMixinKey, signWbiQuery } from '@/lib/bilibili-wbi'
 import type {
   NavigationData,
@@ -339,9 +340,9 @@ export async function harvestVideosForTopic(
         const durationSec = parseDurationToSeconds(item.duration)
         if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
 
-        // 过滤标题 html 标签
-        const cleanTitle = (item.title || '').replace(/<[^>]+>/g, '').trim()
-        const cleanDesc = (item.description || '').replace(/<[^>]+>/g, '').trim()
+        // 过滤标题 html 标签（单遍状态机脱标签：单次正则一次删除后嵌套残片会拼成新标签，见 html-text.ts）
+        const cleanTitle = stripHtmlTags(item.title || '').trim()
+        const cleanDesc = stripHtmlTags(item.description || '').trim()
 
         const stats: VideoStats = {
           views: item.play || 0,

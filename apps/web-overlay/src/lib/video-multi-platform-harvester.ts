@@ -25,6 +25,7 @@ import {
   isHarvestEligibleForItem,
 } from './video-harvest-guard'
 import { enrichVideoItemSeo } from './video-seo'
+import { stripHtmlTags } from './html-text'
 import { guardedFetch, isProbablySafeUrl, safeFetch } from './ssrf-guard'
 
 /**
@@ -501,7 +502,7 @@ export async function resolveMultiPlatformVideoUrl(
           return attachResolvedSeoMetadata({
             title: String(d.title).trim(),
             href: canonicalUrl,
-            description: String(d.description || '').replace(/<[^>]+>/g, '').trim(),
+            description: stripHtmlTags(String(d.description || '')).trim(),
             icon: d.thumbnail_720_url || undefined,
             videoConfig: {
               type: 'dailymotion',
@@ -961,9 +962,9 @@ async function harvestDailymotionChannel(
       const durationSec = Number(item.duration) || 0
       if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
 
-      const cleanTitle = String(item.title || '').replace(/<[^>]+>/g, '').trim()
+      const cleanTitle = stripHtmlTags(String(item.title || '')).trim()
       if (!cleanTitle) continue
-      const cleanDesc = String(item.description || '').replace(/<[^>]+>/g, '').trim()
+      const cleanDesc = stripHtmlTags(String(item.description || '')).trim()
 
       const stats: VideoStats = { views: Number(item.views_total) || 0 }
       const qualityScore = calculateQualityScore(stats, durationSec || undefined, item.created_time)

@@ -13,6 +13,7 @@
 
 import { validateQuicklink } from './quicklinks'
 import { fingerprintUrl } from './import-workbench'
+import { stripHtmlTags } from './html-text'
 
 export interface ExportFolder {
   id: string
@@ -380,7 +381,7 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
       // 检查文件夹名 <H3 ...>FolderName</H3>
       const folderMatch = line.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i)
       if (folderMatch) {
-        const fName = folderMatch[1].replace(/<[^>]+>/g, '').trim()
+        const fName = stripHtmlTags(folderMatch[1]).trim()
         if (fName && fName !== 'Bookmarks' && fName !== '书签栏') {
           currentFolder = fName
           folders.add(fName)
@@ -393,7 +394,7 @@ export function parseUniversalBookmarks(content: string, limit = 5000): ParseRes
         const rawHref = m[2]
         const href = sanitizeBookmarkUrl(rawHref)
         const fp = fingerprintUrl(href)
-        const rawTitle = m[4].replace(/<[^>]+>/g, '').trim()
+        const rawTitle = stripHtmlTags(m[4]).trim()
         const title = rawTitle || href
 
         // 提取 TAGS="..."

@@ -28,6 +28,55 @@ export interface ParsedBookmarkFolder {
   addDate?: number
 }
 
+/**
+ * 纯文本剥标签（无 DOM 依赖，Node 与浏览器通用）。
+ *
+ * 单次正则 `.replace(/<[^>]+>/g, '')` 有两处硬伤（CodeQL「不完整的多字符
+ * 清理」，同 apps/web-overlay/src/lib/html-text.ts 的 #138/#139）：
+ * 1. 引号盲区：`<a title="x>y">正文</a>` 会在属性内的 `>` 处提前截断；
+ * 2. 拼接复活：嵌套标签一次删除后，外层残片可能拼成新的标签形子串。
+ *
+ * 这里是单遍状态机（与 html-text.ts 的 stripHtmlTags 同语义，core 层不
+ * 依赖 overlay 故本地一份）：只把 `<` 后跟字母 / `/` / `!` / `?` 的才当
+ * 标签开头，标签内引号里的 `>` 不闭合标签，未闭合标签丢弃剩余部分。
+ * 一次扫描即干净，线性时间、无回溯。
+ */
+export function stripHtmlTags(text: string): string {
+  const out: string[] = []
+  const n = text.length
+  let i = 0
+  while (i < n) {
+    const ch = text[i]
+    if (ch !== '<') {
+      out.push(ch)
+      i++
+      continue
+    }
+    const next = text[i + 1]
+    if (next === undefined || !/[A-Za-z/?!]/.test(next)) {
+      out.push(ch)
+      i++
+      continue
+    }
+    let j = i + 1
+    let quote: string | null = null
+    while (j < n) {
+      const c = text[j]
+      if (quote) {
+        if (c === quote) quote = null
+      } else if (c === '"' || c === "'") {
+        quote = c
+      } else if (c === '>') {
+        break
+      }
+      j++
+    }
+    if (j >= n) break // 未闭合标签：丢弃剩余部分
+    i = j + 1
+  }
+  return out.join('').trim()
+}
+
 // =========================================================================
 // 1. URL 规范化与跟踪参数剥离算法
 // =========================================================================
@@ -175,7 +224,7 @@ export function parseNetscapeBookmarksHtml(htmlString: string): ParsedBookmarkFo
       } else {
         // H3 内容可能在紧接着的 token 里
         const nextContent = tokens[i + 1] || ''
-        title = decodeHtmlEntities(nextContent.replace(/<[^>]+>/g, '')).trim()
+        title = decodeHtmlEntities(stripHtmlTags(nextContent)).trim()
       }
 
       if (!title) title = '书签文件夹'
@@ -216,7 +265,7 @@ export function parseNetscapeBookmarksHtml(htmlString: string): ParsedBookmarkFo
         title = decodeHtmlEntities(fullMatch[1] || '').trim()
       } else {
         const nextContent = tokens[i + 1] || ''
-        title = decodeHtmlEntities(nextContent.replace(/<[^>]+>/g, '')).trim()
+        title = decodeHtmlEntities(stripHtmlTags(nextContent)).trim()
       }
 
       if (href && !/^(place:|javascript:|data:|vbscript:|file:)/i.test(href)) {

@@ -6,6 +6,7 @@ import {
   parseMarkdownBookmarks,
   parseUniversalBookmarks,
   deduplicateBookmarkItems,
+  stripHtmlTags,
 } from '../src/bookmark-parser'
 
 describe('全格式书签智能解析与语义去重清洗引擎 (Universal Bookmarks Parser & Deduplication)', () => {
@@ -145,5 +146,53 @@ describe('全格式书签智能解析与语义去重清洗引擎 (Universal Book
     expect(result.duplicates).toHaveLength(3)
     expect(result.stats.addedCount).toBe(2)
     expect(result.stats.duplicateCount).toBe(3)
+  })
+})
+
+describe('stripHtmlTags（状态机剥标签：书签标题回退路径）', () => {
+  it('普通行内标签剥干净', () => {
+    expect(stripHtmlTags('<b>bold</b>')).toBe('bold')
+    expect(stripHtmlTags('plain text')).toBe('plain text')
+    expect(stripHtmlTags('')).toBe('')
+  })
+
+  it('引号内的 > 不闭合标签：旧正则会输出 y">kept', () => {
+    expect(stripHtmlTags('<a title="x>y">kept</a>')).toBe('kept')
+    expect(stripHtmlTags(`<a title='a>b'>kept</a>`)).toBe('kept')
+  })
+
+  it('嵌套标签删一次后不留活标签', () => {
+    const out = stripHtmlTags('<scr<script>ipt>alert(1)</scr</script>ipt>')
+    expect(out).not.toContain('<script')
+    expect(out).not.toContain('<scr')
+    expect(out).toContain('alert(1)')
+  })
+
+  it('纯文本小于号保留：a < b 不被吞掉', () => {
+    expect(stripHtmlTags('a < b > c')).toBe('a < b > c')
+  })
+
+  it('未闭合标签丢弃剩余部分', () => {
+    expect(stripHtmlTags('hello <b')).toBe('hello')
+  })
+
+  it('标题回退路径：嵌套标签标题剥干净不留活标签', () => {
+    const html = '<DL><DT><H3>Folder</H3><DL><DT><A HREF="https://example.com">x</A></DT></DL></DL>'
+    const parsed = parseNetscapeBookmarksHtml(html)
+    expect(parsed.find((f) => f.title === 'Folder')).toBeDefined()
+    const nested = '<DL><DT><A HREF="https://example.com"><scr<script>ipt>Title</scr</script>ipt></A></DT></DL>'
+    const parsedNested = parseNetscapeBookmarksHtml(nested)
+    const titles: string[] = []
+    const walk = (folders: ReturnType<typeof parseNetscapeBookmarksHtml>) => {
+      for (const f of folders) {
+        titles.push(f.title)
+        for (const item of f.items) titles.push(item.title)
+        if (f.subFolders) walk(f.subFolders)
+      }
+    }
+    walk(parsedNested)
+    expect(titles.length).toBeGreaterThan(0)
+    for (const t of titles) expect(t).not.toContain('<script')
+    expect(titles.some((t) => t.includes('Title'))).toBe(true)
   })
 })

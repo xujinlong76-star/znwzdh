@@ -26,6 +26,7 @@ import { renderToString } from 'react-dom/server'
 
 import { altDigitTargetIndex } from '@/lib/palette-actions'
 import { NavDigitBadge, PaletteFooterHint } from '@/components/search-palette'
+import { stripHtmlTags } from '@/lib/html-text'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -44,8 +45,8 @@ function overlayRoot(): string {
 const ROOT = overlayRoot()
 const paletteSrc = readFileSync(join(ROOT, 'src/components/search-palette.tsx'), 'utf8')
 
-/** renderToString 的 HTML 去标签后即 textContent。 */
-const textOf = (html: string) => html.replace(/<[^>]*>/g, '')
+/** renderToString 的 HTML 去标签后即 textContent（单遍状态机：单次正则对嵌套标签会拼活，见 html-text.ts）。 */
+const textOf = (html: string) => stripHtmlTags(html)
 
 describe('altDigitTargetIndex（D1：映射本身）', () => {
   it('Alt+1..9 → 0..8，Alt+0 → 9', () => {

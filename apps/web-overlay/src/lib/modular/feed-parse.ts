@@ -85,8 +85,58 @@ function unwrapCdata(raw: string): string {
 /** 只给块级标签留空格：`<strong>` 这类行内标签替换成空格会把中文摘要切碎 */
 const BLOCK_TAG = /^(?:\/)?(?:br|p|div|li|ul|ol|dl|dd|dt|blockquote|h[1-6]|tr|table|thead|tbody|section|article|header|footer)\b/i;
 
+/**
+ * 脱标签（单遍状态机，块级标签留空格、行内标签删空）。
+ *
+ * 旧实现是单次正则 `raw.replace(/<([^>]*)>/g, cb)`，有两处硬伤（CodeQL
+ * 「不完整的多字符清理」，同 html-text.ts 注释的 #138/#139）：
+ * 1. 引号盲区：`<a title="x>y">正文</a>` 会在属性内的 `>` 处提前截断；
+ * 2. 拼接复活：嵌套标签一次删除后，外层残片可能拼成新的标签形子串。
+ *
+ * 这里逐字符扫描，只把 `<` 后跟字母 / `/` / `!` / `?` 的才当标签开头
+ * （`a < b` 这种纯文本小于号原样保留），标签内引号里的 `>` 不闭合标签，
+ * 未闭合标签丢弃剩余部分；块级标签（BLOCK_TAG）替换成一个空格，行内
+ * 标签替换成空串——与旧回调的映射关系一致。一次扫描即干净，不存在
+ * “删完再拼活”的中间态，线性时间、无回溯。
+ */
 export function stripTags(raw: string): string {
-  return raw.replace(/<([^>]*)>/g, (_m, inner: string) => (BLOCK_TAG.test(inner.trim()) ? " " : ""));
+  const out: string[] = [];
+  const n = raw.length;
+  let i = 0;
+  while (i < n) {
+    const ch = raw[i];
+    if (ch !== "<") {
+      out.push(ch);
+      i++;
+      continue;
+    }
+    // `<` 后不是字母 / `/` / `!` / `?`：是纯文本小于号，原样保留。
+    const next = raw[i + 1];
+    if (next === undefined || !/[A-Za-z/?!]/.test(next)) {
+      out.push(ch);
+      i++;
+      continue;
+    }
+    // 扫描到配对的 `>`，引号内的 `>` 不闭合标签。
+    let j = i + 1;
+    let quote: string | null = null;
+    while (j < n) {
+      const c = raw[j];
+      if (quote) {
+        if (c === quote) quote = null;
+      } else if (c === '"' || c === "'") {
+        quote = c;
+      } else if (c === ">") {
+        break;
+      }
+      j++;
+    }
+    if (j >= n) break; // 未闭合标签：丢弃剩余部分
+    const inner = raw.slice(i + 1, j).trim();
+    if (BLOCK_TAG.test(inner)) out.push(" ");
+    i = j + 1;
+  }
+  return out.join("");
 }
 
 /**

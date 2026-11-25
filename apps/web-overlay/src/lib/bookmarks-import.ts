@@ -9,6 +9,7 @@
  */
 
 import { fingerprintUrl } from './import-workbench'
+import { stripHtmlTags } from './html-text'
 
 export interface ParsedBookmark {
   title: string
@@ -26,8 +27,16 @@ export function bookmarkId(href: string): string {
   return 'bm-' + (h >>> 0).toString(36) + '-' + href.length.toString(36)
 }
 
+/**
+ * 脱标签 + 解实体（先脱后解：`&lt;script&gt;` 是用户想看的字面文本，解一层后
+ * 不再当标签吃；顺序与 feed-parse.ts 的 toPlainText 一致）。
+ *
+ * 脱标签用单遍状态机 stripHtmlTags，不用单次正则 `.replace(/<[^>]+>/g, '')`：
+ * 后者对嵌套标签一次删除后外层残片会拼成新标签（CodeQL「不完整的多字符
+ * 清理」），且属性内 `>` 会提前截断（见 html-text.ts）。
+ */
 function stripTags(text: string): string {
-  return text.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim()
+  return stripHtmlTags(text).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim()
 }
 
 /** 单次上限与 parseUniversalBookmarks 对齐（总协调人决策 1：5000） */

@@ -83,6 +83,24 @@ describe("decodeEntities / toPlainText：纯文本化但不双重解码", () => 
     expect(long.truncated).toBe(true);
     expect(stripTags("a<br/>b")).toBe("a b");
   });
+
+  it("stripTags 状态机：引号内的 > 不闭合标签，嵌套标签不留活标签", () => {
+    // 旧单次正则会在属性内 > 处提前截断，输出 y">kept
+    expect(stripTags('<a title="x>y">kept</a>')).toBe("kept");
+    expect(stripTags(`<a title='a>b'>kept</a>`)).toBe("kept");
+    // 嵌套标签一次删除后不留活标签
+    const nested = stripTags("<scr<script>ipt>alert(1)</scr</script>ipt>");
+    expect(nested).not.toContain("<script");
+    expect(nested).not.toContain("<scr");
+    expect(nested).toContain("alert(1)");
+    // 块级标签仍留空格、行内标签仍删空（与旧回调映射一致）
+    expect(stripTags("<p>a</p><p>b</p>")).toBe(" a  b ");
+    expect(stripTags("<div>x</div><span>y</span>")).toBe(" x y");
+    // 纯文本小于号保留
+    expect(stripTags("a < b > c")).toBe("a < b > c");
+    // 未闭合标签丢弃剩余部分（本函数不 trim，尾部空格保留，toPlainText 会压掉）
+    expect(stripTags("hello <b")).toBe("hello ");
+  });
 });
 
 describe("parseFeed：三种源格式都按真实字段解析", () => {

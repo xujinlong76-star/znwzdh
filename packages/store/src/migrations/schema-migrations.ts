@@ -24,6 +24,7 @@ import {
   cleanTaxonomyAndDuplicates,
   normalizeSiteCreatedAt,
   migrateSiteReportsAndReviews,
+  migrateSitePatrolIndex,
 } from "../migrate.ts";
 
 export interface MigrationRecord {
@@ -300,6 +301,16 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
       await migrateSiteReportsAndReviews(db);
     },
     checksum: "v1_site_reports_and_reviews",
+  },
+  {
+    // 2026-11-26：sites_patrol_idx 曾被追加进已记账的 20261015_site_indexes，
+    // 存量库永远缺这条巡检索引。单独版本补建；DDL 真相见 migrate.ts 的 SITE_PATROL_INDEX_DDL。
+    version: "20261126_site_patrol_index",
+    name: "巡检索引 sites_patrol_idx 补建",
+    up: async (db: Db) => {
+      await migrateSitePatrolIndex(db);
+    },
+    checksum: "v1_site_patrol_index",
   },
 ];
 

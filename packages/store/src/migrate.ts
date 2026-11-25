@@ -509,6 +509,30 @@ export async function migrateSiteReportsAndReviews(db: { dialect: string; sqlite
   }
 }
 
+/**
+ * 巡检专用索引的救场 DDL（2026-11-26）。
+ *
+ * sites_patrol_idx 的建表语句原本被追加进 20261015_site_indexes 的语句表——
+ * 该版本在存量库上早已记账完成，追加的语句永远不会再跑。实测 5096 站的存量库
+ * 缺这条索引，daily health_check 巡检列表只能全表扫 + 临时 B-tree 排序。
+ * 与 site_reports 的救场同构：单独版本执行这段 DDL，真相放本常量。
+ */
+export const SITE_PATROL_INDEX_DDL: string[] = [
+  "CREATE INDEX IF NOT EXISTS sites_patrol_idx ON sites(deleted_at, enabled, last_checked_at, created_at)",
+];
+
+/** 补建 sites_patrol_idx（存量库追加过 DDL 的救场迁移）。 */
+export async function migrateSitePatrolIndex(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  await ensureMigrationFailures(db);
+  for (const sqlText of SITE_PATROL_INDEX_DDL) {
+    try {
+      await execSql(db, sqlText);
+    } catch (err) {
+      await recordMigrationFailure(db, sqlText, err);
+    }
+  }
+}
+
 export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
   await ensureMigrationFailures(db);
   /**

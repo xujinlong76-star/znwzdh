@@ -33,6 +33,19 @@ describe("版本化数据库迁移台账（DB-01）", () => {
     expect(res.skipped.length).toBeGreaterThanOrEqual(BUILTIN_MIGRATIONS.length);
   });
 
+  it("sites_patrol_idx 作为独立版本登记（存量库在旧版本已记账时仍能补建）", async () => {
+    // 2026-11-26：该索引曾被追加进早已记账的 20261015_site_indexes，存量库永远缺。
+    // 单独版本是唯一能让它在新老库都落地的形态；这里钉住版本已进台账且索引实际存在。
+    const m = BUILTIN_MIGRATIONS.find((x) => x.version === "20261126_site_patrol_index");
+    expect(m).toBeDefined();
+    const applied = await getAppliedMigrations(db);
+    expect(applied.has("20261126_site_patrol_index")).toBe(true);
+    const rows = db.sqlite!
+      .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='sites_patrol_idx'")
+      .all() as { name: string }[];
+    expect(rows.length).toBe(1);
+  });
+
   it("台账记录包含 version, name, applied_at, checksum", async () => {
     const ledger = await getMigrationLedger(db);
     expect(ledger.length).toBeGreaterThanOrEqual(BUILTIN_MIGRATIONS.length);

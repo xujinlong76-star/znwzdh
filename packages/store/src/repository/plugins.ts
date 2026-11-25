@@ -276,8 +276,14 @@ export async function getPluginBundleMembers(
   if (plugin.kind !== "bundle") return [];
   const payload = plugin.manifest.payload as BundlePayload;
   const members: PluginBundleMember[] = [];
-  for (const item of payload.items ?? []) {
-    const ref = await getPluginBySlug(repo, item.slug);
+  // 组合包成员一次性批量取回：原先逐成员一次 getPluginBySlug（含评分聚合子查询），
+  // 是典型 N+1。用 Map 按 slug 还原，保持 payload.items 的声明顺序与缺失成员语义。
+  const items = payload.items ?? [];
+  const refsBySlug = new Map(
+    (await getPluginsBySlugs(repo, items.map((item) => item.slug))).map((ref) => [ref.slug, ref]),
+  );
+  for (const item of items) {
+    const ref = refsBySlug.get(item.slug) ?? null;
     const selfReference = String(item.slug).toLowerCase() === plugin.slug.toLowerCase();
     if (!ref) {
       members.push({

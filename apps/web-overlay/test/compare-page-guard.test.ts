@@ -207,4 +207,39 @@ describe('收藏夹入口：批量栏“横向对比”按钮', () => {
     const titleSlice = code.slice(code.lastIndexOf('title={', compareAt), compareAt + 200)
     expect(titleSlice).not.toContain('快捷键')
   })
+
+  it('F-10：匿名点对比不走到 /compare 才撞 401——就绪后确认匿名就去登录（带回跳），title 先写清需登录', () => {
+    const code = stripComments(favoritesPage)
+    expect(code).toContain('横向对比只对登录用户开放，请先登录后再对比')
+    expect(code).toContain("router.push(`/auth/signin?callbackUrl=${encodeURIComponent(buildCompareHref([...selectedSiteIds]))}`)")
+    // 只在身份就绪后才下匿名结论：登录用户在会话同步完成前不被误导去登录。
+    expect(code).toContain('identityReady.ready && !isLoggedIn')
+  })
+})
+
+describe('F-10：对照页早期登录门（匿名不取数、不撞 401 墙）', () => {
+  it('对照页用 useIdentityReady 守门：未就绪先渲染加载态，就绪后匿名才亮登录墙', () => {
+    const code = stripComments(page)
+    expect(code).toContain('useIdentityReady')
+    expect(code).toContain('identityReady.ready')
+    expect(code).toContain('横向对比需要登录')
+    // 匿名判定：无身份或 anon- 身份都算匿名（登录用户不闪墙）。
+    expect(code).toContain("!identityReady.identity || identityReady.isAnonymous")
+  })
+
+  it('登录墙在 CompareView 挂载之前：匿名分支不渲染 CompareView/SnapshotPanel', () => {
+    const code = stripComments(page)
+    const gateAt = code.indexOf('横向对比需要登录')
+    const viewAt = code.indexOf('<CompareView')
+    expect(gateAt).toBeGreaterThan(-1)
+    expect(viewAt).toBeGreaterThan(gateAt)
+    expect(code).toContain('横向对比只对登录用户开放，请先登录后再查看')
+  })
+
+  it('登录后按 callbackUrl 回到这次对比（siteIds 原样带回），空态回跳去收藏夹', () => {
+    const code = stripComments(page)
+    expect(code).toContain("encodeURIComponent(`/compare?siteIds=${validated.siteIds.join(',')}`)")
+    expect(code).toContain('/auth/signin?callbackUrl=${callbackUrl}')
+    expect(code).toContain('/auth/signin?callbackUrl=%2Ffavorites')
+  })
 })

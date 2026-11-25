@@ -69,12 +69,26 @@ async function currentUser() {
 
 async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
   const { user, identity, sessionSid, sessionExpiresAt, sessionIssuedAt } = await currentUser()
-  if (!user || !identity) {
-    return NextResponse.json({ error: '未登录' }, { status: 401, headers: { 'cache-control': 'no-store' } })
-  }
-
   const path = ((await ctx.params).path ?? []).filter((p) => p && p !== '.' && p !== '..')
   const method = request.method.toUpperCase()
+  if (!user || !identity) {
+    // 匿名可读的两条 GET（F-03/F-04）：文档口径匿名返 []，无会话时直接在 BFF 回空，
+    // 不把 401 透传给浏览器（否则每个匿名 /drama、/me/* 访问都在 Console 刷 401）。
+    // 中枢对已签名 anon- 身份本就返 []，这里只是把「无会话」也按同一口径处理，
+    // 不发明匿名身份、不触碰其他端点的 401 语义；登录态仍走下面的正常转发。
+    if (method === 'GET' && path.length === 1 && path[0] === 'drama-check-states') {
+      return NextResponse.json({ ok: true, states: [] }, { headers: { 'cache-control': 'no-store' } })
+    }
+    if (method === 'GET' && path.length === 1 && path[0] === 'custom-sites') {
+      // anonymous:true 让「我的站点」页仍能区分「匿名」与「登录后 0 条」，
+      // 继续显示登录提示而不是空表单（见 custom-sites-view 的 load）。
+      return NextResponse.json(
+        { ok: true, items: [], total: 0, anonymous: true },
+        { headers: { 'cache-control': 'no-store' } },
+      )
+    }
+    return NextResponse.json({ error: '未登录' }, { status: 401, headers: { 'cache-control': 'no-store' } })
+  }
 
   // 登录后把用户 upsert 进 users 表，返回 canonical userId
   if (path[0] === 'sync') {

@@ -4,7 +4,9 @@
  * 「我的站点」管理页：用户自定义网址的增删改与排序。
  *
  * 数据走 BFF `/api/me/custom-sites`（会话派生身份 → 中枢按账号存储），
- * 未登录时 BFF 回 401，这里显示登录提示而不是假装能存。
+ * 未登录时 BFF 直接回 `{ items: [], anonymous: true }`（不再 401，避免
+ * 每个匿名访问都在 Console 刷 401），这里据此显示登录提示而不是空表单；
+ * 401 分支仍保留作兜底（会话中途失效等），写操作匿名时仍 401。
  * 链接渲染统一过 safeHref：服务端已只收 http(s)，这里是第二道防线。
  */
 import { useCallback, useEffect, useState } from 'react'
@@ -49,7 +51,13 @@ export function CustomSitesView() {
 
   const load = useCallback(async () => {
     try {
-      const data = await api<{ items: CustomSite[] }>('/api/me/custom-sites')
+      const data = await api<{ items: CustomSite[]; anonymous?: boolean }>('/api/me/custom-sites')
+      if (data.anonymous) {
+        // 匿名态：服务端回空列表 + anonymous 标志，显示登录提示而不是空表单。
+        setItems([])
+        setState('anonymous')
+        return
+      }
       setItems(data.items)
       setState('ready')
     } catch (err) {

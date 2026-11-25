@@ -8,6 +8,9 @@
  * `app/favorites/page.tsx:124-150` 的范式），不进 `/compare` 首屏 chunk。
  * 取数与渲染全在 `components/compare-view.tsx`；元信息（noindex）在
  * `app/compare/layout.tsx`（客户端组件无法导出 metadata）。
+ * 另：匿名用户不进对照表——`useIdentityReady` 就绪后若未登录，先渲染
+ * 登录提示面板（附回跳链接），不等 `CompareView` 取数撞 401 才报墙
+ * （F-10：匿名对比的登录墙必须出现在流程早期）。
  */
 
 import { Suspense } from 'react'
@@ -18,6 +21,7 @@ import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { parseCompareSiteIds, validateCompareSiteIds } from '@/lib/compare'
+import { useIdentityReady } from '@/hooks/useIdentityReady'
 
 const CompareView = dynamic(
   () => import('@/components/compare-view').then((m) => m.CompareView),
@@ -40,6 +44,94 @@ function ComparePageBody() {
   const searchParams = useSearchParams()
   const siteIds = parseCompareSiteIds(searchParams.get('siteIds'))
   const validated = validateCompareSiteIds(siteIds)
+  // F-10：身份未就绪前不下结论（登录用户在会话同步完成前不闪登录墙）；
+  // 就绪后仍匿名则直接亮登录墙，不挂载 CompareView、不发 /api/compare。
+  const identityReady = useIdentityReady()
+  const isAnonymous = identityReady.ready && (!identityReady.identity || identityReady.isAnonymous)
+
+  if (!validated.ok) {
+    return (
+      <Container as="main" id="main-content">
+        <div className="py-6 sm:py-10 max-w-6xl mx-auto space-y-6">
+          <header className="space-y-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground">横向对比</h1>
+            <p className="text-xs sm:text-sm leading-relaxed text-muted-foreground">
+              并排对照我收藏的同类站点：只比能验证的硬字段，每个格子带来源与日期，缺失写“未验证”；不排名、不打分。
+            </p>
+          </header>
+
+          <div className="rounded-xl border border-border/70 bg-card p-5 space-y-3">
+            <p className="text-sm font-semibold text-foreground">还不能开始对比</p>
+            <p className="text-sm leading-relaxed text-muted-foreground">{validated.error}</p>
+            {isAnonymous && (
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                横向对比只对登录用户开放，
+                <Link href="/auth/signin?callbackUrl=%2Ffavorites" className="text-primary underline underline-offset-2">
+                  请先登录
+                </Link>
+                后再去收藏夹勾选站点。
+              </p>
+            )}
+            <div>
+              <Button asChild size="sm" variant="outline" className="h-8 text-xs">
+                <Link href="/favorites">去收藏夹勾选 2–4 个站点</Link>
+              </Button>
+            </div>
+          </div>
+        </div>
+        <Footer />
+      </Container>
+    )
+  }
+
+  if (!identityReady.ready) {
+    return (
+      <Container as="main" id="main-content">
+        <div className="py-6 sm:py-10 max-w-6xl mx-auto space-y-6">
+          <header className="space-y-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground">横向对比</h1>
+            <p className="text-xs sm:text-sm leading-relaxed text-muted-foreground">
+              并排对照我收藏的同类站点：只比能验证的硬字段，每个格子带来源与日期，缺失写“未验证”；不排名、不打分。
+            </p>
+          </header>
+          <p className="text-sm text-muted-foreground">正在加载对照表…</p>
+        </div>
+        <Footer />
+      </Container>
+    )
+  }
+
+  if (isAnonymous) {
+    const callbackUrl = encodeURIComponent(`/compare?siteIds=${validated.siteIds.join(',')}`)
+    return (
+      <Container as="main" id="main-content">
+        <div className="py-6 sm:py-10 max-w-6xl mx-auto space-y-6">
+          <header className="space-y-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground">横向对比</h1>
+            <p className="text-xs sm:text-sm leading-relaxed text-muted-foreground">
+              并排对照我收藏的同类站点：只比能验证的硬字段，每个格子带来源与日期，缺失写“未验证”；不排名、不打分。
+            </p>
+          </header>
+
+          <div className="rounded-xl border border-border/70 bg-card p-5 space-y-3">
+            <p className="text-sm font-semibold text-foreground">横向对比需要登录</p>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              横向对比只对登录用户开放，请先登录后再查看。登录后会直接回到这次对比。
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild size="sm" className="h-8 text-xs">
+                <Link href={`/auth/signin?callbackUrl=${callbackUrl}`}>去登录</Link>
+              </Button>
+              <Button asChild size="sm" variant="outline" className="h-8 text-xs">
+                <Link href="/favorites">返回收藏夹</Link>
+              </Button>
+            </div>
+          </div>
+        </div>
+        <Footer />
+      </Container>
+    )
+  }
 
   return (
     <Container as="main" id="main-content">
@@ -51,22 +143,8 @@ function ComparePageBody() {
           </p>
         </header>
 
-        {!validated.ok ? (
-          <div className="rounded-xl border border-border/70 bg-card p-5 space-y-3">
-            <p className="text-sm font-semibold text-foreground">还不能开始对比</p>
-            <p className="text-sm leading-relaxed text-muted-foreground">{validated.error}</p>
-            <div>
-              <Button asChild size="sm" variant="outline" className="h-8 text-xs">
-                <Link href="/favorites">去收藏夹勾选 2–4 个站点</Link>
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <CompareView siteIds={validated.siteIds} />
-            <SnapshotPanel siteIds={validated.siteIds} />
-          </>
-        )}
+        <CompareView siteIds={validated.siteIds} />
+        <SnapshotPanel siteIds={validated.siteIds} />
       </div>
       <Footer />
     </Container>

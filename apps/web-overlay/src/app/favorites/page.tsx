@@ -2346,13 +2346,23 @@ export default function FavoritesPage() {
                 variant="outline"
                 className="h-8 text-xs"
                 disabled={selectedSiteIds.size < 2 || selectedSiteIds.size > 4}
-                onClick={() => router.push(buildCompareHref([...selectedSiteIds]))}
+                onClick={() => {
+                  // F-10：匿名点对比不走到 /compare 才撞 401 墙——就绪后确认匿名
+                  // 就直接去登录，登录后按 callbackUrl 回到这次对比。
+                  if (identityReady.ready && !isLoggedIn) {
+                    router.push(`/auth/signin?callbackUrl=${encodeURIComponent(buildCompareHref([...selectedSiteIds]))}`)
+                    return
+                  }
+                  router.push(buildCompareHref([...selectedSiteIds]))
+                }}
                 title={
-                  selectedSiteIds.size < 2
-                    ? `横向对比需要选 2–4 个收藏（当前已选 ${selectedSiteIds.size} 个）`
-                    : selectedSiteIds.size > 4
-                      ? `横向对比一次最多 4 个收藏（当前已选 ${selectedSiteIds.size} 个）`
-                      : '并排对照选中的 2–4 个收藏'
+                  identityReady.ready && !isLoggedIn
+                    ? '横向对比只对登录用户开放，请先登录后再对比'
+                    : selectedSiteIds.size < 2
+                      ? `横向对比需要选 2–4 个收藏（当前已选 ${selectedSiteIds.size} 个）`
+                      : selectedSiteIds.size > 4
+                        ? `横向对比一次最多 4 个收藏（当前已选 ${selectedSiteIds.size} 个）`
+                        : '并排对照选中的 2–4 个收藏'
                 }
               >
                 横向对比

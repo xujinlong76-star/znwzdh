@@ -1348,6 +1348,47 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   'typemovie.art=typemoviep',
   'todoist.com=todoistp',
   'opus.pro=opusclipp',
+  // 2026-11-25（图标剩余轮 W11：学术 / 影视 / 其他组）。
+  // - Scopus：站方 https://www.scopus.com/favicon.ico 实测 SSO 循环
+  //   （307 → id.elsevier.com，50 次重定向未果，C10 旧阻塞原因仍成立，
+  //   故不用站方 favicon）；改用 Simple Icons 官方 Scopus 字标 SVG
+  //   https://cdn.simpleicons.org/scopus（200、image/svg+xml、808 B，
+  //   SHA-256 93e51dcc…；橙色 #E9711C Scopus 字标，非 Elsevier 字母标，
+  //   C10“Elsevier 字母标不是 Scopus”禁令不适用），SVG 原样落盘
+  //   scopus.svg。'scopus.com' 全库只命中 Scopus 一站，无后缀串站。
+  'scopus.com=scopuss',
+  // - 读秀：站方 favicon.ico 是微软 IE 蓝色“e”错标（16×16，1150 B，
+  //   目视确认为蓝 e + 金环，绝不能用，C10 旧阻塞原因仍成立）；登录页
+  //   https://www.duxiu.com（login.jsp）全站无任何 logo 图片资产
+  //   （仅 1 张 gab.png 备案小图标；images/logo.png 实为“图书馆联合
+  //   参考咨询服务中心”拼图标志，与读秀无关，未用）。故按任务要求重绘：
+  //   以官网主视觉为源——登录页主品牌蓝 #2872E2（login.css 出现 7 次，
+  //   辅蓝 #0066cc 链接色 3 次）、标题“读秀学术搜索”首字“读”——画
+  //   128×128 圆角方块 + 白色“读”字（Noto Sans CJK SC Bold），四角透明，
+  //   落盘 duxiu.png（3,693 B）。重绘依据与来源见 W11 测试与 EVIDENCE。
+  //   'duxiu.com' 全库只命中读秀一站，无后缀串站。
+  'duxiu.com=duxiup',
+  // - Rotten Tomatoes：首页声明的
+  //   https://www.rottentomatoes.com/assets/pizza-pie/images/favicon.ico
+  //   （200、image/vnd.microsoft.icon、3,310 B）内容实为 96×96 PNG
+  //   （单帧，红番茄绿蒂标，四角透明，目视确认），按内容解码原样落盘
+  //   rottentomatoes.png（3,310 B，md5 12e316e3…，与源字节一致）。
+  //   未用 apple-touch-icon-180.jpg（JPEG 白底，非透明标）。
+  //   'rottentomatoes.com' 全库只命中一站，无后缀串站。
+  'rottentomatoes.com=rottentomatoesp',
+  // - Metacritic：首页声明的 https://www.metacritic.com/a/img/favicon.svg
+  //   （200、image/svg+xml、1,381 B）原样落盘 metacritic.svg：深海军蓝圆
+  //   #001B36 + 黄圈 #FC0 + 白色 M 字标（width/height 88，无 viewBox）。
+  //   未用 favicon.ico（16/32 两帧 ICO）。深色主题下黄圈定形、白 M 可读，
+  //   按规范 §9 不配 LOGO_TILE_MAP，留待统一处理轮。
+  //   'metacritic.com' 全库只命中一站，无后缀串站。
+  'metacritic.com=metacritics',
+  // - Windy：站方 https://www.windy.com/img/favicon.png
+  //   （200、image/png、3,629 B）原样落盘 windy.png：128×128 调色板 PNG，
+  //   红圆底 + 白色风形 W 标，四角透明，目视确认。未用 favicon.ico
+  //   （16/32 两帧 ICO，15,086 B）与 logo-full.png（180×180 宽版字标，
+  //   28px 卡片内不可读）。'windy.com' 全库只命中一站，无后缀串站。
+  'windy.com=windyp',
  ];
 
 /**

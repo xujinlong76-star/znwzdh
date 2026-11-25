@@ -152,6 +152,7 @@ const LAYOUT_SLOT_LABELS: Record<string, string> = {
   glassmorphismBlur: '毛玻璃模糊',
   cardOpacity: '卡片不透明度',
   enableAdaptiveRanking: '自适应排序',
+  rankingMode: '排序方式',
 }
 
 /** 插槽键 → 用户能看懂的中文名（元素级插槽只取字段部分，如 customCategories::x → 专属分类） */

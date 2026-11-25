@@ -86,6 +86,7 @@ export const LayoutSchema = z.object({
   heroDeckCollapsed: z.boolean().optional(),
   heroDeckWidgets: z.array(z.unknown()).max(200).optional(),
   enableAdaptiveRanking: z.boolean().optional(),
+  rankingMode: z.enum(['adaptive', 'default', 'frequent']).optional(),
   categoryOrder: idListSchema,
   pinnedCategoryIds: idListSchema,
   hiddenCategoryIds: idListSchema,

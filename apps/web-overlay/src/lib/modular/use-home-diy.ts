@@ -40,6 +40,7 @@ import {
   hydrateHomeDiy,
   redoHomeDiy,
   resolveDiyDataAccent,
+  resolveRankingMode,
   setHomeDiyEditingLayout,
   stageHomeDiyPendingShare,
   STORAGE_CLOCKS_KEY,
@@ -48,6 +49,7 @@ import {
   type AccentColor,
   type CanvasBackground,
   type CardDisplayMode,
+  type CategoryRankingMode,
   type CustomCategory,
   type CustomCategoryItem,
   type HomeDIYConfig,
@@ -456,15 +458,26 @@ export function useHomeDIY(initialCardDisplayMode?: CanonicalCardDisplayMode) {
     }
 
     const result = computeSmartAutoTune(sites, categories, visitStats, favoriteIds)
-    persistConfig((prev) => ({
-      ...prev,
-      speedDialPinnedIds: result.speedDialPinnedIds,
-      speedDialEnabled: result.speedDialEnabled,
-      categoryOrder: result.categoryOrder,
-      collapsedCategoryIds: result.collapsedCategoryIds,
-      enableAdaptiveRanking: result.enableAdaptiveRanking,
-      updatedAt: Date.now(),
-    }))
+    // P0-B：调优开自适应排序时不抢用户显式选的「我的常用」模式；
+    // 其余情况模式与布尔镜像同步写，避免两者 desync。
+    persistConfig((prev) => {
+      const nextMode: CategoryRankingMode =
+        resolveRankingMode(prev) === 'frequent'
+          ? 'frequent'
+          : result.enableAdaptiveRanking
+            ? 'adaptive'
+            : 'default'
+      return {
+        ...prev,
+        speedDialPinnedIds: result.speedDialPinnedIds,
+        speedDialEnabled: result.speedDialEnabled,
+        categoryOrder: result.categoryOrder,
+        collapsedCategoryIds: result.collapsedCategoryIds,
+        enableAdaptiveRanking: nextMode === 'adaptive',
+        rankingMode: nextMode,
+        updatedAt: Date.now(),
+      }
+    })
     return result
   }, [persistConfig])
 
@@ -480,14 +493,37 @@ export function useHomeDIY(initialCardDisplayMode?: CanonicalCardDisplayMode) {
     }))
   }, [persistConfig])
 
-  // 16.1 智能自适应热度半衰期推荐排序开关
+  // 16.1 智能自适应热度半衰期推荐排序开关（P0-B：改为排序方式切换；
+  // 旧开关语义保留：开 = 切到「自适应热度」，关 = 切回「站内综合」。
+  // 若当前是「我的常用」，开关视为“开自适应”，不静默吞掉用户选择、
+  // 也不把「我的常用」写回默认——模式切换只走 setRankingMode / 胶囊下拉。）
   const toggleAdaptiveRanking = useCallback(() => {
-    persistConfig((prev) => ({
-      ...prev,
-      enableAdaptiveRanking: !prev.enableAdaptiveRanking,
-      updatedAt: Date.now(),
-    }))
+    persistConfig((prev) => {
+      const nextMode: CategoryRankingMode =
+        resolveRankingMode(prev) === 'adaptive' ? 'default' : 'adaptive'
+      return {
+        ...prev,
+        enableAdaptiveRanking: nextMode === 'adaptive',
+        rankingMode: nextMode,
+        updatedAt: Date.now(),
+      }
+    })
   }, [persistConfig])
+
+  // 16.2 分类内排序方式（P0-B）：自适应热度 / 站内综合 / 我的常用。
+  // rankingMode 与 enableAdaptiveRanking 布尔镜像同步写，旧读端（只读布尔值）
+  // 不会看到两者打架；旧配置缺 rankingMode 时由布尔值派生（resolveRankingMode）。
+  const setRankingMode = useCallback(
+    (mode: CategoryRankingMode) => {
+      persistConfig((prev) => ({
+        ...prev,
+        enableAdaptiveRanking: mode === 'adaptive',
+        rankingMode: mode,
+        updatedAt: Date.now(),
+      }))
+    },
+    [persistConfig],
+  )
 
   // 17. 添加自定义专属分类
   const addCustomCategory = useCallback((title: string, icon?: string) => {
@@ -1021,8 +1057,10 @@ export function useHomeDIY(initialCardDisplayMode?: CanonicalCardDisplayMode) {
     removeSiteFromCustomCategory,
     addSitesToCustomCategory,
     removeSitesFromCustomCategories,
-    isAdaptiveRankingEnabled: Boolean(config.enableAdaptiveRanking),
+    isAdaptiveRankingEnabled: resolveRankingMode(config) === 'adaptive',
     toggleAdaptiveRanking,
+    rankingMode: resolveRankingMode(config),
+    setRankingMode,
     applyDIYPreset,
     exportDIYConfig,
     importDIYConfig,

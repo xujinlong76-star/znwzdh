@@ -55,6 +55,39 @@ export interface CustomCategory {
   createdAt: number
 }
 
+/**
+ * 分类内排序方式（P0-B，2026-11-26）：
+ *   - 'adaptive' 自适应热度：computeAdaptiveSiteRanking（热度与趋势加权）；
+ *   - 'default' 站内综合：sortCategoryItemsWithPinned（置顶优先，其余收录次序）；
+ *   - 'frequent' 我的常用：sortItemsByVisitFrequency（本机点击次数）。
+ * 只有这三种：首页 navigation.json 的子项只有 id/title/href/icon/tags 等
+ * 字段、没有收录日期，且首页不取中枢数据，「最新收录」没有可排的数据，
+ * 故不设该模式（不编造无数据的模式）。
+ */
+export type CategoryRankingMode = 'adaptive' | 'default' | 'frequent'
+
+export const CATEGORY_RANKING_MODES: readonly CategoryRankingMode[] = [
+  'adaptive',
+  'default',
+  'frequent',
+]
+
+export function isCategoryRankingMode(v: unknown): v is CategoryRankingMode {
+  return typeof v === 'string' && (CATEGORY_RANKING_MODES as readonly string[]).includes(v)
+}
+
+/**
+ * 旧配置没有 rankingMode 时从 enableAdaptiveRanking 布尔值派生，
+ * 保证 2026-11-26 之前存下的配置升级后排序不变。
+ */
+export function resolveRankingMode(config: {
+  rankingMode?: CategoryRankingMode
+  enableAdaptiveRanking?: boolean
+}): CategoryRankingMode {
+  if (isCategoryRankingMode(config.rankingMode)) return config.rankingMode
+  return config.enableAdaptiveRanking ? 'adaptive' : 'default'
+}
+
 export interface HomeDIYConfig {
   version: 3
   viewMode: HomeViewMode
@@ -64,6 +97,8 @@ export interface HomeDIYConfig {
   heroDeckCollapsed: boolean
   heroDeckWidgets: string[]
   enableAdaptiveRanking: boolean
+  /** 分类内排序方式（可选：缺失时由 enableAdaptiveRanking 派生，见 resolveRankingMode） */
+  rankingMode?: CategoryRankingMode
   // 分类可视化编排
   categoryOrder: string[]
   pinnedCategoryIds: string[]
@@ -112,6 +147,7 @@ export const DEFAULT_CONFIG: HomeDIYConfig = {
   heroDeckCollapsed: false,
   heroDeckWidgets: DEFAULT_HERO_WIDGETS,
   enableAdaptiveRanking: false,
+  rankingMode: 'default',
   categoryOrder: [],
   pinnedCategoryIds: [],
   hiddenCategoryIds: [],
@@ -915,6 +951,9 @@ function pickLegacyFields(parsed: Record<string, unknown>, from: 2 | 1): Partial
     if (typeof parsed.enableAdaptiveRanking === 'boolean') {
       out.enableAdaptiveRanking = parsed.enableAdaptiveRanking
     }
+    if (isCategoryRankingMode(parsed.rankingMode)) {
+      out.rankingMode = parsed.rankingMode
+    }
     if (Array.isArray(parsed.categoryOrder)) out.categoryOrder = parsed.categoryOrder as string[]
     if (Array.isArray(parsed.pinnedCategoryIds)) out.pinnedCategoryIds = parsed.pinnedCategoryIds as string[]
     if (Array.isArray(parsed.hiddenCategoryIds)) out.hiddenCategoryIds = parsed.hiddenCategoryIds as string[]
@@ -1166,7 +1205,16 @@ export function computeHomeDiyShareDiff(
     const chg = [...keys].filter((k) => curSlots[k as keyof typeof curSlots] !== impSlots[k as keyof typeof impSlots])
     if (chg.length > 0) diff.push('数字快拨：' + chg.length + ' 个快拨位会变')
   }
-  if (includes('enableAdaptiveRanking') && current.enableAdaptiveRanking !== imported.enableAdaptiveRanking) {
+  // P0-B：rankingMode 覆盖 enableAdaptiveRanking（后者只是它的布尔镜像），
+  // 两者都在导入里时只报模式变化，避免同一改动报两条。
+  if (includes('rankingMode') && resolveRankingMode(current) !== resolveRankingMode(imported)) {
+    const label: Record<CategoryRankingMode, string> = {
+      adaptive: '自适应热度',
+      default: '站内综合',
+      frequent: '我的常用',
+    }
+    diff.push('排序方式将改为「' + label[resolveRankingMode(imported)] + '」')
+  } else if (includes('enableAdaptiveRanking') && current.enableAdaptiveRanking !== imported.enableAdaptiveRanking) {
     diff.push('自适应排序将' + (imported.enableAdaptiveRanking ? '开启' : '关闭'))
   }
   const values: Array<[string, string, string | number | undefined, string | number | undefined]> = [

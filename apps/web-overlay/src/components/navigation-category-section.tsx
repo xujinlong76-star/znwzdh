@@ -25,14 +25,23 @@ const ModuleResizeHandles = dynamic(
   { ssr: false, loading: () => null },
 )
 import { useModuleWindowSize } from '@/lib/modular/module-resize-store'
-import { ChevronDown, Pin, Plus, Sparkles, Search, X, Link2, Network, Eye, EyeOff, RotateCcw } from 'lucide-react'
+import { ChevronDown, Pin, Plus, Sparkles, Search, X, Link2, Network, Eye, EyeOff, RotateCcw, Check } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/registry/new-york/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import {
   computeAdaptiveSiteRanking,
   sortCategoryItemsWithPinned,
 } from '@/lib/modular/diy-presets'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
+import type { CategoryRankingMode } from '@/lib/modular/home-diy-storage'
+import { readVisitCounts, sortItemsByVisitFrequency, type VisitStats } from '@/lib/offline-recent'
 import { useHomeDiyGrid } from '@/lib/modular/use-home-diy-grid'
 import type { CardMoveDirection, DiyCardDragData } from '@/lib/modular/diy-drag'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
@@ -126,6 +135,36 @@ function defaultSubCatIdFor(category: { subCategories?: Array<{ id: string; enab
 }
 
 
+/**
+ * 分类内排序方式切换（P0-B，2026-11-26）：三种模式全是已有排序，不编造：
+ *   - adaptive 自适应热度：computeAdaptiveSiteRanking（既有）；
+ *   - default 站内综合：sortCategoryItemsWithPinned（既有，置顶优先 + 收录次序）；
+ *   - frequent 我的常用：sortItemsByVisitFrequency（本机点击次数，既有数据）。
+ * 「最新收录」不在此列：首页 navigation.json 子项无收录日期字段、首页不取
+ * 中枢数据，该模式没有可排的数据，硬上就是假功能（见 diy-presets 注释）。
+ */
+export const RANKING_MODE_OPTIONS: ReadonlyArray<{
+  id: CategoryRankingMode
+  label: string
+  hint: string
+}> = [
+  { id: 'adaptive', label: '自适应热度', hint: '按热度与趋势加权' },
+  { id: 'default', label: '站内综合', hint: '置顶优先，其余按收录次序' },
+  { id: 'frequent', label: '我的常用', hint: '按本机点击次数排序' },
+]
+
+export function sortCategoryItemsByMode<T extends { id: string }>(
+  items: T[],
+  pinnedItemIds: string[],
+  mode: CategoryRankingMode,
+  visitStats: Readonly<Record<string, VisitStats>> = {},
+): T[] {
+  if (mode === 'adaptive') return computeAdaptiveSiteRanking(items, { pinnedItemIds })
+  if (mode === 'frequent') return sortItemsByVisitFrequency(items, visitStats, pinnedItemIds)
+  return sortCategoryItemsWithPinned(items, pinnedItemIds)
+}
+
+
 export const NavigationCategorySection = memo(function NavigationCategorySection({
   category,
   index,
@@ -151,7 +190,8 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   const {
     mounted,
     isEditingLayout,
-    isAdaptiveRankingEnabled,
+    rankingMode,
+    setRankingMode,
     categoryOrder,
     pinnedCategoryIds,
     hiddenCategoryIds,
@@ -166,6 +206,19 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     unpinFromSpeedDial,
     quickDialSlots,
   } = useHomeDIY()
+
+  // 「我的常用」排序用的本机点击次数（P0-B）：localStorage 同步读，SSR 下为空对象；
+  // 只在该模式下才读（其余模式不碰存储），窗口获焦时重读（与速览坞同口径，
+  // 点开站点回来后次数已变）。首帧与 SSR 一致（空表 = 置顶优先原序），
+  // 挂载后读到真实次数再重排，不产生水合分叉。
+  const [visitStats, setVisitStats] = useState<Readonly<Record<string, VisitStats>>>({})
+  useEffect(() => {
+    if (rankingMode !== 'frequent') return
+    const sync = () => setVisitStats(readVisitCounts())
+    sync()
+    window.addEventListener('focus', sync)
+    return () => window.removeEventListener('focus', sync)
+  }, [rankingMode])
 
   /** 自定义快拨位反查（站点 id → Ctrl+Shift+数字）：卡片 aria-keyshortcuts 用 */
   const quickDigitBySiteId = useMemo(() => {
@@ -381,11 +434,8 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
    * 主线程会被排序吃满，拖拽明显掉帧。
    */
   const sortedDirectItems = useMemo(
-    () =>
-      isAdaptiveRankingEnabled
-        ? computeAdaptiveSiteRanking(directItems, { pinnedItemIds: categoryPinnedItemIds })
-        : sortCategoryItemsWithPinned(directItems, categoryPinnedItemIds),
-    [directItems, categoryPinnedItemIds, isAdaptiveRankingEnabled]
+    () => sortCategoryItemsByMode(directItems, categoryPinnedItemIds, rankingMode, visitStats),
+    [directItems, categoryPinnedItemIds, rankingMode, visitStats]
   )
 
   /**
@@ -405,12 +455,10 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
         return {
           subCategory,
           subPinnedItemIds,
-          sortedSubItems: isAdaptiveRankingEnabled
-            ? computeAdaptiveSiteRanking(subItems, { pinnedItemIds: subPinnedItemIds })
-            : sortCategoryItemsWithPinned(subItems, subPinnedItemIds),
+          sortedSubItems: sortCategoryItemsByMode(subItems, subPinnedItemIds, rankingMode, visitStats),
         }
       }),
-    [subCats, pinnedSiteIdsByCategory, isAdaptiveRankingEnabled, bypassMaskTemporarily, isSiteHidden]
+    [subCats, pinnedSiteIdsByCategory, rankingMode, visitStats, bypassMaskTemporarily, isSiteHidden]
   )
 
   /**
@@ -899,13 +947,56 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                   <span>专属私人</span>
                                 </span>
                               )}
-                              {isAdaptiveRankingEnabled && (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-700 dark:text-violet-400 border border-violet-500/20 font-medium">
-                                  <Sparkles className="w-2.5 h-2.5" />
-                                  <span>自适应热度</span>
-                                </span>
-                              )}
                             </h2>
+                            {/* P0-B（2026-11-26）：排序方式胶囊下拉——旧胶囊只在自适应开启时
+                                出现（bg-violet-500/10 + text-violet-700，11px 单色字在 /10 底
+                                上发灰难辨），现常驻为模式切换器。配色改低饱和描边样式：
+                                翠绿半透明底 bg-emerald-500/15 + 高亮文字 text-emerald-800 /
+                                dark:text-emerald-300，实测对比度浅色 6.69:1、深色 10.35:1，
+                                均达 WCAG AA（4.5:1）；描边 border-emerald-600/40。
+                                三个选项全是已有排序（见文件头 sortCategoryItemsByMode 注释），
+                                「最新收录」无数据不设。
+                                位置注意：必须放在 h2 之外——category-section-link 守卫禁 h2 内
+                                出现 onClick（标题不得是折叠开关），下拉项的 onClick 在 h2 内
+                                会撞该守卫；放标题旁同行 flex 容器里，视觉同一行不变。 */}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  aria-label={`分类内排序方式：${RANKING_MODE_OPTIONS.find((o) => o.id === rankingMode)?.label ?? '站内综合'}，点击切换排序方式`}
+                                  className="inline-flex items-center gap-1 rounded-full border border-emerald-600/40 bg-emerald-500/15 px-2 py-0.5 text-[11px] font-mono font-medium text-emerald-800 hover:bg-emerald-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-emerald-300 cursor-pointer"
+                                >
+                                  <Sparkles className="h-2.5 w-2.5" />
+                                  <span>{RANKING_MODE_OPTIONS.find((o) => o.id === rankingMode)?.label ?? '站内综合'}</span>
+                                  <ChevronDown className="h-2.5 w-2.5" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="start"
+                                className="w-56 bg-popover text-popover-foreground border border-border shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
+                              >
+                                <DropdownMenuLabel className="text-[11px] text-muted-foreground font-semibold px-2 py-1">
+                                  分类内排序方式
+                                </DropdownMenuLabel>
+                                {RANKING_MODE_OPTIONS.map((opt) => (
+                                  <DropdownMenuItem
+                                    key={opt.id}
+                                    onClick={() => setRankingMode(opt.id)}
+                                    className="flex items-center gap-2 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent"
+                                  >
+                                    {rankingMode === opt.id ? (
+                                      <Check className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400 shrink-0" />
+                                    ) : (
+                                      <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                                    )}
+                                    <span className="min-w-0 flex flex-col">
+                                      <span className="font-medium text-foreground">{opt.label}</span>
+                                      <span className="truncate text-[11px] text-muted-foreground">{opt.hint}</span>
+                                    </span>
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                             {/* 2026-11-21 要求 3：分类头两个无文字小图标补齐语义区分。
                                 原来只有裸 title（约 1s 系统延迟、键盘聚焦不显示），
                                 且两者视觉上都是「一个小方块图标」，用户分不清哪个做什么。

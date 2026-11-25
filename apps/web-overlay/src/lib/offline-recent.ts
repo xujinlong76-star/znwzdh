@@ -172,6 +172,71 @@ export function topFrequentVisits(list: RecentVisit[], limit = 6): RecentVisit[]
 }
 
 /**
+ * 「我的常用」分类内排序（P0-B，2026-11-26）：按本机点击次数排分类内站点。
+ *
+ * 数据源就是 `bumpVisitCount` 每次点击同步累加的 `navhub_visit_counts_v1`
+ *（与 DIY 智能调优的 visitStats 同源），不是新造的数据：
+ *   - 置顶站点永远在最前（置顶是显式表达，与 sortCategoryItemsWithPinned 同契约）；
+ *   - 其余按 count 降序，同 count 按 lastVisitedAt 降序；
+ *   - 无记录的站一律排最后、保持原序（稳定排序，Array.prototype.sort 稳定，
+ *     同分返回 0 即不换位）；
+ *   - 不改原数组，返回新数组；脏 count（NaN / 负数）按 0 计。
+ * 纯函数，可单测；SSR 下读不到 localStorage 时调用方传 {} 即退化为置顶优先原序。
+ */
+export interface VisitStats {
+  count: number
+  lastVisitedAt?: number
+}
+
+export function sortItemsByVisitFrequency<T extends { id: string }>(
+  items: T[],
+  stats: Readonly<Record<string, VisitStats>> = {},
+  pinnedItemIds: string[] = [],
+): T[] {
+  // 返回类型不用 VisitStats：它的 lastVisitedAt 是可选字段（原始记录可能缺失），
+  // 而 statOf 恒返回归一化后的 number；沿用 VisitStats 会让 TS18048 误报
+  // “sa.lastVisitedAt is possibly undefined”（前端 typecheck 实测）。
+  const statOf = (id: string): { count: number; lastVisitedAt: number } => {
+    const s = stats[id]
+    const count = typeof s?.count === 'number' && Number.isFinite(s.count) ? Math.max(0, s.count) : 0
+    const lastVisitedAt =
+      typeof s?.lastVisitedAt === 'number' && Number.isFinite(s.lastVisitedAt) && s.lastVisitedAt > 0
+        ? s.lastVisitedAt
+        : 0
+    return { count, lastVisitedAt }
+  }
+  return [...items].sort((a, b) => {
+    const aPinned = pinnedItemIds.includes(a.id)
+    const bPinned = pinnedItemIds.includes(b.id)
+    if (aPinned && !bPinned) return -1
+    if (!aPinned && bPinned) return 1
+    if (aPinned && bPinned) return pinnedItemIds.indexOf(a.id) - pinnedItemIds.indexOf(b.id)
+    const sa = statOf(a.id)
+    const sb = statOf(b.id)
+    if (sb.count !== sa.count) return sb.count - sa.count
+    if (sb.lastVisitedAt !== sa.lastVisitedAt) return sb.lastVisitedAt - sa.lastVisitedAt
+    return 0
+  })
+}
+
+/**
+ * 同步读本机访问频次表（P0-B）：`bumpVisitCount` 的唯一读入口之一。
+ * localStorage 不可用（SSR / 隐私模式）返回 {}，永不抛错。
+ */
+export function readVisitCounts(): Record<string, VisitStats> {
+  try {
+    if (typeof localStorage === 'undefined') return {}
+    const raw = localStorage.getItem(VISIT_COUNTS_KEY)
+    if (!raw) return {}
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return parsed as Record<string, VisitStats>
+  } catch {
+    return {}
+  }
+}
+
+/**
  * 空查询「最近访问」分区的两段拆分（04 §3.3 硬门槛，C2 前半；纯函数，可单测）。
  *
  * - boosted：`count >= MRU_MIN_USES_FOR_BOOST`（3），按 `mruScore` 降序

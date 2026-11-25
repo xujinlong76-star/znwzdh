@@ -218,6 +218,7 @@ export const DIY_LAYOUT_FIELD_NAMES = [
   'heroDeckCollapsed',
   'heroDeckWidgets',
   'enableAdaptiveRanking',
+  'rankingMode',
   'categoryOrder',
   'pinnedCategoryIds',
   'hiddenCategoryIds',

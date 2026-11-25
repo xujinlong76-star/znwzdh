@@ -944,6 +944,15 @@ export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
     heroDeckCollapsed: Boolean(raw.heroDeckCollapsed),
     heroDeckWidgets,
     enableAdaptiveRanking: Boolean(raw.enableAdaptiveRanking),
+    // P0-B：排序方式与布尔镜像同源；非法值不丢弃、按旧布尔值派生（升级兼容），
+    // 否则导入/快照恢复会把用户选的「我的常用」静默洗掉。
+    rankingMode: (['adaptive', 'default', 'frequent'] as readonly string[]).includes(
+      raw.rankingMode,
+    )
+      ? raw.rankingMode
+      : raw.enableAdaptiveRanking
+        ? 'adaptive'
+        : 'default',
     categoryOrder: cleanIdList(raw.categoryOrder, ledger, '分类顺序'),
     pinnedCategoryIds: cleanIdList(raw.pinnedCategoryIds, ledger, '置顶分类'),
     hiddenCategoryIds: cleanIdList(raw.hiddenCategoryIds, ledger, '隐藏分类'),

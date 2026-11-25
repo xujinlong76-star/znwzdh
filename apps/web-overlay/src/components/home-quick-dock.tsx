@@ -149,6 +149,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
         title: v.title,
         href: v.href,
         icon: v.icon ?? null,
+        useDefaultIcon: undefined as boolean | undefined,
         digit: undefined as number | string | undefined,
         meta: v.count && v.count > 1 ? `${v.count}次` : undefined,
       }))
@@ -159,6 +160,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
         title: v.title,
         href: v.href,
         icon: v.icon ?? null,
+        useDefaultIcon: undefined as boolean | undefined,
         digit: undefined as number | string | undefined,
         meta: recentVisitMeta(v),
       }))
@@ -259,14 +261,25 @@ export const HomeQuickDock = memo(function HomeQuickDock({
               }
               className="group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border/50 bg-background px-2 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent/50"
             >
-              <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+              {/* P0-B（2026-11-26）：线性 flex，角标永不盖图标——
+                  旧结构是 16px 图标上压一只 16px 绝对定位 kbd（旧偏移 class
+                  为 -bottom-1/-right-1），白色角标盖住图标约 3/4，只剩白色
+                  碎片 / L 形（Claude / Midjourney / 元宝 / 星火 / Gemini /
+                  Kimi 真机复现）。现改为流内三段：
+                  [kbd 序号] + [18px 固定圆角 icon 容器 + 浅色兜底底色] + [站名]。
+                  18px 容器用纯白底（深色主题亦然）：Gemini / Kimi 这类深色透明底
+                  品牌标在深底上不可见，白底兜底才看得见；图标加载失败时
+                  SiteFavicon 的渐变字母徽标盖住容器，不露白边。
+                  NumberDialBadge 用 inline 模式（relative 流内），digit 为空不渲染。 */}
+              <NumberDialBadge digit={item.digit} inline />
+              <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center overflow-hidden rounded-[5px] bg-white ring-1 ring-border/40">
                 <SiteFavicon
                   icon={item.icon}
                   url={item.href}
                   title={item.title}
-                  className="h-4 w-4"
+                  useDefaultIcon={item.useDefaultIcon}
+                  className="h-full w-full"
                 />
-                <NumberDialBadge digit={item.digit} className="-bottom-1 -right-1" />
               </span>
               <span className="max-w-[96px] truncate">{item.title}</span>
               {item.meta ? (

@@ -3986,8 +3986,11 @@
       /* c3001：先把文案放进未显示的气泡再量——会盖住正文卡片就跳过本次自动招呼（猫还在，点猫照常聊天）。 */
       /* PR #186 E2E #10（2026-11-25）：水合期间版式未定、门控可能被瞬时重叠
          误拦——一次判定就放弃会让本次招呼永久消失（CI 冷启动 3/3 失败）。
-         门控拦住时 1s 后重测，最多 3 次（最晚 init+2.85s，仍在用例 15s 窗口内）；
-         版式定下来且门控放行就出气泡，真正盖正文时每次都拦、绝不出。 */
+         门控拦住时 1s 后重测，最多 8 次（最晚 init+7.85s，仍在用例 15s 窗口内）；
+         版式定下来且门控放行就出气泡，真正盖正文时每次都拦、绝不出。
+         #191 CI（2026-11-26）：3 次重试在冷启动下全撞上样式未就绪（气泡零尺寸
+         → 门控拦住），:123 失败；8 次是为慢加载留的余量，单次重试只是同步量
+         一下尺寸、无开销，真正盖正文时 8 次都拦、行为与 3 次一致。 */
       var greetTries = 0;
       var tryGreet = function () {
         if (userActed) return;
@@ -3996,7 +3999,7 @@
         if (autoGreetWouldCoverContent()) {
           bubbleEl.textContent = '';
           greetTries += 1;
-          if (greetTries < 3) window.setTimeout(tryGreet, 1000);
+          if (greetTries < 8) window.setTimeout(tryGreet, 1000);
           return;
         }
         showBubble(greetText, hasUserActivation());

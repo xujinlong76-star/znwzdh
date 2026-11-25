@@ -32,6 +32,11 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
  *   方块 + 白色“读”字（Noto Sans CJK SC Bold，标题“读秀学术搜索”
  *   首字），128×128、四角透明，落盘 duxiu.png（3,693 B）。
  *   重绘依据与来源见 EVIDENCE-w11.md。
+ * - Rotten Tomatoes：首页声明的 favicon.ico
+ *   https://www.rottentomatoes.com/assets/pizza-pie/images/favicon.ico
+ *   （200、3,310 B）内容实为 96×96 PNG（红番茄绿蒂标，四角透明，
+ *   目视确认），按内容解码原样落盘 rottentomatoes.png（3,310 B）。
+ *   未用 apple-touch-icon-180.jpg（JPEG 白底，非透明标）。
  *
  * 事实钉死（只记、不加占位、不擅自换图）：
  * - 5 落地站均 ≤15 KB（字节数下方钉死）；SVG 站原样、PNG 站 <128 原样，
@@ -45,11 +50,13 @@ import { resolveSiteIcon } from '../src/components/site-favicon'
 const CASES: Array<{ url: string; title: string; customIcon?: string; expected: string }> = [
   { url: 'https://www.scopus.com', title: 'Scopus', customIcon: 'https://www.scopus.com/favicon.ico', expected: '/brand-icons/scopus.svg' },
   { url: 'https://www.duxiu.com', title: '读秀', customIcon: 'https://www.duxiu.com/favicon.ico', expected: '/brand-icons/duxiu.png' },
+  { url: 'https://www.rottentomatoes.com', title: 'Rotten Tomatoes', customIcon: 'https://www.rottentomatoes.com/assets/pizza-pie/images/favicon.ico', expected: '/brand-icons/rottentomatoes.png' },
 ]
 
 const LOCAL_ASSETS: Array<{ name: string; width: number; height: number; bytes: number }> = [
   { name: 'scopus.svg', width: 24, height: 24, bytes: 808 },
   { name: 'duxiu.png', width: 128, height: 128, bytes: 3693 },
+  { name: 'rottentomatoes.png', width: 96, height: 96, bytes: 3310 },
 ]
 
 function readPngDimensions(buf: Buffer): { width: number; height: number } {
@@ -65,7 +72,7 @@ describe('resolveSiteIcon（图标修复剩余轮 W11）', () => {
 
   it('本地品牌资产在 served 树的 public/brand-icons/ 落盘', () => {
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
-    expect(LOCAL_ASSETS).toHaveLength(2)
+    expect(LOCAL_ASSETS).toHaveLength(3)
     for (const { name } of LOCAL_ASSETS) {
       expect(existsSync(`${dir}${name}`), name).toBe(true)
     }

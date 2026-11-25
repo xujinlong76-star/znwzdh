@@ -1086,6 +1086,14 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   //   落盘 duxiu.png（3,693 B）。重绘依据与来源见 W11 测试与 EVIDENCE。
   //   'duxiu.com' 全库只命中读秀一站，无后缀串站。
   'duxiu.com=duxiup',
+  // - Rotten Tomatoes：首页声明的
+  //   https://www.rottentomatoes.com/assets/pizza-pie/images/favicon.ico
+  //   （200、image/vnd.microsoft.icon、3,310 B）内容实为 96×96 PNG
+  //   （单帧，红番茄绿蒂标，四角透明，目视确认），按内容解码原样落盘
+  //   rottentomatoes.png（3,310 B，md5 12e316e3…，与源字节一致）。
+  //   未用 apple-touch-icon-180.jpg（JPEG 白底，非透明标）。
+  //   'rottentomatoes.com' 全库只命中一站，无后缀串站。
+  'rottentomatoes.com=rottentomatoesp',
  ];
 
 /**

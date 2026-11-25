@@ -229,6 +229,10 @@ function runStandardTier() {
   run("依赖边界（vendored 底座 / 分层单向）", "node", ["scripts/check-import-boundaries.mjs"]);
   run("同构副本一致性", "node", ["scripts/sync-vendored.mjs", "--check"]);
   gate("core 镜像一致", "node", ["scripts/sync-core-mirrors.mjs", "--check"], touches("packages/core/src/") || touches("apps/web-overlay/src/lib/"));
+  // 生成链第 4 条：REST 契约。CI 的 check:generated 覆盖 4 条链，而这里原本只登记了 3 条
+  // （core 镜像 / 路由策略 / overlay 镜像）——本机能一路绿，推上去才在 CI 的 REST 链红。
+  // 与 check-generated-all.mjs:25-50 的四链清单保持同口径。
+  gate("REST 契约一致", "node", ["scripts/generate-rest-contract-types.mjs", "--check"], touches("apps/api/src/routes/") || touches("packages/core/src/"));
   gate("扩展校验", "node", ["scripts/check-extensions.mjs"], touches("extensions/"));
   // 后端 lint 已是硬门禁（error + --max-warnings 0），必须进这条链：
   // 只在 CI 单独跑的规则等于没有规则，本地会一路绿灯直到推上去才红。

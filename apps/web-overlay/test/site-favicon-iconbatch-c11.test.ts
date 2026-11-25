@@ -14,6 +14,11 @@ import { LOCAL_LOGO_MAP, resolveSiteIcon } from '../src/components/site-favicon'
  * 3 站阻塞未入（本次不接线、不放占位图，见文件末事实钉死）：
  * Pexels / Pixabay（403 Cloudflare 机器人墙）、
  * SiteInspire（429 Vercel 检查点）。
+ * 2026-11-25 更新：Pexels 已由剩余图标补齐 W9 落地——源为站方自有
+ * 图片 CDN images.pexels.com/lib/api/pexels.png（复测与前任记录一致），
+ * 等比落盘 pexels.png（见 site-favicon-iconbatch-remaining-w9.test.ts
+ * 与 EVIDENCE-w9.md）；文件末事实钉死已同步更新，仍阻塞的只剩
+ * Pixabay、SiteInspire 2 站。
  *
  * 本批 CASES 必须传三参数（url, title, customIcon）：navigation.json 的
  * icon 字段（customIcon）在 resolveSiteIcon 里优先级最高，不传就复现不了
@@ -227,13 +232,15 @@ describe('resolveSiteIcon（图标修复 C 类第 11 批）', () => {
     }
   })
 
-  it('事实钉死：3 站阻塞站本次不接线，仍解析为空串（字母徽标兜底）', () => {
-    // Pexels / Pixabay（403 Cloudflare 机器人墙）、SiteInspire（429 Vercel 检查点）
-    expect(resolveSiteIcon('https://www.pexels.com', 'Pexels', 'https://www.pexels.com/favicon.ico')).toBe('')
+  it('事实钉死：2 站阻塞站本次不接线，仍解析为空串（字母徽标兜底）；Pexels 已由剩余补齐 W9 落地', () => {
+    // Pixabay（403 Cloudflare 机器人墙）、SiteInspire（429 Vercel 检查点）
+    // 仍阻塞；Pexels 不再阻塞（剩余补齐 W9 落地 pexels.png，源为站方自有
+    // 图片 CDN images.pexels.com/lib/api/pexels.png），见 EVIDENCE-w9.md。
+    expect(resolveSiteIcon('https://www.pexels.com', 'Pexels', 'https://www.pexels.com/favicon.ico')).toBe('/brand-icons/pexels.png')
     expect(resolveSiteIcon('https://pixabay.com', 'Pixabay', 'https://pixabay.com/favicon.ico')).toBe('')
     expect(resolveSiteIcon('https://www.siteinspire.com', 'SiteInspire', 'https://www.siteinspire.com/favicon.ico')).toBe('')
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
-    expect(existsSync(`${dir}pexels.png`)).toBe(false)
+    expect(existsSync(`${dir}pexels.png`)).toBe(true)
     expect(existsSync(`${dir}pexels.svg`)).toBe(false)
     expect(existsSync(`${dir}pixabay.png`)).toBe(false)
     expect(existsSync(`${dir}pixabay.svg`)).toBe(false)

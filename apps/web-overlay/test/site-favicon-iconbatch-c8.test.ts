@@ -9,7 +9,7 @@ import { resolveLogoTile, resolveSiteIcon } from '../src/components/site-favicon
  * 19/20 站：石墨文档 / 语雀 / Obsidian / AppFlowy / AFFiNE / 思源笔记 /
  * Excalidraw / XMind / MindManager / ProcessOn / GitMind / tldraw /
  * Draw.io / Miro / Khan Academy / Skillshare / 慕课网 / 学习强国 /
- * 菜鸟教程。网易云课堂阻塞未入（见事实钉死）。
+ * 菜鸟教程。网易云课堂原阻塞未入，2026-11-25 已由剩余图标补齐 W7 落地（见事实钉死更新）。
  *
  * 本批 CASES 必须传三参数（url, title, customIcon）：navigation.json 的
  * icon 字段（customIcon）在 resolveSiteIcon 里优先级最高，不传就复现不了
@@ -60,10 +60,12 @@ import { resolveLogoTile, resolveSiteIcon } from '../src/components/site-favicon
  *   static.char123.com/favicon.ico 仅 32px、mobile-icon.png 均未用。
  *
  * 事实钉死（只记、不加底块、不改组件、不擅自换图）：
- * - 网易云课堂阻塞未接线：站方 /favicon.ico 仅 16×16（1150 B）质量
- *   不达标；吉祥物图不是 logo；站点头部 logo 是雪碧图区域且直链超时；
- *   图标字体无图片文件。本批不放占位图，该站仍解析为空（字母徽标兜底），
- *   解阻塞二选一：浏览器端取材后复审定夺，或用户拍板接受 16px 原样。
+ * - 网易云课堂原阻塞未接线（见下），2026-11-25 已由剩余图标补齐 W7
+ *   解堵落地：源为官网首页引用的唯一 logo 图
+ *   s2.stu.126.net/res/images/common/logo/logo_mascot.png（200、
+ *   204×137，吉祥物大头），等比缩至最长边 128 落盘 study-163.png
+ *   （128×86 RGBA、7,722 B），见 site-favicon-iconbatch-remaining-w7.test.ts
+ *   与 EVIDENCE-w7.md；文件末事实钉死已同步更新。
  * - khanacademy.png 为 32×32 原样（唯一可达官方标）；更大品牌标须
  *   浏览器端取材或接受 32px，未擅自替换。
  * - imooc.png 为 48×48 火焰 favicon 原样；宽版白字 wordmark 已排除。
@@ -170,12 +172,14 @@ describe('resolveSiteIcon（图标修复 C 类第 8 批）', () => {
     }
   })
 
-  it('事实钉死：网易云课堂阻塞未接线，仍解析为空（无占位图）', () => {
-    // 站方 /favicon.ico 仅 16×16 质量不达标；吉祥物不是 logo；
-    // 站点头部 logo 是雪碧图区域且直链超时；图标字体无图片文件。
-    // 解阻塞二选一：浏览器端取材后复审定夺，或用户拍板接受 16px 原样。
-    expect(resolveSiteIcon('https://study.163.com', '网易云课堂', 'https://study.163.com/favicon.ico')).toBe('')
+  it('事实钉死：网易云课堂已由剩余补齐 W7 落地，不再阻塞', () => {
+    // 2026-11-25：站方 /favicon.ico 仍仅 16×16 不达标，但官网首页引用的
+    // 唯一 logo 图 logo_mascot.png（吉祥物大头）已取到并等比落盘
+    // study-163.png（128×86），见 EVIDENCE-w7.md；旧候选文件名
+    // study163.png / wangyiyunketang.png 仍不存在。
+    expect(resolveSiteIcon('https://study.163.com', '网易云课堂', 'https://study.163.com/favicon.ico')).toBe('/brand-icons/study-163.png')
     const dir = fileURLToPath(new URL('../public/brand-icons/', import.meta.url))
+    expect(existsSync(`${dir}study-163.png`)).toBe(true)
     expect(existsSync(`${dir}study163.png`)).toBe(false)
     expect(existsSync(`${dir}wangyiyunketang.png`)).toBe(false)
   })

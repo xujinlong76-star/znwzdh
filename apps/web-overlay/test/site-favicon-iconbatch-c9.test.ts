@@ -19,6 +19,10 @@ import { LOCAL_LOGO_MAP, resolveSiteIcon } from '../src/components/site-favicon'
  * （scs.png，见 site-favicon-iconbatch-remaining-w6.test.ts 与
  * EVIDENCE-w6.md）；文件末事实钉死已同步更新，仍阻塞的只剩
  * 中公教育、廖雪峰教程 2 站。
+ * 同日更新：廖雪峰教程已由剩余图标补齐 W7 落地——源为官网页眉在用的
+ * /static/logo.svg（裸域取，800×800 方形帆船标），渲染 128×128 落盘
+ * liaoxuefeng.png（见 site-favicon-iconbatch-remaining-w7.test.ts 与
+ * EVIDENCE-w7.md）；文件末事实钉死已同步更新，仍阻塞的只剩中公教育 1 站。
  *
  * 本批 CASES 必须传三参数（url, title, customIcon）：navigation.json 的
  * icon 字段（customIcon）在 resolveSiteIcon 里优先级最高，不传就复现不了
@@ -181,14 +185,15 @@ describe('resolveSiteIcon（图标修复 C 类第 9 批）', () => {
     }
   })
 
-  it('事实钉死：2 站阻塞站仍不接线，仍解析为空串（字母徽标兜底）；scs 3 站已由剩余补齐 W6 落地', () => {
+  it('事实钉死：1 站阻塞站仍不接线，仍解析为空串（字母徽标兜底）；scs 3 站已由剩余补齐 W6、廖雪峰已由 W7 落地', () => {
     // 2026-11-25：scs.gov.cn 3 站不再阻塞（剩余补齐 W6 落地 scs.png，
-    // 官方标志源 dl.scs.gov.cn logo.png）；中公教育（403 WAF）、
-    // 廖雪峰教程（无 favicon）仍阻塞未入。
+    // 官方标志源 dl.scs.gov.cn logo.png）；廖雪峰教程不再阻塞（剩余补齐
+    // W7 落地 liaoxuefeng.png，源为官网页眉 /static/logo.svg）；中公教育
+    //（403 WAF）仍阻塞未入。
     expect(resolveSiteIcon('http://www.scs.gov.cn/gkIndex.html', '国家公务员局', 'http://www.scs.gov.cn/favicon.ico')).toBe('/brand-icons/scs.png')
     expect(resolveSiteIcon('http://bm.scs.gov.cn/kl2027', '2027年国家公务员考试专题', 'http://www.scs.gov.cn/favicon.ico')).toBe('/brand-icons/scs.png')
     expect(resolveSiteIcon('http://subb.scs.gov.cn/lx2027', '中央机关公开遴选和公开选调专题', 'http://www.scs.gov.cn/favicon.ico')).toBe('/brand-icons/scs.png')
     expect(resolveSiteIcon('https://www.offcn.com', '中公教育', 'https://www.offcn.com/favicon.ico')).toBe('')
-    expect(resolveSiteIcon('https://www.liaoxuefeng.com', '廖雪峰教程', 'https://liaoxuefeng.com/favicon.ico')).toBe('')
+    expect(resolveSiteIcon('https://www.liaoxuefeng.com', '廖雪峰教程', 'https://liaoxuefeng.com/favicon.ico')).toBe('/brand-icons/liaoxuefeng.png')
   })
 })

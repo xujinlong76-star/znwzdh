@@ -5897,6 +5897,67 @@
               ]
             }
           ]
+        },
+        {
+          "id": "reg-short-drama-distribute",
+          "title": "短剧分发与变现",
+          "description": "短剧创作者的分发与变现后台：投稿上架、分账结算、数据与商单",
+          "parentId": "reg-short-drama",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-2c2083b1a75c",
+              "hubId": "nav-2c2083b1a75c",
+              "title": "爱奇艺号",
+              "href": "https://creator.iqiyi.com/",
+              "description": "爱奇艺创作者平台：内容上传发布，分账、流量扶持与商业变现，个人创作者可入驻",
+              "icon": "https://creator.iqiyi.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "创作者平台",
+                "分账"
+              ]
+            },
+            {
+              "id": "nav-fb872ac80733",
+              "hubId": "nav-fb872ac80733",
+              "title": "优酷内容合作平台",
+              "href": "https://om.youku.com/",
+              "description": "优酷内容合作平台：面向创作者的内容合作入口，分账、活动激励与横屏合作",
+              "icon": "https://om.youku.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "创作者平台",
+                "内容合作"
+              ]
+            },
+            {
+              "id": "nav-a17eed02d986",
+              "hubId": "nav-a17eed02d986",
+              "title": "抖音创作者中心",
+              "href": "https://creator.douyin.com/",
+              "description": "抖音创作者的一站式创作与服务平台：发布管理作品、数据分析、商单任务变现；走版权中心上架分账",
+              "icon": "https://creator.douyin.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "创作者平台",
+                "变现"
+              ]
+            },
+            {
+              "id": "nav-49dd02f32bdb",
+              "hubId": "nav-49dd02f32bdb",
+              "title": "快手创作者服务平台",
+              "href": "https://cp.kuaishou.com/",
+              "description": "快手创作者服务平台：上传视频、管理作品、数据统计与内容推广，支持内容发布与变现合作",
+              "icon": "https://cp.kuaishou.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "创作者平台",
+                "变现"
+              ]
+            }
+          ]
         }
       ]
     }

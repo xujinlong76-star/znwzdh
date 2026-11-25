@@ -138,20 +138,38 @@ export default async function SceneDetailPage({ params }: { params: Promise<{ id
             <div className="space-y-6">
               {scene.steps.map((step) => (
                 <section key={step.label} aria-label={step.label} className="space-y-3">
-                  <h2 className="text-lg font-semibold text-foreground">{step.label}</h2>
+                  <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold text-foreground">
+                    {step.label}
+                    {step.fallback ? (
+                      <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-foreground">
+                        相关推荐
+                      </span>
+                    ) : null}
+                  </h2>
+                  {step.fallback ? (
+                    <p className="text-sm text-muted-foreground">
+                      这一步暂无对口工具，下面是按关键词找到的相关网站，仅供参考。
+                    </p>
+                  ) : null}
                   <div className="grid gap-3 sm:grid-cols-2">
                     {step.sites.map((site) => (
-                      <article key={site.siteId} className="flex flex-col rounded-2xl border border-border bg-card p-4">
+                      <article
+                        key={site.siteId}
+                        className={
+                          step.fallback
+                            ? 'flex flex-col rounded-2xl border border-dashed border-border bg-card p-4'
+                            : 'flex flex-col rounded-2xl border border-border bg-card p-4'
+                        }
+                      >
                         <Link
                           href={`/site/${site.siteId}`}
                           className="text-base font-semibold text-foreground underline-offset-4 hover:underline"
                         >
                           {site.title}
                         </Link>
+                        {/* 卡片只渲染 reason 其一：reason 已含简介（有本步用途时为「用途——简介」），
+                            不再另渲 description，否则同一段简介在卡片里出现两次。 */}
                         <p className="mt-1 flex-1 text-sm leading-relaxed text-muted-foreground">{site.reason}</p>
-                        {site.description ? (
-                          <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-muted-foreground">{site.description}</p>
-                        ) : null}
                         <a
                           href={safeHref(site.url)}
                           target="_blank"

@@ -25,6 +25,28 @@ export interface FinderStep {
   sites: FinderSite[];
 }
 
+export interface SceneStepDef {
+  /** 步骤名，如「第一步：做稿件」 */
+  label: string;
+  /** 每个步骤给一组检索词：按词召回站内目录，召回不到的步骤会被跳过而不是编造 */
+  queries: string[];
+  /**
+   * 本步用途（一句话）：场景页卡片 reason 的前缀，说明这一步要拿这些工具办什么事。
+   * 只写在步骤定义里，不新增站点数据字段；没有 purpose 的步骤沿用本地兜底理由。
+   */
+  purpose?: string;
+  /**
+   * 本步只允许的子分类 id（1–2 个）：召回先过门控，不过滤的关键词召回不再直接上位。
+   * 门控召回为空时才回落关键词召回（整步标为「相关推荐」）。
+   */
+  categories?: string[];
+  /**
+   * 锚点站点 id（每步最多 2 个）：绝不能移的工具，始终置顶、计入每步上限。
+   * 只留非它不可的；能靠门控 + 词法召回稳住的不要 pin。
+   */
+  pins?: string[];
+}
+
 export interface ScenePack {
   id: string;
   title: string;
@@ -40,7 +62,7 @@ export interface ScenePack {
    */
   intro: string;
   /** 每个步骤给一组检索词：按词召回站内目录，召回不到的步骤会被跳过而不是编造 */
-  steps: Array<{ label: string; queries: string[] }>;
+  steps: SceneStepDef[];
 }
 
 /**
@@ -101,12 +123,47 @@ export const SCENE_PACKS: ScenePack[] = [
     description: "自己做一部短剧的全流程：写剧本大纲、做分镜与角色图、AI 生成视频、配音配乐、剪辑成片，再到发布与变现。每一步都配了能直接上手的网站。",
     intro: "我想自己做一部短剧",
     steps: [
-      { label: "第一步：写剧本与大纲", queries: ["短剧剧本", "剧本"] },
-      { label: "第二步：分镜与角色生图", queries: ["分镜", "AI 生图"] },
-      { label: "第三步：AI 生成视频", queries: ["AI 视频生成", "图生视频"] },
-      { label: "第四步：配音与配乐", queries: ["配音", "AI 音乐"] },
-      { label: "第五步：剪辑成片", queries: ["剪映", "视频剪辑"] },
-      { label: "第六步：发布与变现", queries: ["短剧", "创作者平台"] },
+      {
+        label: "第一步：写剧本与大纲",
+        queries: ["短剧剧本", "剧本"],
+        purpose: "先把故事写成可拍的剧本与大纲",
+        // 只留剧本/对话生成 AI：看剧平台与内容合作平台再怎么命中「短剧」也不进这一步
+        categories: ["reg-ai-drama-creation"],
+      },
+      {
+        label: "第二步：分镜与角色生图",
+        queries: ["分镜", "AI 生图"],
+        purpose: "把剧本拆成分镜，定下角色长相",
+        categories: ["reg-ai-drama-creation", "reg-ai-image-generation"],
+      },
+      {
+        label: "第三步：AI 生成视频",
+        queries: ["AI 视频生成", "图生视频"],
+        purpose: "按分镜把画面动起来，生成视频片段",
+        categories: ["reg-ai-video-generation"],
+      },
+      {
+        label: "第四步：配音与配乐",
+        queries: ["配音", "AI 音乐"],
+        purpose: "给成片配上中文对白与背景音乐",
+        // 同一子分类内的配音与配乐两路查询轮流取位，避免「配音」一路占满 4 席
+        categories: ["reg-ai-audio-voice"],
+      },
+      {
+        label: "第五步：剪辑成片",
+        queries: ["剪映", "视频剪辑"],
+        purpose: "把片段剪成可发布的成片",
+        // 剪辑工具分处两类：剪映专业版等在「AI 视频生成」，Descript 在「AI 音频语音」
+        categories: ["reg-ai-video-generation", "reg-ai-audio-voice"],
+      },
+      {
+        label: "第六步：发布与变现",
+        queries: ["创作者平台", "分账"],
+        purpose: "把成片发到平台上架，分账变现",
+        // 只留 B 端分发与变现后台（「短剧分发与变现」子分类）：C 端看剧页再热门也不进这一步。
+        // 查询词不用「短剧」：这 4 站的标题/简介里不写「短剧」，避免它们反串进追短剧等看剧场景。
+        categories: ["reg-short-drama-distribute"],
+      },
     ],
   },
   {

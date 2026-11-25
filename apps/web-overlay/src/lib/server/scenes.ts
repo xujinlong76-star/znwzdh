@@ -14,13 +14,18 @@ export interface HubSceneSite {
   url: string
   description: string | null
   categoryId: string
-  /** 本地拼装的推荐理由（分类 + 简介），不是模型生成 */
+  /**
+   * 卡片唯一简介：有本步用途的步骤是「用途——简介」，其余是本地拼装（简介 + 分类）。
+   * 页面只渲染 reason，不再另渲 description，简介文字在卡片里只出现一次。
+   */
   reason: string
 }
 
 export interface HubSceneStep {
   label: string
   queries: string[]
+  /** 本步是否走了关键词回落：为 true 时页面须标为「相关推荐」，与本步工具视觉区分 */
+  fallback: boolean
   sites: HubSceneSite[]
 }
 

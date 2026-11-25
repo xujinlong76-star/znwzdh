@@ -26,6 +26,11 @@ export const SCENE_STEP_SITE_LIMIT = 4;
 export interface SceneStepGroup {
   label: string;
   sites: NavSite[];
+  /**
+   * 本步是否走了关键词回落：门控（categories）召回为空时，整步才回落关键词召回，
+   * 调用方须明确标为「相关推荐」，不得冒充本步工具。
+   */
+  fallback: boolean;
 }
 
 export interface SceneResolution {
@@ -37,6 +42,14 @@ export interface SceneResolution {
 /**
  * 把一个场景包展开成「步骤 → 真实站点」分组。顺序即建议使用顺序；
  * 空步骤不出现在结果里（与 ai/find 的既有行为一致）。
+ *
+ * 门控（step.categories，1–2 个子分类）：
+ *  - 锚点（pins，每步最多 2 个）先占位：只留库里真实存在、在门控内、在用的站点；
+ *  - 再按 queries 召回并过滤到门控内：同一步多个查询轮流取位，避免第一个
+ *    查询占满 4 席（如「配音」挤掉「AI 音乐」）；
+ *  - 门控召回为空（锚点也没命中）时才回落关键词召回（不过滤），整步标
+ *    fallback，调用方须明确标为「相关推荐」；
+ *  - 没有 categories 的步骤沿用旧行为（查询按顺序填满），其它场景包不受影响。
  */
 export async function resolveSceneGroups(ctx: AppContext, scene: ScenePack): Promise<SceneResolution> {
   const groups: SceneStepGroup[] = [];
@@ -47,21 +60,76 @@ export async function resolveSceneGroups(ctx: AppContext, scene: ScenePack): Pro
   for (const step of scene.steps) {
     const seen = new Set<string>();
     const sites: NavSite[] = [];
+    let fallback = false;
+    const allowed = step.categories && step.categories.length > 0 ? new Set(step.categories) : null;
+    const take = (s: NavSite): boolean => {
+      if (seen.has(s.id) || usedAcrossSteps.has(s.id) || sites.length >= SCENE_STEP_SITE_LIMIT) return false;
+      seen.add(s.id);
+      sites.push(s);
+      return true;
+    };
+    // 1. 锚点先占位：只认库里真实存在、在门控内、在用的站点；取不到不拖垮本步。
+    const pins = (step.pins ?? []).slice(0, 2);
+    if (pins.length > 0) {
+      try {
+        const pinned = await ctx.repo.getSitesByIds(pins);
+        for (const id of pins) {
+          const s = pinned.get(id);
+          if (!s || s.status !== "active") continue;
+          if (allowed && !allowed.has(s.categoryId)) continue;
+          take(s);
+        }
+      } catch {
+        /* 锚点取不到不拖垮本步：走正常召回 */
+      }
+    }
+    // 2. 按 queries 召回（与 ai/find 同一套检索参数）。
+    const perQuery: NavSite[][] = [];
     for (const q of step.queries) {
       const r = await retrieveCopilotCandidates(ctx, retrievalQueryOf(q), { pinCategory: false, lexicalOnly: true });
       if (r.failed) retrievalFailed = true;
-      for (const s of r.sites) {
-        if (!seen.has(s.id) && !usedAcrossSteps.has(s.id)) {
-          seen.add(s.id);
-          sites.push(s);
+      perQuery.push(r.sites);
+    }
+    if (allowed) {
+      // 门控召回：过滤到允许的子分类内，多查询轮流取位。
+      const gated = perQuery.map((list) => list.filter((s) => allowed.has(s.categoryId)));
+      const pointers = gated.map(() => 0);
+      let progressed = true;
+      while (sites.length < SCENE_STEP_SITE_LIMIT && progressed) {
+        progressed = false;
+        for (let qi = 0; qi < gated.length; qi++) {
+          if (sites.length >= SCENE_STEP_SITE_LIMIT) break;
+          const list = gated[qi]!;
+          while (pointers[qi]! < list.length) {
+            const s = list[pointers[qi]!++]!;
+            if (take(s)) { progressed = true; break; }
+          }
         }
       }
-      if (sites.length >= SCENE_STEP_SITE_LIMIT) break;
+      // 3. 门控召回为空（锚点也没命中）时才回落关键词召回，整步标为相关推荐。
+      if (sites.length === 0) {
+        fallback = true;
+        for (const list of perQuery) {
+          for (const s of list) {
+            if (!take(s)) continue;
+            if (sites.length >= SCENE_STEP_SITE_LIMIT) break;
+          }
+          if (sites.length >= SCENE_STEP_SITE_LIMIT) break;
+        }
+      }
+    } else {
+      for (const list of perQuery) {
+        for (const s of list) {
+          if (!take(s)) continue;
+          if (sites.length >= SCENE_STEP_SITE_LIMIT) break;
+        }
+        if (sites.length >= SCENE_STEP_SITE_LIMIT) break;
+      }
     }
     if (sites.length > 0) {
       const kept = sites.slice(0, SCENE_STEP_SITE_LIMIT);
       for (const s of kept) usedAcrossSteps.add(s.id);
-      groups.push({ label: step.label, sites: kept });
+      groups.push({ label: step.label, sites: kept, fallback });
     }
   }
   return { groups, retrievalFailed };
@@ -71,6 +139,8 @@ export interface SceneStepView {
   label: string;
   /** 这一步的检索词（页面不展示，留作口径可审计：站点就是按它们召回的） */
   queries: string[];
+  /** 本步是否走了关键词回落（门控召回为空）：页面须标为「相关推荐」，与本步工具区分 */
+  fallback: boolean;
   sites: FinderSite[];
 }
 
@@ -101,13 +171,30 @@ export interface SceneSummaryView {
   updatedAt: number | null;
 }
 
+/**
+ * 卡片理由：有 purpose 的步骤，reason = 本步用途 + 站点简介——
+ * 卡片只渲染 reason（模板不再另渲 description），简介文字在整张卡片里只出现一次；
+ * 没有 purpose 的步骤沿用本地兜底（简介 + 分类），同样只出现一次。
+ */
+function reasonOf(site: NavSite, purpose: string | undefined, categoryTitle: string | undefined): string {
+  if (purpose) {
+    const desc = (site.description ?? "").trim();
+    return desc ? `${purpose}——${desc}` : purpose;
+  }
+  return localReasonOf(site, categoryTitle);
+}
+
 function toStepViews(scene: ScenePack, groups: SceneStepGroup[], categoryTitle: Map<string, string>): SceneStepView[] {
-  const queriesByLabel = new Map(scene.steps.map((s) => [s.label, s.queries]));
-  return groups.map((g) => ({
-    label: g.label,
-    queries: queriesByLabel.get(g.label) ?? [],
-    sites: g.sites.map((s) => finderSiteOf(s, localReasonOf(s, categoryTitle.get(s.categoryId)))),
-  }));
+  const defByLabel = new Map(scene.steps.map((s) => [s.label, s]));
+  return groups.map((g) => {
+    const def = defByLabel.get(g.label);
+    return {
+      label: g.label,
+      queries: def?.queries ?? [],
+      fallback: g.fallback,
+      sites: g.sites.map((s) => finderSiteOf(s, reasonOf(s, def?.purpose, categoryTitle.get(s.categoryId)))),
+    };
+  });
 }
 
 function maxUpdatedAt(groups: SceneStepGroup[]): number | null {

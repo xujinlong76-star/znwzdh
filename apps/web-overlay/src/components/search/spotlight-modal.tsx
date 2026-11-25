@@ -1170,7 +1170,7 @@ export function SpotlightModal({
                           </div>
                           <div className="min-w-0">
                             <div className="text-xs font-medium truncate">{cmd.title}</div>
-                            <div className="text-[11px] text-muted-foreground truncate">{cmd.description}</div>
+                            <div className="text-[0.6875rem] text-muted-foreground truncate">{cmd.description}</div>
                           </div>
                         </div>
                         <Badge variant="secondary" className="text-[10px] shrink-0 font-normal">
@@ -1198,7 +1198,7 @@ export function SpotlightModal({
                     : '随时向 AI Copilot 提问，支持网页对比、技术选型分析与智能书签归整。'}
                 </p>
                 <div className="flex items-center justify-between pt-1">
-                  <span className="text-[11px] text-muted-foreground">按回车 (Enter) 呼出抽屉继续推理</span>
+                  <span className="text-[0.6875rem] text-muted-foreground">按回车 (Enter) 呼出抽屉继续推理</span>
                   <Button
                     size="sm"
                     className="h-7 text-xs gap-1.5 bg-purple-600 hover:bg-purple-700 text-white"
@@ -1256,13 +1256,13 @@ export function SpotlightModal({
                         <div className="text-xs font-semibold truncate group-hover:text-primary transition-colors">
                           在 {quicklinkMatch.entry.title} 搜索：{quicklinkMatch.arg ? `"${quicklinkMatch.arg}"` : '(全部)'}
                         </div>
-                        <div className="text-[11px] text-muted-foreground truncate leading-relaxed">
+                        <div className="text-[0.6875rem] text-muted-foreground truncate leading-relaxed">
                           {quicklinkMatch.entry.href}
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                      <span className="text-[11px] text-muted-foreground">回车直达</span>
+                      <span className="text-[0.6875rem] text-muted-foreground">回车直达</span>
                       <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
                     </div>
                   </div>
@@ -1352,8 +1352,8 @@ export function SpotlightModal({
                           onClick={() => void handleClearRecent()}
                           className={
                             confirmClearRecent
-                              ? 'ml-auto text-[11px] font-medium text-destructive-text hover:underline'
-                              : 'ml-auto text-[11px] font-normal text-muted-foreground hover:text-foreground hover:underline'
+                              ? 'ml-auto text-[0.6875rem] font-medium text-destructive-text hover:underline'
+                              : 'ml-auto text-[0.6875rem] font-normal text-muted-foreground hover:text-foreground hover:underline'
                           }
                         >
                           {confirmClearRecent ? '确认清空' : '清空'}
@@ -1489,7 +1489,7 @@ export function SpotlightModal({
 
               {/* 语义未就绪必须外显：用户有权知道结果是关键词召回而不是语义召回 */}
               {!loading && query.trim() && !sitesUnavailable && semanticUnavailable && (
-                <div className="px-3 py-1.5 text-[11px] text-muted-foreground">
+                <div className="px-3 py-1.5 text-[0.6875rem] text-muted-foreground">
                   语义检索未就绪（未配置本地模型），当前为关键词 / 拼音 / 全文混合召回。
                 </div>
               )}
@@ -1569,14 +1569,14 @@ export function SpotlightModal({
                       <span>导航站点（RRF 混合多通道排序）</span>
                     </span>
                     <span className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono text-muted-foreground">{displayHits.length} 条命中</span>
+                      <span className="text-[0.6875rem] font-mono text-muted-foreground">{displayHits.length} 条命中</span>
                       <button
                         type="button"
                         onClick={() => {
                           setOpen(false)
                           router.push(searchHref({ q: query }))
                         }}
-                        className="text-[11px] text-primary hover:underline"
+                        className="text-[0.6875rem] text-primary hover:underline"
                       >
                         查看全部
                       </button>
@@ -1633,7 +1633,7 @@ export function SpotlightModal({
                                 </Badge>
                               )}
                             </div>
-                            <div className="text-[11px] text-muted-foreground truncate leading-relaxed">
+                            <div className="text-[0.6875rem] text-muted-foreground truncate leading-relaxed">
                               {site.description || site.url}
                             </div>
                           </div>
@@ -1663,7 +1663,7 @@ export function SpotlightModal({
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-7 text-[11px] gap-1 px-2 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
+                              className="h-7 text-[0.6875rem] gap-1 px-2 border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
                               title="调取 Wayback Machine 历史快照自愈修复此站点"
                               disabled={healingId === site.id}
                               onClick={(e) => handleWaybackHeal(site.id, site.url, e)}
@@ -1719,14 +1719,14 @@ export function SpotlightModal({
                       <span>精选技术视频 (Video Hub)</span>
                     </span>
                     <span className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono text-muted-foreground">{totalVideoCount} 条命中</span>
+                      <span className="text-[0.6875rem] font-mono text-muted-foreground">{totalVideoCount} 条命中</span>
                       <button
                         type="button"
                         onClick={() => {
                           setOpen(false)
                           router.push(`/videos?q=${encodeURIComponent(query)}`)
                         }}
-                        className="text-[11px] text-primary hover:underline"
+                        className="text-[0.6875rem] text-primary hover:underline"
                       >
                         查看全部视频
                       </button>
@@ -1786,7 +1786,7 @@ export function SpotlightModal({
                                 {platform === 'bilibili' ? 'B站' : 'YouTube'}
                               </Badge>
                             </div>
-                            <div className="text-[11px] text-muted-foreground truncate leading-relaxed">
+                            <div className="text-[0.6875rem] text-muted-foreground truncate leading-relaxed">
                               {author ? `UP主: ${author}` : ''} {video.description || ''}
                             </div>
                           </div>
@@ -1818,7 +1818,7 @@ export function SpotlightModal({
                         setOpen(false)
                         router.push(`/marketplace?q=${encodeURIComponent(query)}`)
                       }}
-                      className="text-[11px] text-primary hover:underline"
+                      className="text-[0.6875rem] text-primary hover:underline"
                     >
                       查看全部
                     </button>
@@ -1847,7 +1847,7 @@ export function SpotlightModal({
                           </div>
                           <div className="min-w-0">
                             <div className="text-xs font-semibold truncate">{plugin.name}</div>
-                            <div className="text-[11px] text-muted-foreground truncate">{plugin.description}</div>
+                            <div className="text-[0.6875rem] text-muted-foreground truncate">{plugin.description}</div>
                           </div>
                         </div>
 
@@ -1879,7 +1879,7 @@ export function SpotlightModal({
                         <button
                           type="button"
                           onClick={() => setSearchNonce((n) => n + 1)}
-                          className="text-[11px] px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-muted/60 transition-colors"
+                          className="text-[0.6875rem] px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-muted/60 transition-colors"
                         >
                           重试
                         </button>
@@ -1895,7 +1895,7 @@ export function SpotlightModal({
                         <button
                           type="button"
                           onClick={() => setSearchNonce((n) => n + 1)}
-                          className="text-[11px] px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-muted/60 transition-colors"
+                          className="text-[0.6875rem] px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-muted/60 transition-colors"
                         >
                           重试
                         </button>
@@ -1928,7 +1928,7 @@ export function SpotlightModal({
                             setSelectedIndex(0)
                             inputRef.current?.focus()
                           }}
-                          className="text-[11px] px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-muted/60 transition-colors"
+                          className="text-[0.6875rem] px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-muted/60 transition-colors"
                         >
                           换关键词
                         </button>
@@ -1940,7 +1940,7 @@ export function SpotlightModal({
                             setOpen(false)
                             openCopilot({ query: q, source: 'spotlight' })
                           }}
-                          className="text-[11px] px-2.5 py-1 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
+                          className="text-[0.6875rem] px-2.5 py-1 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
                         >
                           去 AI 找站
                         </button>
@@ -1994,7 +1994,7 @@ export function SpotlightModal({
                           只留明确出口，不叠泛推荐）；未纠正时照常显示 */}
                       {!correction && suggestions.length > 0 && (
                         <div className="pt-1 max-w-md mx-auto">
-                          <div className="text-[11px] text-muted-foreground mb-1.5">相关搜索推荐：</div>
+                          <div className="text-[0.6875rem] text-muted-foreground mb-1.5">相关搜索推荐：</div>
                           <div className="flex flex-wrap justify-center gap-1.5">
                             {suggestions.map((s) => (
                               <button
@@ -2038,14 +2038,14 @@ export function SpotlightModal({
                       <div className="pt-1 max-w-md mx-auto text-left">
                         <WantedActions query={query} correctedQuery={correction?.corrected ?? null} />
                       </div>
-                      <div className="text-[11px] text-muted-foreground">
+                      <div className="text-[0.6875rem] text-muted-foreground">
                         提示：输入 <span className="font-mono text-primary">&gt;</span> 可执行系统控制指令，或输入 <span className="font-mono text-primary">?</span> 呼出 AI 助手
                       </div>
                     </>
                   )}
                   {query.trim() && (
                     <div className="pt-2 flex flex-col items-center gap-2">
-                      <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <div className="text-[0.6875rem] text-muted-foreground flex items-center gap-1">
                         <ExternalLink className="h-3 w-3 text-primary" />
                         <span>一键全网聚合搜索「{query.trim()}」：</span>
                       </div>
@@ -2093,20 +2093,20 @@ export function SpotlightModal({
               )}
               {/* 站点通道挂了但插件有结果：说清「下面不完整」，不要让用户以为整站就这些 */}
               {!loading && sitesUnavailable && displayHits.length === 0 && !!pluginHits && pluginHits.items.length > 0 && (
-                <div className="px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
+                <div className="px-3 py-2 text-[0.6875rem] text-amber-700 dark:text-amber-400">
                   站点检索通道暂时不可用，以下只有插件结果。
                 </div>
               )}
               {/* 插件通道挂了但站点有结果：不能让「插件市场没有匹配」冒充事实 */}
               {!loading && pluginUnavailable && displayHits.length > 0 && (
-                <div className="px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400 border-t border-border/40">
+                <div className="px-3 py-2 text-[0.6875rem] text-amber-700 dark:text-amber-400 border-t border-border/40">
                   插件检索通道暂时不可用，以下只有站点结果。
                 </div>
               )}
               {/* 当有检索结果时，在列表底部也常驻提供全网聚合搜索入口 */}
               {query.trim() && displayHits.length > 0 && (
                 <div className="pt-2.5 pb-1 px-2 border-t border-border/40 mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1.5 text-[11px]">
+                  <div className="flex items-center gap-1.5 text-[0.6875rem]">
                     <ExternalLink className="h-3 w-3 text-primary shrink-0" />
                     <span>全网聚合搜索「{query.trim()}」：</span>
                   </div>
@@ -2116,7 +2116,7 @@ export function SpotlightModal({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setOpen(false)}
-                      className="px-2 py-0.5 rounded text-[11px] bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors font-medium"
+                      className="px-2 py-0.5 rounded text-[0.6875rem] bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors font-medium"
                     >
                       Google
                     </a>
@@ -2125,7 +2125,7 @@ export function SpotlightModal({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setOpen(false)}
-                      className="px-2 py-0.5 rounded text-[11px] bg-neutral-500/10 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-500/20 border border-neutral-500/20 transition-colors font-medium"
+                      className="px-2 py-0.5 rounded text-[0.6875rem] bg-neutral-500/10 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-500/20 border border-neutral-500/20 transition-colors font-medium"
                     >
                       GitHub
                     </a>
@@ -2134,7 +2134,7 @@ export function SpotlightModal({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setOpen(false)}
-                      className="px-2 py-0.5 rounded text-[11px] bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors font-medium"
+                      className="px-2 py-0.5 rounded text-[0.6875rem] bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-colors font-medium"
                     >
                       百度
                     </a>
@@ -2143,7 +2143,7 @@ export function SpotlightModal({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setOpen(false)}
-                      className="px-2 py-0.5 rounded text-[11px] bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-colors font-medium"
+                      className="px-2 py-0.5 rounded text-[0.6875rem] bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-colors font-medium"
                     >
                       Bing
                     </a>
@@ -2155,7 +2155,7 @@ export function SpotlightModal({
                   「有查询词且配了外部引擎」时出现；零结果时同样出现（聚合块只在有结果时出现）。 */}
               {externalSearchHref && externalSearchName && (
                 <div className="pt-2.5 pb-1 px-2 border-t border-border/40 mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1.5 text-[11px]">
+                  <div className="flex items-center gap-1.5 text-[0.6875rem]">
                     <ExternalLink className="h-3 w-3 text-primary shrink-0" />
                     <span>站内没有想要的？去站外搜「{query.trim()}」：</span>
                   </div>
@@ -2165,7 +2165,7 @@ export function SpotlightModal({
                     rel="noopener noreferrer"
                     onClick={() => setOpen(false)}
                     aria-label={`在 ${externalSearchName} 中搜索「${query.trim()}」`}
-                    className="px-2 py-1 rounded text-[11px] bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 transition-colors font-medium"
+                    className="px-2 py-1 rounded text-[0.6875rem] bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 transition-colors font-medium"
                   >
                     在 {externalSearchName} 中搜索
                   </a>
@@ -2177,7 +2177,7 @@ export function SpotlightModal({
 
         {/* 底部快捷键指南栏：↑↓ 与 ↵ 是硬件键，触屏按不到；而 > 与 ? 是打得出来的
             输入前缀，软键盘上有，所以只摘掉前两项，后缀提示留给触屏用户。 */}
-        <div className="px-4 py-2.5 border-t border-border/50 bg-muted/30 text-[11px] text-muted-foreground flex items-center justify-between">
+        <div className="px-4 py-2.5 border-t border-border/50 bg-muted/30 text-[0.6875rem] text-muted-foreground flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1 pointer-coarse:hidden">
               <kbd className="rounded border bg-background px-1 py-0.5 text-[10px]">↑↓</kbd>

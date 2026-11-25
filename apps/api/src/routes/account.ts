@@ -405,6 +405,10 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
           String(row.user_id), body.data.password, String(row.target_email),
         );
         if (!updated) return "stale" as const;
+        // 重置链接本身就是发到该邮箱的一次性所有权证明：密码改掉的同时把该邮箱
+        // 标为已验证，否则登录侧的“未验证不得建会话”会让刚重置完的账号立刻 401，
+        // 形成“重置成功却登不进”的死路。若邮箱在此期间已被改走则不阻塞重置本身。
+        await ctx.repo.setUserEmailVerifiedForEmail(String(row.user_id), String(row.target_email));
         // 与密码更新在同一事务内撤销兄弟令牌；并发请求拿到用户锁后会看到令牌已失效。
         await ctx.repo.runCount(
           "UPDATE auth_tokens SET consumed_at = ? WHERE user_id = ? AND purpose = 'password_reset' AND consumed_at IS NULL",

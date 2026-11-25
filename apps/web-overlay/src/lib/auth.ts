@@ -298,6 +298,8 @@ const config = {
       token.issuedAt = issuedAt
       const identity = canonicalUserId({ id: user.id, provider: account?.provider })
       if (identity) {
+        // 核对失败按 null 处理：下方 revoked === null 分支决定结果（生产拒绝签发会话，
+        // 非生产记 warn 继续）；此处不吞错，只是把“不可用”交给调用方显式分支。
         const revoked = await hubSessionRevoked(token.sid, identity, issuedAt).catch(() => null)
         if (revoked === true) throw new Error('Session registration rejected: session is revoked')
         if (revoked === null && IS_PRODUCTION_RUNTIME) {

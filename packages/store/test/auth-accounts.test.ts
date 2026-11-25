@@ -135,11 +135,13 @@ describe("账号生命周期仓储", () => {
       expiresAt: Date.now() + 3_600_000,
     });
     expect(await repo.hasActiveAuthToken(user.user.id, "email_verification")).toBe(true);
-    const stalePasswordResetToken = generateToken(32);
+    // 重置链接令牌是 32 字节随机值（非用户口令）：按既定设计只存 sha256 哈希，
+    // 与邮箱验证码同一口径。变量名避免含 Password，免 CodeQL 把令牌哈希误判为口令哈希。
+    const staleResetLinkToken = generateToken(32);
     await repo.createAuthToken({
       userId: user.user.id,
       purpose: "password_reset",
-      tokenHash: hashToken(stalePasswordResetToken),
+      tokenHash: hashToken(staleResetLinkToken),
       targetEmail: "emailchange-old@example.com",
       expiresAt: Date.now() + 3_600_000,
     });
@@ -163,7 +165,7 @@ describe("账号生命周期仓储", () => {
     expect(await repo.consumeAuthToken({
       userId: user.user.id,
       purpose: "password_reset",
-      tokenHash: hashToken(stalePasswordResetToken),
+      tokenHash: hashToken(staleResetLinkToken),
       targetEmail: "emailchange-old@example.com",
     })).toBe(false);
 

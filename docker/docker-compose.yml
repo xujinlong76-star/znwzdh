@@ -253,6 +253,9 @@ services:
       # 与 api / api-standard 同值（C-1 / C-4）：web 侧 BFF 代理与 cron 路由都要读。
       NAVHUB_IDENTITY_SIGNATURE_STRICT: ${NAVHUB_IDENTITY_SIGNATURE_STRICT:-1}
       CRON_SECRET: ${CRON_SECRET:-}
+      # 管理员凭证由 Web NextAuth CredentialsProvider 校验；仅服务端环境可见，不进入浏览器 bundle。
+      NAVHUB_ADMIN_PASSWORD: ${NAVHUB_ADMIN_PASSWORD:-}
+      NAVHUB_ADMIN_TOKEN: ${NAVHUB_ADMIN_TOKEN:-}
       # B 站高清解析（/api/videos/bili-parse）：操作者自己的 access_key，用于第三方解析站
       # 解锁大会员画质。以前 compose 完全没透传 → 容器里这条能力恒关，界面上那个密钥输入框骗人。
       # 只透传不兜底：这是凭据，写死默认值等于把部署者的 B 站账号公开。

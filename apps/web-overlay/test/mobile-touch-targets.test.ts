@@ -746,4 +746,17 @@ describe('tablist A-3：tablist 对应面板补 role="tabpanel" / aria-labelledb
     const tablist = src.slice(src.indexOf('role="tablist"'), src.indexOf("{tab === 'manual' && ("))
     expect(tablist).not.toContain('inline-flex')
   })
+
+  it('#10 bookmark-importer 导入目标模式：无面板（mode 是行为约束），A-3 跳过登记', () => {
+    const src = read('src/components/bookmark-importer.tsx')
+    // mode 组（导入目标模式）无面板：changeMode 只改 state + 按新模式重建去重报告 /
+    // 默认勾选，全文件 mode === 用法全部落在后续步骤的暂存表勾选逻辑里，没有任何一块
+    // UI 是按 mode 条件渲染的“模式面板”。mode 是行为约束，不是视图切换。
+    // 合规做法是把 role 由 tabs 改为 radio group / segmented control，留待另行立项；
+    // A-3 不补面板，更不得给 mode tab 挂 aria-controls 指向输入卡片（假关联比不挂更糟）。
+    const modeSection = src.slice(src.indexOf('aria-label="导入目标模式"'), src.indexOf('aria-label="收藏来源"'))
+    expect(modeSection).not.toContain('role="tabpanel"')
+    expect(modeSection).not.toContain('aria-controls')
+    expect(modeSection).not.toContain('bookmark-mode-tab')
+  })
 })

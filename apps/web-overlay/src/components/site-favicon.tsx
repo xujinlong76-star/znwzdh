@@ -1066,6 +1066,34 @@ const LOCAL_LOGO_ENTRIES: ReadonlyArray<string> = [
   'lingxi.kdocs.cn=lingxip',
   'workbuddy.cn=workbuddys',
   'dumate.baidu.com=dumatep',
+  // 2026-11-25（剩余图标补齐 W6 政务/考试组：国家公务员局 3 站）。
+  // 3 站 icon 字段均为远端 http://www.scs.gov.cn/favicon.ico，被
+  // isRemoteRawFavicon 拦截，map 生效，navigation.json 不动。
+  // 来源（2026-11-25 11:2x CST 复测，Chrome UA）：
+  // www.scs.gov.cn 首页/根/favicon.ico 均回机器人验证墙（HTTP 200 但
+  // 体为 EO_Bot_Ssid 混淆 JS 挑战页，985/987/988 B，非图标）；https
+  // 全站连接失败（仅 http 可达）；bm/subb 站根 /favicon.ico 与
+  // /apple-touch-icon.png 均 404。真正的官方标志取自三站共用的
+  // gkweb 平台静态 host dl.scs.gov.cn（无墙）：bm/subb 实页
+  // /pp/gkweb/core/web/ui/business/home/gkhome.html 与 lxhome.html
+  // 均无 rel=icon 声明，页头 logo-box 的 background 即
+  // http://dl.scs.gov.cn/pp/gkweb/core/web/ui/images/common/logo.png
+  // （200、image/png、16,233 B、80×84 RGBA，md5
+  // bc05012735ab6609bdccd258de168d20；像素实测：红底圆徽 #D020 系 +
+  // 金色 #E0B040 星穗、国徽造型，四角透明，ASCII 渲染确认圆形徽章
+  // 完整）。三站同平台同标、同 favicon 源，故一标三键共用 scs.png。
+  // 80×84 < 128 按规范 §1.1 原样不放大；16,233 B 略超 ~15 KB 参考线
+  // （超 873 B），按 C7 W3 dramabox.png（15,595 B）先例原样接线、
+  // 字节数测试钉死。'gov.cn' 裸域键绝不加（C12 裁决：后缀匹配会让
+  // 全库 *.gov.cn 错指中国政府网）；'scs.gov.cn' 精确键 + 两子域
+  // 完整 hostname 键，bm/subb 即便无精确键也会被后缀匹配兜底，
+  // 此处三键明写防歧义。全库 388 站核对：三键只命中此 3 站
+  // （www/bm/subb.scs.gov.cn），无后缀串站；公安部/中公教育/
+  // 12377 本批阻塞未入，不建键。红底实色圆徽浅/深主题均可辨，
+  // 按统一规范 §9 不做单站底块补丁、不配 LOGO_TILE_MAP。
+  'scs.gov.cn=scsp',
+  'bm.scs.gov.cn=scsp',
+  'subb.scs.gov.cn=scsp',
  ];
 
 /**

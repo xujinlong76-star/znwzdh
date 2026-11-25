@@ -127,8 +127,9 @@ export function SyncHealthCard({
         <Row
           icon={<UserCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />}
           label="已合并匿名身份"
-          value={aliases.length > 0 ? `${aliases.length} 个` : '无'}
-          ok={aliases.length > 0}
+          // 中枢旧版/降级通道可能省略 aliases（同 overview 在 account-view 已用 ?? []）
+          value={(aliases ?? []).length > 0 ? `${(aliases ?? []).length} 个` : '无'}
+          ok={(aliases ?? []).length > 0}
           next={{ href: '/me/data', label: '把本机匿名数据并入账号' }}
         />
         <Row

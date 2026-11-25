@@ -41,4 +41,12 @@ describe('管理后台页级 h1（E2E awaitContentReady 的 SSR 锚点）', () =
       expect(src).toMatch(new RegExp(`<h1[^>]*>\\s*${title}\\s*</h1>`))
     })
   }
+
+  // 视频子分类管理页（动态标题，无法用静态文案锁）：至少有一个页级 h1，
+  // 否则 e2e/helpers.ts 的 awaitContentReady 会一直等不到 main#main-content h1。
+  it('admin/videos/[id]/categories 有页级 h1（动态标题）', () => {
+    const src = readFileSync(join(appDir, 'admin/videos/[id]/categories/page.tsx'), 'utf8')
+    expect(src.match(/<h1\b/g) ?? []).toHaveLength(1)
+    expect(src).toContain('子分类管理')
+  })
 })

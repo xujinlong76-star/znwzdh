@@ -265,9 +265,9 @@ export default function VideoCategoriesPage() {
                     >
                         <ArrowLeft className="h-4 w-4" />
                     </Button>
-                    <h2 className="text-base sm:text-lg font-semibold flex items-center gap-2">
+                    <h1 className="text-base sm:text-lg font-bold text-foreground flex items-center gap-2">
                         {navigation?.title || '未命名分类'} - 子分类管理
-                    </h2>
+                    </h1>
                     <div className="relative flex-1 max-w-sm">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input

@@ -1163,9 +1163,9 @@ export function SimilarSitesExplorer({
                             +{t}
                           </span>
                         ))}
-                        {item.reasons[0] && (
+                        {(item.reasons ?? [])[0] && (
                           <span className="text-[11px] text-muted-foreground">
-                            · {item.reasons[0]}
+                            · {(item.reasons ?? [])[0]}
                           </span>
                         )}
                       </div>
@@ -1314,10 +1314,10 @@ export function SimilarSitesExplorer({
                         ))}
                       </div>
                     )}
-                    {item.reasons.length > 0 && (
+                    {(item.reasons ?? []).length > 0 && (
                       <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-border/40 text-[11px] text-muted-foreground">
                         <span className="font-semibold text-foreground">匹配依据：</span>
-                        {item.reasons.map((r, i) => (
+                        {(item.reasons ?? []).map((r, i) => (
                           <span key={i} className="rounded bg-background px-2 py-0.5 border border-border/50">
                             {r}
                           </span>

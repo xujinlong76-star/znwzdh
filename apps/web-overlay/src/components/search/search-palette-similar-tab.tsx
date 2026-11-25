@@ -600,9 +600,13 @@ export function SearchPaletteSimilarTab({
                 {displayedItems.map((item, idx) => {
                   const tone = similarityTone(item.similarityPercent)
                   const host = safeHostname(item.site.url)
+                  // 中枢直连分支可能返回形状不全的 item（reasons/sharedTags 缺失），
+                  // 与同文件 similar-sites-explorer 保持一致的 ?? [] 兜底。
+                  const reasons = item.reasons ?? []
+                  const sharedTags = item.sharedTags ?? []
                   const topReason =
-                    item.reasons[0] ||
-                    (item.sharedTags.length > 0 ? `共享标签 ${item.sharedTags.slice(0, 2).join(' / ')}` : '综合语义相似')
+                    reasons[0] ||
+                    (sharedTags.length > 0 ? `共享标签 ${sharedTags.slice(0, 2).join(' / ')}` : '综合语义相似')
                   return (
                     <div
                       key={item.site.id}

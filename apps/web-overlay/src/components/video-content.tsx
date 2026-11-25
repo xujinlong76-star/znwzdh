@@ -673,6 +673,7 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                     navigationData={visibleNavigationData}
                     siteInfo={siteData}
                     className="sticky top-0 h-screen"
+                    brandAsHeading={false}
                 />
             </div>
 

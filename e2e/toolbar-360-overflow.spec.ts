@@ -148,7 +148,10 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     await expect(todayBtn).toBeVisible({ timeout: 60_000 });
     const label = todayBtn.locator('span:not([aria-hidden])');
     await expect(label).toBeVisible();
-    await expect(label).toHaveText(/^今日( \d+ 项)?$/);
+    // 2026-11-26：todayCount=0 的日子标签是「今日效率」（navigation-toolbar.tsx:195，
+    // 有待办项时才显示「今日 N 项」）。断言须接受两种形态，否则该用例在任何
+    // todayCount=0 的日子都会红；在有节点的日子（如 11-28/29 国考）自动回到「今日 N 项」。
+    await expect(label).toHaveText(/^今日( \d+ 项|效率)?$/);
   });
 
   test('360px：工具栏外观按钮可见，点开同一小窗「外观与排版」tab 可切', async ({ page }) => {

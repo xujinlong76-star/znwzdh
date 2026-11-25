@@ -411,6 +411,11 @@ describe('接线守卫：这五项偏好各自都有真实消费者', () => {
     // 冷启动第一次 ⌘K：顶栏搜索框还是懒占位（ssr:false），网守必须派发
     // navhub:focus-search 让面板挂载，不能因为查不到 input 就静默 return。
     expect(gateway).toContain("window.dispatchEvent(new CustomEvent('navhub:focus-search'))")
+    // 2026-11-26 订正：光派发事件不够——该事件在全仓的唯一监听者就是面板自身，
+    // 面板未挂载时无人收听。网守必须同时等 input 出现再聚焦
+    //（focusSearchInputWhenReady），否则冷启动那一拍仍是空操作。
+    expect(gateway).toContain('focusSearchInputWhenReady')
+    expect(gateway).toContain('MutationObserver')
     const modal = overlayCode('src/components/search/spotlight-modal.tsx')
     expect(modal).toContain('spotlightModalHotkeyMatches')
     expect(modal).toContain('topSearchHotkeyMatches')

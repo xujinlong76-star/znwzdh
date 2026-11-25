@@ -110,6 +110,11 @@ export interface NavigationCategorySectionProps {
  * 水合安全：判定只依赖 props（category.subCategories），服务端与客户端首帧结论一致，
  * 不读 mount / 视口 / localStorage。阈值取 8：≤8 个子类的分类保持「全部」视图不变。
  * 筛选态、聚焦直达（initialSelectedSubCatId）、编辑态都不受影响——它们各自显式传值。
+ *
+ * 2026-11-26 孤儿行规则豁免（主聊裁决）：选中子分类后该组是全量展开的完整列表，
+ * 末行不满是自然收尾，不是布局缺陷——孤儿行断言（e2e/category-block-a11y.spec.ts）
+ * 只约束收起/限量 teaser 网格。组件侧用 data-grid-expanded 显式标记完整列表
+ * （与 data-grid-folded 互斥）；不要为凑整倍数向下切卡片，那会藏掉真实站点。
  */
 const MANY_SUBCATEGORIES_THRESHOLD = 8
 
@@ -1235,6 +1240,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                 data-nav-grid=""
                                 data-card-mode={normalizedCardMode}
                                 data-grid-folded={directGroup.items.length < filteredDirectItems.length ? '' : undefined}
+                                data-grid-expanded={directGroup.items.length >= filteredDirectItems.length ? '' : undefined}
                                 className={cn(effectiveGridClass, "transition-all duration-200")}
                                 style={effectiveCardModeMeta.usesDensityGap ? { gap: 'var(--density-grid-gap, 14px)' } : undefined}
                               >
@@ -1363,6 +1369,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                       data-nav-grid=""
                                       data-card-mode={normalizedCardMode}
                                       data-grid-folded={items.length < sortedSubItems.length ? '' : undefined}
+                                      data-grid-expanded={items.length >= sortedSubItems.length ? '' : undefined}
                                       className={cn(effectiveGridClass, "transition-all duration-200")}
                                       style={effectiveCardModeMeta.usesDensityGap ? { gap: 'var(--density-grid-gap, 14px)' } : undefined}
                                     >

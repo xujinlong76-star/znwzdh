@@ -91,10 +91,15 @@ describe('B11 设置页重看入口（源码守卫）', () => {
     expect(panel).toContain('OnboardingReplayField')
     expect(panel).toContain('resetOnboarding')
     expect(panel).toContain('isOnboardingDismissed')
-    expect(panel).toContain('重新查看新手引导')
+    // e502fa5f 跟随：设置页文案已修正「回首页就能看到引导」的失真说法——
+    // 引导实际藏在首页顶栏「DIY 排版 → 外观与向导」里。按钮文案随之改写：
+    // 关过引导时「重置并回到首页」，没关过时「去首页打开引导」。
+    expect(panel).toContain('重置并回到首页')
     expect(panel).toContain('href="/"')
     // 未关过时不说「重新查看」的假话：直接去首页看
-    expect(panel).toContain('去首页查看引导')
+    expect(panel).toContain('去首页打开引导')
+    // 新文案必须指明真实入口，否则「回首页就能看到」会再次失真
+    expect(panel).toContain('DIY 排版 → 外观与向导')
   })
 
   it('引导卡与设置入口共用同一把键：卡片不再自写字面量', () => {

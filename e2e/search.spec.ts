@@ -46,12 +46,21 @@ test.describe('核心旅程 1：首页检索与 0-RTT 意图微部件', () => {
 
 test.describe('冷启动搜索快捷键：首访第一次 ⌘K 不应静默失灵', () => {
   test('冷启动直接按 ⌘/Ctrl+K，懒挂载的顶栏搜索框应出现并获得焦点', async ({ page }) => {
-    // 刚 goto 完不做任何点击/等待交互：顶栏搜索框此时是 ssr:false 的懒占位 button，
-    // [data-search-input] 还不在 DOM 里——这正是此前静默失灵的触发条件。
+    // 刚 goto 完不做任何点击：测的是首访第一次按键，不点搜索框。
     await page.goto('/');
-    // 等 React 水合把全局网守的 keydown 监听挂上（网守在 useEffect 里注册）。
-    // 仍不点击搜索框，[data-search-input] 保持未挂载——测的正是兜底路径。
-    await expect(page.getByRole('button', { name: /搜索站点、标签或拼音/ })).toBeVisible();
+    // 等水合完成：网格列数已写入 data-grid-cols = 客户端 effects 已跑，
+    // 全局网守的 keydown 监听已挂上。注意：这里不能等「搜索占位 button」——
+    // 顶栏的 ssr:false loading 占位是 div 不是 button，全仓没有 name 匹配
+    // /搜索站点、标签或拼音/ 的 button（2026-11-26 实测：旧等待在此超时，
+    // 用例在按键前就死了，网守兜底路径根本没被测到）。
+    // 也不等 [data-search-input]：面板 chunk 可能还在加载，input 未必已挂载——
+    // 测的正是这条兜底路径（chunk 已加载时走网守直接聚焦，未加载时走
+    // focusSearchInputWhenReady 等 input 出现再聚焦；两种时序都应以输入框获焦告终）。
+    await page.waitForFunction(
+      () => document.querySelectorAll('[data-grid-cols]').length > 0,
+      undefined,
+      { timeout: 15_000 },
+    );
     await page.waitForTimeout(800);
     await page.keyboard.press('ControlOrMeta+k');
     const input = page.locator('[data-search-input]');

@@ -454,20 +454,35 @@ export async function getCategoryWithSemantic(
 
   const relatedList: CategorySemanticDetail["related"] = [];
   if (Array.isArray(cat.relatedCategories) && cat.relatedCategories.length > 0) {
-    for (const relId of cat.relatedCategories) {
-      const relCat = await repo.getCategory(relId);
+    // 批量取关联类目与有效站点数：原先每个 relId 各发一轮 getCategory + COUNT，
+    // 相关概念多时是典型 N+1。这里两条集合式查询搞定，再用 Map 按原顺序还原。
+    const relIds = cat.relatedCategories.filter((v): v is string => typeof v === "string");
+    const relCatById = new Map<string, Category>();
+    const siteCountById = new Map<string, number>();
+    for (const chunk of chunkList(relIds)) {
+      const byId = inPredicate("id", chunk);
+      const rows = await repo.raw(`SELECT * FROM categories WHERE ${byId.sql}`, byId.params);
+      for (const row of rows) {
+        const c = rowToCategory(row);
+        relCatById.set(c.id, c);
+      }
+      // categories 表无 deleted_at 列，站点数仍按存活口径统计（与原实现一致）。
+      const byCat = inPredicate("category_id", chunk);
+      const counts = await repo.raw(
+        `SELECT category_id, COUNT(*) AS c FROM sites WHERE ${byCat.sql} AND deleted_at IS NULL GROUP BY category_id`,
+        byCat.params,
+      );
+      for (const r of counts) siteCountById.set(String(r.category_id), Number(r.c ?? 0));
+    }
+    for (const relId of relIds) {
+      const relCat = relCatById.get(relId);
       if (relCat) {
-        const countRows = await repo.raw(
-          "SELECT COUNT(*) AS c FROM sites WHERE category_id = ? AND deleted_at IS NULL",
-          [relId]
-        );
-        const siteCount = Number(countRows[0]?.c ?? 0);
         relatedList.push({
           id: relCat.id,
           title: relCat.title,
           titleEn: relCat.titleEn,
           icon: relCat.icon,
-          siteCount,
+          siteCount: siteCountById.get(relId) ?? 0,
         });
       }
     }

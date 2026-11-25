@@ -164,3 +164,19 @@ export function parseSiteUrl(raw: string): URL | null {
   }
 }
 
+/**
+ * GitHub blob 链接转 raw 链接（`github.com/<owner>/<repo>/blob/<branch>/<path>`
+ * → `raw.githubusercontent.com/<owner>/<repo>/<branch>/<path>`）。
+ *
+ * 主机名必须用 URL 解析判定，不用子串 includes：子串匹配会被
+ * `github.com.evil.com` 或查询串里的 `github.com/` 绕过（CodeQL
+ * js/incomplete-url-substring-sanitization）。非 blob 链接或非
+ * github.com 主机返回 null（调用方保留原 URL）。
+ */
+export function toRawGithubUrl(raw: string): string | null {
+  const u = parseSiteUrl(raw)
+  if (!u || u.hostname.toLowerCase().replace(/\.$/, '') !== 'github.com') return null
+  if (!u.pathname.includes('/blob/')) return null
+  return `https://raw.githubusercontent.com${u.pathname.replace('/blob/', '/')}${u.search}${u.hash}`
+}
+

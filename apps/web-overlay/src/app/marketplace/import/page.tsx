@@ -17,6 +17,7 @@ import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import { getIdentity } from '@/lib/identity'
+import { toRawGithubUrl } from '@/lib/safe-url'
 import { importPlugin, installPlugin } from '@/lib/navhub-api'
 import { formatImportError } from '@/lib/plugin-import-errors'
 import { setActiveTheme } from '@/lib/plugins/theme-runtime'
@@ -41,9 +42,10 @@ export default function MarketplaceImportPage() {
   const handleFetchRemoteUrl = async () => {
     let url = remoteUrl.trim()
     if (!url) return
-    if (url.includes('github.com/') && url.includes('/blob/')) {
-      url = url.replace('github.com/', 'raw.githubusercontent.com/').replace('/blob/', '/')
-    }
+    // GitHub blob 链接转 raw 链接：主机名用 URL 解析判定，不用子串 includes
+    //（github.com.evil.com 这类主机可绕过子串判定，见 safe-url.ts 注释）。
+    const rawUrl = toRawGithubUrl(url)
+    if (rawUrl) url = rawUrl
     setFetchingUrl(true)
     setError(null)
     try {

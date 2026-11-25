@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSafeHttpUrl, safeHref, safeSrc } from "@/lib/safe-url";
+import { isSafeHttpUrl, safeHref, safeSrc, toRawGithubUrl } from "@/lib/safe-url";
 
 describe("safeHref：站内路径与外部 URL 边界", () => {
   it("保留站内绝对路径、锚点和相对路径", () => {
@@ -46,5 +46,37 @@ describe("safeHref：站内路径与外部 URL 边界", () => {
     expect(safeHref("  /admin  ")).toBe("/admin");
     expect(safeSrc("//evil.example/a.png")).toBeUndefined();
     expect(safeSrc("https://navhub.example/a.png")).toBe("https://navhub.example/a.png");
+  });
+});
+
+describe("toRawGithubUrl：blob 链接转 raw 链接只认 github.com 主机名", () => {
+  it("标准 blob 链接正确转 raw，保留查询与锚点", () => {
+    expect(toRawGithubUrl("https://github.com/o/r/blob/main/x.json")).toBe(
+      "https://raw.githubusercontent.com/o/r/main/x.json",
+    );
+    expect(toRawGithubUrl("https://github.com/o/r/blob/main/x.json?x=1#top")).toBe(
+      "https://raw.githubusercontent.com/o/r/main/x.json?x=1#top",
+    );
+  });
+
+  it("非 blob 链接与非 github.com 主机返回 null（不改写）", () => {
+    expect(toRawGithubUrl("https://github.com/o/r")).toBeNull();
+    expect(toRawGithubUrl("https://raw.githubusercontent.com/o/r/main/x.json")).toBeNull();
+    expect(toRawGithubUrl("https://example.com/a/b")).toBeNull();
+    expect(toRawGithubUrl("not a url")).toBeNull();
+    expect(toRawGithubUrl("")).toBeNull();
+  });
+
+  it("子串绕过不生效：github.com.evil.com 与查询串里的 github.com/ 都不转", () => {
+    // 旧实现 includes("github.com/") 会把这两者都误判为 blob 链接并改写。
+    expect(toRawGithubUrl("https://github.com.evil.com/o/r/blob/main/x.json")).toBeNull();
+    expect(toRawGithubUrl("https://evil.com/?u=https://github.com/o/r/blob/main/x.json")).toBeNull();
+    expect(toRawGithubUrl("https://evil.com/github.com/o/r/blob/main/x.json")).toBeNull();
+  });
+
+  it("主机名大小写与末尾点不影响判定", () => {
+    expect(toRawGithubUrl("https://GitHub.COM/o/r/blob/main/x.json")).toBe(
+      "https://raw.githubusercontent.com/o/r/main/x.json",
+    );
   });
 });

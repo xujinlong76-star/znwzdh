@@ -19,6 +19,7 @@ import { ADMIN_NOTIFICATION_IDENTITY } from "../../notifications.ts";
 import {
   validatePluginManifestWithCatalog,
   summarizePluginManifest,
+  parseSiteUrl,
   } from "@navhub/core";
 import { safeDecodeParam,
   badRequest,
@@ -34,6 +35,22 @@ import {
   publicPlugin,
   } from "../plugin-presentation.ts";
 import type { AppContext } from "../../context.ts";
+
+/**
+ * GitHub blob 链接转 raw 链接（`github.com/<owner>/<repo>/blob/<branch>/<path>`
+ * → `raw.githubusercontent.com/<owner>/<repo>/<branch>/<path>`）。
+ *
+ * 主机名必须用 URL 解析判定（`parseSiteUrl`），不用子串 includes：子串
+ * 匹配会被 `github.com.evil.com` 或查询串里的 `github.com/` 绕过，旧实现
+ * 还会把首次出现的子串换成 raw 域、把请求送到攻击者主机。非 blob 链接
+ * 或非 github.com 主机返回 null（调用方保留原 URL，照常走 SSRF 守卫取数）。
+ */
+export function toRawGithubUrl(raw: string): string | null {
+  const u = parseSiteUrl(raw);
+  if (!u || u.hostname.toLowerCase() !== "github.com") return null;
+  if (!u.pathname.includes("/blob/")) return null;
+  return `https://raw.githubusercontent.com${u.pathname.replace("/blob/", "/")}${u.search}${u.hash}`;
+}
 
 export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -56,9 +73,12 @@ export const pluginRoutesPart4: FastifyPluginAsync<{ ctx: AppContext }> = async 
       let manifestInput = body.manifest ?? body;
       if (typeof body.url === "string" && body.url.trim()) {
         let fetchUrl = body.url.trim();
-        if (fetchUrl.includes("github.com/") && fetchUrl.includes("/blob/")) {
-          fetchUrl = fetchUrl.replace("github.com/", "raw.githubusercontent.com/").replace("/blob/", "/");
-        }
+        // GitHub blob 链接转 raw 链接：必须用解析出的主机名判定，子串
+        // includes("github.com/") 会被 github.com.evil.com 这类主机绕过
+        // （CodeQL js/incomplete-url-substring-sanitization；旧实现把
+        // 首次出现的 github.com/ 换成 raw 域，绕过后仍会去攻击者主机取内容）。
+        const rawUrl = toRawGithubUrl(fetchUrl);
+        if (rawUrl) fetchUrl = rawUrl;
         const res = await guardedFetch(fetchUrl, { timeoutMs: 8000 });
         if (res.status < 200 || res.status >= 300) {
           return badRequest(reply, `从远程 URL 读取插件失败: HTTP ${res.status}`);

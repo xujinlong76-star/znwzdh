@@ -296,32 +296,57 @@ export async function guardedFetch(
     const isLiteralIp = isIP(rawHost) !== 0
 
     // 防 DNS 重绑定（TOCTOU）：
-    // - HTTP 明文：直接改写请求 URL 为已校验的首个 IP，并通过 Host 头保留原域名
+    // - HTTP 明文：直接改写请求 URL 为已校验的 IP，并通过 Host 头保留原域名
     // - HTTPS：因 TLS SNI/证书校验需用原域名建连，连接返回后立即二次复核 DNS 解析
-    let fetchTarget = current.toString()
+    // 解析结果可能有多个（localhost 常得 ::1 + 127.0.0.1），监听方却可能只绑其一：
+    // 只钉第一个 IP 时，::1 优先的机器上 localhost 出站会全灭（ECONNREFUSED，
+    // CI 2026-11-25 ISR 阶段 4 的 502×60 就是这么来的；裸 fetch 有 Happy Eyeballs
+    // 兜底才没事）。逐个候选尝试、仅连接级失败换下一个 IP——每个候选都是解析后
+    // 校验过的地址，防重绑定语义不变；取消/超时立即向上传递，不重试。
     const headers: Record<string, string> = {
       'User-Agent': opts.userAgent,
       ...carriedHeaders,
     }
-    if (!isLiteralIp && current.protocol === 'http:' && resolvedIps[0]) {
-      const pinned = new URL(current.toString())
-      const ip = resolvedIps[0]
-      pinned.hostname = isIP(ip) === 6 ? `[${ip}]` : ip
-      fetchTarget = pinned.toString()
-      if (!headers['Host'] && !headers['host']) {
+    const pinTargets: string[] = []
+    if (!isLiteralIp && current.protocol === 'http:') {
+      for (const ip of resolvedIps) {
+        const pinned = new URL(current.toString())
+        pinned.hostname = isIP(ip) === 6 ? `[${ip}]` : ip
+        pinTargets.push(pinned.toString())
+      }
+      if (pinTargets.length > 0 && !headers['Host'] && !headers['host']) {
         headers['Host'] = current.host
       }
     }
+    if (pinTargets.length === 0) pinTargets.push(current.toString())
 
-    const response = await fetch(fetchTarget, {
-      ...init,
-      redirect: 'manual',
-      // 调用方信号（客户端断开）与内部超时合并：任一路 abort 都掐断上游。
-      signal: opts.signal
-        ? AbortSignal.any([AbortSignal.timeout(opts.timeoutMs), opts.signal])
-        : AbortSignal.timeout(opts.timeoutMs),
-      headers,
-    })
+    const CONNECTION_ERRORS = new Set(['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE'])
+    let response: Response | undefined
+    let lastError: unknown
+    for (const fetchTarget of pinTargets) {
+      try {
+        response = await fetch(fetchTarget, {
+          ...init,
+          redirect: 'manual',
+          // 调用方信号（客户端断开）与内部超时合并：任一路 abort 都掐断上游。
+          signal: opts.signal
+            ? AbortSignal.any([AbortSignal.timeout(opts.timeoutMs), opts.signal])
+            : AbortSignal.timeout(opts.timeoutMs),
+          headers,
+        })
+        break
+      } catch (err) {
+        // 取消/超时是调用方的意图，立即向上传递，不换 IP 重试。
+        if (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')) throw err
+        const cause = (err as { cause?: unknown } | null)?.cause
+        const code = cause && typeof cause === 'object' ? (cause as { code?: unknown }).code : undefined
+        if (typeof code !== 'string' || !CONNECTION_ERRORS.has(code)) throw err
+        lastError = err
+      }
+    }
+    if (!response) {
+      throw lastError ?? new Error('上游连接失败')
+    }
 
     if (!isLiteralIp && current.protocol === 'https:' && !opts.allowPrivateNetworks) {
       await resolveAndCheckAddresses(current, opts)

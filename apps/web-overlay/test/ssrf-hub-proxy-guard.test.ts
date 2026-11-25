@@ -7,12 +7,17 @@
  * ③ buildPinnedHubUrl / buildHubUrl 的路径段校验与 host 钉死；
  * ④ hubGuardOptions 的 host/端口推导；
  * ⑤ 七处 sink 的源码级调用关系（走守卫出口、不用裸 fetch、不破坏流式）。
+ * ⑥ localhost 解析到多 IP（::1 在前、服务只绑 127.0.0.1）时连接失败换下一个
+ *    候选（回归：CI 2026-11-25 ISR 阶段 4 的 502×60；裸 fetch 有 Happy Eyeballs
+ *    兜底，旧实现只钉 resolvedIps[0] 没有）。
  *
  * 行为用例 mock `node:dns/promises` 与全局 fetch，与 ssrf-guard.test.ts 同口径；
  * 路由处理器本身串着 auth/会话/签名副作用，按仓库惯例只钉源码级调用关系。
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -195,6 +200,54 @@ describe('guardedFetch：外部取消信号穿透到上游', () => {
     expect(racedWhilePending).toBe('pending')
     client.abort()
     await expect(pending).rejects.toThrow(/abort/i)
+  })
+})
+
+describe('guardedFetch：解析到多 IP 时连接失败换下一个候选', () => {
+  it('localhost 解析到 ::1 在前、服务只绑 127.0.0.1 时仍能连上（回归：CI 2026-11-25 ISR 阶段 4 的 502×60）', async () => {
+    // DNS mock 返回 ::1 在前（与本机/CI runner 的 lookup 顺序一致），服务只绑
+    // 127.0.0.1：旧实现只钉 resolvedIps[0] 会 ECONNREFUSED ::1，新实现换下一个
+    // 候选 IP 后 200。测试用真 fetch + 真本地服务，不 stub fetch。
+    lookupMock.mockResolvedValue([
+      { address: '::1', family: 6 },
+      { address: '127.0.0.1', family: 4 },
+    ])
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ ok: true }))
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const port = (server.address() as AddressInfo).port
+    try {
+      const { response } = await guardedFetch(`http://localhost:${port}/api/categories`, {
+        ...hubGuardOptions(`http://localhost:${port}`),
+        timeoutMs: 5000,
+        maxBytes: 1024,
+      })
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toEqual({ ok: true })
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  it('全部候选都拒绝连接时抛错、不静默吞掉', async () => {
+    lookupMock.mockResolvedValue([
+      { address: '::1', family: 6 },
+      { address: '127.0.0.1', family: 4 },
+    ])
+    // 找一个当前无人监听的端口：先起一个服务取端口、关掉再用它。
+    const probe = createServer()
+    await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve))
+    const port = (probe.address() as AddressInfo).port
+    await new Promise<void>((resolve) => probe.close(() => resolve()))
+    await expect(
+      guardedFetch(`http://localhost:${port}/api/categories`, {
+        ...hubGuardOptions(`http://localhost:${port}`),
+        timeoutMs: 5000,
+        maxBytes: 1024,
+      }),
+    ).rejects.toThrow(/fetch failed/)
   })
 })
 

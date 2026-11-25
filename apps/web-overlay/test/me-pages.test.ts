@@ -43,8 +43,11 @@ describe('用户中心第二批页面', () => {
     expect(existsSync(join(ROOT, rel)), 'BFF 必须是可选 catch-all，否则 GET /api/me 会 404').toBe(true)
     const src = read(rel)
     expect(src).toContain("path[0] === 'sync'")
-    expect(src).toContain('const suffix = path.length > 0')
-    expect(src).toContain("HUB_BASE + '/api/me' + suffix")
+    // SSRF 2026-11-25：裸字符串拼接（const suffix / HUB_BASE + '/api/me' + suffix）
+    // 已改走 buildPinnedHubUrl + guardedFetch——path 段逐段编码、host 钉死到
+    // HUB_BASE、重定向逃离即 403。守卫跟随新接线，意图（BFF 转发到中枢 /api/me*）不变。
+    expect(src).toContain("buildPinnedHubUrl(HUB_BASE, ['me', ...path]")
+    expect(src).toContain('guardedFetch(')
   })
 
   it('搜索历史页有地标、分页与删除接线', () => {

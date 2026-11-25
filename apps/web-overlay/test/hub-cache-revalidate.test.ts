@@ -93,7 +93,9 @@ describe('写侧接线（route.ts 结构 + 顺序）', () => {
   const ROUTE = codeOnly(readFileSync(overlayFile('src/app/api/hub/[...path]/route.ts'), 'utf8'))
 
   it('失效判在上游 fetch 之后，且用同一份标签常量', () => {
-    const atFetch = ROUTE.indexOf('await fetch(target')
+    // SSRF 2026-11-25：上游出站由裸 fetch 改走 guardedFetch（host 钉死 + 逐跳校验），
+    // 顺序断言（失效判在上游调用之后）跟随新调用形态，意图不变。
+    const atFetch = ROUTE.indexOf('await guardedFetch(')
     const atInvalidate = ROUTE.indexOf('revalidateTag(HUB_CACHE_TAG')
     expect(atFetch).toBeGreaterThan(-1)
     expect(atInvalidate).toBeGreaterThan(atFetch)

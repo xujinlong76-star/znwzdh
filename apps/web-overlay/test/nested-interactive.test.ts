@@ -95,6 +95,35 @@ function readTags(src: string): Tag[] {
   return tags;
 }
 
+/**
+ * `between` 是否只含空白与 JSX 注释（线性扫描，无回溯）。
+ *
+ * 旧实现用惰性任意字符匹配套在可重复分组里，是指数级回溯（CodeQL
+ * js/redos；实测 20 个注释块时 86ms、25 个时 5.2s、30 个时 133s）。
+ * 这里逐字符走：空白跳过，注释开头找第一个闭合，其余一律判否——与旧
+ * 正则逐字符等价（惰性匹配同样取第一个闭合）。注释里不写旧正则字面量，
+ * 避免 `* /` 提前闭合本注释、也避免测试文件本身再被同一规则扫出。
+ */
+function isOnlyWhitespaceAndJsxComments(s: string): boolean {
+  let i = 0;
+  const n = s.length;
+  while (i < n) {
+    const ch = s[i]!;
+    if (/\s/.test(ch)) {
+      i++;
+      continue;
+    }
+    if (s.startsWith("{/*", i)) {
+      const end = s.indexOf("*/}", i + 3);
+      if (end < 0) return false;
+      i = end + 3;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
 interface Violation {
   tag: string;
   child: string;
@@ -110,7 +139,7 @@ function findNestedInteractive(src: string): Violation[] {
     const next = tags[k + 1];
     const between = src.slice(t.end, next.start);
     // 只允许空白与 JSX 注释
-    if (!/^\s*(?:\{\/\*[\s\S]*?\*\/\}\s*)*$/.test(between)) continue;
+    if (!isOnlyWhitespaceAndJsxComments(between)) continue;
     const linkParent = t.name === "Link" || t.name === "a";
     const buttonParent = t.name === "Button" && !/\basChild\b/.test(t.attrs);
     const childButton = next.name === "Button";
@@ -245,5 +274,34 @@ describe("全仓库不许再有嵌套可交互元素", () => {
       }
     }
     expect(problems, "嵌套可交互元素（应用 Button asChild 或把链接改成普通按钮）：\n" + problems.join("\n")).toHaveLength(0);
+  });
+});
+
+describe("isOnlyWhitespaceAndJsxComments（线性判定：旧指数正则的回归）", () => {
+  it("空白与 JSX 注释的组合都认，文本与未闭合注释都不认", () => {
+    expect(isOnlyWhitespaceAndJsxComments("")).toBe(true);
+    expect(isOnlyWhitespaceAndJsxComments("  \n\t ")).toBe(true);
+    expect(isOnlyWhitespaceAndJsxComments("{/* note */}")).toBe(true);
+    expect(isOnlyWhitespaceAndJsxComments("  {/* a */}  {/* b */} \n ")).toBe(true);
+    expect(isOnlyWhitespaceAndJsxComments("{/* a */ b */}")).toBe(true);
+    expect(isOnlyWhitespaceAndJsxComments("text")).toBe(false);
+    expect(isOnlyWhitespaceAndJsxComments("{/* unclosed")).toBe(false);
+    expect(isOnlyWhitespaceAndJsxComments("{/* a */} x")).toBe(false);
+  });
+
+  it("注释里含 */ 也只认到第一个 */}（与旧正则惰性匹配一致）", () => {
+    expect(isOnlyWhitespaceAndJsxComments("{/* a */ b */}")).toBe(true);
+    expect(isOnlyWhitespaceAndJsxComments("{/* a */ b */} x")).toBe(false);
+  });
+
+  it("30 个注释块 + 尾部杂字符：线性完成（旧正则此时已 133 秒）", () => {
+    const adversarial = "{/*a*/}".repeat(30) + "x";
+    const start = Date.now();
+    expect(isOnlyWhitespaceAndJsxComments(adversarial)).toBe(false);
+    expect(Date.now() - start).toBeLessThan(1000);
+    const ok = "{/*a*/}".repeat(30);
+    const start2 = Date.now();
+    expect(isOnlyWhitespaceAndJsxComments(ok)).toBe(true);
+    expect(Date.now() - start2).toBeLessThan(1000);
   });
 });

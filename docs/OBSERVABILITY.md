@@ -60,6 +60,43 @@ curl -fsS http://localhost:8787/api/metrics | head
 
 > `navhub_categories_total` / `navhub_tags_total` 是历史已发布的 gauge 名（规模计数），不属于 counter；守卫里单独登记，避免新增 gauge 继续占用 `_total`。
 
+### 缓存命中率 / 队列深度 / 快照新鲜度（2026-11-26 补齐）
+
+以下指标已在 `apps/api/src/metrics.ts` 实际导出，之前未登记在清单里；标签白名单仍遵循第 3 节（`result` / `kind` / `scope` / `metric` / `state` / `component`）。
+
+| 指标 | 类型 | 标签 | 含义 |
+| :--- | :--- | :--- | :--- |
+| `navhub_stats_cache_total` | counter | `result=hit|shared|miss` | 全站计数缓存命中 / 共享 / 回源次数；命中率突然掉到 0 通常是写入风暴或 TTL 被改小 |
+| `navhub_stats_refresh_seconds` | gauge | — | 全站计数最近一次刷新耗时（秒） |
+| `navhub_dashboard_cache_total` | counter | `result=hit|shared|miss` | 管理总览缓存命中 / 共享 / 回源次数 |
+| `navhub_dashboard_refresh_seconds` | gauge | — | 管理总览最近一次刷新耗时（秒） |
+| `navhub_snapshot_cache_total` | counter | `result=hit|miss` | 导航快照读缓存命中与回源；hit/miss 是「读放大有没有消掉」的直接证据 |
+| `navhub_snapshot_builds_total` | counter | — | 导航快照全量重建次数 |
+| `navhub_snapshot_build_seconds_total` | counter | — | 快照重建累计耗时（秒）；除以 builds_total = 平均重建成本 |
+| `navhub_snapshot_last_build_seconds` | gauge | — | 最近一次快照重建耗时（秒） |
+| `navhub_snapshot_last_bytes` | gauge | — | 最近一次快照的序列化体积（字节） |
+| `navhub_snapshot_degraded_reads_total` | counter | — | 版本号读不到、退回 TTL 的读取次数；持续增长 = bump 触发器失效或老库 |
+| `navhub_snapshot_data_version` | gauge | — | 当前缓存条目的导航数据版本号（0 也可能表示未取到，须结合 degraded_reads 判断） |
+| `navhub_snapshot_version_health` | gauge | `state` | 版本号健康度三态（固定全量导出，1=当前状态）：triggers_missing / unreadable 都意味着退回 TTL |
+| `navhub_jobs_pending` | gauge | `kind` | 待认领任务数（retrying 不计——退避是设计行为，不是积压） |
+| `navhub_jobs_running` | gauge | `kind` | 本进程正在执行的任务数 |
+| `navhub_job_runs_total` | counter | `kind` | 本进程完成任务执行次数（含成功 / 失败 / 超时 / 取消） |
+| `navhub_job_duration_seconds_total` | counter | `kind` | 任务执行耗时合计（秒，只算 handler）；除以 runs_total = 平均耗时 |
+| `navhub_job_failures_total` | counter | `kind` | 任务失败次数（超时另行计入 timeouts） |
+| `navhub_job_timeouts_total` | counter | `kind` | 超执行预算且已确认停手的次数（>0 说明预算偏紧或 handler 卡住） |
+| `navhub_job_cancels_total` | counter | `kind` | 按用户请求停止的任务次数（分片边界停手，已提交部分保留） |
+| `navhub_job_queue_readable` | gauge | — | 任务积压读数是否可读（0=这次读不到，积压序列退回缓存或 0）；别把读不到误判成队列清空 |
+| `navhub_llm_quota_rejected_total` | counter | `scope` / `metric` | LLM 额度闸门调用前拒绝次数（按档位与计量维度；拒绝不落 llm_usage） |
+| `navhub_llm_quota_rejected_by_reservation_total` | counter | — | 仅由在途预留造成的拒绝次数：>0 说明闸门开始吃并发 |
+| `navhub_llm_quota_settle_failures_total` | counter | — | 额度预留结算失败次数（行留表等 TTL 回收，期间白占额度） |
+| `navhub_llm_quota_reservations_active` | gauge | — | 当前未结算的预留行数（异常 / 断流残留会在这里现形） |
+| `navhub_llm_quota_reserved_tokens` | gauge | — | 当前在途预留占用的 token 合计（只用于并发判定，不参与成本统计） |
+| `navhub_search_write_failures_total` | counter | `component` | 检索写入失败次数（事件 / 零结果 / 历史 / 通道观测；四类固定导出含 0） |
+| `navhub_search_suggestions_degraded_total` | counter | — | 搜索建议读失败降级次数（建议区为空，检索命中不受影响） |
+
+> `navhub_http_request_duration_seconds_bucket` 是 summary 在开启分位时自动派生的序列，不是独立指标；口径仍以第 2 节的 `_sum` / `_count` 为准。
+
+
 ## 3. 基数保证
 
 - `route` 标签只取 Fastify 路由模板（如 `/api/sites/:id`），**绝不使用原始 URL**；查询串不会进入标签。

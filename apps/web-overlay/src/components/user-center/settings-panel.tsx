@@ -108,7 +108,7 @@ function FontSizeField({ idPrefix }: { idPrefix: string }) {
           </option>
         ))}
       </SettingsSelect>
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
+      <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
         与首页右上角的字号按钮是同一份设置，改一处两处同步；只存这台设备。
       </p>
     </div>
@@ -143,13 +143,13 @@ function HalfScreenDockField({ idPrefix }: { idPrefix: string }) {
         id={`${idPrefix}-half-screen-dock`}
         size="sm"
         variant={on ? 'outline' : 'default'}
-        className="h-7 text-[11px]"
+        className="h-7 text-[0.6875rem]"
         onClick={toggle}
         aria-pressed={on}
       >
         {on ? '已开启' : '已关闭'}
       </Button>
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
+      <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
         视口 640–1024px 时，首页底部出现一条常驻操作栏，放回半屏下工具栏里丢失的场景、密度、视图、工具箱与热度榜入口；只存这台设备。
       </p>
     </div>
@@ -253,7 +253,7 @@ function ThemeField({ idPrefix }: { idPrefix: string }) {
           </option>
         ))}
       </SettingsSelect>
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
+      <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
         {loading
           ? '正在加载已安装的主题…'
           : loadFailed
@@ -267,7 +267,7 @@ function ThemeField({ idPrefix }: { idPrefix: string }) {
                   : '使用系统默认外观；选一套主题立即换上，只存这台设备。'}
       </p>
       {themes.length === 0 && !loading && !loadFailed && (
-        <p className="text-[11px] leading-relaxed">
+        <p className="text-[0.6875rem] leading-relaxed">
           <Link href="/marketplace?kind=theme" className="font-medium text-primary underline underline-offset-2">
             去插件市场看看主题
           </Link>
@@ -278,14 +278,14 @@ function ThemeField({ idPrefix }: { idPrefix: string }) {
           <button
             type="button"
             onClick={() => void loadThemes()}
-            className="text-[11px] font-medium text-primary underline underline-offset-2"
+            className="text-[0.6875rem] font-medium text-primary underline underline-offset-2"
           >
             重新加载主题列表
           </button>
         </p>
       )}
       {error && (
-        <p role="alert" className="text-[11px] leading-relaxed text-destructive-text">
+        <p role="alert" className="text-[0.6875rem] leading-relaxed text-destructive-text">
           {error}
         </p>
       )}
@@ -313,7 +313,7 @@ function OnboardingReplayField() {
     <div className="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-background/50 p-3">
       <div className="min-w-0">
         <p className="text-xs font-medium">新手引导</p>
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
+        <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
           {dismissed === null
             ? '首页的三步引导（导入书签 / 搜索 / 收藏），关掉后可从这里重新查看。'
             : dismissed
@@ -321,7 +321,7 @@ function OnboardingReplayField() {
               : '首页的三步引导还没关过，回到首页就能看到。'}
         </p>
       </div>
-      <Button asChild size="sm" variant="outline" className="h-7 shrink-0 text-[11px]">
+      <Button asChild size="sm" variant="outline" className="h-7 shrink-0 text-[0.6875rem]">
         <Link href="/" onClick={replay}>
           {dismissed ? '重新查看新手引导' : '去首页查看引导'}
         </Link>
@@ -382,12 +382,12 @@ function ToggleRow({
           {icon}
           {title}
         </p>
-        <p className="text-[11px] leading-relaxed text-muted-foreground">{hint}</p>
+        <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">{hint}</p>
       </div>
       <Button
         size="sm"
         variant={enabled ? 'outline' : 'default'}
-        className="h-7 shrink-0 text-[11px]"
+        className="h-7 shrink-0 text-[0.6875rem]"
         disabled={busy}
         onClick={onToggle}
         aria-pressed={enabled}
@@ -414,7 +414,7 @@ function TriageSettingsSection({ busy, idPrefix }: { busy: boolean; idPrefix: st
         <Inbox className="h-4 w-4 text-sky-500" aria-hidden />
         待读分流
       </h3>
-      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+      <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
         新收藏先放进待读箱，规定时间里没打开就移到「已移出」（可找回，不会直接删掉）。
         只存这台设备，不会上传到云端；改窗口后，已有待读条目的到期时间跟着变。
         上面的「恢复默认偏好」只恢复云端偏好，不重置这里的分流设置。
@@ -450,7 +450,7 @@ function TriageSettingsSection({ busy, idPrefix }: { busy: boolean; idPrefix: st
               </option>
             ))}
           </SettingsSelect>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
+          <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
             超过这个时间没打开，就移到「已移出」。
           </p>
         </div>
@@ -473,7 +473,7 @@ function TriageSettingsSection({ busy, idPrefix }: { busy: boolean; idPrefix: st
               </option>
             ))}
           </SettingsSelect>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
+          <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
             打开后进「已读」，超过这个天数没晋升，同样移到「已移出」。
           </p>
         </div>
@@ -500,7 +500,7 @@ function HibernationSettingsSection({ busy, idPrefix }: { busy: boolean; idPrefi
         <Moon className="h-4 w-4 text-slate-500" aria-hidden />
         冬眠收藏
       </h3>
-      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+      <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
         长期没打开的收藏自动沉到收藏页底部的折叠区，不删除、不移出，随时能唤醒。
         只存这台设备，不会上传到云端；改阈值后，已有收藏的冬眠状态跟着变。
         上面的「恢复默认偏好」只恢复云端偏好，不重置这里的冬眠设置。
@@ -536,7 +536,7 @@ function HibernationSettingsSection({ busy, idPrefix }: { busy: boolean; idPrefi
               </option>
             ))}
           </SettingsSelect>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
+          <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
             超过这个天数本机没记录到打开，就沉到冬眠区（待读箱 / 已读不参与）。
           </p>
         </div>
@@ -636,7 +636,7 @@ function QuickDialSettingsSection({
         <Command className="h-4 w-4 text-primary" aria-hidden />
         数字快拨
       </h3>
-      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+      <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
         按 1–9 直接打开速览坞对应站点，Shift+数字在新标签页打开；Ctrl+Shift+1–0 打开下面绑定的站点。
         绑定在首页卡片 ⋯ 菜单（编辑态）里设置，这里只做总览与清除；快拨位只存这台设备，不会上传到云端。
       </p>
@@ -684,7 +684,7 @@ function QuickDialSettingsSection({
                   <span className="text-muted-foreground">加载中…</span>
                 )}
                 {boundId && foldedCustomSiteIds.has(boundId) && (
-                  <span className="shrink-0 text-[11px] text-amber-700 dark:text-amber-400">
+                  <span className="shrink-0 text-[0.6875rem] text-amber-700 dark:text-amber-400">
                     所在分类已折叠，展开后恢复
                   </span>
                 )}
@@ -693,7 +693,7 @@ function QuickDialSettingsSection({
                 type="button"
                 size="sm"
                 variant="ghost"
-                className="h-7 shrink-0 px-2 text-[11px] text-muted-foreground hover:text-destructive-text"
+                className="h-7 shrink-0 px-2 text-[0.6875rem] text-muted-foreground hover:text-destructive-text"
                 disabled={busy || !boundId}
                 onClick={() => setQuickDialSlot(digit, null)}
               >
@@ -719,7 +719,7 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
             <Settings2 className="h-4 w-4 shrink-0 text-primary" aria-hidden />
             全局导航、0-RTT 引擎与隐私偏好
           </h2>
-          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
             修改后立即保存并回读校验；登录状态下跨设备生效
           </p>
         </div>
@@ -748,7 +748,7 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
               </option>
             ))}
           </SettingsSelect>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
+          <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
             {value.defaultSearchEngine === 'internal'
               ? '站内检索没命中时不再自动跳转站外，只给重试与分类入口。'
               : '站内搜索没命中时，结果面板会给出用该引擎搜索这句话的直达入口。'}
@@ -772,7 +772,7 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
               </option>
             ))}
           </SettingsSelect>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
+          <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
             与首页右上角的密度切换按钮是同一份设置，改一处两处同步。
           </p>
         </div>
@@ -802,7 +802,7 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
               </option>
             ))}
           </SettingsSelect>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
+          <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
             输入框里打「/」永远是正文，只有从非输入态按下才算呼出。
           </p>
         </div>
@@ -851,7 +851,7 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
             <option value="light">始终浅色</option>
             <option value="dark">始终深色</option>
           </SettingsSelect>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
+          <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
             登录后在任何设备打开都会按这个偏好显示；本机工具栏的手动切换只影响当前设备。
           </p>
         </div>
@@ -960,8 +960,8 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
 
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-xs">
           <div className="rounded-lg border border-border/50 bg-card/40 p-2.5 space-y-1.5">
-            <span className="text-[11px] font-medium text-foreground">全局直达与唤醒</span>
-            <ul className="space-y-1 text-[11px] text-muted-foreground">
+            <span className="text-[0.6875rem] font-medium text-foreground">全局直达与唤醒</span>
+            <ul className="space-y-1 text-[0.6875rem] text-muted-foreground">
               <li className="flex items-center justify-between">
                 <span>唤醒全局搜索与命令</span>
                 <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘K 或 /</kbd>
@@ -978,8 +978,8 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
           </div>
 
           <div className="rounded-lg border border-border/50 bg-card/40 p-2.5 space-y-1.5">
-            <span className="text-[11px] font-medium text-foreground">卡片单焦点键盘动作 (A11y)</span>
-            <ul className="space-y-1 text-[11px] text-muted-foreground">
+            <span className="text-[0.6875rem] font-medium text-foreground">卡片单焦点键盘动作 (A11y)</span>
+            <ul className="space-y-1 text-[0.6875rem] text-muted-foreground">
               <li className="flex items-center justify-between">
                 <span>Tab 遍历卡片（单焦点模型）</span>
                 <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">Tab / ⇧Tab</kbd>
@@ -996,8 +996,8 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
           </div>
 
           <div className="rounded-lg border border-border/50 bg-card/40 p-2.5 space-y-1.5 sm:col-span-2 lg:col-span-1">
-            <span className="text-[11px] font-medium text-foreground">弹窗与速览层控制</span>
-            <ul className="space-y-1 text-[11px] text-muted-foreground">
+            <span className="text-[0.6875rem] font-medium text-foreground">弹窗与速览层控制</span>
+            <ul className="space-y-1 text-[0.6875rem] text-muted-foreground">
               <li className="flex items-center justify-between">
                 <span>关闭当前弹窗 / 速览层</span>
                 <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">Esc</kbd>
@@ -1014,8 +1014,8 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
           </div>
 
           <div className="rounded-lg border border-border/50 bg-card/40 p-2.5 space-y-1.5 sm:col-span-2 lg:col-span-1">
-            <span className="text-[11px] font-medium text-foreground">数字快拨</span>
-            <ul className="space-y-1 text-[11px] text-muted-foreground">
+            <span className="text-[0.6875rem] font-medium text-foreground">数字快拨</span>
+            <ul className="space-y-1 text-[0.6875rem] text-muted-foreground">
               <li className="flex items-center justify-between">
                 <span>直接打开速览坞对应站点</span>
                 <kbd className="rounded border border-border/70 bg-muted px-1.5 py-0.5 font-mono text-[10px]">1–9</kbd>

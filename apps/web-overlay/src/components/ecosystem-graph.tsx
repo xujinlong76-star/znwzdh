@@ -188,6 +188,9 @@ export function EcosystemGraph() {
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const isDraggingRef = useRef(false)
   const dragStartRef = useRef({ x: 0, y: 0 })
+  /** 拖拽平移用 rAF 合帧：mousemove 每帧最多触发一次 setPan，避免大 SVG 每事件全量重渲染 */
+  const dragRafRef = useRef<number | null>(null)
+  const pendingPanRef = useRef<{ x: number; y: number } | null>(null)
 
   const [edges, setEdges] = useState<GraphEdge[]>(DEFAULT_EDGES)
   const [liveCount, setLiveCount] = useState(0)
@@ -247,6 +250,7 @@ export function EcosystemGraph() {
   useEffect(() => {
     return () => {
       if (viewTweenRef.current !== null) cancelAnimationFrame(viewTweenRef.current)
+      if (dragRafRef.current !== null) cancelAnimationFrame(dragRafRef.current)
     }
   }, [])
 
@@ -827,14 +831,31 @@ export function EcosystemGraph() {
     if (!isDraggingRef.current) return
     // 真正拖动才算手动移动：光点下不算，避免一次点击就关掉自动 fit
     setUserMoved(true)
-    setPan({
+    const next = {
       x: e.clientX - dragStartRef.current.x,
       y: e.clientY - dragStartRef.current.y,
+    }
+    pendingPanRef.current = next
+    // 一帧内多次 mousemove 只提交最后一次；队列里已有帧就攒着不重复排。
+    if (dragRafRef.current !== null) return
+    dragRafRef.current = requestAnimationFrame(() => {
+      dragRafRef.current = null
+      if (pendingPanRef.current) setPan(pendingPanRef.current)
+      pendingPanRef.current = null
     })
   }
 
   const handleMouseUp = () => {
     isDraggingRef.current = false
+    // 收尾必须冲刷最后一帧：否则松手时指针停在两帧之间，画面落后一个位置。
+    if (dragRafRef.current !== null) {
+      cancelAnimationFrame(dragRafRef.current)
+      dragRafRef.current = null
+    }
+    if (pendingPanRef.current) {
+      setPan(pendingPanRef.current)
+      pendingPanRef.current = null
+    }
   }
 
   return (

@@ -171,6 +171,33 @@ describe("/api/me/visits（T23 访问历史）", () => {
     expect(body.hasMore).toBe(false);
   });
 
+  it("U-374：GET /api/me/visits?q= 服务端过滤——站名/链接子串，总数同口径", async () => {
+    const cat = await ctx.repo.createCategory({ title: "访问检索" });
+    const target = await ctx.repo.createSite({ url: "https://u374-visit.example.com", title: "U374 目标站", categoryId: cat.id });
+    const filler = await ctx.repo.createSite({ url: "https://u374-filler.example.com", title: "U374 填充站", categoryId: cat.id });
+    // 目标先点（最旧），再点 21 次填充站：不带 q 的第一页（20 条）里没有目标。
+    await ctx.repo.recordEvent("click", { siteId: target.id, identity: USER });
+    for (let i = 0; i < 21; i++) {
+      await ctx.repo.recordEvent("click", { siteId: filler.id, identity: USER });
+    }
+    const firstPage = await app.inject({ method: "GET", url: "/api/me/visits?limit=20", headers: userHeaders() });
+    expect(firstPage.statusCode).toBe(200);
+    expect(firstPage.json().items).toHaveLength(20);
+    expect(firstPage.json().items.some((v: { siteId: string }) => v.siteId === target.id)).toBe(false);
+    // 服务端 q 按站名命中第一页之外的目标，总数也按同一口径过滤。
+    const byTitle = await app.inject({ method: "GET", url: "/api/me/visits?limit=20&q=" + encodeURIComponent("U374 目标"), headers: userHeaders() });
+    expect(byTitle.statusCode).toBe(200);
+    expect(byTitle.json().items.map((v: { siteId: string }) => v.siteId)).toEqual([target.id]);
+    expect(byTitle.json().total).toBe(1);
+    // 链接子串 + 大小写不敏感。
+    const byUrl = await app.inject({ method: "GET", url: "/api/me/visits?limit=20&q=" + encodeURIComponent("U374-VISIT"), headers: userHeaders() });
+    expect(byUrl.json().items.map((v: { siteId: string }) => v.siteId)).toEqual([target.id]);
+    // 无匹配时总数为 0，不是全量。
+    const none = await app.inject({ method: "GET", url: "/api/me/visits?limit=20&q=" + encodeURIComponent("U374 不存在"), headers: userHeaders() });
+    expect(none.json().items).toEqual([]);
+    expect(none.json().total).toBe(0);
+  });
+
   it("未受信身份 401", async () => {
     const res = await app.inject({ method: "GET", url: "/api/me/visits" });
     expect(res.statusCode).toBe(401);

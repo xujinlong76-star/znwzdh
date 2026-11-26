@@ -20,6 +20,8 @@ import { HandoffCardWithCloud } from '@/components/handoff-card-with-cloud'
 import { SectionState } from '@/components/user-center/section-state'
 import { fetchVisitsPage, clearProfileSignals, type HubVisitItem } from '@/lib/navhub-api'
 import { safeHref } from '@/lib/safe-url'
+import { decodeSearchScope } from '@/lib/search-scope'
+import { searchHref } from '@/lib/search-page'
 import {
   batchCleanZeroResultSearchHistory,
   clearCloudSearchHistory,
@@ -37,6 +39,37 @@ type ViewState = 'loading' | 'ready' | 'error' | 'no-identity'
 type ResultFilterMode = 'all' | 'with-results' | 'zero-results'
 
 const PAGE_SIZE = 20
+
+/** U-374：关键词输入停手多久后发服务端检索（输入过程不逐字发请求）。 */
+const HISTORY_SEARCH_DEBOUNCE_MS = 300
+
+/**
+ * U-374：一条历史的「再次搜索」链接——关键词 + 当时生效的作用域（分类/标签/分面）。
+ * 无作用域时退化成纯 q 链接，与旧行为一致。
+ */
+function searchAgainHref(item: HubSearchHistoryItem): string {
+  const scope = decodeSearchScope(item.scope)
+  return searchHref({
+    q: item.query,
+    category: scope.category ?? null,
+    tag: scope.tag ?? null,
+    facets: scope.facets,
+  })
+}
+
+/** U-374：作用域的可读徽标（无作用域时为空数组，不展示）。 */
+function scopeLabels(item: HubSearchHistoryItem): string[] {
+  const scope = decodeSearchScope(item.scope)
+  const labels: string[] = []
+  if (scope.category) labels.push(`分类：${scope.category}`)
+  if (scope.tag) labels.push(`标签：${scope.tag}`)
+  if (scope.facets) {
+    for (const [key, values] of Object.entries(scope.facets)) {
+      labels.push(`${key}：${values.join('、')}`)
+    }
+  }
+  return labels
+}
 
 /** 离线快照（T24）：只存最近一页（≤20 条）+ 时间戳，会话级过期不设、随新数据覆盖；
     键名唯一事实源在 lib/recent-search.ts（清空路径共用，R4） */
@@ -91,6 +124,8 @@ export default function SearchHistoryPage() {
 
   // 检索过滤与零结果批量清理状态
   const [keyword, setKeyword] = useState('')
+  /** U-374：真正发往服务端的关键词（keyword 防抖后的值；空 = 不过滤）。 */
+  const [searchQuery, setSearchQuery] = useState('')
   const [filterMode, setFilterMode] = useState<ResultFilterMode>('all')
   const [cleaningZero, setCleaningZero] = useState(false)
   /** U-400：当前处于「已武装、待第二击确认」的零结果批量清理；false = 无武装 */
@@ -107,12 +142,20 @@ export default function SearchHistoryPage() {
   const [confirmClearVisits, setConfirmClearVisits] = useState(false)
   /** A7：访问 tab 检索关键词（与搜索 tab 的 keyword 同款，跨 tab 保留） */
   const [visitKeyword, setVisitKeyword] = useState('')
+  /** U-374：访问 tab 真正发往服务端的关键词（visitKeyword 防抖后的值）。 */
+  const [appliedVisitKeyword, setAppliedVisitKeyword] = useState('')
+  /** U-374：最近一次要求加载的访问关键词（防抖 effect 与 loadVisits 之间传话）。 */
+  const visitRequestedQRef = useRef('')
+  /** U-374：最近一次实际开始加载的访问关键词（防抖 effect 的重发门控）。 */
+  const visitLoadedQRef = useRef('')
+  /** U-374：最近一次要求加载的搜索关键词（load 的过期响应丢弃门控）。 */
+  const searchRequestedQRef = useRef('')
   /** 非空 = 当前展示的是离线快照（时间戳用于如实标注） */
   const [offlineSnapshotAt, setOfflineSnapshotAt] = useState<number | null>(null)
   /** A5：当前身份的最新值（ref 形式，供在途请求的归属比对） */
   const identityRef = useRef('')
 
-  const load = useCallback(async (id: string) => {
+  const load = useCallback(async (id: string, q = '') => {
     setIdentity(id)
     if (!id) {
       setState('no-identity')
@@ -123,10 +166,18 @@ export default function SearchHistoryPage() {
     // 降级 ≠ 空：取数失败必须落 error（带重试），不能渲染成「还没有搜索记录」——
     // 后者会让用户以为历史被清空。fetchSearchHistoryPage 的 degrade 回调正是为此存在。
     let degraded = false
-    const page = await fetchSearchHistoryPage(id, { limit: PAGE_SIZE, offset: 0 }, () => {
+    const page = await fetchSearchHistoryPage(id, { limit: PAGE_SIZE, offset: 0, q }, () => {
       degraded = true
     })
+    // U-374：防抖后又输了新词——旧 q 的在途响应直接丢弃，不覆盖新结果。
+    if (searchRequestedQRef.current !== q) return
     if (degraded) {
+      // U-374：带关键词的检索失败时不展示离线快照——快照是未过滤的第一页，
+      // 展示它会让用户以为「这些就是匹配结果」；直接落 error、带重试。
+      if (q) {
+        setState('error')
+        return
+      }
       // 离线快照（T24）：本机有最近的首页快照时展示它，并明确标注「这是快照」——
       // 有标注的旧数据好过一行错误；没有快照才落纯 error 态。
       const snapshot = readHistorySnapshot()
@@ -145,15 +196,36 @@ export default function SearchHistoryPage() {
     setHasMore(page.hasMore)
     setNextOffset(page.nextOffset)
     setState('ready')
-    writeHistorySnapshot(page.items)
+    // U-374：只给未过滤的第一页写快照；关键词检索页不是「最近历史」，不能当快照。
+    if (!q) writeHistorySnapshot(page.items)
   }, [])
+
+  // U-374：关键词防抖——停手 300ms 后才把输入变成真正发往服务端的 searchQuery；
+  // 输入过程不逐字发请求，清空输入立即回到未过滤列表。
+  useEffect(() => {
+    const q = keyword.trim()
+    if (q === searchQuery) return
+    if (!q) {
+      searchRequestedQRef.current = ''
+      // 取数放微任务：effect 同步段不触碰 setState（set-state-in-effect）
+      void Promise.resolve().then(() => setSearchQuery(''))
+      return
+    }
+    const timer = setTimeout(() => {
+      searchRequestedQRef.current = q
+      setSearchQuery(q)
+    }, HISTORY_SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [keyword, searchQuery])
 
   useEffect(() => {
     // 等身份就绪再取数：登录/合并/退出都会改变 identity，从而自动重取。
     // 取数放微任务：effect 同步段不触碰 setState（set-state-in-effect）
     if (!identityReady.ready) return
-    void Promise.resolve().then(() => load(identityReady.identity ?? ''))
-  }, [load, identityReady.ready, identityReady.identity])
+    // U-374：searchQuery 变化也走这里重取（第 0 页）；在途旧响应由 load 内门控丢弃。
+    searchRequestedQRef.current = searchQuery
+    void Promise.resolve().then(() => load(identityReady.identity ?? '', searchQuery))
+  }, [load, identityReady.ready, identityReady.identity, searchQuery])
 
   const loadMore = useCallback(async () => {
     if (!identity || loadingMore) return
@@ -162,21 +234,24 @@ export default function SearchHistoryPage() {
       // A6：加载更多失败不再静默消失——此前不传降级回调，degrade 兜底
       // 返回 { items: [], hasMore: false }，按钮直接消失、无反馈、无重试。
       // 现在降级时 toast 给反馈、hasMore/nextOffset 原样保留，按钮仍在、可重试。
+      // U-374：翻页带上当前服务端检索词，否则第 2 页起会变成未过滤的记录。
       let degraded = false
-      const page = await fetchSearchHistoryPage(identity, { limit: PAGE_SIZE, offset: nextOffset }, () => {
+      const page = await fetchSearchHistoryPage(identity, { limit: PAGE_SIZE, offset: nextOffset, q: searchQuery }, () => {
         degraded = true
       })
       if (degraded) {
         toast({ title: '加载失败', description: '云端暂不可用，请稍后重试', variant: 'destructive' })
         return
       }
+      // U-374：翻页途中用户改了关键词——旧 q 的在途页直接丢弃，不拼进新结果。
+      if (searchRequestedQRef.current !== searchQuery) return
       setItems((prev) => [...prev, ...page.items])
       setHasMore(page.hasMore)
       setNextOffset(page.nextOffset)
     } finally {
       setLoadingMore(false)
     }
-  }, [identity, loadingMore, nextOffset, toast])
+  }, [identity, loadingMore, nextOffset, toast, searchQuery])
 
   const removeItem = useCallback(async (id: number) => {
     // U-145：离线快照守卫前置到武装之前——快照态点删除不武装、不静默吞第二击。
@@ -217,6 +292,11 @@ export default function SearchHistoryPage() {
     setItems([])
     setHasMore(false)
     setNextOffset(0)
+    // U-374：清空后回到未过滤态——否则残留的关键词会让空列表显示成「没有匹配」，
+    // 用户会以为清空没生效。
+    setKeyword('')
+    searchRequestedQRef.current = ''
+    setSearchQuery('')
     // R4：清空成功后同步删快照键，否则下次降级加载会把已清空的历史当快照「复活」
     clearSearchHistorySnapshot()
     // 快照态清空成功后页面不再是快照态：同步清掉时间戳，否则「正在展示本机离线快照」横幅会残留在空列表上方
@@ -230,31 +310,20 @@ export default function SearchHistoryPage() {
   )
 
   const filteredItems = useMemo(() => {
-    const q = keyword.trim().toLowerCase()
+    // U-374：关键词检索已在服务端做（searchQuery 发往中枢），这里只剩
+    // 结果状态筛选；此前 keyword 在这里对已加载页做 client 过滤，翻不到的页永远搜不到。
     return items.filter((item) => {
       if (filterMode === 'with-results' && item.resultCount <= 0) return false
       if (filterMode === 'zero-results' && item.resultCount !== 0) return false
-      if (q && !item.query.toLowerCase().includes(q)) return false
       return true
     })
-  }, [items, keyword, filterMode])
+  }, [items, filterMode])
 
-  // U-193 方案①：检索只筛已加载页，筛选态不是「全量无结果」，按钮保留、
-  // 只改文案说明它能扩大检索范围；根治（服务端检索）另立项。
-  const isFiltering = keyword.trim() !== '' || filterMode !== 'all'
+  // U-374：检索已是服务端行为——关键词在全部历史中检索，加载更多翻的是匹配结果的下一页。
+  const isFiltering = searchQuery !== '' || filterMode !== 'all'
 
-  // A7：访问 tab 检索——与 U-193 方案①同口径，只筛已加载页（站名/链接），
-  // 加载更多可扩大检索范围；服务端检索另立项。
-  const filteredVisits = useMemo(() => {
-    const q = visitKeyword.trim().toLowerCase()
-    if (!q) return visits
-    return visits.filter(
-      (v) =>
-        (v.site?.title ?? '').toLowerCase().includes(q) ||
-        (v.site?.url ?? '').toLowerCase().includes(q),
-    )
-  }, [visits, visitKeyword])
-  const isVisitFiltering = visitKeyword.trim() !== ''
+  /** U-374：已加载的记录里有没有带作用域的——有才展示「再次搜索带作用域」的说明。 */
+  const hasScopedItems = useMemo(() => items.some((item) => item.scope !== ''), [items])
 
   const handleCleanZeroResults = useCallback(async () => {
     if (!identity || zeroResultItems.length === 0 || cleaningZero) return
@@ -293,22 +362,26 @@ export default function SearchHistoryPage() {
     }
   }, [cleaningZero, confirmCleanZero, identity, toast, zeroResultItems.length])
 
-  const loadVisits = useCallback(async (offset: number) => {
+  const loadVisits = useCallback(async (offset: number, q = '') => {
     // U-239：匿名态必须带 identity 取数（fetchVisitsPage 自报 anon 头），
     // 否则 /api/me/visits 直接 401。身份未就绪时不发请求：保持 idle，
     // identity 就绪后 effect 重跑再取，避免一次无意义的 401 落 error。
     if (visitBusy || !identity) return
+    // U-374：记下本次实际开始加载的关键词；防抖 effect 靠它判断「该 q 是否已在加载」。
+    visitLoadedQRef.current = q
     // A5：记下本次请求归属的身份；await 后若身份已变，响应直接丢弃。
     const requestIdentity = identity
     if (offset === 0) setVisitState('loading')
     setVisitBusy(true)
     let degraded = false
-    const page = await fetchVisitsPage(identity, { limit: 20, offset }, () => {
+    const page = await fetchVisitsPage(identity, { limit: 20, offset, q }, () => {
       degraded = true
     })
     setVisitBusy(false)
     // A5：身份已变（登录/退出/合并）——旧身份的在途响应不得写回列表。
     if (identityRef.current !== requestIdentity) return
+    // U-374：防抖后又输了新词——旧 q 的在途响应直接丢弃，不覆盖新结果。
+    if (visitRequestedQRef.current !== q) return
     if (degraded || page === null) {
       // 降级 ≠ 空：首次加载失败落 error（带重试），加载更多失败保持原列表
       if (offset === 0) setVisitState('error')
@@ -321,6 +394,34 @@ export default function SearchHistoryPage() {
     setVisitNextOffset(page.nextOffset)
     setVisitState('ready')
   }, [visitBusy, identity])
+
+  // U-374：访问关键词防抖——停手 300ms 后才发服务端检索；清空输入立即回到未过滤列表。
+  useEffect(() => {
+    const q = visitKeyword.trim()
+    if (q === appliedVisitKeyword) return
+    if (!q) {
+      visitRequestedQRef.current = ''
+      // 取数放微任务：effect 同步段不触碰 setState（set-state-in-effect）
+      void Promise.resolve().then(() => setAppliedVisitKeyword(''))
+      return
+    }
+    const timer = setTimeout(() => {
+      visitRequestedQRef.current = q
+      setAppliedVisitKeyword(q)
+    }, HISTORY_SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [visitKeyword, appliedVisitKeyword])
+
+  // U-374：应用后的访问关键词变化 → 当前在访问 tab 时从第 0 页重取。
+  // 门控用 visitLoadedQRef（最近一次实际开始加载的 q）：loadVisits 在途时
+  // busy 守卫会拦下本次调用，但 ref 未变，busy 翻转后 effect 重跑会补发——
+  // 关键词变化不会丢在「正在加载」的间隙里。
+  useEffect(() => {
+    if (tab !== 'visits') return
+    if (visitLoadedQRef.current === appliedVisitKeyword) return
+    // 取数放微任务：effect 同步段不触碰 setState（set-state-in-effect）
+    void Promise.resolve().then(() => loadVisits(0, appliedVisitKeyword))
+  }, [appliedVisitKeyword, tab, loadVisits])
 
   // A5：身份变化后访问历史必须失效——3c2470e3（U-239）只修了取数时传
   // 当前身份，没修「旧身份已加载的列表残留」：visitState 仍是 ready，
@@ -337,6 +438,9 @@ export default function SearchHistoryPage() {
       setVisitHasMore(false)
       setVisitNextOffset(0)
       setVisitState('idle')
+      // U-374：身份变了，已加载的关键词结果也随之失效。
+      visitLoadedQRef.current = ''
+      visitRequestedQRef.current = ''
     })
   }, [identity])
 
@@ -344,8 +448,8 @@ export default function SearchHistoryPage() {
   useEffect(() => {
     if (tab !== 'visits') return
     // 取数放微任务：effect 同步段不触碰 setState（set-state-in-effect）
-    if (visitState === 'idle') void Promise.resolve().then(() => loadVisits(0))
-  }, [tab, visitState, loadVisits])
+    if (visitState === 'idle') void Promise.resolve().then(() => loadVisits(0, appliedVisitKeyword))
+  }, [tab, visitState, loadVisits, appliedVisitKeyword])
 
   const clearVisits = useCallback(async () => {
     if (!identity || visitBusy) return
@@ -366,6 +470,11 @@ export default function SearchHistoryPage() {
     setVisitTotal(0)
     setVisitHasMore(false)
     setVisitNextOffset(0)
+    // U-374：清空后回到未过滤态——否则残留的关键词会让空列表显示成「没有匹配」。
+    setVisitKeyword('')
+    visitLoadedQRef.current = ''
+    visitRequestedQRef.current = ''
+    setAppliedVisitKeyword('')
     toast({ title: '访问记录已清空', description: '画像已按剩余行为重建；收藏与搜索历史不受影响。' })
   }, [confirmClearVisits, identity, toast, visitBusy])
 
@@ -500,7 +609,7 @@ export default function SearchHistoryPage() {
               variant="error"
               title="访问记录暂时取不到"
               description="云端暂时不可用，这不代表记录被清空——恢复后会原样回来。"
-              onRetry={() => void loadVisits(0)}
+              onRetry={() => void loadVisits(0, appliedVisitKeyword)}
             />
           )}
 
@@ -524,7 +633,8 @@ export default function SearchHistoryPage() {
                 )}
               </div>
 
-              {/* A7：访问 tab 检索框（站名/链接）+ 范围说明，与搜索 tab 同口径。 */}
+              {/* U-374：访问 tab 检索框（站名/链接）+ 范围说明——关键词发往服务端，
+                  在全部访问记录中检索，不只已加载页。 */}
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
                 <Input
@@ -535,27 +645,29 @@ export default function SearchHistoryPage() {
                   className="h-9 pl-8 text-xs"
                 />
               </div>
-              {isVisitFiltering && (
-                <p className="text-[11px] text-muted-foreground">
-                  仅检索已加载的 {visits.length} 条，加载更多可扩大检索范围
-                </p>
-              )}
+              <p className="text-[11px] text-muted-foreground">
+                {appliedVisitKeyword
+                  ? `已按关键词在全部访问记录中检索（已加载 ${visits.length} 条匹配记录）`
+                  : '关键词检索覆盖全部访问记录，不只已加载的记录'}
+              </p>
 
               {visits.length === 0 ? (
-                <SectionState
-                  variant="empty"
-                  icon={History}
-                  title="还没有站点访问记录"
-                  description="浏览站点后这里会按时间列出最近访问（只记录站点点击，不含搜索内容）。"
-                />
-              ) : filteredVisits.length === 0 ? (
-                <section className="rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center text-xs text-muted-foreground">
-                  当前筛选条件下没有匹配的访问记录。
-                </section>
+                appliedVisitKeyword ? (
+                  <section className="rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center text-xs text-muted-foreground">
+                    没有匹配「{appliedVisitKeyword}」的访问记录。
+                  </section>
+                ) : (
+                  <SectionState
+                    variant="empty"
+                    icon={History}
+                    title="还没有站点访问记录"
+                    description="浏览站点后这里会按时间列出最近访问（只记录站点点击，不含搜索内容）。"
+                  />
+                )
               ) : (
                 <>
                   <ul className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/70 bg-card/60">
-                    {filteredVisits.map((v) => (
+                    {visits.map((v) => (
                       <li key={v.id} className="flex items-center justify-between gap-3 px-4 py-3">
                         <div className="min-w-0 flex-1">
                           {v.site ? (
@@ -586,9 +698,9 @@ export default function SearchHistoryPage() {
                   </ul>
                   {visitHasMore && (
                     <div className="flex justify-center pt-1">
-                      <Button variant="outline" size="sm" className="text-xs" disabled={visitBusy} onClick={() => void loadVisits(visitNextOffset)}>
+                      <Button variant="outline" size="sm" className="text-xs" disabled={visitBusy} onClick={() => void loadVisits(visitNextOffset, appliedVisitKeyword)}>
                         {visitBusy ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-                        加载更多
+                        {appliedVisitKeyword ? '加载更多匹配记录' : '加载更多'}
                       </Button>
                     </div>
                   )}
@@ -612,11 +724,11 @@ export default function SearchHistoryPage() {
           variant="error"
           title="历史记录暂时取不到"
           description="云端暂时不可用，这不代表历史被清空——恢复后记录会原样回来。"
-          onRetry={() => void load(identityReady.identity ?? '')}
+          onRetry={() => void load(identityReady.identity ?? '', searchQuery)}
         />
       )}
 
-      {tab === 'searches' && state === 'ready' && items.length === 0 && (
+      {tab === 'searches' && state === 'ready' && items.length === 0 && searchQuery === '' && (
         <SectionState
           variant="empty"
           icon={Search}
@@ -625,7 +737,7 @@ export default function SearchHistoryPage() {
         />
       )}
 
-      {tab === 'searches' && state === 'ready' && items.length > 0 && (
+      {tab === 'searches' && state === 'ready' && (items.length > 0 || searchQuery !== '') && (
         <>
           {/* 检索与状态筛选工具栏 */}
           <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/60 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -665,21 +777,25 @@ export default function SearchHistoryPage() {
             </div>
           </div>
 
-          {/* U-193 方案①：检索范围说明——只筛已加载页，加载更多可扩大范围。 */}
+          {/* U-374：检索范围说明——关键词发往服务端，在全部历史中检索，
+              不只已加载页；加载更多翻的是匹配结果的下一页。 */}
           <p className="text-[11px] text-muted-foreground">
-            仅检索已加载的 {items.length} 条，加载更多可扩大检索范围
+            {searchQuery
+              ? `已按关键词在全部历史中检索（已加载 ${items.length} 条匹配记录）`
+              : '关键词检索覆盖全部历史，不只已加载的记录'}
           </p>
 
-          {/* U-192：历史记录未存作用域——「再次搜索」只带关键词，不保留
-              当时的分类/标签筛选；如实标注，不伪装完整。作用域存取需中枢
-              契约变更（search_history 表无 scope 列，见轮次报告）。 */}
-          <p className="text-[11px] text-muted-foreground">
-            再次搜索仅按关键词重搜，不保留当时的分类/标签筛选
-          </p>
+          {/* U-374：作用域已存进历史——「再次搜索」会带上当时的分类/标签筛选；
+              旧记录（scope 为空）仍只按关键词重搜。 */}
+          {hasScopedItems && (
+            <p className="text-[11px] text-muted-foreground">
+              再次搜索会带上当时的分类/标签筛选（带徽标的记录）
+            </p>
+          )}
 
           {filteredItems.length === 0 ? (
             <section className="rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center text-xs text-muted-foreground">
-              当前筛选条件下没有匹配的搜索历史。
+              {searchQuery ? `没有匹配「${searchQuery}」的搜索历史。` : '当前筛选条件下没有匹配的搜索历史。'}
             </section>
           ) : (
             <ul className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/70 bg-card/60">
@@ -691,7 +807,7 @@ export default function SearchHistoryPage() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link
-                        href={`/search?q=${encodeURIComponent(item.query)}`}
+                        href={searchAgainHref(item)}
                         className="line-clamp-2 break-words text-sm font-medium leading-snug text-foreground hover:text-primary hover:underline"
                         title={`再次搜索：${item.query}`}
                       >
@@ -702,6 +818,15 @@ export default function SearchHistoryPage() {
                           无命中
                         </span>
                       )}
+                      {/* U-374：当时生效的作用域徽标——点「再次搜索」会原样带上。 */}
+                      {scopeLabels(item).map((label) => (
+                        <span
+                          key={label}
+                          className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+                        >
+                          {label}
+                        </span>
+                      ))}
                     </div>
                     <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] tabular-nums text-muted-foreground">
                       <span>{formatTime(item.createdAt)}</span>
@@ -716,7 +841,7 @@ export default function SearchHistoryPage() {
                       asChild
                       className="h-8 w-8 text-muted-foreground hover:text-primary"
                     >
-                      <Link href={`/search?q=${encodeURIComponent(item.query)}`} aria-label={`再次搜索 ${item.query}`}>
+                      <Link href={searchAgainHref(item)} aria-label={`再次搜索 ${item.query}`}>
                         <ArrowUpRight className="h-3.5 w-3.5" />
                       </Link>
                     </Button>
@@ -776,7 +901,7 @@ export default function SearchHistoryPage() {
             onClick={() => void loadMore()}
           >
             {loadingMore ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-            {isFiltering ? '加载更多记录以扩大检索范围' : '加载更多'}
+            {searchQuery ? '加载更多匹配记录' : isFiltering ? '加载更多记录以扩大检索范围' : '加载更多'}
           </Button>
         </div>
       )}

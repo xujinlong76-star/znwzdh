@@ -159,6 +159,50 @@ describe("搜索历史 API", () => {
     const neither = await data("POST", "/api/search-history/batch-delete", {});
     expect(neither.statusCode).toBe(400);
   });
+
+  it("U-374：GET /api/search-history?q= 服务端过滤——命中第一页之外的记录", async () => {
+    // 目标先记（最旧），再记 24 条填充（更新）：不带 q 的第一页（20 条）里没有目标。
+    await ctx.repo.recordSearch(USER, "U374 考研资料", 7);
+    for (let i = 0; i < 24; i++) await ctx.repo.recordSearch(USER, `U374 填充 ${i}`, 1);
+    const firstPage = await data("GET", "/api/search-history?limit=20");
+    expect(firstPage.statusCode).toBe(200);
+    expect(firstPage.json().items).toHaveLength(20);
+    expect(firstPage.json().items.some((i: { query: string }) => i.query === "U374 考研资料")).toBe(false);
+    // 服务端 q 直接命中第一页之外的目标——此前前端只能对已加载页做 client 过滤。
+    const hit = await data("GET", "/api/search-history?limit=20&q=" + encodeURIComponent("U374 考研"));
+    expect(hit.statusCode).toBe(200);
+    expect(hit.json().items.map((i: { query: string }) => i.query)).toEqual(["U374 考研资料"]);
+    expect(hit.json().hasMore).toBe(false);
+    // q 只圈定本身份的记录。
+    const otherHit = await other("GET", "/api/search-history?limit=20&q=" + encodeURIComponent("U374 考研"));
+    expect(otherHit.json().items).toEqual([]);
+  });
+
+  it("U-374：POST /api/search-history 可带 scope，GET 原样返回；非法 scope 退回 ''", async () => {
+    const scope = JSON.stringify({ category: "cat-u374", tag: "chat" });
+    const res = await data("POST", "/api/search-history", { q: "U374 作用域记录", resultCount: 3, scope });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, recorded: true });
+    const page = await data("GET", "/api/search-history?limit=50&q=" + encodeURIComponent("U374 作用域记录"));
+    expect(page.json().items[0].scope).toBe(scope);
+    // 非法 scope 不让记录写失败，只按 '' 落库。
+    const bad = await data("POST", "/api/search-history", { q: "U374 脏作用域", resultCount: 1, scope: "not-json{" });
+    expect(bad.statusCode).toBe(200);
+    expect(bad.json().recorded).toBe(true);
+    const badPage = await data("GET", "/api/search-history?limit=50&q=" + encodeURIComponent("U374 脏作用域"));
+    expect(badPage.json().items[0].scope).toBe("");
+  });
+
+  it("U-374：/api/search 带分类筛选时，历史记下 scope，「再次搜索」可恢复", async () => {
+    const cat = await ctx.repo.createCategory({ title: "U374 作用域" });
+    const search = await data("GET", "/api/search?q=Data&categoryId=" + encodeURIComponent(cat.id));
+    expect(search.statusCode).toBe(200);
+    const page = await data("GET", "/api/search-history?limit=50&q=Data");
+    expect(page.statusCode).toBe(200);
+    const row = page.json().items.find((i: { query: string }) => i.query === "Data");
+    expect(row).toBeDefined();
+    expect(row.scope).toBe(JSON.stringify({ category: cat.id }));
+  });
 });
 
 describe("设置与画像信号", () => {

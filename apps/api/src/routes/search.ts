@@ -4,7 +4,7 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
-import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
+import { encodeSearchScope, MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
 import { recordSearchChannels, recordSearchSuggestionsDegraded, recordSearchWriteFailure } from "../metrics.ts";
 import { refreshUserProfile } from "../profile-service.ts";
 import { badRequest, clampFacets, FACET_MAX_JSON_LENGTH, identityTrusted, requestIdentityOf } from "./shared.ts";
@@ -285,7 +285,17 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         popular = top.filter((t) => !zeroSet.has(t.query) && t.query !== q).slice(0, 8).map((t) => t.query);
       }
       if (identity && isFirstPage && searchHistoryEnabled && !isProbe) {
-        await ctx.repo.recordSearch(identity, q, result.hits.length).catch(() => recordSearchWriteFailure("history"));
+        // U-374：把本次搜索生效的作用域（分类/标签/分面）一起记进历史，
+        // 「再次搜索」才能原样恢复；无筛选时 scope 为 ''。
+        // tag 只取 URL 能表达的单标签：input.tag 优先；tags 恰好 1 个时取它；
+        // 多标签时不记 tag（/search 的 URL 只有一个 tag 参数，记首个会
+        // 让「再次搜索」静默缩窄成部分筛选，比不记更误导）。
+        const scope = encodeSearchScope({
+          category: input.categoryId ?? undefined,
+          tag: input.tag ?? (input.tags?.length === 1 ? input.tags[0] : undefined),
+          facets,
+        });
+        await ctx.repo.recordSearch(identity, q, result.hits.length, scope).catch(() => recordSearchWriteFailure("history"));
       }
     }
     return {

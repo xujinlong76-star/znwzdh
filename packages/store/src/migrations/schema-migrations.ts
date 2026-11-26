@@ -327,6 +327,18 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     checksum: "v1_sites_sub_category_idx",
   },
   {
+    // 2026-11-27：搜索历史 scope 列（U-374）——一次搜索当时生效的分类/
+    // 标签/分面，供「再次搜索」原样恢复。列本身由 migrateColumns（每次启动
+    // 无条件跑，COLUMN_ALTERS 登记即生效）补齐，旧行得 ''（= 无作用域）；
+    // 本版本只记账，让台账可审计「哪次升级补的列」。
+    version: "20261127_search_history_scope",
+    name: "搜索历史 scope 列（U-374：再次搜索恢复作用域）",
+    up: async (db: Db) => {
+      await migrateColumns(db);
+    },
+    checksum: "v1_search_history_scope",
+  },
+  {
     // 旧版本已记账的部署不会重跑 20261107；新的 v2 只做无损冲突报告。
     // cleanTaxonomyAndDuplicates 默认 dry-run，即使 force 重跑也不会删站点。
     version: "20261126_taxonomy_dedup_safety_v2",

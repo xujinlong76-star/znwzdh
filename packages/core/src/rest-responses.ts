@@ -651,6 +651,10 @@ const SearchHistoryItemPayload = z.looseObject({
   id: z.number().int(),
   query: z.string(),
   resultCount: z.number().int(),
+  // U-374：当时生效的搜索作用域（encodeSearchScope 的产物，'' = 无作用域）。
+  // 旧行由迁移补 ''，服务端永远返回字符串，所以这里是必填而不是 optional——
+  // 契约缺了它，前端「再次搜索」就没值可拼（U-192 的根因正是契约里没这个字段）。
+  scope: z.string(),
   createdAt: z.number(),
 });
 

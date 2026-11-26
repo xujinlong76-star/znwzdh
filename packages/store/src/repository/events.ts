@@ -10,6 +10,7 @@ import {
   encodeKeysetCursor,
   parseKeysetCursor,
 } from "../keyset.ts";
+import { containsLike } from "../sql-like.ts";
 
 /**
  * 幂等键的可接受形态：有界、只含字母数字与 `-`/`_`。
@@ -169,18 +170,34 @@ export async function listVisitsPage(
   limit: number,
   offset: number,
   cursor?: string,
+  // U-374：服务端关键词检索——非空时只返回站名/链接含 q 的访问记录。
+  // 必须 JOIN sites：events 行本身只有 site_id，用户眼里的标题/链接在 sites 表。
+  // LEFT JOIN：站点被软删（行仍在、title/url 仍在）或已不在库时，行本身不丢，
+  // 只是 title/url 为 NULL、不参与匹配（与无 q 时「站点已不在中枢」的展示一致）。
+  q = "",
 ): Promise<{ items: VisitItem[]; hasMore: boolean; nextCursor: string | null }> {
   const capped = Math.min(Math.max(limit, 1), 50);
   // Keyset 键（M12）：id DESC 单键——events.id 是自增主键，本身就是全序。
+  // 列名写 e.id：本查询 JOIN 了 sites，裸 id 在双方言下都有歧义。
   const keysetValues = parseKeysetCursor(cursor, 1);
   const keyset = keysetValues
-    ? buildKeysetPredicate([{ column: "id", direction: "DESC" }], keysetValues)
+    ? buildKeysetPredicate([{ column: "e.id", direction: "DESC" }], keysetValues)
     : null;
+  const keyword = q.trim();
+  const siteFilter = keyword
+    ? " AND (lower(s.title) LIKE ? ESCAPE '!' OR lower(s.url) LIKE ? ESCAPE '!')"
+    : "";
+  const siteParams: unknown[] = keyword
+    ? [containsLike(keyword.toLowerCase()), containsLike(keyword.toLowerCase())]
+    : [];
   const rows = await repo.raw(
-    "SELECT id, site_id, created_at FROM events WHERE identity = ? AND kind = 'click' AND site_id IS NOT NULL" +
+    "SELECT e.id, e.site_id, e.created_at FROM events e LEFT JOIN sites s ON s.id = e.site_id WHERE e.identity = ? AND e.kind = 'click' AND e.site_id IS NOT NULL" +
+      siteFilter +
       (keyset ? ` AND ${keyset.sql}` : "") +
-      ` ORDER BY id DESC LIMIT ?${keyset ? "" : " OFFSET ?"}`,
-    keyset ? [identity, ...keyset.params, capped + 1] : [identity, capped + 1, Math.max(0, offset)],
+      ` ORDER BY e.id DESC LIMIT ?${keyset ? "" : " OFFSET ?"}`,
+    keyset
+      ? [identity, ...siteParams, ...keyset.params, capped + 1]
+      : [identity, ...siteParams, capped + 1, Math.max(0, offset)],
   );
   const hasMore = rows.length > capped;
   const items = (hasMore ? rows.slice(0, capped) : rows).map((r) => ({
@@ -193,9 +210,21 @@ export async function listVisitsPage(
   return { items, hasMore, nextCursor: last ? encodeKeysetCursor([last.id]) : null };
 }
 
-export async function countVisits(repo: Repository, identity: string): Promise<number> {
+export async function countVisits(repo: Repository, identity: string, q = ""): Promise<number> {
+  // U-374：q 非空时总数也要按同一过滤口径算，否则列表是过滤后的、总数却是全量的。
+  const keyword = q.trim();
+  const siteFilter = keyword
+    ? " AND (lower(s.title) LIKE ? ESCAPE '!' OR lower(s.url) LIKE ? ESCAPE '!')"
+    : "";
+  const siteParams: unknown[] = keyword
+    ? [containsLike(keyword.toLowerCase()), containsLike(keyword.toLowerCase())]
+    : [];
   const row = (
-    await repo.raw("SELECT COUNT(*) AS c FROM events WHERE identity = ? AND kind = 'click' AND site_id IS NOT NULL", [identity])
+    await repo.raw(
+      "SELECT COUNT(*) AS c FROM events e LEFT JOIN sites s ON s.id = e.site_id WHERE e.identity = ? AND e.kind = 'click' AND e.site_id IS NOT NULL" +
+        siteFilter,
+      [identity, ...siteParams],
+    )
   )[0];
   return Number(row?.c ?? 0);
 }

@@ -89,6 +89,11 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "api_tokens", column: "revoked_at", sqlite: "INTEGER", pg: "BIGINT" },
   { table: "api_tokens", column: "rotated_at", sqlite: "INTEGER", pg: "BIGINT" },
   { table: "api_tokens", column: "token_prefix", sqlite: "TEXT", pg: "TEXT" },
+  // 搜索历史作用域（U-374）：一次搜索当时生效的分类/标签/分面（JSON 串，
+  // 编解码见 @navhub/core 的 search-scope.ts）。列 NOT NULL DEFAULT ''：
+  // 旧行由本条 ALTER 补 ''（= 无作用域），读路径永远拿到字符串；
+  // 只改 CREATE TABLE 的话存量库永远缺列，所以 ALTER 必须同步登记。
+  { table: "search_history", column: "scope", sqlite: "TEXT NOT NULL DEFAULT ''", pg: "TEXT NOT NULL DEFAULT ''" },
   // 行为事件身份独立列（原藏在 meta JSON 里，LIKE 过滤走不了索引）。
   // 补齐后由 migrateEventIdentity 从 meta 回填历史行。
   { table: "events", column: "identity", sqlite: "TEXT", pg: "TEXT" },

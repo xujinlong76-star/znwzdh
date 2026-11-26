@@ -160,7 +160,7 @@ describe('U-228：访问 tab 下不出现搜索历史「加载更多」', () => 
 
   it('断言 2：搜索 tab 下唯一加载更多——访问块守 visitHasMore 且接 loadVisits', () => {
     const visitBlock = visitLoadMoreBlock(PAGE)
-    expect(visitBlock).toContain('onClick={() => void loadVisits(visitNextOffset)}')
+    expect(visitBlock).toContain('onClick={() => void loadVisits(visitNextOffset, appliedVisitKeyword)}')
     expect(visitBlock).not.toContain('loadMore()')
     // 访问块在 visits 分支内：其前最近的 tab 分支条件是 visits。
     const visitIdx = PAGE.indexOf('visitHasMore && (')
@@ -183,20 +183,21 @@ describe('U-228：访问 tab 下不出现搜索历史「加载更多」', () => 
   })
 })
 
-describe('U-193 方案①：筛选态下按钮不藏、只改文案 + 检索范围说明', () => {
-  it('断言 1：检索框下方有范围说明文案，N 为已加载动态条数', () => {
-    expect(PAGE).toContain('仅检索已加载的 {items.length} 条，加载更多可扩大检索范围')
+describe('U-374（原 U-193 方案①）：检索已走服务端，范围说明与按钮文案同步更新', () => {
+  it('断言 1：检索框下方是服务端范围说明文案，旧「仅检索已加载」文案已删', () => {
+    expect(PAGE).toContain('已按关键词在全部历史中检索')
+    expect(PAGE).not.toContain('仅检索已加载的 {items.length} 条，加载更多可扩大检索范围')
     // 文案在搜索 tab 分支内（检索工具栏之后、列表之前）。
-    const branchIdx = PAGE.indexOf("tab === 'searches' && state === 'ready' && items.length > 0")
-    const noteIdx = PAGE.indexOf('仅检索已加载的 {items.length} 条')
+    const branchIdx = PAGE.indexOf("tab === 'searches' && state === 'ready' && (items.length > 0 || searchQuery !== '')")
+    const noteIdx = PAGE.indexOf('已按关键词在全部历史中检索')
     expect(branchIdx, '搜索分支应存在').toBeGreaterThanOrEqual(0)
     expect(noteIdx, '范围说明应在搜索分支内').toBeGreaterThan(branchIdx)
   })
 
-  it('断言 2：筛选态（keyword 非空或 filterMode 非 all）下按钮文案为扩大检索范围', () => {
-    expect(PAGE).toContain("const isFiltering = keyword.trim() !== '' || filterMode !== 'all'")
+  it('断言 2：筛选态（searchQuery 非空或 filterMode 非 all）下按钮文案分三档', () => {
+    expect(PAGE).toContain("const isFiltering = searchQuery !== '' || filterMode !== 'all'")
     const block = bottomSearchLoadMoreBlock(PAGE)
-    expect(block).toContain("{isFiltering ? '加载更多记录以扩大检索范围' : '加载更多'}")
+    expect(block).toContain("{searchQuery ? '加载更多匹配记录' : isFiltering ? '加载更多记录以扩大检索范围' : '加载更多'}")
   })
 
   it('断言 3：筛选态不藏按钮——底部按钮渲染条件里无筛选态门控', () => {
@@ -261,7 +262,7 @@ describe('U-239：匿名访问历史 401——fetchVisitsPage 自报 anon 身份
     const body = fetchVisitsPageBody(NAVHUB_API)
     assertOrder(
       body,
-      ["'/api/me/visits?limit=' + limit + '&offset=' + offset,", 'anonHeaders(identity)'],
+      ["'/api/me/visits?limit=' + limit + '&offset=' + offset + (q ? '&q=' + encodeURIComponent(q) : '')", 'anonHeaders(identity)'],
       'fetchVisitsPage 取数',
     )
     // getJson 第三参就是 extraHeaders：头不到代理，verdict 即 anonymous。
@@ -315,7 +316,7 @@ function loadVisitsBody(src: string): string {
 describe('U-239（页面接线）：历史页访问 tab 用当前身份取数', () => {
   it('断言 1：loadVisits 传 identity 调 fetchVisitsPage，身份未就绪不发请求', () => {
     const body = loadVisitsBody(PAGE)
-    expect(body).toContain('fetchVisitsPage(identity, { limit: 20, offset }')
+    expect(body).toContain('fetchVisitsPage(identity, { limit: 20, offset, q }')
     // 守卫先于取数：visitBusy 或 identity 为空直接 return，不产生 401。
     assertOrder(
       body,
@@ -334,10 +335,10 @@ describe('U-239（页面接线）：历史页访问 tab 用当前身份取数', 
   })
 
   it('断言 3：搜索 tab 取数不受影响——仍用 fetchSearchHistoryPage(identity, …)', () => {
-    expect(PAGE).toContain('fetchSearchHistoryPage(id, { limit: PAGE_SIZE, offset: 0 }')
+    expect(PAGE).toContain('fetchSearchHistoryPage(id, { limit: PAGE_SIZE, offset: 0, q }')
     // A6 起 loadMore 传降级回调（失败 toast + 保留 hasMore）：调用仍是同一
     // 函数/同一身份/同一分页，回调只接失败事实，不改变取数口径。
-    expect(PAGE).toContain('fetchSearchHistoryPage(identity, { limit: PAGE_SIZE, offset: nextOffset }, () => {')
+    expect(PAGE).toContain('fetchSearchHistoryPage(identity, { limit: PAGE_SIZE, offset: nextOffset, q: searchQuery }, () => {')
     // 访问取数不走搜索接口、不复用搜索分页状态。
     const body = loadVisitsBody(PAGE)
     expect(body).not.toContain('fetchSearchHistoryPage')

@@ -757,13 +757,15 @@ async savedPluginEmbeddings(filter?: {
     limit: number,
     offset: number,
     cursor?: string,
+    // U-374：服务端关键词检索——非空时只返回站名/链接含 q 的记录（大小写不敏感）。
+    q = "",
   ): Promise<{ items: eventsRepo.VisitItem[]; hasMore: boolean; nextCursor: string | null }> {
-    return eventsRepo.listVisitsPage(this, identity, limit, offset, cursor);
+    return eventsRepo.listVisitsPage(this, identity, limit, offset, cursor, q);
   }
 
   /** 该身份的访问历史总条数（T23） */
-  async countVisits(identity: string): Promise<number> {
-    return eventsRepo.countVisits(this, identity);
+  async countVisits(identity: string, q = ""): Promise<number> {
+    return eventsRepo.countVisits(this, identity, q);
   }
 
   async audit(entry: { actor: string; actorKind?: string; action: string; target?: string; diff?: unknown; ip?: string }): Promise<void> {
@@ -1245,8 +1247,8 @@ async savedPluginEmbeddings(filter?: {
 
   /* ------------------------- 搜索历史 ------------------------- */
 
-  async recordSearch(userId: string, query: string, resultCount: number): Promise<void> {
-    return historyRepo.recordSearch(this, userId, query, resultCount);
+  async recordSearch(userId: string, query: string, resultCount: number, scope = ""): Promise<void> {
+    return historyRepo.recordSearch(this, userId, query, resultCount, scope);
   }
 
   async listSearchHistory(userId: string, limit = 10): Promise<historyRepo.SearchHistoryItem[]> {
@@ -1257,8 +1259,10 @@ async savedPluginEmbeddings(filter?: {
     userId: string,
     limit: number,
     offset: number,
+    // U-374：服务端关键词检索——非空时只返回查询词含 q 的记录（大小写不敏感）。
+    q = "",
   ): Promise<{ items: historyRepo.SearchHistoryItem[]; hasMore: boolean }> {
-    return historyRepo.listSearchHistoryPage(this, userId, limit, offset);
+    return historyRepo.listSearchHistoryPage(this, userId, limit, offset, q);
   }
 
   async deleteSearchHistoryItem(userId: string, id: number): Promise<boolean> {

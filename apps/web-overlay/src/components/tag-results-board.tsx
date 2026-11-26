@@ -70,7 +70,8 @@ export function TagResultsBoard({
   }, [sites, filterQuery])
 
   // 标签内即时筛选的查询也要进搜索历史（计数取当前匹配数）
-  useLocalSearchRecorder(filterQuery, filteredSites.length)
+  // U-374：把当时生效的标签一起记下，历史页「再次搜索」才能恢复它。
+  useLocalSearchRecorder(filterQuery, filteredSites.length, { tag: slug })
 
   const reload = () => setReloadToken((n) => n + 1)
 

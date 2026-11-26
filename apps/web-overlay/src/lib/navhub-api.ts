@@ -1697,16 +1697,20 @@ export type HubSearchHistoryItem = SearchHistoryPageResponse['items'][number]
 
 export async function fetchSearchHistoryPage(
   identity: string,
-  options: { limit?: number; offset?: number } = {},
+  options: { limit?: number; offset?: number; q?: string } = {},
   onDegraded?: DegradedHandler,
 ): Promise<SearchHistoryPageResponse> {
   const limit = options.limit ?? 20
   const offset = options.offset ?? 0
+  // U-374：服务端关键词检索——q 非空时中枢只返回查询词含 q 的记录（大小写不敏感），
+  // 而不是前端对已加载页做 client 过滤（翻不到的页永远搜不到）。
+  const q = (options.q ?? '').trim()
+  const qs = '/api/search-history?limit=' + limit + '&offset=' + offset + (q ? '&q=' + encodeURIComponent(q) : '')
   return degrade(
     { items: [], hasMore: false, nextOffset: offset },
     () =>
       getJson<SearchHistoryPageResponse>(
-        '/api/search-history?limit=' + limit + '&offset=' + offset,
+        qs,
         undefined,
         anonHeaders(identity),
       ),
@@ -1796,16 +1800,19 @@ export interface HubVisitItem {
  */
 export async function fetchVisitsPage(
   identity: string,
-  options: { limit?: number; offset?: number } = {},
+  options: { limit?: number; offset?: number; q?: string } = {},
   onDegraded?: DegradedHandler,
 ): Promise<{ items: HubVisitItem[]; total: number; hasMore: boolean; nextOffset: number } | null> {
   const limit = options.limit ?? 20
   const offset = options.offset ?? 0
+  // U-374：服务端关键词检索——q 非空时中枢只返回站名/链接含 q 的记录，与搜索历史同款。
+  const q = (options.q ?? '').trim()
+  const qs = '/api/me/visits?limit=' + limit + '&offset=' + offset + (q ? '&q=' + encodeURIComponent(q) : '')
   return degrade(
     null,
     async () => {
       const data = await getJson<{ items?: HubVisitItem[]; total?: number; hasMore?: boolean; nextOffset?: number }>(
-        '/api/me/visits?limit=' + limit + '&offset=' + offset,
+        qs,
         undefined,
         anonHeaders(identity),
       )

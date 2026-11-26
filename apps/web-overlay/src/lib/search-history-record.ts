@@ -216,6 +216,9 @@ async function degrade<T>(fallback: T, run: () => Promise<T>, onDegraded?: Degra
  * 实际展示的命中数」（本页筛选后的匹配数），服务端只记历史、不跑检索、
  * 不写 search 事件；同一查询 5 分钟内重复只刷新（服务端去重）。
  *
+ * U-374：调用方把当时生效的作用域（分类/标签）一起传进来，服务端原样落
+ * 库，历史页「再次搜索」才能恢复它；不传就是无作用域（''）。
+ *
  * fire-and-forget：失败（云端不可用、开关关了）只返回 false，不抛错、
  * 不弹提示——记录历史是附带行为，不能打断用户正在做的筛选。
  */
@@ -224,9 +227,15 @@ export async function recordLocalSearchHistory(
   query: string,
   resultCount: number,
   onDegraded?: DegradedHandler,
+  // U-374：当时生效的作用域——已编码的字符串（encodeSearchScope 的产物，
+  // 调用方负责编码；本模块是轻量发送端，不 import 编解码器，见 bundle-guard）。
+  // 不传 = 无作用域。
+  scope?: string,
 ): Promise<boolean> {
   const q = query.trim()
   if (!q || !identity) return false
+  // 有作用域才带 scope 字段；无作用域不发，服务端按 '' 落库。
+  const encodedScope = scope ?? ''
   return degrade(
     false,
     async () => {
@@ -237,6 +246,7 @@ export async function recordLocalSearchHistory(
           q,
           resultCount: Math.max(0, Math.trunc(resultCount)),
           searchHistoryEnabled: readLocalUserSettings().searchHistoryEnabled,
+          ...(encodedScope ? { scope: encodedScope } : {}),
         },
         undefined,
         anonHeaders(identity),

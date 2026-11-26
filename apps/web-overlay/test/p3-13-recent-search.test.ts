@@ -40,6 +40,8 @@ function historyItem(over: Partial<HubSearchHistoryItem> & { id: number; query: 
     id,
     query,
     resultCount: 3,
+    // U-374：scope 是必带字段（服务端总返回，旧记录为 ''）；默认无作用域。
+    scope: '',
     createdAt: 1700000000000,
     ...rest,
   }

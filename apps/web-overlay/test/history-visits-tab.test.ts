@@ -67,12 +67,12 @@ describe('A4：访问 tab 不被搜索 state 绑架', () => {
     const visitIdx = PAGE.indexOf("{tab === 'visits' && (")
     const visitBlock = PAGE.slice(visitIdx, visitIdx + 4000)
     expect(visitBlock).toContain("visitState === 'error'")
-    expect(visitBlock).toContain('onRetry={() => void loadVisits(0)}')
+    expect(visitBlock).toContain('onRetry={() => void loadVisits(0, appliedVisitKeyword)}')
   })
 
   it('断言 4：搜索空态与搜索列表仍只在搜索 tab 下（不回归）', () => {
-    expect(PAGE).toContain("{tab === 'searches' && state === 'ready' && items.length === 0 && (")
-    expect(PAGE).toContain("{tab === 'searches' && state === 'ready' && items.length > 0 && (")
+    expect(PAGE).toContain("{tab === 'searches' && state === 'ready' && items.length === 0 && searchQuery === '' && (")
+    expect(PAGE).toContain("{tab === 'searches' && state === 'ready' && (items.length > 0 || searchQuery !== '') && (")
     expect(PAGE).toContain("{tab === 'searches' && state === 'ready' && hasMore && (")
   })
 })
@@ -112,14 +112,14 @@ describe('A5：身份变化后访问历史不重取、旧身份残留', () => {
     expect(start, '切 tab effect 应存在').toBeGreaterThanOrEqual(0)
     const body = PAGE.slice(start, PAGE.indexOf('const clearVisits', start))
     expect(body).toContain("if (tab !== 'visits') return")
-    expect(body).toContain("if (visitState === 'idle') void Promise.resolve().then(() => loadVisits(0))")
+    expect(body).toContain("if (visitState === 'idle') void Promise.resolve().then(() => loadVisits(0, appliedVisitKeyword))")
   })
 })
 
 describe('A6：搜索加载更多失败静默消失', () => {
   it('断言 1：loadMore 传降级回调——失败事实不再被 degrade 吞掉', () => {
     const body = callbackBody(PAGE, 'loadMore')
-    expect(body).toContain('fetchSearchHistoryPage(identity, { limit: PAGE_SIZE, offset: nextOffset }, () => {')
+    expect(body).toContain('fetchSearchHistoryPage(identity, { limit: PAGE_SIZE, offset: nextOffset, q: searchQuery }, () => {')
     expect(body).toContain('let degraded = false')
     expect(body).toContain('degraded = true')
   })
@@ -149,20 +149,32 @@ describe('A6：搜索加载更多失败静默消失', () => {
   })
 })
 
-describe('U-192：历史「再次搜索」只带 q——根因在数据模型，web 侧修不好', () => {
-  it('断言 1：两处「再次搜索」都只拼 q（现状如实保留，不硬凑 scope）', () => {
-    expect(PAGE).toContain("href={`/search?q=${encodeURIComponent(item.query)}`}")
-    // 标题链接与图标按钮各一处，共两处；没有第三处拼 category/tag 的链接。
-    expect(PAGE.split("href={`/search?q=${encodeURIComponent(item.query)}`}").length - 1).toBe(2)
-    expect(PAGE).not.toContain('category=${')
-    expect(PAGE).not.toContain('tag=${')
+describe('U-374（原 U-192）：历史「再次搜索」恢复作用域——scope 已进数据模型', () => {
+  it('断言 1：两处「再次搜索」都走 searchAgainHref（关键词 + 作用域），不再裸拼 q', () => {
+    expect(PAGE).toContain('href={searchAgainHref(item)}')
+    // 标题链接与图标按钮各一处，共两处；没有第三处裸拼 q 的链接。
+    expect(PAGE.split('href={searchAgainHref(item)}').length - 1).toBe(2)
+    expect(PAGE).not.toContain("href={`/search?q=${encodeURIComponent(item.query)}`}")
   })
 
-  it('断言 2：旧条目如实标「仅关键词」降级展示，不伪装完整', () => {
-    expect(PAGE).toContain('再次搜索仅按关键词重搜，不保留当时的分类/标签筛选')
+  it('断言 2：searchAgainHref 用 searchHref 拼 category/tag/facets', () => {
+    const start = PAGE.indexOf('function searchAgainHref(item: HubSearchHistoryItem): string {')
+    expect(start, 'searchAgainHref 应存在').toBeGreaterThanOrEqual(0)
+    const body = PAGE.slice(start, PAGE.indexOf('\n}\n', start))
+    expect(body).toContain('decodeSearchScope(item.scope)')
+    expect(body).toContain('searchHref({')
+    expect(body).toContain('category: scope.category ?? null')
+    expect(body).toContain('tag: scope.tag ?? null')
+    expect(body).toContain('facets: scope.facets')
   })
 
-  it('断言 3：GET 契约 items 无 scope 具名字段——没值可拼，不是链接写漏了', () => {
+  it('断言 3：作用域以徽标展示，旧记录（无 scope）不伪装', () => {
+    expect(PAGE).toContain('scopeLabels(item).map((label) => (')
+    expect(PAGE).toContain('再次搜索会带上当时的分类/标签筛选')
+    expect(PAGE).not.toContain('再次搜索仅按关键词重搜，不保留当时的分类/标签筛选')
+  })
+
+  it('断言 4：GET 契约 items 有 scope 具名字段——有值可拼', () => {
     const contracts = overlaySource('src/lib/rest-contracts.generated.ts')
     const start = contracts.indexOf('export interface SearchHistoryPageResponse {')
     expect(start, 'SearchHistoryPageResponse 应存在').toBeGreaterThanOrEqual(0)
@@ -170,61 +182,101 @@ describe('U-192：历史「再次搜索」只带 q——根因在数据模型，
     expect(block).toContain('id: number')
     expect(block).toContain('query: string')
     expect(block).toContain('resultCount: number')
+    expect(block).toContain('scope: string')
     expect(block).toContain('createdAt: number')
-    expect(block).not.toContain('category')
-    expect(block).not.toContain('tag')
-    expect(block).not.toContain('facet')
   })
 
-  it('断言 4：写入侧 POST 体无 scope——recordLocalSearchHistory 只发 q/结果数/开关', () => {
+  it('断言 5：写入侧 POST 体可带 scope——recordLocalSearchHistory 有作用域才发', () => {
     const writer = overlaySource('src/lib/search-history-record.ts')
     const start = writer.indexOf("'/api/search-history',")
     expect(start, 'POST /api/search-history 调用应存在').toBeGreaterThanOrEqual(0)
-    const call = writer.slice(start, start + 600)
+    const call = writer.slice(start, start + 800)
     expect(call).toContain('q,')
     expect(call).toContain('resultCount:')
     expect(call).toContain('searchHistoryEnabled:')
-    expect(call).not.toContain('category')
-    expect(call).not.toContain('facets')
+    expect(call).toContain('scope: encodedScope')
+    expect(writer).toContain('scope?: string')
   })
 })
 
-describe('A7：访问 tab 无检索', () => {
-  it('断言 1：filteredVisits 只筛已加载页（站名/链接），空关键词返回全部', () => {
-    const start = PAGE.indexOf('const filteredVisits = useMemo')
-    expect(start, 'filteredVisits 应存在').toBeGreaterThanOrEqual(0)
-    const body = PAGE.slice(start, PAGE.indexOf('const isVisitFiltering', start))
-    expect(body).toContain("if (!q) return visits")
-    expect(body).toContain("(v.site?.title ?? '').toLowerCase().includes(q)")
-    expect(body).toContain("(v.site?.url ?? '').toLowerCase().includes(q)")
-    expect(PAGE).toContain("const [visitKeyword, setVisitKeyword] = useState('')")
-    expect(PAGE).toContain("const isVisitFiltering = visitKeyword.trim() !== ''")
+describe('U-374（原 A7）：访问 tab 检索走服务端', () => {
+  it('断言 1：不再 client 过滤已加载页——filteredVisits 已删，取数带 q', () => {
+    expect(PAGE).not.toContain('filteredVisits')
+    expect(PAGE).not.toContain('const isVisitFiltering')
+    expect(PAGE).toContain('const [appliedVisitKeyword, setAppliedVisitKeyword] = useState')
+    const start = PAGE.indexOf('const loadVisits = useCallback')
+    expect(start, 'loadVisits 应存在').toBeGreaterThanOrEqual(0)
+    const body = PAGE.slice(start, PAGE.indexOf('}, [', start))
+    expect(body).toContain('async (offset: number, q = ')
+    expect(body).toContain('fetchVisitsPage(identity, { limit: 20, offset, q }')
   })
 
-  it('断言 2：检索框 + 范围说明——与 U-193 方案①同口径', () => {
+  it('断言 2：fetchVisitsPage 把 q 发往服务端', () => {
+    const api = overlaySource('src/lib/navhub-api.ts')
+    const start = api.indexOf('export async function fetchVisitsPage(')
+    expect(start, 'fetchVisitsPage 应存在').toBeGreaterThanOrEqual(0)
+    const body = api.slice(start, api.indexOf('\n}\n', start))
+    expect(body).toContain('q?: string')
+    expect(body).toContain("'&q=' + encodeURIComponent(q)")
+  })
+
+  it('断言 3：检索框 + 服务端范围说明；筛空与无记录是两个互斥空态', () => {
     expect(PAGE).toContain('aria-label="筛选访问历史"')
     expect(PAGE).toContain('placeholder="输入站名或链接筛选访问记录…"')
-    expect(PAGE).toContain('仅检索已加载的 {visits.length} 条，加载更多可扩大检索范围')
-  })
-
-  it('断言 3：列表渲染 filteredVisits；筛空与无记录是两个互斥空态', () => {
+    expect(PAGE).toContain('已按关键词在全部访问记录中检索')
+    expect(PAGE).not.toContain('仅检索已加载的 {visits.length} 条，加载更多可扩大检索范围')
     const visitIdx = PAGE.indexOf("{tab === 'visits' && (")
     const visitBlock = PAGE.slice(visitIdx)
-    expect(visitBlock).toContain('{filteredVisits.map((v) => (')
-    expect(visitBlock).toContain('当前筛选条件下没有匹配的访问记录。')
+    expect(visitBlock).toContain('{visits.map((v) => (')
+    expect(visitBlock).toContain('没有匹配「{appliedVisitKeyword}」的访问记录。')
     expect(visitBlock).toContain('还没有站点访问记录')
-    // 筛空分支在无记录分支之后、列表之前：顺序即语义。
+    // 筛空分支在无记录分支之内、列表之前：顺序即语义。
     assertOrder(
       visitBlock,
-      ['visits.length === 0 ?', '还没有站点访问记录', 'filteredVisits.length === 0 ?', '当前筛选条件下没有匹配的访问记录。', '{filteredVisits.map((v) => ('],
+      ['visits.length === 0 ?', '还没有站点访问记录', '{visits.map((v) => ('],
       '访问 tab 空态顺序',
     )
   })
 
-  it('断言 4：筛选态不藏「加载更多」——仍接 loadVisits，可扩大检索范围', () => {
+  it('断言 4：筛选态不藏「加载更多」——翻页与重试都带 q', () => {
     const visitIdx = PAGE.indexOf("{tab === 'visits' && (")
     const visitBlock = PAGE.slice(visitIdx)
-    expect(visitBlock).toContain('onClick={() => void loadVisits(visitNextOffset)}')
+    expect(visitBlock).toContain('onClick={() => void loadVisits(visitNextOffset, appliedVisitKeyword)}')
+    expect(visitBlock).toContain('onRetry={() => void loadVisits(0, appliedVisitKeyword)}')
     expect(visitBlock).toContain('{visitHasMore && (')
+    expect(visitBlock).toContain("{appliedVisitKeyword ? '加载更多匹配记录' : '加载更多'}")
+  })
+})
+
+describe('U-374：搜索 tab 检索走服务端', () => {
+  it('断言 1：不再 client 过滤已加载页——filteredItems 只剩结果状态筛选', () => {
+    expect(PAGE).not.toContain('item.query.toLowerCase().includes(q)')
+    const start = PAGE.indexOf('const filteredItems = useMemo')
+    expect(start, 'filteredItems 应存在').toBeGreaterThanOrEqual(0)
+    const body = PAGE.slice(start, PAGE.indexOf('}, [', start))
+    expect(body).toContain("filterMode === 'with-results'")
+    expect(body).toContain("filterMode === 'zero-results'")
+  })
+
+  it('断言 2：关键词防抖后发往服务端，翻页与重试都带 q', () => {
+    expect(PAGE).toContain('const [searchQuery, setSearchQuery] = useState')
+    expect(PAGE).toContain('HISTORY_SEARCH_DEBOUNCE_MS')
+    expect(PAGE).toContain('fetchSearchHistoryPage(id, { limit: PAGE_SIZE, offset: 0, q }')
+    expect(PAGE).toContain('fetchSearchHistoryPage(identity, { limit: PAGE_SIZE, offset: nextOffset, q: searchQuery }')
+    expect(PAGE).toContain("onRetry={() => void load(identityReady.identity ?? '', searchQuery)}")
+    const api = overlaySource('src/lib/navhub-api.ts')
+    const start = api.indexOf('export async function fetchSearchHistoryPage(')
+    expect(start, 'fetchSearchHistoryPage 应存在').toBeGreaterThanOrEqual(0)
+    const body = api.slice(start, api.indexOf('\n}\n', start))
+    expect(body).toContain('q?: string')
+    expect(body).toContain("'&q=' + encodeURIComponent(q)")
+  })
+
+  it('断言 3：服务端范围说明；检索态空态与无记录空态区分', () => {
+    expect(PAGE).toContain('已按关键词在全部历史中检索')
+    expect(PAGE).not.toContain('仅检索已加载的 {items.length} 条，加载更多可扩大检索范围')
+    expect(PAGE).toContain('没有匹配「${searchQuery}」的搜索历史。')
+    expect(PAGE).toContain("state === 'ready' && items.length === 0 && searchQuery === ''")
+    expect(PAGE).toContain("{searchQuery ? '加载更多匹配记录' : isFiltering ? '加载更多记录以扩大检索范围' : '加载更多'}")
   })
 })

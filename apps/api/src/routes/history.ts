@@ -4,7 +4,7 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync } from "fastify";
-import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
+import { decodeSearchScope, encodeSearchScope, MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
 import {identityTrusted, parsePagination, resolveCanonicalIdentity, requestIdentityOf, userDomainWriteAllowed } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
@@ -21,7 +21,11 @@ export const historyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     // 合并后的旧 id 仍会从扩展/旧标签页发来：读也要落到 canonical，否则看不到已合并的数据
     const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
     const { limit, offset } = parsePagination(req.query, { defaultLimit: 10, maxLimit: 50 });
-    const page = await ctx.repo.listSearchHistoryPage(identity, limit, offset);
+    // U-374：服务端关键词检索——q 非空时只返回查询词含 q 的记录（大小写不敏感），
+    // 而不是让前端对已加载页做 client 过滤（翻不到的页永远搜不到）。
+    const rawQ = (req.query as { q?: unknown } | undefined)?.q;
+    const q = typeof rawQ === "string" ? rawQ.trim().slice(0, MAX_SEARCH_QUERY_LENGTH) : "";
+    const page = await ctx.repo.listSearchHistoryPage(identity, limit, offset, q);
     return {
       items: page.items,
       hasMore: page.hasMore,
@@ -51,10 +55,15 @@ export const historyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { ok: false, error: "当前令牌为只读，无法执行写操作" }; }
     if (!rawIdentity) { reply.code(400); return { ok: false, error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { ok: false, error: "需要 Bearer token" }; }
-    const body = (req.body ?? {}) as { q?: unknown; query?: unknown; resultCount?: unknown; searchHistoryEnabled?: unknown };
+    const body = (req.body ?? {}) as { q?: unknown; query?: unknown; resultCount?: unknown; searchHistoryEnabled?: unknown; scope?: unknown };
     const q = typeof body.q === "string" ? body.q.trim() : typeof body.query === "string" ? body.query.trim() : "";
     if (!q) { reply.code(400); return { ok: false, error: "缺少查询词" }; }
     if (q.length > MAX_SEARCH_QUERY_LENGTH) { reply.code(400); return { ok: false, error: "查询词超长" }; }
+    // U-374：调用方（页内筛选框）把当时生效的作用域一起带上（encodeSearchScope
+    // 的产物）；缺失/非法时 decode→encode 退回 ''（= 无作用域），不让一次记录写失败。
+    const scope = typeof body.scope === "string"
+      ? encodeSearchScope(decodeSearchScope(body.scope))
+      : "";
     const countRaw = Number(body.resultCount ?? 0);
     const resultCount = Number.isFinite(countRaw) ? Math.max(0, Math.trunc(countRaw)) : 0;
     const localEnabled =
@@ -64,7 +73,7 @@ export const historyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
     const settings = await ctx.repo.getUserSettings(identity);
     if (settings.searchHistoryEnabled === false || !localEnabled) return { ok: true, recorded: false };
-    await ctx.repo.recordSearch(identity, q, resultCount);
+    await ctx.repo.recordSearch(identity, q, resultCount, scope);
     return { ok: true, recorded: true };
   });
 

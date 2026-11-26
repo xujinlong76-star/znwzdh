@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
  *    search-history-record 的 recordLocalSearchHistory（POST
  *    /api/search-history，只记历史不跑检索）；
  * 2. 五处页内筛选框都接上同一条记录，计数取当时实际展示的匹配数；
- * 3. 点击历史条目能重搜：历史页条目链到 /search?q=<编码后的查询词>。
+ * 3. 点击历史条目能重搜：历史页条目走 searchAgainHref（/search?q=…+ 当时作用域）。
  *
  * 去重口径在服务端（recordSearch 5 分钟窗口内同一查询只刷新、不新增行），
  * 行为断言见 apps/api/test/api.test.ts 与 packages/store/test/store.test.ts；
@@ -49,13 +49,14 @@ describe('页内搜索进搜索历史', () => {
   it('记录 hook 存在：停手 800ms 记一次，身份未就绪 / 空查询不记', () => {
     const src = overlayFile(HOOK)
     expect(src).toContain('export const LOCAL_SEARCH_RECORD_DEBOUNCE_MS = 800')
-    expect(src).toContain('export function useLocalSearchRecorder(query: string, resultCount: number): void')
+    expect(src).toContain('export function useLocalSearchRecorder(')
+    expect(src).toContain('scope?: SearchScope,')
     expect(src).toContain('const q = query.trim()')
     expect(src).toContain('if (!ready || !identity || !q) return')
     expect(src).toContain('clearTimeout(timerRef.current)')
     expect(src).toContain('setTimeout(() => {')
     expect(src).toContain('LOCAL_SEARCH_RECORD_DEBOUNCE_MS')
-    expect(src).toContain('void recordLocalSearchHistory(identity, q, capturedCount)')
+    expect(src).toContain('void recordLocalSearchHistory(identity, q, capturedCount, undefined, capturedScopeKey || undefined)')
     expect(src).toContain('Math.max(0, Math.trunc(resultCount))')
   })
 
@@ -79,9 +80,12 @@ describe('页内搜索进搜索历史', () => {
     }
   })
 
-  it('点击历史条目可重搜：条目与再次搜索按钮都链到 /search?q=<编码查询词>', () => {
+  it('点击历史条目可重搜：条目与再次搜索按钮都走 searchAgainHref（关键词 + 作用域）', () => {
     const src = overlayFile(HISTORY_PAGE)
-    expect(src).toContain('href={`/search?q=${encodeURIComponent(item.query)}`}')
+    expect(src).toContain('href={searchAgainHref(item)}')
+    // 标题链接与图标按钮各一处，共两处；不再裸拼 q（作用域会丢）。
+    expect(src.split('href={searchAgainHref(item)}').length - 1).toBe(2)
+    expect(src).not.toContain('href={`/search?q=${encodeURIComponent(item.query)}`}')
     expect(src).toContain('aria-label={`再次搜索 ${item.query}`}')
   })
 })

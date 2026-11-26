@@ -991,6 +991,131 @@ describe("SQLite 集成：导航增强能力", () => {
     expect((await repo.listSearchHistory("u-limit", 10)).length).toBe(1);
   });
 
+  it("U-374：scope 随记录落库、读回原样（无作用域时为 ''）", async () => {
+    const scoped = JSON.stringify({ category: "cat-ai", tag: "chat" });
+    await repo.recordSearch("u-scope", "AI 绘图", 4, scoped);
+    await repo.recordSearch("u-scope", "天气", 3);
+    const items = await repo.listSearchHistory("u-scope", 10);
+    expect(items.length).toBe(2);
+    expect(items[0]!.query).toBe("天气");
+    expect(items[0]!.scope).toBe("");
+    expect(items[1]!.query).toBe("AI 绘图");
+    expect(items[1]!.scope).toBe(scoped);
+    // 分页读也带 scope
+    const page = await repo.listSearchHistoryPage("u-scope", 10, 0);
+    expect(page.items.find((i) => i.query === "AI 绘图")!.scope).toBe(scoped);
+  });
+
+  it("U-374：窗口内去重刷新时 scope 取最新一次的值", async () => {
+    const first = JSON.stringify({ category: "cat-ai" });
+    const latest = JSON.stringify({ category: "cat-design", tag: "ui" });
+    await repo.recordSearch("u-scope-refresh", "设计", 1, first);
+    await repo.recordSearch("u-scope-refresh", "设计", 9, latest);
+    const items = await repo.listSearchHistory("u-scope-refresh", 10);
+    expect(items.length).toBe(1);
+    expect(items[0]!.resultCount).toBe(9);
+    expect(items[0]!.scope).toBe(latest);
+  });
+
+  it("U-374：分页 q 在服务端过滤——命中第一页之外的记录", async () => {
+    // 目标先记（最旧），再记 24 条填充（更新）：不带 q 的第一页（20 条）里没有目标。
+    await repo.recordSearch("u-q374", "考研资料", 7);
+    for (let i = 0; i < 24; i++) await repo.recordSearch("u-q374", `填充 ${i}`, 1);
+    const firstPage = await repo.listSearchHistoryPage("u-q374", 20, 0);
+    expect(firstPage.items).toHaveLength(20);
+    expect(firstPage.hasMore).toBe(true);
+    expect(firstPage.items.some((i) => i.query === "考研资料")).toBe(false);
+    // 服务端 q 直接命中第一页之外的目标——此前前端只能对已加载页做 client 过滤。
+    const hit = await repo.listSearchHistoryPage("u-q374", 20, 0, "考研");
+    expect(hit.items.map((i) => i.query)).toEqual(["考研资料"]);
+    expect(hit.hasMore).toBe(false);
+    // 大小写不敏感 + 子串 + 翻页：q=填充 命中 24 条，第一页 20 条、第二页 4 条。
+    const fillPage1 = await repo.listSearchHistoryPage("u-q374", 20, 0, "填充");
+    expect(fillPage1.items).toHaveLength(20);
+    expect(fillPage1.hasMore).toBe(true);
+    const fillPage2 = await repo.listSearchHistoryPage("u-q374", 20, 20, "填充");
+    expect(fillPage2.items).toHaveLength(4);
+    expect(fillPage2.hasMore).toBe(false);
+    // LIKE 通配符当字面量：q=100% 不命中全表。
+    await repo.recordSearch("u-q374", "100% 折扣", 2);
+    const pct = await repo.listSearchHistoryPage("u-q374", 20, 0, "100%");
+    expect(pct.items.map((i) => i.query)).toEqual(["100% 折扣"]);
+    const under = await repo.listSearchHistoryPage("u-q374", 20, 0, "_");
+    expect(under.items.some((i) => i.query === "考研资料")).toBe(false);
+    // 空 q = 不过滤（与旧行为一致）。
+    const all = await repo.listSearchHistoryPage("u-q374", 50, 0, "  ");
+    expect(all.items.length).toBe(26);
+  });
+
+  it("U-374：旧库迁移——无 scope 列的表补列后旧行得 ''、新写照常", async () => {
+    const { migrateColumns } = await import("../src/migrate.ts");
+    const legacyDir = mkdtempSync(join(tmpdir(), "navhub-scope-legacy-"));
+    const legacyPath = join(legacyDir, "legacy.db");
+    try {
+      // 先建新库、再把 scope 列删掉，模拟 U-374 之前的旧库（含 2 行旧记录）。
+      const legacyDb = await openDb({ dialect: "sqlite", sqlitePath: legacyPath });
+      const legacyRepo = new Repository(legacyDb);
+      await legacyRepo.recordSearch("u-legacy", "旧记录一", 1);
+      await legacyRepo.recordSearch("u-legacy", "旧记录二", 0);
+      legacyDb.sqlite!.prepare("ALTER TABLE search_history DROP COLUMN scope").run();
+      const colsBefore = (legacyDb.sqlite!.prepare("PRAGMA table_info(search_history)").all() as Array<{ name: string }>).map((c) => c.name);
+      expect(colsBefore).not.toContain("scope");
+      await legacyDb.close();
+      // 重新打开：启动迁移应把列补回来，旧行得 ''（不是 NULL）。
+      const reopened = await openDb({ dialect: "sqlite", sqlitePath: legacyPath });
+      try {
+        const colsAfter = (reopened.sqlite!.prepare("PRAGMA table_info(search_history)").all() as Array<{ name: string }>).map((c) => c.name);
+        expect(colsAfter).toContain("scope");
+        const reopenedRepo = new Repository(reopened);
+        const items = await reopenedRepo.listSearchHistory("u-legacy", 10);
+        expect(items.length).toBe(2);
+        expect(items.every((i) => i.scope === "")).toBe(true);
+        // 补列后新写带 scope 的记录照常落库读回。
+        await reopenedRepo.recordSearch("u-legacy", "新记录", 5, JSON.stringify({ tag: "chat" }));
+        const after = await reopenedRepo.listSearchHistory("u-legacy", 10);
+        expect(after[0]!.scope).toBe(JSON.stringify({ tag: "chat" }));
+        // 版本化台账记了这次迁移。
+        const ledger = (reopened.sqlite!.prepare("SELECT version FROM _schema_migrations WHERE version = ?").all("20261127_search_history_scope") as Array<{ version: string }>);
+        expect(ledger.map((r) => r.version)).toContain("20261127_search_history_scope");
+        // 迁移幂等：再跑一次不新增列。
+        const added = await migrateColumns(reopened);
+        expect(added).not.toContain("search_history.scope");
+      } finally {
+        await reopened.close();
+      }
+    } finally {
+      rmSync(legacyDir, { recursive: true, force: true });
+    }
+  });
+
+  it("U-374：访问历史 q 在服务端过滤——站名/链接子串，含第一页之外的记录", async () => {
+    const identity = "u-visits-q374";
+    const cat = await repo.createCategory({ id: "cat-u374-visits", title: "访问检索" });
+    const npm = await repo.createSite({ url: "https://u374-npm.example.com", title: "U374 npm 包站", description: "JavaScript 包管理器", categoryId: cat.id });
+    const docker = await repo.createSite({ url: "https://u374-docker.example.com", title: "U374 docker 镜像站", description: "容器镜像", categoryId: cat.id });
+    // 目标先点（最旧），再点 21 次填充站：不带 q 的第一页（20 条）里没有目标。
+    await repo.recordEvent("click", { siteId: npm.id, meta: { identity } });
+    for (let i = 0; i < 21; i++) {
+      await repo.recordEvent("click", { siteId: docker.id, meta: { identity } });
+    }
+    const firstPage = await repo.listVisitsPage(identity, 20, 0);
+    expect(firstPage.items).toHaveLength(20);
+    expect(firstPage.hasMore).toBe(true);
+    expect(firstPage.items.some((v) => v.siteId === npm.id)).toBe(false);
+    // 服务端 q 按站名命中第一页之外的目标。
+    const byTitle = await repo.listVisitsPage(identity, 20, 0, undefined, "npm 包站");
+    expect(byTitle.items.map((v) => v.siteId)).toEqual([npm.id]);
+    expect(byTitle.hasMore).toBe(false);
+    // 链接子串 + 大小写不敏感。
+    const byUrl = await repo.listVisitsPage(identity, 20, 0, undefined, "U374-NPM");
+    expect(byUrl.items.map((v) => v.siteId)).toEqual([npm.id]);
+    // 总数也按同一口径过滤。
+    expect(await repo.countVisits(identity)).toBe(22);
+    expect(await repo.countVisits(identity, "npm")).toBe(1);
+    expect(await repo.countVisits(identity, "docker")).toBe(21);
+    expect(await repo.countVisits(identity, "不存在的站")).toBe(0);
+  });
+
   /* ------------------------- 终端用户 ------------------------- */
 
   it("OAuth 用户 upsert：按 username 归一，不再按 email 绑定", async () => {

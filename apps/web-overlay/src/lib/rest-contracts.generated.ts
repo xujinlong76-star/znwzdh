@@ -882,6 +882,7 @@ export interface SearchHistoryPageResponse {
     id: number;
     query: string;
     resultCount: number;
+    scope: string;
     createdAt: number;
     [key: string]: unknown;
   }[];

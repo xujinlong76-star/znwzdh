@@ -49,7 +49,11 @@ export function CategorySiteFilterBar({
   const [, startTransition] = useTransition()
   const filterInputId = useId()
   // 页内即时筛选的查询也要进搜索历史（停手 800ms 记一次，计数取当前匹配数）
-  useLocalSearchRecorder(query, matchedCount)
+  // U-374：把当时生效的分类/标签一起记下，历史页「再次搜索」才能恢复它。
+  useLocalSearchRecorder(query, matchedCount, {
+    category: categorySlug ?? undefined,
+    tag: selectedTag ?? undefined,
+  })
 
   const applyFilter = (newQuery: string, newTag: string | null, newSubcategoryId: string | null) => {
     const q = newQuery.trim().toLowerCase()

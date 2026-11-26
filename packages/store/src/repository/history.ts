@@ -1,5 +1,6 @@
 import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
 import type { Repository } from "../repository.ts";
+import { containsLike } from "../sql-like.ts";
 
 /**
  * 同一查询短时间内去重窗口。
@@ -14,7 +15,15 @@ import type { Repository } from "../repository.ts";
  */
 export const SEARCH_HISTORY_DEDUPE_WINDOW_MS = 5 * 60 * 1000;
 
-export async function recordSearch(repo: Repository, userId: string, query: string, resultCount: number): Promise<void> {
+export async function recordSearch(
+  repo: Repository,
+  userId: string,
+  query: string,
+  resultCount: number,
+  // U-374：当时生效的搜索作用域（encodeSearchScope 的产物，'' = 无作用域）。
+  // 调用方负责编码；这里只原样落库（读侧 decode 永不抛错，脏串只等于无作用域）。
+  scope = "",
+): Promise<void> {
   const q = query.trim();
   if (!q) return;
   // 最后一道形状守卫：REST / 导入都先过 schema，正常路径到不了这里。
@@ -31,17 +40,20 @@ export async function recordSearch(repo: Repository, userId: string, query: stri
   );
   const prev = latest[0];
   if (prev && now - Number(prev.createdat ?? 0) < SEARCH_HISTORY_DEDUPE_WINDOW_MS) {
-    await repo.run("UPDATE search_history SET created_at = ?, result_count = ? WHERE id = ?", [
+    // U-374：刷新时 scope 也取最新一次的值——同一词 5 分钟内先裸搜、后在分类里
+    // 搜，「再次搜索」应恢复后一次的作用域，而不是把旧的空作用域钉死。
+    await repo.run("UPDATE search_history SET created_at = ?, result_count = ?, scope = ? WHERE id = ?", [
       now,
       resultCount,
+      scope,
       Number(prev.id),
     ]);
     return;
   }
   // id 自增：同毫秒的多条记录也能按插入顺序稳定排序
   await repo.run(
-    "INSERT INTO search_history (user_id, query, result_count, created_at) VALUES (?,?,?,?)",
-    [userId, q, resultCount, now],
+    "INSERT INTO search_history (user_id, query, result_count, scope, created_at) VALUES (?,?,?,?,?)",
+    [userId, q, resultCount, scope, now],
   );
 }
 
@@ -49,45 +61,60 @@ export interface SearchHistoryItem {
   id: number;
   query: string;
   resultCount: number;
+  /** U-374：当时生效的搜索作用域（encodeSearchScope 的产物，'' = 无作用域）。 */
+  scope: string;
   createdAt: number;
+}
+
+function toSearchHistoryItem(r: Record<string, unknown>): SearchHistoryItem {
+  return {
+    id: Number(r.id ?? 0),
+    query: String(r.query),
+    resultCount: Number(r.resultcount ?? 0),
+    // 旧库行由迁移补 ''；读路径按字符串处理，缺列/NULL 都退回 ''。
+    scope: typeof r.scope === "string" ? r.scope : "",
+    createdAt: Number(r.createdat ?? 0),
+  };
 }
 
 export async function listSearchHistory(repo: Repository, userId: string, limit = 10): Promise<SearchHistoryItem[]> {
   // 自增 id 作次级排序键：created_at 同毫秒时按真实插入顺序
   const rows = await repo.raw(
-    "SELECT id, query, result_count AS resultcount, created_at AS createdat FROM search_history WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+    "SELECT id, query, result_count AS resultcount, scope, created_at AS createdat FROM search_history WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
     [userId, limit],
   );
-  return rows.map((r) => ({
-    id: Number(r.id ?? 0),
-    query: String(r.query),
-    resultCount: Number(r.resultcount ?? 0),
-    createdAt: Number(r.createdat ?? 0),
-  }));
+  return rows.map(toSearchHistoryItem);
 }
 
 /**
  * 分页列表：多取 1 条探针判断 hasMore，避免 COUNT 查询。
  * offset 分页而不是游标：历史是 append-only，删除单条后游标容易跳项。
+ *
+ * U-374：`q` 非空时服务端按查询词子串过滤（大小写不敏感，`%`/`_` 当字面量，
+ * 见 sql-like.ts 的 containsLike）——此前没有 q 参数，前端只能对已加载页
+ * 做 client 过滤，翻不到的页永远搜不到。
  */
 export async function listSearchHistoryPage(
   repo: Repository,
   userId: string,
   limit: number,
   offset: number,
+  q = "",
 ): Promise<{ items: SearchHistoryItem[]; hasMore: boolean }> {
   const probe = Math.max(1, limit) + 1;
+  const keyword = q.trim();
+  const where = keyword
+    ? "WHERE user_id = ? AND lower(query) LIKE ? ESCAPE '!'"
+    : "WHERE user_id = ?";
+  const params: unknown[] = keyword
+    ? [userId, containsLike(keyword.toLowerCase())]
+    : [userId];
   const rows = await repo.raw(
-    "SELECT id, query, result_count AS resultcount, created_at AS createdat FROM search_history WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
-    [userId, probe, Math.max(0, offset)],
+    `SELECT id, query, result_count AS resultcount, scope, created_at AS createdat FROM search_history ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+    [...params, probe, Math.max(0, offset)],
   );
   const hasMore = rows.length > limit;
-  const items = (hasMore ? rows.slice(0, limit) : rows).map((r) => ({
-    id: Number(r.id ?? 0),
-    query: String(r.query),
-    resultCount: Number(r.resultcount ?? 0),
-    createdAt: Number(r.createdat ?? 0),
-  }));
+  const items = (hasMore ? rows.slice(0, limit) : rows).map(toSearchHistoryItem);
   return { items, hasMore };
 }
 

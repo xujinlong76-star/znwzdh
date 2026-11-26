@@ -22,24 +22,34 @@
 import { useEffect, useRef } from 'react'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { recordLocalSearchHistory } from '@/lib/search-history-record'
+import { encodeSearchScope, type SearchScope } from '@/lib/search-scope'
 
 /** 停手多久后记一次：太短会把逐字输入记成多条，太长会漏掉输完即走的查询。 */
 export const LOCAL_SEARCH_RECORD_DEBOUNCE_MS = 800
 
-export function useLocalSearchRecorder(query: string, resultCount: number): void {
+export function useLocalSearchRecorder(
+  query: string,
+  resultCount: number,
+  // U-374：调用方所在页当时生效的作用域（分类/标签）；不传 = 无作用域。
+  // 依赖里只取编码后的字符串：调用方每渲染传新对象也不会反复重设计时器。
+  scope?: SearchScope,
+): void {
   const { ready, identity } = useIdentityReady()
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scopeKey = encodeSearchScope(scope)
 
   useEffect(() => {
     const q = query.trim()
     if (!ready || !identity || !q) return
     if (timerRef.current) clearTimeout(timerRef.current)
     const capturedCount = Math.max(0, Math.trunc(resultCount))
+    const capturedScopeKey = scopeKey
     timerRef.current = setTimeout(() => {
-      void recordLocalSearchHistory(identity, q, capturedCount)
+      // 编码串直接传：recordLocalSearchHistory 接受已编码的字符串，不再重编。
+      void recordLocalSearchHistory(identity, q, capturedCount, undefined, capturedScopeKey || undefined)
     }, LOCAL_SEARCH_RECORD_DEBOUNCE_MS)
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [query, resultCount, ready, identity])
+  }, [query, resultCount, ready, identity, scopeKey])
 }

@@ -527,6 +527,9 @@ CREATE TABLE IF NOT EXISTS search_history (
   user_id TEXT NOT NULL,
   query TEXT NOT NULL,
   result_count INTEGER NOT NULL DEFAULT 0,
+  -- U-374：搜索时生效的分类/标签/分面（JSON 串，'' = 无作用域）；旧行由
+  -- COLUMN_ALTERS 的 ALTER 补 ''，不是 NULL（读路径按字符串处理）。
+  scope TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS search_history_user_idx ON search_history(user_id);
@@ -1330,6 +1333,9 @@ CREATE TABLE IF NOT EXISTS search_history (
   user_id TEXT NOT NULL,
   query TEXT NOT NULL,
   result_count INTEGER NOT NULL DEFAULT 0,
+  -- U-374：搜索时生效的分类/标签/分面（JSON 串，'' = 无作用域）；旧行由
+  -- COLUMN_ALTERS 的 ALTER 补 ''，不是 NULL（读路径按字符串处理）。
+  scope TEXT NOT NULL DEFAULT '',
   created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS search_history_user_idx ON search_history(user_id);

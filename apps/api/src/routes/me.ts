@@ -30,7 +30,7 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import { generateToken, hashToken, tokenPrefixOf } from "../auth.ts";
 
-import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
+import { MAX_SEARCH_QUERY_LENGTH, SEARCH_SCOPE_MAX_LENGTH } from "@navhub/core";
 import { EXPORT_FAVORITES_LIMIT, EXPORT_HISTORY_LIMIT, EXPORT_SCHEMA_VERSION, mapSyncErrorCode } from "@navhub/store";
 
 import type { AppContext } from "../context.ts";
@@ -613,6 +613,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
                     // 否则一条 201~256 字的历史会让整份备份 400（收藏、设置连坐）
                     query: z.string().trim().min(1).max(MAX_SEARCH_QUERY_LENGTH),
                     resultCount: z.number().int().min(0).optional(),
+                    // U-374：导出侧的 scope（encodeSearchScope 的产物）要能导回来，
+                    // 否则备份恢复会静默丢掉「再次搜索」的作用域。
+                    scope: z.string().max(SEARCH_SCOPE_MAX_LENGTH).optional(),
                   }),
                 )
                 .max(EXPORT_HISTORY_LIMIT)
@@ -625,6 +628,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
                 z.object({
                   query: z.string().trim().min(1).max(MAX_SEARCH_QUERY_LENGTH),
                   resultCount: z.number().int().min(0).optional(),
+                  scope: z.string().max(SEARCH_SCOPE_MAX_LENGTH).optional(),
                 }),
               )
               .max(EXPORT_HISTORY_LIMIT),
@@ -742,7 +746,13 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
             searchesSkippedDuplicate += 1;
             continue;
           }
-          await ctx.repo.recordSearch(canonical, q, Number(item.resultCount ?? 0));
+          await ctx.repo.recordSearch(
+            canonical,
+            q,
+            Number(item.resultCount ?? 0),
+            // U-374：备份里带回来的 scope 原样恢复（缺失时 recordSearch 按 '' 落库）。
+            typeof item.scope === "string" ? item.scope : "",
+          );
           existingQueries.add(q.toLowerCase());
           searchesImported += 1;
         }
@@ -959,6 +969,8 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
           // Keyset 游标（M12）：传了就走 WHERE id > (?) 谓词，不再 OFFSET。
           // @deprecated 游标分页已废弃（仍可用）：请用 limit/offset 翻页。
           cursor: z.string().max(4096).optional(),
+          // U-374：服务端关键词检索——q 非空时只返回站名/链接含 q 的记录。
+          q: z.string().max(200).optional(),
         })
         .safeParse(req.query ?? {});
       const limit = query.success ? (query.data.limit ?? 20) : 20;
@@ -966,9 +978,10 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       // 无效游标由全局错误处理器映射成 400 INVALID_CURSOR。
       const cursor = query.success && typeof query.data.cursor === "string" && query.data.cursor ? query.data.cursor : undefined;
       if (cursor) markCursorPaginationDeprecated(reply);
+      const q = query.success && typeof query.data.q === "string" ? query.data.q.trim() : "";
       const [page, total] = await Promise.all([
-        ctx.repo.listVisitsPage(canonical, limit, offset, cursor),
-        ctx.repo.countVisits(canonical),
+        ctx.repo.listVisitsPage(canonical, limit, offset, cursor, q),
+        ctx.repo.countVisits(canonical, q),
       ]);
       const siteMap = await ctx.repo.getSitesByIds([...new Set(page.items.map((v) => v.siteId))]);
       return {

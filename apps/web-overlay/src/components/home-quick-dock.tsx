@@ -3,17 +3,27 @@
 /**
  * 三合一单行「高频直达」坞（A4）：
  * 将原先纵向串行的 SpeedDialDock（179px）、HomeFrequentVisits 与 HomeRecentVisits
- * 合并为单个 ~56px 紧凑单行坞，支持内联切换「⚡ 极速置顶 | ⭐ 我的常用 | 🕒 最近访问」，
- * 并支持右侧「全部 ▾」按需打开完整清单小窗口。
+ * 合并为单个 ~56px 紧凑单行坞，模式（⚡ 极速置顶 / ⭐ 常用 / 🕒 最近访问）收进
+ * 一个下拉触发器（2026-11-25 UI 评审 P0-2 / 方案 A′），右侧「全部 ▾」按需打开
+ * 完整清单小窗口。
  * 保持 `id="quick-access-tray"` 与 `data-speed-dial="true"` 兼容 DIY 与直达规范。
+ * <md 整行隐藏（CSS 隐藏、DOM 锚点保留），顶行「快捷坞」入口与坞内「展开全部」
+ * 共用同一个受控弹窗（开关由父级 navigation-content 的 quickDockOpen 管）。
  *
  * 默认 tab 契约（D-W3-Tier1，选项 ii 钉选优先）：仅当无钉选且有最近访问时默认
- * 「最近」；有钉选的用户首屏不变（钉选是显式表达）。三 tab 顺序固定为
- * 极速置顶 / 常用 / 最近；数字直达角标只在「极速置顶」渲染，不要“统一”到三 tab。
+ * 「最近」；有钉选的用户首屏不变（钉选是显式表达）。三模式顺序固定为
+ * 极速置顶 / 常用 / 最近；数字直达角标只在「极速置顶」渲染，不要“统一”到三模式。
  */
 import { useEffect, useMemo, useRef, useState, memo } from 'react'
 import dynamic from 'next/dynamic'
-import { ChevronRight, History, Star, Zap } from 'lucide-react'
+import { ChevronDown, ChevronRight, History, Star, Zap, type LucideIcon } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { SiteFavicon } from '@/components/site-favicon'
 import { HorizontalScrollFade } from '@/components/horizontal-scroll-fade'
 import { NumberDialBadge } from '@/components/number-dial-badge'
@@ -72,6 +82,20 @@ export interface HomeQuickDockProps {
   speedSites: SpeedDialSite[]
   /** 首行默认最多展示数量，避免折叠换行推高首屏 */
   maxInlineItems?: number
+  /**
+   * P0-2 / Step 2（U-445）：「全部站点」弹窗受控开关。父级 navigation-content
+   * 传入时，顶行「快捷坞」入口与坞内「展开全部」共用同一个开关（quickDockOpen）；
+   * 不传时坞内自管（DIY 预览等无父级开关的用法）。
+   */
+  allDialogOpen?: boolean
+  onAllDialogOpenChange?: (open: boolean) => void
+}
+
+/** A′：三模式的触发器图标与文案（顺序固定：极速置顶 / 常用 / 最近）。 */
+const DOCK_MODE_META: Record<DockTab, { label: string; Icon: LucideIcon }> = {
+  speed: { label: '极速置顶', Icon: Zap },
+  frequent: { label: '常用', Icon: Star },
+  recent: { label: '最近', Icon: History },
 }
 
 // P0-2：包 memo——父组件传的 dialDigitById/speedSites 均已稳定。
@@ -80,6 +104,8 @@ export const HomeQuickDock = memo(function HomeQuickDock({
   dialDigitById,
   speedSites,
   maxInlineItems = 7,
+  allDialogOpen: allDialogOpenProp,
+  onAllDialogOpenChange,
 }: HomeQuickDockProps) {
   const externalTarget = useExternalLinkTarget()
   // 默认 tab 决策只读钉选 id 列表；速拨顺序仍由父级透传（P2-14），此处不重算。
@@ -88,7 +114,13 @@ export const HomeQuickDock = memo(function HomeQuickDock({
   const [activeTab, setActiveTab] = useState<DockTab>('speed')
   const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
   const [recentLoaded, setRecentLoaded] = useState(false)
-  const [allDialogOpen, setAllDialogOpen] = useState(false)
+  // P0-2 / Step 2：受控时开关归父级（quickDockOpen），否则坞内自管。
+  const [internalAllDialogOpen, setInternalAllDialogOpen] = useState(false)
+  const allDialogOpen = allDialogOpenProp ?? internalAllDialogOpen
+  const setAllDialogOpen = (open: boolean) => {
+    if (onAllDialogOpenChange) onAllDialogOpenChange(open)
+    else setInternalAllDialogOpen(open)
+  }
   // 用户手动切过 tab 后不再自动改默认 tab；默认 tab 只在最近访问首次回填后决定一次，
   // 此后 focus 回填 / 取消钉选都不再中途翻 tab。
   const userChoseTabRef = useRef(false)
@@ -180,63 +212,62 @@ export const HomeQuickDock = memo(function HomeQuickDock({
     return null
   }
 
+  const activeMode = DOCK_MODE_META[activeTab]
+
   return (
     <>
       <section
         id="quick-access-tray"
         data-speed-dial="true"
         aria-label="高频直达与常用访问"
-        className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-border/60 bg-card/85 px-2.5 py-1.5 sm:h-10 sm:flex-nowrap sm:py-0"
+        className="hidden md:flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-border/60 bg-card/85 px-2.5 py-1.5 sm:h-10 sm:flex-nowrap sm:py-0"
       >
-        {/* 首屏瘦身：单行 40px（h-10，与左侧工作区胶囊行像素级同高对齐）——左紧凑 tab +
-            中间横向滚动胶囊区 + 右「展开全部」。胶囊区已接入 HorizontalScrollFade 横向滚动渐隐
-            （2026-11-20 合入合并：首屏单行布局 + 顶栏渐隐包装，两者都保留）。 */}
-        <div className="flex shrink-0 items-center gap-1" role="tablist" aria-label="高频直达分类">
+        {/* 首屏瘦身：单行 40px（h-10，与左侧工作区胶囊行像素级同高对齐）——左模式下拉
+            触发器 + 中间横向滚动胶囊区 + 右「展开全部」。胶囊区已接入 HorizontalScrollFade
+            横向滚动渐隐（2026-11-20 合入合并：首屏单行布局 + 顶栏渐隐包装，两者都保留）。
+            A′：三模式不再内联平铺成 tab（旧 tablist 无方向键漫游，见 U-394），只留
+            一个下拉触发器（L2 虚线边界＝可点开的模式）；<md 整行隐藏，顶行「快捷坞」
+            入口点开的是同一个受控弹窗（开关在父级）。 */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <button
               type="button"
-              role="tab"
-              aria-selected={activeTab === 'speed'}
-              onClick={() => chooseTab('speed')}
-              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer ${
-                activeTab === 'speed'
-                  ? 'bg-primary/12 text-primary'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
+              aria-label={`快捷坞模式：${activeMode.label}，点击切换`}
+              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-dashed border-border-strong px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted/70 cursor-pointer"
             >
-              <Zap className="h-3.5 w-3.5" />
-              <span>极速置顶</span>
+              <activeMode.Icon className="h-3.5 w-3.5" />
+              <span>{activeMode.label}</span>
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
             </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'frequent'}
-              disabled={!mounted || frequentVisits.length === 0}
-              onClick={() => chooseTab('frequent')}
-              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed ${
-                activeTab === 'frequent'
-                  ? 'bg-primary/12 text-primary'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-            >
-              <Star className="h-3.5 w-3.5" />
-              <span>常用</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'recent'}
-              disabled={!mounted || recentVisits.length === 0}
-              onClick={() => chooseTab('recent')}
-              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed ${
-                activeTab === 'recent'
-                  ? 'bg-primary/12 text-primary'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-            >
-              <History className="h-3.5 w-3.5" />
-              <span>最近</span>
-            </button>
-          </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className="w-48 p-1.5 bg-popover text-popover-foreground border border-border shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
+          >
+            <DropdownMenuRadioGroup value={activeTab} onValueChange={(v) => chooseTab(v as DockTab)}>
+              <DropdownMenuRadioItem value="speed" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
+                <Zap className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="font-medium text-foreground">极速置顶</span>
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem
+                value="frequent"
+                disabled={!mounted || frequentVisits.length === 0}
+                className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent"
+              >
+                <Star className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="font-medium text-foreground">常用</span>
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem
+                value="recent"
+                disabled={!mounted || recentVisits.length === 0}
+                className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent"
+              >
+                <History className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="font-medium text-foreground">最近</span>
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <HorizontalScrollFade
           className="order-3 w-full basis-full min-w-0 sm:order-none sm:w-auto sm:basis-auto sm:flex-1"
@@ -259,7 +290,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
                   icon: item.icon,
                 })
               }
-              className="group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border/50 bg-background px-2 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent/50"
+              className="group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-transparent px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted/70"
             >
               {/* P0-B（2026-11-26）：线性 flex，角标永不盖图标——
                   旧结构是 16px 图标上压一只 16px 绝对定位 kbd（旧偏移 class

@@ -1544,9 +1544,10 @@ export function NavigationContent({
               dialDigitById={mounted ? dialMap.digitById : undefined}
               // P2-14：速拨顺序由父级 dialSites 一次算好透传，坞不再自己重算。
               speedSites={dialSites}
-              // P0-2 / Step 2 在途（并行会话）：quickDockOpen 父级提升草稿保留；
-              // 远端 731bdf82 的 HomeQuickDock 暂为弹窗内部自管（allDialogOpen/
-              // onAllDialogOpenChange props 已删），两边对齐由该草稿收尾时定夺。
+              // P0-2 / Step 2（U-445）：顶行「快捷坞」入口与坞内「展开全部」共用
+              // 同一个受控弹窗，开关统一由父级 quickDockOpen 管；坞内不再自管。
+              allDialogOpen={quickDockOpen}
+              onAllDialogOpenChange={setQuickDockOpen}
             />
           </div>
         </>

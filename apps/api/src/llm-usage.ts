@@ -232,7 +232,7 @@ export async function callLlm(
       : provider;
     // 备用模型通常使用系统配置的密钥。主模型为 BYOK 时，初始预留只覆盖
     // 用户自己的额度；因此每次真正切换到系统备用模型前，必须单独原子预留系统档。
-    let fallbackHold: Parameters<typeof settleLlmQuota>[1] = null;
+    let fallbackHold: Parameters<typeof settleLlmQuota>[1] = undefined;
     if (source === "fallback") {
       const reservation = await reserveLlmQuota(ctx, opts.identity, { source: "fallback" });
       if (!reservation.ok) {

@@ -27,7 +27,14 @@ import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-url'
 import { SiteCard } from '@/components/site-card'
 import { buildDeadLinkWaybackUrl } from '@/lib/dead-link'
-import { healthDotClass, isFailingHealthState, siteHealthState, siteHealthTitle, type SiteHealthState } from '@/lib/site-health'
+import { getSiteNotice } from '@/lib/site-notices'
+import {
+  healthDotClass,
+  isFailingHealthState,
+  siteHealthState,
+  siteHealthTitle,
+  type SiteHealthState,
+} from '@/lib/site-health'
 import { tagSlug } from '@/lib/seo/tag-slug'
 import { recordOfflineVisit } from '@/lib/offline-recent'
 import { getIdentity } from '@/lib/identity'
@@ -144,7 +151,7 @@ function CardHealthBadge({
   health: NavigationSubItem['health']
   state: SiteHealthState
 }) {
-  const title = siteHealthTitle(health)
+  const title = siteHealthTitle(health, state)
   const showArchive = state.state === 'dead' || state.state === 'suspect-soft404'
   return (
     <span
@@ -311,7 +318,7 @@ export const NavigationCard = memo(function NavigationCard({
    * 徽标按 siteHealthState() 的分级渲染；未巡检（healthState 为 null）
    * 时不渲染任何徽标位、不占位、不写“检测中”——与移除前的无徽标视觉一致。
    */
-  const healthState = siteHealthState(item.health)
+  const healthState = siteHealthState(item.health, getSiteNotice(item.hubId))
 
   /**
    * dnd-kit 拖拽手柄的 ref 回调（轻量 context，不 import dnd-kit）。

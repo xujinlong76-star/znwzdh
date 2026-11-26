@@ -74,6 +74,7 @@ import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SiteFavicon } from '@/components/site-favicon'
 import { healthDotClass, healthPillClass, isBotBlockStatus, siteHealthState, siteHealthTitle } from '@/lib/site-health'
+import { getSiteNotice } from '@/lib/site-notices'
 import { buildDeadLinkWaybackUrl } from '@/lib/dead-link'
 import { safeHref } from '@/lib/safe-url'
 import { cn } from '@/lib/utils'
@@ -567,7 +568,7 @@ export function SiteDetailView({
   )
 
   const hasFacets = site.facets && Object.keys(site.facets).length > 0
-  const healthState = siteHealthState(site.health)
+  const healthState = siteHealthState(site.health, getSiteNotice(site.id))
   // 反爬状态（401/403/429）不等于站点下线：详情页只报 HTTP 码会被读成「打不开」，
   // 这一句把「我们被拒绝」和「站点不可用」分开（口径与 /search 的 broken 分区一致）。
   const botBlocked = isBotBlockStatus(site.health?.httpStatus)
@@ -669,7 +670,7 @@ export function SiteDetailView({
                   {healthState && (
                     <span
                       className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs border ${healthPillClass(healthState)}`}
-                      title={siteHealthTitle(site.health) ?? '服务端最新巡检结果'}
+                      title={siteHealthTitle(site.health, healthState) ?? '服务端最新巡检结果'}
                     >
                       <span className={cn('w-2 h-2 rounded-full', healthDotClass(healthState))} />
                       <span>{healthState.label}</span>

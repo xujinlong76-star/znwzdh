@@ -22,6 +22,7 @@ import { Badge } from '@/components/ui/badge'
 import { isSafeHttpUrl, safeHref, safeSrc, safeWindowOpen } from '@/lib/safe-url'
 import { buildWaybackSnapshotUrl } from '@/lib/wayback-resolver'
 import { healthDotClass, siteHealthState, siteHealthTitle } from '@/lib/site-health'
+import { getSiteNotice } from '@/lib/site-notices'
 import { probeSiteLatency, type PingResult } from '@/lib/site-ping'
 
 interface SitePeekDialogProps {
@@ -285,7 +286,7 @@ export function SitePeekDialog({
 
   // iframe 预览源：非法 URL 直接不渲染（safeSrc 返回 undefined）
   const previewSrc = safeSrc(item.href)
-  const healthState = siteHealthState(item.health)
+  const healthState = siteHealthState(item.health, getSiteNotice(item.hubId))
 
   return (
     <Dialog
@@ -422,7 +423,9 @@ export function SitePeekDialog({
                 站点连通性提示：{healthState.label}
               </div>
               <div className="text-amber-900 dark:text-amber-200 leading-relaxed">
-                建议优先使用下方「平替雷达」中的可用替代产品，或点击右上角「历史快照」调取网页归档。
+                {healthState.state === 'maintenance'
+                  ? '对方站点正在维护，稍后再试。'
+                  : '建议优先使用下方「平替雷达」中的可用替代产品，或点击右上角「历史快照」调取网页归档。'}
               </div>
             </div>
           </div>
@@ -909,7 +912,7 @@ export function SitePeekDialog({
             {healthState && (
               <div
                 className="flex items-center gap-1.5 font-mono"
-                title={siteHealthTitle(item.health) ?? '服务端远端巡检结果'}
+                title={siteHealthTitle(item.health, healthState) ?? '服务端远端巡检结果'}
               >
                 <span className={`w-2 h-2 rounded-full ${healthDotClass(healthState)}`} />
                 <span>{healthState.label}</span>

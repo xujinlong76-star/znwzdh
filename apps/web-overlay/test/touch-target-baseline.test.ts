@@ -204,10 +204,17 @@ describe("无障碍细节（footer 分隔符与移动表单字号）", () => {
     expect(media).toContain(".nav-card-actionbar");
     expect(media).toContain("opacity: 1");
     expect(media).toContain("pointer-events: auto");
-    // 星标不得再包在 opacity-0 的 hover-reveal 簇里：三处星标容器均须是
-    // 常驻可见（标准/丰富卡为 absolute top-2 right-2 + pointer-events-none
-    // 容器配 pointer-events-auto 按钮；紧凑行为 opacity-100 容器）。
+    // 星标不得再包在 opacity-0 的 hover-reveal 簇里：三变体全部常驻可见。
+    // 当前结构（2026-11-26 卡片重构后）：紧凑档为 inline opacity-100
+    // 容器（:796 注释），丰富/标准档走 SiteCard actions 槽 +
+    // actionsAlwaysVisible（:1089 注释 / :1384 无注释，槽本身即常驻）。
+    // 2026-11-26 卡片重构（U-442）只丢了标准档的一处注释、未动行为；
+    // 断言跟随新结构改写，并加锁三处 <FavoriteButton 与两处
+    // actionsAlwaysVisible，不只数注释。
     const starWrappers = src.split("收藏星标（卡片悬浮修复 2026-11-20）").length - 1;
-    expect(starWrappers, "三变体的星标注释都应更新为卡片悬浮修复版（常驻可见）").toBe(3);
+    expect(starWrappers, "紧凑/丰富档的星标注释仍在").toBe(2);
+    expect(src.split("<FavoriteButton").length - 1, "三变体各应有一处星标").toBe(3);
+    const alwaysVisibleSlots = src.match(/^\s*actionsAlwaysVisible\s*$/gm)?.length ?? 0;
+    expect(alwaysVisibleSlots, "丰富/标准档星标槽均应经 actionsAlwaysVisible 常驻").toBe(2);
   });
 });

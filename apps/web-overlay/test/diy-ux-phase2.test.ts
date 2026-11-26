@@ -91,12 +91,19 @@ describe("工具栏文案与无障碍", () => {
     expect(src).toContain("setIsBackupOpen(true)");
   });
 
-  it("完成按钮不在横向滚动区里：滚动只发生在左侧控制簇", () => {
+  it("完成按钮不在横向滚动区里：横向滚动已整体退役，完成按钮在右侧固定簇", () => {
     const src = overlayFile("src/components/home-diy-toolbar.tsx");
-    expect(src).toContain("overflow-x-auto no-scrollbar min-w-0 flex-1");
-    expect(src).not.toContain(
-      "'flex items-center justify-between gap-2 overflow-x-auto no-scrollbar'",
-    );
+    // 2026-11-26 Phase 1 A2 零溢出重构（U-442）：横向滚动模型整体退役——
+    // 左侧控制簇改走 overflow-hidden + 低频工具收进「更多」菜单，全栏零横向
+    // 滚动；完成按钮仍在右侧 shrink-0 簇内、永不滚出视野。本意（完成按钮
+    // 永远可见）未变且更强，断言跟随新机制改写。
+    expect(src).toContain("min-w-0 flex-1 overflow-hidden");
+    expect(src).not.toContain("overflow-x-auto");
+    // 完成按钮在右侧固定簇内：右侧簇 shrink-0 ml-auto，且完成按钮位于其后
+    const rightCluster = src.indexOf("shrink-0 ml-auto");
+    const done = src.indexOf('data-testid="diy-btn-done"');
+    expect(rightCluster).toBeGreaterThan(-1);
+    expect(done).toBeGreaterThan(rightCluster);
   });
 
   it("强调色圆点 36px 视觉 + ::after 扩至 44px 命中区，且带 aria-pressed（P1 #10 2026-11-13 升级）", () => {

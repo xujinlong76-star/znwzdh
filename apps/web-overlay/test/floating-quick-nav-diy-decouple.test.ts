@@ -74,7 +74,15 @@ describe("FloatingQuickNav（退役）：组件与事件桥均已删除，源码
     expect(storage).not.toContain("dispatchDiyEditingLayout");
     expect(storage).not.toContain("diy-editing-event");
     expect(storage).toMatch(/export function setHomeDiyEditingLayout\(next: boolean\)/);
-    expect(storage).toContain("commitSharedState({ isEditingLayout: next })");
+    // 2026-11-26 wip 快照重构（U-442）：退出编排时除 isEditingLayout: false
+    // 外一并复位拖拽层/大纲态/选中块（防残留态），进入时只写 isEditingLayout:
+    // true；单行 commitSharedState({ isEditingLayout: next }) 已不存在。
+    // 断言跟随新行为改写，并锁死退出复位四项——比旧断言更严，不是放宽。
+    expect(storage).toContain("commitSharedState({ isEditingLayout: true })");
+    expect(storage).toContain("isEditingLayout: false,");
+    expect(storage).toContain("activeDragLayer: 'none',");
+    expect(storage).toContain("outlineMode: false,");
+    expect(storage).toContain("selectedBlockId: null,");
   });
 
   it("三键功能仍有替代入口：回顶在命令面板，搜索在顶栏，微工具在首页抽屉", () => {

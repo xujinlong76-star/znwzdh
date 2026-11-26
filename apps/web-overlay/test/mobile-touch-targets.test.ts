@@ -258,7 +258,13 @@ describe('P1 #10 触控目标：DIY 工具栏与触发器', () => {
     expect(src).toContain("after:absolute after:-inset-3.5 after:content-['']")
     // 右侧撤销/重做/备份/重置仍是 32px（有意不动：工具栏在 360px 屏上已挤满，
     // 放大它们会把左侧控制簇挤出视野，等移动端布局决策——见本轮报告跟进项）
-    expect(count(src, 'h-8 w-8 rounded-full')).toBe(4)
+    // 2026-11-26 Phase 1 A2 零溢出重构（U-442）：撤销/重做改走
+    // h-9 w-9 sm:h-8 sm:w-8（<sm 36px，≥sm 仍 32px——移动端反而更大，不是
+    // 回退）；存为场景由 44px 收为 32px 且只在 xl+ 直出（与备份/重置同款），
+    // 故字面 'h-8 w-8 rounded-full' 计数 4 → 3，另锁 2 处 sm:h-8 sm:w-8
+    // （撤销/重做）。四钮桌面态仍为 32px 的本意未变，断言跟随新行为改写。
+    expect(count(src, 'h-8 w-8 rounded-full')).toBe(3)
+    expect(count(src, 'sm:h-8 sm:w-8')).toBe(2)
   })
 
   it('home-diy-trigger：工坊入口 44px，警告 × 隐形扩到 44px', () => {

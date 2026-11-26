@@ -43,7 +43,11 @@ const gated: Array<[string, string]> = [
   ["src/components/search-palette.tsx", "hidden sm:flex sm:pointer-coarse:hidden items-center gap-3 border-t border-border/60 bg-muted/20"],
   ["src/components/search/spotlight-modal.tsx", "hidden sm:inline-flex sm:pointer-coarse:hidden h-5"],
   ["src/components/search/spotlight-modal.tsx", 'flex items-center gap-1 pointer-coarse:hidden'],
-  ["src/components/home-diy-toolbar.tsx", "hidden sm:inline-block sm:pointer-coarse:hidden text-[10px]"],
+  // 2026-11-26 Phase 1 A2 零溢出重构（U-442）：DIY 工具栏「完成」按钮的 Esc
+  // 提示由 sm: 延后到 md: 才显示（640–768px 档工具栏已挤满，键盘提示是纯
+  // 键盘 chrome，窄屏隐藏不损功能）；触屏降噪仍在，pointer-coarse:hidden
+  // 本身不丢——与上文搜索面板徽章 sm:→xl: 的先例同一口径。
+  ["src/components/home-diy-toolbar.tsx", "hidden md:inline-block sm:pointer-coarse:hidden text-[10px]"],
   ["src/components/ai/ai-copilot-drawer.tsx", "hidden sm:flex sm:pointer-coarse:hidden items-center gap-1"],
   ["src/components/ai/ai-copilot-drawer.tsx", "hidden sm:inline sm:pointer-coarse:hidden"],
   ["src/components/onboarding-card.tsx", 'pointer-coarse:hidden">，或按'],

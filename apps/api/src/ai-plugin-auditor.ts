@@ -34,6 +34,47 @@ import { indexPluginsBatch, indexItemFromManifest, removePluginIndex } from "./i
 import type { PluginRecord } from "@navhub/store";
 import { ADMIN_NOTIFICATION_IDENTITY } from "./notifications.ts";
 
+export interface PluginAuditModelResult {
+  decision: "approve" | "reject";
+  complianceScore: number;
+  relevanceScore: number;
+  rationale: string;
+  suggestions: string[];
+}
+
+/** 严格校验模型裁决；任何缺失、未知、非有限或越界字段均转人工复核。 */
+export function parsePluginAuditModelResult(content: string): PluginAuditModelResult {
+  const trimmed = content.trim();
+  const candidate = trimmed.match(/\{[\s\S]*\}/)?.[0] ?? trimmed;
+  const parsed: unknown = JSON.parse(candidate);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("插件审核模型返回值必须是 JSON 对象");
+  }
+  const value = parsed as Record<string, unknown>;
+  if (value.decision !== "approve" && value.decision !== "reject") {
+    throw new Error("插件审核模型缺少合法 decision，转人工复核");
+  }
+  for (const key of ["complianceScore", "relevanceScore"] as const) {
+    const score = value[key];
+    if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 100) {
+      throw new Error("插件审核模型的 " + key + " 必须是 0 到 100 之间的有限数字");
+    }
+  }
+  if (typeof value.rationale !== "string" || !value.rationale.trim()) {
+    throw new Error("插件审核模型缺少有效 rationale");
+  }
+  const suggestions = value.suggestions === undefined ? [] : value.suggestions;
+  if (!Array.isArray(suggestions) || suggestions.some((item) => typeof item !== "string")) {
+    throw new Error("插件审核模型 suggestions 格式无效");
+  }
+  return {
+    decision: value.decision as "approve" | "reject",
+    complianceScore: Math.round(value.complianceScore as number),
+    relevanceScore: Math.round(value.relevanceScore as number),
+    rationale: value.rationale.trim().slice(0, 500),
+    suggestions: suggestions.map((item) => (item as string).trim()).filter(Boolean).slice(0, 20),
+  };
+}
 export interface AuditCheckItem {
   name: string;
   passed: boolean;
@@ -497,28 +538,14 @@ export async function evaluatePluginAudit(
       // 管理端只填了名字没填 model 时，报告会自称跑过一个并不存在的模型。
       auditModel = chatRes.model || resolved.provider.model || "unknown-model";
 
-      const parsed = JSON.parse(chatRes.content.match(/\{[\s\S]*\}/)?.[0] || chatRes.content);
-      if (parsed && typeof parsed === "object" && parsed.decision === "reject") {
-        llmRejected = true;
-      }
-      if (typeof parsed.complianceScore === "number") {
-        complianceScore = Math.max(0, Math.min(100, Math.round(parsed.complianceScore)));
-      }
-      if (typeof parsed.relevanceScore === "number") {
-        relevanceScore = Math.max(0, Math.min(100, Math.round(parsed.relevanceScore)));
-      }
-      if (typeof parsed.rationale === "string" && parsed.rationale.trim()) {
-        aiRationale = parsed.rationale.trim();
-      }
-      if (Array.isArray(parsed.suggestions)) {
-        for (const s of parsed.suggestions) {
-          if (typeof s === "string" && s.trim()) suggestions.push(s.trim());
-        }
-      }
-      // 「调用成功」不等于「审理发生」：两个维度都拿到分才算。
-      // 旧实现在这里不检查，模型回一句散文也能带着 95 的假初值过审。
-      llmReviewed = complianceScore !== null && relevanceScore !== null;
-      if (!llmReviewed) reviewSkipped = "error";
+      const parsed = parsePluginAuditModelResult(chatRes.content);
+      llmRejected = parsed.decision === "reject";
+      complianceScore = parsed.complianceScore;
+      relevanceScore = parsed.relevanceScore;
+      aiRationale = parsed.rationale;
+      suggestions.push(...parsed.suggestions);
+      // 只有完整、合法的裁决对象才能视为模型真正完成审理。
+      llmReviewed = true;
     }
   } catch {
     // 模型层任何异常都不能补分：缺维度就让它缺着，由 pending_review 交人工。

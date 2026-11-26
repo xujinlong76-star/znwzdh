@@ -156,6 +156,18 @@ describe('全格式书签智能解析与语义去重清洗引擎 (Universal Book
     expect(elapsed).toBeLessThan(1000)
   })
 
+  it('Markdown 嗅探：多行输入下链接探测仍是线性的，1MB 多行不阻塞（CodeQL #20 返工 D1）', () => {
+    // 约 50 万行、1MB 的 `a\n` 输入：旧版行切分每行对 4 个终止符各做一次
+    // indexOf（不存在的终止符每次扫到串尾），呈 O(k·n) 近平方级增长，
+    // 实测约 5.9 秒；单遍切分应远低于此
+    const input = 'a\n'.repeat(500000)
+    const t0 = Date.now()
+    const result = parseUniversalBookmarks(input)
+    const elapsed = Date.now() - t0
+    expect(result.format).toBe('onetab_text')
+    expect(elapsed).toBeLessThan(1000)
+  })
+
   it('Markdown 嗅探：链接探测覆盖边界形态（与旧正则等价）', () => {
     const cases: Array<[string, 'markdown' | 'onetab_text']> = [
       ['[Test](https://test.com)', 'markdown'],

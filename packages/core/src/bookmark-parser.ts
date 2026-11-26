@@ -445,8 +445,10 @@ export type BookmarkSourceFormat = 'netscape_html' | 'onetab_text' | 'markdown' 
 // Markdown 链接探测的针点：`](http://` / `](https://`
 const MARKDOWN_LINK_PREFIXES = ['](http://', '](https://'] as const
 
-// 正则 `.` 不匹配的行终止符。
-const LINE_TERMINATORS = ['\n', '\r', '\u2028', '\u2029'] as const
+// 正则 `.` 不匹配的行终止符：`\n \r \u2028 \u2029`（字符码 0x0a / 0x0d / 0x2028 / 0x2029）。
+// 行切分须单遍扫描，禁止每行对各终止符重复 indexOf（对行内不存在的
+// 终止符每次都会扫到串尾，多行输入下呈 O(k·n) 近平方级增长，CodeQL #20
+// 返工 D1）；见下方 hasMarkdownLink。
 
 /**
  * 判断单行内是否存在 Markdown 链接 `[text](http(s)://...)`。
@@ -477,22 +479,20 @@ function hasMarkdownLinkInLine(line: string): boolean {
 /**
  * 线性检测文本中是否存在 Markdown 链接。
  * 原正则对 `[`×n 输入呈平方级回溯（CodeQL #20）；
- * 本实现按行切分后逐行 indexOf 判定，整体线性。
+ * 本实现单遍扫描行终止符：每字符只看一次 charCodeAt，找到终止符
+ * 即切一行，整体线性（O(n)）；逐行判定仍走 hasMarkdownLinkInLine。
  */
 function hasMarkdownLink(text: string): boolean {
-  let lineStart = 0
   const len = text.length
-  while (lineStart <= len) {
-    let lineEnd = len
-    for (const terminator of LINE_TERMINATORS) {
-      const pos = text.indexOf(terminator, lineStart)
-      if (pos !== -1 && pos < lineEnd) lineEnd = pos
+  let lineStart = 0
+  for (let i = 0; i < len; i++) {
+    const code = text.charCodeAt(i)
+    if (code === 0x0a || code === 0x0d || code === 0x2028 || code === 0x2029) {
+      if (hasMarkdownLinkInLine(text.slice(lineStart, i))) return true
+      lineStart = i + 1
     }
-    if (hasMarkdownLinkInLine(text.slice(lineStart, lineEnd))) return true
-    if (lineEnd === len) break
-    lineStart = lineEnd + 1
   }
-  return false
+  return hasMarkdownLinkInLine(text.slice(lineStart, len))
 }
 
 /**

@@ -172,7 +172,7 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
               </span>
               <div className="min-w-0">
                 <span className="font-semibold text-foreground block text-sm">除了工具网站，还想看技术视频教程？</span>
-                <span className="text-muted-foreground text-xs block truncate">
+                <span className="text-muted-foreground text-xs block line-clamp-2">
                   本站视频库收录高质量技术视频与实操课程，覆盖前端、后端、AI 等全栈技能
                 </span>
               </div>

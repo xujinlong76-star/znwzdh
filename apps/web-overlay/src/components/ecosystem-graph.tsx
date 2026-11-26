@@ -843,11 +843,12 @@ export function EcosystemGraph() {
       className="relative w-full h-[calc(100vh-64px)] overflow-hidden bg-background select-none flex flex-col"
     >
       {/* 顶部控制栏：固定 2 行（第 1 行标题 + 场景胶囊，第 2 行图例过滤 + 换簇 + 搜索 + 缩放），
-          行内超宽时组内横向滚动、不换行，画布始终占满剩余视口高度 */}
+          组内超宽时横向滚动；窄屏下第 1 行可换行（标题徽章折到第二行、场景胶囊独占一行），
+          避免徽章被视口右缘裁掉（390px 实测 h1 曾溢出 175px），画布始终占满剩余视口高度 */}
       <div className="border-b border-border/60 glass-surface subtle-mesh z-20 shadow-xs">
         {/* 第 1 行：返回 + 标题/徽章 + 场景胶囊（分类域里也展示，点场景即切回全局场景） */}
-        <div className="flex items-center gap-3 px-3 sm:px-6 pt-2 pb-1.5">
-          <div className="flex items-center gap-3 min-w-0 shrink-0">
+        <div className="flex flex-wrap items-center gap-3 px-3 sm:px-6 pt-2 pb-1.5">
+          <div className="flex items-center gap-3 min-w-0">
             <Button asChild variant="ghost" size="sm" className="gap-1.5 text-xs h-8 border border-border/50 hover:bg-background/80 shrink-0">
               <Link href="/">
                 <ArrowLeft className="w-3.5 h-3.5" />
@@ -909,7 +910,7 @@ export function EcosystemGraph() {
           {/* 场景胶囊：全部 / 研发全栈 / UI & 设计 / AI 实验室 / 效率创作。
               分类域里也展示（旧实现只在全局展示，?category= 进来就看不到，等于功能缺失）；
               点场景即重新抽样该场景子集，分类域里点场景先切回全局。 */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-pan-x p-1 rounded-xl bg-muted/40 border border-border/50 min-w-0 flex-1" role="group" aria-label="场景切换">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-pan-x p-1 rounded-xl bg-muted/40 border border-border/50 min-w-0 w-full sm:w-auto sm:flex-1" role="group" aria-label="场景切换">
             {(['all', 'dev', 'design', 'ai', 'efficiency'] as const).map((cat) => (
               <Button
                 key={cat}

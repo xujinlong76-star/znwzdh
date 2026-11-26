@@ -76,16 +76,18 @@ describe('HotwordChips：热词点选直达', () => {
 describe('热词接线：page.tsx 取数、SearchResults 空态挂载', () => {
   it('page.tsx 只在无筛选时取一次 /api/search/hotwords，并传给 SearchResults', () => {
     const src = overlaySource(PAGE)
-    expect(src).toContain("hubGet<{ hotwords?: string[] }>('/api/search/hotwords', 60)")
+    expect(src).toContain("hubGet<{ hotwords?: string[]; source?: 'behavioral' | 'curated' }>('/api/search/hotwords', 60)")
     expect(src).toContain('hotwords={hotwordsData?.hotwords ?? []}')
+    // U-367：source 随 hotwords 一起透传，SearchResults 据此切换「大家都在搜 / 热门推荐」
+    expect(src).toContain("hotwordSource={hotwordsData?.source ?? 'behavioral'}")
   })
 
   it('SearchResults 空态（无 q/tag/category/facets）挂载 HotwordChips', () => {
     const src = overlaySource(RESULTS)
-    expect(src).toContain('<HotwordChips hotwords={hotwords} />')
+    expect(src).toContain('<HotwordChips hotwords={hotwords} source={hotwordSource} />')
     // 挂载点在空态 section 内：空态门之后、浏览入口 nav 之前
     const gateAt = src.indexOf("q === '' && !tag && !category")
-    const mountAt = src.indexOf('<HotwordChips hotwords={hotwords} />')
+    const mountAt = src.indexOf('<HotwordChips hotwords={hotwords} source={hotwordSource} />')
     const navAt = src.indexOf('aria-label="浏览入口"', gateAt)
     expect(gateAt).toBeGreaterThan(-1)
     expect(mountAt).toBeGreaterThan(gateAt)

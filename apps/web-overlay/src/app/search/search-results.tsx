@@ -57,6 +57,12 @@ interface SearchResultsProps {
    * 热词区整块不渲染。点选即 searchHref({ q: 词 })，纯 <a> 链接，无 JS 照常直达。
    */
   hotwords?: string[]
+  /**
+   * 空搜索页热词的来源（U-367）：'behavioral'（行为榜单）或 'curated'
+   * （冷启动回落站内标签榜）。缺省 behavioral——旧缓存响应无该字段时
+   * 仍按「大家都在搜」渲染，不误标。
+   */
+  hotwordSource?: 'behavioral' | 'curated'
   /** 收录站点外链 rel（站点级设置，服务端透传）；缺省 nofollow */
   externalRel?: string
 }
@@ -282,6 +288,7 @@ function EmptyResults({
   facets = {},
   suggestions,
   popular,
+  suggestionSource = 'behavioral',
   inferredCategory,
   recommended,
   externalRel = 'nofollow noopener noreferrer',
@@ -300,6 +307,12 @@ function EmptyResults({
   facets?: Record<string, string[]>
   suggestions: string[]
   popular: string[]
+  /**
+   * 零结果建议的来源（U-367）：'behavioral'（行为榜单）或 'curated'
+   * （冷启动回落站内标签榜）。curated 时「大家在搜」改标「热门推荐」，
+   * 绝不冒充行为热榜；「换个词试试」本身不宣称来源，不用改。
+   */
+  suggestionSource?: 'behavioral' | 'curated'
   /** 中枢从查询里理解到的分类（如 @开发工具 / “开发工具”一词）；没有推断出来时不硬凑 */
   inferredCategory?: string | null
   /** 零结果救援的「今日热榜」：今日热榜站点；取数失败为空数组，整块不渲染 */
@@ -413,7 +426,7 @@ function EmptyResults({
       ) : null}
       {!hideGenericRecommendations && popular.length > 0 ? (
         <div className="space-y-1.5">
-          <p className="text-xs text-muted-foreground">大家在搜</p>
+          <p className="text-xs text-muted-foreground">{suggestionSource === 'curated' ? '热门推荐' : '大家在搜'}</p>
           <div className="flex flex-wrap gap-1.5">
             {popular.map((item) => (
               <Link
@@ -719,12 +732,16 @@ function SearchRelatedTags({
  * 每个 chip 都是指向 `/search?q=<词>` 的普通 <a>（经 searchHref 编码），
  * 点选即直达该词的站内搜索；无 JS 时同样可点——搜索框空态不依赖任何脚本。
  * 空数组返回 null：未取到或取数失败时整块不渲染，不谎称「没有热词」。
+ *
+ * U-367 文案诚实化：source="curated"（冷启动回落站内标签榜）时标题标
+ * 「热门推荐」，绝不冒充「大家都在搜」；source 缺省/行为榜单时仍是
+ * 「大家都在搜」。空数组时无论哪种来源都整块不渲染（目录也空时不编造）。
  */
-export function HotwordChips({ hotwords }: { hotwords: string[] }) {
+export function HotwordChips({ hotwords, source = 'behavioral' }: { hotwords: string[]; source?: 'behavioral' | 'curated' }) {
   if (hotwords.length === 0) return null
   return (
     <div className="space-y-1.5">
-      <p className="text-xs text-muted-foreground">大家都在搜</p>
+      <p className="text-xs text-muted-foreground">{source === 'curated' ? '热门推荐' : '大家都在搜'}</p>
       <div className="flex flex-wrap justify-center gap-1.5">
         {hotwords.map((item) => (
           <Link
@@ -754,6 +771,7 @@ export function SearchResults({
   plugins = null,
   recommended = [],
   hotwords = [],
+  hotwordSource = 'behavioral',
   externalRel = 'nofollow noopener noreferrer',
 }: SearchResultsProps) {
   const hits = result?.hits ?? []
@@ -765,6 +783,8 @@ export function SearchResults({
   const relatedTags = result?.relatedTags ?? []
   const suggestions = result?.suggestions ?? []
   const popular = result?.popular ?? []
+  /** 零结果建议的来源（U-367）：中枢随 suggestions/popular 下发，缺席按 behavioral */
+  const suggestionSource = result?.suggestionSource ?? 'behavioral'
   const didYouMean = result?.didYouMean
   const correction = result?.correction ?? null
   // 纠正后仍零结果：只给两个明确出口（存为待找 / 新建收藏），不再叠
@@ -1010,8 +1030,9 @@ export function SearchResults({
           {q === '' && !tag && !category && Object.keys(facets).length === 0 ? (
             <section className="space-y-3 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
               <p className="text-sm text-muted-foreground">输入关键词开始搜索；也可以先按分类或标签浏览。</p>
-              {/* W4-0622-1 收尾③：空态热词点选直达（取数失败为空数组时整块不渲染）。 */}
-              <HotwordChips hotwords={hotwords} />
+              {/* W4-0622-1 收尾③：空态热词点选直达（取数失败为空数组时整块不渲染）。
+                  U-367：source=curated 时 HotwordChips 标「热门推荐」不冒充行为热榜。 */}
+              <HotwordChips hotwords={hotwords} source={hotwordSource} />
               {/* U-335：空态最近搜索点选重搜（客户端岛，见 recent-search-chips.tsx 顶部注释：
                   身份只在浏览器 localStorage，服务端取不到个人历史；无历史/取数失败不渲染；
                   与热词共存、重叠词排重）。放热词之后，避免后加载的个人区把已渲染的热词顶下去。 */}
@@ -1128,6 +1149,7 @@ export function SearchResults({
                   facets={facets}
                   suggestions={suggestions}
                   popular={popular}
+                  suggestionSource={suggestionSource}
                   inferredCategory={result?.inferredCategory ?? null}
                   recommended={recommended}
                   externalRel={externalRel}

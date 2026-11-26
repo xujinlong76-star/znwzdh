@@ -169,6 +169,7 @@ export interface SearchResponse {
   queryExpansion?: string[];
   suggestions?: string[];
   popular?: string[];
+  suggestionSource?: "behavioral" | "curated";
   suggestionsDegraded?: true;
   relationHits?: ({
     targetTitle: string;
@@ -220,6 +221,7 @@ export interface SearchResponse {
  */
 export interface SearchHotwordsResponse {
   hotwords: string[];
+  source: "behavioral" | "curated";
   suggestionsDegraded?: true;
   [key: string]: unknown;
 }

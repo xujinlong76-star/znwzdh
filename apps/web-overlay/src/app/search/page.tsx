@@ -126,9 +126,11 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
     // W4-0622-1 收尾③：空搜索页的热词 chips（GET /api/search/hotwords，60s 缓存，
     // 与零结果页 popular 同口径）。只在无筛选时取——有筛选的页不渲染空态，
     // 取了也是浪费一次中枢往返；取数失败（null）时热词区整块不渲染。
+    // U-367：响应带 source——behavioral 时文案「大家都在搜」，curated（冷启动
+    // 回落站内标签榜）时文案「热门推荐」，绝不冒充行为热榜。
     hasFilter
       ? Promise.resolve(null)
-      : hubGet<{ hotwords?: string[] }>('/api/search/hotwords', 60),
+      : hubGet<{ hotwords?: string[]; source?: 'behavioral' | 'curated' }>('/api/search/hotwords', 60),
   ])
   const categoryName = category ? resolveCategoryName(category, categories) : null
   const recommended = (trending?.hits ?? [])
@@ -152,6 +154,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       plugins={plugins}
       recommended={recommended}
       hotwords={hotwordsData?.hotwords ?? []}
+      hotwordSource={hotwordsData?.source ?? 'behavioral'}
       externalRel={externalRel}
     />
   )

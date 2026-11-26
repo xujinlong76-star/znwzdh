@@ -171,6 +171,19 @@ const MatchedSiteRelationPayload = z.looseObject({
   sourceSite: SitePayload.nullable(),
 });
 
+/**
+ * 热词 / 零结果建议的来源（U-367 冷启动回落，切换条件写死在此处，文案不得漂移）：
+ * - "behavioral"：行为榜单（suggestableTopQueries：180 天、≥2 身份 / ≥2 行、
+ *   形状闸，再排除零结果词）；
+ * - "curated"：行为榜单为空且读侧未失败时，回落站内类目数据（存活站点数最
+ *   多的标签名，见 apps/api/src/search-hotword-fallback.ts）。前端遇 curated
+ *   必须标「热门推荐」，绝不冒充「大家都在搜 / 大家在搜」；行为数据到达后
+ *   下一次请求自动切回 behavioral，无需任何配置或迁移。
+ * 读侧失败（degraded）不回落：失败不是冷启动，仍为空 + 降级标记。
+ */
+export const HotwordSource = z.enum(["behavioral", "curated"]);
+export type HotwordSource = z.infer<typeof HotwordSource>;
+
 export const SearchResponse = z.looseObject({
   hits: z.array(SearchHitPayload),
   /** 与 hits 同源的别名（兼容旧客户端；新代码请用 hits） */
@@ -208,6 +221,11 @@ export const SearchResponse = z.looseObject({
   // 零结果时才会出现的附加信息
   suggestions: z.array(z.string()).optional(),
   popular: z.array(z.string()).optional(),
+  /**
+   * suggestions / popular 的来源（U-367）：只在零结果首屏随两者一起出现；
+   * 缺席时前端按 "behavioral" 处理。口径见 HotwordSource。
+   */
+  suggestionSource: HotwordSource.optional(),
   suggestionsDegraded: z.literal(true).optional(),
   relationHits: z.array(MatchedSiteRelationPayload).optional(),
 });
@@ -223,10 +241,16 @@ export const SearchResponse = z.looseObject({
  * ≥2 行、形状闸）再排除零结果词，取前 8。读失败降级为空数组 +
  * suggestionsDegraded 标记，不 5xx（与 SearchResponse 同口径的
  * literal(true)，正常返回时字段不存在）。
+ *
+ * U-367 冷启动回落：行为榜单为空且读侧未失败时，回落 curated 标签榜
+ * （存活站点数最多的标签名），此时 source="curated"，前端文案标
+ * 「热门推荐」；行为榜单非空时 source="behavioral"。口径见 HotwordSource。
  */
 export const SearchHotwordsResponse = z.looseObject({
   /** 最多 8 条热词（路由 slice(0, 8) 截断） */
   hotwords: z.array(z.string()),
+  /** 本次 hotwords 的来源：行为榜单还是 curated 回落（恒存在） */
+  source: HotwordSource,
   suggestionsDegraded: z.literal(true).optional(),
 });
 

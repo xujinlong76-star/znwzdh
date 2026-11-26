@@ -11,6 +11,7 @@ import { badRequest, clampFacets, FACET_MAX_JSON_LENGTH, identityTrusted, reques
 
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
+import { curatedHotwords, type HotwordSource } from "../search-hotword-fallback.ts";
 
 /**
  * 搜索响应的缓存键必须包含的字段（写进 `Vary`，见 server.ts 的 CachePolicy.vary）。
@@ -84,21 +85,38 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    * 只读、无身份、无写入：本次请求不记事件，`before: snapshotAt` 也不需要——
    * 本端点不写事件，不存在「自己灌榜」回路。读失败降级为空数组 + 降级计数，
    * 不 5xx（chips 是附加信息，缺了比整页报错好；与 runSearch 建议读侧同哲学）。
+   *
+   * U-367 冷启动回落：行为榜单为空且读侧未失败时，回落 curated 标签榜
+   * （存活站点数最多的标签名，见 search-hotword-fallback.ts），source="curated"，
+   * 前端文案标「热门推荐」；行为榜单非空时 source="behavioral"。读失败不回落。
    */
   app.get("/api/search/hotwords", { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 60, etag: true } } }, async () => {
     const [topRead, zeroRead] = await Promise.allSettled([
       ctx.repo.suggestableTopQueries(180, 30),
       ctx.repo.zeroResultQueries(180, 30),
     ]);
-    const degraded = topRead.status === "rejected" || zeroRead.status === "rejected";
+    let degraded = topRead.status === "rejected" || zeroRead.status === "rejected";
     if (degraded) {
       recordSearchSuggestionsDegraded();
     }
     const top = topRead.status === "fulfilled" ? topRead.value : [];
     const zero = zeroRead.status === "fulfilled" ? zeroRead.value : [];
     const zeroSet = new Set(zero.map((z) => z.query));
-    const hotwords = top.filter((t) => !zeroSet.has(t.query)).slice(0, 8).map((t) => t.query);
-    return { hotwords, ...(degraded ? { suggestionsDegraded: true } : {}) };
+    let hotwords = top.filter((t) => !zeroSet.has(t.query)).slice(0, 8).map((t) => t.query);
+    let source: HotwordSource = "behavioral";
+    if (hotwords.length === 0 && !degraded) {
+      try {
+        const fallback = await curatedHotwords(ctx.repo, { exclude: zeroSet, limit: 8 });
+        if (fallback.length > 0) {
+          hotwords = fallback;
+          source = "curated";
+        }
+      } catch {
+        degraded = true;
+        recordSearchSuggestionsDegraded();
+      }
+    }
+    return { hotwords, source, ...(degraded ? { suggestionsDegraded: true } : {}) };
   });
 
   app.get("/api/search", { config: { rateLimit: { max: 600, timeWindow: "1 minute" }, cache: { maxAge: 20, etag: true, vary: SEARCH_VARY } } }, async (req, reply) => {
@@ -225,6 +243,8 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     const isFirstPage = (input.offset ?? 0) === 0;
     let suggestions: string[] = [];
     let popular: string[] = [];
+    /** 零结果建议的来源（U-367）：随 suggestions/popular 一起下发，缺省 behavioral */
+    let suggestionSource: HotwordSource = "behavioral";
     let relationHits: unknown[] = [];
     let relatedTags: Array<{ name: string; slug: string; count: number }> = [];
     /** 建议读侧失败：hits 已经算出，不能因为「附加信息」读不出来而整单 5xx */
@@ -279,10 +299,28 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         const top = topRead.status === "fulfilled" ? topRead.value : [];
         const zero = zeroRead.status === "fulfilled" ? zeroRead.value : [];
         const zeroSet = new Set(zero.map((z) => z.query));
-        suggestions = top.filter((t) => !zeroSet.has(t.query) && t.query !== q).slice(0, 5).map((t) => t.query);
+        // U-367：suggestions / popular 同池——先取行为榜单；为空且读侧未失败时
+        // 回落 curated 标签榜（与 /api/search/hotwords 同一切换条件），
+        // suggestionSource 随零结果载荷一起下发，前端据此切换文案。
+        const behavioral = top.filter((t) => !zeroSet.has(t.query) && t.query !== q);
+        suggestionSource = "behavioral";
+        let pool = behavioral.map((t) => t.query);
+        if (pool.length === 0 && !suggestionsDegraded) {
+          try {
+            const fallback = await curatedHotwords(ctx.repo, { exclude: new Set([...zeroSet, q]), limit: 8 });
+            if (fallback.length > 0) {
+              pool = fallback;
+              suggestionSource = "curated";
+            }
+          } catch {
+            suggestionsDegraded = true;
+            recordSearchSuggestionsDegraded();
+          }
+        }
+        suggestions = pool.slice(0, 5);
         // popular 同样排除本次 q：suggestions 一直排着，两条并列的口径不一致时，
         // 用户会在「大家都在搜」里看到自己刚搜过、并且什么都没搜到的那个词。
-        popular = top.filter((t) => !zeroSet.has(t.query) && t.query !== q).slice(0, 8).map((t) => t.query);
+        popular = pool.slice(0, 8);
       }
       if (identity && isFirstPage && searchHistoryEnabled && !isProbe) {
         await ctx.repo.recordSearch(identity, q, result.hits.length).catch(() => recordSearchWriteFailure("history"));
@@ -292,7 +330,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       ...result,
       hits,
       items: hits,
-      ...(result.hits.length === 0 && q && isFirstPage ? { suggestions, popular } : {}),
+      ...(result.hits.length === 0 && q && isFirstPage ? { suggestions, popular, suggestionSource } : {}),
       ...(suggestionsDegraded ? { suggestionsDegraded: true } : {}),
       ...(relationHits.length > 0 ? { relationHits } : {}),
       ...(relatedTags.length > 0 ? { relatedTags } : {}),

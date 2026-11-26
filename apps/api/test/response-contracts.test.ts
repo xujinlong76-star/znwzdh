@@ -430,6 +430,8 @@ describe("真实响应满足契约", () => {
     expectContract(SearchHotwordsResponse, body, "GET /api/search/hotwords");
     expect(body.hotwords).toContain("契约热词");
     expect(body.hotwords.length).toBeLessThanOrEqual(8);
+    // U-367：行为榜单非空时 source 恒为 behavioral（回落只在榜单为空时发生）
+    expect(body.source).toBe("behavioral");
     // 正常返回不带降级标记（读失败时才出现 suggestionsDegraded: true）
     expect(body.suggestionsDegraded).toBeUndefined();
   });

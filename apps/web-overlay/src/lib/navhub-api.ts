@@ -162,6 +162,7 @@ export interface HubSearchResult
     | 'fallback'
     | 'suggestions'
     | 'popular'
+    | 'suggestionSource'
     | 'inferredFacets'
     | 'inferredTag'
     | 'inferredCategory'

@@ -896,6 +896,10 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   }
 
   // Phase 2 模块 D：紧凑大纲态（手动全景模式或拖动超过 260px 高区块时的无跳变紧凑胶囊呈现）
+  // U-454：大纲态分类卡的点击即选中（onSelectBlock）原来只有鼠标能用，键盘用户在
+  // 大纲态下没有任何办法选中分类（完整区块里的「属性」按钮只在非大纲分支才渲染）。
+  // 按知识星图节点（graph/knowledge-star-map-modal.tsx）的既有写法补键盘等价入口：
+  // 可聚焦 + role=button + Enter/Space 触发与点击同一动作。
   if (isCompactOutline && isEditingLayout) {
     return (
       <section
@@ -903,8 +907,17 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
         id={category.id}
         data-bento-outline-card={category.id}
         onClick={() => onSelectBlock?.(category.id)}
+        role="button"
+        tabIndex={0}
+        aria-label={`选中分类「${category.title}」${isBlockSelected ? '（已选中）' : ''}`}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onSelectBlock?.(category.id)
+          }
+        }}
         className={cn(
-          'js-block-drag-handle flex h-full min-h-[68px] items-center justify-between gap-2 rounded-xl border-2 px-3 py-2 cursor-grab active:cursor-grabbing transition-colors select-none',
+          'js-block-drag-handle flex h-full min-h-[68px] items-center justify-between gap-2 rounded-xl border-2 px-3 py-2 cursor-grab active:cursor-grabbing transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
           isBlockSelected
             ? 'border-primary bg-primary/10 ring-2 ring-primary/30 shadow-md'
             : 'border-dashed border-primary/40 bg-card/90 hover:border-primary/70',

@@ -35,12 +35,25 @@ export const UnifiedWidgetChrome = memo(function UnifiedWidgetChrome({
   children,
 }: UnifiedWidgetChromeProps) {
   if (isCompactOutline) {
+    // U-454：大纲态卡片的点击即选中（onSelect）原来只有鼠标能用，键盘用户在
+    // 大纲态下没有任何办法选中区块（非大纲态的「属性」按钮只在完整卡片里才有）。
+    // 按知识星图节点（graph/knowledge-star-map-modal.tsx）的既有写法补键盘
+    // 等价入口：可聚焦 + role=button + Enter/Space 触发与点击同一动作。
     return (
       <div
         data-bento-outline-card={block.id}
         onClick={() => onSelect(block.id)}
+        role="button"
+        tabIndex={0}
+        aria-label={`选中区块「${title}」${isSelected ? '（已选中）' : ''}`}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onSelect(block.id)
+          }
+        }}
         className={cn(
-          'js-block-drag-handle flex h-full items-center justify-between gap-2 rounded-xl border px-3 py-2 cursor-grab active:cursor-grabbing transition-colors select-none',
+          'js-block-drag-handle flex h-full items-center justify-between gap-2 rounded-xl border px-3 py-2 cursor-grab active:cursor-grabbing transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
           isSelected
             ? 'border-primary bg-primary/10 ring-2 ring-primary/30'
             : 'border-dashed border-primary/40 bg-card/90 hover:border-primary/70',

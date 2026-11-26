@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { formatDuration } from '@/lib/video-format'
 import { cn } from '@/lib/utils'
+import { handleTabListKeyDown } from '@/lib/tab-keyboard'
 import { ensureAdminSession } from '@/lib/client-auto-auth'
 import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-platform-registry'
 import type { VideoPlatformType } from '@/types/navigation'
@@ -229,11 +230,15 @@ export function VideoAutoHarvestDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div role="tablist" aria-label="采集方式" className="flex gap-1 pt-2 shrink-0">
+        {/* U-434：采集方式 tablist——←/→ 漫游见 @/lib/tab-keyboard。 */}
+        <div role="tablist" aria-label="采集方式" onKeyDown={handleTabListKeyDown} className="flex gap-1 pt-2 shrink-0">
           <button
             type="button"
             role="tab"
+            id="auto-harvest-tab-manual"
             aria-selected={tab === 'manual'}
+            aria-controls="auto-harvest-panel-manual"
+            tabIndex={tab === 'manual' ? 0 : -1}
             onClick={() => setTab('manual')}
             className={cn(
               'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors',
@@ -247,7 +252,10 @@ export function VideoAutoHarvestDialog({
           <button
             type="button"
             role="tab"
+            id="auto-harvest-tab-autonomous"
             aria-selected={tab === 'autonomous'}
+            aria-controls="auto-harvest-panel-autonomous"
+            tabIndex={tab === 'autonomous' ? 0 : -1}
             onClick={() => setTab('autonomous')}
             className={cn(
               'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors',
@@ -261,7 +269,7 @@ export function VideoAutoHarvestDialog({
         </div>
 
         {tab === 'manual' && (
-        <div className="flex-1 overflow-y-auto space-y-3.5 py-2 text-xs">
+        <div role="tabpanel" id="auto-harvest-panel-manual" aria-labelledby="auto-harvest-tab-manual" className="flex-1 overflow-y-auto space-y-3.5 py-2 text-xs">
           {/* 流水线阶段状态指示器 */}
           <div className="grid grid-cols-4 gap-1.5 p-2 rounded-xl border bg-muted/30">
             {[
@@ -531,7 +539,7 @@ export function VideoAutoHarvestDialog({
         </div>
         )}
         {tab === 'autonomous' && (
-          <div className="flex-1 overflow-y-auto py-2 pr-1">
+          <div role="tabpanel" id="auto-harvest-panel-autonomous" aria-labelledby="auto-harvest-tab-autonomous" className="flex-1 overflow-y-auto py-2 pr-1">
             <VideoAutonomousHarvestPanel onCycleFinished={onHarvestCompleted} />
           </div>
         )}

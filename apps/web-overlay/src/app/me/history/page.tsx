@@ -19,6 +19,7 @@ import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { HandoffCardWithCloud } from '@/components/handoff-card-with-cloud'
 import { SectionState } from '@/components/user-center/section-state'
 import { fetchVisitsPage, clearProfileSignals, type HubVisitItem } from '@/lib/navhub-api'
+import { handleTabListKeyDown } from '@/lib/tab-keyboard'
 import { safeHref } from '@/lib/safe-url'
 import {
   batchCleanZeroResultSearchHistory,
@@ -438,7 +439,7 @@ export default function SearchHistoryPage() {
 
       {/* 双 tab（T23）：搜索历史 / 访问历史。访问历史来自服务端 click 流水，
           与搜索历史一样都是「用户自己的行为数据」。 */}
-      <div role="tablist" aria-label="历史类型" className="flex w-full gap-1.5 sm:w-auto">
+      <div role="tablist" aria-label="历史类型" onKeyDown={handleTabListKeyDown} className="flex w-full gap-1.5 sm:w-auto">
         {(
           [
             ['searches', '搜索历史'],
@@ -448,7 +449,10 @@ export default function SearchHistoryPage() {
           <button
             key={key}
             role="tab"
+            id={`history-tab-${key}`}
             aria-selected={tab === key}
+            aria-controls={key === 'searches' ? 'history-panel-searches' : 'history-panel-visits'}
+            tabIndex={tab === key ? 0 : -1}
             onClick={() => {
               // U-145：切 tab 清武装，避免武装态跨 tab 残留。
               setConfirmDeleteId(null)
@@ -472,6 +476,24 @@ export default function SearchHistoryPage() {
         ))}
       </div>
 
+      {/* 匿名身份也有云端历史（绑定本浏览器身份）：如实说明归属，避免「这是谁的记录」的疑惑 */}
+      {state === 'ready' && identity.startsWith('anon-') && (
+        <p className="rounded-xl border border-dashed border-border/70 bg-card/50 px-3.5 py-2 text-[11px] leading-relaxed text-muted-foreground">
+          当前为匿名身份：这些历史绑定本浏览器的匿名标识，只用于「最近搜索」与画像；登录后会自动合并到账号。
+        </p>
+      )}
+
+      {state === 'no-identity' && (
+        <section className="rounded-2xl border border-dashed border-border/70 bg-card/50 p-6 text-sm leading-relaxed text-muted-foreground">
+          还没有可用的身份标识。先在首页搜索一次或登录账号，再回到这里管理历史。
+        </section>
+      )}
+
+      {/* U-434：两个 tab 的面板。搜索面板与访问面板只渲染其一，
+          但 DOM 顺序上搜索块原本被访问块隔开——为让每块 tab 有且只有一个
+          tabpanel 容器，访问块整体移到搜索块之后（互斥渲染，视觉不变）；
+          space-y-6 与父级 Container 一致，块间间距不变。 */}
+      <div role="tabpanel" id="history-panel-searches" aria-labelledby="history-tab-searches" className="space-y-6">
       {/* A4：搜索取数态不得绑架访问 tab——搜索 loading 时访问 tab
           不应显示「正在加载搜索历史」骨架，访问分支自有 visitState。 */}
       {tab === 'searches' && state === 'loading' && <SectionState variant="loading" rows={4} loadingLabel="正在加载搜索历史" />}
@@ -480,129 +502,6 @@ export default function SearchHistoryPage() {
         <p role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2 text-[11px] leading-relaxed text-amber-800 dark:text-amber-200">
           云端暂时取不到，正在展示本机离线快照（截至 {new Date(offlineSnapshotAt).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' })}）。这不是实时数据，联网后重试可获取最新记录。
         </p>
-      )}
-
-      {/* 匿名身份也有云端历史（绑定本浏览器身份）：如实说明归属，避免「这是谁的记录」的疑惑 */}
-      {state === 'ready' && identity.startsWith('anon-') && (
-        <p className="rounded-xl border border-dashed border-border/70 bg-card/50 px-3.5 py-2 text-[11px] leading-relaxed text-muted-foreground">
-          当前为匿名身份：这些历史绑定本浏览器的匿名标识，只用于「最近搜索」与画像；登录后会自动合并到账号。
-        </p>
-      )}
-
-      {/* A4：访问分支只认 tab 与 visitState，不再要求搜索 state === 'ready'——
-          搜索取数失败/加载中时，访问 tab 仍可正常渲染与重试。 */}
-      {tab === 'visits' && (
-        <>
-          {visitState === 'loading' && <SectionState variant="loading" rows={4} loadingLabel="正在加载访问历史" />}
-
-          {visitState === 'error' && (
-            <SectionState
-              variant="error"
-              title="访问记录暂时取不到"
-              description="云端暂时不可用，这不代表记录被清空——恢复后会原样回来。"
-              onRetry={() => void loadVisits(0)}
-            />
-          )}
-
-          {visitState === 'ready' && (
-            <>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-[11px] text-muted-foreground">
-                  共 {visitTotal} 条站点访问记录（用于画像与「最近访问」，不含搜索词）。
-                </p>
-                {visits.length > 0 && (
-                  <Button
-                    variant={confirmClearVisits ? 'destructive' : 'outline'}
-                    size="sm"
-                    className="w-full text-xs sm:w-auto"
-                    disabled={visitBusy}
-                    onClick={() => void clearVisits()}
-                  >
-                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                    {confirmClearVisits ? '确认清空访问记录' : '清空访问记录'}
-                  </Button>
-                )}
-              </div>
-
-              {/* A7：访问 tab 检索框（站名/链接）+ 范围说明，与搜索 tab 同口径。 */}
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
-                <Input
-                  aria-label="筛选访问历史"
-                  value={visitKeyword}
-                  onChange={(e) => setVisitKeyword(e.target.value)}
-                  placeholder="输入站名或链接筛选访问记录…"
-                  className="h-9 pl-8 text-xs"
-                />
-              </div>
-              {isVisitFiltering && (
-                <p className="text-[11px] text-muted-foreground">
-                  仅检索已加载的 {visits.length} 条，加载更多可扩大检索范围
-                </p>
-              )}
-
-              {visits.length === 0 ? (
-                <SectionState
-                  variant="empty"
-                  icon={History}
-                  title="还没有站点访问记录"
-                  description="浏览站点后这里会按时间列出最近访问（只记录站点点击，不含搜索内容）。"
-                />
-              ) : filteredVisits.length === 0 ? (
-                <section className="rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center text-xs text-muted-foreground">
-                  当前筛选条件下没有匹配的访问记录。
-                </section>
-              ) : (
-                <>
-                  <ul className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/70 bg-card/60">
-                    {filteredVisits.map((v) => (
-                      <li key={v.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                        <div className="min-w-0 flex-1">
-                          {v.site ? (
-                            <a
-                              href={safeHref(v.site.url)}
-                              target="_blank"
-                              rel="noopener noreferrer nofollow"
-                              className="block truncate text-xs font-medium hover:text-primary hover:underline"
-                              title={v.site.title}
-                            >
-                              {v.site.title}
-                            </a>
-                          ) : (
-                            <span className="block truncate text-xs font-medium text-muted-foreground" title="站点已不在库">
-                              （站点已不在中枢）
-                            </span>
-                          )}
-                          {v.site?.url && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{v.site.url}</p>}
-                        </div>
-                        <time
-                          dateTime={new Date(v.at).toISOString()}
-                          className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
-                        >
-                          {formatTime(v.at)}
-                        </time>
-                      </li>
-                    ))}
-                  </ul>
-                  {visitHasMore && (
-                    <div className="flex justify-center pt-1">
-                      <Button variant="outline" size="sm" className="text-xs" disabled={visitBusy} onClick={() => void loadVisits(visitNextOffset)}>
-                        {visitBusy ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-                        加载更多
-                      </Button>
-                    </div>
-                  )}
-                </>
-              )}
-            </>
-          )}
-        </>
-      )}
-
-      {state === 'no-identity' && (
-        <section className="rounded-2xl border border-dashed border-border/70 bg-card/50 p-6 text-sm leading-relaxed text-muted-foreground">
-          还没有可用的身份标识。先在首页搜索一次或登录账号，再回到这里管理历史。
-        </section>
       )}
 
       {/* A4：搜索 error 只在搜索 tab 下展示——访问 tab 下应由访问分支
@@ -780,6 +679,120 @@ export default function SearchHistoryPage() {
           </Button>
         </div>
       )}
+
+      </div>
+
+      <div role="tabpanel" id="history-panel-visits" aria-labelledby="history-tab-visits" className="space-y-6">
+      {/* A4：访问分支只认 tab 与 visitState，不再要求搜索 state === 'ready'——
+          搜索取数失败/加载中时，访问 tab 仍可正常渲染与重试。 */}
+      {tab === 'visits' && (
+        <>
+          {visitState === 'loading' && <SectionState variant="loading" rows={4} loadingLabel="正在加载访问历史" />}
+
+          {visitState === 'error' && (
+            <SectionState
+              variant="error"
+              title="访问记录暂时取不到"
+              description="云端暂时不可用，这不代表记录被清空——恢复后会原样回来。"
+              onRetry={() => void loadVisits(0)}
+            />
+          )}
+
+          {visitState === 'ready' && (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] text-muted-foreground">
+                  共 {visitTotal} 条站点访问记录（用于画像与「最近访问」，不含搜索词）。
+                </p>
+                {visits.length > 0 && (
+                  <Button
+                    variant={confirmClearVisits ? 'destructive' : 'outline'}
+                    size="sm"
+                    className="w-full text-xs sm:w-auto"
+                    disabled={visitBusy}
+                    onClick={() => void clearVisits()}
+                  >
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    {confirmClearVisits ? '确认清空访问记录' : '清空访问记录'}
+                  </Button>
+                )}
+              </div>
+
+              {/* A7：访问 tab 检索框（站名/链接）+ 范围说明，与搜索 tab 同口径。 */}
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                <Input
+                  aria-label="筛选访问历史"
+                  value={visitKeyword}
+                  onChange={(e) => setVisitKeyword(e.target.value)}
+                  placeholder="输入站名或链接筛选访问记录…"
+                  className="h-9 pl-8 text-xs"
+                />
+              </div>
+              {isVisitFiltering && (
+                <p className="text-[11px] text-muted-foreground">
+                  仅检索已加载的 {visits.length} 条，加载更多可扩大检索范围
+                </p>
+              )}
+
+              {visits.length === 0 ? (
+                <SectionState
+                  variant="empty"
+                  icon={History}
+                  title="还没有站点访问记录"
+                  description="浏览站点后这里会按时间列出最近访问（只记录站点点击，不含搜索内容）。"
+                />
+              ) : filteredVisits.length === 0 ? (
+                <section className="rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center text-xs text-muted-foreground">
+                  当前筛选条件下没有匹配的访问记录。
+                </section>
+              ) : (
+                <>
+                  <ul className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/70 bg-card/60">
+                    {filteredVisits.map((v) => (
+                      <li key={v.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                        <div className="min-w-0 flex-1">
+                          {v.site ? (
+                            <a
+                              href={safeHref(v.site.url)}
+                              target="_blank"
+                              rel="noopener noreferrer nofollow"
+                              className="block truncate text-xs font-medium hover:text-primary hover:underline"
+                              title={v.site.title}
+                            >
+                              {v.site.title}
+                            </a>
+                          ) : (
+                            <span className="block truncate text-xs font-medium text-muted-foreground" title="站点已不在库">
+                              （站点已不在中枢）
+                            </span>
+                          )}
+                          {v.site?.url && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{v.site.url}</p>}
+                        </div>
+                        <time
+                          dateTime={new Date(v.at).toISOString()}
+                          className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
+                        >
+                          {formatTime(v.at)}
+                        </time>
+                      </li>
+                    ))}
+                  </ul>
+                  {visitHasMore && (
+                    <div className="flex justify-center pt-1">
+                      <Button variant="outline" size="sm" className="text-xs" disabled={visitBusy} onClick={() => void loadVisits(visitNextOffset)}>
+                        {visitBusy ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+                        加载更多
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </>
+      )}
+      </div>
 
       <Footer />
     </Container>

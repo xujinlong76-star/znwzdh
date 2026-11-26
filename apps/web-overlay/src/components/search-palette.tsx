@@ -71,6 +71,7 @@ import { useFavorites } from '@/hooks/useFavorites'
 import { useToast } from '@/components/ui/use-toast'
 import type { SiteConfig } from '@/types/site'
 import { parseSpeculativeIntent } from '@/lib/speculative'
+import { handleTabListKeyDown } from '@/lib/tab-keyboard'
 import { spotlightHotkeyHint, useExternalLinkTarget, useUserPreferences } from '@/lib/user-preferences'
 import { parseTechComparisonQuery } from '@/lib/comparison'
 import { findMatchingArchitectureRecipe } from '@/lib/architecture-recipe'
@@ -1662,15 +1663,23 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
   const unifiedModeHeader = (
     <div className="sticky top-0 z-20 flex items-center justify-between gap-1.5 border-b border-border/70 bg-popover px-2.5 py-2">
+      {/* U-434：三合一融合搜索模式 tablist——←/→ 漫游见 @/lib/tab-keyboard。
+          面板说明：AI / 找相似两个 tab 的面板是 AI 工作台分支里的内容区
+          （search-palette-discovery-panel）；「全站检索」tab 没有单个面板
+          容器可指——检索结果与空态建议分属两个互斥的外层面板，且结果区
+          本身是 flex 滚动结构、包一层 tabpanel 会造出嵌套滚动，故不硬指。 */}
       <div
         role="tablist"
         aria-label="三合一融合搜索模式"
+        onKeyDown={handleTabListKeyDown}
         className="inline-flex min-w-0 items-center rounded-lg border border-border/70 bg-muted/50 p-0.5"
       >
         <button
           type="button"
           role="tab"
+          id="search-palette-tab-search"
           aria-selected={activeDiscoveryTab === 'search'}
+          tabIndex={activeDiscoveryTab === 'search' ? 0 : -1}
           onClick={() => selectDiscoveryTab('search')}
           className={`inline-flex h-7 items-center gap-1 rounded-md px-2 sm:px-2.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
             activeDiscoveryTab === 'search'
@@ -1684,7 +1693,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         <button
           type="button"
           role="tab"
+          id="search-palette-tab-ai"
           aria-selected={activeDiscoveryTab === 'ai'}
+          aria-controls="search-palette-discovery-panel"
+          tabIndex={activeDiscoveryTab === 'ai' ? 0 : -1}
           onClick={() => selectDiscoveryTab('ai')}
           className={`inline-flex h-7 items-center gap-1 rounded-md px-2 sm:px-2.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
             activeDiscoveryTab === 'ai'
@@ -1698,7 +1710,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         <button
           type="button"
           role="tab"
+          id="search-palette-tab-similar"
           aria-selected={activeDiscoveryTab === 'similar'}
+          aria-controls="search-palette-discovery-panel"
+          tabIndex={activeDiscoveryTab === 'similar' ? 0 : -1}
           onClick={() => selectDiscoveryTab('similar')}
           className={`inline-flex h-7 items-center gap-1 rounded-md px-2 sm:px-2.5 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
             activeDiscoveryTab === 'similar'
@@ -2051,7 +2066,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:w-[min(660px,calc(100vw-2rem))] md:w-[min(700px,calc(100vw-19rem))] mt-0 sm:mt-2.5 bg-popover text-popover-foreground border border-border rounded-xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 z-50 max-h-[min(78vh,calc(100dvh-110px))] flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150"
         >
           {unifiedModeHeader}
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div role="tabpanel" id="search-palette-discovery-panel" aria-labelledby={`search-palette-tab-${activeDiscoveryTab}`} className="min-h-0 flex-1 overflow-y-auto">
             {aiMode ? (
               <SearchPaletteAiTab
                 query={query}

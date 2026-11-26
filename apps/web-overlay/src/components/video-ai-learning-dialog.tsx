@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/registry/new-york/ui/dialog'
 import { Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { handleTabListKeyDown } from '@/lib/tab-keyboard'
 import type { NavigationData, VideoTranscriptItem } from '@/types/navigation'
 import type { FlashcardItem } from '@/lib/video-spaced-repetition'
 
@@ -68,7 +69,10 @@ export function VideoAiLearningDialog({
       key={id}
       type="button"
       role="tab"
+      id={`ai-learning-tab-${id}`}
       aria-selected={tab === id}
+      aria-controls={`ai-learning-panel-${id}`}
+      tabIndex={tab === id ? 0 : -1}
       onClick={() => setTab(id)}
       className={cn(
         'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors',
@@ -94,19 +98,20 @@ export function VideoAiLearningDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div role="tablist" aria-label="AI 学习方式" className="flex gap-1 pt-2 shrink-0">
+        {/* U-434：AI 学习方式 tablist——←/→ 漫游见 @/lib/tab-keyboard。 */}
+        <div role="tablist" aria-label="AI 学习方式" onKeyDown={handleTabListKeyDown} className="flex gap-1 pt-2 shrink-0">
           {tabButton('copilot', 'AI伴学')}
           {conceptAvailable && tabButton('concept', '概念图谱')}
           {tabButton('flashcards', `抽认卡 (${cards.length})`)}
         </div>
 
         {tab === 'copilot' && (
-          <div className="flex-1 overflow-y-auto py-2">
+          <div role="tabpanel" id="ai-learning-panel-copilot" aria-labelledby="ai-learning-tab-copilot" className="flex-1 overflow-y-auto py-2">
             <VideoAssistantCopilot transcripts={transcripts} onSeek={onSeek} />
           </div>
         )}
         {tab === 'concept' && conceptAvailable && (
-          <div className="flex-1 overflow-y-auto py-2 pr-1">
+          <div role="tabpanel" id="ai-learning-panel-concept" aria-labelledby="ai-learning-tab-concept" className="flex-1 overflow-y-auto py-2 pr-1">
             <VideoConceptGraphPanel
               navigationData={navigationData}
               onJumpToTarget={onJumpToTarget}
@@ -115,7 +120,7 @@ export function VideoAiLearningDialog({
           </div>
         )}
         {tab === 'flashcards' && (
-          <div className="flex-1 overflow-y-auto py-2 pr-1">
+          <div role="tabpanel" id="ai-learning-panel-flashcards" aria-labelledby="ai-learning-tab-flashcards" className="flex-1 overflow-y-auto py-2 pr-1">
             <VideoFlashcardPanel cards={cards} videoTitle={videoTitle} />
           </div>
         )}

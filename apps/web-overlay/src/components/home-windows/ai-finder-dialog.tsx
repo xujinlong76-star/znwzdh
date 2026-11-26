@@ -32,6 +32,7 @@ import { AiFinderPanel } from '@/components/ai/ai-finder-panel'
 import { SimilarSitesExplorer } from '@/components/similar-sites-explorer'
 import { SiteFavicon } from '@/components/site-favicon'
 import { lookupSimilarSites, type HubSimilarSitesReport } from '@/lib/navhub-api'
+import { handleTabListKeyDown } from '@/lib/tab-keyboard'
 import { cn } from '@/lib/utils'
 
 const RECENT_SIMILAR_HISTORY_KEY = 'navhub.similar.history.v1'
@@ -277,16 +278,20 @@ export function AiFinderDialog({
               <span>AI 找站 × 找相似工作台</span>
             </DialogTitle>
 
-            {/* 双模式融合切换 */}
+            {/* U-434：双模式融合切换 tablist——←/→ 漫游见 @/lib/tab-keyboard。 */}
             <div
               role="tablist"
               aria-label="融合工作台模式切换"
+              onKeyDown={handleTabListKeyDown}
               className="inline-flex items-center rounded-xl border border-border/70 bg-muted/50 p-0.5"
             >
               <button
                 type="button"
                 role="tab"
+                id="ai-finder-tab-ai"
                 aria-selected={activeTab === 'ai'}
+                aria-controls="ai-finder-panel-ai"
+                tabIndex={activeTab === 'ai' ? 0 : -1}
                 onClick={() => setActiveTab('ai')}
                 className={cn(
                   'inline-flex h-7 items-center gap-1 rounded-lg px-2.5 text-xs font-semibold transition-all cursor-pointer',
@@ -301,7 +306,10 @@ export function AiFinderDialog({
               <button
                 type="button"
                 role="tab"
+                id="ai-finder-tab-similar"
                 aria-selected={activeTab === 'similar'}
+                aria-controls="ai-finder-panel-similar"
+                tabIndex={activeTab === 'similar' ? 0 : -1}
                 onClick={() => setActiveTab('similar')}
                 className={cn(
                   'inline-flex h-7 items-center gap-1 rounded-lg px-2.5 text-xs font-semibold transition-all cursor-pointer',
@@ -338,7 +346,7 @@ export function AiFinderDialog({
 
         <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
           {activeTab === 'ai' ? (
-            <div className="[&>section]:mb-0 [&>section]:border-0 [&>section]:p-1 [&>section]:shadow-none [&>section]:bg-transparent">
+            <div role="tabpanel" id="ai-finder-panel-ai" aria-labelledby="ai-finder-tab-ai" className="[&>section]:mb-0 [&>section]:border-0 [&>section]:p-1 [&>section]:shadow-none [&>section]:bg-transparent">
               <AiFinderPanel
                 key={`${sceneTrigger || 'default'}-${aiPanelSeed}`}
                 initialQuery={aiInitialQuery}
@@ -346,7 +354,7 @@ export function AiFinderDialog({
               />
             </div>
           ) : (
-            <div className="space-y-3.5 p-0.5">
+            <div role="tabpanel" id="ai-finder-panel-similar" aria-labelledby="ai-finder-tab-similar" className="space-y-3.5 p-0.5">
               {/* 找相似搜索条 + 180ms 自动补全 */}
               <div ref={searchBoxRef} className="relative">
                 <form onSubmit={handleSimilarSubmit} className="flex items-center gap-2">

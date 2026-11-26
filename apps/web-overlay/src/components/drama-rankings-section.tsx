@@ -5,6 +5,7 @@ import { useDramaRankings } from "@/hooks/useDramaData";
 import { useWatchlist } from "@/hooks/useWatchlist";
 import { normalizeDramaTitle } from "@/lib/watchlist";
 import { safeHref } from "@/lib/safe-url";
+import { handleTabListKeyDown } from "@/lib/tab-keyboard";
 import type { DramaRankingsResponse } from "@/lib/rest-contracts.generated";
 
 /** 一条榜单记录（与 GET /api/drama/rankings 的 entries[] 同形）。 */
@@ -169,13 +170,16 @@ function RankingsBody({
         </p>
       ) : (
         <>
-          <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="榜单选择">
+          <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="榜单选择" onKeyDown={handleTabListKeyDown}>
             {TABS.map((t) => (
               <button
                 key={t.kind}
                 type="button"
                 role="tab"
+                id={`drama-rankings-tab-${t.kind}`}
                 aria-selected={tab === t.kind}
+                aria-controls="drama-rankings-tabpanel"
+                tabIndex={tab === t.kind ? 0 : -1}
                 onClick={() => onTab(t.kind)}
                 className={
                   tab === t.kind
@@ -188,7 +192,9 @@ function RankingsBody({
               </button>
             ))}
           </div>
-          {list === undefined || list.entries.length === 0 ? (
+          {/* U-434：榜单 tab 的面板——空态 / 榜单列表都在这一个面板里。 */}
+          <div role="tabpanel" id="drama-rankings-tabpanel" aria-labelledby={`drama-rankings-tab-${tab}`}>
+            {list === undefined || list.entries.length === 0 ? (
             <p className="mt-4 rounded-xl border border-dashed border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900 p-4 text-sm text-zinc-600 dark:text-zinc-400">
               这个榜今日暂无数据，稍后再来。
             </p>
@@ -225,7 +231,8 @@ function RankingsBody({
                   : ""}
               </p>
             </>
-          )}
+            )}
+          </div>
         </>
       )}
     </div>

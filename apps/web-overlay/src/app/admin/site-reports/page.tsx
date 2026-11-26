@@ -17,6 +17,7 @@ import { Flag } from 'lucide-react'
 import { hubGet, hubSend } from '@/lib/navhub-api'
 import { describeDegrade } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
+import { handleTabListKeyDown } from '@/lib/tab-keyboard'
 
 type ReportStatus = 'open' | 'in_progress' | 'resolved' | 'rejected'
 
@@ -125,13 +126,16 @@ export default function SiteReportsAdminPage() {
         用户在站点详情页上报的问题。复核后请到站点管理里手动修正——上报本身不会改任何数据。
       </p>
 
-      <div className="flex flex-wrap gap-2 mb-4" role="tablist" aria-label="按状态筛选">
+      <div className="flex flex-wrap gap-2 mb-4" role="tablist" aria-label="按状态筛选" onKeyDown={handleTabListKeyDown}>
         {STATUS_TABS.map((tab) => (
           <Button
             key={tab.key}
             type="button"
             role="tab"
+            id={`site-report-tab-${tab.key}`}
             aria-selected={status === tab.key}
+            aria-controls="site-reports-tabpanel"
+            tabIndex={status === tab.key ? 0 : -1}
             variant={status === tab.key ? 'default' : 'outline'}
             size="sm"
             onClick={() => setStatus(tab.key)}
@@ -142,7 +146,9 @@ export default function SiteReportsAdminPage() {
         ))}
       </div>
 
-      {notice && <HubDegradedNotice notice={notice} onRetry={retry} />}
+      {/* U-434：状态 tab 的面板——加载 / 空态 / 列表 / 加载更多都在这一个面板里，tab 经 aria-controls 指到它。 */}
+      <div role="tabpanel" id="site-reports-tabpanel" aria-labelledby={`site-report-tab-${status}`}>
+        {notice && <HubDegradedNotice notice={notice} onRetry={retry} />}
 
       {loading ? (
         <p className="text-sm text-muted-foreground py-10 text-center">加载中…</p>
@@ -252,6 +258,7 @@ export default function SiteReportsAdminPage() {
           </Button>
         </div>
       )}
+      </div>
     </div>
   )
 }

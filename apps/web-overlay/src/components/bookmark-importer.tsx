@@ -79,6 +79,7 @@ import {
   type SocialFailure,
   type SocialPlatformId,
 } from '@/lib/social-saves-import'
+import { handleTabListKeyDown } from '@/lib/tab-keyboard'
 
 /** 社交导入失败行下载文件名（与失败行同一份内容，可改后重新导入） */
 const SOCIAL_FAILURES_FILENAME = 'social-import-failures.txt'
@@ -1491,7 +1492,10 @@ export function BookmarkImporter({
             查看我的收藏夹 <ArrowRight className="w-3 h-3" aria-hidden="true" />
           </Link>
         </div>
-        <div role="tablist" aria-label="导入目标模式" className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {/* U-434：导入目标模式 tablist——←/→ 漫游见 @/lib/tab-keyboard。
+            这里没有 aria-controls：模式选的是整条向导的目标走向，没有
+            单个面板容器可指；指一个错的元素比不指更糟。 */}
+        <div role="tablist" aria-label="导入目标模式" onKeyDown={handleTabListKeyDown} className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           {MODE_META.map(({ key, label, hint, icon: Icon }) => {
             const active = mode === key
             return (
@@ -1499,7 +1503,9 @@ export function BookmarkImporter({
                 key={key}
                 type="button"
                 role="tab"
+                id={`bookmark-import-mode-tab-${key}`}
                 aria-selected={active}
+                tabIndex={active ? 0 : -1}
                 onClick={() => changeMode(key)}
                 className={`text-left rounded-xl border p-3 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                   active ? 'border-primary/50 bg-primary/5 shadow-xs' : 'border-border/70 bg-background/40 hover:border-primary/30'
@@ -1519,7 +1525,8 @@ export function BookmarkImporter({
           只认用户自己从平台导出的文件/粘贴，不登录、不调平台 API、不联网抓取。 */}
       <section aria-labelledby="source-heading" className="space-y-2.5">
         <h2 id="source-heading" className="text-sm font-bold text-foreground">选择收藏来源</h2>
-        <div role="tablist" aria-label="收藏来源" className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {/* U-434：收藏来源 tablist——与目标模式同理，没有单个面板容器可指 aria-controls。 */}
+        <div role="tablist" aria-label="收藏来源" onKeyDown={handleTabListKeyDown} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {([
             { key: 'browser', label: '浏览器书签', hint: 'Chrome / Edge / Safari 等导出的 HTML、Markdown、OneTab、JSON' },
             { key: 'social', label: '社交平台收藏', hint: 'X、Reddit、GitHub Stars、Hacker News、Instagram、TikTok 的导出文件或链接粘贴' },
@@ -1530,7 +1537,9 @@ export function BookmarkImporter({
                 key={key}
                 type="button"
                 role="tab"
+                id={`bookmark-import-source-tab-${key}`}
                 aria-selected={active}
+                tabIndex={active ? 0 : -1}
                 onClick={() => { setSourceKind(key); setSocialFailures([]); setError(null) }}
                 className={`min-h-[44px] text-left rounded-xl border p-3 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                   active ? 'border-primary/50 bg-primary/5 shadow-xs' : 'border-border/70 bg-background/40 hover:border-primary/30'
@@ -1580,9 +1589,12 @@ export function BookmarkImporter({
           {step === 1 && (<>
           {/* 多格式输入：文件 + 直接粘贴，隐藏原生 input 用 sr-only + label 关联 */}
           <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-3">
-            <div role="tablist" aria-label="输入方式" className="inline-flex rounded-lg bg-muted/60 p-0.5">
+            {/* U-434：输入方式 tablist——←/→ 漫游见 @/lib/tab-keyboard；文件 / 粘贴各有自己的面板。 */}
+            <div role="tablist" aria-label="输入方式" onKeyDown={handleTabListKeyDown} className="inline-flex rounded-lg bg-muted/60 p-0.5">
               {([['file', '文件上传'], ['paste', '直接粘贴文本 / URL']] as const).map(([key, label]) => (
-                <button key={key} type="button" role="tab" aria-selected={inputTab === key}
+                <button key={key} type="button" role="tab" id={`bookmark-import-tab-${key}`} aria-selected={inputTab === key}
+                  aria-controls={`bookmark-import-panel-${key}`}
+                  tabIndex={inputTab === key ? 0 : -1}
                   onClick={() => setInputTab(key)}
                   className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                     inputTab === key ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
@@ -1599,6 +1611,9 @@ export function BookmarkImporter({
 
           {inputTab === 'file' ? (
             <div
+              role="tabpanel"
+              id="bookmark-import-panel-file"
+              aria-labelledby="bookmark-import-tab-file"
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={onDrop}
@@ -1645,7 +1660,7 @@ export function BookmarkImporter({
               </div>
             </div>
           ) : (
-            <div className="space-y-2.5">
+            <div role="tabpanel" id="bookmark-import-panel-paste" aria-labelledby="bookmark-import-tab-paste" className="space-y-2.5">
               <label htmlFor="bookmark-paste" className="text-xs font-semibold text-foreground">
                 {sourceKind === 'social' ? '粘贴社交收藏文本 / URL 列表' : '粘贴书签文本 / URL 列表'}
               </label>

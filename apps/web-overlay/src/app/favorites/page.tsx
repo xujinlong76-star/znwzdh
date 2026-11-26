@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input'
 import { FavoriteButton } from '@/components/favorite-button'
 import { SiteFavicon } from '@/components/site-favicon'
 import { cn } from '@/lib/utils'
+import { handleTabListKeyDown } from '@/lib/tab-keyboard'
 import {
   readSyncStatus,
   syncFavoritesToCloud,
@@ -1575,9 +1576,11 @@ export default function FavoritesPage() {
 
         {/* 工作区同级 Tab 切换栏（?view= 同步）：站点收藏 / 星标插件 / 我的批注 / 公开导航页。
             星标插件与公开导航页从首屏常驻卡改为 Tab 承接——不再需要解释「两套东西」。 */}
+        {/* U-434：收藏工作区 tablist——←/→ 漫游见 @/lib/tab-keyboard。 */}
         <div
           role="tablist"
           aria-label="收藏工作区视图"
+          onKeyDown={handleTabListKeyDown}
           className="mt-4 flex flex-wrap items-center gap-1 rounded-xl border border-border/60 bg-card/40 p-1"
         >
           {(
@@ -1592,7 +1595,10 @@ export default function FavoritesPage() {
               key={view}
               type="button"
               role="tab"
+              id={`favorites-tab-${view}`}
               aria-selected={activeView === view}
+              aria-controls={`favorites-panel-${view}`}
+              tabIndex={activeView === view ? 0 : -1}
               title={tip}
               onClick={() => {
                 setActiveView(view)
@@ -1762,16 +1768,21 @@ export default function FavoritesPage() {
 
         {/* 星标插件 Tab：插件星标独立于网站收藏（P1-6），由 Tab 承接而非首屏常驻卡 */}
         {activeView === 'plugins' && (
-          <StarredPluginsSection
-            onCountChange={(total) => {
-              setStarredCount(total)
-              setStarredCountLoaded(true)
-            }}
-          />
+          <div role="tabpanel" id="favorites-panel-plugins" aria-labelledby="favorites-tab-plugins">
+            <StarredPluginsSection
+              onCountChange={(total) => {
+                setStarredCount(total)
+                setStarredCountLoaded(true)
+              }}
+            />
+          </div>
         )}
         {/* 我的批注 Tab：直达完整批注页（划线批注按收藏聚合，可搜索可导出） */}
         {activeView === 'annotations' && (
           <section
+            role="tabpanel"
+            id="favorites-panel-annotations"
+            aria-labelledby="favorites-tab-annotations"
             aria-label="我的批注"
             className="rounded-xl border border-border/70 bg-card/50 p-6 text-center"
           >
@@ -1942,17 +1953,19 @@ export default function FavoritesPage() {
 
         {/* 公开导航页 Tab：把一个收藏夹发布成 /pub/ 只读页；未登录时区内置灰说明 */}
         {activeView === 'public' && (
-          <PublicPageManager
-            cloudIdentity={cloudIdentity}
-            folders={visibleFolders}
-            activeFolder={activeFolder}
-            activeFolderCount={activeFolder === 'all' ? favorites.items.length : (folderCounts.get(activeFolder) ?? 0)}
-          />
+          <div role="tabpanel" id="favorites-panel-public" aria-labelledby="favorites-tab-public">
+            <PublicPageManager
+              cloudIdentity={cloudIdentity}
+              folders={visibleFolders}
+              activeFolder={activeFolder}
+              activeFolderCount={activeFolder === 'all' ? favorites.items.length : (folderCounts.get(activeFolder) ?? 0)}
+            />
+          </div>
         )}
 
         {/* 站点收藏 Tab：移动端文件夹下拉 + 桌面双栏（左树右卡）+ 筛选 + 列表（默认视图） */}
         {activeView === 'sites' && (
-        <>
+        <div role="tabpanel" id="favorites-panel-sites" aria-labelledby="favorites-tab-sites" className="space-y-4 sm:space-y-5">
         {/* 移动端：顶部文件夹下拉选择器（桌面用左侧树，见下） */}
         {favorites.items.length > 0 && (
           <div className="mb-4 lg:hidden">
@@ -3023,7 +3036,7 @@ export default function FavoritesPage() {
 
           </div>
         </div>
-        </>
+        </div>
         )}
 
         {/* 导出为插件市场清单向导弹窗 */}

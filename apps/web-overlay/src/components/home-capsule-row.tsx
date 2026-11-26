@@ -275,10 +275,12 @@ export function HomeCapsuleRow({
             })}
           </div>
 
-          {/* 时段场景推荐：≥1536px 宽屏空间充裕时呈现，1280–1535px 让位给同行的工作区与高频直达坞 */}
-          <div className="hidden min-w-0 shrink-0 items-center gap-2 whitespace-nowrap pl-1 text-xs text-muted-foreground min-[1536px]:flex">
-            {daypartSceneEnabled ? (
-              suggestedWorkspace ? (
+          {/* 时段场景推荐：≥1536px 宽屏空间充裕时呈现，1280–1535px 让位给同行的工作区与高频直达坞。
+              U-393：开关关掉时这一整段不渲染——不留一枚点不开的「已关闭」死胶囊
+              占着首屏；开关本身的说明在设置页（settings-panel「全天候时段场景流推荐」）。 */}
+          {daypartSceneEnabled ? (
+            <div className="hidden min-w-0 shrink-0 items-center gap-2 whitespace-nowrap pl-1 text-xs text-muted-foreground min-[1536px]:flex">
+              {suggestedWorkspace ? (
                 <button
                   type="button"
                   onClick={() => onWorkspaceChange(suggestedWorkspace.id)}
@@ -299,13 +301,9 @@ export function HomeCapsuleRow({
                     {daypartText(daypart?.hint ?? DAYPART_PLACEHOLDER)}
                   </span>
                 </div>
-              )
-            ) : (
-              <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-muted/40 border border-border/40 text-muted-foreground shrink-0 whitespace-nowrap">
-                <span className="text-xs whitespace-nowrap">时段场景推荐已关闭</span>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          ) : null}
       </div>
 
       {dramaOpen ? (

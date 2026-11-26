@@ -28,6 +28,7 @@ import {
   fetchSearchHistoryPage,
   deleteSearchHistoryItem,
   clearCloudSearchHistory,
+  fetchCategories,
   fetchCollections,
   createCustomSite,
   type HubSearchHit,
@@ -35,6 +36,7 @@ import {
   type HubSiteRelation,
   type HubPluginSearchResponse,
   type HubCollection,
+  type HubCategoryLite,
 } from '@/lib/navhub-api'
 import { queryToTitleAndUrl } from '@/lib/submit-prefill'
 import { saveWantedSearch } from '@/lib/wanted-searches'
@@ -66,7 +68,7 @@ import {
 import { SearchPaletteAiTab, AI_FALLBACK_SCENES } from '@/components/search/search-palette-ai-tab'
 import { SearchPaletteSimilarTab, SIMILAR_QUICK_SEEDS } from '@/components/search/search-palette-similar-tab'
 import { getIdentity } from '@/lib/identity'
-import { relaxedPricingNotice, searchHref } from '@/lib/search-page'
+import { relaxedCategoryNotice, relaxedPricingNotice, resolveCategoryDisplayName, searchHref } from '@/lib/search-page'
 import { useFavorites } from '@/hooks/useFavorites'
 import { useToast } from '@/components/ui/use-toast'
 import type { SiteConfig } from '@/types/site'
@@ -431,6 +433,42 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [fallbackHint, setFallbackHint] = useState<'filter' | 'fuzzy' | undefined>(undefined)
   /** A3：放宽时被丢弃的分面条件，用于把「已放宽」点名到付费条件上 */
   const [relaxedFacets, setRelaxedFacets] = useState<Record<string, string[]> | undefined>(undefined)
+  /** A3：放宽时被丢弃的显式分类条件（与搜索页同款字段），浮层内点名提示；API 分支未合入前恒 undefined */
+  const [relaxedCategoryId, setRelaxedCategoryId] = useState<string | undefined>(undefined)
+  /** 用户在浮层内点了「去掉分类」：本轮面板会话不再把 categoryId 带给搜索，只去分类、保留 q/tag/facets */
+  const [categoryDropped, setCategoryDropped] = useState(false)
+  /** 被放宽分类的中文展示名（null = 未解析到，退回通用句，原始 id/slug 不进文案） */
+  const [relaxedCategoryName, setRelaxedCategoryName] = useState<string | null>(null)
+  /** 类目表缓存：只在真的需要点名被放宽的分类时才拉一次 */
+  const categoriesCacheRef = useRef<HubCategoryLite[] | null>(null)
+  /** 用户去掉分类后实际生效的分类条件（与搜索页「去掉分类」导航到无分类 URL 同义） */
+  const effectiveCategoryId = categoryDropped ? undefined : categoryId
+  /** 分类作用域变了（侧栏切到另一分类）= 新的作用域，「去掉分类」复位 */
+  useEffect(() => {
+    setCategoryDropped(false)
+  }, [categoryId])
+  /**
+   * A3：只有真的放宽了分类才解析展示名——平时 relaxedCategoryId 为
+   * undefined，不发这次请求；类目表取不到 / 未命中时展示名保持 null，
+   * 横幅退回不点名的通用句，不把原始 id/slug 漏到文案里。
+   */
+  useEffect(() => {
+    if (!relaxedCategoryId) {
+      setRelaxedCategoryName(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      if (!categoriesCacheRef.current) {
+        categoriesCacheRef.current = await fetchCategories()
+      }
+      if (cancelled) return
+      setRelaxedCategoryName(resolveCategoryDisplayName(relaxedCategoryId, categoriesCacheRef.current))
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [relaxedCategoryId])
   const [recent, setRecent] = useState<RecentSearchItem[]>([])
   const [recentVisits, setRecentVisits] = useState<RecentVisit[]>([])
   /** MRU 加分用的全量快照（上限 50 条）：与空面板直达区的 8 条分轨，
@@ -829,6 +867,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     setQueryExpansion([])
     setFallbackHint(undefined)
     setRelaxedFacets(undefined)
+    setRelaxedCategoryId(undefined)
     setDegraded(false)
     setLoadingMore(false)
     if (!q) {
@@ -875,7 +914,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           setPluginFailed(true)
           setPluginSemanticFallback(false)
         })
-      void searchSites({ q, limit: 12, categoryId, identity, nocorrect: nocorrectQuery !== null && nocorrectQuery === q }, controller.signal)
+      void searchSites({ q, limit: 12, categoryId: effectiveCategoryId, identity, nocorrect: nocorrectQuery !== null && nocorrectQuery === q }, controller.signal)
         .then((res) => {
           if (controller.signal.aborted || activeQueryRef.current !== q) return
           setHits(res.hits)
@@ -894,6 +933,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           setQueryExpansion(res.queryExpansion ?? [])
           setFallbackHint(res.fallback)
           setRelaxedFacets(res.relaxedFacets)
+          setRelaxedCategoryId(res.relaxedCategoryId)
           offsetRef.current = res.hits.length
           setLoading(false)
         })
@@ -908,7 +948,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       abortRef.current?.abort()
       moreAbortRef.current?.abort()
     }
-  }, [query, categoryId, identity, retryToken, nocorrectQuery])
+  }, [query, effectiveCategoryId, identity, retryToken, nocorrectQuery])
 
   /**
    * 拼音库触发加载（04 §1.3，写死）：面板打开后，第一次出现拉丁字母查询
@@ -937,7 +977,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     setMoreFailed(false)
     const controller = new AbortController()
     moreAbortRef.current = controller
-    void searchSites({ q, limit: 12, offset: offsetRef.current, categoryId, identity }, controller.signal)
+    void searchSites({ q, limit: 12, offset: offsetRef.current, categoryId: effectiveCategoryId, identity }, controller.signal)
       .then((res) => {
         // 查询已经变了：这一页属于上一个查询。放进去会把旧结果混进新列表，
         // offsetRef 也会被污染，后续分页永远错位。
@@ -957,7 +997,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       .finally(() => {
         if (!controller.signal.aborted) setLoadingMore(false)
       })
-  }, [query, categoryId, identity, loadingMore])
+  }, [query, effectiveCategoryId, identity, loadingMore])
 
   /** 提示块里的出口动作 */
   const runPanelAction = useCallback((action: SearchPanelAction) => {
@@ -2629,11 +2669,26 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               {/* 放宽提示只在真的展示了放宽结果时出现：弱语义填充被重排抑制、
                   面板走真空态时不再挂这条横幅（否则"没有找到"和"以下是放宽结果"自相矛盾） */}
               {fallbackHint && displayHits.length > 0 && (
-                <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 border-b">
-                  {fallbackHint === 'filter'
-                    ? (relaxedPricingNotice(relaxedFacets) ??
-                      '当前筛选下没有结果，已放宽到全库匹配（结果可能来自其他类目）。')
-                    : '没有精确匹配，以下是放宽匹配后的结果。'}
+                <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 border-b flex items-center justify-between gap-2">
+                  <span>
+                    {fallbackHint === 'filter'
+                      ? (relaxedPricingNotice(relaxedFacets) ??
+                        relaxedCategoryNotice(relaxedCategoryId, relaxedCategoryName) ??
+                        '当前筛选下没有结果，已放宽到全库匹配（结果可能来自其他类目）。')
+                      : '没有精确匹配，以下是放宽匹配后的结果。'}
+                  </span>
+                  {/* A3：分类被放宽时可一键去掉分类（与搜索页同款，只去分类、保留 q/tag/facets；
+                      浮层内无 URL 可跳，去掉即以无分类条件重查；与上方分类芯片无关） */}
+                  {fallbackHint === 'filter' && relaxedCategoryId && effectiveCategoryId && (
+                    <button
+                      type="button"
+                      className="underline underline-offset-2 hover:no-underline shrink-0"
+                      aria-label={relaxedCategoryName ? `去掉分类「${relaxedCategoryName}」筛选` : '去掉分类筛选'}
+                      onClick={() => setCategoryDropped(true)}
+                    >
+                      去掉分类
+                    </button>
+                  )}
                 </div>
               )}
               {/* 分组建议（research #2）：打字时即时给出的快捷入口，排在结果分组之前。

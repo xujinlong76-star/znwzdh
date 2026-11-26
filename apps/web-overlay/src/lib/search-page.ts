@@ -278,6 +278,35 @@ export function relaxedCategoryNotice(
   return '该分类下暂无匹配，已放宽分类条件显示全站结果；下面的站点可能来自其他分类。'
 }
 
+/** 客户端类目行的最小形状（与 navhub-api 的 HubCategoryLite 同构，不 import 以免循环依赖） */
+export interface CategoryNameSource {
+  id: string
+  title: string
+  slug?: string | null
+  parentId?: string | null
+}
+
+/**
+ * A3（浮层复用）：被放宽的分类 id/slug → 中文展示名。
+ *
+ * 搜索页是服务端直出 categoryName prop；浮层是客户端组件，只能在需要点名时
+ * 用 fetchCategories() 拉类目表再本地解析。与服务端 `categoryDisplayName`
+ * 同口径：同名标题用「父 · 子」消歧。未命中 / 类目表取不到时返回 null，
+ * 调用方退回不点名的通用句，原始 id/slug 绝不进文案。
+ */
+export function resolveCategoryDisplayName(
+  category: string | null | undefined,
+  categories: ReadonlyArray<CategoryNameSource> | null | undefined,
+): string | null {
+  if (!category || !categories) return null
+  const hit = categories.find((c) => c.id === category || c.slug === category)
+  if (!hit) return null
+  const duplicated = categories.some((c) => c.id !== hit.id && c.title === hit.title)
+  if (!duplicated) return hit.title
+  const parent = hit.parentId ? categories.find((c) => c.id === hit.parentId) : null
+  return parent ? `${parent.title} · ${hit.title}` : hit.title
+}
+
 export function inferredConditionLabels(input: {
   inferredTag?: string
   inferredCategory?: string

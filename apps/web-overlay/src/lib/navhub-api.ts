@@ -210,7 +210,10 @@ function readSignal(signal?: AbortSignal): AbortSignal | undefined {
 const inflightGets = new Map<string, Promise<unknown>>()
 
 async function getJson<T>(path: string, signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<T> {
-  const dedupe = !signal && !extraHeaders
+  // 空对象也属于「无额外头」：anonHeaders(undefined) 返回 {}（truthy），
+  // 旧写法 !extraHeaders 会把它当成「有额外头」从而永久关闭在飞去重，
+  // 让最高 QPS 的 searchSites 每次都发重复请求（2026-11-27 性能审计 P0-1）。
+  const dedupe = !signal && (!extraHeaders || Object.keys(extraHeaders).length === 0)
   if (dedupe) {
     const existing = inflightGets.get(path)
     if (existing) return existing as Promise<T>

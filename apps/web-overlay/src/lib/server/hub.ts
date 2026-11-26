@@ -99,10 +99,12 @@ export async function hubGetProbe<T>(
   timeoutMs = 0,
 ): Promise<HubProbe<T>> {
   try {
-    const init: RequestInit & { next?: { revalidate: number } } = {
+    const init: RequestInit & { next?: { revalidate: number; tags: string[] } } = {
       headers: { ...BASE_HEADERS },
     }
-    if (revalidate > 0) init.next = { revalidate }
+    // 与 hubGet 同口径：Data Cache 条目必须打标签，否则写侧 revalidateTag(HUB_CACHE_TAG)
+    // 对探针取数无效，四类页面（站点/插件详情/作者/场景）写后最长 stale 一个 revalidate 窗口。
+    if (revalidate > 0) init.next = { revalidate, tags: [HUB_CACHE_TAG] }
     if (timeoutMs > 0) init.signal = AbortSignal.timeout(timeoutMs)
     const res = await fetch(`${HUB_BASE}${path}`, init)
     if (res.status === 404) return { status: 'miss' }

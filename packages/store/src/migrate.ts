@@ -649,6 +649,18 @@ export async function migrateSitesPatrolIndex(db: { dialect: string; sqlite?: an
   await execSql(db, SITES_PATROL_INDEX_DDL);
 }
 
+/**
+ * sub_category_id 索引（2026-11-27 性能审计 P0-3）。
+ * dashboard 分类分布与插件占用检查的 OR 谓词 (category_id=? OR sub_category_id=?)
+ * 因 sub_category_id 无索引而全表扫；新库由 schema.ts 建，存量库由本版本补建。
+ */
+export const SITES_SUB_CATEGORY_INDEX_DDL =
+  "CREATE INDEX IF NOT EXISTS sites_sub_category_idx ON sites(sub_category_id)";
+
+export async function migrateSitesSubCategoryIndex(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  await execSql(db, SITES_SUB_CATEGORY_INDEX_DDL);
+}
+
 /** 补建 site_reports / submission_reviews（存量库追加过 DDL 的救场迁移）。 */
 export async function migrateSiteReportsAndReviews(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
   for (const sqlText of SITE_REPORTS_AND_REVIEWS_DDL) await execSql(db, sqlText);

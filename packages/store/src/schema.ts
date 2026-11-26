@@ -97,6 +97,9 @@ export const sites = sqliteTable("sites", {
 }, (t) => [
   uniqueIndex("sites_url_uniq_v2").on(t.url),
   index("sites_category_idx").on(t.categoryId),
+  // P0-3（2026-11-27）：category_id OR sub_category_id 的 OR 谓词里，sub_category_id
+  // 此前无索引 → 仪表板分类分布与插件占用检查全表扫（117ms/次，随库线性恶化）。
+  index("sites_sub_category_idx").on(t.subCategoryId),
   index("sites_status_idx").on(t.status),
   index("sites_pinyin_full_idx").on(t.pinyinFull),
   index("sites_pinyin_initials_idx").on(t.pinyinInitials),

@@ -8,7 +8,7 @@
  *      不能把陈旧数据喂给用户）。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { fetchCategories } from "../src/lib/navhub-api";
+import { fetchCategories, searchSites } from "../src/lib/navhub-api";
 
 const realFetch = globalThis.fetch;
 
@@ -41,5 +41,27 @@ describe("navhub-api 并发去重（single-flight）", () => {
     await fetchCategories();
     await fetchCategories();
     expect(calls()).toBe(2);
+  });
+
+  it("searchSites 并发去重：anonHeaders(undefined)={} 不得关闭在飞去重（P0-1）", async () => {
+    // 回归 2026-11-27 性能审计 P0-1：旧写法 const dedupe = !signal && !extraHeaders
+    // 对 {} 求真值 → dedupe 恒 false → 最高 QPS 的搜索路径每次都发重复请求。
+    // stub 返回合法 HubSearchResult 形状，避免降级路径掩盖请求次数。
+    let requestCount = 0;
+    globalThis.fetch = (async () => {
+      requestCount += 1;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return new Response(
+        JSON.stringify({ hits: [], channelsUsed: [], semanticAvailable: false, tookMs: 0 }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as unknown as typeof fetch;
+    const [a, b] = await Promise.all([
+      searchSites({ q: "dedupe-probe" }),
+      searchSites({ q: "dedupe-probe" }),
+    ]);
+    expect(requestCount).toBe(1);
+    expect(a.hits).toEqual([]);
+    expect(b.hits).toEqual([]);
   });
 });

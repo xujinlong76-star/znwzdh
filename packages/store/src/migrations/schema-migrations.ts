@@ -25,6 +25,7 @@ import {
   normalizeSiteCreatedAt,
   migrateSiteReportsAndReviews,
   migrateSitesPatrolIndex,
+  migrateSitesSubCategoryIndex,
   withMigrationTransaction,
   recordMigrationFailure,
 } from "../migrate.ts";
@@ -314,6 +315,16 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
       await migrateSitesPatrolIndex(db);
     },
     checksum: "v1_sites_patrol_idx",
+  },
+  {
+    // 2026-11-27 性能审计 P0-3：sub_category_id 无索引致 OR 谓词全表扫。
+    // DDL 真相见 migrate.ts 的 SITES_SUB_CATEGORY_INDEX_DDL；新库 schema.ts 已建，本版本给存量库补建。
+    version: "20261127_sites_sub_category_idx",
+    name: "sub_category_id 索引 sites_sub_category_idx 存量库补建",
+    up: async (db: Db) => {
+      await migrateSitesSubCategoryIndex(db);
+    },
+    checksum: "v1_sites_sub_category_idx",
   },
   {
     // 旧版本已记账的部署不会重跑 20261107；新的 v2 只做无损冲突报告。

@@ -34,6 +34,34 @@ describe("版本化数据库迁移台账（DB-01）", () => {
     expect(res.skipped.length).toBeGreaterThanOrEqual(BUILTIN_MIGRATIONS.length);
   });
 
+  it("存量库补建：sub_category_id 索引缺失时由 20261127 版本补上（P0-3）", async () => {
+    // 2026-11-27 性能审计：sub_category_id 无索引导致 dashboard 分类分布与
+    // 插件占用检查的 OR 谓词全表扫。新库 schema.ts/driver.ts 已建，存量库靠本版本补。
+    const fresh = await openDb({ dialect: "sqlite", sqlitePath: ":memory:" });
+    try {
+      const mig = BUILTIN_MIGRATIONS.find((m) => m.version === "20261127_sites_sub_category_idx");
+      expect(mig, "BUILTIN_MIGRATIONS 里必须有 20261127_sites_sub_category_idx").toBeDefined();
+      const hasIdx = () =>
+        fresh.sqlite!
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?")
+          .get("sites_sub_category_idx") !== undefined;
+
+      fresh.sqlite!.exec("DROP INDEX IF EXISTS sites_sub_category_idx");
+      fresh.sqlite!.prepare("DELETE FROM _schema_migrations WHERE version = ?").run("20261127_sites_sub_category_idx");
+      expect(hasIdx()).toBe(false);
+
+      const first = await runVersionedMigrations(fresh, { migrations: [mig!] });
+      expect(first.applied).toEqual(["20261127_sites_sub_category_idx"]);
+      expect(hasIdx()).toBe(true);
+
+      const second = await runVersionedMigrations(fresh, { migrations: [mig!] });
+      expect(second.applied).toEqual([]);
+      expect(second.skipped).toEqual(["20261127_sites_sub_category_idx"]);
+    } finally {
+      await fresh.close();
+    }
+  });
+
   it("存量库补建：20261015 已记账但缺 sites_patrol_idx 时，新版本才把它补上", async () => {
     // 真实的存量库不会有 sites_patrol_idx：这条 DDL 是事后追加进
     // 20261015_site_indexes 的，而该版本早已记账、不会再跑。

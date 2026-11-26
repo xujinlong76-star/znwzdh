@@ -436,7 +436,10 @@ function createResponsePipeline(
   const transforms: Transform[] = [createLimitTransform(maxBytes), ...(decoders ?? [])]
   if (decoders && decoders.length > 0) transforms.push(createLimitTransform(maxBytes))
   const destination = new PassThrough()
-  pipeline(incoming, ...transforms, destination, (error) => {
+  // transforms 是变长 Transform[]（解码器个数随 Content-Encoding 而变），不是
+  // 定长元组，不能展开进 pipeline 的定长重载（TS2556）；改走 pipeline 的数组
+  // 重载 pipeline(streams, callback)，语义与展开调用完全一致。
+  pipeline([incoming, ...transforms, destination], (error) => {
     if (error) onError(error)
   })
   return { stream: destination, headers: responseHeaders }

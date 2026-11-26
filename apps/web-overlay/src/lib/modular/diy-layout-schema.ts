@@ -42,8 +42,9 @@ const DANGEROUS_KEY_SET = new Set<string>(DANGEROUS_KEYS)
 
 /**
  * 已知首屏小组件 id：与 WIDGET_REGISTRY（lib/modular/registry.ts）的键一一对应。
- * 展板渲染时未知类型直接 `return null`（home-hero-deck.tsx 的 HeroDeckWidgetItem），
- * 占位却不显示 —— 导入/分享带进来的未知类型必须在这里点名丢弃，不能悄悄留一个空洞。
+ * 展板渲染时未知类型直接 `return null`（旧 home-hero-deck.tsx 的 HeroDeckWidgetItem
+ * 曾如此；该组件 U-438 已删，导入/分享清洗仍按此规则丢弃未知类型，不能悄悄
+ * 留一个空洞）。
  * 注册表加新组件时同步改这里；diy-share-link.test.ts 有源码守卫盯着两边对齐。
  */
 export const KNOWN_HERO_WIDGET_IDS = [

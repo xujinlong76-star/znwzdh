@@ -178,6 +178,18 @@ describe("/api/health：运行时与探针语义", () => {
     expect(((await res.json()) as Record<string, any>).status).toBe("degraded");
     expect(spy).toHaveBeenCalled();
   });
+
+  it("导航分片回落指标（U-386）：仅内部 token 可见，未回落过时为 null，不影响 status", async () => {
+    stubHub(() => new Response(JSON.stringify(hubBody()), { status: 200 }));
+    process.env.NAVHUB_INTERNAL_TOKEN = "s3cret";
+    const detailed = await getHealth("", { "x-navhub-internal-token": "s3cret" });
+    expect(detailed.body.status).toBe("ok");
+    expect(detailed.body.navigationFallback).toBeNull();
+
+    const anon = await getHealth();
+    expect(anon.body.status).toBe("ok");
+    expect(anon.body.navigationFallback).toBeUndefined();
+  });
 });
 
 // env 卫生（D2）：恢复本文件改写的环境变量，避免驻留同 worker 的后续文件

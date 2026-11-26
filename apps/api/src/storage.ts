@@ -20,7 +20,9 @@ import { backfillDerivedFacets, formatFacetBackfillReport } from "./facet-backfi
 import { indexSitesBatch } from "./index-site.ts";
 import { loadVideoCatalogFromDb, resolveVideoStoreMode, syncReplacementHistorySafely, syncVideoCatalogSafely, VIDEO_REPLACEMENTS_PATH } from "./video-catalog.ts";
 import { deriveVideoShards } from "./video-shards.ts";
-import { deriveNavigationShards } from "./navigation-shards.ts";
+import { deriveNavigationShards, NAVIGATION_INDEX_PATH } from "./navigation-shards.ts";
+import { sendWebhookAlert, ALERT_DEDUPE_WINDOW_MS } from "./alerts.ts";
+import { createStoreAlertDeduper } from "./alert-dedupe.ts";
 
 /** 外置替换审计文档的 basename（路径事实源在 video-catalog.ts，避免两处硬编码漂移） */
 const REPLACEMENTS_BASENAME = VIDEO_REPLACEMENTS_PATH.split("/").pop()!;
@@ -801,6 +803,291 @@ export async function ensureNavigationShardsFresh(
   return inFlightNavShardsPromise;
 }
 
+/**
+ * 导航分片回落告警的持久记录键（system_states）。
+ *
+ * 读路径回落的「最后一次」落在这里，供 GET /api/admin/navigation-shards/status
+ * 直接返回——管理员不用翻日志就能看到分片是什么时候、为什么回落的。
+ */
+export const NAVIGATION_SHARD_FALLBACK_STATE_KEY = "navigation-shard-fallback:last";
+
+/** 持久告警节流窗口：与 webhook 去重窗口（ALERT_DEDUPE_WINDOW_MS，5 分钟）同频 */
+const NAVIGATION_SHARD_FALLBACK_ALERT_WINDOW_MS = ALERT_DEDUPE_WINDOW_MS;
+
+export interface NavigationShardCategoryStatus {
+  id: string;
+  itemCount: number;
+  shardPaths: string[];
+  missingShards: string[];
+  staleShards: string[];
+}
+
+export interface NavigationShardFallbackRecord {
+  at: number;
+  reason: string;
+  path: string | null;
+  dataVersion: number | null;
+  existingSourceVersion: unknown;
+  count: number;
+}
+
+export interface NavigationShardStatus {
+  dataVersion: number | null;
+  indexSourceVersion: number | null;
+  indexPresent: boolean;
+  fresh: boolean;
+  totalItems: number | null;
+  categories: NavigationShardCategoryStatus[];
+  missingShards: string[];
+  staleShards: string[];
+  lastFallback: NavigationShardFallbackRecord | null;
+}
+
+/**
+ * 导航分片现状（U-386）：data_version、索引版本、每分类分片的缺失/过期清单、
+ * 以及最近一次读路径回落记录。只读不写，dry-run 与管理面共用。
+ */
+export async function getNavigationShardStatus(ctx: AppContext): Promise<NavigationShardStatus> {
+  const version = await ctx.repo.readNavDataVersion();
+  const index = (await readKv(ctx, pathToKey(NAVIGATION_INDEX_PATH))) as {
+    kind?: unknown;
+    sourceVersion?: unknown;
+    totalItems?: unknown;
+    categories?: unknown;
+  } | null;
+  const indexPresent =
+    !!index && index.kind === "navhub-navigation-index" && typeof index.sourceVersion === "number";
+  const indexSourceVersion = indexPresent ? (index.sourceVersion as number) : null;
+  const totalItems = typeof index?.totalItems === "number" ? index.totalItems : null;
+  const categories: NavigationShardCategoryStatus[] = [];
+  const missingShards: string[] = [];
+  const staleShards: string[] = [];
+  // 索引本身也是派生产物：缺失/过期时同样登记，status 与 backfill 的 writes 口径一致。
+  if (!indexPresent) {
+    missingShards.push(NAVIGATION_INDEX_PATH);
+  } else if (version !== null && indexSourceVersion !== version) {
+    staleShards.push(NAVIGATION_INDEX_PATH);
+  }
+  if (indexPresent && Array.isArray(index.categories)) {
+    for (const c of index.categories as Array<Record<string, unknown>>) {
+      if (typeof c?.id !== "string" || !Array.isArray(c?.shardPaths)) continue;
+      const entry: NavigationShardCategoryStatus = {
+        id: c.id,
+        itemCount: typeof c.itemCount === "number" ? c.itemCount : 0,
+        shardPaths: (c.shardPaths as unknown[]).filter((p): p is string => typeof p === "string"),
+        missingShards: [],
+        staleShards: [],
+      };
+      for (const shardPath of entry.shardPaths) {
+        const existing = (await readKv(ctx, pathToKey(shardPath))) as { sourceVersion?: unknown } | null;
+        if (!existing) {
+          entry.missingShards.push(shardPath);
+          missingShards.push(shardPath);
+        } else if (version !== null && existing.sourceVersion !== version) {
+          entry.staleShards.push(shardPath);
+          staleShards.push(shardPath);
+        }
+      }
+      categories.push(entry);
+    }
+  }
+  const fresh =
+    version !== null &&
+    indexPresent &&
+    indexSourceVersion === version &&
+    missingShards.length === 0 &&
+    staleShards.length === 0;
+  const lastFallback = await ctx.repo
+    .getSystemState<NavigationShardFallbackRecord>(NAVIGATION_SHARD_FALLBACK_STATE_KEY)
+    .catch(() => null);
+  return {
+    dataVersion: version,
+    indexSourceVersion,
+    indexPresent,
+    fresh,
+    totalItems,
+    categories,
+    missingShards,
+    staleShards,
+    lastFallback,
+  };
+}
+
+export type NavigationShardWriteChange = "missing" | "stale" | "changed" | "unchanged";
+
+export interface NavigationShardBackfillWrite {
+  path: string;
+  change: NavigationShardWriteChange;
+}
+
+export interface NavigationShardBackfillReport {
+  dryRun: boolean;
+  dataVersion: number;
+  sourceVersion: number;
+  totalItems: number;
+  categories: number;
+  writes: NavigationShardBackfillWrite[];
+  /** dry-run：将会写入的文档数；apply：实际写入的文档数 */
+  wouldWrite: number;
+  wrote: number;
+  skippedUnchanged: number;
+  /** public 快照为空库时为 true（与 ensureNavigationShardsFresh 的空库保护一致：不派生空索引） */
+  empty: boolean;
+}
+
+/**
+ * 导航分片一次性回填（U-386）。
+ *
+ * 派生逻辑本身一行不改：仍是 deriveNavigationShards（public 快照 → 分片集），
+ * 本函数只补一个「独立触发入口」——以前分片只能由写导航 / 启动预热 / 读时
+ * 惰性自愈间接触发，存量缺失/过期无法一次性修复。
+ *
+ * dry-run（默认）：只比对、只报告，不写任何 KV；apply：按派生顺序落库
+ * （分片 → index，index 是提交标记，必须最后，与 ensureNavigationShardsFresh 一致）。
+ *
+ * 每条 writes 的 change 口径：missing（从未派生过）/ stale（sourceVersion 落后于
+ * data_version）/ changed（版本对得上但内容被改过）/ unchanged（逐字相同，跳过）。
+ */
+export async function backfillNavigationShards(
+  ctx: AppContext,
+  opts: { dryRun?: boolean } = {},
+): Promise<NavigationShardBackfillReport> {
+  const dryRun = opts.dryRun !== false;
+  invalidateSnapshotCache();
+  const version = await ctx.repo.readNavDataVersion();
+  if (version === null) {
+    throw new Error("backfillNavigationShards: data_version 取不到，无法确定派生源版本");
+  }
+  const publicDoc = await readNavigationSnapshot(ctx, "public", version);
+  if (!Array.isArray(publicDoc?.navigationItems) || publicDoc.navigationItems.length === 0) {
+    return {
+      dryRun,
+      dataVersion: version,
+      sourceVersion: version,
+      totalItems: 0,
+      categories: 0,
+      writes: [],
+      wouldWrite: 0,
+      wrote: 0,
+      skippedUnchanged: 0,
+      empty: true,
+    };
+  }
+  const derived = deriveNavigationShards(publicDoc, version);
+  const writes: NavigationShardBackfillWrite[] = [];
+  for (const w of derived.writes) {
+    const existing = await readKv(ctx, pathToKey(w.path));
+    let change: NavigationShardWriteChange;
+    if (existing === null || existing === undefined) {
+      change = "missing";
+    } else if ((existing as { sourceVersion?: unknown })?.sourceVersion !== version) {
+      change = "stale";
+    } else if (JSON.stringify(existing) !== JSON.stringify(w.data)) {
+      change = "changed";
+    } else {
+      change = "unchanged";
+    }
+    writes.push({ path: w.path, change });
+  }
+  const toWrite = writes.filter((w) => w.change !== "unchanged");
+  if (!dryRun) {
+    for (let i = 0; i < derived.writes.length; i++) {
+      const w = derived.writes[i];
+      if (!w || writes[i]?.change === "unchanged") continue;
+      await writeKv(ctx, pathToKey(w.path), w.data);
+    }
+  }
+  return {
+    dryRun,
+    dataVersion: version,
+    sourceVersion: derived.sourceVersion,
+    totalItems: derived.totalItems,
+    categories: publicDoc.navigationItems.length,
+    writes,
+    wouldWrite: toWrite.length,
+    wrote: dryRun ? 0 : toWrite.length,
+    skippedUnchanged: writes.length - toWrite.length,
+    empty: false,
+  };
+}
+
+/**
+ * 读路径分片回落告警（U-386）。
+ *
+ * 以前 readStoragePath 自愈失败时只是悄悄返回过期/缺失的分片（调用方再回落
+ * 整包读），web 侧 fallback() 也只有一句 console.info——分片烂了没人知道。
+ * 现在回落即告警，走仓库已有的三条可观测链路（不发明新通道）：
+ *   1. error 级日志（每次回落都记，与 ensureNavigationShardsFresh 的 catch 同级）；
+ *   2. events 表审计（kind=navigation_shard_fallback，jobs.ts 的 site_healing /
+ *      backup_restore 同款 recordEvent 口径）+ system_states 最近一次记录
+ *      （status 端点直接返回，管理面不用翻日志）；
+ *   3. 配了 NAVHUB_ALERT_WEBHOOK 时投递 webhook（main.ts 的 JobRunner 同款
+ *      sendWebhookAlert + system_states 去重，同一原因 5 分钟只喊一次）。
+ *
+ * 持久告警（2、3）按原因节流：同一原因 5 分钟内只落一条，避免持续故障期
+ * 每次分片读都往 events 表写一行；error 日志本身每次都记。
+ * 告警链路绝不抛错、绝不拖垮读请求：任何一步失败都静默丢弃。
+ */
+export async function recordNavigationShardFallback(
+  ctx: AppContext,
+  reason: string,
+  detail: { path?: string | null; dataVersion?: number | null; existingSourceVersion?: unknown } = {},
+): Promise<void> {
+  try {
+    console.error("[navigation] 分片读回落告警：" + reason, {
+      path: detail.path ?? null,
+      dataVersion: detail.dataVersion ?? null,
+      existingSourceVersion: detail.existingSourceVersion ?? null,
+    });
+    const now = Date.now();
+    const prev = await ctx.repo
+      .getSystemState<NavigationShardFallbackRecord>(NAVIGATION_SHARD_FALLBACK_STATE_KEY)
+      .catch(() => null);
+    if (prev && prev.reason === reason && now - prev.at < NAVIGATION_SHARD_FALLBACK_ALERT_WINDOW_MS) {
+      return;
+    }
+    const record: NavigationShardFallbackRecord = {
+      at: now,
+      reason,
+      path: detail.path ?? null,
+      dataVersion: detail.dataVersion ?? null,
+      existingSourceVersion: detail.existingSourceVersion ?? null,
+      count: (prev?.reason === reason ? prev.count : 0) + 1,
+    };
+    await ctx.repo
+      .recordEvent("navigation_shard_fallback", {
+        meta: {
+          reason,
+          path: record.path,
+          dataVersion: record.dataVersion,
+          existingSourceVersion: record.existingSourceVersion,
+          count: record.count,
+        },
+      })
+      .catch(() => {
+        // 审计/遥测类写库是尽力而为：失败不阻断主操作（errors.ts 同款口径）。
+      });
+    await ctx.repo.setSystemState(NAVIGATION_SHARD_FALLBACK_STATE_KEY, record).catch(() => {
+      // 同上：状态记录写失败不影响读请求本身。
+    });
+    const webhook = ctx.config.alertWebhook;
+    if (webhook) {
+      const deduper = createStoreAlertDeduper(ctx.repo, ALERT_DEDUPE_WINDOW_MS);
+      await sendWebhookAlert(
+        webhook,
+        "导航分片读回落：" + reason,
+        { kind: "navigation-shard-fallback", attempts: 1, error: reason },
+        ctx.config.alertTimeoutMs,
+        deduper,
+      ).catch(() => {
+        // webhook 投递失败只返回 false，不影响主流程（alerts.ts 同款口径）。
+      });
+    }
+  } catch {
+    // 告警链路本身绝不能把读请求拖垮：失败即丢弃（error 日志已记）。
+  }
+}
+
 type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
 
 /** 快照条目 → 托管字段（与旧 upsertSite 的取值规则逐字一致） */
@@ -1538,6 +1825,20 @@ export async function readStoragePath(
     if (healed) {
       return readKv(ctx, pathToKey(path));
     }
+    // 自愈失败：调用方即将拿到过期/缺失的分片（或 null）并回落整包读。
+    // 这就是 U-386 要告警的读路径回落：以前这里静默返回，等于没人知道分片烂了。
+    await recordNavigationShardFallback(
+      ctx,
+      version === null ? "分片自愈失败：data_version 取不到" : "分片自愈失败：派生未对齐当前版本",
+      {
+        path,
+        dataVersion: version,
+        existingSourceVersion:
+          existing && typeof existing === "object"
+            ? (existing as { sourceVersion?: unknown }).sourceVersion ?? null
+            : null,
+      },
+    );
     return existing;
   }
   // 其余内容文件走通用 JSON 文档。从未写入过时返回 null（与"保存了空对象"区分开），

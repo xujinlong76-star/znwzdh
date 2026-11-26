@@ -71,6 +71,8 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "POST", path: "/api/admin/maintenance/optimize", scope: "admin" },
   { method: "GET", path: "/api/admin/maintenance/status", scope: "admin" },
   { method: "POST", path: "/api/admin/maintenance/vacuum", scope: "admin" },
+  { method: "POST", path: "/api/admin/navigation-shards/backfill", scope: "admin" },
+  { method: "GET", path: "/api/admin/navigation-shards/status", scope: "admin" },
   { method: "GET", path: "/api/admin/notifications", scope: "admin" },
   { method: "GET", path: "/api/admin/notifications/deliveries", scope: "admin" },
   { method: "POST", path: "/api/admin/notifications/read-all", scope: "admin" },

@@ -208,6 +208,22 @@ export interface NavigationCatalogLoad {
   degraded: boolean;
 }
 
+/**
+ * 最近一次分片读回落（U-386）：进程内记录，供 /api/health 的 detail 视图
+ * 返回——分片烂了不能只躺在日志里，管理面要有一个不用翻日志就能看到的指标。
+ * 只记最近一次（时间 + 原因），不攒历史；调用方拿到它也不做业务分支。
+ */
+export interface NavigationShardFallbackRecord {
+  at: string;
+  reason: string;
+}
+
+let lastNavigationShardFallback: NavigationShardFallbackRecord | null = null;
+
+export function getLastNavigationShardFallback(): NavigationShardFallbackRecord | null {
+  return lastNavigationShardFallback;
+}
+
 async function loadWholeDoc(): Promise<NavigationCatalogLoad> {
   const { data, degraded } = await getFileContentWithStatus<NavigationData>(NAVIGATION_DOC_PATH);
   const usable = !!data && Array.isArray((data as NavigationData).navigationItems);
@@ -215,7 +231,13 @@ async function loadWholeDoc(): Promise<NavigationCatalogLoad> {
 }
 
 function fallback(reason: string): Promise<NavigationCatalogLoad> {
-  console.info("[navigation-read] 回落整包读：" + reason);
+  // U-386：回落即告警，不再只记一条 info——分片缺失/过期是数据层故障，
+  // 必须在 error 级日志里可见，并留一条进程内记录供 /api/health 的 detail 视图返回。
+  // 中枢侧的同款告警（events 表 + system_states + webhook）在 storage.ts 的
+  // recordNavigationShardFallback 里；这里是 web 拼装侧的第二层（例如中枢返回的
+  // 分片在版本/条数上对不上时，中枢自愈已过、这里仍会回落）。
+  console.error("[navigation-read] 分片读回落告警（已回落整包读）：" + reason);
+  lastNavigationShardFallback = { at: new Date().toISOString(), reason };
   return loadWholeDoc().then((load) => ({ ...load, degraded: true }));
 }
 

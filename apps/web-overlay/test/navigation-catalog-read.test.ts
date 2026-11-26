@@ -15,6 +15,7 @@ import { describe, expect, it, vi, beforeEach, afterAll, beforeAll } from "vites
 import { createServer, type Server } from "node:http";
 import { invalidateContentCache } from "@/lib/github";
 import {
+  getLastNavigationShardFallback,
   loadNavigationCatalog,
   loadNavigationCategoryById,
   navigationReadMode,
@@ -233,6 +234,21 @@ describe("loadNavigationCatalog", () => {
     const load = await loadNavigationCatalog();
     expect(load.mode).toBe("doc");
     expect(seenPaths).toContain(NAVIGATION_DOC_PATH);
+  });
+
+  it("回落即告警（U-386）：error 级日志 + 最近一次回落记录可查，不再是 info 一句", async () => {
+    seedShards();
+    seedWholeDoc();
+    store.delete(navigationShardPath("cat-a"));
+    const load = await loadNavigationCatalog();
+    expect(load.mode).toBe("doc");
+    expect(load.degraded).toBe(true);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("分片读回落告警"));
+    expect(console.info).not.toHaveBeenCalledWith(expect.stringContaining("回落整包读"));
+    const last = getLastNavigationShardFallback();
+    expect(last).not.toBeNull();
+    expect(last?.reason).toContain("cat-a");
+    expect(typeof last?.at).toBe("string");
   });
 
   it("索引缺失（中枢尚未派生）→ 回落整包", async () => {

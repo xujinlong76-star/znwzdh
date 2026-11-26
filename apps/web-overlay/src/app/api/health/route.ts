@@ -27,6 +27,7 @@
  */
 import { NextResponse } from 'next/server'
 import { hubGetProbe, type HubProbe } from '@/lib/server/hub'
+import { getLastNavigationShardFallback } from '@/lib/navigation-catalog-read'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -155,7 +156,10 @@ export async function GET(request: Request) {
       hub: detail
         ? hub
         : { ok: hub.ok, probe: hub.probe, latencyMs: hub.latencyMs, reason: hub.reason, probedAt: hub.probedAt, fromCache: hub.fromCache },
-      ...(detail ? { node: process.version, detail: true } : {}),
+      // U-386：导航分片最近一次读回落（时间 + 原因），只对内部调用方可见；
+      // null 表示本进程启动以来没有回落过。状态本身不因此变 degraded——
+      // 回落是「读到整包兜底」的降级事实，不是「web 坏了」。
+      ...(detail ? { node: process.version, detail: true, navigationFallback: getLastNavigationShardFallback() } : {}),
     },
     {
       status: degraded && params.get('strict') === '1' ? 503 : 200,

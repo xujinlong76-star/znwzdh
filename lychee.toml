@@ -1,5 +1,5 @@
 # lychee.toml（PR 门禁：只拦内部链接，外部一律不查）
 offline = true
-include_fragments = true # 实际为 anchor-only（不带值默认）；站内文档锚点漂移是 PR 可修的
+include_fragments = "anchor-only" # lychee v0.24.2 要求字符串枚举；仅检查站内锚点
 max_concurrency = 16
 format = "json"

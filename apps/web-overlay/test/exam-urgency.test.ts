@@ -321,30 +321,41 @@ describe('源码守卫：按档位上色、提醒只对已关注显示', () => {
 })
 
 describe('activeExamReminders（撞期提醒过期哨兵，2026-11-17 R-1）', () => {
-  it('每条提醒都有明确过期日：省考两条到 12-06，考研衔接到 12-19', () => {
+  it('每条提醒都有明确过期日：省考三条到 12-06，考研衔接到 12-19', () => {
     expect(EXAM_REMINDERS.map((r) => r.validUntilISO)).toEqual([
       '2026-12-06',
       '2026-12-06',
       '2026-12-19',
+      '2026-12-06',
     ])
   })
 
-  it('11-17 三条全在：撞期未到，不过期', () => {
+  it('11-17 四条全在：撞期未到，不过期', () => {
     expect(activeExamReminders(NOV_14_0800_CST).map((r) => r.title)).toEqual(
       EXAM_REMINDERS.map((r) => r.title),
     )
   })
 
-  it('12-06 当天三条仍在：有效期含当日', () => {
-    expect(activeExamReminders(DEC_06_0800_CST)).toHaveLength(3)
+  it('12-06 当天四条仍在：有效期含当日', () => {
+    expect(activeExamReminders(DEC_06_0800_CST)).toHaveLength(4)
   })
 
-  it('12-07 省考两条下线，只剩考研衔接一条', () => {
+  it('江苏提醒：11-27 在有效期内出现，12-07 后消失', () => {
+    const jiangsu = '江苏提醒：国考+省考共用四条新规'
+    expect(activeExamReminders(NOV_27_0800_CST).map((r) => r.title)).toContain(
+      jiangsu,
+    )
+    expect(activeExamReminders(DEC_07_0800_CST).map((r) => r.title)).not.toContain(
+      jiangsu,
+    )
+  })
+
+  it('12-07 省考三条下线，只剩考研衔接一条', () => {
     const titles = activeExamReminders(DEC_07_0800_CST).map((r) => r.title)
     expect(titles).toEqual(['四六级之后一周就是考研'])
   })
 
-  it('12-19 当天考研衔接仍在，12-20 三条全下线', () => {
+  it('12-19 当天考研衔接仍在，12-20 四条全下线', () => {
     expect(activeExamReminders(DEC_19_0800_CST).map((r) => r.title)).toEqual([
       '四六级之后一周就是考研',
     ])

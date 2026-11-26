@@ -190,6 +190,36 @@ describe("AI 专业级自动化插件审查与审批引擎 (AI Plugin Auditor)",
     expect(res.scoreBasis).toBe("static_plus_probe");
   });
 
+  it("模型缺少 decision：即使返回高分也必须转人工复核", async () => {
+    stubReply = {
+      status: 200,
+      content: JSON.stringify({
+        complianceScore: 99,
+        relevanceScore: 99,
+        rationale: "看起来不错",
+      }),
+    };
+    const res = await evaluatePluginAudit(ctx, { ...validSitePack, name: "缺少裁决字段测试包" });
+    expect(res.llmReviewed).toBe(false);
+    expect(res.reviewSkipped).toBe("error");
+    expect(res.dimensionScores.compliance).toBeNull();
+    expect(res.dimensionScores.relevance).toBeNull();
+    expect(res.decision).toBe("pending_review");
+  }, SLOW_AUDIT_MS);
+
+  it("模型返回 Infinity 分数：不得截断成 100 分或自动通过", async () => {
+    stubReply = {
+      status: 200,
+      content: '{"decision":"approve","complianceScore":1e309,"relevanceScore":99,"rationale":"异常数值测试"}',
+    };
+    const res = await evaluatePluginAudit(ctx, { ...validSitePack, name: "非有限分数测试包" });
+    expect(res.llmReviewed).toBe(false);
+    expect(res.reviewSkipped).toBe("error");
+    expect(res.dimensionScores.compliance).toBeNull();
+    expect(res.dimensionScores.relevance).toBeNull();
+    expect(res.decision).toBe("pending_review");
+  }, SLOW_AUDIT_MS);
+
   it("静态安全沙箱：检出 javascript: 伪协议注入时立即裁决 reject 并严重扣分", async () => {
     const maliciousPack: PluginManifest = {
       ...validSitePack,

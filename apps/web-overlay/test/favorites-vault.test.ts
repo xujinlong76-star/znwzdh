@@ -24,8 +24,10 @@ function overlaySource(rel: string): string {
  * 收藏 ↔ E2EE 金库的纯转换（P1）。
  *
  * 重点锁两件曾内联在页面里、没有任何测试的映射：
- *  1. 导出：`note → category`、`icon → tags[0]`；
- *  2. 导入：缺 `url` 的条目必须被丢弃（渲染不出来），缺 `createdAt` 必须补确定值。
+ *  1. 导出（v2，U-413）：`note → category`、`icon → icon`、`tags → tags`、
+ *     `folderName → folderName`，逐条写 `formatVersion: 2`；
+ *  2. 导入：缺 `url` 的条目必须被丢弃（渲染不出来），缺 `createdAt` 必须补确定值；
+ *     v1 旧文件（无 formatVersion）仍按旧口径读：`tags[0]` 是图标、没有文件夹与真实标签。
  */
 const NOW = 1_700_000_000_000
 
@@ -43,7 +45,7 @@ const sample: VaultMappableFavorite[] = [
 ]
 
 describe('收藏 → 金库条目', () => {
-  it('备注映射到 category，图标映射到 tags[0]', () => {
+  it('备注映射到 category，图标进 icon 字段、真实标签进 tags（U-413 v2，不再借用 tags[0]）', () => {
     const items = favoritesToVaultItems(sample)
     expect(items).toHaveLength(2)
     expect(items[0]).toMatchObject({
@@ -52,9 +54,13 @@ describe('收藏 → 金库条目', () => {
       url: 'https://example.com',
       description: '描述',
       category: '我的备注',
-      tags: ['https://example.com/icon.png'],
+      icon: 'https://example.com/icon.png',
+      tags: [],
+      formatVersion: 2,
       createdAt: NOW,
     })
+    // 图标不再出现在 tags 里：v1 的「tags[0] 是图标」是标签全丢的根因
+    expect(items[0]!.tags).not.toContain('https://example.com/icon.png')
   })
 
   it('没有备注/图标时不留空字段', () => {
@@ -100,7 +106,7 @@ describe('金库条目 → 收藏', () => {
     expect(vaultExportFilename(NOW)).toBe('navhub-vault-2023-11-14.navhub.vault')
   })
 
-  it('category 还原为 note，tags[0] 还原为 icon', () => {
+  it('category 还原为 note，icon 字段还原为 icon（v2 往返恒等）', () => {
     const restored = vaultItemsToFavorites(favoritesToVaultItems(sample), NOW)
     expect(restored[0]).toMatchObject({
       siteId: 'site-1',
@@ -200,6 +206,55 @@ describe('金库还原的结案陈词', () => {
     expect(notice.text).toContain('已恢复 2 条私密收藏')
     expect(notice.text).toContain('2 条已存在')
     expect(notice.text).toContain('1 条格式不完整')
+  })
+})
+
+describe('U-413 金库 v2：文件夹与真实标签往返', () => {
+  const v2Sample: VaultMappableFavorite[] = [
+    {
+      siteId: 'site-1',
+      title: '示例站',
+      href: 'https://example.com',
+      icon: 'https://example.com/icon.png',
+      description: '描述',
+      note: '我的备注',
+      tags: ['工作', '常用'],
+      folderName: '工作夹',
+      createdAt: NOW,
+    },
+  ]
+
+  it('v2 导出：文件夹进 folderName，真实标签进 tags，图标进 icon（不再借用 tags[0]）', () => {
+    const items = favoritesToVaultItems(v2Sample)
+    expect(items[0]).toMatchObject({
+      folderName: '工作夹',
+      tags: ['工作', '常用'],
+      icon: 'https://example.com/icon.png',
+      category: '我的备注',
+    })
+  })
+
+  it('v2 导出再导入：文件夹、标签、图标、备注全部回来', () => {
+    const restored = vaultItemsToFavorites(favoritesToVaultItems(v2Sample), NOW)
+    expect(restored[0]).toMatchObject({
+      siteId: 'site-1',
+      folderName: '工作夹',
+      tags: ['工作', '常用'],
+      icon: 'https://example.com/icon.png',
+      note: '我的备注',
+    })
+  })
+
+  it('v1 旧文件仍能导入：tags[0] 仍当图标、category 仍当备注，无文件夹、无真实标签', () => {
+    const v1 = [{ id: 'old', title: '旧站', url: 'https://old.example.com', category: '旧备注', tags: ['https://old.example.com/icon.png'], createdAt: NOW }]
+    const restored = vaultItemsToFavorites(v1, NOW)
+    expect(restored[0]).toMatchObject({
+      siteId: 'old',
+      note: '旧备注',
+      icon: 'https://old.example.com/icon.png',
+    })
+    expect(restored[0]!.folderName).toBeUndefined()
+    expect(restored[0]!.tags).toBeUndefined()
   })
 })
 

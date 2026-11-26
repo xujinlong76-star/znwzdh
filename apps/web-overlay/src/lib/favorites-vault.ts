@@ -20,13 +20,24 @@ export interface VaultMappableFavorite {
   icon?: string
   description?: string
   note?: string
+  /** 真实标签（T22，≤8 个、各 ≤24 字符）：v2 起进金库的 tags，不再被图标借用 */
+  tags?: string[]
+  /** 收藏夹名（U-413 金库 v2）：v2 起进金库的 folderName，导入时按名找回/新建 */
+  folderName?: string
   createdAt: number
   /** 参数化快捷链接（v1 本地 only）：金库是显式白名单组装，两字段随金库走 */
   quickPrefix?: string
   templateUrl?: string
 }
 
-/** 收藏 → 金库条目 */
+/**
+ * 收藏 → 金库条目（v2，U-413）。
+ *
+ * v1 的映射错在两处，且没有任何报错：备注走 category（分组语义被借用）、
+ * 图标走 tags[0]（真实标签无处可放）。v2 起四者各归其位——
+ * note → category、icon → icon、tags → tags、folderName → folderName，
+ * 并逐条写 formatVersion: 2，让导入侧能区分 v1 旧文件。
+ */
 export function favoritesToVaultItems(items: VaultMappableFavorite[]): VaultItem[] {
   return items.map((f) => ({
     id: f.siteId,
@@ -35,7 +46,11 @@ export function favoritesToVaultItems(items: VaultMappableFavorite[]): VaultItem
     description: f.description,
     // 备注走 category：金库格式里它是"分组"语义，导入侧再映射回 note
     category: f.note,
-    tags: f.icon ? [f.icon] : [],
+    // v2：真实标签进 tags，图标进 icon——v1 把图标塞进 tags[0] 致使标签全丢
+    tags: f.tags ? [...f.tags] : [],
+    icon: f.icon,
+    folderName: f.folderName,
+    formatVersion: 2,
     createdAt: f.createdAt,
     quickPrefix: f.quickPrefix,
     templateUrl: f.templateUrl,
@@ -50,19 +65,28 @@ export function favoritesToVaultItems(items: VaultMappableFavorite[]): VaultItem
  */
 export type VaultFileEntry = Partial<VaultItem> & { id?: string; url?: string }
 
-/** 金库条目 → 本地收藏（解密后的还原路径） */
+/** 金库条目 → 本地收藏（解密后的还原路径）
+ *
+ * v2（formatVersion === 2）：icon/tags/folderName 各归其位。
+ * v1（缺 formatVersion 的旧文件）：tags[0] 是图标、category 是备注、
+ * 没有文件夹与真实标签——按旧口径回退，旧文件仍能导入（U-413）。
+ */
 export function vaultItemsToFavorites(items: readonly VaultFileEntry[], now: number): VaultMappableFavorite[] {
   const out: VaultMappableFavorite[] = []
   for (const item of items) {
     // 站点地址是渲染与跳转的唯一依据：没有它这条记录无法使用，宁可丢掉也不留残行
     if (!item || typeof item.id !== 'string' || !item.id || typeof item.url !== 'string' || !item.url) continue
+    const isV2 = item.formatVersion === 2
     out.push({
       siteId: item.id,
       title: item.title || item.id,
       href: item.url,
       description: item.description,
       note: item.category,
-      icon: item.tags?.[0],
+      // v2：图标走 icon 字段、标签走 tags；v1：图标借存在 tags[0]，没有真实标签
+      icon: isV2 ? item.icon : item.tags?.[0],
+      tags: isV2 ? item.tags : undefined,
+      folderName: isV2 ? item.folderName : undefined,
       createdAt: typeof item.createdAt === 'number' && item.createdAt > 0 ? item.createdAt : now,
       // 快捷链接随金库走：合法性由读取侧 quicklinkFromFavorite / importJson
       // 再验，这里只做透传，不静默丢字段

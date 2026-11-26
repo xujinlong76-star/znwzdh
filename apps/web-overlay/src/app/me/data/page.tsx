@@ -114,6 +114,22 @@ const PRUNE_OPTIONS: ReadonlyArray<{
   },
 ]
 
+/** 导入回执里「未恢复」类的中文说明（U-412 诚实化）：只说类名用户看不懂为什么 */
+const NOT_RESTORED_LABELS: Record<string, string> = {
+  growthSnapshot: '本机成长快照（只作存档，未写回服务端）',
+  user: '账号记录（不覆盖当前账号）',
+  eventsSummary: '行为事件聚合（只作存档）',
+  vault: '金库密文（备份里只有版本信息）',
+  profile: '画像',
+  llmConfig: 'AI 配置',
+  workspaces: '工作区',
+  crdt: '同步日志',
+  comparisonSnapshots: '对照快照',
+  sitePrices: '对照价格',
+  pluginInstalls: '插件安装',
+  watchEntries: '追剧清单',
+}
+
 interface DataOverviewSummary {
   counts: {
     favorites: number
@@ -167,6 +183,21 @@ export default function MeDataPage() {
     reviewsSkippedInvalid: number
     /** 备份里带本机成长快照：服务端已明确忽略、不回写 */
     growthSnapshotIgnored: boolean
+    /** 追剧清单恢复（U-411）：新增/覆盖的条目与 LWW 判旧跳过的条目 */
+    watchImported: number
+    watchSkipped: number
+    /** 画像 / LLM 配置 / 工作区 / CRDT / 对照快照 / 对照价格 / 插件安装恢复（U-412） */
+    profileImported: number
+    llmConfigImported: number
+    /** 恢复的 LLM 配置不含 API 密钥：密钥从不进导出文件，须重新填写 */
+    llmConfigApiKeyNotRestored: boolean
+    workspacesImported: number
+    crdtImported: number
+    comparisonSnapshotsImported: number
+    sitePricesImported: number
+    pluginInstallsImported: number
+    /** 备份里有、这次导入后目标账号仍然没有的类（U-412 诚实化）：逐个点名 */
+    notRestored: string[]
   } | null>(null)
   // 续导要把同一份备份再发一次，所以原文得留在内存里（不进 state 免得触发重渲染）。
   // T2 起同时落一份到 sessionStorage（会话级）：刷新页面不再丢续导进度，
@@ -325,6 +356,20 @@ export default function MeDataPage() {
           reviewsSkippedInvalid?: number
           /** 备份里带本机成长快照：只作存档，服务端不回写（U-372） */
           growthSnapshotIgnored?: boolean
+          /** 追剧清单恢复（U-411） */
+          watchImported?: number
+          watchSkipped?: number
+          /** 画像 / LLM 配置 / 工作区 / CRDT / 对照快照 / 对照价格 / 插件安装恢复（U-412） */
+          profileImported?: number
+          llmConfigImported?: number
+          llmConfigApiKeyNotRestored?: boolean
+          workspacesImported?: number
+          crdtImported?: number
+          comparisonSnapshotsImported?: number
+          sitePricesImported?: number
+          pluginInstallsImported?: number
+          /** 备份里有、这次导入后仍然没有的类（U-412 诚实化） */
+          notRestored?: string[]
           error?: string
         }
         if (!res.ok || !data.ok) {
@@ -355,6 +400,19 @@ export default function MeDataPage() {
           reviewsSkippedMissing: Number(data.reviewsSkippedMissing ?? 0),
           reviewsSkippedInvalid: Number(data.reviewsSkippedInvalid ?? 0),
           growthSnapshotIgnored: Boolean(data.growthSnapshotIgnored),
+          watchImported: Number(data.watchImported ?? 0),
+          watchSkipped: Number(data.watchSkipped ?? 0),
+          profileImported: Number(data.profileImported ?? 0),
+          llmConfigImported: Number(data.llmConfigImported ?? 0),
+          llmConfigApiKeyNotRestored: Boolean(data.llmConfigApiKeyNotRestored),
+          workspacesImported: Number(data.workspacesImported ?? 0),
+          crdtImported: Number(data.crdtImported ?? 0),
+          comparisonSnapshotsImported: Number(data.comparisonSnapshotsImported ?? 0),
+          sitePricesImported: Number(data.sitePricesImported ?? 0),
+          pluginInstallsImported: Number(data.pluginInstallsImported ?? 0),
+          notRestored: Array.isArray(data.notRestored)
+            ? data.notRestored.filter((v): v is string => typeof v === 'string')
+            : [],
         }
         setImportResult(result)
         // 续导上下文按结果刷新：导完即清，没导完则更新剩余数与起点（sessionStorage 兜刷新）
@@ -362,11 +420,15 @@ export default function MeDataPage() {
         setImportJsonText('')
         // 恢复类操作最怕「其实没恢复全但看着像成功」：只要有任何跳过/截断就不许再报「成功」
         const lost =
-          result.favoritesSkippedMissingSite + result.searchesTruncated + (result.settingsError ? 1 : 0)
+          result.favoritesSkippedMissingSite + result.searchesTruncated + (result.settingsError ? 1 : 0) + result.notRestored.length
         toast({
           title: lost > 0 ? '备份已导入，但有内容没能恢复' : '云端备份已导入',
           description:
             `新增收藏 ${result.favoritesImported} 条、收藏夹 ${result.foldersImported} 个、搜索历史 ${result.searchesImported} 条` +
+            (result.watchImported > 0 ? `、追剧清单 ${result.watchImported} 条` : '') +
+            (result.profileImported + result.llmConfigImported + result.workspacesImported + result.crdtImported + result.comparisonSnapshotsImported + result.sitePricesImported + result.pluginInstallsImported > 0
+              ? `、画像 ${result.profileImported} 份、AI 配置 ${result.llmConfigImported} 份、工作区 ${result.workspacesImported} 条、同步日志 ${result.crdtImported} 份、对照快照 ${result.comparisonSnapshotsImported} 个、对照价格 ${result.sitePricesImported} 条、插件安装 ${result.pluginInstallsImported} 个`
+              : '') +
             (result.starsImported + result.reviewsImported > 0
               ? `、插件星标 ${result.starsImported} 个、评价 ${result.reviewsImported} 条`
               : '') +
@@ -377,6 +439,12 @@ export default function MeDataPage() {
               ? `；${result.searchesTruncated} 条历史超出单次 ${result.historyImportCap} 条上限，点结果里的「继续导入剩余」接着导`
               : '') +
             (result.settingsError ? `；偏好设置未能恢复：${result.settingsError}` : '') +
+            (result.llmConfigApiKeyNotRestored
+              ? '；AI 配置已恢复，但 API 密钥不在备份内，需重新填写'
+              : '') +
+            (result.notRestored.length > 0
+              ? `；以下备份内容未恢复：${result.notRestored.map((k) => NOT_RESTORED_LABELS[k] ?? k).join('、')}`
+              : '') +
             (result.backupHistoryTruncated
               ? `；提醒：这份备份在导出时历史就已截断（上限 ${result.historyExportLimit} 条），更早的记录不在文件里`
               : ''),
@@ -544,7 +612,7 @@ export default function MeDataPage() {
               <span className="text-[11px] text-muted-foreground">JSON 与书签 HTML 两种格式</span>
             </div>
             <p className="mt-3 max-w-prose text-xs leading-relaxed text-muted-foreground">
-              包含收藏与文件夹、搜索历史、画像、设置、插件安装记录、金库版本信息。LLM 配置只保留模型与地址，
+              包含收藏与文件夹、追剧清单、搜索历史、画像、设置、插件安装记录与星标评价、工作区、对照快照与价格、同步日志、金库版本信息。LLM 配置只保留模型与地址，
               不含密钥；金库只导出加密后的元信息。另含本机成长快照：成长档案只存在这台设备的浏览器里，
               导出时从本机读取打包进文件，导入时只作存档、不会写回服务端。
             </p>
@@ -576,21 +644,22 @@ export default function MeDataPage() {
               <span className="text-[11px] text-muted-foreground">幂等合并，不覆盖已有收藏</span>
             </div>
             <p className="mt-2 max-w-prose text-xs leading-relaxed text-muted-foreground">
-              选择或粘贴通过上方「下载 JSON」导出的 <code className="font-mono">navhub-export-*.json</code> 文件，即可合并恢复收藏夹分组、收藏站点、搜索历史与个人偏好设置：已存在的内容不会被覆盖，
+              选择或粘贴通过上方「下载 JSON」导出的 <code className="font-mono">navhub-export-*.json</code> 文件，即可合并恢复收藏夹分组、收藏站点、追剧清单、搜索历史与个人偏好设置，以及画像、AI 配置（不含密钥，需重新填写）、工作区、同步日志、对照快照与价格、插件安装记录：已存在的内容不会被覆盖，
               搜索历史受中枢逐条写入限制，单次最多恢复一部分，剩余条数会在结果里说明并提供「继续导入剩余」按钮。
               备份里的本机成长快照只作存档，不会恢复到服务端——成长档案只存在这台设备的浏览器里。
+              备份里有、但这次没能恢复的内容，会在结果里逐个点名。
             </p>
 
             {importResult && (
               <div
                 className={
-                  importResult.favoritesSkippedMissingSite + importResult.searchesTruncated > 0
+                  importResult.favoritesSkippedMissingSite + importResult.searchesTruncated + importResult.notRestored.length > 0
                     ? 'mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-800 dark:text-amber-200'
                     : 'mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-700 dark:text-emerald-300'
                 }
               >
                 <p className="font-semibold">
-                  {importResult.favoritesSkippedMissingSite + importResult.searchesTruncated > 0
+                  {importResult.favoritesSkippedMissingSite + importResult.searchesTruncated + importResult.notRestored.length > 0
                     ? '备份导入完成，但以下数据没能恢复：'
                     : '备份导入恢复完成：'}
                 </p>
@@ -623,6 +692,18 @@ export default function MeDataPage() {
                     : ''}
                   {importResult.growthSnapshotIgnored
                     ? ' · 备份里的本机成长快照只作存档，未写回服务端（成长档案只存在这台设备的浏览器里）'
+                    : ''}
+                  {importResult.watchImported + importResult.watchSkipped > 0
+                    ? ` · 追剧清单恢复 ${importResult.watchImported} 条（已是最新跳过 ${importResult.watchSkipped} 条）`
+                    : ''}
+                  {importResult.profileImported + importResult.llmConfigImported + importResult.workspacesImported + importResult.crdtImported + importResult.comparisonSnapshotsImported + importResult.sitePricesImported + importResult.pluginInstallsImported > 0
+                    ? ` · 画像恢复 ${importResult.profileImported} 份、AI 配置 ${importResult.llmConfigImported} 份、工作区 ${importResult.workspacesImported} 条、同步日志 ${importResult.crdtImported} 份、对照快照 ${importResult.comparisonSnapshotsImported} 个、对照价格 ${importResult.sitePricesImported} 条、插件安装 ${importResult.pluginInstallsImported} 个`
+                    : ''}
+                  {importResult.llmConfigApiKeyNotRestored
+                    ? ' · AI 配置已恢复，但 API 密钥不在备份内，需重新填写'
+                    : ''}
+                  {importResult.notRestored.length > 0
+                    ? ` · 以下备份内容未恢复：${importResult.notRestored.map((k) => NOT_RESTORED_LABELS[k] ?? k).join('、')}`
                     : ''}
                 </p>
                 {importResult.nextHistoryOffset !== null && (

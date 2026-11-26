@@ -604,6 +604,213 @@ describe("备份导入 T2：星标/评价重放 + 格式版本判别", () => {
   });
 });
 
+describe("U-411/U-412 导出→导入往返对称（repro：先证伪再修）", () => {
+  const SOURCE = "github:u-export-roundtrip";
+  const TARGET = "github:u-import-roundtrip";
+  let rtSeq = 900;
+  const rtInject = (method: "GET" | "POST", url: string, payload: unknown, identity: string) =>
+    app.inject({
+      method,
+      url,
+      remoteAddress: `10.99.${Math.floor(rtSeq / 200)}.${(rtSeq++ % 200) + 3}`,
+      headers: signedHeaders(identity),
+      payload: payload as never,
+    });
+
+  beforeAll(async () => {
+    await ctx.repo.createPlugin(
+      {
+        manifest: {
+          manifestVersion: 1,
+          kind: "theme" as const,
+          name: "往返主题",
+          description: "U-412 往返测试用主题",
+          version: "1.0.0",
+          payload: { accent: "violet" },
+        },
+        slug: "rt-theme",
+        status: "published",
+        source: "seed",
+        author: "测试",
+      },
+      { actor: "test", actorKind: "system" },
+    );
+    await ctx.repo.installPlugin("rt-theme", SOURCE);
+    await ctx.repo.starPlugin("rt-theme", SOURCE);
+    await ctx.repo.createPluginReview("rt-theme", SOURCE, { rating: 5, title: "好用", content: "往返评价" });
+    await ctx.repo.addFavorite({ userId: SOURCE, siteId });
+    await ctx.repo.applyWatchOps(SOURCE, [
+      {
+        op: "add",
+        key: "site-a::剧A",
+        title: "剧A",
+        platformSiteId: "site-a",
+        platformTitle: "平台A",
+        playUrl: "https://a.example.com/play",
+        episode: 3,
+        priority: "high",
+        cadence: { kind: "daily" },
+        remind: true,
+        createdAt: 1700000000000,
+        at: 1700000001000,
+      },
+      {
+        op: "add",
+        key: "site-b::剧B",
+        title: "剧B",
+        platformSiteId: "site-b",
+        platformTitle: "平台B",
+        playUrl: "https://b.example.com/play",
+        episode: 0,
+        priority: "normal",
+        cadence: { kind: "unknown" },
+        remind: false,
+        createdAt: 1700000002000,
+        at: 1700000003000,
+      },
+    ]);
+    await ctx.repo.upsertSitePrice({
+      ownerIdentity: SOURCE,
+      siteId,
+      amountMinor: 9900,
+      currency: "CNY",
+      period: "month",
+      freeTierLimit: null,
+      sourceType: "manual",
+      sourceUrl: null,
+      verifiedAt: 1700000000000,
+    });
+    await ctx.repo.createComparisonSnapshot({ ownerIdentity: SOURCE, siteIds: [siteId], items: [] });
+    await ctx.repo.saveUserProfile(SOURCE, {
+      topCategories: ["a"],
+      topTags: ["t"],
+      visitedSiteIds: [siteId],
+      favoriteSiteIds: [siteId],
+      searchCount: 7,
+    });
+    await ctx.repo.upsertUserLlmConfig(SOURCE, {
+      model: "rt-model",
+      baseUrl: "https://rt.example.com",
+      timeoutMs: 5000,
+      jsonMode: "strict",
+      allowPrivateNetwork: false,
+    });
+    await ctx.repo.saveWorkspaceBlob("workspaces:" + SOURCE, JSON.stringify({ v: 1 }));
+    await ctx.repo.saveWorkspaceBlob("ws_members:" + SOURCE + ":ws-1", JSON.stringify({ v: 1 }));
+    await ctx.repo.saveUserVault("crdt:" + SOURCE, JSON.stringify({ ops: [] }));
+    await ctx.repo.recordSearch(SOURCE, "往返关键词", 2);
+  });
+
+  it("U-411：导出包含全部追剧清单条目", async () => {
+    const res = await rtInject("GET", "/api/me/export", undefined, SOURCE);
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(Array.isArray(body.watchEntries)).toBe(true);
+    expect(body.watchEntries).toHaveLength(2);
+    expect(body.watchEntries.map((e: { key: string }) => e.key).sort()).toEqual([
+      "site-a::剧A",
+      "site-b::剧B",
+    ]);
+    expect(body.watchEntriesTruncated).toBe(false);
+  });
+
+  it("U-411/U-412：把一份真实导出原样导入空账号，七类与追剧清单全部恢复", async () => {
+    const exported = (await rtInject("GET", "/api/me/export", undefined, SOURCE)).json();
+    const res = await rtInject("POST", "/api/me/import", exported, TARGET);
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.watchImported).toBe(2);
+    expect(body.watchSkipped).toBe(0);
+    // 导出形（pluginSlug）与导入形（slug）曾对不上：真实导出的星标/评价必须能原样导回
+    expect(body.starsImported).toBe(1);
+    expect(body.reviewsImported).toBe(1);
+    expect(body.profileImported).toBe(1);
+    expect(body.llmConfigImported).toBe(1);
+    expect(body.workspacesImported).toBe(2);
+    expect(body.crdtImported).toBe(1);
+    expect(body.comparisonSnapshotsImported).toBe(1);
+    expect(body.sitePricesImported).toBe(1);
+    expect(body.pluginInstallsImported).toBe(1);
+
+    // 七类与追剧清单全恢复后，没有任何类留在「未恢复」里
+    expect(body.notRestored).toEqual([]);
+
+    // 库里真的恢复了，不只是回执数字
+    expect(await ctx.repo.listWatchEntries(TARGET)).toHaveLength(2);
+    expect(await ctx.repo.getUserProfile(TARGET)).not.toBeNull();
+    expect((await ctx.repo.getUserLlmConfig(TARGET))?.provider.model).toBe("rt-model");
+    expect(await ctx.repo.getWorkspaceBlob("workspaces:" + TARGET)).not.toBeNull();
+    expect(await ctx.repo.getWorkspaceBlob("ws_members:" + TARGET + ":ws-1")).not.toBeNull();
+    expect((await ctx.repo.getUserVault("crdt:" + TARGET))?.payload).toBe(JSON.stringify({ ops: [] }));
+    expect(await ctx.repo.listComparisonSnapshotsByOwner(TARGET)).toHaveLength(1);
+    expect(await ctx.repo.listSitePricesByOwner(TARGET)).toHaveLength(1);
+    expect(await ctx.repo.listPluginInstallsByIdentity(TARGET)).toHaveLength(1);
+
+    // 对称性：导出顶层字段要么被导入恢复，要么在已知的「只存档不恢复」集合里
+    const restoredKeys = new Set([
+      "favorites",
+      "favoriteFolders",
+      "searchHistory",
+      "settings",
+      "pluginStars",
+      "pluginReviews",
+      "watchEntries",
+      "workspaces",
+      "crdt",
+      "comparisonSnapshots",
+      "sitePrices",
+      "pluginInstalls",
+      "profile",
+      "llmConfig",
+    ]);
+    const archiveOnlyKeys = new Set([
+      "schemaVersion",
+      "exportedAt",
+      "identity",
+      "user",
+      "eventsSummary",
+      "vault",
+      "growthSnapshot",
+      "favoritesTruncated",
+      "watchEntriesTruncated",
+    ]);
+    const unhandled = Object.keys(exported).filter((k) => !restoredKeys.has(k) && !archiveOnlyKeys.has(k));
+    expect(unhandled).toEqual([]);
+  });
+
+  it("U-412：重复导入同一份备份是幂等的，不复制追剧清单与快照", async () => {
+    const exported = (await rtInject("GET", "/api/me/export", undefined, SOURCE)).json();
+    const res = await rtInject("POST", "/api/me/import", exported, TARGET);
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.watchImported).toBe(0);
+    expect(body.watchSkipped).toBe(2);
+    expect(body.comparisonSnapshotsImported).toBe(0);
+    expect(body.comparisonSnapshotsSkippedDuplicate).toBe(1);
+    expect(body.sitePricesImported).toBe(1); // upsert：同站同价再写一次仍算恢复 1 条
+    expect(await ctx.repo.listWatchEntries(TARGET)).toHaveLength(2);
+    expect(await ctx.repo.listComparisonSnapshotsByOwner(TARGET)).toHaveLength(1);
+  });
+
+  it("U-412：真正无法恢复的类必须进 notRestored，而不是静默消失", async () => {
+    const res = await rtInject(
+      "POST",
+      "/api/me/import",
+      {
+        user: { id: TARGET, username: "rt", role: "user" },
+        eventsSummary: [{ kind: "click", count: 3, lastAt: 1700000000000 }],
+        vault: { exists: true, version: 2, updatedAt: 1700000000000 },
+        growthSnapshot: { scope: "local-only", source: "browser-localStorage", note: "x", exportedAt: 1, level: 1, title: "t", totalXp: 0, streak: 0, longestStreak: 0, freezeCards: 0, profile: null },
+      },
+      "github:u-import-notrestored",
+    );
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.notRestored).toEqual(expect.arrayContaining(["user", "eventsSummary", "vault", "growthSnapshot"]));
+  });
+});
+
 describe("金库版本前置条件", () => {
   it("旧版本写入 -> 409 并返回当前版本", async () => {
     const first = await data("PUT", "/api/vault/sync", { payload: "cipher-1", version: 0 });

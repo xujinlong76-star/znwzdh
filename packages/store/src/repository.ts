@@ -105,7 +105,7 @@ export * from "./repository/records.ts";
 export { bindSqlite, normalizeTokenScopes, slugify, toPgSql } from "./repository/dialect.ts";
 export { TOKEN_TOUCH_THROTTLE_MS } from "./repository/tokens.ts";
 // 导入侧的条数上限要跟导出侧对齐，否则合法备份会被自己的上限拒掉
-export { EXPORT_HISTORY_LIMIT, EXPORT_FAVORITES_LIMIT, EXPORT_SCHEMA_VERSION } from "./repository/user-data.ts";
+export { EXPORT_HISTORY_LIMIT, EXPORT_FAVORITES_LIMIT, EXPORT_WATCH_LIMIT, EXPORT_SCHEMA_VERSION } from "./repository/user-data.ts";
 export {
   EXPORT_FRESH_DAYS,
   EXPORT_STALE_DAYS,

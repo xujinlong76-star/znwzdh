@@ -15,6 +15,7 @@ import type {
   UserProfileRecord,
   UserRecord,
   UserVaultRecord,
+  WatchEntryRecord,
 } from "./records.ts";
 import { getSearchHistoryAll, type SearchHistoryItem } from "./history.ts";
 import type { UserSettingsRecord } from "./settings.ts";
@@ -38,6 +39,13 @@ export const EXPORT_HISTORY_LIMIT = 5000;
  * 收藏域按同一修法对齐（T2）。
  */
 export const EXPORT_FAVORITES_LIMIT = 20000;
+
+/**
+ * 导出时单身份最多带上的追剧清单条数（U-411）。与收藏同一口径：
+ * 导出端先声明上限，导入端的 zod 上限与之同源，避免「导出无上限、导入有上限」
+ * 的往返不对称把合法备份整份 400。
+ */
+export const EXPORT_WATCH_LIMIT = 20000;
 
 /** 当前导出格式版本。导入端据此判别「备份比服务新」的向前兼容场景。 */
 export const EXPORT_SCHEMA_VERSION = 1;
@@ -85,6 +93,14 @@ export interface UserDataExport {
   /** 备份里的收藏是否达到了 EXPORT_FAVORITES_LIMIT（与历史域同语义） */
   favoritesTruncated: boolean;
   favoriteFolders: FavoriteFolderRecord[];
+  /**
+   * 追剧清单（U-411）：导出缺了它，用户导出→注销→凭备份恢复会丢掉整个清单。
+   * 形状与 watch_entries 行一致（WatchEntryRecord），导入端经 applyWatchOps
+   * 按 (user_id, drama_key) 幂等恢复。
+   */
+  watchEntries: WatchEntryRecord[];
+  /** 备份里的追剧清单是否达到了 EXPORT_WATCH_LIMIT（与收藏域同语义） */
+  watchEntriesTruncated: boolean;
   searchHistory: { items: SearchHistoryItem[]; truncated: boolean };
   profile: UserProfileRecord | null;
   settings: UserSettingsRecord;
@@ -168,7 +184,7 @@ function safeLlmConfig(config: UserLlmConfigRecord | null): ExportedLlmConfig | 
 }
 
 export async function exportUserData(repo: Repository, identity: string): Promise<UserDataExport> {
-  const [user, favorites, folders, history, profile, settings, llm, installs, vault, crdtVault, snapshots, prices] = await Promise.all([
+  const [user, favorites, folders, history, profile, settings, llm, installs, vault, crdtVault, snapshots, prices, watchEntries] = await Promise.all([
     repo.getUser(identity),
     repo.listFavorites(identity),
     repo.listFavoriteFolders(identity),
@@ -182,6 +198,8 @@ export async function exportUserData(repo: Repository, identity: string): Promis
     repo.getUserVault("crdt:" + identity),
     repo.listComparisonSnapshotsByOwner(identity),
     repo.listSitePricesByOwner(identity),
+    // 追剧清单（U-411）：与收藏同一批并行读出，墓碑行已由 listWatchEntries 过滤
+    repo.listWatchEntries(identity),
   ]);
   // 星标 / 评价 / 工作区 / 事件聚合：原先导出缺这四类，用户拿到的「全部数据」名不副实
   const [starRows, reviewRows, workspaceRows, eventRows] = await Promise.all([
@@ -206,6 +224,11 @@ export async function exportUserData(repo: Repository, identity: string): Promis
   // 收藏截断与历史同语义：导出端先声明上限，导入端的 zod 上限与之同源
   const favoritesTruncated = favorites.length > EXPORT_FAVORITES_LIMIT;
   const favoritesCapped = favoritesTruncated ? favorites.slice(0, EXPORT_FAVORITES_LIMIT) : favorites;
+  // 追剧清单截断与收藏同语义（U-411）
+  const watchEntriesTruncated = watchEntries.length > EXPORT_WATCH_LIMIT;
+  const watchEntriesCapped = watchEntriesTruncated
+    ? watchEntries.slice(0, EXPORT_WATCH_LIMIT)
+    : watchEntries;
 
   return {
     schemaVersion: EXPORT_SCHEMA_VERSION,
@@ -215,6 +238,8 @@ export async function exportUserData(repo: Repository, identity: string): Promis
     favorites: favoritesCapped,
     favoritesTruncated,
     favoriteFolders: folders,
+    watchEntries: watchEntriesCapped,
+    watchEntriesTruncated,
     searchHistory: history,
     profile,
     settings,

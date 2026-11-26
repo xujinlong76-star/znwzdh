@@ -69,6 +69,18 @@ const REPORT_FIELDS = [
   'historyExportLimit',
   'historyImportCap',
   'nextHistoryOffset',
+  // U-411/U-412：追剧清单、七类恢复与「未恢复」点名，同样不许留在响应里没人读
+  'watchImported',
+  'watchSkipped',
+  'profileImported',
+  'llmConfigImported',
+  'llmConfigApiKeyNotRestored',
+  'workspacesImported',
+  'crdtImported',
+  'comparisonSnapshotsImported',
+  'sitePricesImported',
+  'pluginInstallsImported',
+  'notRestored',
 ] as const
 
 describe('备份导入的服务端台账字段一个都不许留在响应里没人读', () => {

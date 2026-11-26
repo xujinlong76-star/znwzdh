@@ -30,8 +30,8 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import { generateToken, hashToken, tokenPrefixOf } from "../auth.ts";
 
-import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
-import { EXPORT_FAVORITES_LIMIT, EXPORT_HISTORY_LIMIT, EXPORT_SCHEMA_VERSION, mapSyncErrorCode } from "@navhub/store";
+import { MAX_SEARCH_QUERY_LENGTH, type SiteComparisonItem } from "@navhub/core";
+import { EXPORT_FAVORITES_LIMIT, EXPORT_HISTORY_LIMIT, EXPORT_SCHEMA_VERSION, EXPORT_WATCH_LIMIT, mapSyncErrorCode } from "@navhub/store";
 
 import type { AppContext } from "../context.ts";
 import { requestIdentityOf, identityTrusted, markCursorPaginationDeprecated, userDomainWriteAllowed, isSafeAvatarUrl } from "./shared.ts";
@@ -528,6 +528,8 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         favorites: payload.favorites.length,
         folders: payload.favoriteFolders.length,
         searches: payload.searchHistory.items.length,
+        // U-411：导出含追剧清单，审计也要记下条数，否则「导出全不全」无据可查
+        watchEntries: payload.watchEntries.length,
         // 第 15 项：记下这次导出是否被截断，下次打开页面才能知道“上次导出全不全”。
         // 只影响未来导出，历史导出保持 unknown（审计里没有这个字段）。
         truncated: { favorites: payload.favoritesTruncated, history: payload.searchHistory.truncated },
@@ -546,6 +548,8 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
    * 从导出的 JSON 备份恢复个人数据（解决「有导出无导入」的核心痛点）。
    * 幂等合并：同名收藏夹自动复用、已有收藏跳过不覆盖、偏好设置合并写回、搜索历史去重导入。
    * 返回的是「实际恢复了多少」，不是「备份里有多少」：跳过、截断、设置校验失败都要回传。
+   * U-411/U-412：追剧清单与画像/LLM 配置/工作区/CRDT/对照快照/对照价格/插件安装
+   * 一并恢复；备份里有、导入后仍然没有的类进 notRestored（如实点名，不静默丢弃）。
    */
   app.post(
     "/api/me/import",
@@ -595,7 +599,10 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         pluginReviews: z
           .array(
             z.object({
-              slug: z.string().trim().min(1).max(160),
+              // 导出形用 pluginSlug（见 exportUserData），手写备份用 slug：两者都认，
+              // 都没有时按 skippedInvalid 计，不整份 400（U-412 往返不对称）。
+              slug: z.string().trim().min(1).max(160).optional(),
+              pluginSlug: z.string().trim().min(1).max(160).optional(),
               rating: z.number().int().min(1).max(5),
               title: z.string().max(100).nullable().optional(),
               content: z.string().max(1000).nullable().optional(),
@@ -631,6 +638,128 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
           ])
           .optional(),
         settings: z.record(z.string(), z.unknown()).optional(),
+        // 备份来源身份（导出时写下）：工作区键里嵌着来源身份，跨账号导入时据此重打键
+        identity: z.string().max(200).optional(),
+        // 追剧清单（U-411）：与 /api/me/watchlist/sync 同一套 WatchOp 形状，
+        // 上限与导出侧 EXPORT_WATCH_LIMIT 同源
+        watchEntries: z
+          .array(
+            z.object({
+              key: z.string().min(1).max(200),
+              title: z.string().max(500).optional(),
+              platformSiteId: z.string().max(64).optional(),
+              platformTitle: z.string().max(500).optional(),
+              playUrl: z.string().max(2048).optional(),
+              icon: z.string().max(2048).optional().nullable(),
+              episode: z.number().int().min(0).max(100_000).optional(),
+              priority: z.enum(["high", "normal"]).optional(),
+              cadence: z
+                .discriminatedUnion("kind", [
+                  z.object({ kind: z.literal("daily") }),
+                  z.object({
+                    kind: z.literal("weekly"),
+                    weekdays: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+                  }),
+                  z.object({ kind: z.literal("finished") }),
+                  z.object({ kind: z.literal("unknown") }),
+                ])
+                .optional(),
+              remind: z.boolean().optional(),
+              dismissedOn: z.string().max(10).optional().nullable(),
+              lastProgressAt: z.number().optional(),
+              createdAt: z.number().optional(),
+              updatedAt: z.number().optional(),
+            }),
+          )
+          .max(EXPORT_WATCH_LIMIT)
+          .optional(),
+        // 画像（U-412 七类之一）：派生信号原文；只在目标账号尚无画像时恢复，
+        // 已有画像不覆盖（新行为信号比旧备份新鲜）
+        profile: z
+          .object({
+            topCategories: z.array(z.string().max(200)).max(100).optional(),
+            topTags: z.array(z.string().max(200)).max(100).optional(),
+            visitedSiteIds: z.array(z.string().max(64)).max(5000).optional(),
+            favoriteSiteIds: z.array(z.string().max(64)).max(20000).optional(),
+            searchCount: z.number().int().min(0).optional(),
+          })
+          .optional(),
+        // LLM 配置（U-412 七类之一）：导出已脱敏（无 apiKeyEnc），恢复的只是
+        // 模型/地址等非敏感字段；只在目标账号尚无配置时恢复，已有配置不覆盖
+        // （覆盖会把现存的密钥信封抹掉），密钥缺失见 llmConfigApiKeyNotRestored
+        llmConfig: z
+          .object({
+            model: z.string().max(200).optional(),
+            baseUrl: z.string().max(2048).optional(),
+            timeoutMs: z.number().int().min(0).nullable().optional(),
+            jsonMode: z.string().max(64).nullable().optional(),
+            allowPrivateNetwork: z.boolean().nullable().optional(),
+          })
+          .optional(),
+        // 工作区原始记录（U-412 七类之一）：键里嵌来源身份，导入时重打键；
+        // 只恢复目标账号尚无的键，已有键不覆盖
+        workspaces: z
+          .array(
+            z.object({
+              key: z.string().min(1).max(500),
+              payload: z.string().nullable(),
+            }),
+          )
+          .max(5000)
+          .optional(),
+        // CRDT 编辑日志（U-412 七类之一）：只在目标账号尚无日志时恢复，
+        // 已有日志不覆盖（覆盖会丢掉另一台设备的新排版）
+        crdt: z
+          .object({
+            exists: z.boolean().optional(),
+            payload: z.string().nullable().optional(),
+            updatedAt: z.number().optional(),
+          })
+          .optional(),
+        // 对照快照（U-412 七类之一）：冻结表原文；按 (siteIds, items) 去重，
+        // 重复导入不复制，id 由服务端重发（分享链接不随备份走）
+        comparisonSnapshots: z
+          .array(
+            z.object({
+              siteIds: z.array(z.string().min(1).max(64)).max(100),
+              items: z.array(z.unknown()).max(1000),
+            }),
+          )
+          .max(1000)
+          .optional(),
+        // 对照价格数值（U-412 七类之一）：每站只留最新一条，upsert 语义；
+        // 备份比现存更旧（verifiedAt 更小）时跳过，不拿旧价覆盖新价
+        sitePrices: z
+          .array(
+            z.object({
+              siteId: z.string().min(1).max(64),
+              amountMinor: z.number().int().min(0),
+              currency: z.enum(["CNY", "USD", "EUR", "GBP", "JPY", "HKD", "AUD", "CAD", "SGD", "KRW"]),
+              period: z.enum(["month", "year", "once", "usage"]),
+              freeTierLimit: z.string().max(200).nullable().optional(),
+              sourceType: z.enum(["manual", "official_scrape"]),
+              sourceUrl: z.string().max(2048).nullable().optional(),
+              verifiedAt: z.number().optional(),
+            }),
+          )
+          .max(5000)
+          .optional(),
+        // 插件安装记录（U-412 七类之一）：按 slug 重装；已安装的跳过，
+        // 插件已下架/不存在的跳过并计数
+        pluginInstalls: z
+          .array(
+            z.object({
+              slug: z.string().trim().min(1).max(160),
+              version: z.string().max(64).optional(),
+            }),
+          )
+          .max(5000)
+          .optional(),
+        // 只作存档、从不恢复的类（U-372 同款诚实化）：显式接住，响应里
+        // notRestored 如实点名，别让用户以为它们已恢复
+        user: z.unknown().optional(),
+        eventsSummary: z.unknown().optional(),
+        vault: z.unknown().optional(),
         // 本机成长快照（U-372 诚实化小步）：导出时浏览器把本机档案打包进备份，
         // 但成长档案只存本机 localStorage、服务端从不持有——这里只显式接住、
         // 绝不回写，响应里 growthSnapshotIgnored 如实回传，别让用户以为它已恢复。
@@ -784,13 +913,42 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         starsImported += 1;
       }
 
+      // 5b. 恢复插件安装记录（U-412 七类之一）：先于评价恢复——评价门禁要求
+      // 「已安装该插件」，安装记录不先回来，备份里的评价会全被门禁跳过。
+      let pluginInstallsImported = 0;
+      let pluginInstallsSkippedDuplicate = 0;
+      let pluginInstallsSkippedMissing = 0;
+      const installedSlugs = new Set(
+        (await ctx.repo.listPluginInstallsByIdentity(canonical)).map((i) => i.plugin.slug),
+      );
+      for (const inst of parsed.data.pluginInstalls ?? []) {
+        if (installedSlugs.has(inst.slug)) {
+          pluginInstallsSkippedDuplicate += 1;
+          continue;
+        }
+        try {
+          await ctx.repo.installPlugin(inst.slug, canonical);
+          installedSlugs.add(inst.slug);
+          pluginInstallsImported += 1;
+        } catch {
+          pluginInstallsSkippedMissing += 1;
+        }
+      }
+
       let reviewsImported = 0;
       let reviewsSkippedMissing = 0;
       let reviewsSkippedNotInstalled = 0;
       let reviewsSkippedInvalid = 0;
       for (const review of parsed.data.pluginReviews ?? []) {
+        // 导出形 pluginSlug 与手写形 slug 都认；都没有不是「插件不存在」，
+        // 是备份本身缺字段，单独计 invalid（U-412 往返不对称）
+        const reviewSlug = review.slug ?? review.pluginSlug;
+        if (!reviewSlug) {
+          reviewsSkippedInvalid += 1;
+          continue;
+        }
         try {
-          await ctx.repo.createPluginReview(review.slug, canonical, {
+          await ctx.repo.createPluginReview(reviewSlug, canonical, {
             rating: review.rating,
             title: review.title ?? null,
             content: review.content ?? null,
@@ -802,6 +960,223 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
           else if (message.includes("已安装")) reviewsSkippedNotInstalled += 1;
           else reviewsSkippedInvalid += 1;
         }
+      }
+
+      // 6. 恢复追剧清单（U-411）：与 /api/me/watchlist/sync 同一套
+      // applyWatchOps（LWW）：at 不大于存量 updated_at 的条目跳过，重复导入
+      // 不复制；at 取备份里的 updatedAt，缺省时退回 createdAt
+      let watchImported = 0;
+      let watchSkipped = 0;
+      const incomingWatch = parsed.data.watchEntries ?? [];
+      if (incomingWatch.length > 0) {
+        const applied = await ctx.repo.applyWatchOps(
+          canonical,
+          incomingWatch.map((e) => ({
+            op: "add" as const,
+            key: e.key,
+            title: e.title,
+            platformSiteId: e.platformSiteId,
+            platformTitle: e.platformTitle,
+            playUrl: e.playUrl,
+            icon: e.icon ?? null,
+            episode: e.episode,
+            priority: e.priority,
+            cadence: e.cadence,
+            remind: e.remind,
+            dismissedOn: e.dismissedOn,
+            lastProgressAt: e.lastProgressAt,
+            createdAt: e.createdAt,
+            at: e.updatedAt ?? e.createdAt,
+          })),
+        );
+        watchImported = applied.applied;
+        watchSkipped = incomingWatch.length - applied.applied;
+      }
+
+      // 7. 恢复画像（U-412 七类之一）：只在目标账号尚无画像时写回
+      let profileImported = 0;
+      let profileSkippedExisting = 0;
+      if (parsed.data.profile) {
+        const existingProfile = await ctx.repo.getUserProfile(canonical);
+        if (existingProfile) {
+          profileSkippedExisting = 1;
+        } else {
+          await ctx.repo.saveUserProfile(canonical, {
+            topCategories: parsed.data.profile.topCategories ?? [],
+            topTags: parsed.data.profile.topTags ?? [],
+            visitedSiteIds: parsed.data.profile.visitedSiteIds ?? [],
+            favoriteSiteIds: parsed.data.profile.favoriteSiteIds ?? [],
+            searchCount: parsed.data.profile.searchCount ?? 0,
+          });
+          profileImported = 1;
+        }
+      }
+
+      // 8. 恢复 LLM 配置（U-412 七类之一）：只在目标账号尚无配置时写回；
+      // 备份里永远没有 apiKeyEnc，恢复的配置须重新填写密钥
+      // （llmConfigApiKeyNotRestored 如实回传）
+      let llmConfigImported = 0;
+      let llmConfigSkippedExisting = 0;
+      if (parsed.data.llmConfig) {
+        const existingLlm = await ctx.repo.getUserLlmConfig(canonical);
+        if (existingLlm) {
+          llmConfigSkippedExisting = 1;
+        } else {
+          await ctx.repo.upsertUserLlmConfig(canonical, {
+            model: parsed.data.llmConfig.model ?? "",
+            baseUrl: parsed.data.llmConfig.baseUrl ?? "",
+            timeoutMs: parsed.data.llmConfig.timeoutMs ?? null,
+            jsonMode: parsed.data.llmConfig.jsonMode ?? null,
+            allowPrivateNetwork: parsed.data.llmConfig.allowPrivateNetwork ?? null,
+          });
+          llmConfigImported = 1;
+        }
+      }
+
+      // 9. 恢复工作区原始记录（U-412 七类之一）：键里嵌来源身份，导入时重打
+      // 为当前身份的键；只恢复目标账号尚无的键，已有键不覆盖
+      let workspacesImported = 0;
+      let workspacesSkippedExisting = 0;
+      let workspacesSkippedInvalid = 0;
+      const sourceIdentity =
+        typeof parsed.data.identity === "string" && parsed.data.identity ? parsed.data.identity : canonical;
+      for (const ws of parsed.data.workspaces ?? []) {
+        if (ws.payload == null) {
+          workspacesSkippedInvalid += 1;
+          continue;
+        }
+        let targetKey: string | null = null;
+        if (ws.key === "workspaces:" + sourceIdentity || ws.key === sourceIdentity) {
+          targetKey = "workspaces:" + canonical;
+        } else if (ws.key.startsWith("ws_members:" + sourceIdentity + ":")) {
+          targetKey = "ws_members:" + canonical + ":" + ws.key.slice(("ws_members:" + sourceIdentity + ":").length);
+        } else if (ws.key === "workspaces:" + canonical || ws.key.startsWith("ws_members:" + canonical + ":")) {
+          targetKey = ws.key;
+        }
+        if (!targetKey) {
+          workspacesSkippedInvalid += 1;
+          continue;
+        }
+        const existingBlob = await ctx.repo.getWorkspaceBlob(targetKey);
+        if (existingBlob) {
+          workspacesSkippedExisting += 1;
+          continue;
+        }
+        await ctx.repo.saveWorkspaceBlob(targetKey, ws.payload);
+        workspacesImported += 1;
+      }
+
+      // 10. 恢复 CRDT 编辑日志（U-412 七类之一）：只在目标账号尚无日志时写回
+      let crdtImported = 0;
+      let crdtSkippedExisting = 0;
+      const incomingCrdt = parsed.data.crdt;
+      if (incomingCrdt?.exists && typeof incomingCrdt.payload === "string" && incomingCrdt.payload) {
+        const existingCrdt = await ctx.repo.getUserVault("crdt:" + canonical);
+        if (existingCrdt) {
+          crdtSkippedExisting = 1;
+        } else {
+          await ctx.repo.saveUserVault("crdt:" + canonical, incomingCrdt.payload);
+          crdtImported = 1;
+        }
+      }
+
+      // 11. 恢复对照快照（U-412 七类之一）：按 (siteIds, items) 去重
+      let comparisonSnapshotsImported = 0;
+      let comparisonSnapshotsSkippedDuplicate = 0;
+      const existingSnapKeys = new Set(
+        (await ctx.repo.listComparisonSnapshotsByOwner(canonical)).map((s) =>
+          JSON.stringify([s.siteIds, s.items]),
+        ),
+      );
+      for (const snap of parsed.data.comparisonSnapshots ?? []) {
+        const snapKey = JSON.stringify([snap.siteIds, snap.items]);
+        if (existingSnapKeys.has(snapKey)) {
+          comparisonSnapshotsSkippedDuplicate += 1;
+          continue;
+        }
+        await ctx.repo.createComparisonSnapshot({
+          ownerIdentity: canonical,
+          siteIds: snap.siteIds,
+          items: snap.items as SiteComparisonItem[],
+        });
+        existingSnapKeys.add(snapKey);
+        comparisonSnapshotsImported += 1;
+      }
+
+      // 12. 恢复对照价格数值（U-412 七类之一）：upsert 语义，备份比现存更旧时跳过
+      let sitePricesImported = 0;
+      let sitePricesSkippedOlder = 0;
+      for (const price of parsed.data.sitePrices ?? []) {
+        const existingPrice = await ctx.repo.getSitePrice(canonical, price.siteId);
+        if (existingPrice && (price.verifiedAt ?? 0) < existingPrice.verifiedAt) {
+          sitePricesSkippedOlder += 1;
+          continue;
+        }
+        await ctx.repo.upsertSitePrice({
+          ownerIdentity: canonical,
+          siteId: price.siteId,
+          amountMinor: price.amountMinor,
+          currency: price.currency,
+          period: price.period,
+          freeTierLimit: price.freeTierLimit ?? null,
+          sourceType: price.sourceType,
+          sourceUrl: price.sourceUrl ?? null,
+          verifiedAt: price.verifiedAt ?? Date.now(),
+        });
+        sitePricesImported += 1;
+      }
+
+      // U-412 诚实化：备份里有、这次导入后目标账号仍然没有的类，必须点名。
+      // 「已在目标账号里（跳过即已有）」不算未恢复——数据已经在那儿了。
+      const rawBody = (req.body ?? {}) as Record<string, unknown>;
+      const presentNonEmpty = (key: string): boolean => {
+        const v = rawBody[key];
+        if (v === undefined || v === null) return false;
+        if (Array.isArray(v)) return v.length > 0;
+        if (typeof v === "object") return Object.keys(v as Record<string, unknown>).length > 0;
+        return true;
+      };
+      const notRestored: string[] = [];
+      if (growthSnapshotIgnored) notRestored.push("growthSnapshot");
+      if (presentNonEmpty("user")) notRestored.push("user");
+      if (presentNonEmpty("eventsSummary")) notRestored.push("eventsSummary");
+      const rawVault = rawBody.vault as { exists?: unknown } | undefined;
+      if (rawVault && typeof rawVault === "object" && rawVault.exists === true) notRestored.push("vault");
+      if (presentNonEmpty("profile") && profileImported === 0 && profileSkippedExisting === 0) {
+        notRestored.push("profile");
+      }
+      if (presentNonEmpty("llmConfig") && llmConfigImported === 0 && llmConfigSkippedExisting === 0) {
+        notRestored.push("llmConfig");
+      }
+      if (presentNonEmpty("workspaces") && workspacesImported === 0 && workspacesSkippedExisting === 0) {
+        notRestored.push("workspaces");
+      }
+      if (
+        incomingCrdt?.exists &&
+        typeof incomingCrdt.payload === "string" &&
+        incomingCrdt.payload &&
+        crdtImported === 0 &&
+        crdtSkippedExisting === 0
+      ) {
+        notRestored.push("crdt");
+      }
+      if (
+        presentNonEmpty("comparisonSnapshots") &&
+        comparisonSnapshotsImported === 0 &&
+        comparisonSnapshotsSkippedDuplicate === 0
+      ) {
+        notRestored.push("comparisonSnapshots");
+      }
+      if (presentNonEmpty("sitePrices") && sitePricesImported === 0) notRestored.push("sitePrices");
+      if (
+        presentNonEmpty("pluginInstalls") &&
+        pluginInstallsImported === 0 &&
+        pluginInstallsSkippedDuplicate === 0
+      ) {
+        notRestored.push("pluginInstalls");
+      }
+      if (presentNonEmpty("watchEntries") && watchImported === 0 && watchSkipped === 0) {
+        notRestored.push("watchEntries");
       }
 
       await ctx.repo.audit({
@@ -822,6 +1197,15 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
           settingsError,
           starsImported,
           reviewsImported,
+          watchImported,
+          profileImported,
+          llmConfigImported,
+          workspacesImported,
+          crdtImported,
+          comparisonSnapshotsImported,
+          sitePricesImported,
+          pluginInstallsImported,
+          notRestored,
         },
       }).catch(() => {
         // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
@@ -860,6 +1244,38 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         favoritesExportLimit: EXPORT_FAVORITES_LIMIT,
         /** 备份里带本机成长快照：只作存档，未写回服务端（U-372） */
         growthSnapshotIgnored,
+        /** 追剧清单恢复（U-411）：applied = 新写/覆盖的条目，skipped = LWW 判旧跳过的条目 */
+        watchImported,
+        watchSkipped,
+        /** 画像恢复（U-412）：只在目标账号尚无画像时写回 1 条 */
+        profileImported,
+        profileSkippedExisting,
+        /** LLM 配置恢复（U-412）：只在目标账号尚无配置时写回 1 份 */
+        llmConfigImported,
+        llmConfigSkippedExisting,
+        /** 恢复的 LLM 配置不含 API 密钥：密钥从不进导出文件，须重新填写 */
+        llmConfigApiKeyNotRestored: llmConfigImported > 0,
+        /** 工作区原始记录恢复（U-412）：键已重打为当前身份 */
+        workspacesImported,
+        workspacesSkippedExisting,
+        workspacesSkippedInvalid,
+        /** CRDT 编辑日志恢复（U-412）：只在目标账号尚无日志时写回 */
+        crdtImported,
+        crdtSkippedExisting,
+        /** 对照快照恢复（U-412）：重复导入按内容去重，不复制 */
+        comparisonSnapshotsImported,
+        comparisonSnapshotsSkippedDuplicate,
+        /** 对照价格数值恢复（U-412）：upsert 语义，旧价不覆盖新价 */
+        sitePricesImported,
+        sitePricesSkippedOlder,
+        /** 插件安装记录恢复（U-412）：按 slug 重装 */
+        pluginInstallsImported,
+        pluginInstallsSkippedDuplicate,
+        pluginInstallsSkippedMissing,
+        /** 备份里有、这次导入后目标账号仍然没有的类（U-412 诚实化）：
+         *  growthSnapshot/user/eventsSummary/vault 从不恢复；其余七类只有在
+         * 「一条都没恢复、且不是因为目标账号里已有」时才出现在这里 */
+        notRestored,
       };
     },
   );

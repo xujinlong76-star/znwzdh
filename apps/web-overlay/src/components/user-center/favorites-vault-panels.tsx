@@ -150,7 +150,7 @@ export function FavoritesVaultPanels(props: FavoritesVaultPanelsProps) {
         {/* 导出前提醒：N、M 均取真实数量，不是写死数字 */}
         <p className="text-xs text-muted-foreground">
           导出将含 {itemCount} 条收藏与 {quicklinkCount} 条快捷模板
-          （快捷模板随金库一同加密；密码只在本地浏览器使用，服务器永不接触密码）。
+          （含文件夹与标签；快捷模板随金库一同加密；密码只在本地浏览器使用，服务器永不接触密码）。
         </p>
 
         <div className="flex items-center gap-2 pt-1">

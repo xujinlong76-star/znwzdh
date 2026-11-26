@@ -27,6 +27,21 @@ export interface VaultItem {
   quickPrefix?: string;
   /** 参数化快捷链接模板：含恰好一个 `{q}` 的绝对 http(s) URL */
   templateUrl?: string;
+  /**
+   * 收藏夹名（U-413 金库 v2）：v1 没有这个字段，导出再导入会丢分组。
+   * v2 导出写下它，导入时按名找回/新建收藏夹；v1 文件缺它即「未分组」。
+   */
+  folderName?: string;
+  /**
+   * 图标 URL（U-413 金库 v2）：v1 把图标借存在 `tags[0]` 里，致使真实标签
+   * 无处可放、导入后标签全丢。v2 起图标走本字段，`tags` 回归真实标签。
+   */
+  icon?: string;
+  /**
+   * 条目格式版本（U-413 金库 v2）：v2 导出逐条写 2；缺省即 v1——
+   * v1 的 `tags[0]` 是图标、`category` 是备注，导入侧据此回退，不丢旧文件。
+   */
+  formatVersion?: number;
 }
 
 export interface EncryptedVaultPayload {

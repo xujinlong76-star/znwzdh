@@ -44,6 +44,7 @@ import {
   formatVaultRestoreNotice,
   vaultExportFilename,
   vaultItemsToFavorites,
+  type VaultMappableFavorite,
 } from '@/lib/favorites-vault'
 import {
   findQuicklinkPrefixConflict,
@@ -1273,7 +1274,14 @@ export default function FavoritesPage() {
 
     setVaultLoading(true)
     try {
-      const vaultItems = favoritesToVaultItems(favorites.items)
+      // U-413 金库 v2：文件夹名随条目走（按 folderId 查名），换设备导入时按名找回/新建
+      const folderNameById = new Map(visibleFolders.map((f) => [f.id, f.name]))
+      const vaultItems = favoritesToVaultItems(
+        favorites.items.map((f) => ({
+          ...f,
+          folderName: f.folderId ? folderNameById.get(f.folderId) : undefined,
+        })),
+      )
       const payload = await encryptVault(vaultItems, vaultPassword)
       const blob = new Blob([JSON.stringify(payload, null, 2)], {
         type: 'application/octet-stream',
@@ -1341,6 +1349,27 @@ export default function FavoritesPage() {
       // 还原为 LocalFavorite 格式（纯转换在 lib/favorites-vault，缺 id/url 的条目会被丢弃）
       const localItems = vaultItemsToFavorites(decryptedItems, Date.now())
 
+      // U-413 金库 v2：文件夹名按名找回/新建收藏夹，再把 folderId 带进导入
+      // （与通用多格式导入 handleImportUniversalItems 同款口径）
+      const folderNameToId = new Map<string, string>()
+      for (const f of visibleFolders) folderNameToId.set(f.name, f.id)
+      let vaultFoldersCreated = 0
+      for (const item of localItems) {
+        if (!item.folderName) continue
+        let targetId = folderNameToId.get(item.folderName)
+        if (!targetId) {
+          const created = await createFolderDirectly(item.folderName)
+          if (created) {
+            folderNameToId.set(item.folderName, created)
+            targetId = created
+            vaultFoldersCreated += 1
+          }
+        }
+        if (targetId) {
+          ;(item as VaultMappableFavorite & { folderId?: string | null }).folderId = targetId
+        }
+      }
+
       const importResult = favorites.importJson(JSON.stringify({ version: 1, items: localItems }))
       if (importResult.ok) {
         // 报「实际并入」而不是「解密到多少」：转换阶段出局的残行必须点名；
@@ -1352,7 +1381,9 @@ export default function FavoritesPage() {
           restoredCount: importResult.imported + importResult.updated,
           alreadyExisted: importResult.alreadyExisted,
         })
-        setSyncNote(notice.text)
+        setSyncNote(
+          notice.text + (vaultFoldersCreated > 0 ? `，新建 ${vaultFoldersCreated} 个分类夹` : ''),
+        )
         setSyncStatus(notice.tone)
         if (notice.tone !== 'error') {
           setShowVaultImport(false)

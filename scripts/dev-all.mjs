@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,6 +24,25 @@ console.log(
 );
 
 const isWin = process.platform === "win32";
+
+// U-443：开发栈启动前先补齐猫挂件媒体（只补缺失、绝不覆盖真实媒体）。
+// 全新 checkout 下 public/xiaomaomao/media/ 为空，9 个媒体全 404、猫被
+// hideCat() 藏掉；E2E 路径（e2e-web-server.mjs / CI）早已调
+// ensure-cat-media，普通 dev:all 也要同一份保障。失败只告警、不拦开发栈
+// 启动（媒体缺失时挂件按设计藏猫）；真实媒体在位时 --fill-missing 一个
+// 字节都不会动它。
+try {
+  const placed = spawnSync(
+    process.execPath,
+    [resolve(rootDir, "scripts/ensure-cat-media.mjs"), "--fill-missing"],
+    { cwd: rootDir, stdio: "inherit" }
+  );
+  if (placed.status !== 0) {
+    console.error("[dev-all] 猫挂件媒体补齐失败（见上），开发栈继续启动，猫可能被藏起。");
+  }
+} catch (err) {
+  console.error("[dev-all] 猫挂件媒体补齐失败，开发栈继续启动：", err?.message ?? err);
+}
 
 // 启动 Fastify API 中枢
 const apiProc = spawn(

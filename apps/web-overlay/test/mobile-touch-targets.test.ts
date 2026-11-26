@@ -68,10 +68,10 @@ describe('P1 #10 评审结论：底部导航已存在，不重建', () => {
     expect(src).toContain('unreadBadgeText')
   })
 
-  it('footer 为右下角浮坞预留 7rem/6rem 安全区（2026-11-22 抬升）', () => {
+  it('footer 为右下角浮坞预留 9rem/6rem 安全区（2026-11-26 抬升）', () => {
     const src = read('src/components/footer.tsx')
-    // 原 5.5rem/4.5rem 不够：右下浮坞（猫+回顶钮≈116px）会压住页脚链接，实测复现后抬到 7rem/6rem
-expect(src).toContain('pb-[calc(7rem+env(safe-area-inset-bottom,0px))]')
+    // 原 5.5rem/4.5rem 不够：右下浮坞（猫+回顶钮≈116px）会压住页脚链接，实测复现后抬到 7rem/6rem；2026-11-26 再修正：猫是独立 fixed 元素、移动端猫带顶沿 128px，7rem=112px 仍短 16px，移动端抬到 9rem
+expect(src).toContain('pb-[calc(9rem+env(safe-area-inset-bottom,0px))]')
 expect(src).toContain('lg:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]')
   })
 })

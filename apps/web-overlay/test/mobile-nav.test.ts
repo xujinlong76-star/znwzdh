@@ -103,11 +103,11 @@ describe('根布局挂载', () => {
 })
 
 describe('与 footer 预留的契约', () => {
-  it('footer 底垫：为右下浮坞抬到 <640 留 7rem、≥640 留 6rem（2026-11-22）', () => {
+  it('footer 底垫：为右下浮坞抬到 <640 留 9rem、≥640 留 6rem（2026-11-26）', () => {
     const footer = read(FOOTER)
     // 原 5.5/4.5rem + pb-8 不够：右下浮坞（猫+回顶钮≈116px）
-    // 在 390x844 与 1366x768 下都压住了页脚链接，实测复现后抬升。
-    expect(footer).toContain('pb-[calc(7rem+env(safe-area-inset-bottom,0px))]')
+    // 在 390x844 与 1366x768 下都压住了页脚链接，实测复现后抬升；2026-11-26 再修正：猫是独立 fixed 元素、移动端猫带顶沿 128px，7rem=112px 仍短 16px，移动端抬到 9rem。
+    expect(footer).toContain('pb-[calc(9rem+env(safe-area-inset-bottom,0px))]')
     expect(footer).toContain(
       'min-[640px]:max-[1024px]:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]',
     )

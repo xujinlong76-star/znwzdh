@@ -506,6 +506,11 @@ export const CATEGORY_REGISTRY_ROOTS: readonly RegistryRootInput[] = [
       // 不能进注册标题；线上标题「免费短剧」走 legacyTitles 继续解析，不改用户已见的目录名。
       { slug: "short-drama-free", title: "畅看短剧", titleEn: "Free Short Dramas", description: "看广告免费看全集的短剧平台", legacyTitles: ["免费短剧"] },
       { slug: "short-drama-platform", title: "平台短剧", titleEn: "Short Drama Platform", description: "长视频、短视频平台内的短剧频道与海外短剧平台" },
+      // 2026-11-26 P0 A 线：基线新增「创作者分发与变现」二级（爱奇艺号/优酷内容合作平台/
+      // 抖音创作者中心/快手创作者服务平台，4 站），权威树跟进补叶。注册标题取合规短名
+      // 「分发与变现」（5 单位 ≤ 7 单位上限）；基线标题「创作者分发与变现」8 单位超限，
+      // 走 legacyTitles 继续解析，不改用户已见的目录名（与「畅看短剧」/「免费短剧」同款做法）。
+      { slug: "short-drama-distribute", title: "分发与变现", titleEn: "Distribution & Monetization", description: "创作者的分发与变现后台：内容上架、分账结算、数据与商单", legacyTitles: ["创作者分发与变现"] },
     ],
   },
 ];

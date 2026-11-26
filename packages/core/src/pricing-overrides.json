@@ -1968,5 +1968,25 @@
   "pricing": "freemium",
   "evidence": "官网设体验版免费与 Pro 版（首月 9.9 元、次月起 59 元/月）、Max 版（首月 69 元、次月起 129 元/月）付费档",
   "title": "百度搭子"
+ },
+ "creator.iqiyi.com": {
+  "pricing": "free",
+  "evidence": "创作者免费入驻，收益走分账；新华网 2026-08-21：爱奇艺降低创作者入局门槛，短剧分账独家 100%",
+  "title": "爱奇艺号"
+ },
+ "om.youku.com": {
+  "pricing": "free",
+  "evidence": "创作者免费入驻，收益走分账；优酷账号注册免费，内容合作按会员收入分账",
+  "title": "优酷内容合作平台"
+ },
+ "creator.douyin.com": {
+  "pricing": "free",
+  "evidence": "创作者服务平台官方基础工具免费（0 元，需实名）；付费投流另计",
+  "title": "抖音创作者中心"
+ },
+ "cp.kuaishou.com": {
+  "pricing": "free",
+  "evidence": "创作者服务平台免费开通，不收开通服务费；投放推广另按点击/展示付费",
+  "title": "快手创作者服务平台"
  }
 }

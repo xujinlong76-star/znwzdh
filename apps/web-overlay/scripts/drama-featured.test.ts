@@ -137,9 +137,13 @@ describe("drama page structure", () => {
   // 分片 1/3 红，见 evolution-round-2026-11-20-0422-research-a.md）。
   // 2026-11-20 修复 U-252：补 Melolo 1 站进「免费短剧」，
   // 平台区 17→18 条，App-only 仍 7 家。
-  it("平台区收满 18 条，7 家 App-only 文案写了需在 App 内观看", () => {
+  // 2026-11-26 P0 A 线：新增「创作者分发与变现」二级 4 站
+  // （爱奇艺号/优酷内容合作平台/抖音创作者中心/快手创作者服务平台），
+  // 平台区 18→22 条，App-only 仍 7 家。4 站为创作者后台（分发与变现），
+  // 排在短剧类目末位，首页影院前 8 条（免费短剧）不受影响。
+  it("平台区收满 22 条，7 家 App-only 文案写了需在 App 内观看", () => {
     const sites = collectDramaSites(baselineNavigation.navigationItems);
-    expect(sites).toHaveLength(18);
+    expect(sites).toHaveLength(22);
     const appOnly = sites.filter((s) =>
       (s.description ?? "").includes("需在") &&
       (s.description ?? "").includes("App 内观看"),

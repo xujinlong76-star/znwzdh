@@ -76,7 +76,15 @@ describe('mobile-nav 组件本体', () => {
     // 例如「我的，3 条未读通知」：读屏能听到未读数，是改进而非退化。
     // 这里刻意不写成 `aria-label={label}` 的精确快照：那样任何合法的状态后缀
     // 都会让守卫变红，而它真正要守的是「别把 label 换掉或写成固定文案」。
-    expect(src).toMatch(/aria-label=\{[^}]*\blabel\b/)
+    // 2026-11-26：a58021ed 把模板改成徽章数前置（`${unread} ${label}，未读通知`，
+    // WCAG 2.5.3），`}` 出现在 label 之前，旧正则 /aria-label=\{[^}]*\blabel\b/
+    // 的 [^}]* 在第一个 `}` 处就截断，误报。改成先截取 aria-label={…} 整块
+    // （闭合 `}` 独占一行才算块尾，块内模板插值不影响），再断言块内含 label。
+    // 注意：只断言捕获组（块体），不含 `aria-label={` 前缀——前缀里的 label
+    // 会让 /\blabel\b/ 恒成立、守卫失效。
+    const ariaLabelBody = src.match(/aria-label=\{([\s\S]*?)\n\s*\}/)?.[1]
+    expect(ariaLabelBody).toBeTruthy()
+    expect(ariaLabelBody).toMatch(/\blabel\b/)
     // 根路径只认精确匹配，其余走前缀匹配（/category/xxx 也点亮分类）
     expect(src).toContain("pathname.startsWith(href + '/')")
   })

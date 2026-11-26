@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   isBotBlockStatus,
   isFailingHealthState,
@@ -6,6 +6,7 @@ import {
   siteHealthState,
   siteHealthTitle,
 } from "../src/lib/site-health";
+import { getSiteNotice } from "../src/lib/site-notices";
 
 /**
  * 03-livelink-mapping §3 分级全表（§9 验收第 4 条）：§3.2 的 8 行各至少一个用例。
@@ -283,5 +284,98 @@ describe("siteHealthTitle（§7 悬停格式）", () => {
     );
     expect(siteHealthTitle(null)).toBeNull();
     expect(siteHealthTitle({ lastCheckedAt: null })).toBeNull();
+  });
+
+  it("维护档写维护中 · 巡检于 <YYYY-MM-DD>；未巡检只写维护中", () => {
+    const notice = { label: "维护中" as const, untilISO: "2999-01-01T00:00:00+08:00" };
+    const health = { ok: false, httpStatus: null, lastCheckedAt: CHECKED };
+    const state = siteHealthState(health, notice);
+    expect(siteHealthTitle(health, state)).toBe("维护中 · 巡检于 2026-11-19");
+    // 未巡检仍显示维护中（notice 独立生效），title 无巡检日期可写
+    expect(siteHealthTitle(null, siteHealthState(null, notice))).toBe("维护中");
+    expect(siteHealthTitle({ lastCheckedAt: null }, siteHealthState({ lastCheckedAt: null }, notice))).toBe(
+      "维护中",
+    );
+    // 非维护 state 不影响原有 title 口径
+    expect(
+      siteHealthTitle(health, siteHealthState(health)),
+    ).toBe("近期检测异常 · 巡检于 2026-11-19");
+  });
+});
+
+describe("维护中人工标注（2026-11-27 Gutenberg 临时标注，见 site-notices.ts）", () => {
+  const NOTICE = { label: "维护中" as const, untilISO: "2999-01-01T00:00:00+08:00" };
+  // Gutenberg live 健康对象形态：巡检被 SSRF guard 拦在站外，无状态码
+  const GUTENBERG_HEALTH = { ok: false, httpStatus: null, latencyMs: 1, lastCheckedAt: CHECKED };
+
+  it("维护档优先于检测异常 / 已失效 / 疑似反爬", () => {
+    expect(siteHealthState(GUTENBERG_HEALTH, NOTICE)).toMatchObject({
+      state: "maintenance",
+      tone: "warn",
+      label: "维护中",
+    });
+    expect(
+      siteHealthState(
+        { ok: false, httpStatus: 404, lastCheckedAt: CHECKED, consecutiveFailures: 2 },
+        NOTICE,
+      ),
+    ).toMatchObject({ state: "maintenance", label: "维护中" });
+    expect(
+      siteHealthState({ ok: false, httpStatus: 403, lastCheckedAt: CHECKED }, NOTICE),
+    ).toMatchObject({ state: "maintenance", label: "维护中" });
+    expect(
+      siteHealthState({ ok: true, httpStatus: 200, lastCheckedAt: CHECKED }, NOTICE),
+    ).toMatchObject({ state: "maintenance", label: "维护中" });
+  });
+
+  it("notice 有效但 health 为空 / 未巡检时仍显示维护中", () => {
+    expect(siteHealthState(null, NOTICE)).toMatchObject({ state: "maintenance", label: "维护中" });
+    expect(siteHealthState(undefined, NOTICE)).toMatchObject({ state: "maintenance", label: "维护中" });
+    expect(siteHealthState({ lastCheckedAt: null }, NOTICE)).toMatchObject({
+      state: "maintenance",
+      label: "维护中",
+    });
+  });
+
+  it("无 notice 时回落到原分级：Gutenberg 对象仍是近期检测异常", () => {
+    expect(siteHealthState(GUTENBERG_HEALTH)).toMatchObject({
+      state: "anomaly",
+      tone: "warn",
+      label: "近期检测异常",
+    });
+    expect(siteHealthState(GUTENBERG_HEALTH, undefined)).toMatchObject({ state: "anomaly" });
+  });
+
+  it("维护中进「只看失效」侧；薄壳透传 notice", () => {
+    expect(isFailingHealthState(siteHealthState(GUTENBERG_HEALTH, NOTICE))).toBe(true);
+    expect(siteHealthBadge(GUTENBERG_HEALTH, NOTICE)).toEqual({
+      tone: "warn",
+      label: "维护中",
+      latencyMs: 1,
+    });
+    expect(siteHealthBadge(GUTENBERG_HEALTH)).toEqual({
+      tone: "warn",
+      label: "近期检测异常",
+      latencyMs: 1,
+    });
+  });
+
+  it("getSiteNotice：Gutenberg 条目有效期内可取，未知 hubId 取不到", () => {
+    const notice = getSiteNotice("nav-508848075e00");
+    expect(notice).toMatchObject({ label: "维护中", untilISO: "2026-11-29T02:26:00+08:00" });
+    expect(getSiteNotice("nav-000000000000")).toBeUndefined();
+    expect(getSiteNotice(undefined)).toBeUndefined();
+  });
+
+  it("getSiteNotice：过期后返回 undefined（自动回落，无需二次上线摘除）", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-29T02:26:01+08:00"));
+      expect(getSiteNotice("nav-508848075e00")).toBeUndefined();
+      vi.setSystemTime(new Date("2026-11-27T02:26:00+08:00"));
+      expect(getSiteNotice("nav-508848075e00")).toMatchObject({ label: "维护中" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

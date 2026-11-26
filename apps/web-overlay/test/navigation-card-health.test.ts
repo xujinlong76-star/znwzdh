@@ -234,3 +234,38 @@ describe("「只看失效」开关（§7）", () => {
     expect(src).not.toContain("localStorage");
   });
 });
+
+describe("维护中卡片（2026-11-27 Gutenberg 临时标注）", () => {
+  // Gutenberg live 健康对象形态：巡检被 SSRF guard 拦在站外，无状态码
+  const gutenbergItem = (): NavigationSubItem => ({
+    ...itemWithHealth({ ok: false, httpStatus: null, latencyMs: 1, lastCheckedAt: CHECKED }),
+    hubId: "nav-508848075e00",
+    title: "Project Gutenberg",
+    href: "https://www.gutenberg.org/",
+  });
+
+  it("Gutenberg 卡片画「维护中」+ 琥珀点、无「看存档」链接", () => {
+    const html = renderCard(gutenbergItem());
+    expect(html).toContain("维护中");
+    expect(html).not.toContain("近期检测异常");
+    expect(html).toContain("rounded-full bg-pinned");
+    expect(html).not.toContain("看存档");
+    expect(html).toContain('title="维护中 · 巡检于 2026-11-19"');
+  });
+
+  it("维护中卡片进「只看失效」侧", () => {
+    expect(renderCard(gutenbergItem(), { showFailingOnly: true })).toContain("维护中");
+  });
+
+  it("标注过期后同一卡片恢复「近期检测异常」", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-29T02:26:01+08:00"));
+      const html = renderCard(gutenbergItem());
+      expect(html).toContain("近期检测异常");
+      expect(html).not.toContain("维护中");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

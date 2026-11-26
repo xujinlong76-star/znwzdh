@@ -7,11 +7,13 @@
 
 | 环境变量 | 产物 | 用途 |
 | :--- | :--- | :--- |
-| （都不设） | 不下发 CSP | 默认；避免个人部署被内联脚本问题打挂 |
+| （都不设，裸 `pnpm build`） | 不下发 CSP | next.config.js 层的开关语义：只有显式设为 `1` 才开启 |
+| （Docker / compose 默认档，U-415） | `Content-Security-Policy-Report-Only` + `Strict-Transport-Security` | 默认部署：report-only 开、上报到站内 `/api/csp-report`，HSTS 开 |
 | `NAVHUB_CSP_REPORT_ONLY=1` | `Content-Security-Policy-Report-Only` | 只收集，不拦截 |
 | `NAVHUB_CSP=1` | `Content-Security-Policy` | 真正拦截 |
 | 两者同时为 1 | 只下发 enforce | enforce 优先，避免同源策略双份报告 |
 | `NAVHUB_CSP_REPORT_URI=https://…` | 两种档位都追加 `report-uri` | 指定收集端点（可选） |
+| `NAVHUB_CSP_REPORT_ONLY=0` / `NAVHUB_HSTS=0` | 对应头不下发 | 退出默认档的逃生口（compose 里置 0，或 docker build 时传 `--build-arg`） |
 
 > **关键：以上都是构建期变量。** Next 的 `headers()` 在 `next build` 时求值并写入 `routes-manifest.json`，`next start` 时改 env 不会生效。切换档位必须重新构建（Docker 用 `--build-arg`，见第 3 步）。
 
@@ -69,6 +71,12 @@ pnpm --filter navsphere start --port 4180
 
 ### 第 1 步：打开 report-only（重新构建）
 
+> 自 U-415 起，Docker / compose 默认构建已是 report-only + HSTS（Dockerfile.web
+> 默认 `NAVHUB_CSP_REPORT_ONLY=1`、`NAVHUB_CSP_REPORT_URI=/api/csp-report`，
+> compose 默认 `NAVHUB_HSTS=1`），无需再手动传参；裸 `pnpm build` 仍需按下
+> 面显式设置。确认响应头存在，且**没有** `Content-Security-Policy`（enforce）头。
+> **只改运行时 env 并重启是无效的**——见第 1 节说明。
+
 ```bash
 NAVHUB_CSP_REPORT_ONLY=1 \
 NAVHUB_CSP_REPORT_URI=https://<collector>/csp \
@@ -76,7 +84,7 @@ pnpm --filter navsphere build
 # 然后发布这次构建产物并重启服务
 ```
 
-Docker：
+Docker（默认已是 report-only；显式覆盖外部收集端点才需传参）：
 
 ```bash
 docker build -f docker/Dockerfile.web \
@@ -84,8 +92,6 @@ docker build -f docker/Dockerfile.web \
   --build-arg NAVHUB_CSP_REPORT_URI=https://<collector>/csp \
   -t navhub-web:csp-ro .
 ```
-
-确认响应头存在，且**没有** `Content-Security-Policy`（enforce）头。**只改运行时 env 并重启是无效的**——见第 1 节说明。
 
 ### 第 2 步：收集与分诊（7 天）
 

@@ -10,13 +10,20 @@
  *
  * 本脚本直接加载同一份 next.config.js，在隔离的 env 档位下调用 headers()，
  * 断言与镜像测试等价的契约：
- *   1. 默认档不下发 CSP，也不下发 Report-Only
+ *   1. 默认档不下发 CSP，也不下发 Report-Only（next.config.js 层面的
+ *      开关语义未变：只有显式设为 "1" 才开启；U-415 的默认档由 Docker /
+ *      compose 的构建参数提供，见第 8-10 条）
  *   2. enforce 档下发 Content-Security-Policy
  *   3. report-only 档下发 Content-Security-Policy-Report-Only，且与 enforce **逐字同源**
  *   4. 两个开关同时打开时 enforce 优先，不下发双份
  *   5. NAVHUB_CSP_REPORT_URI 在两个档位都追加 report-uri
  *   6. 基础安全头（nosniff / Referrer-Policy / X-Frame-Options / COOP / CORP）在所有档位始终下发
  *   7. docker/docker-compose.yml 暴露三个 NAVHUB_CSP* 构建参数（保证镜像链路可透传）
+ *   8. （U-415）Dockerfile.web / .slim 的默认档：report-only 开、上报到站内
+ *      /api/csp-report（已实现的收集端点），enforce 默认关
+ *   9. （U-415）compose 的 web 构建参数默认 report-only=1、report-uri=/api/csp-report
+ *  10. （U-415）compose 默认 HSTS=1（构建期参数；Dockerfile 只声明透传位，
+ *      裸 docker build 的 http-only 自托管默认仍不开 HSTS）
  *
  * 用法：node scripts/check-csp-headers.mjs
  * 退出码：0 = 契约通过；1 = 契约破坏（CI 可直接判定）。
@@ -30,6 +37,8 @@ const require = createRequire(import.meta.url);
 const ROOT = resolve(process.cwd());
 const CONFIG_PATH = resolve(ROOT, "apps/web/next.config.js");
 const COMPOSE_PATH = resolve(ROOT, "docker/docker-compose.yml");
+const DOCKERFILE_PATH = resolve(ROOT, "docker/Dockerfile.web");
+const DOCKERFILE_SLIM_PATH = resolve(ROOT, "docker/Dockerfile.web.slim");
 
 const CSP_KEYS = [
   "NAVHUB_CSP",
@@ -122,6 +131,45 @@ check("compose 暴露三个 NAVHUB_CSP* 构建参数", () => {
   for (const key of ["NAVHUB_CSP", "NAVHUB_CSP_REPORT_ONLY", "NAVHUB_CSP_REPORT_URI"]) {
     assert.ok(new RegExp(`^\\s+${key}:`, "m").test(src), `compose build.args 缺少 ${key}`);
   }
+});
+check("Dockerfile.web/.slim 默认档：report-only 开 + 站内收集端点，enforce 关", () => {
+  for (const [label, path] of [
+    ["Dockerfile.web", DOCKERFILE_PATH],
+    ["Dockerfile.web.slim", DOCKERFILE_SLIM_PATH],
+  ]) {
+    assert.ok(existsSync(path), `${label} 不存在`);
+    const src = readFileSync(path, "utf8");
+    assert.ok(/^ARG NAVHUB_CSP_REPORT_ONLY=1$/m.test(src), `${label} 默认应为 NAVHUB_CSP_REPORT_ONLY=1`);
+    assert.ok(
+      /^ARG NAVHUB_CSP_REPORT_URI=\/api\/csp-report$/m.test(src),
+      `${label} report-uri 默认应指向站内 /api/csp-report（已实现的收集端点）`,
+    );
+    assert.ok(/^ARG NAVHUB_CSP=$/m.test(src), `${label} enforce 默认应保持关闭（NAVHUB_CSP 空）`);
+    assert.ok(/^ARG NAVHUB_HSTS=$/m.test(src), `${label} 应声明 NAVHUB_HSTS 透传位供 compose 传入`);
+    assert.ok(
+      /NAVHUB_HSTS="\$NAVHUB_HSTS"/.test(src),
+      `${label} 构建时应把 NAVHUB_HSTS 透传给 next build`,
+    );
+  }
+});
+check("compose 默认 report-only=1、report-uri=/api/csp-report", () => {
+  const src = readFileSync(COMPOSE_PATH, "utf8");
+  assert.ok(
+    /^\s+NAVHUB_CSP_REPORT_ONLY: \$\{NAVHUB_CSP_REPORT_ONLY:-1\}$/m.test(src),
+    "compose 默认应为 NAVHUB_CSP_REPORT_ONLY=${NAVHUB_CSP_REPORT_ONLY:-1}",
+  );
+  assert.ok(
+    /^\s+NAVHUB_CSP_REPORT_URI: \$\{NAVHUB_CSP_REPORT_URI:-\/api\/csp-report\}$/m.test(src),
+    "compose 默认应为 NAVHUB_CSP_REPORT_URI=${NAVHUB_CSP_REPORT_URI:-/api/csp-report}",
+  );
+  assert.ok(
+    /^\s+NAVHUB_CSP: \$\{NAVHUB_CSP:-\}$/m.test(src),
+    "compose 的 enforce 默认应保持关闭（NAVHUB_CSP 空）",
+  );
+});
+check("compose 默认 HSTS=1（构建期参数）", () => {
+  const src = readFileSync(COMPOSE_PATH, "utf8");
+  assert.ok(/^\s+NAVHUB_HSTS: \$\{NAVHUB_HSTS:-1\}$/m.test(src), "compose 默认应为 NAVHUB_HSTS=${NAVHUB_HSTS:-1}");
 });
 
 console.log("[csp-contract] CSP 双档位契约测试（无需 Docker）");

@@ -37,9 +37,13 @@ COPY apps/web-overlay/ ./apps/web-overlay/
 ARG NAVSPHERE_REF
 RUN NAVSPHERE_REF="$NAVSPHERE_REF" node scripts/vendor-web.mjs
 WORKDIR /app/apps/web
+# 安全头默认档与 docker/Dockerfile.web 同口径（U-415）：report-only 开 +
+# 上报到站内 /api/csp-report，enforce 默认关；HSTS 只声明透传位（默认空，
+# 由调用方显式传入，裸构建的 http-only 自托管不被强制升级）。
 ARG NAVHUB_CSP=
-ARG NAVHUB_CSP_REPORT_ONLY=
-ARG NAVHUB_CSP_REPORT_URI=
+ARG NAVHUB_CSP_REPORT_ONLY=1
+ARG NAVHUB_CSP_REPORT_URI=/api/csp-report
+ARG NAVHUB_HSTS=
 ENV NODE_ENV=production \
     STORAGE_ADAPTER=http \
     NEXT_PUBLIC_API_URL=http://api:8787 \
@@ -48,6 +52,7 @@ ENV NODE_ENV=production \
 RUN NAVHUB_CSP="$NAVHUB_CSP" \
     NAVHUB_CSP_REPORT_ONLY="$NAVHUB_CSP_REPORT_ONLY" \
     NAVHUB_CSP_REPORT_URI="$NAVHUB_CSP_REPORT_URI" \
+    NAVHUB_HSTS="$NAVHUB_HSTS" \
     pnpm build
 
 # ============================ 阶段 3：运行 ============================

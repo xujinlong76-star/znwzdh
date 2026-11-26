@@ -188,13 +188,16 @@ services:
         NODE_IMAGE: ${NODE_IMAGE:-node:24-bookworm-slim}
         # Docker Hub 不可达时指向镜像源；deb.debian.org 被中断时可换 APT 镜像
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-deb.debian.org}
-        # CSP 是构建期变量：Next 的 headers() 在 next build 时固化进 routes-manifest，
-        # 运行时往 environment 注入 NAVHUB_CSP 不会生效。这三个参数必须与
-        # docker/Dockerfile.web:72-74 的 ARG 同名并经 build.args 透传；
-        # 默认空保持存量部署兼容，需要 CSP 时：NAVHUB_CSP=1 docker compose build web。
+        # CSP / HSTS 都是构建期变量：Next 的 headers() 在 next build 时固化进
+        # routes-manifest，运行时往 environment 注入不会生效。这四个参数必须与
+        # docker/Dockerfile.web:49-52 的 ARG 同名并经 build.args 透传；
+        # 默认档（U-415）：report-only 开、上报到站内 /api/csp-report、HSTS 开，
+        # enforce 默认关。显式覆盖仍优先：宿主 .env / shell 里设同名变量即可，
+        # 退出默认档用 0（NAVHUB_CSP_REPORT_ONLY=0、NAVHUB_HSTS=0）。
         NAVHUB_CSP: ${NAVHUB_CSP:-}
-        NAVHUB_CSP_REPORT_ONLY: ${NAVHUB_CSP_REPORT_ONLY:-}
-        NAVHUB_CSP_REPORT_URI: ${NAVHUB_CSP_REPORT_URI:-}
+        NAVHUB_CSP_REPORT_ONLY: ${NAVHUB_CSP_REPORT_ONLY:-1}
+        NAVHUB_CSP_REPORT_URI: ${NAVHUB_CSP_REPORT_URI:-/api/csp-report}
+        NAVHUB_HSTS: ${NAVHUB_HSTS:-1}
     image: navhub/web:0.1.0
     container_name: navhub-web
     profiles: ["web"]

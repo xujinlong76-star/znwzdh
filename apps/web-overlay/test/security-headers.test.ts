@@ -115,6 +115,14 @@ describe("CSP 三档开关", () => {
     expect(find(headers, "Content-Security-Policy-Report-Only")).toBeUndefined();
   });
 
+  it("显式置 0 可退出默认档（U-415 的逃生口：只有 \"1\" 才开启）", async () => {
+    process.env.NAVHUB_CSP_REPORT_ONLY = "0";
+    process.env.NAVHUB_HSTS = "0";
+    const headers = await loadHeaders();
+    expect(find(headers, "Content-Security-Policy-Report-Only")).toBeUndefined();
+    expect(find(headers, "Strict-Transport-Security")).toBeUndefined();
+  });
+
   it("enforce 与 report-only 的指令逐字一致（单一事实源，防策略漂移）", async () => {
     process.env.NAVHUB_CSP = "1";
     const enforced = find(await loadHeaders(), "Content-Security-Policy")!.value;
@@ -174,6 +182,7 @@ afterAll(() => {
   delete process.env.NAVHUB_CSP;
   delete process.env.NAVHUB_CSP_REPORT_ONLY;
   delete process.env.NAVHUB_CSP_REPORT_URI;
+  delete process.env.NAVHUB_HSTS;
   delete process.env.NAVHUB_PUBLIC_URL;
   delete process.env.NAVHUB_COOP;
 });

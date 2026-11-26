@@ -46,6 +46,17 @@ export async function register() {
     console.error('[EventLoopWatchdog] 启动失败（阻塞不会上报，不影响服务）:', error)
   }
 
+  // 安全头启动告警（U-415）：构建产物 routes-manifest 是响应头的事实源；
+  // 构建期没开 CSP/HSTS 时这里是唯一能在启动日志里看见的信号。缺失只告警
+  // 不抛错（http-only 自托管关 HSTS 可能是有意的），产物不可读时静默跳过。
+  // 与巡检调度同一口径：函数内动态 import，不进 Edge Instrumentation 编译。
+  try {
+    const { warnIfSecurityHeadersOff } = await import('./lib/security-headers-startup')
+    await warnIfSecurityHeadersOff()
+  } catch (error) {
+    console.error('[security-headers] 启动自检失败（不影响服务）:', error)
+  }
+
   const raw = process.env.NAVHUB_SITE_URL?.trim()
   if (!raw) {
     console.error(

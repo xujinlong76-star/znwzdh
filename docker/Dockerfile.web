@@ -38,12 +38,18 @@ RUN NAVSPHERE_REF="$NAVSPHERE_REF" node scripts/vendor-web.mjs
 WORKDIR /app/apps/web
 
 # CSP 开关是构建期变量：Next 的 headers() 在 next build 时写入 routes-manifest，
-# 运行时改 env 不会生效。需要 CSP 的镜像用：
-#   docker build --build-arg NAVHUB_CSP=1 -f docker/Dockerfile.web .
-# report-only 档：--build-arg NAVHUB_CSP_REPORT_ONLY=1 [--build-arg NAVHUB_CSP_REPORT_URI=https://...]
+# 运行时改 env 不会生效。
+# 默认档（U-415）：report-only 开 + 上报到站内 /api/csp-report（已实现，
+# apps/web-overlay/src/app/api/csp-report/route.ts），只收集违规不拦截；
+# enforce 仍默认关（NAVHUB_CSP 空），切 enforce 是后续单独改动。
+# HSTS 由 docker/docker-compose.yml 以 build-arg 传入（默认 1）；这里只声明
+# 透传位，默认值留空——裸 docker build 的 http-only 自托管不被强制升级。
+# 退出默认档：--build-arg NAVHUB_CSP_REPORT_ONLY=0（report-uri 同理可覆盖），
+# HSTS 用 --build-arg NAVHUB_HSTS=0（compose 里同名变量置 0）。
 ARG NAVHUB_CSP=
-ARG NAVHUB_CSP_REPORT_ONLY=
-ARG NAVHUB_CSP_REPORT_URI=
+ARG NAVHUB_CSP_REPORT_ONLY=1
+ARG NAVHUB_CSP_REPORT_URI=/api/csp-report
+ARG NAVHUB_HSTS=
 
 # 首页 HTML 预算（4096KB 哨兵）：全量 443 卡时实测 4617KB，超预算 521KB。
 # app/page.tsx 支持用 NAVHUB_HOME_CARDS_PER_GROUP 控制每组 SSR 卡片数；实测每组 4 张后
@@ -74,6 +80,7 @@ ENV NODE_ENV=production \
 RUN NAVHUB_CSP="$NAVHUB_CSP" \
     NAVHUB_CSP_REPORT_ONLY="$NAVHUB_CSP_REPORT_ONLY" \
     NAVHUB_CSP_REPORT_URI="$NAVHUB_CSP_REPORT_URI" \
+    NAVHUB_HSTS="$NAVHUB_HSTS" \
     pnpm build
 
 EXPOSE 3000

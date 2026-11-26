@@ -115,6 +115,12 @@ describe('U-92 插件徽章：动态计数', () => {
     expect(html).not.toContain('0 款生态')
   })
 
+  it('U-432：SSR 即含 /me/sites「我的站点」入口（内容组第 5 项）', () => {
+    const html = renderToString(createElement(EntryGroups, {}))
+    expect(html).toContain('/me/sites')
+    expect(html).toContain('我的站点')
+  })
+
   it('源码守卫：无「77 款生态」，接线走 fetchPlugins({ limit: 1 }) 且已装跳过取数', () => {
     const src = readSrc('components/user-center/dashboard/entry-groups.tsx')
     expect(src).not.toContain('77 款生态')

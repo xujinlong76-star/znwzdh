@@ -14,6 +14,35 @@ export interface CategoryJumpItem {
   icon?: string
 }
 
+/**
+ * U-416：精选视频徽章的真实总数格式化（2265 → "2,265"）。
+ * 不做数量级缩写——约数写法就是旧徽章失真的根源，精确数才诚实。
+ */
+export function formatVideoCount(count: number): string {
+  return count.toLocaleString('en-US')
+}
+
+export type VideoTotalFetcher = (
+  url: string,
+) => Promise<{ headers: { get(name: string): string | null } }>
+
+/**
+ * U-416：视频库实时总数取数（`GET /api/videos?limit=1`，只要总数、
+ * 条目本身不拉——与管理端数据页同款轻量口径；总数走 `X-Total-Items`
+ * 响应头，与服务端 countItems 同口径）。
+ * 取不到 / 非正数 / 解析失败都回 null——调用方不渲染徽章，绝不回落
+ * 任何手写数字（旧徽章手写约数与实际 2265 条差了近三倍）。
+ */
+export async function loadVideoTotalCount(fetcher: VideoTotalFetcher): Promise<number | null> {
+  try {
+    const res = await fetcher('/api/videos?limit=1')
+    const total = Number(res.headers.get('X-Total-Items'))
+    return Number.isFinite(total) && total > 0 ? Math.floor(total) : null
+  } catch {
+    return null
+  }
+}
+
 interface CategoryQuickJumpBarProps {
   categories: CategoryJumpItem[]
   hasQuickAccess?: boolean
@@ -22,6 +51,11 @@ interface CategoryQuickJumpBarProps {
   isAllCollapsed?: boolean
   /** 一键折叠/展开全部顶级类目 */
   onToggleAllCollapsed?: () => void
+  /**
+   * U-416：视频库总数（由调用方服务端算好传入时优先用它）。
+   * 不传时组件在移动端自行取一次实时总数；取不到就不显示徽章。
+   */
+  videoCount?: number
 }
 
 export function CategoryQuickJumpBar({
@@ -30,9 +64,25 @@ export function CategoryQuickJumpBar({
   className,
   isAllCollapsed,
   onToggleAllCollapsed,
+  videoCount,
 }: CategoryQuickJumpBarProps) {
   const [activeId, setActiveId] = useState<string>('')
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  // U-416：移动端才取实时总数（本栏桌面端隐藏，桌面不发请求）。
+  const [liveVideoCount, setLiveVideoCount] = useState<number | null>(null)
+  useEffect(() => {
+    if (typeof videoCount === 'number') return
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    if (!window.matchMedia('(max-width: 767px)').matches) return
+    let cancelled = false
+    void loadVideoTotalCount((url) => fetch(url)).then((total) => {
+      if (!cancelled) setLiveVideoCount(total)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [videoCount])
+  const effectiveVideoCount = typeof videoCount === 'number' ? videoCount : liveVideoCount
 
   // 监听可视区域内的分类区块 (Scroll Spy)
   useEffect(() => {
@@ -207,7 +257,9 @@ export function CategoryQuickJumpBar({
           >
             <MonitorPlay className="h-3 w-3" />
             <span>精选视频</span>
-            <span className="text-[10px] px-1 rounded-full bg-rose-500/20">6k+</span>
+            {typeof effectiveVideoCount === 'number' && effectiveVideoCount > 0 && (
+              <span className="text-[10px] px-1 rounded-full bg-rose-500/20">{formatVideoCount(effectiveVideoCount)}</span>
+            )}
           </Link>
         </HorizontalScrollFade>
       </div>

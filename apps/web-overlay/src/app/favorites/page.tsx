@@ -1954,7 +1954,8 @@ export default function FavoritesPage() {
         {activeView === 'sites' && (
         <>
         {/* 移动端：顶部文件夹下拉选择器（桌面用左侧树，见下） */}
-        {favorites.items.length > 0 && (
+        {/* U-402：0 收藏但已有夹子时也要能管夹子，门改成「有收藏或有夹子」。 */}
+        {(favorites.items.length > 0 || visibleFolders.length > 0) && (
           <div className="mb-4 lg:hidden">
             <label htmlFor="favorites-folder-select" className="sr-only">
               选择收藏夹
@@ -1978,7 +1979,8 @@ export default function FavoritesPage() {
         {/* 桌面双栏工作区：左文件夹树（sticky），右筛选 + 站点卡片 */}
         <div className="lg:flex lg:items-start lg:gap-5">
           {/* 左侧文件夹树（桌面）：竖排结构，选中项高亮 + 计数 + 快捷新建 */}
-          {favorites.items.length > 0 && (
+          {/* U-402：0 收藏但已有夹子时树不能整块消失，否则夹子无法管理。 */}
+          {(favorites.items.length > 0 || visibleFolders.length > 0) && (
             <aside
               aria-label="收藏夹树"
               className="hidden lg:block lg:w-52 lg:shrink-0 lg:sticky lg:top-4"
@@ -2136,7 +2138,8 @@ export default function FavoritesPage() {
           <div className="min-w-0 flex-1">
 
         {/* 智能整理（P1 #6）：只给建议，用户点「采用」后才建夹、才移动——绝不自动应用 */}
-        {favorites.items.length > 0 && (
+        {/* U-402：与文件夹树同门——0 收藏但有夹子时面板仍挂载（空 items 时面板自返 null）。 */}
+        {(favorites.items.length > 0 || visibleFolders.length > 0) && (
           <SmartCollectionsPanel
             items={favorites.items}
             onCreateFolder={createFolderDirectly}
@@ -2918,7 +2921,8 @@ export default function FavoritesPage() {
         <StarredPluginsSection />
 
         {/* 智能整理（P1 #6）：只给建议，用户点「采用」后才建夹、才移动——绝不自动应用 */}
-        {favorites.items.length > 0 && (
+        {/* U-402：与文件夹树同门——0 收藏但有夹子时面板仍挂载（空 items 时面板自返 null）。 */}
+        {(favorites.items.length > 0 || visibleFolders.length > 0) && (
           <SmartCollectionsPanel
             items={favorites.items}
             onCreateFolder={createFolderDirectly}

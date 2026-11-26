@@ -36,6 +36,19 @@ describe('formatClock', () => {
   it('输出 HH:mm', () => {
     expect(formatClock(Date.UTC(2026, 10, 11, 1, 5))).toMatch(/^\d{2}:\d{2}$/)
   })
+
+  it('U-396：按北京时间出 HH:mm——跑在 TZ=UTC 的容器上也不晚 8 小时', () => {
+    // UTC 2026-11-11 01:05 = 北京时间 09:05；旧实现（getHours 本地时区）
+    // 在 UTC 容器上会出 01:05，「生成于/更新于」全部晚 8 小时。
+    expect(formatClock(Date.UTC(2026, 10, 11, 1, 5))).toBe('09:05')
+    // 午夜边界：UTC 16:00 = 北京时间次日 00:00，出 00:00 不出 24:00。
+    expect(formatClock(Date.UTC(2026, 10, 10, 16, 0))).toBe('00:00')
+    // 北京时间 23:59（UTC 15:59）不跨日。
+    expect(formatClock(Date.UTC(2026, 10, 11, 15, 59))).toBe('23:59')
+    expect(formatClock(null)).toBeNull()
+    expect(formatClock(NaN)).toBeNull()
+    expect(formatClock(0)).toBeNull()
+  })
 })
 
 describe('简报页源码守卫', () => {

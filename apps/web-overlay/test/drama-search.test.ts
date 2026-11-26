@@ -4,14 +4,18 @@
  * 验收口径：题材筛选与搜剧名可叠加；日历标题无题材、只参与搜剧名；
  * 空结果返回空数组（调用方如实写“这个题材暂无收录”，不拿别的题材凑数）。
  */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   collectDramaExtraResults,
+  countDramasWithGenres,
   dramaGenreOptions,
   dramaTitleMatches,
   filterFeaturedDramas,
 } from "../src/lib/drama-search";
-import type { DramaFeatured } from "../src/lib/drama-featured";
+import { loadDramaFeatured, type DramaFeatured } from "../src/lib/drama-featured";
 import type {
   DramaCalendarResponse,
   DramaRankingsResponse,
@@ -175,5 +179,45 @@ describe("collectDramaExtraResults", () => {
   it("月份待定与过期区的日历标题同样可搜", () => {
     const res = collectDramaExtraResults(rankings(), calendar(), "雾锁", "");
     expect(res.calendar).toEqual([{ title: "雾锁情迷2", label: "12月待上线" }]);
+  });
+});
+
+describe("U-397 搜索框占位示例必须搜得到", () => {
+  it("「红果」是平台名不是剧名、0 命中；「万妖图录」命中真实剧名", () => {
+    const { dramas } = loadDramaFeatured();
+    expect(dramas.length).toBe(18);
+    expect(filterFeaturedDramas(dramas, "红果", "")).toEqual([]);
+    expect(filterFeaturedDramas(dramas, "万妖图录", "").map((d) => d.title)).toEqual([
+      "万妖图录传 第十四季",
+    ]);
+  });
+
+  it("源码守卫：占位文案不再拿「红果」举例，只举真实剧名", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, "..", "src/components/drama-content.tsx"), "utf8");
+    expect(src).not.toContain("「红果」");
+    expect(src).toContain("「万妖图录」");
+  });
+});
+
+describe("U-398 有题材标签的热门剧数是算出来的", () => {
+  it("夹具：只数 genres 非空的剧", () => {
+    expect(countDramasWithGenres(DRAMAS)).toBe(3);
+    expect(countDramasWithGenres([])).toBe(0);
+    expect(countDramasWithGenres([featured("无题材剧")])).toBe(0);
+  });
+
+  it("真实 featured.json：8 部有题材（旧文案手写 7 部是错的）", () => {
+    const { dramas } = loadDramaFeatured();
+    expect(countDramasWithGenres(dramas)).toBe(8);
+  });
+
+  it("源码守卫：文案用 countDramasWithGenres，不再手写「7 部」", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, "..", "src/components/drama-content.tsx"), "utf8");
+    expect(src).toContain("countDramasWithGenres");
+    expect(src).toContain("featuredGenreCount");
+    expect(src).not.toContain("热门剧里 7 部有题材标签");
+    expect(src).not.toContain("热门剧里 8 部有题材标签");
   });
 });

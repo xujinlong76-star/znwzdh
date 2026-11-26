@@ -164,3 +164,14 @@ describe('用户中心与插件市场 V5 回归守卫', () => {
   })
 })
 
+
+describe('U-432：/me 概览「全部入口」有「我的站点」', () => {
+  it('内容组含 /me/sites「我的站点」，与子导航同名同址', () => {
+    const entries = read('src/components/user-center/dashboard/entry-groups.tsx')
+    expect(entries).toContain("href: '/me/sites'")
+    expect(entries).toContain("label: '我的站点'")
+    // 路由本身存在（独立页面），入口不是空链。
+    expect(existsSync(join(ROOT, 'src/app/me/sites/page.tsx'))).toBe(true)
+    expect(read('src/app/me/sites/page.tsx')).toContain('我的站点')
+  })
+})

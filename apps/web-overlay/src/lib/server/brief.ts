@@ -89,10 +89,23 @@ export async function loadBriefToday(revalidate = 300): Promise<HubBrief | null>
   return hubGet<HubBrief>('/api/brief/today', revalidate)
 }
 
-/** 毫秒戳 → HH:mm（展示「更新于」） */
+/**
+ * 毫秒戳 → HH:mm（展示「更新于」/「生成于」）。
+ *
+ * U-396：必须按北京时间（Asia/Shanghai）算。旧实现用 d.getHours() /
+ * d.getMinutes()，取的是服务器本地时区——UTC 容器上会比北京时间晚 8 小时。
+ * hourCycle 'h23'：午夜出 00:xx，不出 24:xx。
+ */
+const BEIJING_CLOCK = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
 export function formatClock(ts: number | null): string | null {
   if (!ts) return null
   const d = new Date(ts)
   if (Number.isNaN(d.getTime())) return null
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return BEIJING_CLOCK.format(d)
 }

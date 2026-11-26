@@ -23,6 +23,15 @@ export function dramaTitleMatches(title: string, query: string): boolean {
   return norm(title).includes(norm(query));
 }
 
+/**
+ * U-398：有题材标签的热门剧数——/drama 页「热门剧里 N 部有题材标签」
+ * 的 N 由此算出，不许手写字面量（手写 7 部、实际 8 部就是这么来的）。
+ * 只数 genres 非空的剧；空 genres / 缺字段都不算。
+ */
+export function countDramasWithGenres(dramas: DramaFeatured[]): number {
+  return dramas.filter((d) => (d.genres ?? []).length > 0).length;
+}
+
 /** 热门剧过滤：题材（无题材的剧不参与题材筛选）+ 剧名。 */
 export function filterFeaturedDramas(
   dramas: DramaFeatured[],

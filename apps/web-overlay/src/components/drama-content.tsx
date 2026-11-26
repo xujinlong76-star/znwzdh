@@ -30,6 +30,7 @@ import {
 } from "@/lib/drama-watch-stats";
 import {
   collectDramaExtraResults,
+  countDramasWithGenres,
   dramaGenreOptions,
   filterFeaturedDramas,
 } from "@/lib/drama-search";
@@ -174,6 +175,10 @@ export function DramaContent({
       dramaGenreOptions(dramas, rankings.kind === "ready" ? rankings.data : null),
     [dramas, rankings],
   );
+
+  // U-398：有题材标签的热门剧数——文案里的数字由此算出，不许手写
+  //（旧文案手写「7 部」，实际是 8 部）。
+  const featuredGenreCount = useMemo(() => countDramasWithGenres(dramas), [dramas]);
 
   const filtering = query.trim() !== "" || genre !== "";
   const featuredFiltered = useMemo(
@@ -336,7 +341,7 @@ export function DramaContent({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜剧名，如「红果」「万妖图录」…"
+              placeholder="搜剧名，如「万妖图录」…"
               className="h-11 w-full rounded-full border border-zinc-300 bg-white px-4 pr-11 text-sm text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-zinc-400"
             />
             {query !== "" && (
@@ -383,7 +388,7 @@ export function DramaContent({
             </div>
           )}
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            题材只标核实过的：热门剧里 7 部有题材标签，其余与日历剧暂无题材、不参与题材筛选；搜剧名即时出结果，筛选与搜索可叠加。
+            题材只标核实过的：热门剧里 {featuredGenreCount} 部有题材标签，其余与日历剧暂无题材、不参与题材筛选；搜剧名即时出结果，筛选与搜索可叠加。
           </p>
         </div>
 

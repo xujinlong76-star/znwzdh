@@ -5,7 +5,7 @@
  * 与顶部子导航互补——这里按「内容 / 扩展 / 偏好 / 数据」说明每组能做什么。
  *
  * 栅格重构（V5）：
- * 1. 4 组 13 张卡片：U-62a 起内容组 4 项（含追剧清单），其余三组各 3 项，
+ * 1. 4 组 14 张卡片：内容组 5 项（含追剧清单、我的站点 U-432），其余三组各 3 项，
  *    接受不对称，不再强求 12 张对称矩阵；
  * 2. 补齐「智能书签导入 (/import)」与「快捷键与命令面板 (/me/settings#shortcuts)」；
  * 3. 注入实时遥测胶囊徽章（Live Telemetry Badges），直观展示当前状态与容量。
@@ -20,6 +20,7 @@ import {
   Download,
   FileUp,
   FolderHeart,
+  Globe,
   KeyRound,
   Package,
   Search,
@@ -146,6 +147,14 @@ const GROUPS: readonly GroupDefinition[] = [
         icon: Clapperboard,
         badgeKey: 'watchlist',
         defaultBadge: WATCHLIST_DEFAULT_BADGE,
+      },
+      {
+        href: '/me/sites',
+        label: '我的站点',
+        hint: '自己添加的网址',
+        icon: Globe,
+        badgeKey: 'sites',
+        defaultBadge: '跨设备同步',
       },
     ],
   },
@@ -324,6 +333,7 @@ export function EntryGroups({
       import: '0-RTT 解析',
       workspaces: '个人空间',
       custom: '自由排版',
+      sites: '跨设备同步',
     })
   }, [favoritesCount, installedPluginsCount, searchesCount, vaultExists, profileReady, anonymous, settings])
 

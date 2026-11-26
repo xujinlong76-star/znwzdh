@@ -91,3 +91,20 @@ describe('本地收藏夹（P2）', () => {
     expect(page).toContain('本地收藏夹仅存本机')
   })
 })
+
+describe('U-402：0 收藏时收藏夹管理区不消失', () => {
+  it('文件夹树与移动端下拉的门是「有收藏或有夹子」，不是只看收藏数', () => {
+    const page = overlaySource('src/app/favorites/page.tsx')
+    // 桌面树（aria-label="收藏夹树"）与移动端下拉都必须用放宽后的门；
+    // 旧门 `{favorites.items.length > 0 && (` 会在 0 收藏时把整块管理区藏掉，
+    // 已有夹子的用户连改名/删夹都摸不到。
+    const widened = page.match(/\(favorites\.items\.length > 0 \|\| visibleFolders\.length > 0\) && \(/g) ?? []
+    expect(widened.length).toBeGreaterThanOrEqual(2)
+    expect(page).toContain('aria-label="收藏夹树"')
+    // 树所在的 aside 之前不许再出现只看收藏数的旧门。
+    const treeAt = page.indexOf('aria-label="收藏夹树"')
+    const beforeTree = page.slice(Math.max(0, treeAt - 400), treeAt)
+    expect(beforeTree).not.toContain('{favorites.items.length > 0 && (')
+    expect(beforeTree).toContain('visibleFolders.length > 0')
+  })
+})

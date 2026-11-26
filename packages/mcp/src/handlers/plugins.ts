@@ -113,15 +113,6 @@ export const pluginHandlers = {
           actorKind: "token",
         });
 
-        // 与 REST 路由同口径：新建站点补向量索引（批量查询，消除 N+1）
-        if (result.applied.createdSiteIds.length > 0) {
-          const siteMap = await ctx.repo.getSitesByIds(result.applied.createdSiteIds);
-          const sites = Array.from(siteMap.values())
-            .filter((s): s is NonNullable<typeof s> => !!s)
-            .map((s) => ({ id: s.id, title: s.title, description: s.description ?? null, url: s.url }));
-          await deps.ctx.pluginOps?.indexSitesBatch(sites);
-        }
-
         return {
           slug: plugin.slug,
           name: plugin.name,
@@ -130,6 +121,17 @@ export const pluginHandlers = {
           identity,
           ...result,
         };
+      }, {
+        // 与 REST 路由同口径：新建站点补向量索引（批量查询，消除 N+1）。必须等
+        // 幂等事务 COMMIT 后再做，避免 embedding/vector 副作用落在事务里。
+        afterCommit: async (response) => {
+          if (response.applied.createdSiteIds.length === 0) return;
+          const siteMap = await ctx.repo.getSitesByIds(response.applied.createdSiteIds);
+          const sites = Array.from(siteMap.values())
+            .filter((s): s is NonNullable<typeof s> => !!s)
+            .map((s) => ({ id: s.id, title: s.title, description: s.description ?? null, url: s.url }));
+          await ctx.pluginOps?.indexSitesBatch(sites);
+        },
       });
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));
@@ -178,9 +180,6 @@ export const pluginHandlers = {
           input.changelog ?? null,
           actor,
         );
-        if (updated.status !== "published") {
-          await deps.ctx.pluginOps?.removePluginIndex(input.slug);
-        }
         return {
           success: true,
           slug: updated.slug,
@@ -190,6 +189,13 @@ export const pluginHandlers = {
           summary: summarizePluginManifest(updated.pendingManifest ?? updated.manifest),
           reviewHint: "已进入待审队列；通过后版本历史会记录本次变更",
         };
+      }, {
+        afterCommit: async (response) => {
+          if (response.status === "published") return;
+          const current = await ctx.repo.getPluginBySlug(input.slug);
+          if (current?.status === "published") return;
+          await ctx.pluginOps?.removePluginIndex(input.slug);
+        },
       });
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));

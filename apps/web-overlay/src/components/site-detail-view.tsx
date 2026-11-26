@@ -73,7 +73,7 @@ import { copyText } from '@/lib/clipboard'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SiteFavicon } from '@/components/site-favicon'
-import { isBotBlockStatus, siteHealthState, siteHealthTitle } from '@/lib/site-health'
+import { healthDotClass, healthPillClass, isBotBlockStatus, siteHealthState, siteHealthTitle } from '@/lib/site-health'
 import { buildDeadLinkWaybackUrl } from '@/lib/dead-link'
 import { safeHref } from '@/lib/safe-url'
 import { cn } from '@/lib/utils'
@@ -668,18 +668,11 @@ export function SiteDetailView({
                 <div className="flex flex-wrap items-center gap-2">
                   {healthState && (
                     <span
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs border ${
-                        healthState.tone === 'ok'
-                          ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
-                          : healthState.tone === 'error'
-                            ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/30'
-                            : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30'
-                      }`}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs border ${healthPillClass(healthState)}`}
                       title={siteHealthTitle(site.health) ?? '服务端最新巡检结果'}
                     >
-                      <span className={`w-2 h-2 rounded-full ${healthState.tone === 'ok' ? 'bg-emerald-500 animate-pulse' : healthState.tone === 'error' ? 'bg-rose-500' : 'bg-amber-500'}`} />
+                      <span className={cn('w-2 h-2 rounded-full', healthDotClass(healthState))} />
                       <span>{healthState.label}</span>
-                      {healthState.latencyMs != null && <span>({healthState.latencyMs}ms)</span>}
                     </span>
                   )}
                   {healthHistory.length >= 2 && (
@@ -702,10 +695,11 @@ export function SiteDetailView({
                         <span
                           className={cn(
                             'w-2 h-2 rounded-full',
-                            livePing.quality === 'fast' && 'bg-emerald-500 animate-pulse',
-                            livePing.quality === 'normal' && 'bg-sky-500',
-                            livePing.quality === 'slow' && 'bg-amber-500',
-                            livePing.quality === 'unreachable' && 'bg-rose-500',
+                            // 配色走 Token（同健康徽点一档：success/info/pinned/destructive）
+                            livePing.quality === 'fast' && 'bg-success',
+                            livePing.quality === 'normal' && 'bg-info',
+                            livePing.quality === 'slow' && 'bg-pinned',
+                            livePing.quality === 'unreachable' && 'bg-destructive',
                           )}
                         />
                         <span className={livePing.reachable ? 'text-foreground font-medium' : 'text-destructive-text font-medium'}>

@@ -223,6 +223,112 @@ describe("/api/me/sessions（T8 会话治理）", () => {
     expect(verify.json().revoked).toBe(true);
   });
 
+  it("设备列表、单设备撤销与注销覆盖 raw / credentials / provider 全部别名", async () => {
+    const created = await ctx.repo.createUserWithPassword({
+      username: "me-alias-sessions",
+      email: "me-alias-sessions@example.com",
+      password: "S3cret-Passw0rd!",
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const rawId = created.user.id;
+    const provider = "github:me-alias-sessions-provider";
+    await ctx.repo.upsertOauthUser({
+      id: provider,
+      username: "me-alias-sessions",
+      email: "me-alias-sessions@example.com",
+    });
+    const identities = [rawId, "credentials:" + rawId, provider];
+    const sessions = identities.map((identity, index) => ({
+      identity,
+      sid: `test-sid-me-alias-${index}`,
+      token: sidHash(`test-sid-me-alias-${index}`),
+    }));
+    for (const item of sessions) {
+      await ctx.repo.upsertSessionActivity({
+        token: item.token,
+        userId: item.identity,
+        userAgent: `Alias-Agent/${item.identity}`,
+        expiresAt: Date.now() + 86_400_000,
+      });
+    }
+
+    // provider canonical 入口也应看到 raw 与 credentials 历史设备。
+    const list = await app.inject({ method: "GET", url: "/api/me/sessions", headers: headersFor(provider) });
+    expect(list.statusCode).toBe(200);
+    expect(new Set(list.json().devices.map((device: { token: string }) => device.token)))
+      .toEqual(new Set(sessions.map((item) => item.token)));
+
+    // credentials 入口可踢出 raw UUID 设备，重复踢出返回 404。
+    const kicked = await app.inject({
+      method: "DELETE",
+      url: "/api/me/sessions/" + sessions[0].token,
+      headers: headersFor(identities[1]),
+    });
+    expect(kicked.statusCode).toBe(200);
+    expect((await app.inject({
+      method: "DELETE",
+      url: "/api/me/sessions/" + sessions[0].token,
+      headers: headersFor(identities[1]),
+    })).statusCode).toBe(404);
+
+    // 注销入口同样按全部别名吊销，不只处理当前 provider 身份。
+    const removed = await app.inject({
+      method: "DELETE",
+      url: "/api/me",
+      headers: headersFor(provider),
+      payload: { confirm: "DELETE" },
+    });
+    expect(removed.statusCode).toBe(200);
+    const rows = await ctx.repo.raw(
+      `SELECT token, revoked_at FROM sessions WHERE token IN (${sessions.map(() => "?").join(", ")})`,
+      sessions.map((item) => item.token),
+    );
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((row) => String(row.token))))
+      .toEqual(new Set(sessions.slice(0, 2).map((item) => item.token)));
+    expect(rows.every((row) => row.revoked_at != null)).toBe(true);
+    // provider 会话行随账号数据删除，但注销前写的别名墓碑仍须拒绝旧 sid 重建。
+    expect(await ctx.repo.isSessionRevoked(sessions[2].token, provider)).toBe(true);
+  });
+
+  it("check 消费 passwordVersion：旧版本拒绝登记，新版本放行", async () => {
+    const created = await ctx.repo.createUserWithPassword({
+      username: "me-password-version",
+      email: "me-password-version@example.com",
+      password: "S3cret-Passw0rd!",
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const identity = "credentials:" + created.user.id;
+    const headers = { ...headersFor(identity), "content-type": "application/json" };
+
+    expect(await ctx.repo.updateUserPassword(created.user.id, "NewPassw0rd!")).toBe(true);
+    const staleSid = "test-sid-password-version-stale";
+    const stale = await app.inject({
+      method: "POST",
+      url: "/api/me/sessions/check",
+      headers,
+      payload: { sid: staleSid, passwordVersion: 0 },
+    });
+    expect(stale.statusCode).toBe(200);
+    expect(stale.json().revoked).toBe(true);
+
+    const freshSid = "test-sid-password-version-fresh";
+    const fresh = await app.inject({
+      method: "POST",
+      url: "/api/me/sessions/check",
+      headers,
+      payload: { sid: freshSid, passwordVersion: 1 },
+    });
+    expect(fresh.statusCode).toBe(200);
+    expect(fresh.json().revoked).toBe(false);
+    const rows = await ctx.repo.raw("SELECT token FROM sessions WHERE token = ?", [sidHash(freshSid)]);
+    expect(rows).toHaveLength(1);
+    const staleRows = await ctx.repo.raw("SELECT token FROM sessions WHERE token = ?", [sidHash(staleSid)]);
+    expect(staleRows).toHaveLength(0);
+  });
+
   it("sid 格式非法 400；列表未受信 401", async () => {
     const bad = await app.inject({
       method: "POST",

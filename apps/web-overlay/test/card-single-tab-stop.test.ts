@@ -30,8 +30,10 @@ describe("站点卡片：单一 Tab 入口 + 方向键操作区", () => {
   });
 
   it("主链接承载 Space 速览与 → 进入操作区", () => {
-    expect(card).toContain("ref={linkRef}");
-    expect(card).toContain("onKeyDown={handleKeyDown}");
+    // S2 迁移（2026-11-26）：标准档覆盖层经 SiteCard overlayProps 透传（对象字面量），
+    // 紧凑/富卡仍是 JSX 属性——两种接线形态都认。
+    expect(card).toMatch(/ref: linkRef,|ref=\{linkRef\}/);
+    expect(card).toMatch(/onKeyDown: handleKeyDown,|onKeyDown=\{handleKeyDown\}/);
     expect(card).toContain("e.key === 'ArrowRight'");
     expect(card).toContain("[data-card-action]");
   });
@@ -67,8 +69,12 @@ describe("站点卡片：单一 Tab 入口 + 方向键操作区", () => {
     expect(card).toContain("...(dialDigit ? [String(dialDigit)] : [])");
     expect(card).toContain("...(quickDialDigit ? [`Ctrl+Shift+${quickDialDigit}`] : [])");
     expect(card).toContain("].join(' ')");
-    expect((card.match(/aria-keyshortcuts=\{dialKeyshortcuts\}/g) ?? []).length).toBe(3);
-    expect(card).toContain("aria-describedby={keyboardHintId}");
+    // 三处渲染点共用它：紧凑/富卡 JSX 属性形态 + 标准档 overlayProps 对象字面量形态（S2）。
+    const shortcutWiring =
+      (card.match(/aria-keyshortcuts=\{dialKeyshortcuts\}/g) ?? []).length +
+      (card.match(/'aria-keyshortcuts': dialKeyshortcuts,/g) ?? []).length;
+    expect(shortcutWiring).toBe(3);
+    expect(card).toMatch(/aria-describedby=\{keyboardHintId\}|'aria-describedby': keyboardHintId,/);
   });
 
   it("键盘拖拽进行中 ←/→/Esc 交给 dnd-kit 传感器，不抢焦点（W4）", () => {

@@ -17,9 +17,7 @@
  *
  * 浮坞距底用 `max(16px, env(safe-area-inset-bottom))`——iOS 刘海屏底部
  * 有 home indicator 遮挡区，写死 16px 会让按钮压在它上面点不到。
- * 滚到底时页脚版权高于浮坞靠两处：footer 自身的底垫（移动端 9rem，
- * 见 footer.tsx——猫带顶沿 128px，底垫须大于它）与小猫滚到底自动收起
- * （见 xiaomaomao.js syncAutoPark，≤1023px 生效）。
+ * 同时全站主容器统一 pb-24（见 layout），保证滚到底时页脚版权永远高于浮坞。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowUp } from 'lucide-react'

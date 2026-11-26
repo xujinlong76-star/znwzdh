@@ -296,7 +296,9 @@ describe("check-ci-gate 第 7 项：撤防账接线", () => {
     // 2026-11-07 九维评审 1-2：check-web-overlay 新增 gate-config-parity（四条构建路径配置同源）→ 30。
     // 2026-11-09：test-web 新增 web-no-explicit-any（显式 any 棘轮进 CI）→ 31。
     // 2026-11-21：check-web-overlay 新增 gate-hub-id（Batch 1 W2b hubId 校验）→ 32。
-    expect(res.out).toContain("撤防账已接线（9 个作业 / 32 道门禁");
+    // 任务 #10：补登已有 raw palette 门禁（+1）、聚合生成链 gate-generated（+1）、
+    // Docker 启动/迁移 docker-runtime（+1）；独立 core mirror 检查被聚合入口覆盖（-1）→ 34。
+    expect(res.out).toContain("撤防账已接线（9 个作业 / 34 道门禁");
     expect(source().split("run: node scripts/ci-defused-gates.mjs").length - 1).toBe(9);
   });
 

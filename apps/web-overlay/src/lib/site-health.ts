@@ -13,6 +13,13 @@
  * 第一条命中即返回，不叠加——未巡检 → 已失效（硬条件）→ 疑似反爬 →
  * 疑似停放 / 疑似软 404 / 疑似内容过薄 → 检测异常 → 可访问。
  * 绝不引入分数/百分比字段：不折算 0–100 分，不算健康百分比。
+ *
+ * 可访问档的延迟分档（2026-11-25 UI 评审 P1-4）：延迟 >3000ms 不再标绿
+ * 「可访问」（7035ms 的绿灯是矛盾信号），按三档给词——≤1s 可访问 /
+ * 1–3s 响应较慢 / >3s 响应缓慢。**只改展示词与徽标配色，不动 state/tone**：
+ * 慢站仍是 accessible、tone 仍为 ok，「只看失效」（isFailingHealthState）的
+ * 过滤口径不变，慢 ≠ 失效。延迟数字不再进徽标正文（title 里本来就有完整
+ * 「HTTP code · latency · 巡检日期」），避免与状态词抢注意力。
  */
 import type { HealthStatus } from './health-sentinel'
 
@@ -81,6 +88,20 @@ function singleFailureState(httpStatus: number): 'suspect-not-found' | 'suspect-
   return httpStatus >= 500 && httpStatus <= 599 ? 'suspect-server-error' : 'suspect-not-found'
 }
 
+/**
+ * 可访问档的延迟分档阈值（2026-11-25 UI 评审 P1-4）。
+ * 边界口径：>3000ms → 响应缓慢；>1000ms → 响应较慢；其余（含无延迟值）→ 可访问。
+ * 只影响展示词与徽标配色（healthVisualTone），不影响 state/tone 过滤口径。
+ */
+const LATENCY_SLOW_MS = 1000
+const LATENCY_SLUGGISH_MS = 3000
+
+function accessibleLabel(latencyMs: number | null): string {
+  if (latencyMs != null && latencyMs > LATENCY_SLUGGISH_MS) return '响应缓慢'
+  if (latencyMs != null && latencyMs > LATENCY_SLOW_MS) return '响应较慢'
+  return '可访问'
+}
+
 export function siteHealthState(health: SiteHealthInput | null | undefined): SiteHealthState | null {
   if (!health || !health.lastCheckedAt) return null
   const latencyMs = health.latencyMs ?? null
@@ -142,7 +163,7 @@ export function siteHealthState(health: SiteHealthInput | null | undefined): Sit
   // HEALTHY 与 ok === false 同时出现时以连通性为准，上面分支已处理，
   // 所以这里只认 ok === true——没有肯定事实就不报可访问。
   if (health.ok === true) {
-    return { state: 'accessible', tone: 'ok', label: '可访问', latencyMs }
+    return { state: 'accessible', tone: 'ok', label: accessibleLabel(latencyMs), latencyMs }
   }
 
   // 兜底：ok 既非 true 又非上述失败形态（如 ok 缺失但给了 200）——
@@ -190,4 +211,45 @@ export function siteHealthTitle(health: SiteHealthInput | null | undefined): str
   if (health.httpStatus == null) return `近期检测异常 · 巡检于 ${day}`
   const latency = health.latencyMs != null ? ` · ${health.latencyMs}ms` : ''
   return `HTTP ${health.httpStatus}${latency} · 巡检于 ${day}`
+}
+
+/**
+ * 徽标/胶囊的视觉档（2026-11-25 UI 评审 P1-4）：与语义 tone 分离。
+ * tone 管过滤口径（慢站仍是 ok、进不了「只看失效」），visualTone 管配色——
+ * 响应较慢/缓慢要用琥珀警示档，不能跟着 tone 亮绿灯。
+ */
+export type HealthVisualTone = 'ok' | 'warn' | 'error'
+
+export function healthVisualTone(state: SiteHealthState | null | undefined): HealthVisualTone {
+  if (!state) return 'ok'
+  if (state.tone !== 'ok') return state.tone
+  if (state.latencyMs != null && state.latencyMs > LATENCY_SLOW_MS) return 'warn'
+  return 'ok'
+}
+
+/**
+ * 状态点配色（Token 化，替代原 bg-emerald-500 / bg-amber-500 / bg-rose-500 三连）：
+ * ok → bg-success，warn → bg-pinned，error → bg-destructive。
+ * 静态巡检快照不再用 animate-pulse——脉动暗示“实时监控”，而数据是随分片下发的
+ * 快照（reduced-motion 下动画本来也会被压掉），去掉是诚实且更安静。
+ */
+export function healthDotClass(state: SiteHealthState | null | undefined): string {
+  const tone = healthVisualTone(state)
+  if (tone === 'error') return 'bg-destructive'
+  if (tone === 'warn') return 'bg-pinned'
+  return 'bg-success'
+}
+
+/**
+ * 状态胶囊底色/文字/边框（详情页等带底色的展示位）。文字档全部走已实测对比度的
+ * Token（success-foreground 5.48/10.35、pinned-foreground 5.02/11.92、
+ * destructive-text 6.41/7.07），不再用 emerald-700 之类的 raw palette 类。
+ * 错误档底色走 /15（不是 /10）：a11y-token-contrast 的危险文字配方要求
+ * text-destructive-text + bg-destructive/15，/10 实测对比度不足。
+ */
+export function healthPillClass(state: SiteHealthState | null | undefined): string {
+  const tone = healthVisualTone(state)
+  if (tone === 'error') return 'bg-destructive/15 text-destructive-text border-destructive/30'
+  if (tone === 'warn') return 'bg-pinned/10 text-pinned-foreground border-pinned/30'
+  return 'bg-success/10 text-success-foreground border-success/30'
 }

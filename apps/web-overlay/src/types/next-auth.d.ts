@@ -17,9 +17,14 @@ declare module 'next-auth' {
   interface JWT {
     accessToken?: string
     role?: string
+    provider?: string
+    sid?: string
+    issuedAt?: number
+    passwordVersion?: number
   }
   interface User {
     accessToken?: string
     role?: string
+    passwordVersion?: number
   }
 }

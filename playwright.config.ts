@@ -83,6 +83,10 @@ export default defineConfig({
       // 举报接口按 IP 限流 5 次/小时；E2E 用不同 XFF 模拟独立举报人，
       // 避免测试重试累计超过配额（仅测试进程生效，生产默认不信任 XFF）。
       NAVHUB_TRUST_PROXY: '1',
+      // 单个页面 SSR 会扇出多次中枢取数，整套 E2E 共用本机出口 IP；沿用生产
+      // 300/min 会把正常页面加载误判成 429。路由级限流仍保留，专门限流用例不受影响。
+      NAVHUB_RATE_LIMIT_MAX: '10000',
+      NAVHUB_INTERNAL_TOKEN: 'navhub-e2e-internal-token-0123456789',
       // 审核上架/安装会同步重建向量索引。CI 冷启动没有模型缓存，首次
       // embedding 要从 hf-mirror 下载 ~24MB 模型（本地实测 9s，CI 更慢），
       // 足以把 15s/30s 的 UI 断言拖成超时且随网络抖动时绿时红。

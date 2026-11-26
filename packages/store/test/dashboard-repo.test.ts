@@ -3,6 +3,12 @@ import { openDb, type Db } from "../src/driver.ts";
 import { Repository } from "../src/repository.ts";
 import { SearchEngine } from "../src/search.ts";
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
 describe("Dashboard Repository & Search Extensions", () => {
   let db: Db;
   let repo: Repository;
@@ -129,8 +135,8 @@ describe("Dashboard Repository & Search Extensions", () => {
     expect(retried?.attempts).toBe(0);
 
     // 模拟任务失败（completeJob 只接受 running，先恢复成执行中）
-    await repo.run("UPDATE jobs SET status = 'running' WHERE id = ?", [jobId]);
-    await repo.completeJob(jobId, "simulated error", { retryAt: null, exhausted: true });
+    await repo.run("UPDATE jobs SET status = 'running', run_token = ? WHERE id = ?", ["dashboard-token", jobId]);
+    await repo.completeJob(jobId, "simulated error", { retryAt: null, exhausted: true, runToken: "dashboard-token" });
     const failedJob = await repo.getJob(jobId);
     expect(failedJob?.status).toBe("failed");
     expect(failedJob?.error).toBe("simulated error");
@@ -141,8 +147,8 @@ describe("Dashboard Repository & Search Extensions", () => {
     expect(retriedAgain?.error).toBeNull();
 
     // 标记完成并测试 prune（先恢复成 running，completeJob 是 running→终态的 CAS）
-    await repo.run("UPDATE jobs SET status = 'running' WHERE id = ?", [jobId]);
-    expect(await repo.completeJob(jobId, null)).toBe(true);
+    await repo.run("UPDATE jobs SET status = 'running', run_token = ? WHERE id = ?", ["dashboard-token", jobId]);
+    expect(await repo.completeJob(jobId, null, { runToken: "dashboard-token" })).toBe(true);
     const pruneResult = await repo.pruneJobs(0, ["done"]);
     expect(pruneResult.pruned).toBeGreaterThanOrEqual(1);
     const prunedJob = await repo.getJob(jobId);
@@ -203,9 +209,10 @@ describe("Dashboard Repository & Search Extensions", () => {
     await repo.run("DELETE FROM jobs");
     const id = await repo.enqueueJob("retry_state_test", {});
     expect((await repo.retryJob(id))?.status).toBe("pending");
-    expect((await repo.claimNextJob())?.id).toBe(id);
+    const claimed = await repo.claimNextJob();
+    expect(claimed?.id).toBe(id);
     expect((await repo.retryJob(id))?.status).toBe("running");
-    await repo.completeJob(id, null);
+    await repo.completeJob(id, null, { runToken: claimed!.runToken });
     const done = await repo.retryJob(id);
     expect(done?.status).toBe("done");
   });
@@ -213,17 +220,135 @@ describe("Dashboard Repository & Search Extensions", () => {
   it("heartbeatJob 回报执行态：running 续期成功，取消后仍是 cancelling", async () => {
     await repo.run("DELETE FROM jobs");
     const id = await repo.enqueueJob("heartbeat_test", {});
-    await repo.claimNextJob();
+    const claimed = await repo.claimNextJob();
     const stale = Date.now() - 10 * 60 * 1000;
     await repo.run("UPDATE jobs SET updated_at = ? WHERE id = ?", [stale, id]);
     // running 上心跳回 "running"：续期成功且状态未变。
-    expect(await repo.heartbeatJob(id)).toBe("running");
+    expect(await repo.heartbeatJob(id, claimed!.runToken)).toBe("running");
     expect((await repo.getJob(id))?.updatedAt).toBeGreaterThan(stale);
 
     // 取消 running 的任务只会停在 cancelling（真 cancelled 要等 Runner 收尾写），
     // 而心跳口径覆盖 cancelling —— 收尾期间 updated_at 必须继续前进，
     // 否则 reaper 会在 handler 还没停手时就把任务重新排队，又造一次并发执行。
     await repo.cancelJob(id);
-    expect(await repo.heartbeatJob(id)).toBe("cancelling");
+    expect(await repo.heartbeatJob(id, claimed!.runToken)).toBe("cancelling");
+  });
+});
+
+describe("SQLite 维护写门禁", () => {
+  it("VACUUM、FTS optimize、checkpoint 在写事务挂起时排队，结束后独立执行", async () => {
+    const db = await openDb({ dialect: "sqlite", sqlitePath: ":memory:" });
+    const repo = new Repository(db);
+    const txStarted = deferred();
+    const releaseTx = deferred();
+    const tx = repo.withTransaction(async () => {
+      await repo.run("UPDATE sites SET title = title WHERE id = 'missing'");
+      txStarted.resolve();
+      await releaseTx.promise;
+      throw new Error("maintenance gate rollback");
+    });
+    await txStarted.promise;
+
+    let settled = 0;
+    const maintenance = [
+      repo.vacuumDatabase(),
+      repo.optimizeFts(),
+      repo.checkpointWal("passive"),
+    ].map((promise) => promise.then((result) => {
+      settled++;
+      return result;
+    }));
+
+    await new Promise((r) => setTimeout(r, 30));
+    expect(settled).toBe(0);
+
+    releaseTx.resolve();
+    await expect(tx).rejects.toThrow("maintenance gate rollback");
+    const results = await Promise.all(maintenance);
+    expect(results.every((result) => result.ok)).toBe(true);
+
+    // 三项维护都必须释放写门禁，后续普通写不能永久卡住。
+    await repo.run("CREATE TABLE maintenance_gate_probe (id INTEGER PRIMARY KEY)");
+    await db.close();
+  });
+
+  it("调用方事务内拒绝三项维护，不产生 VACUUM/optimize/checkpoint 写入", async () => {
+    const db = await openDb({ dialect: "sqlite", sqlitePath: ":memory:" });
+    const real = db.sqlite!;
+    const calls: string[] = [];
+    const sqlite = new Proxy(real, {
+      get(target, prop) {
+        if (prop === "exec") {
+          return (sql: string) => { calls.push(sql); return target.exec(sql); };
+        }
+        if (prop === "prepare") {
+          return (sql: string) => { calls.push(sql); return target.prepare(sql); };
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const repo = new Repository({ dialect: "sqlite", sqlite } as never);
+
+    await repo.withTransaction(async () => {
+      expect((await repo.vacuumDatabase()).ok).toBe(false);
+      expect((await repo.optimizeFts()).ok).toBe(false);
+      expect((await repo.checkpointWal("passive")).ok).toBe(false);
+    });
+
+    expect(calls.some((sql) => sql === "VACUUM")).toBe(false);
+    expect(calls.some((sql) => sql.includes("INSERT INTO sites_fts(sites_fts) VALUES('optimize')"))).toBe(false);
+    expect(calls.some((sql) => sql.includes("PRAGMA wal_checkpoint"))).toBe(false);
+    await db.close();
+  });
+
+  it("维护 SQL 失败后回滚独立事务并释放门禁，后续写入可继续", async () => {
+    const db = await openDb({ dialect: "sqlite", sqlitePath: ":memory:" });
+    const real = db.sqlite!;
+    real.exec("CREATE VIRTUAL TABLE sites_fts USING fts5(title)");
+    const sqlite = new Proxy(real, {
+      get(target, prop) {
+        if (prop === "exec") {
+          return (sql: string) => {
+            if (sql === "VACUUM" || sql.includes("VALUES('optimize')")) {
+              throw new Error("injected maintenance exec failure");
+            }
+            return target.exec(sql);
+          };
+        }
+        if (prop === "prepare") {
+          return (sql: string) => {
+            if (sql.includes("PRAGMA wal_checkpoint")) {
+              return { get: () => { throw new Error("injected checkpoint failure"); } };
+            }
+            return target.prepare(sql);
+          };
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const repo = new Repository({ dialect: "sqlite", sqlite } as never);
+
+    expect((await repo.vacuumDatabase()).ok).toBe(false);
+    expect((await repo.optimizeFts()).ok).toBe(false);
+    expect(real.inTransaction).toBe(false);
+    expect((await repo.checkpointWal("passive")).ok).toBe(false);
+    await repo.run("CREATE TABLE maintenance_failure_probe (id INTEGER PRIMARY KEY)");
+    await db.close();
+  });
+
+  it("PostgreSQL 维护保持 ANALYZE/空操作语义，不引入 SQLite 门禁", async () => {
+    const calls: string[] = [];
+    const db = {
+      dialect: "pg",
+      pg: { query: async (sql: string) => { calls.push(sql); return { rows: [], rowCount: 0 }; } },
+    } as never;
+    const repo = new Repository(db);
+
+    expect((await repo.vacuumDatabase()).ok).toBe(true);
+    expect((await repo.optimizeFts()).ok).toBe(true);
+    expect((await repo.checkpointWal("passive")).ok).toBe(true);
+    expect(calls).toEqual(["ANALYZE"]);
   });
 });

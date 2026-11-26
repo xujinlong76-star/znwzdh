@@ -42,6 +42,16 @@ export async function upsertOauthUser(repo: Repository, input: { id?: string; us
         [input.avatar ?? null, input.source ?? "github", String(row.id)],
       );
     }
+    // 历史行被 canonical provider 身份认领后，users.id 仍是旧 UUID。必须把
+    // “旧 id -> provider:providerId” 持久化，否则密码重置只能吊销 credentials:<uuid>，
+    // 真实 github:<providerId> 会话会继续有效。identity_aliases 已是双方言共享底座。
+    if (input.id && input.id !== String(row.id)) {
+      await repo.run(
+        `INSERT INTO identity_aliases (alias, canonical, created_at) VALUES (?,?,?)
+         ON CONFLICT (alias) DO UPDATE SET canonical = excluded.canonical`,
+        [String(row.id), input.id, Date.now()],
+      );
+    }
     const updated = (await repo.raw("SELECT * FROM users WHERE id = ?", [String(row.id)]))[0];
     if (!updated) throw new Error("更新用户后无法读回");
     return rowToUser(updated);
@@ -78,7 +88,7 @@ export async function upsertOauthUser(repo: Repository, input: { id?: string; us
     await insert(disambiguated, null);
     storedUsername = disambiguated;
   }
-  return { id, username: storedUsername, role: "user", email: storedEmail, avatar: input.avatar ?? null, source: input.source ?? "github", emailVerified: true };
+  return { id, username: storedUsername, role: "user", email: storedEmail, avatar: input.avatar ?? null, source: input.source ?? "github", emailVerified: true, passwordVersion: 0 };
 }
 
 export async function getUser(repo: Repository, idOrUsername: string): Promise<UserRecord | null> {
@@ -202,6 +212,48 @@ export async function findUserByIdentifier(
   return byName ? rowToUser(byName) : null;
 }
 
+/**
+ * 列出 users.id 及其全部已知会话身份别名。
+ *
+ * 包含 credentials:<裸 UUID>，并沿 identity_aliases 正向/反向跟随最多 5 跳
+ * （与 resolveIdentity 同口径，防环）。legacy OAuth 认领会写入 raw UUID ->
+ * github:<providerId>，因此重置可同时覆盖旧凭据身份与真实 OAuth 身份。
+ */
+export async function listUserIdentityAliases(repo: Repository, userId: string): Promise<string[]> {
+  const aliases = new Set<string>([userId]);
+  const addAlias = (value: string) => {
+    if (!value) return;
+    aliases.add(value);
+    if (!value.includes(":")) aliases.add("credentials:" + value);
+    if (value.startsWith("credentials:")) aliases.add(value.slice("credentials:".length));
+  };
+  addAlias(userId);
+  for (let depth = 0; depth < 5; depth++) {
+    const before = aliases.size;
+    for (const alias of [...aliases]) {
+      const rows = await repo.raw(
+        "SELECT alias, canonical FROM identity_aliases WHERE alias = ? OR canonical = ?",
+        [alias, alias],
+      );
+      for (const row of rows) {
+        addAlias(String(row.alias));
+        addAlias(String(row.canonical));
+      }
+    }
+    if (aliases.size === before) break;
+  }
+  return [...aliases];
+}
+
+/** 按会话身份查用户：兼容 raw UUID、credentials:<uuid> 与 legacy OAuth 别名。 */
+export async function findUserByIdentity(repo: Repository, identity: string): Promise<UserRecord | null> {
+  for (const alias of await listUserIdentityAliases(repo, identity)) {
+    const row = (await repo.raw("SELECT * FROM users WHERE id = ? LIMIT 1", [alias]))[0];
+    if (row) return rowToUser(row);
+  }
+  return null;
+}
+
 export type CreateUserResult =
   | { ok: true; user: UserRecord }
   | { ok: false; reason: "username_taken" | "email_taken" | "invalid_username" | "invalid_email" | "invalid_password" };
@@ -277,13 +329,15 @@ export async function verifyUserPassword(
     await verifyPassword(password, "scrypt$16384$8$1$AAAA$AAAA");
     return null;
   }
+  // 口令哈希与版本必须来自同一行快照。返回后若发生重置，version 仍是旧值；
+  // NextAuth 的 jwt/session 与 sessions/check 会拒绝该过期版本建立会话。
   const row = (
-    await repo.raw("SELECT password_hash FROM users WHERE id = ? LIMIT 1", [user.id])
+    await repo.raw("SELECT password_hash, password_version FROM users WHERE id = ? LIMIT 1", [user.id])
   )[0];
   const hash = row?.password_hash;
   if (!hash) return null;
   const ok = await verifyPassword(password, String(hash));
-  return ok ? user : null;
+  return ok ? { ...user, passwordVersion: Number(row.password_version ?? 0) } : null;
 }
 
 /** 更新密码（找回密码流程用）：先哈希再写，明文不落库 */
@@ -296,7 +350,7 @@ export async function updateUserPassword(
   if (pwError) return false;
   const passwordHash = await hashPassword(newPassword);
   const changes = await repo.runCount(
-    "UPDATE users SET password_hash = ? WHERE id = ?",
+    "UPDATE users SET password_hash = ?, password_version = password_version + 1 WHERE id = ?",
     [passwordHash, userId],
   );
   return changes > 0;

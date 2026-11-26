@@ -19,12 +19,16 @@ import {
   DEFAULT_UPSTREAM_TIMEOUT_MS,
   FORWARD_REQUEST_HEADERS,
   MAX_FORWARDED_FOR_ENTRIES,
+  UpstreamBodyTooLargeError,
   createDeadline,
+  decodeBody,
   isLongRunningPath,
   isNullBodyStatus,
   isStreamingContentType,
   isTextContentType,
+  limitResponseStream,
   pickResponseHeaders,
+  readBodyLimited,
   sanitizeForwardedFor,
   upstreamTimeoutMs,
 } from "../src/lib/hub-proxy";
@@ -35,6 +39,59 @@ const ROOT = resolve(HERE, "..");
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("BFF 响应与请求体字节上限", () => {
+  const streamOf = (...chunks: Uint8Array[]) => new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk)
+      controller.close()
+    },
+  });
+
+  it("按累计字节而非字符数拒绝 chunked 请求体", async () => {
+    const bytes = new TextEncoder().encode("中");
+    expect(bytes.byteLength).toBe(3);
+    await expect(readBodyLimited(streamOf(bytes), 2)).rejects.toBeInstanceOf(UpstreamBodyTooLargeError);
+  });
+
+  it("content-length 超限时在读取前拒绝", async () => {
+    const body = new ReadableStream<Uint8Array>();
+    await expect(readBodyLimited(body, 4, new Headers({ "content-length": "5" }))).rejects.toBeInstanceOf(UpstreamBodyTooLargeError);
+    expect(body.locked).toBe(false);
+  });
+
+  it("普通响应有界读取并保留 UTF-8 解码", async () => {
+    const bytes = await readBodyLimited(streamOf(new TextEncoder().encode("你"), new TextEncoder().encode("好")), 6);
+    expect(decodeBody(bytes)).toBe("你好");
+  });
+
+  it("SSE 有界透传，超限后下游报错且上游被取消", async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2]));
+        controller.enqueue(new Uint8Array([3, 4]));
+      },
+      cancel() { cancelled = true; },
+    });
+    const limited = limitResponseStream(body, 3).getReader();
+    expect((await limited.read()).value).toEqual(new Uint8Array([1, 2]));
+    await expect(limited.read()).rejects.toBeInstanceOf(UpstreamBodyTooLargeError);
+    expect(cancelled).toBe(true);
+  });
+
+  it("两个 BFF 路由都接入请求体与响应体有界读取", () => {
+    const hub = readFileSync(resolve(ROOT, "src/app/api/hub/[...path]/route.ts"), "utf8");
+    const me = readFileSync(resolve(ROOT, "src/app/api/me/[[...path]]/route.ts"), "utf8");
+    for (const src of [hub, me]) {
+      expect(src).toContain("readBodyLimited(request.body");
+      expect(src).not.toContain("request.text()");
+      expect(src).not.toContain("upstream.text()");
+      expect(src).not.toContain("upstream.arrayBuffer()");
+    }
+    expect(hub).toContain("limitResponseStream(upstream.body");
+  });
 });
 
 describe("upstreamTimeoutMs", () => {

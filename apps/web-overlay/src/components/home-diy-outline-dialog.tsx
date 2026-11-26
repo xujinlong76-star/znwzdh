@@ -969,6 +969,7 @@ export function HomeDIYOutlineDialog({
                         type="button"
                         variant="outline"
                         size="sm"
+                        data-testid="trash-restore-btn"
                         onClick={() => handleRestoreTrashItem(item.id)}
                         className="h-7 px-2.5 text-xs rounded-lg gap-1 border-primary/40 text-primary hover:bg-primary/10 shrink-0"
                       >

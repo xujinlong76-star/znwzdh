@@ -25,7 +25,7 @@ const ModuleResizeHandles = dynamic(
   { ssr: false, loading: () => null },
 )
 import { useModuleWindowSize } from '@/lib/modular/module-resize-store'
-import { ChevronDown, Pin, Plus, Sparkles, Search, X, Link2, Network, Eye, EyeOff, RotateCcw, Check } from 'lucide-react'
+import { ChevronDown, GripVertical, Lock, Pin, Plus, SlidersHorizontal, Sparkles, Search, X, Link2, Network, Eye, EyeOff, RotateCcw, Check } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
   DropdownMenu,
@@ -37,10 +37,12 @@ import {
 import { cn } from '@/lib/utils'
 import {
   computeAdaptiveSiteRanking,
+  sortCategoryItemsWithOrder,
   sortCategoryItemsWithPinned,
 } from '@/lib/modular/diy-presets'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import type { CategoryRankingMode } from '@/lib/modular/home-diy-storage'
+import type { LayoutBlock } from '@/lib/modular/workspace-layout-v2'
 import { readVisitCounts, sortItemsByVisitFrequency, type VisitStats } from '@/lib/offline-recent'
 import { useHomeDiyGrid } from '@/lib/modular/use-home-diy-grid'
 import type { CardMoveDirection, DiyCardDragData } from '@/lib/modular/diy-drag'
@@ -106,6 +108,18 @@ export interface NavigationCategorySectionProps {
   initialSelectedSubCatId?: string | null
   /** 子分类标签切换回调（用于同步顶部聚焦面包屑与左侧栏激活态） */
   onSubCategoryChange?: (subCatId: string | null) => void
+  /** Phase 2：是否挂载在 12 列 Bento 自由画布内 */
+  embeddedInBento?: boolean
+  /** Phase 2：当前区块在当前断点下的 LayoutBlock 元数据 */
+  bentoBlock?: LayoutBlock
+  /** Phase 2：当前断点总列数（12 / 8 / 4） */
+  bentoTotalCols?: number
+  /** Phase 2：是否在区块属性检查器中被选中 */
+  isBlockSelected?: boolean
+  /** Phase 2：选中区块回调 */
+  onSelectBlock?: (blockId: string) => void
+  /** Phase 2：紧凑大纲态（手动全景模式或拖动高区块时的视觉紧凑态） */
+  isCompactOutline?: boolean
 }
 
 /**
@@ -185,6 +199,12 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   showCompleteContent = false,
   initialSelectedSubCatId = null,
   onSubCategoryChange,
+  embeddedInBento = false,
+  bentoBlock,
+  bentoTotalCols = 12,
+  isBlockSelected = false,
+  onSelectBlock,
+  isCompactOutline = false,
 }: NavigationCategorySectionProps) {
   const { toast } = useToast()
   const {
@@ -199,6 +219,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     categoryDensityOverrides,
     collapsedCategoryIds,
     pinnedSiteIdsByCategory,
+    siteOrderByCategory,
     togglePinSiteInCategory,
     toggleCollapseCategory,
     speedDialPinnedIds,
@@ -318,8 +339,16 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   const isMobileViewport = useIsMobileViewport()
   const isPinned = pinnedCategoryIds.includes(category.id)
   const isCustom = Boolean(category.isCustom)
-  const isCollapsed = collapsedCategoryIds.includes(category.id)
-  const rawCategoryCardMode = categoryDensityOverrides?.[category.id] || cardDisplayMode
+  const isCollapsed = Boolean(bentoBlock?.style?.collapsed) || collapsedCategoryIds.includes(category.id)
+  const bentoVariantMode: CardDisplayMode | undefined =
+    bentoBlock?.style?.cardVariant === 'capsule'
+      ? 'minimal'
+      : bentoBlock?.style?.cardVariant === 'compact'
+        ? 'compact'
+        : bentoBlock?.style?.cardVariant === 'icon-only'
+          ? 'icon-wall'
+          : undefined
+  const rawCategoryCardMode = bentoVariantMode || categoryDensityOverrides?.[category.id] || cardDisplayMode
   const normalizedCardMode = mounted
     ? resolveEffectiveViewMode(rawCategoryCardMode, isMobileViewport)
     : normalizeCardDisplayMode(rawCategoryCardMode)
@@ -365,12 +394,30 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
    *
    * 窄模块（DIY 里被拖窄到 moduleColSpan ≤ 9）仍强制减列防挤压，但同样走容器查询。
    */
+  const effectiveBentoColSpan = embeddedInBento && bentoBlock ? bentoBlock.w : moduleColSpan
+  const bentoInnerCols = bentoBlock?.style?.innerCols
+
   const effectiveGridClass = useMemo(() => {
-    if (normalizedCardMode === 'standard' && moduleColSpan > 9) {
+    if (typeof bentoInnerCols === 'number') {
+      const explicitCols: Record<number, string> = {
+        1: 'grid grid-cols-1 gap-3',
+        2: 'grid grid-cols-1 @[300px]:grid-cols-2 gap-3',
+        3: 'grid grid-cols-1 @[320px]:grid-cols-2 @[520px]:grid-cols-3 gap-3',
+        4: 'grid grid-cols-1 @[320px]:grid-cols-2 @[520px]:grid-cols-3 @[720px]:grid-cols-4 gap-3',
+        5: 'grid grid-cols-2 @[520px]:grid-cols-3 @[720px]:grid-cols-5 gap-3',
+        6: 'grid grid-cols-2 @[520px]:grid-cols-4 @[720px]:grid-cols-6 gap-2.5',
+      }
+      return explicitCols[bentoInnerCols] || explicitCols[3]
+    }
+    if (embeddedInBento && normalizedCardMode === 'standard') {
+      // Phase 2 模块 B：按当前 Bento 区块容器真实宽度自适应（<360px 1列、360–680px 2列、>680px 3–4列）
+      return 'grid grid-cols-1 @[360px]:grid-cols-2 @[680px]:grid-cols-3 @[960px]:grid-cols-4 gap-3'
+    }
+    if (normalizedCardMode === 'standard' && effectiveBentoColSpan > 9) {
       return CARD_GRID
     }
-    return getGridClassForCardMode(normalizedCardMode, moduleColSpan)
-  }, [normalizedCardMode, moduleColSpan])
+    return getGridClassForCardMode(normalizedCardMode, effectiveBentoColSpan)
+  }, [bentoInnerCols, embeddedInBento, normalizedCardMode, effectiveBentoColSpan])
 
   // 切换网址展示模式或模块列宽时容器物理宽度未变，ResizeObserver 不会触发；
   // 主动重算一次 data-grid-cols，保证预览张数立即按新列数切满整行。
@@ -433,10 +480,13 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
    * 悬停变化都会让本区块重渲染，这里若每帧重排整个分类（几十~上百条），
    * 主线程会被排序吃满，拖拽明显掉帧。
    */
-  const sortedDirectItems = useMemo(
-    () => sortCategoryItemsByMode(directItems, categoryPinnedItemIds, rankingMode, visitStats),
-    [directItems, categoryPinnedItemIds, rankingMode, visitStats]
-  )
+  const directCustomOrder = siteOrderByCategory?.[category.id]
+  const sortedDirectItems = useMemo(() => {
+    const base = sortCategoryItemsByMode(directItems, categoryPinnedItemIds, rankingMode, visitStats)
+    return directCustomOrder && directCustomOrder.length > 0
+      ? sortCategoryItemsWithOrder(base, directCustomOrder, categoryPinnedItemIds)
+      : base
+  }, [directItems, directCustomOrder, categoryPinnedItemIds, rankingMode, visitStats])
 
   /**
    * 选中态查找用 Set：`.includes()` 是 O(n)，而它对**每张卡片**都要跑一次，
@@ -449,16 +499,21 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     () =>
       subCats.map((subCategory) => {
         const subPinnedItemIds = pinnedSiteIdsByCategory[subCategory.id] || []
+        const subCustomOrder = siteOrderByCategory?.[subCategory.id]
         const subItems = ((subCategory.items || []) as NavigationSubItem[]).filter(
           (item) => bypassMaskTemporarily || !isSiteHidden(item.id)
         )
+        const base = sortCategoryItemsByMode(subItems, subPinnedItemIds, rankingMode, visitStats)
         return {
           subCategory,
           subPinnedItemIds,
-          sortedSubItems: sortCategoryItemsByMode(subItems, subPinnedItemIds, rankingMode, visitStats),
+          sortedSubItems:
+            subCustomOrder && subCustomOrder.length > 0
+              ? sortCategoryItemsWithOrder(base, subCustomOrder, subPinnedItemIds)
+              : base,
         }
       }),
-    [subCats, pinnedSiteIdsByCategory, rankingMode, visitStats, bypassMaskTemporarily, isSiteHidden]
+    [subCats, pinnedSiteIdsByCategory, siteOrderByCategory, rankingMode, visitStats, bypassMaskTemporarily, isSiteHidden]
   )
 
   /**
@@ -492,14 +547,21 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
   // 类目内秒级精准筛选状态
   const [filterKeyword, setFilterKeyword] = useState('')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
+  const defaultSubCatId = defaultSubCatIdFor(category)
   const [selectedSubCatId, setSelectedSubCatId] = useState<string | null>(
-    initialSelectedSubCatId ?? defaultSubCatIdFor(category),
+    initialSelectedSubCatId ?? defaultSubCatId,
   )
   const [isFilterOpen, setIsFilterOpen] = useState(false)
 
+  const prevCatIdRef = useRef(category.id)
+  const prevInitialSubRef = useRef(initialSelectedSubCatId)
   useEffect(() => {
-    setSelectedSubCatId(initialSelectedSubCatId ?? defaultSubCatIdFor(category))
-  }, [initialSelectedSubCatId, category])
+    if (prevCatIdRef.current !== category.id || prevInitialSubRef.current !== initialSelectedSubCatId) {
+      prevCatIdRef.current = category.id
+      prevInitialSubRef.current = initialSelectedSubCatId
+      setSelectedSubCatId(initialSelectedSubCatId ?? defaultSubCatId)
+    }
+  }, [category.id, initialSelectedSubCatId, defaultSubCatId])
 
   const handleSelectSubCat = useCallback(
     (nextSubCatId: string | null) => {
@@ -582,7 +644,10 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     }).filter((entry) => isEditingLayout || entry.filteredSubItems.length > 0)
   }, [sortedSubCategories, isFilterActive, matchesFilter, isEditingLayout])
 
-  const showDirectGroup = selectedSubCatId === null || selectedSubCatId === '__direct__'
+  const showDirectGroup =
+    selectedSubCatId === null ||
+    selectedSubCatId === '__direct__' ||
+    (isEditingLayout && sortedDirectItems.length > 0)
 
   const directGroup = useMemo(() => {
     const all = filteredDirectItems
@@ -778,7 +843,11 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
       href: item.href,
       description: item.description,
       icon: item.icon,
-      sourceCategoryId: opts.sourceCategoryId,
+      sourceCategoryId: category.id,
+      containerId: opts.sourceCategoryId,
+      index: opts.index,
+      displayedIds: opts.displayedIds,
+      isCustomContainer: isCustom,
     }
     return (
       <DiyDraggableCard key={item.id} data={dragData}>
@@ -826,13 +895,64 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     )
   }
 
+  // Phase 2 模块 D：紧凑大纲态（手动全景模式或拖动超过 260px 高区块时的无跳变紧凑胶囊呈现）
+  if (isCompactOutline && isEditingLayout) {
+    return (
+      <section
+        ref={sectionRef}
+        id={category.id}
+        data-bento-outline-card={category.id}
+        onClick={() => onSelectBlock?.(category.id)}
+        className={cn(
+          'js-block-drag-handle flex h-full min-h-[68px] items-center justify-between gap-2 rounded-xl border-2 px-3 py-2 cursor-grab active:cursor-grabbing transition-colors select-none',
+          isBlockSelected
+            ? 'border-primary bg-primary/10 ring-2 ring-primary/30 shadow-md'
+            : 'border-dashed border-primary/40 bg-card/90 hover:border-primary/70',
+        )}
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            data-testid="block-drag-handle"
+            data-bento-drag-handle={category.id}
+            className="inline-flex items-center justify-center shrink-0"
+          >
+            <GripVertical className="h-4 w-4 text-muted-foreground" />
+          </span>
+          <span
+            className={cn(
+              'h-4 w-1.5 shrink-0 rounded-full',
+              isCustom ? 'bg-emerald-500' : isPinned ? 'bg-amber-500' : 'bg-primary',
+            )}
+          />
+          <span className="truncate text-sm font-bold text-foreground">{category.title}</span>
+          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+            {totalCount} 站
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {bentoBlock?.locked && (
+            <Lock className="h-3.5 w-3.5 text-amber-700 dark:text-amber-300" aria-label="已锁定位置" />
+          )}
+          <span className="rounded-md bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-primary">
+            {bentoBlock?.w ?? 12}/{bentoTotalCols}
+          </span>
+        </div>
+      </section>
+    )
+  }
+
   const sectionClassName = cn(
     "cv-auto-section group relative scroll-m-16",
     isResizingSelf ? "transition-none! select-none!" : "transition-all duration-200",
-    sectionColSpanClass,
-    isModuleCustomSized && !isPinned && !isEditingLayout && "p-3 sm:p-4 rounded-2xl border border-border/70 bg-card/35 backdrop-blur-xs shadow-2xs",
+    !embeddedInBento && sectionColSpanClass,
+    embeddedInBento && "h-full",
+    isModuleCustomSized && !isPinned && !isEditingLayout && !embeddedInBento && "p-3 sm:p-4 rounded-2xl border border-border/70 bg-card/35 backdrop-blur-xs shadow-2xs",
+    embeddedInBento && !isEditingLayout && !isPinned && "p-3 sm:p-4 rounded-2xl border border-border/55 bg-card/45 backdrop-blur-xs",
     isPinned && "p-3 sm:p-4 rounded-2xl bg-primary/3 border border-primary/20 depth-surface",
-    isEditingLayout && "p-3 sm:p-4 rounded-2xl border-2 border-dashed border-primary/30 bg-muted/20",
+    isEditingLayout &&
+      (isBlockSelected
+        ? "p-3 sm:p-4 rounded-2xl border-2 border-primary bg-primary/[0.04] ring-2 ring-primary/25 shadow-md"
+        : "p-3 sm:p-4 rounded-2xl border-2 border-dashed border-primary/35 bg-muted/20"),
     isCategoryDropTarget && "ring-2 ring-emerald-500 bg-emerald-500/10 rounded-2xl border-emerald-500/60"
   )
 
@@ -851,8 +971,8 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
    */
   const sectionInner = (
     <>
-                      {/* 四向边框与双下角自由拖拉调整模块窗口大小手柄 */}
-                      {isEditingLayout && (
+                      {/* 四向边框与双下角自由拖拉调整模块窗口大小手柄（在 Phase 2 Bento 画布外才挂载） */}
+                      {isEditingLayout && !embeddedInBento && (
                         <ModuleResizeHandles
                           moduleRef={sectionRef}
                           colSpan={moduleColSpan}
@@ -897,9 +1017,31 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                       {/* 2026-11-21 首屏压缩：块内 spacing 4→2、标题行 pb-3 → pb-1.5、
                           标题字号 xl → lg、折叠按钮 44 → 28px（触摸热区靠 ::before 保住）。 */}
                       <div className="space-y-2">
-                        {/* 一级分类标题头 */}
-                        <div className="flex items-center justify-between pb-1 border-b border-border/50">
+                        {/* 一级分类标题头（Phase 1：flex-wrap 防 #tag 折字；Phase 2：js-block-drag-handle 严格隔离外层区块拖拽） */}
+                        <div
+                          className={cn(
+                            'flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 pb-1.5 border-b border-border/50',
+                            isEditingLayout && embeddedInBento && !bentoBlock?.locked && 'js-block-drag-handle cursor-grab active:cursor-grabbing select-none',
+                          )}
+                        >
                           <div className="flex items-center gap-2 flex-wrap">
+                            {isEditingLayout && embeddedInBento && (
+                              <span
+                                data-testid="block-drag-handle"
+                                data-bento-drag-handle={category.id}
+                                title={bentoBlock?.locked ? '该区块已锁定，请在属性面板解锁后拖动' : `按住拖动调整「${category.title}」在 12 列画布中的位置`}
+                                className={cn(
+                                  'js-block-drag-handle inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background/80 text-muted-foreground',
+                                  bentoBlock?.locked ? 'opacity-50 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing hover:border-primary/50 hover:text-primary',
+                                )}
+                              >
+                                {bentoBlock?.locked ? (
+                                  <Lock className="h-3.5 w-3.5 text-amber-700 dark:text-amber-300" />
+                                ) : (
+                                  <GripVertical className="h-3.5 w-3.5" />
+                                )}
+                              </span>
+                            )}
                             {/* 手风琴折叠展开按钮（单分类直达聚焦完整展示态不显示无意义的折叠按钮） */}
                             {!showCompleteContent && (
                               <button
@@ -942,29 +1084,19 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                 </span>
                               )}
                               {isCustom && (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 font-medium">
+                                <span className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300 border border-emerald-500/25 dark:border-emerald-400/35 font-medium">
                                   <Sparkles className="w-2.5 h-2.5" />
                                   <span>专属私人</span>
                                 </span>
                               )}
                             </h2>
-                            {/* P0-B（2026-11-26）：排序方式胶囊下拉——旧胶囊只在自适应开启时
-                                出现（bg-violet-500/10 + text-violet-700，11px 单色字在 /10 底
-                                上发灰难辨），现常驻为模式切换器。配色改低饱和描边样式：
-                                翠绿半透明底 bg-emerald-500/15 + 高亮文字 text-emerald-800 /
-                                dark:text-emerald-300，实测对比度浅色 6.69:1、深色 10.35:1，
-                                均达 WCAG AA（4.5:1）；描边 border-emerald-600/40。
-                                三个选项全是已有排序（见文件头 sortCategoryItemsByMode 注释），
-                                「最新收录」无数据不设。
-                                位置注意：必须放在 h2 之外——category-section-link 守卫禁 h2 内
-                                出现 onClick（标题不得是折叠开关），下拉项的 onClick 在 h2 内
-                                会撞该守卫；放标题旁同行 flex 容器里，视觉同一行不变。 */}
+                            {/* P0-B（2026-11-26）：排序方式胶囊下拉——深色模式提亮至 dark:text-emerald-200 + dark:bg-emerald-500/20，确保 WCAG AA ≥ 4.5:1 且不折行 */}
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <button
                                   type="button"
                                   aria-label={`分类内排序方式：${RANKING_MODE_OPTIONS.find((o) => o.id === rankingMode)?.label ?? '站内综合'}，点击切换排序方式`}
-                                  className="inline-flex items-center gap-1 rounded-full border border-emerald-600/40 bg-emerald-500/15 px-2 py-0.5 text-[11px] font-mono font-medium text-emerald-800 hover:bg-emerald-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-emerald-300 cursor-pointer"
+                                  className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 rounded-full border border-emerald-600/40 dark:border-emerald-400/40 bg-emerald-500/15 dark:bg-emerald-500/20 px-2 py-0.5 text-[11px] font-mono font-medium text-emerald-800 hover:bg-emerald-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-emerald-200 cursor-pointer"
                                 >
                                   <Sparkles className="h-2.5 w-2.5" />
                                   <span>{RANKING_MODE_OPTIONS.find((o) => o.id === rankingMode)?.label ?? '站内综合'}</span>
@@ -1075,7 +1207,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                   role="toolbar"
                                   aria-label={`「${category.title}」热门标签筛选（←/→ 移动，回车切换）`}
                                   aria-orientation="horizontal"
-                                  className="hidden lg:flex items-center gap-1"
+                                  className="hidden lg:flex flex-wrap items-center gap-1"
                                   onKeyDown={(e) => {
                                     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'Home' && e.key !== 'End') return
                                     const chips = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button[data-tag-chip]'))
@@ -1102,11 +1234,12 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                         key={tag}
                                         type="button"
                                         data-tag-chip
+                                        data-testid="category-tag"
                                         tabIndex={index === Math.min(tagFocusIndex, categoryTopTags.length - 1) ? 0 : -1}
                                         onFocus={() => setTagFocusIndex(index)}
                                         onClick={() => setSelectedTag(isSelected ? null : tag)}
                                         className={cn(
-                                          "px-2 py-0.5 min-h-6 inline-flex items-center rounded-md text-[11px] font-medium transition-colors cursor-pointer",
+                                          "px-2 py-0.5 min-h-6 inline-flex items-center whitespace-nowrap shrink-0 rounded-md text-[11px] font-medium transition-colors cursor-pointer",
                                           isSelected
                                             ? "bg-primary text-primary-foreground shadow-2xs"
                                             : "bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
@@ -1182,8 +1315,30 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                             </div>
                           )}
 
-                          {/* 就地可视化排版控制器（置顶 / 上移 / 下移 / 隐藏） */}
-                          {isEditingLayout && (
+                          {/* 就地可视化排版控制器：Phase 2 Bento 画布下收拢进属性检查器，保持标题栏极简 */}
+                          {isEditingLayout && embeddedInBento && (
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                data-testid={`bento-inspect-${category.id}`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onSelectBlock?.(category.id)
+                                }}
+                                className={cn(
+                                  'inline-flex h-7 items-center gap-1 whitespace-nowrap shrink-0 rounded-lg border px-2 text-[11px] font-medium transition-colors cursor-pointer',
+                                  isBlockSelected
+                                    ? 'border-primary bg-primary text-primary-foreground shadow-xs'
+                                    : 'border-border/70 bg-background/90 text-foreground hover:border-primary/50 hover:text-primary',
+                                )}
+                                title={`配置「${category.title}」的列宽、高度、卡片形态与锁定状态`}
+                              >
+                                <SlidersHorizontal className="h-3 w-3" />
+                                <span className="font-mono">{bentoBlock?.w ?? 12}/{bentoTotalCols}</span>
+                              </button>
+                            </div>
+                          )}
+                          {isEditingLayout && !embeddedInBento && (
                             <CategoryInSituControls
                               categoryId={category.id}
                               title={category.title}
@@ -1199,19 +1354,20 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                           )}
                         </div>
 
-                        {/* 未折叠时渲染分类下挂载的站点和二级分类 */}
+                        {/* 未折叠时渲染分类下挂载的站点和二级分类（js-block-no-drag 严格隔离卡片区事件） */}
                         {!isCollapsed && (
                           <div
                             id={categoryContentId}
                             className={cn(
+                              'js-block-no-drag',
                               // 首屏露出冲 40%（2026-11-21）：组间距 space-y-4 -> space-y-2。
                               // 组 mt-2（8px）与 space-y 取大者折叠，16px 的 space-y
                               // 是行距下限；压到 8px 后行距 206 -> 198px，首访态
                               // 第 4 行也开始露头（此前首访 39.8% 仅差 0.2pp）。
                               "space-y-2",
-                              moduleHeightPx && "overflow-y-auto pr-1.5 custom-scrollbar"
+                              !embeddedInBento && moduleHeightPx && "overflow-y-auto pr-1.5 custom-scrollbar"
                             )}
-                            style={moduleHeightPx ? { maxHeight: `${moduleHeightPx}px` } : undefined}
+                            style={!embeddedInBento && moduleHeightPx ? { maxHeight: `${moduleHeightPx}px` } : undefined}
                           >
                             {/* 二级分类快速切换导航轨（仅在拥有多个子分类且未折叠时渲染）
                                 首屏瘦身：接入 HorizontalScrollFade（滚轮横滚、mask 渐隐、
@@ -1384,10 +1540,10 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                 // 实测 222 -> 198px，1920x911 下第 4 行开始露头。
                                 return (
                                   <div key={subCategory.id} id={subCategory.id} className="mt-2 space-y-2">
-                                    <div className="flex items-center justify-between pb-0.5 pt-1">
-                                      <div className="flex items-center gap-2">
-                                        <span className="w-[3px] h-3.5 rounded-full bg-gradient-to-b from-primary to-primary/50 shadow-2xs" />
-                                        <h3 className="text-xs font-semibold text-foreground/90 tracking-wider">
+                                    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 pb-0.5 pt-1">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className="w-[3px] h-3.5 shrink-0 rounded-full bg-gradient-to-b from-primary to-primary/50 shadow-2xs" />
+                                        <h3 className="text-xs font-semibold text-foreground/90 tracking-wider whitespace-nowrap">
                                           {subCategory.title}
                                         </h3>
                                         <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 rounded-full bg-muted/70 text-muted-foreground border border-border/40 leading-none">
@@ -1411,7 +1567,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                                   description: '已移入时间轴回收站，按 Ctrl/Cmd+Z 可立即撤销。',
                                                 })
                                               }}
-                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+                                              className="inline-flex items-center gap-1 whitespace-nowrap shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium text-rose-700 dark:text-rose-200 bg-rose-500/10 dark:bg-rose-500/20 hover:bg-rose-500/20 dark:hover:bg-rose-500/30 border border-rose-500/30 dark:border-rose-400/40 transition-colors cursor-pointer"
                                               title={`隐藏「${subCategory.title}」子分类（可随时在回收站还原）`}
                                             >
                                               <EyeOff className="w-3 h-3" />
@@ -1492,6 +1648,12 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
     </>
   )
 
+  // Phase 1 & 2 模块 D：4,500+ 站点视口外跳过布局/绘制（在 Bento 画布内由外层统一控制）
+  const sectionPerfStyle: React.CSSProperties | undefined =
+    !embeddedInBento && !isModuleCustomSized && !showCompleteContent && index >= 2
+      ? { contentVisibility: 'auto', containIntrinsicSize: 'auto 340px' }
+      : undefined
+
   if (isEditingLayout && dragKit) {
     const { DiyCategoryDropTarget } = dragKit
     return (
@@ -1500,6 +1662,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
         key={category.id}
         id={category.id}
         className={sectionClassName}
+        style={sectionPerfStyle}
       >
         <DiyCategoryDropTarget
           data={{ kind: 'category', categoryId: category.id, isCustom, title: category.title }}
@@ -1517,6 +1680,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
       key={category.id}
       id={category.id}
       className={sectionClassName}
+      style={sectionPerfStyle}
     >
       {sectionInner}
     </section>

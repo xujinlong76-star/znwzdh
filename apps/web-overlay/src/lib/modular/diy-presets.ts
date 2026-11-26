@@ -2,6 +2,7 @@
  * 首页次世代 DIY 可视化排版与分类编排纯算法 (Web 客户端运行时)
  */
 import { VALID_CARD_DISPLAY_MODES, type CardDisplayMode } from './card-display-modes'
+import { migrateLayoutToV2, type WorkspaceLayoutV2 } from './workspace-layout-v2'
 
 export interface CategoryLayoutOptions {
   categoryOrder?: string[]
@@ -126,6 +127,35 @@ export function sortCategoryItemsWithPinned<T extends { id: string }>(
     }
     return 0
   })
+}
+
+/**
+ * 3b. Phase 1 自由拖拽排序覆写（LayoutOverrides 视图解耦）：
+ * 优先按 `customOrder`（siteOrderByCategory[containerId]）的精确序号排布，
+ * 未记录的新增站点按既有 `sortCategoryItemsWithPinned` 稳定追加在后，绝不修改原始 Catalog。
+ */
+export function sortCategoryItemsWithOrder<T extends { id: string }>(
+  items: T[],
+  customOrder?: string[],
+  pinnedItemIds: string[] = [],
+): T[] {
+  if (!customOrder || customOrder.length === 0) {
+    return sortCategoryItemsWithPinned(items, pinnedItemIds)
+  }
+  const rankMap = new Map<string, number>()
+  for (let i = 0; i < customOrder.length; i += 1) {
+    const id = customOrder[i]
+    if (id && !rankMap.has(id)) rankMap.set(id, i)
+  }
+  const ordered: T[] = []
+  const remainder: T[] = []
+  for (const item of items) {
+    if (rankMap.has(item.id)) ordered.push(item)
+    else remainder.push(item)
+  }
+  ordered.sort((a, b) => (rankMap.get(a.id) ?? 0) - (rankMap.get(b.id) ?? 0))
+  const sortedRemainder = sortCategoryItemsWithPinned(remainder, pinnedItemIds)
+  return [...ordered, ...sortedRemainder]
 }
 
 /**
@@ -935,6 +965,54 @@ export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
       })()
     : []
 
+  const siteOrderByCategory = (() => {
+    const rawOrder = (raw as { siteOrderByCategory?: unknown }).siteOrderByCategory
+    if (typeof rawOrder !== 'object' || rawOrder === null || Array.isArray(rawOrder)) return {}
+    const out: Record<string, string[]> = {}
+    for (const [k, v] of Object.entries(rawOrder as Record<string, unknown>)) {
+      if (!isSafeIdKey(k) || !Array.isArray(v)) continue
+      const seen = new Set<string>()
+      const kept: string[] = []
+      for (const entry of v) {
+        if (typeof entry === 'string' && isSafeIdKey(entry) && !seen.has(entry)) {
+          seen.add(entry)
+          kept.push(entry)
+          if (kept.length >= 500) break
+        }
+      }
+      if (kept.length > 0) out[k] = kept
+    }
+    return out
+  })()
+
+  const blockOverrides = (() => {
+    const rawBlocks = (raw as { blockOverrides?: unknown }).blockOverrides
+    if (typeof rawBlocks !== 'object' || rawBlocks === null || Array.isArray(rawBlocks)) return {}
+    const out: Record<string, { colSpan?: number; rowSpan?: number; order?: number }> = {}
+    for (const [k, v] of Object.entries(rawBlocks as Record<string, unknown>)) {
+      if (!isSafeIdKey(k) || typeof v !== 'object' || v === null || Array.isArray(v)) continue
+      const rec = v as { colSpan?: unknown; rowSpan?: unknown; order?: unknown }
+      const item: { colSpan?: number; rowSpan?: number; order?: number } = {}
+      if (typeof rec.colSpan === 'number' && Number.isFinite(rec.colSpan)) {
+        item.colSpan = Math.min(12, Math.max(1, Math.round(rec.colSpan)))
+      }
+      if (typeof rec.rowSpan === 'number' && Number.isFinite(rec.rowSpan)) {
+        item.rowSpan = Math.min(12, Math.max(1, Math.round(rec.rowSpan)))
+      }
+      if (typeof rec.order === 'number' && Number.isFinite(rec.order)) {
+        item.order = Math.max(0, Math.round(rec.order))
+      }
+      if (Object.keys(item).length > 0) out[k] = item
+    }
+    return out
+  })()
+
+  const workspaceLayoutV2: WorkspaceLayoutV2 | undefined = (() => {
+    const rawV2 = (raw as { workspaceLayoutV2?: unknown }).workspaceLayoutV2
+    if (!rawV2 || typeof rawV2 !== 'object' || Array.isArray(rawV2)) return undefined
+    return migrateLayoutToV2({ workspaceLayoutV2: rawV2, siteOrderByCategory, pinnedSiteIdsByCategory })
+  })()
+
   const cleaned = {
     version: 3,
     viewMode: validViewModes.includes(raw.viewMode) ? raw.viewMode : 'hybrid',
@@ -958,6 +1036,9 @@ export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
     hiddenCategoryIds: cleanIdList(raw.hiddenCategoryIds, ledger, '隐藏分类'),
     collapsedCategoryIds: cleanIdList(raw.collapsedCategoryIds, ledger, '折叠分类'),
     pinnedSiteIdsByCategory,
+    siteOrderByCategory,
+    blockOverrides,
+    ...(workspaceLayoutV2 ? { workspaceLayoutV2 } : {}),
     categoryDensityOverrides,
     speedDialEnabled: Boolean(raw.speedDialEnabled),
     speedDialPinnedIds: cleanIdList(raw.speedDialPinnedIds, ledger, '速览星标'),

@@ -7,7 +7,7 @@
  *   recompute_rank   重算全站热度分（trend_score）
  *   reindex          重建检索线索（拼音/FTS 由 updateSite 负责；向量按需重建）
  *
- * 单实例锁：lite 用 idempotency 表里的持久锁行（TTL 120s，崩溃自动释放），
+ * 单实例锁：lite 用主库之外的独立 SQLite 租约文件（TTL 120s，崩溃自动释放），
  * standard 用 PG advisory lock。两者都不持有长事务，不会阻塞正常读写。
  * 没有锁就跳过本次循环——多副本部署时只有一个实例在跑任务。
  *
@@ -18,16 +18,7 @@ import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { readFile, stat, unlink } from "node:fs/promises";
 import { canonicalizeUrl, CONSECUTIVE_FAILURES_THRESHOLD, runAutonomousHealing, planPatrol } from "@navhub/core";
-import {
-  bindSqlite,
-  toPgSql,
-  chunkList,
-  DEFAULT_RETENTION_TARGETS,
-  DEFAULT_ROLLUP_TARGETS,
-  runRetention,
-  runRollup,
-  type RetentionAdapter,
-} from "@navhub/store";
+import { chunkList } from "@navhub/store";
 import type { AppContext } from "./context.ts";
 import { assertRestoreStagingPath } from "./restore-staging.ts";
 import { indexSitesBatch } from "./index-site.ts";
@@ -47,6 +38,10 @@ import {
   handleDramaCalendarRefresh,
   handleDramaRankingsRefresh,
   handlePluginUrlHealth,
+  runRetentionMainPhase,
+  previewRetentionSideEffects,
+  applyRetentionSideEffects,
+  previewDataRetention,
 } from "./jobs/index.ts";
 
 export {
@@ -63,10 +58,12 @@ export {
   handleDramaCalendarRefresh,
   handleDramaRankingsRefresh,
   handlePluginUrlHealth,
+  previewDataRetention,
 };
 
 /** 仓储返回的站点行类型：显式取一次，避免重构期返回类型退化时回调参数变成隐式 any */
 type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
+type ClaimedJob = NonNullable<Awaited<ReturnType<AppContext["repo"]["claimNextJob"]>>>;
 
 /**
  * 连续失败达到该次数才把站点标为 broken。
@@ -269,9 +266,8 @@ export function jobEnqueueScope(kind: JobKind, payload: unknown): "write" | "adm
  */
 const RESTORE_STAGING_MAX_BYTES = 64 * 1024 * 1024;
 
-const LOCK_KEY = "lock:job-runner";
 /**
- * SQLite 持锁有效期（不是「任务预算」）：崩溃后最多等这么久，别的实例就能接管。
+ * SQLite 独立租约的有效期（不是「任务预算」）：崩溃后最多等这么久，别的实例就能接管。
  * 有效期内必须由心跳续期，否则跑过 TTL 的长任务会让锁被合法夺走。
  */
 const LOCK_TTL_MS = 120_000;
@@ -291,7 +287,8 @@ const PG_LOCK_KEY = 728_501_001;
 /** PG 独占连接（advisory lock 是会话级的：加锁与解锁必须在同一连接上） */
 interface PgLockClient {
   query(sql: string, params?: unknown[]): Promise<{ rows: unknown[]; rowCount: number | null }>;
-  release(): void;
+  /** 传 error 时 node-postgres 会销毁连接，而不是把仍持锁的会话归还池。 */
+  release(error?: unknown): void;
 }
 
 /** 失败重试的次数上限（含首次执行共 attempts 次机会后耗尽 → failed） */
@@ -348,7 +345,7 @@ export const HEALTH_CHECK_SAFETY_MARGIN_MS = 10_000;
 /**
  * health_check 的协作式截止时间（0 表示不设截止）。
  *
- * `runWithBudget` 只能让 Runner 脱身，handler 本身还在跑；分批巡检真正需要的
+ * `runWithBudget` 只能发出超时信号，handler 本身仍可能继续跑；分批巡检真正需要的
  * 是「在预算内主动停手，剩余顺延下一次」。余量必须覆盖最后一次抓取的最坏耗时
  * （fetch.timeoutMs），否则边界上仍会撞上外层硬预算。余量再按预算的 1/4 封顶，
  * 让很小的预算（测试）按比例缩小，不会算出早于起点的截止时间。
@@ -373,7 +370,9 @@ export type JobAbortReason =
   /** 用户取消：本进程的路由直接中止，或别的实例改了库里的状态（由任务心跳发现） */
   | "cancelled"
   /** 单次执行预算到点 */
-  | "budget";
+  | "budget"
+  /** Runner 租约/advisory lock 已丢失：旧执行体必须停手，不能继续与新 Runner 双跑 */
+  | "lock_lost";
 
 /**
  * 交给 handler 的执行句柄。
@@ -385,6 +384,7 @@ export type JobAbortReason =
  */
 export interface JobRunHandle {
   readonly jobId: string;
+  readonly runToken: string;
   readonly kind: JobKind;
   readonly signal: AbortSignal;
   /** 协作式截止时间（毫秒时间戳；0 = 不设截止） */
@@ -395,11 +395,16 @@ export interface JobRunHandle {
 
 interface InFlightRun {
   jobId: string;
+  runToken: string;
   kind: JobKind;
+  /** 只中止属于当前 Runner 的执行体；同进程可以存在多个不同 holder 的 Runner。 */
+  owner: symbol;
   controller: AbortController;
   startedAt: number;
   /** 已请求停手的原因；null = 还没人要求 */
   abortReason: JobAbortReason | null;
+  /** 锁丢失后先尝试落 cancelling，handler 结算前等待它，避免旧 Runner 抢写终态。 */
+  lockLossMarked: Promise<boolean> | null;
 }
 
 /**
@@ -411,6 +416,10 @@ interface InFlightRun {
  * 跨实例那一侧靠 `cancelling` 不被 `retryJob` 接受来兜（最坏等 reaper 的 15 分钟）。
  */
 const inFlightRuns = new Map<string, InFlightRun>();
+
+function inFlightKey(jobId: string, runToken: string): string {
+  return jobId + "\u0000" + runToken;
+}
 
 /** 执行中任务读数（/metrics 与管理端共用；不暴露 handler 内部对象） */
 export function inFlightRunsSnapshot(): Array<{ jobId: string; kind: string; runningMs: number; abortRequested: boolean }> {
@@ -425,7 +434,10 @@ export function inFlightRunsSnapshot(): Array<{ jobId: string; kind: string; run
 
 /** 本进程是否还在执行这个任务（含「已要求停手但 handler 未结算」的收尾窗口） */
 export function isJobInFlight(jobId: string): boolean {
-  return inFlightRuns.has(jobId);
+  for (const run of inFlightRuns.values()) {
+    if (run.jobId === jobId) return true;
+  }
+  return false;
 }
 
 /**
@@ -434,13 +446,16 @@ export function isJobInFlight(jobId: string): boolean {
  * 与库状态改写（`repo.cancelJob`）刻意分开：「别的实例按了取消」这条路径根本没有
  * 本地执行体可中止，它靠任务心跳读到 `cancelling` 后自行中止（见 process 里的心跳）。
  */
-export function requestJobAbort(jobId: string, reason: JobAbortReason): boolean {
-  const run = inFlightRuns.get(jobId);
-  if (!run) return false;
-  // 用户取消覆盖先前记录的原因：终态应是 cancelled 而不是 failed
-  if (reason === "cancelled" || run.abortReason === null) run.abortReason = reason;
-  run.controller.abort();
-  return true;
+export function requestJobAbort(jobId: string, reason: JobAbortReason, runToken?: string): boolean {
+  let matched = false;
+  for (const run of inFlightRuns.values()) {
+    if (run.jobId !== jobId || (runToken !== undefined && run.runToken !== runToken)) continue;
+    matched = true;
+    // 用户取消覆盖先前记录的原因：终态应是 cancelled 而不是 failed
+    if (reason === "cancelled" || run.abortReason === null) run.abortReason = reason;
+    run.controller.abort();
+  }
+  return matched;
 }
 
 /* --------------------------- 执行统计（/metrics 用） --------------------------- */
@@ -737,6 +752,7 @@ export class JobRunner {
   private intervalMs: number;
   private maxPerTick: number;
   private holder: string;
+  private readonly runnerId = Symbol("job-runner");
   private enableCron: boolean;
   private lockHeartbeatMs: number;
   private jobHeartbeatMs: number;
@@ -748,6 +764,8 @@ export class JobRunner {
   private cronChecking = false;
   private ticking = false;
   private lockHeld = false;
+  /** 同一时刻最多一个心跳在写队列中，避免长事务前堆积重复续期。 */
+  private lockRenewal: Promise<void> | null = null;
   /** 心跳发现锁已丢失（SQLite 被夺 / PG 连接断开）：本轮不再认领新任务 */
   private lockLost = false;
   /** PG advisory lock 持有期间独占的连接（解锁前不归还给池） */
@@ -758,7 +776,7 @@ export class JobRunner {
     this.ctx = ctx;
     this.intervalMs = opts.intervalMs ?? envInterval();
     this.maxPerTick = opts.maxPerTick ?? 10;
-    this.holder = opts.holder ?? "pid-" + process.pid;
+    this.holder = opts.holder ?? "runner-" + randomUUID();
     this.enableCron = opts.enableCron ?? false;
     this.lockHeartbeatMs = opts.lockHeartbeatMs ?? LOCK_HEARTBEAT_DEFAULT_MS;
     this.jobHeartbeatMs = opts.jobHeartbeatMs ?? JOB_HEARTBEAT_DEFAULT_MS;
@@ -774,8 +792,8 @@ export class JobRunner {
     this.taskRegistry.register("health_check", async ({ payload, run }) => {
       await this.runHealthCheck((payload ?? {}) as { siteId?: string; limit?: number }, run);
     });
-    this.taskRegistry.register("recompute_rank", async () => {
-      await this.runRecomputeRank();
+    this.taskRegistry.register("recompute_rank", async ({ run }) => {
+      await this.runRecomputeRank(run);
     });
     this.taskRegistry.register("refetch_metadata", async ({ payload }) => {
       await this.runRefetch((payload ?? {}) as { siteId?: string; llm?: boolean });
@@ -920,7 +938,7 @@ export class JobRunner {
       // health_check 默认巡检 100 个站点、串行抓取每次最长 10s，慢网络下轻松超过 120s。
       // TTL 一过，别的实例按 SQL 语义就是**合法**夺锁，于是两个实例同时跑同一批任务：
       // 重复抓取、重复写 health/rank、对目标站点翻倍施压。
-      // 续期语句带 `response = holder` 条件，锁真被夺走时只会 0 行命中，不会反向顶掉新持有者。
+      // 续期只匹配自己的 holder，锁真被夺走时不会反向顶掉新持有者。
       const heartbeat = setInterval(() => void this.renewLock(), this.lockHeartbeatMs);
       if (typeof heartbeat.unref === "function") heartbeat.unref();
       try {
@@ -966,7 +984,13 @@ export class JobRunner {
       if (this.lockLost || !this.lockHeld) break;
       const job = await this.ctx.repo.claimNextJob({ deferKinds: DEFERRED_KINDS });
       if (!job) break;
-      await this.process(job.kind as JobKind, job.payload, job.id, job.attempts);
+      // claim 是异步的：等待期间锁可能已被夺走。认领成功后要再检查一次，
+      // 不能把已经失去执行资格的 Runner 放进 handler。
+      if (!this.hasLock()) {
+        await this.returnClaimedJob(job);
+        break;
+      }
+      await this.process(job.kind as JobKind, job.payload, job.id, job.attempts, job.runToken);
       processed++;
       await this.relayNotificationsSafely();
       if (this.lockLost) break;
@@ -1002,8 +1026,12 @@ export class JobRunner {
                 remaining += 1;
                 break;
               }
+              if (!this.hasLock()) {
+                await this.returnClaimedJob(job);
+                break;
+              }
               processed += 1;
-              await this.process(job.kind as JobKind, job.payload, job.id, job.attempts);
+              await this.process(job.kind as JobKind, job.payload, job.id, job.attempts, job.runToken);
               await this.relayNotificationsSafely();
             }
           })(),
@@ -1012,6 +1040,28 @@ export class JobRunner {
     }
     await Promise.all(workers);
     return processed;
+  }
+
+  private hasLock(): boolean {
+    return this.lockHeld && !this.lockLost;
+  }
+
+  /**
+   * 认领后才发现锁丢失时，把尚未执行的 job 归还队列。
+   * attempts 条件很重要：reaper 可能已把旧行重新排队并被新 Runner 再次认领，
+   * 旧 Runner 不能仅凭 status='running' 就覆盖新执行体。
+   */
+  private async returnClaimedJob(job: ClaimedJob): Promise<void> {
+    try {
+      await this.ctx.repo.run(
+        "UPDATE jobs SET status = 'pending', attempts = attempts - 1, run_token = NULL, next_run_at = NULL, updated_at = ? " +
+          "WHERE id = ? AND status = 'running' AND attempts = ? AND run_token = ?",
+        [Date.now(), job.id, job.attempts, job.runToken],
+      );
+    } catch (err) {
+      // 归还失败由 reapStaleJobs 兜底；绝不能为了归还而覆盖新执行体。
+      console.warn("[navhub-job] 锁丢失后归还认领任务失败", { jobId: job.id, err });
+    }
   }
 
   /** 通知投递失败不应中断本轮任务消费：outbox 会在下一轮 tick 自动重试。 */
@@ -1052,7 +1102,6 @@ export class JobRunner {
 
   private async acquireLock(): Promise<boolean> {
     const db = this.ctx.db;
-    const now = Date.now();
     if (db.dialect === "pg") {
       // 关键：advisory lock 是会话级的。必须在独占连接上加锁并一直持有到解锁，
       // 否则 unlock 落到池里另一个连接上会静默失败（返回 false），锁残留到连接关闭，
@@ -1062,14 +1111,16 @@ export class JobRunner {
         if (typeof connect !== "function") return false;
         const client: PgLockClient = await connect.call(db.pg);
         let ok = false;
+        let lockError: unknown;
         try {
           const res = await client.query("SELECT pg_try_advisory_lock($1) AS ok", [PG_LOCK_KEY]);
           ok = Boolean((res.rows[0] as { ok: boolean } | undefined)?.ok);
-        } catch {
-          ok = false;
+        } catch (err) {
+          // 响应丢失时服务端可能已经加锁：必须销毁连接，不能正常回池。
+          lockError = err;
         }
         if (!ok) {
-          client.release();
+          client.release(lockError);
           return false;
         }
         this.pgClient = client;
@@ -1080,44 +1131,48 @@ export class JobRunner {
         return false;
       }
     }
-    // SQLite：持久锁行 + TTL（崩溃后 TTL 到期自动可抢，不会死锁）
+    // SQLite：独立 sidecar 租约 + TTL，既不排队主库写门禁，也不被主库长事务物理阻塞。
     try {
-      const stolen = await this.runCount(
-        "UPDATE idempotency SET response = ?, created_at = ? WHERE key = ? AND created_at < ?",
-        [this.holder, now, LOCK_KEY, now - LOCK_TTL_MS],
-      );
-      if (stolen > 0) { this.lockHeld = true; this.lockLost = false; return true; }
-      await this.run(
-        "INSERT INTO idempotency (key, response, created_at) VALUES (?,?,?)",
-        [LOCK_KEY, this.holder, now],
-      );
+      const acquired = await this.ctx.repo.acquireJobRunnerLease(this.holder, LOCK_TTL_MS);
+      if (!acquired) return false;
       this.lockHeld = true;
       this.lockLost = false;
       return true;
     } catch {
-      // 唯一键冲突 = 别的实例持有
       return false;
     }
   }
 
   private async releaseLock(): Promise<void> {
-    if (!this.lockHeld) return;
+    // 心跳可能仍在途：先等它结束，避免 PG 连接在查询未完成时被归还/销毁。
+    if (this.lockRenewal) {
+      try {
+        await this.lockRenewal;
+      } catch (err) {
+        // 心跳失败已经完成停手；释放阶段继续按旧 holder 条件清理租约。
+        console.warn("[navhub-job] 等待锁心跳结束时失败", { holder: this.holder, err });
+      }
+    }
+    // lockLost 时也要尝试条件释放；迟到旧 holder 删不掉新 holder 的租约。
+    if (!this.lockHeld && !this.lockLost) return;
     const db = this.ctx.db;
     try {
       if (db.dialect === "pg") {
-        // 在加锁的同一连接上解锁，再归还给池
+        // 在加锁的同一连接上解锁，再归还给池。
         const client = this.pgClient;
         this.pgClient = null;
         if (client) {
+          let unlockError: unknown;
           try {
             await client.query("SELECT pg_advisory_unlock($1)", [PG_LOCK_KEY]);
-          } catch {
-            // 解锁失败由会话结束兜底（连接归还后最终关闭时锁自动释放）
+          } catch (err) {
+            // 解锁失败时会话仍可能持锁；release(error) 让池销毁连接而不是复用。
+            unlockError = err;
           }
-          client.release();
+          client.release(unlockError);
         }
       } else {
-        await this.run("DELETE FROM idempotency WHERE key = ? AND response = ?", [LOCK_KEY, this.holder]);
+        await this.ctx.repo.releaseJobRunnerLease(this.holder);
       }
     } catch {
       // 释放失败等 TTL 自然过期
@@ -1125,52 +1180,80 @@ export class JobRunner {
     this.lockHeld = false;
   }
 
+  /** 同步停手：立即阻止新认领，并中止本 Runner 自己的所有执行体。 */
+  private markLockLost(): void {
+    this.lockLost = true;
+    this.lockHeld = false;
+    for (const entry of inFlightRuns.values()) {
+      if (entry.owner !== this.runnerId) continue;
+      if (entry.abortReason === null) entry.abortReason = "lock_lost";
+      if (!entry.lockLossMarked && typeof this.ctx.repo.markJobCancelling === "function") {
+        entry.lockLossMarked = this.ctx.repo
+          .markJobCancelling(entry.jobId, "JobRunner 锁已丢失，旧执行体正在停止", entry.runToken)
+          .catch((err: unknown) => {
+            console.warn("[navhub-job] 锁丢失后标记任务取消失败", { jobId: entry.jobId, err });
+            return false;
+          });
+      }
+      entry.controller.abort();
+    }
+  }
+
   /**
    * 锁心跳（tick 心跳调用）。
    *
-   * SQLite：只刷新**自己名下**的锁行。若 TTL 期间锁已被别的实例夺走，这里匹配 0 行，
-   * 立即标记 lockLost，本轮不再认领新任务——旧实现静默忽略，剩下的任务只是白跑。
+   * SQLite：独立 sidecar 租约按 holder 条件续期，不经过主库 Repository 写门禁。
+   * 若租约已被夺，续期命中 0 行，立即标记 lockLost 并中止当前 handler。
    *
    * PG：advisory lock 是会话级的，无需续期；但长任务期间连接可能被网络/服务端掐断，
    * 此时锁已随会话消失，另一实例可合法接管。心跳对独占连接做一次轻量查询，
-   * 失败即认定锁丢失，避免“以为还持锁”继续认领。
+   * 失败即认定锁丢失，并带错误销毁连接，避免坏会话回池。
    */
   private async renewLock(): Promise<void> {
-    if (!this.lockHeld) return;
+    if (!this.hasLock() || this.lockRenewal) return;
+    const renewal = this.performLockRenewal();
+    this.lockRenewal = renewal;
+    try {
+      await renewal;
+    } finally {
+      if (this.lockRenewal === renewal) this.lockRenewal = null;
+    }
+  }
+
+  private async performLockRenewal(): Promise<void> {
     if (this.ctx.db.dialect === "pg") {
       const client = this.pgClient;
       if (!client) {
-        this.lockLost = true;
-        this.lockHeld = false;
+        this.markLockLost();
         return;
       }
       try {
         await client.query("SELECT 1");
-      } catch {
-        this.lockLost = true;
-        this.lockHeld = false;
+      } catch (err) {
         this.pgClient = null;
-        try { client.release(); } catch { /* 坏连接由池丢弃 */ }
+        this.markLockLost();
+        try {
+          client.release(err);
+        } catch (releaseErr) {
+          // 原查询已失败，连接本就不可复用；记录释放异常后继续停手。
+          console.warn("[navhub-job] 释放失效 PostgreSQL 锁连接失败", { holder: this.holder, err: releaseErr });
+        }
       }
       return;
     }
     try {
-      const renewed = await this.runCount(
-        "UPDATE idempotency SET created_at = ? WHERE key = ? AND response = ?",
-        [Date.now(), LOCK_KEY, this.holder],
-      );
-      if (renewed === 0) {
-        this.lockLost = true;
-        this.lockHeld = false;
-      }
-    } catch {
-      // 续期失败不影响本轮（下一轮重新抢锁）
+      const renewed = await this.ctx.repo.renewJobRunnerLease(this.holder);
+      if (renewed === 0) this.markLockLost();
+    } catch (err) {
+      // 续期失败不能继续认领：宁可停一轮，也不能与合法新持有者双 Runner。
+      console.warn("[navhub-job] SQLite 租约续期失败", { holder: this.holder, err });
+      this.markLockLost();
     }
   }
 
   /* --------------------------- 任务执行 --------------------------- */
 
-  private async process(kind: JobKind, payload: unknown, jobId: string, attempts: number): Promise<void> {
+  private async process(kind: JobKind, payload: unknown, jobId: string, attempts: number, runToken: string): Promise<void> {
     jobEventBus.emitJobUpdate({
       jobId,
       kind,
@@ -1194,12 +1277,15 @@ export class JobRunner {
       typeof this.ctx.repo.heartbeatJob === "function"
         ? setInterval(() => {
             void this.ctx.repo
-              .heartbeatJob(jobId)
+              .heartbeatJob(jobId, runToken)
               .then((status) => {
                 // 非 running = 要么有人要求停手（cancelling），要么行已离开执行态（null）。
                 // 两者的收尾都是「让 handler 在下一个边界停」，区别只由库里当前状态决定：
                 // 真的收成 cancelled 需要行仍是 cancelling，被 reaper 改走时 CAS 自然不命中。
-                if (status !== "running") requestJobAbort(jobId, "cancelled");
+                const entry = inFlightRuns.get(inFlightKey(jobId, runToken));
+                if (status !== "running" && entry?.abortReason === null) {
+                  requestJobAbort(jobId, "cancelled", runToken);
+                }
               })
               .catch((err) => {
                 console.warn("[navhub-job] 任务心跳失败，锁可能已过期", { jobId, err });
@@ -1217,8 +1303,8 @@ export class JobRunner {
      * 单次执行预算（硬超时）。
      *
      * 旧实现只有声明值、从不执行：一个卡住的巡检会把整轮 tick 拖死，
-     * 后续任务全部排队（tick 是串行的）。这里用 Promise.race 在预算到点时
-     * 让 Runner 脱身；handler 本身没有 AbortSignal，可能仍在后台跑，
+     * 后续任务全部排队（tick 是串行）。这里用 Promise.race 在预算到点时
+     * 发出停手信号，并等待执行体真正结算；AbortSignal 不能强杀 JS，
      * 所以超时**不重试**（见 catch 里的 JobBudgetExceededError 分支），
      * 避免同一任务被两个执行流并发处理。
      */
@@ -1231,10 +1317,21 @@ export class JobRunner {
      * 未开始的不写，取消语义与「撤销」无关（这一点界面也必须这么说）。
      */
     const controller = new AbortController();
-    const entry: InFlightRun = { jobId, kind, controller, startedAt: attemptStartedAt, abortReason: null };
-    inFlightRuns.set(jobId, entry);
+    const entry: InFlightRun = {
+      jobId,
+      runToken,
+      kind,
+      owner: this.runnerId,
+      controller,
+      startedAt: attemptStartedAt,
+      abortReason: null,
+      lockLossMarked: null,
+    };
+    const key = inFlightKey(jobId, runToken);
+    inFlightRuns.set(key, entry);
     const run: JobRunHandle = {
       jobId,
+      runToken,
       kind,
       signal: controller.signal,
       deadlineAt:
@@ -1246,12 +1343,23 @@ export class JobRunner {
     };
     /**
      * 执行体结算 = 「handler 确认已停手」的唯一时点，所以收尾（cancelling → 终态）
-     * 挂在这里，而不是挂在 process 的 catch 上——预算到点时 catch 早就跑完了，
-     * 那一刻 handler 还在写数据，写终态就是审计报告说的「假取消」。
+     * 挂在这里，而不是挂在 process 的 catch 上——预算到点时 catch 只发出停手信号，
+     * 那一刻 handler 还可能继续写数据，提前写终态就是「假取消」。
      */
+    let settlement: Promise<void> = Promise.resolve();
     const settleRun = (): void => {
-      inFlightRuns.delete(jobId);
-      void this.finalizeAbortedRun(entry, attemptStartedAt, attempts).catch((err: unknown) => {
+      if (inFlightRuns.get(key) === entry) inFlightRuns.delete(key);
+      settlement = (async () => {
+        // 锁丢失路径先等 cancelling 落库，再收终态；避免完成回写与锁丢失标记竞争。
+        if (entry.lockLossMarked) {
+          await entry.lockLossMarked.catch((err: unknown) => {
+            // 取消失败不能阻止旧执行体收尾，但必须留下可诊断记录。
+            console.warn("[navhub-job] 等待锁丢失取消标记失败", { jobId, kind, err });
+            return false;
+          });
+        }
+        await this.finalizeAbortedRun(entry, attemptStartedAt, attempts);
+      })().catch((err: unknown) => {
         console.error("[navhub-job] 中止收尾失败", { jobId, kind, err });
       });
     };
@@ -1279,9 +1387,20 @@ export class JobRunner {
     try {
       await runWithBudget(execution, budgetMs, kind);
       executionCompleted = true;
+      if (entry.abortReason === "lock_lost") {
+        if (entry.lockLossMarked) {
+          await entry.lockLossMarked.catch((err: unknown) => {
+            // 取消失败不能阻止旧执行体收尾，但必须留下可诊断记录。
+            console.warn("[navhub-job] 等待锁丢失取消标记失败", { jobId, kind, err });
+            return false;
+          });
+        }
+        console.warn("[navhub-job] 锁已丢失，放弃旧执行体的完成回写", { jobId, kind });
+        return;
+      }
       const durationMs = Date.now() - attemptStartedAt;
       const applied = await this.ctx.repo.withTransaction(async () => {
-        const changed = await this.ctx.repo.completeJob(jobId, null, { durationMs });
+        const changed = await this.ctx.repo.completeJob(jobId, null, { durationMs, runToken });
         if (changed && kind === "data_retention") {
           const apply = (payload as DataRetentionPayload | null)?.apply === true;
           await this.ctx.repo.emitNotification({
@@ -1322,6 +1441,17 @@ export class JobRunner {
     } catch (err) {
       // 终态/通知持久化故障不能伪装成任务执行失败。
       if (executionCompleted) throw err;
+      if (entry.abortReason === "lock_lost") {
+        if (entry.lockLossMarked) {
+          await entry.lockLossMarked.catch((err: unknown) => {
+            // 取消失败不能阻止旧执行体收尾，但必须留下可诊断记录。
+            console.warn("[navhub-job] 等待锁丢失取消标记失败", { jobId, kind, err });
+            return false;
+          });
+        }
+        console.warn("[navhub-job] 锁已丢失，放弃旧执行体的失败回写", { jobId, kind });
+        return;
+      }
       const message = err instanceof Error ? err.message : String(err);
       /**
        * 超时与普通失败分开处理：
@@ -1336,11 +1466,14 @@ export class JobRunner {
       if (timedOut) {
         jobStatsOf(kind).timeouts += 1;
         console.warn("[navhub-job] 预算到点，请求停止", { jobId, kind, durationMs, error: message });
-        const marked = await this.ctx.repo.markJobCancelling(jobId, message).catch(() => {
+        // 先记录来源，再等待状态落库；执行体若恰好在这段等待中结算，
+        // 收尾也必须知道这是预算失败，不能误落 cancelled。
+        entry.abortReason = "budget";
+        const marked = await this.ctx.repo.markJobCancelling(jobId, message, runToken).catch(() => {
           // 尽力而为的附带操作：失败不影响主流程。
           return false;
         });
-        requestJobAbort(jobId, "budget");
+        requestJobAbort(jobId, "budget", runToken);
         if (marked) {
           jobEventBus.emitJobUpdate({
             jobId,
@@ -1352,7 +1485,22 @@ export class JobRunner {
             timestamp: Date.now(),
           });
         }
-        // 行已被用户取消(已是 cancelling)或 reaper 改走：原因与终态都归那条路径管
+        // AbortSignal 无法强杀 JS 执行体；在它真正结算前保留心跳与 in-flight 登记，
+        // 避免旧代次被误判僵尸后重新认领，或迟到写入覆盖新一代结果。
+        await execution.catch(() => {
+          // 失败已在主链路处理：预算中止的结论由上方 abortReason / markJobCancelling 落库，
+          // 这里只等执行体结算，防第二个未处理 rejection，不再记第二遍日志。
+        });
+        await settlement;
+        // 执行体可能在 markJobCancelling 等待期间恰好结算，首次收尾会因状态仍是
+        // running 而空过；标记落库后按同一 token 再收一次，CAS 保证不会重复终态。
+        const current = await this.ctx.repo.raw(
+          "SELECT status FROM jobs WHERE id = ? AND run_token = ?",
+          [jobId, runToken],
+        );
+        if (current[0]?.status === "cancelling") {
+          await this.finalizeAbortedRun(entry, attemptStartedAt, attempts);
+        }
         return;
       }
       const exhausted = attempts >= MAX_JOB_ATTEMPTS;
@@ -1361,7 +1509,7 @@ export class JobRunner {
         console.warn("[navhub-job] 长任务失败", { jobId, kind, durationMs, error: message });
       }
       const applied = await this.ctx.repo.withTransaction(async () => {
-        const changed = await this.ctx.repo.completeJob(jobId, message, { retryAt, exhausted, durationMs });
+        const changed = await this.ctx.repo.completeJob(jobId, message, { retryAt, exhausted, durationMs, runToken });
         if (changed && exhausted) {
           await this.ctx.repo.emitNotification({
             identity: ADMIN_NOTIFICATION_IDENTITY,
@@ -1414,15 +1562,14 @@ export class JobRunner {
    * 中止收尾：把 `cancelling` 收成真正的终态（`cancelled` / `failed`）。
    *
    * 调用时机是**执行体已结算**（`settleRun`），也就是 handler 已确认停手的那一刻。
-   * 这是整条状态机里唯一可靠的确认点：`process` 的 catch 在预算到点时就跑完了，
+   * 这是整条状态机里唯一可靠的确认点：`process` 的 catch 在预算到点时只发停手信号，
    * 而那一刻 handler 可能还在写数据——在那里写终态正是审计报告说的「假取消」
    * （界面显示已取消，库里还在变）。
    *
-   * 终态由中止原因决定，两者语义不同：
+   * 终态由中止原因决定，三种语义不同：
    *   - `cancelled`（用户按了取消）：是用户意图，收 `cancelled`，可 `retryJob`；
-   *   - `budget`（单次预算到点）：不是失败也不是用户意图，但本次执行确实没跑完，
-   *     且 budget 超时一律不自动重试（handler 可能仍在后台跑，立刻重试会并发执行），
-   *     因此收 `failed` —— 与 `runWithBudget` 超时分支落 failed 的口径保持一致。
+   *   - `budget`（单次预算到点）：本次执行确实没跑完且不自动重试，收 `failed`；
+   *   - `lock_lost`（Runner 锁丢失）：旧执行体必须停手且不能与新 Runner 双跑，收 `failed`。
    *
    * 写入走仓储的 `settleCancellingJob`（CAS 要求 `cancelling`）：若期间行已被 reaper
    * 改成 pending/failed、或已被别的实例接管，CAS 自然不命中，迟到的收尾不会覆盖
@@ -1443,34 +1590,38 @@ export class JobRunner {
      *   - `budget`：单次预算到点，本次确实没跑完且**不自动重试**（handler 可能仍在
      *     后台跑，立刻重试会并发执行），因此收 failed —— 与 `runWithBudget` 超时
      *     分支落 failed 的口径一致。
+     *   - `lock_lost`：旧 Runner 已失去执行资格，handler 停手后收 failed。
      *   - 无本地原因：见下面「为什么仍然要试一次」。
      */
     /**
-     * 两条写入路径（缺一不可）：
+     * 三条写入路径（缺一不可）：
      *  - 用户取消：路由/心跳调用 `requestJobAbort(..., "cancelled")`；
      *  - 预算超时：process 的 catch 先 `markJobCancelling` 再
      *    `requestJobAbort(..., "budget")`，**不再直接写 failed**——那一刻 handler
      *    可能还在写数据，写终态就是「假取消」。这里才是超时的终态出口。
+     *  - 锁丢失：`markLockLost` 先尽力落 cancelling，再中止 handler；结算后收 failed。
      */
-    const terminal: "cancelled" | "failed" = reason === "budget" ? "failed" : "cancelled";
+    const terminal: "cancelled" | "failed" = reason === "budget" || reason === "lock_lost" ? "failed" : "cancelled";
     const error =
       reason === "budget"
         ? "任务超出单次执行预算，执行体已在分片边界停手（不会自动重试）"
-        : "任务已被取消，执行体在分片边界停手";
+        : reason === "lock_lost"
+          ? "JobRunner 锁已丢失，旧执行体已停止（不会自动重试）"
+          : "任务已被取消，执行体在分片边界停手";
 
     /**
      * 写终态一律走 `settleCancellingJob`（CAS 要求 `cancelling`）而不是本地另写一条
      * UPDATE：那条 CAS 同时兜住「期间被 reaper 改成 pending/failed」与「已被别的实例
      * 接管」两种情况，迟到的收尾因此不可能覆盖别人的状态。
      *
-     * 为什么 `reason` 为空也要试一次：本地原因只在两条路上登记——路由/心跳调用
+     * 为什么 `reason` 为空也要试一次：本地原因只在路由/心跳取消等路径登记——
      * `requestJobAbort`。心跳是**间隔**触发的（`jobHeartbeatMs`），取消可能在两次心跳
      * 之间到达，于是 handler 已经因为「分片边界读到 cancelling」停手了，本地却还没
      * 登记原因。若这里直接 return，任务就永久停在 `cancelling`：既不被 claimNextJob
      * 认领、也不被 retryJob 接受，界面显示「正在收尾」永远不变——这就是另一种假取消。
      * 交给 CAS 判定即可：行不在 `cancelling`（正常结束、仍是 running）时自然不命中。
      */
-    const applied = await this.ctx.repo.settleCancellingJob(jobId, terminal, { error, durationMs });
+    const applied = await this.ctx.repo.settleCancellingJob(jobId, terminal, { error, durationMs, runToken: entry.runToken });
     if (applied) {
       // 与正常/失败路径同口径：计数与事件都要能看到「这次是被中止收掉的」，
       // 否则 /metrics 上取消的任务既不计 cancels 也不计 failures，凭空消失。
@@ -1478,7 +1629,8 @@ export class JobRunner {
       stats.runs += 1;
       stats.durationMsTotal += durationMs;
       if (terminal === "cancelled") stats.cancels += 1;
-      else stats.timeouts += 1;
+      else if (reason === "budget") stats.timeouts += 1;
+      else stats.failures += 1;
       jobEventBus.emitJobUpdate({
         jobId,
         kind,
@@ -1497,16 +1649,19 @@ export class JobRunner {
             idempotencyKey: `job:${jobId}:failed`,
             kind: kind === "backup_restore" ? "backup_failed" : "job_failed",
             title: kind === "backup_restore" ? "备份恢复任务失败" : `自动化任务失败：${kind}`,
-            body: `任务 ${jobId} 超出单次执行预算，已确认停止且不会自动重试。请到任务管理查看详情并决定是否重试。`,
+            body: reason === "lock_lost"
+              ? `任务 ${jobId} 因 JobRunner 锁丢失而停止，已确认不会自动重试。请到任务管理查看详情并决定是否重试。`
+              : `任务 ${jobId} 超出单次执行预算，已确认停止且不会自动重试。请到任务管理查看详情并决定是否重试。`,
           })
           .catch(() => {
             // 尽力而为的附带操作：失败不影响主流程。
           });
-        this.alert("任务 " + kind + " 超出单次执行预算，已确认停止（不会自动重试）", {
-          kind,
-          attempts,
-          error: String(error),
-        });
+        this.alert(
+          reason === "lock_lost"
+            ? "任务 " + kind + " 因 JobRunner 锁丢失而停止（不会自动重试）"
+            : "任务 " + kind + " 超出单次执行预算，已确认停止（不会自动重试）",
+          { kind, attempts, error: String(error) },
+        );
       }
     } else if (reason) {
       // 明确要求过停手却没写上：行已离开 cancelling（被 reaper 回收 / 已被接管 /
@@ -1602,8 +1757,8 @@ export class JobRunner {
   }
 
   /** 重算热度分：近 7 天点击 + 近 7 天收藏 − 年龄惩罚（委派给 tasks/rank-recompute.task.ts） */
-  private async runRecomputeRank(): Promise<void> {
-    return handleRecomputeRank(this.ctx);
+  private async runRecomputeRank(run?: JobRunHandle): Promise<void> {
+    return handleRecomputeRank(this.ctx, run);
   }
 
   private async runHotlistRefresh(): Promise<void> {
@@ -2015,9 +2170,12 @@ export class JobRunner {
        * 只读 `cancelled` 会让「已取消」在收尾前根本读不到，于是分片照写不误。
        */
       if (run.shouldStop()) return true;
-      const rows = await this.ctx.repo.raw("SELECT status FROM jobs WHERE id = ? LIMIT 1", [jobId]);
+      const rows = await this.ctx.repo.raw(
+        "SELECT status FROM jobs WHERE id = ? AND run_token = ? LIMIT 1",
+        [jobId, run.runToken],
+      );
       const status = String(rows[0]?.status ?? "");
-      return status === "cancelled" || status === "cancelling";
+      return !rows[0] || status === "cancelled" || status === "cancelling";
     };
     if (await isCancelled()) {
       console.info("[navhub-job] 恢复任务在执行前已被取消，未写入任何数据", { jobId });
@@ -2075,15 +2233,15 @@ export class JobRunner {
      * 但白跑几十秒没有意义，而且会让重试期间的用户看到进度从 100% 退回 0%。
      */
     const progressRows = await this.ctx.repo.raw(
-      "SELECT progress_done FROM jobs WHERE id = ? LIMIT 1",
-      [jobId],
+      "SELECT progress_done FROM jobs WHERE id = ? AND run_token = ? LIMIT 1",
+      [jobId, run.runToken],
     );
     const doneBefore = Math.max(0, Number(progressRows[0]?.progress_done ?? 0));
     const startIndex = Math.min(sites.length, doneBefore - (doneBefore % CHUNK));
 
     let processed = startIndex;
     // 先把 total 报上去：否则前端在第一批写完之前只能显示「正在准备恢复计划」
-    await this.ctx.repo.updateJobProgress(jobId, { done: processed, total: sites.length });
+    await this.ctx.repo.updateJobProgress(jobId, { done: processed, total: sites.length }, run.runToken);
 
     for (let i = startIndex; i < sites.length; i += CHUNK) {
       /**
@@ -2146,7 +2304,7 @@ export class JobRunner {
       // 进度记「已处理」而不是「已写入」：续跑要对齐分片边界，而实际写入数
       // 可能因去重略少于本片条数（并发插入或重放已提交分片时）。
       processed = i + slice.length;
-      await this.ctx.repo.updateJobProgress(jobId, { done: processed, total: sites.length });
+      await this.ctx.repo.updateJobProgress(jobId, { done: processed, total: sites.length }, run.runToken);
     }
 
     /**
@@ -2474,201 +2632,4 @@ export class JobRunner {
 
   /* --------------------------- 底层执行 --------------------------- */
 
-  /**
-   * 锁相关写语句**故意**直连数据库，不走 store 的写队列。
-   *
-   * 为什么不改成 ctx.repo.run/runCount（有回归测试兜底，见
-   * test/jobs-lock-heartbeat.test.ts）：Runner 收尾时会用 withTransaction 开事务
-   * （事务持写锁），而心跳 setInterval 与事务**不在同一条异步链**上——续期若也去
-   * 排写队列，就会被该事务挡住。一旦某个任务事务超过 LOCK_TTL_MS(120s)
-   * （reindex / data_retention 的预算是 600s），锁会被别的实例按「TTL 到期」合法
-   * 夺走，两个实例同时跑同一批任务。所以续期必须能"插队"直接写锁行。
-   * 代价：它可能落在他人事务的连接上（见 repository.ts 的 DbAccessGate）——
-   * 对"锁行存活"这一用途可接受（最坏是续期被回滚，锁提前过期，而非数据错乱）。
-   */
-  private async run(sqlText: string, params: unknown[]): Promise<void> {
-    const db = this.ctx.db;
-    if (db.dialect === "sqlite") {
-      db.sqlite!.prepare(sqlText).run(...bindSqlite([...params]));
-      return;
-    }
-    await db.pg!.query(toPgSql(sqlText), params);
-  }
-
-  private async runCount(sqlText: string, params: unknown[]): Promise<number> {
-    const db = this.ctx.db;
-    if (db.dialect === "sqlite") {
-      const info = db.sqlite!.prepare(sqlText).run(...bindSqlite([...params])) as { changes?: number };
-      return Number(info?.changes ?? 0);
-    }
-    const res = await db.pg!.query(toPgSql(sqlText), params);
-    return Number(res.rowCount ?? 0);
-  }
-}
-
-function createRetentionAdapter(ctx: AppContext): RetentionAdapter {
-  const db = ctx.db;
-  const isPg = db.dialect === 'pg';
-  return {
-    placeholder: (i: number) => (isPg ? '$' + i : '?'),
-    select: async (sql: string, params: readonly unknown[]) => {
-      if (isPg) {
-        const res = await db.pg!.query(sql, params as unknown[]);
-        return res.rows as never;
-      }
-      return db.sqlite!.prepare(sql).all(...(params as unknown[])) as never;
-    },
-    execute: async (sql: string, params: readonly unknown[]) => {
-      if (isPg) {
-        const res = await db.pg!.query(sql, params as unknown[]);
-        return Number(res.rowCount ?? 0);
-      }
-      const info = db.sqlite!.prepare(sql).run(...(params as unknown[])) as { changes?: number };
-      return Number(info?.changes ?? 0);
-    },
-  };
-}
-
-async function runRetentionMainPhase(
-  ctx: AppContext,
-  payload: DataRetentionPayload,
-  apply: boolean,
-): Promise<Record<string, unknown>> {
-  const adapter = createRetentionAdapter(ctx);
-  const mode = payload.mode === "cleanup" ? "cleanup" : "rollup";
-  if (mode === "rollup") {
-    const res = await runRollup(adapter, {
-      targets: DEFAULT_ROLLUP_TARGETS.map((target) => ({ spec: target.spec, keepDays: target.keepDays })),
-      dialect: ctx.db.dialect === "pg" ? "postgres" : "sqlite",
-      maxDaysPerRun: payload.maxDays ?? 30,
-      maxGroupsPerDay: payload.maxGroups ?? 5000,
-      dryRun: !apply,
-    });
-    return {
-      mode,
-      apply,
-      days: res.tables.map((table) => table.days),
-      groups: res.tables.reduce((sum, table) => sum + table.groups, 0),
-      rows: res.tables.reduce((sum, table) => sum + table.rows, 0),
-      deleted: res.tables.reduce((sum, table) => sum + table.deleted, 0),
-      skippedDays: res.tables.reduce((sum, table) => sum + table.skippedDays, 0),
-      truncated: res.tables.map((table) => table.truncated),
-    };
-  }
-
-  const res = await runRetention(adapter, {
-    targets: DEFAULT_RETENTION_TARGETS,
-    maxScan: payload.maxScan ?? 200_000,
-    dryRun: true,
-  });
-  return {
-    mode,
-    apply: false,
-    reason: "cleanup 在任务里只做 dry-run，真正删除请用 CLI",
-    scanned: res.tables.reduce((sum, table) => sum + table.scanned, 0),
-    truncated: res.tables.map((table) => table.truncated),
-  };
-}
-
-async function previewRetentionSideEffects(
-  ctx: AppContext,
-  payload: DataRetentionPayload,
-): Promise<Record<string, unknown>> {
-  const adapter = createRetentionAdapter(ctx);
-  const telemetryDays = Math.max(1, payload.telemetryDays ?? 90);
-  const since = Date.now() - telemetryDays * 86_400_000;
-  const health = await adapter.select(
-    `SELECT COUNT(*) AS count FROM health_checks WHERE checked_at < ${adapter.placeholder(1)}`,
-    [since],
-  );
-  const usage = await adapter.select(
-    `SELECT COUNT(*) AS count FROM llm_usage WHERE created_at < ${adapter.placeholder(1)}`,
-    [since],
-  );
-
-  let usersAffected = 0;
-  let rowsDeleted = 0;
-  try {
-    const custom = await ctx.repo.listCustomHistoryRetention();
-    const now = Date.now();
-    for (const { identity, retentionDays } of custom) {
-      const cutoff = now - retentionDays * 86_400_000;
-      const rows = await adapter.select(
-        `SELECT COUNT(*) AS count FROM search_history WHERE user_id = ${adapter.placeholder(1)} AND created_at < ${adapter.placeholder(2)}`,
-        [identity, cutoff],
-      );
-      const count = Number(rows[0]?.count ?? 0);
-      if (count > 0) {
-        usersAffected += 1;
-        rowsDeleted += count;
-      }
-    }
-    return {
-      telemetry: {
-        days: telemetryDays,
-        healthChecks: Number(health[0]?.count ?? 0),
-        llmUsage: Number(usage[0]?.count ?? 0),
-      },
-      userRetention: { usersAffected, rowsDeleted },
-    };
-  } catch (err) {
-    return {
-      telemetry: {
-        days: telemetryDays,
-        healthChecks: Number(health[0]?.count ?? 0),
-        llmUsage: Number(usage[0]?.count ?? 0),
-      },
-      userRetention: { error: String((err as Error)?.message ?? "unknown") },
-    };
-  }
-}
-
-async function applyRetentionSideEffects(
-  ctx: AppContext,
-  payload: DataRetentionPayload,
-): Promise<Record<string, unknown>> {
-  const telemetryDays = Math.max(1, payload.telemetryDays ?? 90);
-  const since = Date.now() - telemetryDays * 86_400_000;
-  const telemetry = {
-    days: telemetryDays,
-    healthChecks: await ctx.repo.pruneHealthChecks(since),
-    llmUsage: await ctx.repo.pruneLlmUsage(since),
-  };
-
-  try {
-    const custom = await ctx.repo.listCustomHistoryRetention();
-    let usersAffected = 0;
-    let rowsDeleted = 0;
-    const now = Date.now();
-    for (const { identity, retentionDays } of custom) {
-      const cutoff = now - retentionDays * 86_400_000;
-      const deleted = await ctx.repo.deleteSearchHistoryBefore(identity, cutoff);
-      if (deleted > 0) {
-        usersAffected += 1;
-        rowsDeleted += deleted;
-        await ctx.repo.audit({
-          actor: "system:data_retention",
-          actorKind: "system",
-          action: "user.search_history_expired",
-          target: identity,
-          diff: { retentionDays, deleted },
-        }).catch(() => {
-          // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
-        });
-      }
-    }
-    return { telemetry, userRetention: { usersAffected, rowsDeleted } };
-  } catch (err) {
-    return { telemetry, userRetention: { error: String((err as Error)?.message ?? "unknown") } };
-  }
-}
-
-export async function previewDataRetention(
-  ctx: AppContext,
-  payload: DataRetentionPayload = {},
-): Promise<Record<string, unknown>> {
-  const preview = { ...payload, apply: false };
-  const summary = await runRetentionMainPhase(ctx, preview, false);
-  Object.assign(summary, await previewRetentionSideEffects(ctx, preview));
-  return summary;
 }

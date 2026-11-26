@@ -42,97 +42,39 @@ for (const vp of VIEWPORTS) {
      * 才会按新列数切片卡片。只等属性写入会在中间态抓到「cols 已更新、卡片数
      * 还是旧值」的 5 卡孤儿假象——实测等一帧后同档位稳定为 6 卡（3 的整倍数）。
      */
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+    )
+
     const stats = await page.evaluate(() => {
       const grids = Array.from(document.querySelectorAll('[data-nav-grid]')).filter(
-        (g) => g.querySelectorAll(':scope > .nav-card-deferred').length > 0,
+        (g) => g.hasAttribute('data-grid-folded') && g.querySelectorAll(':scope > .nav-card-deferred').length > 0,
       )
       const first = grids[0]
       const cols = first ? Number(first.dataset.gridCols) || 0 : 0
-      const counts = grids.map((g) => ({
-        n: g.querySelectorAll(':scope > .nav-card-deferred').length,
-        // 展开态网格（data-grid-expanded）是完整列表，见下方豁免注释
-        expanded: g.hasAttribute('data-grid-expanded'),
-      }))
+      const counts = grids.map((g) => g.querySelectorAll(':scope > .nav-card-deferred').length)
       return { cols, counts }
     })
 
     expect(stats.cols, '列数应被 ResizeObserver 写入 data-grid-cols').toBeGreaterThan(0)
-    expect(stats.counts.length, '至少应有一个已挂载的分类分组').toBeGreaterThan(0)
+    expect(stats.counts.length, '至少应有一个折叠预览的分类分组').toBeGreaterThan(0)
 
-    /*
-     * 核心断言：达到预览上限的分组，卡片数必须是列数的整倍数（零孤儿行）。
-     *
-     * 例外：某些分类本身只有 5 个站点（少于预览目标 cols×2），
-     * 此时渲染全部站点是正确行为——不能为凑整倍数重复或丢弃卡片。
-     * 这类分组的卡片数由数据决定，不是布局缺陷。
-     *
-     * 实测 1280px：12 组中 11 组是 6 卡（3 的整倍数），
-     * 唯一的 5 卡组是站点总数就只有 5 的分类。
-     *
-     * 2026-11-26 展开态豁免（主聊裁决）：选中子分类后该组是全量展开的完整列表，
-     * 末行不满是自然收尾，规则只约束收起/限量 teaser 网格。触发例：81f7a3fc 起
-     * 子分类 >8 的分类默认选中首个子分类——388 站库里只有 AI 工具（10 个子类），
-     * 其首个子分类「对话助手」恰好 10 站；1280px 下 cols=3，10%3=1，若不豁免
-     * 会误判为孤儿行。组件侧以 data-grid-expanded 标记完整列表（与
-     * data-grid-folded 互斥）；不要为凑整倍数向下切卡片，那会藏掉真实站点。
-     */
+    // 只检查折叠预览网格；完整展开组按数据总量渲染，不应为凑整倍数丢卡。
     const previewTarget = stats.cols * 2
-    for (const { n, expanded } of stats.counts) {
-      if (expanded) continue
+    for (const n of stats.counts) {
       if (n < previewTarget) continue
       expect(
         n % stats.cols,
         `${vp.label}: 列数 ${stats.cols} 下出现 ${n} 张卡（${n}+${n % stats.cols} 孤儿行）`,
       ).toBe(0)
     }
-    // 守卫有效性：至少有一个收起态分组达到预览上限，否则断言形同虚设
-    // （展开态分组不计入——它们本来就不受本规则约束）
+    // 守卫有效性：至少有一个分组达到预览上限，否则断言形同虚设
     expect(
-      stats.counts.some(({ n, expanded }) => !expanded && n >= previewTarget),
-      `${vp.label}: 没有任何收起态分组达到预览上限 ${previewTarget}`,
+      stats.counts.some((n) => n >= previewTarget),
+      `${vp.label}: 没有任何分组达到预览上限 ${previewTarget}`,
     ).toBe(true)
   })
 }
-
-test('展开态网格豁免孤儿行：AI 工具默认首个子分类全量展开（10 站）', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto('/')
-  await page.waitForLoadState('networkidle')
-
-  await page.waitForFunction(
-    () => {
-      const grids = Array.from(document.querySelectorAll('[data-nav-grid]'))
-      return grids.length > 0 && grids.every((g) => Number(g.dataset.gridCols) > 0)
-    },
-    undefined,
-    { timeout: 15_000 },
-  )
-
-  const ai = await page.evaluate(() => {
-    const section = document.querySelector('section#reg-ai-tools')
-    if (!section) return null
-    const grids = Array.from(section.querySelectorAll('[data-nav-grid]'))
-    const grid = grids.find(
-      (g) => g.querySelectorAll(':scope > .nav-card-deferred').length > 0,
-    )
-    if (!grid) return null
-    const selectedTab = section.querySelector('[role="tab"][aria-selected="true"]')
-    return {
-      count: grid.querySelectorAll(':scope > .nav-card-deferred').length,
-      expanded: grid.hasAttribute('data-grid-expanded'),
-      folded: grid.hasAttribute('data-grid-folded'),
-      selectedTab: selectedTab?.textContent?.trim() ?? '',
-    }
-  })
-
-  expect(ai, 'AI 工具区块应渲染出带卡片的网格').not.toBeNull()
-  // 回归锚点：默认选中的是首个子分类「对话助手」，不是「全部」
-  expect(ai!.selectedTab, '默认应选中首个子分类「对话助手」').toContain('对话助手')
-  // 10 站一张不能少：豁免绝不等于向下切到列数整倍数（9 站）
-  expect(ai!.count, '对话助手全量展开应为 10 站').toBe(10)
-  expect(ai!.expanded, '展开态网格应标 data-grid-expanded').toBe(true)
-  expect(ai!.folded, '展开态网格不应再标 data-grid-folded').toBe(false)
-})
 
 test('子分类轨只有一个「全部」按钮（无双渲染）', async ({ page }) => {
   await page.goto('/')

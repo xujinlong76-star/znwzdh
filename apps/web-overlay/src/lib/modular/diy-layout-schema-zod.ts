@@ -92,6 +92,37 @@ export const LayoutSchema = z.object({
   hiddenCategoryIds: idListSchema,
   collapsedCategoryIds: idListSchema,
   pinnedSiteIdsByCategory: z.record(z.string(), z.array(z.unknown()).max(2000)).optional(),
+  siteOrderByCategory: z.record(z.string(), z.array(z.unknown()).max(2000)).optional(),
+  blockOverrides: z
+    .record(
+      z.string(),
+      z.object({
+        colSpan: z.number().int().min(1).max(12).optional(),
+        rowSpan: z.number().int().min(1).max(12).optional(),
+        order: z.number().int().min(0).optional(),
+      }),
+    )
+    .optional(),
+  workspaceLayoutV2: z
+    .object({
+      version: z.literal(2),
+      id: z.string().max(128),
+      name: z.string().max(128),
+      gridConfig: z.object({
+        columns: z.literal(12),
+        rowHeight: z.number().int().min(24).max(96),
+        gap: z.tuple([z.number().int().min(0).max(48), z.number().int().min(0).max(48)]),
+        compactType: z.enum(['vertical']).nullable(),
+      }),
+      breakpoints: z.object({
+        lg: z.array(z.unknown()).max(300),
+        md: z.array(z.unknown()).max(300),
+        sm: z.array(z.unknown()).max(300),
+      }),
+      blockOverrides: z.record(z.string(), z.unknown()).optional(),
+      trash: z.array(z.unknown()).max(500).optional(),
+    })
+    .optional(),
   customCategories: z.array(DiyCustomCategorySchema).max(1000).optional(),
   siteCategoryOverrides: z.record(z.string(), z.string().max(128)).optional(),
   categoryDensityOverrides: z

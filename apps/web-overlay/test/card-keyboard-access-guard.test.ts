@@ -47,8 +47,12 @@ describe('P0-3/P0-4 卡片键盘入口守卫', () => {
 
   it('漫游处理器挂在三处卡片根节点，不在底栏容器上（防同一按键处理两次）', () => {
     const src = card()
-    const roots = src.match(/onKeyDown=\{handleActionsKeyDown\}/g) || []
-    expect(roots.length).toBe(3)
+    // S2 迁移（2026-11-26）：标准档根节点经 SiteCard rootProps 传 onKeyDown（对象字面量），
+    // 紧凑/富卡仍是 JSX 属性——两种接线形态合计 3 处。
+    const roots =
+      (src.match(/onKeyDown=\{handleActionsKeyDown\}/g) ?? []).length +
+      (src.match(/onKeyDown: handleActionsKeyDown,/g) ?? []).length
+    expect(roots).toBe(3)
     // 底栏容器不再挂处理器
     expect(src).not.toContain(')}\n                onKeyDown={handleActionsKeyDown}\n              >')
     // 守卫：事件源不是 [data-card-action] 时直接返回（防与覆盖层 <a> 的 → 双重处理）

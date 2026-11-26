@@ -1,5 +1,5 @@
 
-import { mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, resolve, relative } from "node:path";
 import { walkAndCopy, pruneGeneratedDirs } from "./lib/walk-copy.mjs";
@@ -21,6 +21,26 @@ const REF = process.argv[2] || process.env.NAVSPHERE_REF || DEFAULT_REF;
 const API = { "User-Agent": "navhub" };
 
 console.log("[vendor] ref=" + REF);
+
+// 0) NavHub-owned config is copied as part of the overlay below. In a partial Docker
+// context the install-time apps/web/package.json may only be a placeholder; never let
+// upstream replace the real manifest. No extra download/overlay path is needed here.
+const OVERLAY = join(ROOT, "apps", "web-overlay");
+if (!existsSync(OVERLAY)) {
+  console.error("[vendor] overlay not found: " + OVERLAY);
+  process.exit(1);
+}
+const overlayManifest = JSON.parse(readFileSync(join(OVERLAY, "package.json"), "utf8"));
+const webManifestPath = join(TARGET, "package.json");
+const placeholderManifest = existsSync(webManifestPath)
+  ? JSON.parse(readFileSync(webManifestPath, "utf8"))
+  : null;
+const hasRealWebManifest = Boolean(placeholderManifest?.dependencies?.next);
+if (!hasRealWebManifest) {
+  mkdirSync(TARGET, { recursive: true });
+  writeFileSync(webManifestPath, JSON.stringify(overlayManifest, null, 2) + "\n");
+  console.log("[vendor] restored apps/web/package.json from overlay manifest");
+}
 
 // 1) upstream revision
 let sha = "unknown";
@@ -113,11 +133,6 @@ if (!inner) { console.error("[vendor] nothing extracted"); process.exit(1); }
 
 // 4) preserve NavHub-owned files: the whole overlay is applied AFTER the
 //    upstream copy, so overlay always wins (single source of truth).
-const OVERLAY = join(ROOT, "apps", "web-overlay");
-if (!existsSync(OVERLAY)) {
-  console.error("[vendor] overlay not found: " + OVERLAY);
-  process.exit(1);
-}
 
 // 4b) NavHub 自有文件清单：git 跟踪的 apps/web/*（即 overlay + package.json /
 // next.config.js 等手改文件）。上游 tarball 会覆盖这些同名文件——历史上曾把
@@ -146,8 +161,9 @@ try {
     }
   };
   walk(OVERLAY, TARGET);
-  ownedRelPaths.add("package.json");
-  ownedRelPaths.add("next.config.js");
+  for (const rel of ["package.json", "next.config.js", "tsconfig.json", "eslint.config.mjs", "postcss.config.js", "tailwind.config.js", "LICENSE"]) {
+    ownedRelPaths.add(rel);
+  }
   ownedRelPaths.delete("UPSTREAM.md");
 }
 
@@ -178,6 +194,8 @@ for (const rel of [
   "wrangler.toml",
   "vercel.json",
   "pnpm-lock.yaml",
+  "apps",
+  "packages",
   "README-CN.md",
   "README-EN.md",
   "doc",

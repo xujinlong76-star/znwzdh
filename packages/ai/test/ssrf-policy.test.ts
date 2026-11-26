@@ -9,6 +9,7 @@
  *   - `http://host:6379` 打内网 Redis → 危险端口必须拦。
  */
 import { describe, expect, it, afterAll, vi } from "vitest";
+import { createServer } from "node:http";
 import {
   DEFAULT_GUARD,
   SsrfBlockedError,
@@ -17,6 +18,7 @@ import {
   isBlockedIp,
   isBlockedIpv4,
   isBlockedIpv6,
+  isAlwaysBlockedIp,
   isTrustedHost,
   resolveAndCheck,
 } from "../src/ssrf.ts";
@@ -29,16 +31,26 @@ vi.mock("node:dns/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:dns/promises")>();
   return {
     ...actual,
-    lookup: (hostname: string, options?: unknown) =>
-      hostname.endsWith(".invalid")
-        ? Promise.reject(Object.assign(new Error("ENOTFOUND"), { code: "ENOTFOUND" }))
-        : actual.lookup(hostname, options as never),
+    lookup: (hostname: string, options?: unknown) => {
+      if (hostname.endsWith(".invalid")) {
+        return Promise.reject(Object.assign(new Error("ENOTFOUND"), { code: "ENOTFOUND" }));
+      }
+      // 私网放行回归使用受控 DNS 响应，不访问外网，也不改动 /etc/hosts。
+      if (["private.example.test", "mixed.example.test"].includes(hostname)) {
+        return Promise.resolve(answers.get(hostname) ?? []);
+      }
+      return actual.lookup(hostname, options as never);
+    },
   };
 });
+
+// allowPrivateNetworks 回归的受控 DNS 响应（普通私网/混合云元数据）。
+const answers = new Map<string, Array<{ address: string; family: number }>>();
 
 // mock 卫生（mock-hygiene 门禁）：isolate:false 下 vi.mock 会跨文件泄漏，
 // afterAll 里 resetModules 还原模块注册表，不把 node:dns 桩带给后续测试文件。
 afterAll(() => {
+  answers.clear();
   vi.resetModules();
 });
 
@@ -88,6 +100,9 @@ describe("IPv6 网段与内嵌 IPv4", () => {
     "::1",
     "::",
     "fe80::1", // 链路本地
+    "febf::1", // 链路本地上边界
+    "fec0::1", // 站点本地
+    "feff::1", // 站点本地上边界
     "fc00::1", // 唯一本地
     "fd12:3456::1", // 唯一本地
     "ff02::1", // 组播
@@ -108,6 +123,7 @@ describe("IPv6 网段与内嵌 IPv4", () => {
   it("公网 IPv6 不误杀", () => {
     expect(isBlockedIpv6("2606:4700:4700::1111")).toBe(false);
     expect(isBlockedIpv6("2a00:1450:4001:80f::200e")).toBe(false);
+    expect(isBlockedIpv6("fe7f::1")).toBe(false);
   });
 
   it("解析不了的串按 fail-closed 处理", () => {
@@ -154,6 +170,71 @@ describe("URL 形态：协议 / 凭证 / 危险端口", () => {
       expect((err as SsrfBlockedError).message).toContain("禁止访问该端口");
     }
   });
+});
+
+describe("allowPrivateNetworks 仍校验并钉扎 DNS 结果", () => {
+  it.each([
+    ["::1", false],
+    ["::", true],
+    ["fd00:ec2::254", true],
+    ["FD00:EC2:0:0:0:0:0:0254", true],
+    ["fe80:0:0:0:0:0:0:1", true],
+    ["::ffff:169.254.169.254", true],
+    ["::ffff:a9fe:a9fe", true],
+    ["::169.254.169.254", true],
+    ["::a9fe:a9fe", true],
+    ["64:ff9b::169.254.169.254", true],
+    ["64:ff9b::a9fe:a9fe", true],
+    ["64:ff9b:1::169.254.169.254", true],
+    ["64:ff9b:1::a9fe:a9fe", true],
+    ["64:ff9b::8.8.8.8", false],
+    ["::ffff:8.8.8.8", false],
+    ["fd12:3456::1", false],
+    ["not-an-ip", true],
+  ])("无条件封锁判定 %s = %s", (ip, blocked) => {
+    expect(isAlwaysBlockedIp(ip)).toBe(blocked);
+  });
+
+  it("字面私网 IP 返回可 pin 值，普通 IPv6 ULA 仍放行", async () => {
+    const opts = { ...DEFAULT_GUARD, allowPrivateNetworks: true };
+    await expect(resolveAndCheck(new URL("http://127.0.0.1/"), opts)).resolves.toEqual(["127.0.0.1"]);
+    await expect(resolveAndCheck(new URL("http://[fd12:3456::1]/"), opts)).resolves.toEqual(["fd12:3456::1"]);
+    await expect(resolveAndCheck(new URL("http://[fd00:ec2::254]/"), opts)).rejects.toMatchObject({
+      name: "SsrfBlockedError",
+      reason: "blocked-ip",
+    });
+    for (const ip of ["::a9fe:a9fe", "64:ff9b::a9fe:a9fe", "64:ff9b:1::a9fe:a9fe"]) {
+      await expect(resolveAndCheck(new URL(`http://[${ip}]/`), opts)).rejects.toMatchObject({
+        name: "SsrfBlockedError",
+        reason: "blocked-ip",
+      });
+    }
+  });
+
+  it("域名仍解析，全部普通私网结果通过并返回 pin 清单", async () => {
+    answers.set("private.example.test", [
+      { address: "127.0.0.1", family: 4 },
+      { address: "fd12:3456::1", family: 6 },
+    ]);
+    await expect(resolveAndCheck(new URL("http://private.example.test/"), {
+      ...DEFAULT_GUARD,
+      allowPrivateNetworks: true,
+    })).resolves.toEqual(["127.0.0.1", "fd12:3456::1"]);
+  });
+
+  it.each(["169.254.169.254", "fd00:ec2::254", "fe80::1"])(
+    "任一 DNS 结果命中 %s 即拒绝整个域名",
+    async (blocked) => {
+      answers.set("mixed.example.test", [
+        { address: "10.0.0.8", family: 4 },
+        { address: blocked, family: blocked.includes(":") ? 6 : 4 },
+      ]);
+      await expect(resolveAndCheck(new URL("http://mixed.example.test/"), {
+        ...DEFAULT_GUARD,
+        allowPrivateNetworks: true,
+      })).rejects.toMatchObject({ name: "SsrfBlockedError", reason: "blocked-ip" });
+    },
+  );
 });
 
 describe("trustedHosts 精确主机名白名单（U-284）", () => {
@@ -205,27 +286,25 @@ describe("trustedHosts 精确主机名白名单（U-284）", () => {
     ).rejects.toThrow(SsrfBlockedError);
   });
 
-  it("guardedFetch 全程走白名单：不做 DNS，桩 fetch 的响应照常返回", async () => {
-    let calledUrl = "";
-    const stub = vi.fn(async (input: unknown) => {
-      calledUrl = String(input);
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
+  it("guardedFetch 全程走白名单：不做 DNS-IP 校验，响应照常返回", async () => {
+    // 用 localhost 的精确白名单验证完整调用路径；命中后不执行 dns.lookup，
+    // 由 Node 按显式信任的主机名完成连接（不再依赖可被全局桩替换的 fetch）。
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
     });
-    vi.stubGlobal("fetch", stub);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const port = (server.address() as { port: number }).port;
     try {
-      const res = await guardedFetch("https://weibo.com/ajax/side/hotSearch", {
+      const res = await guardedFetch(`http://localhost:${port}/ajax/side/hotSearch`, {
         ...DEFAULT_GUARD,
-        trustedHosts: new Set(["weibo.com"]),
+        timeoutMs: 2000,
+        trustedHosts: new Set(["localhost"]),
       });
       expect(res.status).toBe(200);
       expect(res.body).toContain("ok");
-      expect(stub).toHaveBeenCalledTimes(1);
-      expect(calledUrl).toContain("weibo.com/ajax/side/hotSearch");
     } finally {
-      vi.unstubAllGlobals();
+      await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve()));
     }
   });
 

@@ -44,7 +44,7 @@ const CHAINS = [
   {
     id: "web-overlay-mirror",
     name: "overlay → apps/web 镜像",
-    fix: "node scripts/check-web-overlay.mjs --fix",
+    fix: "node scripts/generate-web-mirror.mjs",
     args: ["scripts/check-web-overlay.mjs"],
   },
 ];

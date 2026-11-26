@@ -61,9 +61,14 @@ describe('/sites 站点目录：失败 ≠ 截断 ≠ 空', () => {
   })
 
   it('头部计数：失败时不报「共收录 N 个」，截断时也不报总数', () => {
-    const headerAt = src.indexOf('{failed')
+    // 头部描述是「失败 / 截断 / 常态」三段式（2026-11-25 阶段 B 后收进 PageHeader 的
+    // description prop）：以三段式的第二分叉 `: truncated` 反向定位分叉条件 `failed`，
+    // 再切出失败分支——写法定位随重构走，口径不变：失败分支只能如实说「没取回」。
+    const truncatedAt = src.indexOf(': truncated')
+    expect(truncatedAt).toBeGreaterThan(-1)
+    const headerAt = src.lastIndexOf('failed', truncatedAt)
     expect(headerAt).toBeGreaterThan(-1)
-    const headerBlock = src.slice(headerAt, src.indexOf(': truncated'))
+    const headerBlock = src.slice(headerAt, truncatedAt)
     expect(headerBlock).toContain('目录数据这次没能从山羊胡中枢取回')
     expect(headerBlock).not.toContain('共收录')
     expect(src).toContain('已列出前')

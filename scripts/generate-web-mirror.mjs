@@ -2,20 +2,20 @@
  * 生成 apps/web 镜像（apps/web-overlay -> apps/web）。
  *
  * apps/web 现在是一个 GENERATED 产物，不再是手维护的双胞胎。
- * 跑 `pnpm mirror:web`（即本脚本）即可从唯一事实源 apps/web-overlay 重新生成，
- * check-web-overlay 的前向（overlay -> web 严格）漂移会被自动修复，闸门因此自愈
- * （见根 package.json 的 `check:overlay`：先本脚本再 check）。
+ * 跑 `pnpm mirror:web`（即本脚本）即可从唯一事实源 apps/web-overlay 重新生成。
+ * `check:overlay` / `check:generated` 是纯校验，不会调用本脚本、不会自动修复漂移；
+ * 需要修复时显式执行 `pnpm mirror:web` 后再复查。
  *
  * 语义：把 overlay 整棵树「合并式」拷贝进 apps/web —— overlay 的每个非排除文件逐文件
  * 覆盖 web 的同名文件；web 里「overlay 没有、属于上游底座（vendor 产物）」的文件
  * 一律保留，也不会删除 web 的任何文件。这样 apps/web 始终是「上游底座 + overlay 覆盖层」
  * 的可运行整体，且对 overlay 内容的拷贝是幂等的（跑两次无 diff）。
  *
- * 为什么是「合并式」而不是「清空重建」：apps/web 里那 300+ 个非 overlay 文件是上游
+ * 为什么是「合并式」而不是「清空重建」：apps/web 里有大量非 overlay 文件是上游
  * NavSphere 底座（next/react/字体/css…），它们本就是 vendor 进来的、不进 overlay，
  * 也不能由 overlay 派生；它们只能由 Docker / vendor-web 重新拉底座得到。把它们删掉会让
  * apps/web 变成不可运行的空壳。合并式拷贝只动「overlay 该管的那部分」，闸门只校验这部分，
- * 因此既自愈漂移、又不破坏本地可运行性，且对 overlay 内容严格 byte-identical。
+ * 因此能修复显式发起的漂移，又不破坏本地可运行性，且对 overlay 内容严格 byte-identical。
  *
  * 排除规则（与 check-web-overlay / overlay-drift 一致，避免两边口径分裂）：
  *   - overlay-drift 的 isExcluded：node_modules / .next / dist / .turbo / .cache / coverage /

@@ -7,18 +7,21 @@
  * 「模型推荐的 200 也可能是停放页」），只是那份实现留在 `routes/plugin-audit.ts` 里，
  * 普通站点享受不到 —— 现在两边共用 `src/candidate-probe.ts`。
  *
- * 全程不触网，两个通道各用一个 fetch 桩：
- *  - 大模型：`globalThis.fetch` 换成固定应答（与 `ai-config-api.test.ts` 同一手法）；
+ * 全程不触网，两个通道分别打桩：
+ *  - 大模型：`ctx.config.llm.fetchImpl` 注入固定应答（与 `ai-config-api.test.ts` 同一手法）；
  *  - 候选探活：URL 用**公网 IP 字面量**，`resolveAndCheck` 判完 IP 就放行、不需要 DNS，
- *    真正的响应同样来自这个桩（按路径分别返回 200 正常页 / 200 停放页 / 404）。
+ *    连接级 pinning 走 node:http，因此桩原生请求（按路径返回 200 正常页 / 200 停放页 / 404）。
  *  - 内网地址那条用例反过来用：它必须在 `resolveAndCheck` 就被拒绝，
- *    所以断言里明确要求「桩没有被拿 127.0.0.1 调过一次」。
+ *    所以断言里明确要求「原生请求桩没有被拿 127.0.0.1 调过一次」。
  *  - 探活缓存指向本用例临时文件：既不复用上一轮结论，也不污染开发栈的 data/probe-cache.json。
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
+import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
@@ -28,6 +31,7 @@ let ctx: AppContext;
 let app: Awaited<ReturnType<typeof buildServer>>;
 let brokenSiteId: string;
 const fetchCalls: string[] = [];
+const probeCalls: string[] = [];
 
 const OK_IP = "93.184.216.34";
 const PARKED_IP = "93.184.216.35";
@@ -54,30 +58,42 @@ function llmContent(items: Array<{ title: string; url: string }>) {
 }
 
 function stubFetch(llmBody: unknown) {
-  const original = globalThis.fetch;
+  const original = ctx.config.llm.fetchImpl;
   fetchCalls.length = 0;
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  probeCalls.length = 0;
+  ctx.config.llm.fetchImpl = (async (input: RequestInfo | URL) => {
     const url = String(input);
     fetchCalls.push(url);
-    if (url.includes("/chat/completions")) {
-      return new Response(JSON.stringify(llmBody), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.includes("/parked") || url.includes("/fallback-parked")) {
-      return new Response(PARKED_HTML, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
-    }
-    if (url.includes("gone")) {
-      return new Response("<html><body><p>no such page</p></body></html>", {
-        status: 404,
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-      });
-    }
-    return new Response(HEALTHY_HTML, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
+    return new Response(JSON.stringify(llmBody), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }) as typeof fetch;
+  const requestSpy = vi.spyOn(http, "request").mockImplementation(((options: Record<string, unknown>, callback: (res: unknown) => void) => {
+    const path = String(options.path);
+    const hostname = String(options.hostname);
+    probeCalls.push(`http://${hostname}${path}`);
+    const req = new EventEmitter() as EventEmitter & {
+      write: ReturnType<typeof vi.fn>;
+      end: ReturnType<typeof vi.fn>;
+      destroy: ReturnType<typeof vi.fn>;
+    };
+    req.write = vi.fn();
+    req.destroy = vi.fn();
+    req.end = vi.fn(() => {
+      const parked = path.includes("/parked") || path.includes("/fallback-parked");
+      const gone = path.includes("gone");
+      const res = PassThrough() as PassThrough & { statusCode: number; headers: Record<string, string> };
+      res.statusCode = gone ? 404 : 200;
+      res.headers = { "content-type": "text/html; charset=utf-8" };
+      callback(res);
+      res.end(parked ? PARKED_HTML : gone ? "<html><body><p>no such page</p></body></html>" : HEALTHY_HTML);
+    });
+    return req;
+  }) as unknown as typeof http.request);
   return () => {
-    globalThis.fetch = original;
+    requestSpy.mockRestore();
+    ctx.config.llm.fetchImpl = original;
   };
 }
 
@@ -178,7 +194,7 @@ describe("普通站点平替推荐：候选必须实测后再出现在列表里"
     expect(body.probe).toMatchObject({ checked: 3, verified: 1, unreachable: 2, inconclusive: 0, pending: 0, hasVerified: true });
     expect(body.probe.caveat).toContain("本机");
     // 三条都真发过探测请求（停放页与 404 页也各发一次），不是只探第一条
-    expect(fetchCalls.filter((u) => !u.includes("/chat/completions"))).toHaveLength(3);
+    expect(probeCalls).toHaveLength(3);
   });
 
   it("模型推荐内网地址：守卫拒绝探测并标注不可用，且一次都不碰内网", async () => {
@@ -192,8 +208,8 @@ describe("普通站点平替推荐：候选必须实测后再出现在列表里"
     expect(body.recommendations[0].verified).toBe(false);
     expect(body.recommendations[0].gradeReason).toContain("内网");
     expect(body.probe).toMatchObject({ checked: 1, verified: 0, unreachable: 1, hasVerified: false });
-    // 安全性硬证据：fetch 桩只被大模型调过一次，内网地址从未被真的请求
-    expect(fetchCalls.filter((u) => u.includes("127.0.0.1"))).toEqual([]);
+    // 安全性硬证据：fetch 桩只被大模型调过一次，内网地址从未进入原生请求层
+    expect(probeCalls.filter((u) => u.includes("127.0.0.1"))).toEqual([]);
     expect(fetchCalls.filter((u) => u.includes("/chat/completions"))).toHaveLength(1);
   });
 

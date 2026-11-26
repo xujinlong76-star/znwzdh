@@ -108,6 +108,34 @@ export async function signIdentityV2(
   return Array.from(new Uint8Array(signature), (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+export function identitySignaturePayloadV3(
+  identity: string,
+  ts: number,
+  nonce: string,
+  purpose: 'user' | 'anon',
+): string {
+  return JSON.stringify([identity, ts, nonce, purpose])
+}
+
+export async function signIdentityV3(
+  secret: string,
+  identity: string,
+  ts: number,
+  nonce: string,
+  purpose: 'user' | 'anon',
+): Promise<string> {
+  const enc = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const signature = await crypto.subtle.sign('HMAC', key, enc.encode(identitySignaturePayloadV3(identity, ts, nonce, purpose)))
+  return Array.from(new Uint8Array(signature), (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 /**
  * 生成一组身份签名头：v1（旧中枢只认它）+ v2 三件套（时间戳/nonce/新签名）。
  *
@@ -126,13 +154,16 @@ export async function identitySignatureHeaders(
 ): Promise<Record<string, string>> {
   const ts = Math.floor(now / 1000)
   const nonce = crypto.randomUUID().replace(/-/g, '')
-  const [legacy, v2] = await Promise.all([
+  const purpose = prefix === 'x-navhub-anon' ? 'anon' : 'user'
+  const [legacy, v2, v3] = await Promise.all([
     signIdentity(secret, identity),
     signIdentityV2(secret, identity, ts, nonce),
+    signIdentityV3(secret, identity, ts, nonce, purpose),
   ])
   return {
     [`${prefix}-signature`]: legacy,
     [`${prefix}-signature-v2`]: v2,
+    [`${prefix}-signature-v3`]: v3,
     [`${prefix}-ts`]: String(ts),
     [`${prefix}-nonce`]: nonce,
   }

@@ -59,9 +59,9 @@ async function seedSite(id: string, description = "用于验证读穿缓存") {
 
 /** 接管 /chat/completions：calls 记录被调用了几次，是「命中不打模型」的唯一硬证据 */
 function stubLlm(content: string | "boom") {
-  const original = globalThis.fetch;
+  const original = ctx.config.llm.fetchImpl;
   modelCalls = [];
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  ctx.config.llm.fetchImpl = (async (input: RequestInfo | URL) => {
     const url = String(input);
     // 非模型端点就地回空，不 fall through 到真实网络：桩主机是字面 IP，
     // 真发一次就是往公网地址发请求，成败取决于当天网络，测试结果也跟着抖。
@@ -76,7 +76,7 @@ function stubLlm(content: string | "boom") {
     );
   }) as typeof fetch;
   return () => {
-    globalThis.fetch = original;
+    ctx.config.llm.fetchImpl = original;
   };
 }
 

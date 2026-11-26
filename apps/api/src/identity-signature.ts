@@ -90,6 +90,26 @@ export function signIdentityV2(secret: string, identity: string, ts: number, non
   return createHmac("sha256", secret).update(identitySignaturePayload(identity, ts, nonce), "utf8").digest("hex");
 }
 
+/** v3 把身份用途纳入 MAC，防止匿名签名被改头迁移成登录身份。 */
+export function identitySignaturePayloadV3(
+  identity: string,
+  ts: number,
+  nonce: string,
+  purpose: IdentitySignaturePurpose,
+): string {
+  return JSON.stringify([identity, ts, nonce, purpose]);
+}
+
+export function signIdentityV3(
+  secret: string,
+  identity: string,
+  ts: number,
+  nonce: string,
+  purpose: IdentitySignaturePurpose,
+): string {
+  return createHmac("sha256", secret).update(identitySignaturePayloadV3(identity, ts, nonce, purpose), "utf8").digest("hex");
+}
+
 function macEquals(expectedHex: string, provided: string | undefined): boolean {
   const given = (provided ?? "").trim().toLowerCase();
   if (!given) return false;
@@ -159,13 +179,17 @@ export type IdentitySignatureFailure =
   | "malformed"
   | "stale"
   | "replay"
+  | "v3-invalid"
   | "v2-invalid"
   | "legacy-invalid"
   | "legacy-disabled";
 
+export type IdentitySignaturePurpose = "user" | "anon";
+
 export interface IdentitySignatureVerdict {
   ok: boolean;
-  mode?: "v2" | "legacy";
+  mode?: "v3" | "v2" | "legacy";
+  purpose?: IdentitySignaturePurpose;
   reason?: IdentitySignatureFailure;
 }
 
@@ -194,6 +218,7 @@ export function verifyIdentityHeaders(input: VerifyIdentityHeadersInput): Identi
   if (!secret || !identity) return { ok: false, reason: "missing" };
 
   const prefix = input.prefix ?? "x-navhub-identity";
+  const purpose: IdentitySignaturePurpose = input.prefix === "x-navhub-anon" ? "anon" : "user";
   const read = (suffix: string): string | undefined => {
     const key = prefix + suffix;
     const value = headers[key] ?? headers[key.toLowerCase()];
@@ -201,6 +226,30 @@ export function verifyIdentityHeaders(input: VerifyIdentityHeadersInput): Identi
     if (Array.isArray(value) && typeof value[0] === "string") return value[0];
     return undefined;
   };
+
+  const v3 = read("-signature-v3");
+  if (v3 !== undefined && v3.trim() !== "") {
+    const tsRaw = read("-ts");
+    const nonce = read("-nonce");
+    if (!tsRaw || !nonce) return { ok: false, reason: "malformed" };
+    const ts = Number(tsRaw);
+    if (!Number.isInteger(ts) || ts <= 0 || !NONCE_PATTERN.test(nonce)) {
+      return { ok: false, reason: "malformed" };
+    }
+    const nowMs = input.nowMs ?? Date.now();
+    const windowSeconds = input.windowSeconds ?? IDENTITY_SIGNATURE_WINDOW_SECONDS;
+    if (Math.abs(Math.floor(nowMs / 1000) - ts) > windowSeconds) {
+      return { ok: false, reason: "stale" };
+    }
+    if (!macEquals(signIdentityV3(secret, identity, ts, nonce, purpose), v3)) {
+      return { ok: false, reason: "v3-invalid" };
+    }
+    const guard = input.guard ?? defaultIdentityReplayGuard;
+    if (!guard.accept(v3.trim().toLowerCase(), nowMs, windowSeconds * 2 * 1000)) {
+      return { ok: false, reason: "replay" };
+    }
+    return { ok: true, mode: "v3", purpose };
+  }
 
   const v2 = read("-signature-v2");
   if (v2 !== undefined && v2.trim() !== "") {
@@ -227,12 +276,12 @@ export function verifyIdentityHeaders(input: VerifyIdentityHeadersInput): Identi
     if (!guard.accept(v2.trim().toLowerCase(), nowMs, windowSeconds * 2 * 1000)) {
       return { ok: false, reason: "replay" };
     }
-    return { ok: true, mode: "v2" };
+    return { ok: true, mode: "v2", purpose };
   }
 
   if (input.strict) return { ok: false, reason: "legacy-disabled" };
   if (verifyIdentitySignature(secret, identity, read("-signature"))) {
-    return { ok: true, mode: "legacy" };
+    return { ok: true, mode: "legacy", purpose };
   }
   return { ok: false, reason: "legacy-invalid" };
 }

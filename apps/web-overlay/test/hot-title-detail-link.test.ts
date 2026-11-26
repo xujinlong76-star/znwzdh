@@ -18,11 +18,10 @@ const code = readFileSync(SRC, 'utf8')
 
 describe('/hot 标题链进站内详情', () => {
   it('标题锚点是站内详情内链 /site/{id}，不是外链', () => {
-    const idx = code.indexOf('className="block min-w-0 flex-1"')
+    const idx = code.indexOf('href={`/site/${encodeURIComponent(site.id)}`}')
     expect(idx).toBeGreaterThan(-1)
-    const tag = code.slice(Math.max(0, idx - 200), idx)
-    expect(tag).toContain('<Link')
-    expect(tag).toContain('href={`/site/${encodeURIComponent(site.id)}`}')
+    const tag = code.slice(Math.max(0, idx - 200), code.indexOf('title={site.title}', idx))
+    expect(tag).toContain('<SiteCard')
     expect(tag).not.toContain('target="_blank"')
     expect(tag).not.toContain('safeHref(site.url)')
   })

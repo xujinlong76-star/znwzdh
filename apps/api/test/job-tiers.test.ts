@@ -94,6 +94,21 @@ async function enqueue(token: string, body: Record<string, unknown>) {
   });
 }
 
+async function jobAction(token: string, action: "cancel" | "retry", id: string) {
+  return authApp.inject({
+    method: "POST",
+    url: `/api/jobs/${id}/${action}`,
+    headers: { authorization: `Bearer ${token}` },
+  });
+}
+
+/** 直接构造历史任务，隔离入队接口，专测 retry/cancel 的实时动态判权。 */
+async function seedJob(kind: string, payload: unknown, status: "pending" | "failed"): Promise<string> {
+  const id = await authCtx.repo.enqueueJob(kind, payload);
+  await authCtx.repo.run("UPDATE jobs SET status = ? WHERE id = ?", [status, id]);
+  return id;
+}
+
 describe("开放模式：历史行为与 confirm 门槛", () => {
   it("常规任务匿名入队照旧可用", async () => {
     const res = await openApp.inject({
@@ -196,6 +211,62 @@ describe("鉴权模式：write 与 admin 的分界", () => {
       [jobId],
     )) as Array<{ action: string }>;
     expect(rows.map((row) => row.action)).toContain("job.enqueue_destructive");
+  });
+
+  it("write 令牌可取消/重试常规任务与 data_retention dry-run", async () => {
+    const jobs = [
+      { kind: "health_check", payload: { limit: 3 } },
+      { kind: "data_retention", payload: { mode: "rollup", apply: false } },
+    ];
+    for (const job of jobs) {
+      const cancelId = await seedJob(job.kind, job.payload, "pending");
+      const cancelled = await jobAction(writeToken, "cancel", cancelId);
+      expect(cancelled.statusCode, cancelled.body).toBe(200);
+      expect(cancelled.json().status).toBe("cancelled");
+
+      const retryId = await seedJob(job.kind, job.payload, "failed");
+      const retried = await jobAction(writeToken, "retry", retryId);
+      expect(retried.statusCode, retried.body).toBe(200);
+      expect(retried.json().job.status).toBe("pending");
+    }
+  });
+
+  it("admin 令牌可取消/重试破坏性任务", async () => {
+    const cancelId = await seedJob("purge_trash", { olderThanDays: 1 }, "pending");
+    const cancelled = await jobAction(adminToken, "cancel", cancelId);
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(cancelled.json().status).toBe("cancelled");
+
+    const retryId = await seedJob(
+      "data_retention",
+      { mode: "rollup", apply: true },
+      "failed",
+    );
+    const retried = await jobAction(adminToken, "retry", retryId);
+    expect(retried.statusCode, retried.body).toBe(200);
+    expect(retried.json().job.status).toBe("pending");
+  });
+
+  const destructiveJobs = [
+    { kind: "backup_restore", payload: { stagingPath: "plan.json" } },
+    { kind: "purge_trash", payload: { olderThanDays: 1 } },
+    { kind: "data_retention", payload: { mode: "rollup", apply: true } },
+  ];
+
+  it.each(destructiveJobs)("write 令牌不能取消 admin 任务 $kind，且状态不变", async (job) => {
+    const id = await seedJob(job.kind, job.payload, "pending");
+    const res = await jobAction(writeToken, "cancel", id);
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toContain("admin");
+    expect((await authCtx.repo.getJob(id))?.status).toBe("pending");
+  });
+
+  it.each(destructiveJobs)("write 令牌不能重试 admin 任务 $kind，且状态不变", async (job) => {
+    const id = await seedJob(job.kind, job.payload, "failed");
+    const res = await jobAction(writeToken, "retry", id);
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toContain("admin");
+    expect((await authCtx.repo.getJob(id))?.status).toBe("failed");
   });
 });
 

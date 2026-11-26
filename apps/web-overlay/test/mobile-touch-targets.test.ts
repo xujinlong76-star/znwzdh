@@ -68,10 +68,10 @@ describe('P1 #10 评审结论：底部导航已存在，不重建', () => {
     expect(src).toContain('unreadBadgeText')
   })
 
-  it('footer 为右下角浮坞预留 9rem/6rem 安全区（2026-11-26 抬升）', () => {
+  it('footer 为右下角浮坞预留 7rem/6rem 安全区（2026-11-22 抬升）', () => {
     const src = read('src/components/footer.tsx')
-    // 原 5.5rem/4.5rem 不够：右下浮坞（猫+回顶钮≈116px）会压住页脚链接，实测复现后抬到 7rem/6rem；2026-11-26 再修正：猫是独立 fixed 元素、移动端猫带顶沿 128px，7rem=112px 仍短 16px，移动端抬到 9rem
-expect(src).toContain('pb-[calc(9rem+env(safe-area-inset-bottom,0px))]')
+    // 原 5.5rem/4.5rem 不够：右下浮坞（猫+回顶钮≈116px）会压住页脚链接，实测复现后抬到 7rem/6rem
+expect(src).toContain('pb-[calc(7rem+env(safe-area-inset-bottom,0px))]')
 expect(src).toContain('lg:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]')
   })
 })
@@ -275,6 +275,30 @@ describe('P1 #10 触控目标：DIY 工具栏与触发器', () => {
   })
 })
 
+describe('P1 #10 触控目标：分类聚焦栏与设置开关', () => {
+  it('分类聚焦栏菜单/返回/展开/上下一类按钮自身具备 44px 粗指针热区', () => {
+    const src = read('src/components/navigation-content.tsx')
+    const start = src.indexOf('data-testid="focused-category-bar"')
+    const end = src.indexOf('data-testid="focused-quick-tools-drawer"', start)
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    const bar = src.slice(start, end)
+    // 外层 min-h-11 不会放大子按钮；五个控件必须各自声明粗指针最小尺寸。
+    expect(count(bar, 'pointer-coarse:min-h-11 pointer-coarse:min-w-11')).toBe(5)
+    expect(bar).toContain('aria-label="打开分类导航"')
+    expect(bar).toContain('返回全部')
+    expect(bar).toContain('data-testid="focused-tools-dropdown-toggle"')
+  })
+
+  it('设置页桌面小猫猫开关自身具备 44px 粗指针热区', () => {
+    const src = read('src/components/user-center/settings-panel.tsx')
+    const marker = src.indexOf('data-testid="settings-xiaomaomao-toggle"')
+    expect(marker).toBeGreaterThan(-1)
+    const openingTag = src.slice(src.lastIndexOf('<Button', marker), src.indexOf('>', marker))
+    expect(openingTag).toContain('pointer-coarse:min-h-11 pointer-coarse:min-w-11')
+  })
+})
+
 describe('P1 #10 触控目标：对话框与浮层', () => {
   it('add-site-dialog：选入该类与页脚按钮 44px', () => {
     const src = read('src/components/add-site-dialog.tsx')
@@ -321,8 +345,12 @@ describe('P1 #10 触控目标：对话框与浮层', () => {
 describe('P1 #10 触控目标：热榜页', () => {
   it('hot-view：筛选框/清空 ×/页签/密度/空态按钮 44px', () => {
     const src = read('src/app/hot/hot-view.tsx')
-    expect(src).toContain('w-full min-h-11 text-xs')
-    expect(src).toContain("after:absolute after:-inset-3.5 after:content-['']")
+    // 2026-11-25 阶段 B：榜单筛选框收进 FilterBar 原语——触控档（pointer-coarse 44px、
+    // 清空钮 ::after 扩 46px 热区）落在 filter-bar.tsx；hot-view 侧只钉「确实走原语」。
+    const bar = read('src/components/filter-bar.tsx')
+    expect(bar).toContain('pointer-coarse:min-h-11')
+    expect(bar).toContain("after:absolute after:-inset-3.5 after:content-['']")
+    expect(src).toContain('<FilterBar')
     expect(src).toContain('TabsList className="h-[3.25rem]')
     // 三处：访问量榜 / 最新入库榜 / 插件排行三个页签（插件 tab 新增的第三处）。
     expect(count(src, 'min-h-11 text-xs sm:text-sm gap-1.5 rounded-lg')).toBe(3)

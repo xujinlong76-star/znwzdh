@@ -1,9 +1,15 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { auth } from '@/lib/auth'
+import { readRequestSessionGovernance } from '@/lib/session-governance'
 import { hubIdentitySecret, identitySignatureHeaders, signIdentity } from '@/lib/identity-signature'
-import { buildPinnedHubUrl, guardedFetch, hubGuardOptions, SsrfBlockedError } from '@/lib/ssrf-guard'
-import { ANON_COOKIE, encodeAnonCookie, parseAnonCookie } from '@/lib/hub-identity-guard'
+import { ANON_COOKIE, parseAnonCookie } from '@/lib/hub-identity-guard'
 import { canonicalUserId, isAnonId } from '@/lib/me-identity'
+import {
+  MAX_UPSTREAM_RESPONSE_BYTES,
+  UpstreamBodyTooLargeError,
+  decodeBody,
+  readBodyLimited,
+} from '@/lib/hub-proxy'
 
 /**
  * 用户中心 BFF：/api/me 与 /api/me/*
@@ -27,7 +33,8 @@ const HUB_BASE = (
 ).replace(/\/+$/, '')
 
 const TIMEOUT_MS = 15_000
-/** 会话核对连续失败计数（P0-2）：读请求 fail-open 时仍要让连续失败可观测。 */
+const INTERNAL_TOKEN = (process.env.NAVHUB_INTERNAL_TOKEN ?? '').trim()
+/** 会话核对连续失败计数（P0-2）：任何已登录请求核对失败都 fail-closed。 */
 let sessionCheckFailStreak = 0
 /** body 上限 ~1MB，防止代理被超大请求体耗尽进程内存 */
 const MAX_BODY_BYTES = 1024 * 1024
@@ -44,6 +51,10 @@ function serviceToken(): string | undefined {
 
 type Ctx = { params: Promise<{ path?: string[] }> }
 
+async function readUpstream(response: Response): Promise<string> {
+  return decodeBody(await readBodyLimited(response.body, MAX_UPSTREAM_RESPONSE_BYTES, response.headers))
+}
+
 /** 会话治理（T8）：库与列表只认 sid 的 sha256，原始 sid 不出 Web 服务端 */
 async function hashSid(sid: string): Promise<string> {
   const { createHash } = await import('node:crypto')
@@ -56,8 +67,8 @@ async function currentUser() {
     | { id?: string; provider?: string; name?: string | null; email?: string | null; image?: string | null }
     | undefined
   // 会话治理（T8）：sid 用于设备吊销核对与会话活跃登记（只留在服务端）
-  const sessionSid = (session as { sessionSid?: string } | null)?.sessionSid
-  const sessionIssuedAt = (session as { sessionIssuedAt?: number } | null)?.sessionIssuedAt
+  const { sid: sessionSid, issuedAt: sessionIssuedAt, passwordVersion: sessionPasswordVersion } =
+    await readRequestSessionGovernance(session)
   const expires = Date.parse(String(session?.expires ?? ''))
   return {
     user,
@@ -65,11 +76,12 @@ async function currentUser() {
     sessionSid: typeof sessionSid === 'string' ? sessionSid : undefined,
     sessionExpiresAt: Number.isFinite(expires) && expires > 0 ? expires : undefined,
     sessionIssuedAt: typeof sessionIssuedAt === 'number' ? sessionIssuedAt : undefined,
+    sessionPasswordVersion: typeof sessionPasswordVersion === 'number' ? sessionPasswordVersion : undefined,
   }
 }
 
 async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
-  const { user, identity, sessionSid, sessionExpiresAt, sessionIssuedAt } = await currentUser()
+  const { user, identity, sessionSid, sessionExpiresAt, sessionIssuedAt, sessionPasswordVersion } = await currentUser()
   const path = ((await ctx.params).path ?? []).filter((p) => p && p !== '.' && p !== '..')
   const method = request.method.toUpperCase()
   if (!user || !identity) {
@@ -157,23 +169,19 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
   }
 
   const hasBody = method !== 'GET' && method !== 'HEAD'
+  let rawBody: string | undefined
   if (hasBody) {
-    const declared = Number(request.headers.get('content-length') ?? '')
-    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
-      return NextResponse.json(
-        { error: '请求体过大（上限 1MB）' },
-        { status: 413, headers: { 'cache-control': 'no-store' } },
-      )
+    try {
+      rawBody = decodeBody(await readBodyLimited(request.body, MAX_BODY_BYTES, request.headers))
+    } catch (error) {
+      if (error instanceof UpstreamBodyTooLargeError) {
+        return NextResponse.json(
+          { error: '请求体过大（上限 1MB）' },
+          { status: 413, headers: { 'cache-control': 'no-store' } },
+        )
+      }
+      throw error
     }
-  }
-
-  // 合并请求：除登录身份签名外，匿名 id 也要单独签名
-  const rawBody = hasBody ? await request.text() : undefined
-  if (rawBody && rawBody.length > MAX_BODY_BYTES) {
-    return NextResponse.json(
-      { error: '请求体过大（上限 1MB）' },
-      { status: 413, headers: { 'cache-control': 'no-store' } },
-    )
   }
 
   const headers: Record<string, string> = {
@@ -186,29 +194,24 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
   if (rawBody !== undefined) headers['content-type'] = 'application/json'
 
   const secret = hubIdentitySecret()
-  let pendingAnonCookie: string | null = null
   if (secret) {
     Object.assign(headers, await identitySignatureHeaders(secret, identity))
     if (path[0] === 'merge' && rawBody) {
       try {
         const parsed = JSON.parse(rawBody) as { anonId?: unknown }
         if (isAnonId(parsed.anonId)) {
-          // 匿名所有权校验：浏览器绑定的 HttpOnly cookie 必须与 body.anonId 一致。
-          // 没 cookie（老用户首次合并）按 TOFU 绑定；有 cookie 但不一致 → 401，
-          // 防共享设备/多账号把别人的匿名数据并进当前账号。
           const bound = parseAnonCookie(request.cookies.get(ANON_COOKIE)?.value)
-          if (bound) {
-            const expectedMac = await signIdentity(secret, bound.anonId)
-            if (bound.mac !== expectedMac || bound.anonId !== parsed.anonId) {
-              return NextResponse.json(
-                { error: '匿名身份与当前浏览器不一致，已拒绝合并' },
-                { status: 401, headers: { 'cache-control': 'no-store' } },
-              )
-            }
-          } else {
-            pendingAnonCookie = encodeAnonCookie(
-              parsed.anonId,
-              await signIdentity(secret, parsed.anonId),
+          if (!bound) {
+            return NextResponse.json(
+              { error: '缺少匿名身份绑定，请先在当前浏览器生成匿名数据后再合并' },
+              { status: 401, headers: { 'cache-control': 'no-store' } },
+            )
+          }
+          const expectedMac = await signIdentity(secret, bound.anonId)
+          if (bound.mac !== expectedMac || bound.anonId !== parsed.anonId) {
+            return NextResponse.json(
+              { error: '匿名身份与当前浏览器不一致，已拒绝合并' },
+              { status: 401, headers: { 'cache-control': 'no-store' } },
             )
           }
           Object.assign(headers, await identitySignatureHeaders(secret, parsed.anonId, 'x-navhub-anon'))
@@ -226,28 +229,32 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
 
   // 会话治理（T8）：登记活跃 + 核对吊销（一次往返）。
   // - revoked → 401：被踢出的设备从下一个请求起失去 /api/me/* 全部能力；
-  // - 核对失败：写请求 502（上游不可用），读请求 fail-open 但记数告警；
-  // - 没有 sid（老会话 / 非会话身份）跳过。
+  // - 核对失败 → 502：读写都 fail-closed，不能在无法核验时继续访问用户数据；
+  // - 没有 sid（老会话 / 非会话身份）跳过；auth() 已在正常情况下提前拒绝。
   if (sessionSid) {
-    const isWrite = method !== 'GET' && method !== 'HEAD'
     let checkFailed = false
     try {
       const checkRes = await fetch(HUB_BASE + '/api/me/sessions/check', {
         method: 'POST',
         // 核对固定发 JSON：GET 无体时转发头缺 content-type
-        headers: { ...headers, 'content-type': 'application/json' },
+        headers: {
+          ...headers,
+          'content-type': 'application/json',
+          ...(INTERNAL_TOKEN ? { 'x-navhub-internal-token': INTERNAL_TOKEN } : {}),
+        },
         body: JSON.stringify({
           sid: sessionSid,
           userAgent: request.headers.get('user-agent') ?? null,
           ...(sessionExpiresAt ? { expiresAt: sessionExpiresAt } : {}),
           ...(sessionIssuedAt ? { issuedAt: sessionIssuedAt } : {}),
+          ...(sessionPasswordVersion != null ? { passwordVersion: sessionPasswordVersion } : {}),
         }),
         cache: 'no-store',
         signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, 5000)),
       })
       if (checkRes.ok) {
         sessionCheckFailStreak = 0
-        const verdict = (await checkRes.json()) as { revoked?: boolean }
+        const verdict = JSON.parse(await readUpstream(checkRes)) as { revoked?: boolean }
         if (verdict.revoked) {
           return NextResponse.json(
             { error: '会话已被踢出，请重新登录' },
@@ -264,13 +271,12 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
       sessionCheckFailStreak += 1
       console.warn('[session-check] error', method, sessionCheckFailStreak, error)
     }
-    if (checkFailed && isWrite) {
+    if (checkFailed) {
       return NextResponse.json(
         { error: '会话核对服务暂时不可用，请稍后重试' },
         { status: 502, headers: { 'cache-control': 'no-store' } },
       )
     }
-    // 读请求 fail-open：核对失败不阻断主请求，但失败已被计数
   }
 
   // v2 签名带重放守卫：同一签名在 sessions/check 验过一次后不可再用于正向转发，核对后换一套新签名。
@@ -286,7 +292,18 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
       cache: 'no-store',
       signal: AbortSignal.timeout(TIMEOUT_MS),
     })
-    const listText = await upstreamList.text()
+    let listText: string
+    try {
+      listText = await readUpstream(upstreamList)
+    } catch (error) {
+      if (error instanceof UpstreamBodyTooLargeError) {
+        return NextResponse.json(
+          { error: '中枢响应体超过代理上限' },
+          { status: 502, headers: { 'cache-control': 'no-store' } },
+        )
+      }
+      throw error
+    }
     if (!upstreamList.ok) {
       return new NextResponse(listText || '{}', {
         status: upstreamList.status,
@@ -301,23 +318,19 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
     )
   }
 
-  // SSRF 2026-11-25：path 段（[[...path]]，用户可控）逐段编码拼进中枢 URL，
-  // host 钉死到 HUB_BASE 的 hostname，不再字符串拼接 + 默认跟随重定向的裸 fetch。
-  // path 已在入口滤掉 '.'/'..'，这里再由 buildPinnedHubUrl 纵深校验一次。
-  // :126/:234/:282 三处固定 HUB_BASE 路径无用户污点，保持原样不动。
+  const search = request.nextUrl.search || ''
+  const suffix = path.length > 0 ? '/' + path.join('/') : ''
+  const target = HUB_BASE + '/api/me' + suffix + search
+
   try {
-    const target = buildPinnedHubUrl(HUB_BASE, ['me', ...path], request.nextUrl.search || '').toString()
-    const { response: upstream } = await guardedFetch(
-      target,
-      { ...hubGuardOptions(HUB_BASE), timeoutMs: TIMEOUT_MS, maxBytes: 16 * 1024 * 1024 },
-      {
-        method,
-        headers,
-        body: rawBody === undefined ? undefined : rawBody,
-        cache: 'no-store',
-      },
-    )
-    const text = await upstream.text()
+    const upstream = await fetch(target, {
+      method,
+      headers,
+      body: rawBody === undefined ? undefined : rawBody,
+      cache: 'no-store',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    })
+    const text = await readUpstream(upstream)
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
     // 协商缓存（T18）：中枢声明了 etag 的 GET 响应，透传 etag 并以
     // private, no-cache 取代一刀切的 no-store——浏览器可存但每次再验证，
@@ -332,11 +345,6 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
     if (contentDisposition) {
       responseHeaders['content-disposition'] = contentDisposition
     }
-    if (pendingAnonCookie) {
-      responseHeaders['set-cookie'] =
-        `${ANON_COOKIE}=${pendingAnonCookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000` +
-        (process.env.NODE_ENV === 'production' ? '; Secure' : '')
-    }
     // 304 不能带 body：原样回传状态与 etag，浏览器用自己的缓存副本
     if (upstream.status === 304) {
       return new NextResponse(null, { status: 304, headers: responseHeaders })
@@ -346,13 +354,6 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
       headers: responseHeaders,
     })
   } catch (error) {
-    // SSRF 2026-11-25：非法路径段或重定向逃离钉死的 host，403 明说，不写成 502 上游故障。
-    if (error instanceof SsrfBlockedError) {
-      return NextResponse.json(
-        { error: '上游重定向目标不在允许范围内' },
-        { status: 403, headers: { 'cache-control': 'no-store' } },
-      )
-    }
     const timedOut =
       error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')
     return NextResponse.json(

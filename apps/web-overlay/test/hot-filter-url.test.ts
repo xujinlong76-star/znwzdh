@@ -93,11 +93,12 @@ describe("U-239：挂载读回 + popstate 同步 fq", () => {
 describe("U-239：清空路径零改动，清空后无 fq 残留", () => {
   const src = overlaySource("src/app/hot/hot-view.tsx");
 
-  it("输入框 × + 三处空态「清空筛选条件」都只 setFilterQuery('')", () => {
+  it("三处空态「清空筛选条件」都只 setFilterQuery('')（输入框 × 已收进 FilterBar）", () => {
     expect(src.match(/清空筛选条件/g)).toHaveLength(3);
-    expect(src.match(/setFilterQuery\(''\)/g)).toHaveLength(4);
-    // 全文件仅一处 delete('fq')，且在写回 effect 里——清空按钮处没有直接操作 URL，
-    // 四处 setFilterQuery('') 均不在 delete('fq') 附近，清空只靠写回 effect 自动删参。
+    // 2026-11-25 阶段 B：输入框的清空钮收进 FilterBar 原语（清空 → onChange('')），
+    // hot-view 内只剩三处空态的 setFilterQuery('')。清空路径仍不直接操作 URL，
+    // 全文件仅一处 delete('fq')，且在写回 effect 里。
+    expect(src.match(/setFilterQuery\(''\)/g)).toHaveLength(3);
     const clearSites = [...src.matchAll(/setFilterQuery\(''\)/g)].map((m) => m.index ?? 0);
     for (const idx of clearSites) {
       expect(src.slice(Math.max(0, idx - 200), idx)).not.toContain("delete('fq')");

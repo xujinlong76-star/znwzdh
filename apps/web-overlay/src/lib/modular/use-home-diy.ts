@@ -26,6 +26,20 @@ import { encodeVersionedShareLink, type ShareLinkOutcome } from '@/lib/diy-share
 import { createCustomSiteId } from '@/lib/modular/custom-site-input'
 import type { CanonicalCardDisplayMode } from './card-display-modes'
 import {
+  applyRglCommitToLayout,
+  migrateLayoutToV2,
+  restoreBlockInLayout,
+  trashBlockInLayout,
+  updateBlockInLayout,
+  type ActiveDragLayer,
+  type AvailableWorkspaceBlock,
+  type BlockUpdatePatch,
+  type LayoutCompactType,
+  type RglCommittedItem,
+  type WorkspaceBreakpointKey,
+  type WorkspaceLayoutV2,
+} from './workspace-layout-v2'
+import {
   DEFAULT_CONFIG,
   applyRemoteHomeDiyConfig,
   claimHomeDiyHistoryStep,
@@ -41,7 +55,10 @@ import {
   redoHomeDiy,
   resolveDiyDataAccent,
   resolveRankingMode,
+  setHomeDiyActiveDragLayer,
   setHomeDiyEditingLayout,
+  setHomeDiyOutlineMode,
+  setHomeDiySelectedBlockId,
   stageHomeDiyPendingShare,
   STORAGE_CLOCKS_KEY,
   subscribeHomeDiy,
@@ -147,7 +164,16 @@ export interface BatchRemoveReceipt {
   failedCount: number
 }
 export function useHomeDIY(initialCardDisplayMode?: CanonicalCardDisplayMode) {
-  const { config, history, isEditingLayout, storageWarning, pendingShare } = useSyncExternalStore(
+  const {
+    config,
+    history,
+    isEditingLayout,
+    activeDragLayer,
+    outlineMode,
+    selectedBlockId,
+    storageWarning,
+    pendingShare,
+  } = useSyncExternalStore(
     subscribeHomeDiy,
     getHomeDiySnapshot,
     // SSR/hydration 首帧必须钉死默认值；客户端快照可能已被 hydrateHomeDiy()
@@ -928,6 +954,303 @@ export function useHomeDIY(initialCardDisplayMode?: CanonicalCardDisplayMode) {
     }))
   }, [persistConfig])
 
+  // Phase 1：分类/子分类内自由拖拽排序（单步原子提交，支持 Ctrl+Z 撤销 / Ctrl+Shift+Z 重做与跨标签同步）
+  const reorderSiteInCategory = useCallback((containerId: string, orderedSiteIds: string[]) => {
+    if (!containerId || orderedSiteIds.length === 0) return
+    persistConfig((prev) => {
+      const prevOrderMap = prev.siteOrderByCategory || {}
+      const current = prevOrderMap[containerId] || []
+      if (current.length === orderedSiteIds.length && current.every((id, i) => id === orderedSiteIds[i])) {
+        return prev
+      }
+      // 若属于自定义分类，同步更新 customCategories 内部 items 顺序以保持一致性
+      const customIdx = prev.customCategories.findIndex((c) => c.id === containerId)
+      const nextCustomCategories =
+        customIdx >= 0
+          ? prev.customCategories.map((c, idx) => {
+              if (idx !== customIdx) return c
+              const itemById = new Map(c.items.map((item) => [item.id, item]))
+              const reordered: CustomCategoryItem[] = []
+              for (const id of orderedSiteIds) {
+                const hit = itemById.get(id)
+                if (hit) {
+                  reordered.push(hit)
+                  itemById.delete(id)
+                }
+              }
+              for (const rest of itemById.values()) reordered.push(rest)
+              return { ...c, items: reordered }
+            })
+          : prev.customCategories
+
+      return {
+        ...prev,
+        siteOrderByCategory: {
+          ...prevOrderMap,
+          [containerId]: [...orderedSiteIds],
+        },
+        customCategories: nextCustomCategories,
+        updatedAt: Date.now(),
+      }
+    })
+  }, [persistConfig])
+
+  // Phase 1：跨分类精准落位移动（原子提交：更新归类映射 + 源/目标容器排序列表，一步撤销/重做）
+  const moveSiteToCategoryAtIndex = useCallback(
+    (params: {
+      siteId: string
+      sourceContainerId: string
+      targetCategoryId: string
+      targetContainerId?: string
+      targetIndex: number
+      sourceDisplayedIds?: string[]
+      targetDisplayedIds?: string[]
+    }) => {
+      const {
+        siteId,
+        sourceContainerId,
+        targetCategoryId,
+        targetContainerId = targetCategoryId,
+        targetIndex,
+        sourceDisplayedIds,
+        targetDisplayedIds,
+      } = params
+      if (!siteId || !targetCategoryId) return
+      persistConfig((prev) => {
+        const prevOrderMap = prev.siteOrderByCategory || {}
+        const nextOrderMap: Record<string, string[]> = { ...prevOrderMap }
+
+        // 从源容器排序列表中移除被拖走的卡片
+        const baseSourceOrder = sourceDisplayedIds ?? prevOrderMap[sourceContainerId]
+        if (sourceContainerId && baseSourceOrder && baseSourceOrder.length > 0) {
+          const filtered = baseSourceOrder.filter((id) => id !== siteId)
+          nextOrderMap[sourceContainerId] = filtered
+        }
+
+        // 在目标容器的精确索引位置插入该卡片
+        const baseTargetOrder = (targetDisplayedIds ?? prevOrderMap[targetContainerId] ?? []).filter(
+          (id) => id !== siteId,
+        )
+        const clampedIndex = Math.max(0, Math.min(targetIndex, baseTargetOrder.length))
+        const nextTargetOrder = [...baseTargetOrder]
+        nextTargetOrder.splice(clampedIndex, 0, siteId)
+        nextOrderMap[targetContainerId] = nextTargetOrder
+
+        return {
+          ...prev,
+          siteCategoryOverrides: {
+            ...prev.siteCategoryOverrides,
+            [siteId]: targetCategoryId,
+          },
+          siteOrderByCategory: nextOrderMap,
+          updatedAt: Date.now(),
+        }
+      })
+    },
+    [persistConfig],
+  )
+
+  // Phase 2：12 列 Bento 自由画布原子操作（写入同一份撤销栈 + BroadcastChannel 多标签页协同）
+  const setActiveDragLayer = useCallback((layer: ActiveDragLayer) => {
+    setHomeDiyActiveDragLayer(layer)
+  }, [])
+
+  const setOutlineMode = useCallback((enabled: boolean) => {
+    setHomeDiyOutlineMode(enabled)
+  }, [])
+
+  const toggleOutlineMode = useCallback(() => {
+    const cur = getHomeDiySnapshot().outlineMode
+    setHomeDiyOutlineMode(!cur)
+  }, [])
+
+  const setSelectedBlockId = useCallback((blockId: string | null) => {
+    setHomeDiySelectedBlockId(blockId)
+  }, [])
+
+  const commitWorkspaceBreakpointLayout = useCallback(
+    (
+      bp: WorkspaceBreakpointKey,
+      committed: readonly RglCommittedItem[],
+      available: readonly AvailableWorkspaceBlock[],
+      options: { markFixedScrollForId?: string } = {},
+    ): boolean => {
+      let didChange = false
+      const result = commitHomeDiyConfig(
+        (prev) => {
+          const baseV2: WorkspaceLayoutV2 =
+            prev.workspaceLayoutV2 ??
+            migrateLayoutToV2(prev, {
+              catalogCategoryIds: available.map((a) => a.id),
+            })
+          const nextV2 = applyRglCommitToLayout(baseV2, bp, committed, available, options)
+          if (!nextV2) return prev
+          didChange = true
+          // 同步将 lg 断点下的分类顺序折回 categoryOrder，保持侧边栏/大纲/旧预设同源
+          const nextCategoryOrder =
+            bp === 'lg'
+              ? nextV2.breakpoints.lg
+                  .filter((b) => b.type === 'category' || b.type === 'custom_group')
+                  .map((b) => b.id)
+              : prev.categoryOrder
+          return {
+            ...prev,
+            categoryOrder: nextCategoryOrder,
+            workspaceLayoutV2: nextV2,
+            updatedAt: Date.now(),
+          }
+        },
+        { forceNewHistoryEntry: true },
+      )
+      if (result.ok) publishToOtherTabs(result)
+      return didChange
+    },
+    [publishToOtherTabs],
+  )
+
+  const updateWorkspaceBlock = useCallback(
+    (
+      bp: WorkspaceBreakpointKey,
+      blockId: string,
+      patch: BlockUpdatePatch,
+      available: readonly AvailableWorkspaceBlock[],
+    ): boolean => {
+      let didChange = false
+      const result = commitHomeDiyConfig(
+        (prev) => {
+          const baseV2: WorkspaceLayoutV2 =
+            prev.workspaceLayoutV2 ??
+            migrateLayoutToV2(prev, {
+              catalogCategoryIds: available.map((a) => a.id),
+            })
+          const nextV2 = updateBlockInLayout(baseV2, bp, blockId, patch, available)
+          if (!nextV2) return prev
+          didChange = true
+          return {
+            ...prev,
+            workspaceLayoutV2: nextV2,
+            updatedAt: Date.now(),
+          }
+        },
+        { forceNewHistoryEntry: true },
+      )
+      if (result.ok) publishToOtherTabs(result)
+      return didChange
+    },
+    [publishToOtherTabs],
+  )
+
+  /** 内容自适应高度同步（heightMode: 'auto'）：不压入撤销栈，不污染用户历史记录 */
+  const syncBlockAutoHeight = useCallback(
+    (
+      bp: WorkspaceBreakpointKey,
+      blockId: string,
+      nextH: number,
+      available: readonly AvailableWorkspaceBlock[],
+    ) => {
+      const result = commitHomeDiyConfig(
+        (prev) => {
+          const baseV2: WorkspaceLayoutV2 =
+            prev.workspaceLayoutV2 ??
+            migrateLayoutToV2(prev, {
+              catalogCategoryIds: available.map((a) => a.id),
+            })
+          const existing = baseV2.breakpoints[bp].find((b) => b.id === blockId)
+          if (existing && (existing.heightMode === 'fixed-scroll' || existing.h === nextH)) {
+            return prev
+          }
+          const nextV2 = updateBlockInLayout(baseV2, bp, blockId, { h: nextH }, available)
+          if (!nextV2) return prev
+          return {
+            ...prev,
+            workspaceLayoutV2: nextV2,
+            updatedAt: Date.now(),
+          }
+        },
+        { pushHistory: false },
+      )
+      if (result.ok) publishToOtherTabs(result)
+    },
+    [publishToOtherTabs],
+  )
+
+  const setWorkspaceCompactType = useCallback(
+    (compactType: LayoutCompactType, available: readonly AvailableWorkspaceBlock[] = []) => {
+      const result = commitHomeDiyConfig(
+        (prev) => {
+          const baseV2: WorkspaceLayoutV2 =
+            prev.workspaceLayoutV2 ??
+            migrateLayoutToV2(prev, {
+              catalogCategoryIds: available.map((a) => a.id),
+            })
+          if (baseV2.gridConfig.compactType === compactType) return prev
+          return {
+            ...prev,
+            workspaceLayoutV2: {
+              ...baseV2,
+              gridConfig: {
+                ...baseV2.gridConfig,
+                compactType,
+              },
+            },
+            updatedAt: Date.now(),
+          }
+        },
+        { forceNewHistoryEntry: true },
+      )
+      if (result.ok) publishToOtherTabs(result)
+    },
+    [publishToOtherTabs],
+  )
+
+  const trashWorkspaceBlock = useCallback(
+    (blockId: string, title: string, available: readonly AvailableWorkspaceBlock[]) => {
+      const result = commitHomeDiyConfig(
+        (prev) => {
+          const baseV2: WorkspaceLayoutV2 =
+            prev.workspaceLayoutV2 ??
+            migrateLayoutToV2(prev, {
+              catalogCategoryIds: available.map((a) => a.id),
+            })
+          const nextV2 = trashBlockInLayout(baseV2, blockId, title, available)
+          const nextHidden = prev.hiddenCategoryIds.includes(blockId)
+            ? prev.hiddenCategoryIds
+            : [...prev.hiddenCategoryIds, blockId]
+          return {
+            ...prev,
+            hiddenCategoryIds: nextHidden,
+            workspaceLayoutV2: nextV2,
+            updatedAt: Date.now(),
+          }
+        },
+        { forceNewHistoryEntry: true },
+      )
+      if (result.ok) publishToOtherTabs(result)
+      setHomeDiySelectedBlockId(null)
+    },
+    [publishToOtherTabs],
+  )
+
+  const restoreWorkspaceBlock = useCallback(
+    (blockId: string) => {
+      const result = commitHomeDiyConfig(
+        (prev) => {
+          const baseV2 = prev.workspaceLayoutV2
+          const nextV2 = baseV2 ? restoreBlockInLayout(baseV2, blockId) : undefined
+          return {
+            ...prev,
+            hiddenCategoryIds: prev.hiddenCategoryIds.filter((id) => id !== blockId),
+            ...(nextV2 ? { workspaceLayoutV2: nextV2 } : {}),
+            updatedAt: Date.now(),
+          }
+        },
+        { forceNewHistoryEntry: true },
+      )
+      if (result.ok) publishToOtherTabs(result)
+    },
+    [publishToOtherTabs],
+  )
+
   const resetSiteCategoryOverrides = useCallback(() => {
     persistConfig((prev) => ({
       ...prev,
@@ -981,11 +1304,29 @@ export function useHomeDIY(initialCardDisplayMode?: CanonicalCardDisplayMode) {
   return {
     config,
     reclassifySite,
+    reorderSiteInCategory,
+    moveSiteToCategoryAtIndex,
     resetSiteCategoryOverrides,
     setCustomWallpaper,
     setAestheticSliders,
     exportPresetToUrlHash,
     siteCategoryOverrides: config.siteCategoryOverrides || {},
+    siteOrderByCategory: config.siteOrderByCategory || {},
+    blockOverrides: config.blockOverrides || {},
+    workspaceLayoutV2: config.workspaceLayoutV2,
+    activeDragLayer,
+    setActiveDragLayer,
+    outlineMode,
+    setOutlineMode,
+    toggleOutlineMode,
+    selectedBlockId,
+    setSelectedBlockId,
+    commitWorkspaceBreakpointLayout,
+    updateWorkspaceBlock,
+    syncBlockAutoHeight,
+    setWorkspaceCompactType,
+    trashWorkspaceBlock,
+    restoreWorkspaceBlock,
     customWallpaperUrl: config.customWallpaperUrl || '',
     glassmorphismBlur: config.glassmorphismBlur ?? 12,
     // P1 可读性下限：读取端同样 clamp 0.88——旧配置/旧分享链接可能存着 0.2 或 0.85，读到即抬到 0.88

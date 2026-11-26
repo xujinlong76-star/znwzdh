@@ -15,7 +15,17 @@
  * 某天突然不对——所以必须用假 db 把分派行为钉住。
  */
 import { describe, expect, it } from "vitest";
-import { migrateColumns, migrateSiteIndexes } from "../src/migrate.ts";
+import {
+  dedupeUserEmails,
+  migrateCategorySlugs,
+  migrateColumns,
+  migrateEventIdentity,
+  migrateNavVersionTriggers,
+  migrateSiteIndexes,
+  migrateSiteReportsAndReviews,
+  migrateWorkspaceBlobs,
+  normalizeSiteCreatedAt,
+} from "../src/migrate.ts";
 
 function pgRecorder() {
   const calls: string[] = [];
@@ -81,6 +91,110 @@ describe("migrateSiteIndexes：按方言分派", () => {
   });
 });
 
+describe("migrateWorkspaceBlobs：PostgreSQL 冲突安全 SQL", () => {
+  it("仅覆盖较旧目标，并且只删除内容与时间戳都已确认的源行", async () => {
+    const calls: string[] = [];
+    let countCalls = 0;
+    const db = {
+      dialect: "pg",
+      pg: {
+        query: async (sql: string) => {
+          calls.push(sql);
+          if (sql.includes("SELECT COUNT(*)")) {
+            countCalls++;
+            return { rows: [{ c: countCalls === 1 ? 1 : 0 }], rowCount: 1 };
+          }
+          return { rows: [], rowCount: 0 };
+        },
+      },
+    };
+
+    expect(await migrateWorkspaceBlobs(db)).toEqual({ copied: 1, skipped: false });
+    const insert = calls.find((sql) => sql.includes("INSERT INTO user_workspace_blobs"));
+    const remove = calls.find((sql) => sql.includes("DELETE FROM user_vault_sync"));
+    expect(insert).toContain("DO UPDATE SET");
+    expect(insert).toContain("user_workspace_blobs.updated_at < excluded.updated_at");
+    expect(remove).toContain("b.payload = user_vault_sync.payload");
+    expect(remove).toContain("b.updated_at >= user_vault_sync.updated_at");
+  });
+});
+
+describe("关键迁移 SQL 错误传播", () => {
+  it("dedupeUserEmails 不把 UPDATE 失败当成 0 条成功", async () => {
+    const db = {
+      dialect: "sqlite",
+      sqlite: {
+        prepare: (sql: string) => ({
+          all: () => sql.includes("GROUP BY email")
+            ? [{ email: "same@example.com", c: 2 }]
+            : [{ id: "keep" }, { id: "clear" }],
+          run: () => { throw new Error("injected dedupe failure"); },
+        }),
+      },
+    };
+    await expect(dedupeUserEmails(db)).rejects.toThrow("injected dedupe failure");
+  });
+
+  it("migrateColumns 在 ALTER 真失败时抛出，只有重查确认列已存在才容忍竞态", async () => {
+    const db = {
+      dialect: "sqlite",
+      sqlite: {
+        prepare: () => ({ all: () => [{ name: "id" }] }),
+        exec: () => { throw new Error("injected alter failure"); },
+      },
+    };
+    await expect(migrateColumns(db)).rejects.toThrow("injected alter failure");
+  });
+
+  it("migrateEventIdentity 不把回填失败当成 0 条成功", async () => {
+    const db = {
+      dialect: "sqlite",
+      sqlite: { prepare: () => ({ run: () => { throw new Error("injected identity failure"); } }) },
+    };
+    await expect(migrateEventIdentity(db)).rejects.toThrow("injected identity failure");
+  });
+
+  it("migrateCategorySlugs 不把写入失败当成 0 条成功", async () => {
+    const db = {
+      dialect: "sqlite",
+      sqlite: {
+        prepare: (sql: string) => sql.startsWith("SELECT")
+          ? { all: () => sql.includes("slug IS NULL") ? [{ id: "cat", title: "类目" }] : [] }
+          : { run: () => { throw new Error("injected slug failure"); } },
+      },
+    };
+    await expect(migrateCategorySlugs(db)).rejects.toThrow("injected slug failure");
+  });
+
+  it("normalizeSiteCreatedAt 不把数据修复失败静默降级", async () => {
+    const db = {
+      dialect: "sqlite",
+      sqlite: {
+        prepare: (sql: string) => sql.startsWith("SELECT")
+          ? { all: () => [{ id: "site", created_at: "2026-11-07 06:47:11" }] }
+          : { run: () => { throw new Error("injected created_at failure"); } },
+      },
+    };
+    await expect(normalizeSiteCreatedAt(db)).rejects.toThrow("injected created_at failure");
+  });
+
+  it("migrateSiteReportsAndReviews 的首条 DDL 失败即中止", async () => {
+    const db = {
+      dialect: "sqlite",
+      sqlite: { exec: () => { throw new Error("injected reports ddl failure"); } },
+    };
+    await expect(migrateSiteReportsAndReviews(db)).rejects.toThrow("injected reports ddl failure");
+  });
+
+  it("migrateNavVersionTriggers 的 DDL 失败即中止", async () => {
+    const db = {
+      dialect: "sqlite",
+      sqlite: { exec: () => { throw new Error("injected trigger failure"); } },
+    };
+    await expect(migrateNavVersionTriggers(db)).rejects.toThrow("injected trigger failure");
+  });
+});
+
 describe("migrateColumns：按方言分派", () => {
   it("pg：先查 information_schema，再按需 ALTER", async () => {
     const existing = new Set(["id", "anchor", "parent_id", "title", "enabled", "sort", "created_at", "updated_at"]);
@@ -101,7 +215,9 @@ describe("migrateColumns：按方言分派", () => {
     // categories.source / alt_labels / related_categories 缺失 → 应被补上
     expect(added).toContain("categories.source");
     expect(added).toContain("categories.alt_labels");
+    expect(added).toContain("users.password_version");
     expect(calls.some((s) => s.startsWith("ALTER TABLE categories ADD COLUMN alt_labels"))).toBe(true);
+    expect(calls.some((s) => s === "ALTER TABLE users ADD COLUMN password_version INTEGER NOT NULL DEFAULT 0")).toBe(true);
   });
 
   it("pg 不识别的方言不误伤：sqlite 走 exec", async () => {
@@ -120,6 +236,8 @@ describe("migrateColumns：按方言分派", () => {
     };
     const added = await migrateColumns(db);
     expect(added.length).toBeGreaterThan(0);
+    expect(added).toContain("users.password_version");
+    expect(executed).toContain("ALTER TABLE users ADD COLUMN password_version INTEGER NOT NULL DEFAULT 0");
     expect(executed.every((s) => s.startsWith("ALTER TABLE"))).toBe(true);
   });
 });

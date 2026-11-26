@@ -28,16 +28,9 @@ export function Footer({ siteInfo }: FooterProps) {
    * 桌面 2rem 明显不够——右下角浮坞（猫 48px + 回顶钮 44px + gap 8px + bottom 16px
    * ≈ 116px）会压住页脚右端的「短剧专区」「DIY」等链接，实测 390x844 复现。
    * 现在统一 6rem(96px) 起、移动端 7rem(112px)，让版权行与链接永远高于浮坞。
-   *
-   * 2026-11-26 修正：11-22 的模型按浮坞叠层（116px）算，但猫是独立 fixed
-   * 元素，不在浮坞栈里——移动端猫带顶沿 = bottom 偏移（3.5rem+32px=88px）
-   * + 猫高 40px = 128px，7rem=112px 仍短 16px；390x844 滚到底实测仍压住
-   * 页脚链接行（「主页/用户中心/设为首页领 +100 经验」一行）。移动端再抬
-   * 到 9rem(144px)，留 16px 余量；平板/桌面猫带顶沿 160px、文本止于 96px，
-   * 本就清开，6rem 不动。
    */
   return (
-    <footer className="border-t border-border/40 pt-8 bg-muted/10 mt-auto pb-[calc(9rem+env(safe-area-inset-bottom,0px))] min-[640px]:max-[1024px]:pb-[calc(6rem+env(safe-area-inset-bottom,0px))] lg:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]">
+    <footer className="border-t border-border/40 pt-8 bg-muted/10 mt-auto pb-[calc(7rem+env(safe-area-inset-bottom,0px))] min-[640px]:max-[1024px]:pb-[calc(6rem+env(safe-area-inset-bottom,0px))] lg:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]">
       <div className="container flex flex-col items-center justify-between gap-4 md:flex-row px-4">
         {/* 2026-11-21 页脚链接改两组规整排布。
             原实现 17 个链接 + 16 个「·」分隔符全部塞进一个 flex-wrap，

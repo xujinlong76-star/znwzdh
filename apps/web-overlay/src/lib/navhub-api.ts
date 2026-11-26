@@ -2328,6 +2328,7 @@ export interface HubPluginSearchResponse {
 export async function searchPlugins(
   params: { q: string; kind?: string; limit?: number },
   onDegraded?: DegradedHandler,
+  signal?: AbortSignal,
 ): Promise<HubPluginSearchResponse> {
   const sp = new URLSearchParams()
   sp.set('q', params.q)
@@ -2335,7 +2336,7 @@ export async function searchPlugins(
   if (params.limit) sp.set('limit', String(params.limit))
   return degrade<HubPluginSearchResponse>(
     { items: [], total: 0, mode: 'keyword', degraded: true },
-    () => getJson<HubPluginSearchResponse>(`/api/plugins/search?${sp.toString()}`),
+    () => getJson<HubPluginSearchResponse>(`/api/plugins/search?${sp.toString()}`, signal),
     onDegraded,
   )
 }

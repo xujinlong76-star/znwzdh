@@ -45,7 +45,9 @@ import { getIdentity } from '@/lib/identity'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Flame, Sparkles, Trophy, ExternalLink, Search, X, Video, ArrowRight, Clock, TrendingUp, Star, Puzzle } from 'lucide-react'
+import { Flame, Sparkles, Trophy, ExternalLink, Search, Video, ArrowRight, Clock, TrendingUp, Star, Puzzle } from 'lucide-react'
+import { FilterBar } from '@/components/filter-bar'
+import { SiteCard } from '@/components/site-card'
 import { Button } from '@/registry/new-york/ui/button'
 import { DensityToggle } from '@/components/density-toggle'
 import { SiteFavicon } from '@/components/site-favicon'
@@ -179,7 +181,7 @@ export default function HotView({
       const tagMatch = (s.tags ?? []).some((t) => t.toLowerCase().includes(q))
       return titleMatch || descMatch || urlMatch || tagMatch
     })
-  }, [trending, filterQuery])
+  }, [domainTrending, filterQuery])
 
   const filteredFresh = useMemo(() => {
     if (!filterQuery.trim()) return fresh
@@ -249,6 +251,7 @@ export default function HotView({
       const t = params.get('tab')
       setTab(t === 'new' ? 'new' : t === 'plugins' ? 'plugins' : 'trending')
       setFilterQuery(normalizeSearchQuery(params.get('fq') ?? undefined))
+      setDomain(parseDomain(params.get('domain')))
       setFqReady(true)
     }
     syncFromUrl()
@@ -514,78 +517,68 @@ export default function HotView({
       style={{ gap: 'var(--density-grid-gap, 1rem)' }}
     >
       {sites.map((site, i) => (
-        <div
+        <SiteCard
           key={site.id}
-          className="relative group @container rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 p-[var(--density-card-padding,0.875rem)] flex flex-col justify-between shadow-2xs"
-        >
-          <div className="flex items-start gap-3">
-            {/* 标题内链进详情页：与 SSG 的 /site/{id} 一起进首屏 HTML；站外直达只剩右上角图标按钮 */}
-            <Link href={`/site/${encodeURIComponent(site.id)}`} onClick={() => handleSiteClick(site, i + 1)} className="block min-w-0 flex-1">
-              <div className="flex items-start gap-2.5">
-                <div className="shrink-0 w-10 h-10 rounded-lg p-1.5 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
-                  <SiteFavicon
-                    title={site.title}
-                    url={site.url}
-                    icon={site.iconKey ?? undefined}
-                    className="w-full h-full object-contain rounded-xs"
-                  />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold tracking-tight text-foreground group-hover:text-link transition-colors truncate pr-8">
-                    {site.title}
-                  </div>
-                  {site.description && (
-                    <div className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1">
-                      {site.description}
-                    </div>
-                  )}
-                  <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground font-mono flex-wrap">
-                    {/* 2026-11-21 双态：冷启动不展示 "1 次热度" 这种极小值，
-                        改为有信息量的真实元数据（开源 / 编辑推荐 / 领域 / 新收录） */}
-                    {heatMode === 'live' ? (
-                      typeof site.visitCount === 'number' && site.visitCount > 0 && (
-                        <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium">
-                          {site.visitCount} 次热度
-                        </span>
-                      )
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 font-medium">
-                        {curatedBadge(site)}
-                      </span>
-                    )}
-                    {cleanTagsOf(site).map((t) => (
-                      <span key={t} className="px-2 py-0.5 rounded-full bg-muted border border-border/40">
-                        #{t}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </Link>
-          </div>
-          <div className="absolute top-2 right-2 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex items-center gap-1">
-            <a
-              href={safeHref(site.url)}
-              target="_blank"
-              rel={externalRel}
-              onClick={() => handleSiteClick(site, i + 1)}
-              className="inline-flex min-h-11 min-w-11 items-center justify-center p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-              title="新窗口直达"
-              aria-label={`访问 ${site.title}`}
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-            <FavoriteButton
-              site={{
-                siteId: site.id,
-                title: site.title,
-                href: site.url,
-                icon: site.iconKey ?? undefined,
-                description: site.description ?? undefined,
-              }}
+          variant="grid"
+          href={`/site/${encodeURIComponent(site.id)}`}
+          onTitleClick={() => handleSiteClick(site, i + 1)}
+          title={site.title}
+          description={site.description}
+          icon={
+            <SiteFavicon
+              title={site.title}
+              url={site.url}
+              icon={site.iconKey ?? undefined}
+              className="w-full h-full object-contain rounded-xs"
             />
-          </div>
-        </div>
+          }
+          meta={
+            <>
+              {/* 2026-11-21 双态：冷启动不展示 "1 次热度" 这种极小值，
+                  改为有信息量的真实元数据（开源 / 编辑推荐 / 领域 / 新收录） */}
+              {heatMode === 'live' ? (
+                typeof site.visitCount === 'number' && site.visitCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium">
+                    {site.visitCount} 次热度
+                  </span>
+                )
+              ) : (
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 font-medium">
+                  {curatedBadge(site)}
+                </span>
+              )}
+              {cleanTagsOf(site).map((t) => (
+                <span key={t} className="px-2 py-0.5 rounded-full bg-muted border border-border/40">
+                  #{t}
+                </span>
+              ))}
+            </>
+          }
+          actions={
+            <>
+              <a
+                href={safeHref(site.url)}
+                target="_blank"
+                rel={externalRel}
+                onClick={() => handleSiteClick(site, i + 1)}
+                className="inline-flex min-h-11 min-w-11 items-center justify-center p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                title="新窗口直达"
+                aria-label={`访问 ${site.title}`}
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+              <FavoriteButton
+                site={{
+                  siteId: site.id,
+                  title: site.title,
+                  href: site.url,
+                  icon: site.iconKey ?? undefined,
+                  description: site.description ?? undefined,
+                }}
+              />
+            </>
+          }
+        />
       ))}
     </div>
   )
@@ -703,68 +696,45 @@ export default function HotView({
 
         {notice && <HubDegradedNotice notice={notice} onRetry={reload} />}
 
-        {/* 榜单内即时筛选器 */}
+        {/* 榜单内即时筛选器（FilterBar 原语）：计数在前、全站检索出口在后，
+            与 /sites、/category 筛选条同一读序。 */}
         {!loading && (trending.length > 0 || fresh.length > 0 || pluginTotal > 0) && (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-muted/30 border border-border/60 rounded-xl p-2.5">
-            <div className="relative flex-1">
-              <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                /* 2026-11-21 移动端输入人因：与全站搜索框同口径 */
-                type="search"
-                inputMode="search"
-                enterKeyHint="search"
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-                value={filterQuery}
-                onChange={(e) => setFilterQuery(e.target.value)}
-                placeholder={
-                  tab === 'plugins'
-                    ? '在插件排行中极速筛选插件（名称、简介、标签）...'
-                    : '筛选当前榜单（名称、标签、域名）...'
-                }
-                aria-label={tab === 'plugins' ? '在插件排行中筛选插件' : '在当前榜单中筛选站点'}
-                className="w-full min-h-11 text-xs bg-background/80 border border-border/60 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 rounded-lg pl-8 pr-8 py-1.5 outline-none transition-colors"
-              />
-              {/* 清空筛选 ×：18px 的 × 视觉不变，::after 把点击区无形扩到 46px
-                  （筛选框 44px 高，上下各出 1px 可忽略） */}
-              {filterQuery && (
-                <button
-                  type="button"
-                  onClick={() => setFilterQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 rounded cursor-pointer after:absolute after:-inset-3.5 after:content-['']"
-                  title="清空筛选"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-            {/* 2026-11-21：筛选条只服务"当前榜单"；全站检索的出口放在这里——
-                一个轻量文字链，替代原先占掉整行高度的全站搜索大框。 */}
-            <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault()
-                // 复用全站快捷键：按下 / 会聚焦全站搜索（GlobalSearchHotkey 监听）
-                window.dispatchEvent(
-                  new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true }),
-                )
-              }}
-              className="ml-2 shrink-0 whitespace-nowrap text-[11px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
-            >
-              搜不到？按 / 全站检索
-            </a>
-            <span aria-hidden className="shrink-0 text-border">·</span>
-            <div className="shrink-0 pl-3 text-[11px] text-muted-foreground">
-              {tab === 'trending' ? (
-                <>显示 <span className="font-mono font-semibold text-foreground">{filteredTrending.length}</span> / {trending.length} 个站点</>
-              ) : tab === 'new' ? (
-                <>显示 <span className="font-mono font-semibold text-foreground">{filteredFresh.length}</span> / {fresh.length} 个站点</>
-              ) : (
-                <>显示 <span className="font-mono font-semibold text-foreground">{filteredPluginTotal}</span> / {pluginTotal} 个插件</>
-              )}
-            </div>
-          </div>
+          <FilterBar
+            value={filterQuery}
+            onChange={setFilterQuery}
+            placeholder={
+              tab === 'plugins'
+                ? '在插件排行中极速筛选插件（名称、简介、标签）...'
+                : '筛选当前榜单（名称、标签、域名）...'
+            }
+            aria-label={tab === 'plugins' ? '在插件排行中筛选插件' : '在当前榜单中筛选站点'}
+            meta={
+              <span className="font-mono">
+                {tab === 'trending' ? (
+                  <>显示 <strong className="font-semibold text-foreground">{filteredTrending.length}</strong> / {trending.length} 个站点</>
+                ) : tab === 'new' ? (
+                  <>显示 <strong className="font-semibold text-foreground">{filteredFresh.length}</strong> / {fresh.length} 个站点</>
+                ) : (
+                  <>显示 <strong className="font-semibold text-foreground">{filteredPluginTotal}</strong> / {pluginTotal} 个插件</>
+                )}
+              </span>
+            }
+            actions={
+              <a
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault()
+                  // 复用全站快捷键：按下 / 会聚焦全站搜索（GlobalSearchHotkey 监听）
+                  window.dispatchEvent(
+                    new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true }),
+                  )
+                }}
+                className="shrink-0 whitespace-nowrap text-[11px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+              >
+                搜不到？按 / 全站检索
+              </a>
+            }
+          />
         )}
 
         {loading ? (

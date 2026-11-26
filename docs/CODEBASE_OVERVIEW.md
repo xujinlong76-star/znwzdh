@@ -1,6 +1,6 @@
 # 山羊胡 4.0 代码库架构总览
 
-> 本文基于关键模块源码通读写成。⚠️ **规模数字已改为引用 machine-readable 的 [`metrics.json`](./metrics.json)**（由 `node scripts/gen-docs-metrics.mjs` 生成、`--check` 进 `pnpm verify` 防漂移，2026-11-06 落地）：实测源码约 **40 万行**（`apps/api/src` 178 文件/48,717 行、`apps/web-overlay/src` 1084 文件/255,527 行、`scripts` 232 文件等）、**359 REST 路由声明 / 51 BFF 路由 / 90 页面 / 54 表声明 / 1807 测试文件**。
+> 本文基于关键模块源码通读写成。⚠️ **规模数字以 machine-readable 的 [`metrics.json`](./metrics.json) 为事实源**（由 `node scripts/gen-docs-metrics.mjs` 生成、`--check` 进 `pnpm verify` 防漂移，2026-11-06 落地）：当前源码约 **40 万行**；REST / BFF 路由、页面、表声明与测试文件数请读该文件，不在正文手写快照。
 >
 > 旧版本此处写「778 个文件 / 155,150 行 / 117 端点 / 25 表」（2026-10-18 快照），与当前实物相差近一倍且长期无人核对——这正是引入 `metrics.json` 的原因。下方 §1 的历史表格保留作**当时快照**，不再作为当前事实；要看当前值请读 `metrics.json`。逐文件的职责/导出/依赖见 [`CODEBASE_FILE_INDEX.md`](./CODEBASE_FILE_INDEX.md)，也可用可搜索的单页版 [`codebase-index.html`](./codebase-index.html)。
 
@@ -24,7 +24,7 @@
 
 ## 1. 项目定位与规模
 
-山羊胡是一个 **AI 原生网址导航与开发者知识工作台**：以「站点收藏」为数据底座，向外叠加五路混合检索、Bento 自由排版工作台、端侧 0-RTT 微工具、技术关系图谱，并通过 MCP 协议把同一套能力开放给外部 AI Agent。
+山羊胡是一个 **AI 原生网址导航与开发者知识工作台**：以「站点收藏」为数据底座，向外叠加四路混合检索与个性化重排、Bento 自由排版工作台、端侧 0-RTT 微工具、技术关系图谱，并通过 MCP 协议把同一套能力开放给外部 AI Agent。
 
 代码形态是 **pnpm Workspace Monorepo**：4 个后端库（core / store / ai / mcp）+ 1 个 Fastify 服务（api）+ 1 个 Next.js 前端（web，事实源在 web-overlay）+ 2 个端侧扩展 + 200+ 个工程脚本（当前值见 `metrics.json` 的 `scripts.files`）。
 
@@ -69,16 +69,16 @@
                ▼                      ▼
 ┌──────────────┴──────────────────────┴──────────────────┐
 │ Fastify 中枢 :8787                                     │
-│ · 59 个路由插件 / 387 个 REST 路由声明 / OpenAPI         │
+│ · 59 个路由插件 / REST 路由声明（当前值见 metrics.json）/ OpenAPI │
 │ · AppContext 装配（能力可选、失败不致命）              │
 │ · JobRunner（9 类任务 / 6 条默认 cron）                │
 │ · 横切：CORS 限流 安全头 请求ID 指标 缓存 鉴权         │
 └──────────────┬─────────────────────────────────────────┘
                ▼
 ┌──────────────┴─────────────────────────────────────────┐
-│ @navhub/store · 25 表 / 混合检索 / 向量 / FTS          │
+│ @navhub/store · 业务表（当前值见 metrics.json）/ 混合检索 / 向量 / FTS │
 │ @navhub/ai    · embedding / 富化 / SSRF 沙箱           │
-│ @navhub/core  · 纯算法与契约（59 文件）                │
+│ @navhub/core  · 纯算法与契约                            │
 └──────────────┬─────────────────────────────────────────┘
                ▼
 ┌──────────────┴─────────────────────────────────────────┐
@@ -153,7 +153,7 @@ node scripts/check-web-overlay.mjs          # 镜像与 vendored 底座一致性
 
 ## 4. 五条核心数据流
 
-### 4.1 检索：五路召回 → RRF 融合 → LinUCB 调权 → personal 微调
+### 4.1 检索：四路召回 → RRF 融合 + personal rerank → LinUCB 调权
 
 ```
 GET /api/search?q=写代码的AI
@@ -165,7 +165,7 @@ SearchEngine.search()                       packages/store/src/search.ts
         ├─ fts      FTS5 + CJK 二元分词，BM25 排序
         ├─ pinyin   全拼/首字母（qdjb → 启动脚本）
         ├─ semantic sqlite-vec / pgvector KNN（bge-small-zh 向量）
-        └─ personal 点击/收藏/置顶画像加权
+        └─ personal 仅对以上已召回站点按点击/收藏画像 rerank（非第五路召回）
         │
         ▼
 fuse()  RRF：score = Σ w_c / (60 + rank_c) × coverage 乘子
@@ -183,7 +183,7 @@ SearchResult { hits[], tookMs, channels, capability, suggestions }
 2. **coverage 乘子**：多路共同命中的站点被额外加权，这是抑制「语义答非所问」的主要手段。
 3. **Query Planner early-exit**：`exact` 命中 ≥ 5 条时跳过 semantic，省一次 ONNX 推理（`earlyExitExactHits` 可关）。
 
-闭环学习：`POST /api/events` 上报 click/favorite → `profile-service` 60s 节流聚合 `user_profiles` → 下一次检索注入 personal 通道；同时 `computeDwellTimeReward`（<1.5s 记 -0.5，复制/收藏记 +2.0）更新 LinUCB 的 A/b 矩阵（γ=0.98 折扣）。
+闭环学习：`POST /api/events` 上报 click/favorite → `profile-service` 60s 节流聚合 `user_profiles` → 下一次检索注入 personal rerank 信号；全局 LinUCB 只学习可信身份且显式携带 channel 的反馈，`computeDwellTimeReward`（<1.5s 记 -0.5，复制/收藏记 +2.0）更新 A/b 矩阵（γ=0.98 折扣），匿名或渠道缺失的请求不参与全局学习。
 
 ### 4.2 写入与富化：URL → 安全抓取 → LLM 结构化 → 入库 → 建索引 → 审计
 
@@ -210,7 +210,7 @@ POST /api/sites/auto { url }
 ```
 浏览器 GET /
    │
-   ├─ Next Server Component（app/page.tsx, force-dynamic）
+   ├─ Next Server Component（app/page.tsx, revalidate=60 / ISR）
    │     └─ getFileContent('navigation.json') ─┐
    │        getFileContent('site.json')       ─┴─ StorageAdapter(http)
    │                                              └─ /api/hub/* 代理 → 中枢 /api/storage
@@ -222,7 +222,7 @@ POST /api/sites/auto { url }
          └─ 实时数据 → SSE（/api/jobs/stream、/api/admin/dashboard/stream）
 ```
 
-**为什么首页要 `force-dynamic`**：若参与构建期预渲染，`generateMetadata` 的标题会被固化在产物里（源码注释记录了实测事故：库里标题已改，页面 `<title>` 仍是旧值）。
+**首页缓存**：`src/app/page.tsx` 声明 `revalidate = 60`，HTTP 存储读使用带标签的 Next Data Cache；因此是 ISR，不是 `force-dynamic`。后台写入通过 `revalidateTag` 主动失效，未触发失效时最多一个 60s 周期后可见；展示模式 Cookie 由 `src/proxy.ts` 重写到 `/vm/[mode]`，避免读 cookies 让首页退化为动态渲染。
 
 ### 4.4 MCP 调用：工具清单 → scope 过滤 → 处理器 → 同一套仓储
 
@@ -415,7 +415,7 @@ JobRunner.tick()（定时）
 | `/videos`、`/videos/player` | 视频导航 / 播放 | `video-content.tsx`、`video-player-page.tsx` |
 | `/custom` | 自定义工作区 | `workspace-filter.tsx` |
 | `/auth/signin` | 登录 | `signin-failure.ts` |
-| `/admin/*` | 16 个后台路由页 | `AdminLayoutClient`、`sitelist/page.tsx` 等 |
+| `/admin/*` | 后台路由页（完整实时清单见 `docs/metrics.json` 的 `pages`） | `AdminLayoutClient`、`sitelist/page.tsx` 等 |
 
 **模块化工作台（Bento-Flow）三层**：
 
@@ -466,7 +466,7 @@ JobRunner.tick()（定时）
 - **单元/集成测试 66 个文件、14,345 行**：core 23、store 15、api 13、ai 4、mcp 2、e2e 9。
 - **测试取向是「防回归」而非「覆盖率」**：几乎每个测试文件头部都写明「修的是什么缺陷」以及「去掉修复后哪个断言会失败」（非空性验证）。
 - **真实依赖优先**：`jobs.test.ts` 跑真实 SQLite 与真实 tick；`mcp-http.test.ts` 用真实端口；`pg-dialect.e2e.test.ts` 连真实 PG，未配置则整套 skip。
-- **验证流水线**：`pnpm verify`（类型 + overlay 一致性 + 扩展校验 + 单测）→ `pnpm lint` → `playwright test`。
+- **验证流水线**：`pnpm check:generated`（core 镜像 / 路由策略 / REST 契约 / overlay→web 四条链，纯校验）→ `pnpm verify` → `pnpm lint` → `playwright test`；`pnpm build` 覆盖后端包与前端 navsphere。
 - **Git 门禁**：`scripts/install-git-hooks.mjs` 安装 pre-commit，拦截 overlay 未同步与扩展配置错误。
 
 ---
@@ -481,7 +481,7 @@ JobRunner.tick()（定时）
 | MCP「15 个 / 17 个工具」 | **45 个**（32 read / 12 write / 1 admin） | `wiki.md` §7（`README.md` 无此说法） |
 | 「19 张核心表」 | **55 张** | `wiki.md` §5.2 |
 | 「洛伦兹双曲超曲面 / 闵可夫斯基内积」 | **双模型并存，非术语不一致**：`core/src/hyperbolic.ts`（284 行）同时实现庞加莱球（`poincareDistance`、`mobiusAdd`、`expMap0`，供算法实验室面板经 `findTopAlternativesInHyperbolicSpace` 调用）与洛伦兹（`lorentzInnerProduct`、`lorentzDistance`，附双向换算 `poincareToLorentz`/`lorentzToPoincare`）；线上排序 `api/src/routes/rank.ts` 用洛伦兹距离重排并回 `manifold: "lorentz-hyperboloid"`。README §5 与 wiki §4.2 的洛伦兹说法属实（2026-11-11 核对，原行「仅庞加莱实现」为误判） | `README.md` §5、`wiki.md` §4.2 vs `core/src/hyperbolic.ts`、`api/src/routes/rank.ts` |
-| 「web 与 web-overlay 保持 100% 同步」 | **该说法现行文档已无出处**（`wiki.md` §3.1 现讲生成镜像机制，不再提 100% 同步；本表为唯一引用处）；机制是生成镜像而非人工同步：`apps/web` 由 `mirror:web` 从 overlay 生成，CI 先 vendor 再校验。2026-11-11 复测：`mirror:web` 后 `check:overlay` 通过，1153 个覆盖层文件一致；未重新生成的旧克隆会报漂移（本次实测 11 漂移 + 7 缺失，均为成长/视频线已推 main 的文件，须先 `mirror:web`）。扫描期间曾观测到的 74 漂移 + 25 缺失为历史记录 | `docs/CODEBASE_OVERVIEW.md` §10 P0、`wiki.md` §3.1 |
+| 「web 与 web-overlay 保持 100% 同步」 | **该说法现行文档已无出处**；`apps/web` 由 `vendor:web` / `mirror:web` 从 overlay 生成，CI 先 vendor 再跑 `check:generated` 与 `check:overlay`。两者都是纯校验，不自修；历史文件数快照不再作为当前规模 | `docs/CODEBASE_OVERVIEW.md` §10 P0、`wiki.md` §3.1 |
 | 「24 个路由插件」 | **59 个**（`server.ts` 的 register 调用） | `server.ts` 头注释 |
 
 ---
@@ -490,20 +490,13 @@ JobRunner.tick()（定时）
 
 按影响排序，均来自实测：
 
-### P0 — 双目录同步机制（当前一致，但极易再次漂移）
+### P0 — 双目录同步机制（有纯校验门禁，仍需显式生成）
 
-`node scripts/check-web-overlay.mjs` 在重新生成镜像后通过（2026-11-11 复测：`mirror:web` 后 1153 个覆盖层文件与 `apps/web` 一致；未重新生成的旧克隆会报漂移，本次实测 11 漂移 + 7 缺失，均为成长/视频线已推 main 的文件），但本次扫描过程中曾实测到 **74 个漂移 + 25 个缺失**，几分钟后由外部同步收敛。这说明：
-
-- 影响：Docker 构建与 `vendor-web` 以 overlay 为准，一旦漂移，**部分自研改动不会进入镜像**；反向漂移则会让本地开发看不到已部署的逻辑。
-- 根因：同一份代码存在两个物理副本（`apps/web` 与 `apps/web-overlay`），同步完全依赖人工执行脚本。
-- 处置：把 `check:overlay` 设为 CI 必过项与 pre-commit 钩子（`install-git-hooks.mjs` 已具备能力，需确认实际启用）；长期考虑以构建期注入替代双副本。
+`apps/web` 是 vendored 底座 + overlay 的生成目录。`check:overlay` 与 `check:generated` 只比对、不改写，因此不会把漂移「校验到消失」；发现漂移时应在 overlay 事实源修复，再显式运行 `pnpm mirror:web` 或 `pnpm vendor:web` 并复查。Docker 与本地共用 `vendor-web.mjs`，避免下载、overlay 和 prune 逻辑分叉。长期仍可考虑以构建期注入替代物理双副本。
 
 ### P1 — 算法双份维护
 
-14 个纯算法在 core 与前端各一份，无自动校验。建议：
-
-- 短期：在 `check:overlay` 旁增加 `check:algo-parity`，对镜像文件做 AST/哈希比对；
-- 长期：把 core 编译为独立 ESM 产物，前端以 npm 包或构建期注入方式引用，消除手工副本。
+纯算法在 core 与前端保留运行时副本；`sync-core-mirrors.mjs --check` 已覆盖逐字节镜像，并已接入 `check:generated`。浏览器适配层仍需人工复核；长期可把 core 编译为独立 ESM 产物，以 npm 包或构建期注入方式引用，减少副本维护。
 
 ### P1 — 巨型文件
 
@@ -513,9 +506,9 @@ JobRunner.tick()（定时）
 
 `apps/web/src/app/admin/navigation/**`（6 页 + 7 组件）与 overlay 的 `admin/sitelist`、`admin/categories` 并存，是上游遗留后台与新后台两套入口。建议明确「新后台为准」，旧入口加跳转或下线。
 
-### P2 — 默认 CI 不覆盖 PostgreSQL
+### 已收敛 — CI 已覆盖 PostgreSQL
 
-`pg-dialect.e2e.test.ts` 与 `rollup-pg.e2e.test.ts` 在未设置 `NAVHUB_TEST_DATABASE_URL` 时整套 skip，standard 模式的 SQL 回归依赖 CI 的 `test-postgres` job。建议在合并前强制跑该 job。
+`test-postgres` 注入 pgvector 服务与 `NAVHUB_TEST_DATABASE_URL`，通过带环境守卫的 `pnpm test:pg:suite` 拒绝整套静默 skip，并由 `ci-passed` 聚合为合并门禁。
 
 ### P3 — 死代码与占位文件
 
@@ -525,7 +518,7 @@ JobRunner.tick()（定时）
 
 ### P3 — 中间件位置
 
-Next 只识别 `src/middleware.ts`。`apps/web/src/app/middleware.ts` 不会生效；overlay 已提供正确的 `src/middleware.ts` 但未同步到 `apps/web`。当前管理面仍有 `admin/layout.tsx` 的服务端会话校验兜底，但中间件这层纵深实际缺失。
+Next 16 使用 `src/proxy.ts`（middleware 的继任约定）。overlay 已提供 `src/proxy.ts`，`vendor-web.mjs` 会修剪上游遗留的 `src/middleware.ts`，避免 middleware/proxy 并存导致构建失败；当前管理面仍有 `admin/layout.ts` 的服务端会话校验兜底。
 
 ---
 
@@ -564,5 +557,5 @@ Next 只识别 `src/middleware.ts`。`apps/web/src/app/middleware.ts` 不会生�
 **改动前的三条硬规则**
 
 1. 纯算法先进 `packages/core` 并补单测，再同步前端副本。
-2. 前端改动先改 `apps/web-overlay`，再 `sync` 回 `apps/web`（否则镜像构建丢改动）。
+2. 前端改动只改 `apps/web-overlay`，再显式跑 `pnpm mirror:web`（或重新拉底座时跑 `pnpm vendor:web`），最后用 `pnpm check:generated` 复查。
 3. 新增路由必须声明 `config.scope`（public/read/write/admin），否则默认 public 且 OpenAPI 文档会标错。

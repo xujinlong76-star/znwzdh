@@ -15,6 +15,7 @@
  *   会在两份文件里各漂移一次，而现有门禁没有任何一条能发现它。
  *
  * 本脚本做**只读**内容比对：逐文件算 sha256，不一致即 EXIT=1。
+ * tsconfig 仅忽略 Next 注入 include 的 .next* 类型目录，其余配置仍严格比对。
  * 这是单源化改造最低成本、可回退的第一步；不写盘、不联网、不改任何配置。
  *
  * 用法：在仓库根运行（与 config.ts / verify.mjs 的 CWD 约定一致）
@@ -24,36 +25,44 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-
-const ROOT = resolve(process.cwd());
-const WEB = join(ROOT, "apps", "web");
-const OVERLAY = join(ROOT, "apps", "web-overlay");
+import { normBuildInjectedConfig } from "./lib/overlay-drift.mjs";
 
 // 只对「构建期会被实际读取」的配置文件做全等断言。
 // 源码目录不在此列：apps/web/src 本就是 gitignore 的生成物（仅 10 个文件入库），
 // 由 scripts/check-web-overlay.mjs 按 overlay→web 方向单独校验。
 const FILES = ["next.config.js", "package.json", "tsconfig.json"];
 
-const digest = (abs) => createHash("sha256").update(readFileSync(abs)).digest("hex");
-const asJson = process.argv.includes("--json");
+const digest = (abs, name) => {
+  const buf = readFileSync(abs);
+  const normalized = normBuildInjectedConfig(name, buf);
+  return createHash("sha256").update(normalized ?? buf).digest("hex");
+};
 
-const rows = [];
-for (const name of FILES) {
-  const a = join(WEB, name);
-  const b = join(OVERLAY, name);
-  if (!existsSync(a) || !existsSync(b)) {
-    rows.push({ file: name, status: "missing", a: existsSync(a), b: existsSync(b) });
-    continue;
+export function checkConfigParity(root = process.cwd()) {
+  const web = join(root, "apps", "web");
+  const overlay = join(root, "apps", "web-overlay");
+  const rows = [];
+  for (const name of FILES) {
+    const a = join(web, name);
+    const b = join(overlay, name);
+    if (!existsSync(a) || !existsSync(b)) {
+      rows.push({ file: name, status: "missing", a: existsSync(a), b: existsSync(b) });
+      continue;
+    }
+    const ha = digest(a, name);
+    const hb = digest(b, name);
+    rows.push({ file: name, status: ha === hb ? "equal" : "drift", web: ha.slice(0, 12), overlay: hb.slice(0, 12) });
   }
-  const ha = digest(a);
-  const hb = digest(b);
-  rows.push({ file: name, status: ha === hb ? "equal" : "drift", web: ha.slice(0, 12), overlay: hb.slice(0, 12) });
+  return rows;
 }
 
-if (asJson) {
-  console.log(JSON.stringify({ root: ROOT, rows }, null, 2));
-  process.exit(rows.some((r) => r.status !== "equal") ? 1 : 0);
-}
+function main(argv) {
+  const root = resolve(process.cwd());
+  const rows = checkConfigParity(root);
+  if (argv.includes("--json")) {
+    console.log(JSON.stringify({ root, rows }, null, 2));
+    process.exit(rows.some((r) => r.status !== "equal") ? 1 : 0);
+  }
 
 let bad = 0;
 for (const r of rows) {
@@ -76,3 +85,8 @@ if (bad) {
 }
 console.log(`[config-parity] ✅ ${FILES.length}/${FILES.length} 份配置一致（四条构建路径可判定）`);
 process.exit(0);
+}
+
+if (process.argv[1]?.endsWith("check-web-config-parity.mjs")) {
+  main(process.argv.slice(2));
+}

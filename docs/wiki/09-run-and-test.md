@@ -212,7 +212,7 @@ NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d
 
 ### 5.9 Docker 构建参数
 
-`NODE_IMAGE`（默认 `node:22-bookworm-slim`）、`DEBIAN_MIRROR`（默认 `deb.debian.org`）、`NAVSPHERE_REF`（默认 `main`）。
+`NODE_IMAGE`（默认 `node:22-bookworm-slim`）、`DEBIAN_MIRROR`（默认 `deb.debian.org`）、`NAVSPHERE_REF`（默认 `6ba74fab9f86aa6ba4e276c002128a8f5a0acc0a`，与 `scripts/vendor-web.mjs` 的固定 commit 一致）。
 
 ## 6. 测试
 

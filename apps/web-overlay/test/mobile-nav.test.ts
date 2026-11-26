@@ -76,15 +76,7 @@ describe('mobile-nav 组件本体', () => {
     // 例如「我的，3 条未读通知」：读屏能听到未读数，是改进而非退化。
     // 这里刻意不写成 `aria-label={label}` 的精确快照：那样任何合法的状态后缀
     // 都会让守卫变红，而它真正要守的是「别把 label 换掉或写成固定文案」。
-    // 2026-11-26：a58021ed 把模板改成徽章数前置（`${unread} ${label}，未读通知`，
-    // WCAG 2.5.3），`}` 出现在 label 之前，旧正则 /aria-label=\{[^}]*\blabel\b/
-    // 的 [^}]* 在第一个 `}` 处就截断，误报。改成先截取 aria-label={…} 整块
-    // （闭合 `}` 独占一行才算块尾，块内模板插值不影响），再断言块内含 label。
-    // 注意：只断言捕获组（块体），不含 `aria-label={` 前缀——前缀里的 label
-    // 会让 /\blabel\b/ 恒成立、守卫失效。
-    const ariaLabelBody = src.match(/aria-label=\{([\s\S]*?)\n\s*\}/)?.[1]
-    expect(ariaLabelBody).toBeTruthy()
-    expect(ariaLabelBody).toMatch(/\blabel\b/)
+    expect(src).toMatch(/aria-label=\{[^}]*\blabel\b/)
     // 根路径只认精确匹配，其余走前缀匹配（/category/xxx 也点亮分类）
     expect(src).toContain("pathname.startsWith(href + '/')")
   })
@@ -111,11 +103,11 @@ describe('根布局挂载', () => {
 })
 
 describe('与 footer 预留的契约', () => {
-  it('footer 底垫：为右下浮坞抬到 <640 留 9rem、≥640 留 6rem（2026-11-26）', () => {
+  it('footer 底垫：为右下浮坞抬到 <640 留 7rem、≥640 留 6rem（2026-11-22）', () => {
     const footer = read(FOOTER)
     // 原 5.5/4.5rem + pb-8 不够：右下浮坞（猫+回顶钮≈116px）
-    // 在 390x844 与 1366x768 下都压住了页脚链接，实测复现后抬升；2026-11-26 再修正：猫是独立 fixed 元素、移动端猫带顶沿 128px，7rem=112px 仍短 16px，移动端抬到 9rem。
-    expect(footer).toContain('pb-[calc(9rem+env(safe-area-inset-bottom,0px))]')
+    // 在 390x844 与 1366x768 下都压住了页脚链接，实测复现后抬升。
+    expect(footer).toContain('pb-[calc(7rem+env(safe-area-inset-bottom,0px))]')
     expect(footer).toContain(
       'min-[640px]:max-[1024px]:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]',
     )

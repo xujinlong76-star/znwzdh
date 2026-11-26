@@ -621,10 +621,14 @@ describe("迁移面硬锁（第一批：brief / hot 链接文字走 text-link）
     expect(src).toContain("hover:text-link");
   });
 
-  it("hot-view.tsx：卡片标题 hover 态走 text-link（站内详情链）", () => {
-    const src = readFileSync(overlayPath("src/app/hot/hot-view.tsx"), "utf8");
+  it("站点卡片（SiteCard grid）标题 hover 态走 text-link（站内详情链）", () => {
+    // 2026-11-25 阶段 B：热榜卡片标题收进 SiteCard 原语，hover 配色的断言随解剖
+    // 迁移到原语源码；hot-view 侧只钉「确实走原语、且不再自绘标题 hover」。
+    const src = readFileSync(overlayPath("src/components/site-card.tsx"), "utf8");
     expect(src).toContain("group-hover:text-link");
-    expect(src, "卡片标题 hover 态不得残留 group-hover:text-primary").not.toContain("group-hover:text-primary");
+    const hot = readFileSync(overlayPath("src/app/hot/hot-view.tsx"), "utf8");
+    expect(hot).toContain("<SiteCard");
+    expect(hot, "卡片标题 hover 态不得残留 group-hover:text-primary").not.toContain("group-hover:text-primary");
   });
 
   it("drama 页：无 text-primary（当前本就干净，锁住不回潮）", () => {

@@ -163,6 +163,7 @@ describe("4-2 巡检队列：未知状态不得被候选池饿死", () => {
 describe("4-2 未知状态不得被瞬时抖动降级（验收标准 3 的失败侧）", () => {
   const runHandle = (): JobRunHandle => ({
     jobId: "test-coverage",
+    runToken: "test-coverage-token",
     kind: "health_check",
     signal: new AbortController().signal,
     deadlineAt: 0,

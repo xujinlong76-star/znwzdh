@@ -4,18 +4,21 @@
  * 天气卡以前是纯静态表，没有可测的取数路径；现在它有了真实的失败面，
  * 所以要把「失败必须说清楚、缺失必须是 null、旧观测必须挂 stale」钉住。
  *
- * DNS 被桩成公网 IP：SSRF 防护的三层校验照跑，但不依赖测试机的解析结果。
+ * 天气路由通过 guardedFetch 使用原生 node:http/https，并不经过 globalThis.fetch。
+ * 因此在测试边界替换 guardedFetch：保留真实响应读取与错误类型，只桩掉出网动作，
+ * 既不访问真实外网，也不改动生产 SSRF 策略。
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { guardedFetch } from '@/lib/ssrf-guard';
 
-vi.mock("node:dns/promises", () => ({
-  lookup: vi.fn(async () => [{ address: "93.184.216.34" }]),
-}));
+vi.mock('@/lib/ssrf-guard', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/ssrf-guard')>();
+  return { ...actual, guardedFetch: vi.fn() };
+});
 
 type FetchCall = { url: string };
 
 const calls: FetchCall[] = [];
-let originalFetch: typeof globalThis.fetch;
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(typeof body === "string" ? body : JSON.stringify(body), {
@@ -26,13 +29,12 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 /** 上游行为：按 URL 关键字分派，返回值可以是 Response、Error 或状态码 */
 function stubUpstream(handler: (url: string) => Response | Error): void {
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
-    const url = String(input);
+  vi.mocked(guardedFetch).mockImplementation(async (url) => {
     calls.push({ url });
     const out = handler(url);
     if (out instanceof Error) throw out;
-    return out;
-  }) as typeof globalThis.fetch;
+    return { response: out, finalUrl: url };
+  });
 }
 
 const FORECAST_OK = {
@@ -64,11 +66,11 @@ async function getWeather(query: string, headers?: Record<string, string>) {
 
 beforeEach(() => {
   calls.length = 0;
-  originalFetch = globalThis.fetch;
+  vi.mocked(guardedFetch).mockReset();
 });
 
 afterEach(() => {
-  globalThis.fetch = originalFetch;
+  vi.mocked(guardedFetch).mockReset();
 });
 
 describe("/api/weather：城市表就是唯一的出网面", () => {

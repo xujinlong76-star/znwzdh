@@ -28,6 +28,13 @@ export function fail(message: string): ToolResult {
 /** 所有工具处理器的统一签名。 */
 export type Handler = (deps: HandlerDeps, args: unknown, tc: ToolContext) => Promise<ToolResult>;
 
+export interface IdempotencyOptions<T> {
+  /** 可选的网络/embedding 前置准备：在事务外执行，且已命中缓存时跳过。 */
+  prepare?: () => Promise<void>;
+  /** 向量索引等提交后副作用；重放时也执行，用于补偿上次提交后的中断。 */
+  afterCommit?: (result: T) => Promise<void>;
+}
+
 export interface HandlerDeps {
   ctx: McpHostContext;
   /**
@@ -37,7 +44,11 @@ export interface HandlerDeps {
    * 传进来的 key 会被 bind() 加上「工具名 + 调用身份」作用域，处理器不必自己拼；
    * 理由见 qualifyIdempotencyKey()。
    */
-  withIdempotency: (key: string | undefined, compute: () => Promise<unknown>) => Promise<ToolResult>;
+  withIdempotency: <T>(
+    key: string | undefined,
+    compute: () => Promise<T>,
+    options?: IdempotencyOptions<T>,
+  ) => Promise<ToolResult>;
   /** 写库后补建向量索引；模型不可用时静默跳过（不该让写操作失败）。 */
   indexSite: (id: string, title: string, description: string | null, url: string) => Promise<void>;
 }
@@ -57,28 +68,74 @@ export function requireOwnerIdentity(tc: ToolContext): string {
 }
 
 export function makeWithIdempotency(ctx: McpHostContext): HandlerDeps["withIdempotency"] {
-  return async function withIdempotency(key, compute) {
-    if (!key) return ok(await compute());
-    const db = ctx.repo.db;
-    if (db.dialect === "sqlite" && db.sqlite) {
-      const existing = db.sqlite.prepare("SELECT response FROM idempotency WHERE key = ?").get(key) as { response: string } | undefined;
-      if (existing?.response) return ok({ replayed: true, result: JSON.parse(existing.response) });
-    } else if (db.dialect === "pg" && db.pg) {
-      const { rows } = await db.pg.query("SELECT response FROM idempotency WHERE key = $1", [key]);
-      const row = rows[0] as { response: string } | undefined;
-      if (row?.response) return ok({ replayed: true, result: JSON.parse(row.response) });
+  return async function withIdempotency<T>(
+    key: string | undefined,
+    compute: () => Promise<T>,
+    options?: IdempotencyOptions<T>,
+  ): Promise<ToolResult> {
+    const afterCommit = async (result: T): Promise<void> => {
+      if (!options?.afterCommit) return;
+      try {
+        await options.afterCommit(result);
+      } catch {
+        // 业务记录与幂等响应已经提交，索引故障不能让成功写入变成失败。重放会再次
+        // 调用 afterCommit，因此可补偿进程在 COMMIT 后、索引完成前退出的窗口。
+      }
+    };
+
+    if (!key) {
+      await options?.prepare?.();
+      const result = await compute();
+      await afterCommit(result);
+      return ok(result);
     }
-    const result = await compute();
-    if (db.dialect === "sqlite" && db.sqlite) {
-      db.sqlite.prepare("INSERT OR REPLACE INTO idempotency (key, response, created_at) VALUES (?,?,?)")
-        .run(key, JSON.stringify(result), Date.now());
-    } else if (db.dialect === "pg" && db.pg) {
-      await db.pg.query(
-        "INSERT INTO idempotency (key, response, created_at) VALUES ($1, $2, $3) ON CONFLICT (key) DO UPDATE SET response = $2, created_at = $3",
-        [key, JSON.stringify(result), Date.now()]
+
+    const readResponse = async (): Promise<string | null> => {
+      const existing = await ctx.repo.raw("SELECT response FROM idempotency WHERE key = ?", [key]);
+      const response = existing[0]?.response;
+      return typeof response === "string" && response.length > 0 ? response : null;
+    };
+    const replay = async (response: string): Promise<ToolResult> => {
+      const result = JSON.parse(response) as T;
+      await afterCommit(result);
+      return ok({ replayed: true, result });
+    };
+
+    // 普通重放先在事务外命中缓存，避免再次执行 enrich/LLM 等网络准备。这里只是
+    // 快速路径；真正的并发正确性仍由下面事务内的第二次查重保证。
+    const cached = await readResponse();
+    if (cached) return replay(cached);
+
+    // enrich 可能等待外部网络数秒，绝不能占着 SQLite 的 BEGIN IMMEDIATE。
+    await options?.prepare?.();
+
+    /**
+     * 事务内只保留查重、业务 DB 写入与幂等响应落库。
+     *
+     * SQLite 的 BEGIN IMMEDIATE 已串行化所有写者；PG 额外用事务级 advisory lock
+     * 串行化同一个 key（跨进程也有效）。compute 抛错时整个事务回滚，因此不会
+     * 留下“站点已建但幂等响应缺失”的半状态，重试可以重新完整执行。
+     */
+    const outcome = await ctx.repo.withTransaction(async () => {
+      await ctx.repo.acquireAdvisoryXactLock(key);
+      // prepare 期间可能已有同键请求提交，必须再查一次，不能只信事务外快照。
+      const existing = await readResponse();
+      if (existing) return { replayed: true as const, result: JSON.parse(existing) as T };
+
+      const result = await compute();
+      await ctx.repo.run(
+        "INSERT INTO idempotency (key, response, created_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET response = excluded.response, created_at = excluded.created_at",
+        [key, JSON.stringify(result) ?? "null", Date.now()],
       );
-    }
-    return ok(result);
+      return { replayed: false as const, result };
+    });
+
+    // embedding/vector/plugin index 只在 COMMIT 后执行，回滚不会留下“库里有站点、
+    // 向量库已有记录”的残留，也不会让长网络请求阻塞 SQLite 写锁。
+    await afterCommit(outcome.result);
+    return outcome.replayed
+      ? ok({ replayed: true, result: outcome.result })
+      : ok(outcome.result);
   };
 }
 
@@ -122,8 +179,10 @@ export function bind<T extends Record<string, Handler>>(handlers: T, deps: Handl
       // 只在真正带键时改写：无键的分支不应该多一次哈希
       const scoped: HandlerDeps = {
         ...deps,
-        withIdempotency: (rawKey, compute) =>
-          rawKey ? deps.withIdempotency(qualifyIdempotencyKey(key, tc.actor, rawKey), compute) : deps.withIdempotency(rawKey, compute),
+        withIdempotency: (rawKey, compute, options) =>
+          rawKey
+            ? deps.withIdempotency(qualifyIdempotencyKey(key, tc.actor, rawKey), compute, options)
+            : deps.withIdempotency(rawKey, compute, options),
       };
       return src[key]!(scoped, args, tc);
     };

@@ -5,7 +5,7 @@
  */
 import { enrichUrl, guardedFetch } from "@navhub/ai";
 import { enrichLlmOf } from "@navhub/core";
-import { auditPageHealth, clampFacetFilter, resolveCategoryTitleSuggestion, UNCATEGORIZED_CATEGORY_ID } from "@navhub/core";
+import { auditPageHealth, clampFacetFilter, resolveCategoryTitleSuggestion, UNCATEGORIZED_CATEGORY_ID, type Site } from "@navhub/core";
 import {
   BatchImportInput,
   CreateSiteInput,
@@ -78,20 +78,37 @@ export const siteHandlers = {
       if (!attach.ok) return fail(attach.error);
       attachableCategoryId = attach.categoryId;
     }
+    let duplicate: Site | null = null;
+    let title = input.title ?? input.url;
+    let description = input.description ?? null;
+    let categoryId = attachableCategoryId;
+    let tags = input.tags ?? [];
+    let provenance: string | null = null;
+    let gapTitle: string | null = null;
+    let ambiguousCategoryIds: string[] = [];
+
     return withIdempotency(input.idempotencyKey, async () => {
+      // prepare 里的查重只是快速路径；事务内必须再查，覆盖并发创建与 prepare 期间的竞态。
       const dup = await ctx.repo.findSiteByUrl(input.url);
       // 已存在不算错误：Agent 无法预知库里有什么，报错会让它进入无效重试
       if (dup) return { created: false, reason: "already_exists", site: dup };
 
-      let title = input.title ?? input.url;
-      let description = input.description ?? null;
-      let categoryId = attachableCategoryId;
-      let tags = input.tags ?? [];
-      let provenance: string | null = null;
-      let gapTitle: string | null = null;
-      let ambiguousCategoryIds: string[] = [];
+      if (!categoryId) {
+        // 兜底走固定 id 的「未分类」，不是 cats[0]（那等于随机塞进第一个领域类目）
+        categoryId = await ctx.repo.ensureUncategorized();
+      }
 
-      if (input.enrich) {
+      const site = await ctx.repo.createSite({ url: input.url, title, description, categoryId, tags, facets: input.facets, source: "mcp" });
+      // Agent 建议的类目名不再自动进树：记账成提案，由编辑在后台判定（见 category_gap）
+      const categoryGap = gapTitle
+        ? await ctx.repo.recordCategoryGap({ title: gapTitle, siteId: site.id, siteUrl: site.url, source: "MCP create_site", ambiguousCategoryIds })
+        : null;
+      await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.create", target: site.id, diff: { provenance, categoryGap: categoryGap?.proposalId ?? null } });
+      return { created: true, site, provenance, categoryGap };
+    }, {
+      prepare: async () => {
+        duplicate = await ctx.repo.findSiteByUrl(input.url);
+        if (duplicate || !input.enrich) return;
         const cats = await ctx.repo.listCategories();
         // 与 HTTP 入口共用同一解析链：系统配置 > 环境变量 > 内置默认（未配置时降级本地）
         const resolved = await ctx.resolveLlm?.();
@@ -114,21 +131,12 @@ export const siteHandlers = {
             if (r.status === "ambiguous") ambiguousCategoryIds = r.categoryIds;
           }
         }
-      }
-
-      if (!categoryId) {
-        // 兜底走固定 id 的「未分类」，不是 cats[0]（那等于随机塞进第一个领域类目）
-        categoryId = await ctx.repo.ensureUncategorized();
-      }
-
-      const site = await ctx.repo.createSite({ url: input.url, title, description, categoryId, tags, facets: input.facets, source: "mcp" });
-      // Agent 建议的类目名不再自动进树：记账成提案，由编辑在后台判定（见 category_gap）
-      const categoryGap = gapTitle
-        ? await ctx.repo.recordCategoryGap({ title: gapTitle, siteId: site.id, siteUrl: site.url, source: "MCP create_site", ambiguousCategoryIds })
-        : null;
-      await indexSite(site.id, site.title, site.description ?? null, site.url);
-      await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.create", target: site.id, diff: { provenance, categoryGap: categoryGap?.proposalId ?? null } });
-      return { created: true, site, provenance, categoryGap };
+      },
+      afterCommit: async (result) => {
+        if (result.created && "site" in result) {
+          await indexSite(result.site.id, result.site.title, result.site.description ?? null, result.site.url);
+        }
+      },
     });
   },
 
@@ -228,11 +236,18 @@ export const siteHandlers = {
           categoryId: (s.categoryId ? leafById.get(s.categoryId) : undefined) ?? fallback,
           tags: s.tags ?? [], source: "mcp-batch",
         });
-        await indexSite(site.id, site.title, site.description ?? null, site.url);
         created.push(site.id);
       }
       await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.batchImport", diff: { created: created.length, duplicateUrls: duplicateUrls.length, categoryDegraded: degraded } });
       return { dryRun: false, created: created.length, ids: created, duplicateUrls, categoryDegraded: degraded };
+    }, {
+      afterCommit: async (result) => {
+        if (result.ids.length === 0) return;
+        const siteMap = await ctx.repo.getSitesByIds(result.ids);
+        for (const site of siteMap.values()) {
+          await indexSite(site.id, site.title, site.description ?? null, site.url);
+        }
+      },
     });
   },
 

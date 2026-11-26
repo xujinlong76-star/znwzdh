@@ -27,6 +27,8 @@ interface CachedIcon {
 
 const MEMORY_CACHE = new Map<string, CachedIcon>();
 const MAX_MEMORY_ITEMS = 1500;
+const MAX_CONCURRENT_UPSTREAM_FETCHES = 8;
+let activeUpstreamFetches = 0;
 const CACHE_DIR =
   existsSync(join(process.cwd(), "package.json")) && existsSync(join(process.cwd(), "..", "..", "package.json"))
     ? resolve(process.cwd(), "..", "..", ".cache", "icons")
@@ -221,6 +223,17 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
       //   c) 响应加 Content-Security-Policy: sandbox 防 SVG 脚本执行。
       // 初始两个探测地址（https/http）。重定向交由 safeFetch 逐跳校验与跟随
       // （maxRedirects=MAX_REDIRECT_HOPS），不再手动维护队列去重集与跳数计数器。
+      // P1-4 冷缓存削峰：限制服务端并发出站抓取数（上限 8），超限时直接返回确定性 SVG 兜底
+      if (activeUpstreamFetches >= MAX_CONCURRENT_UPSTREAM_FETCHES) {
+        const fallbackSvg = generateFallbackSvg(monogram, hostname);
+        return reply
+          .header("Content-Type", "image/svg+xml")
+          .header("Cache-Control", "public, max-age=3600")
+          .header("Content-Security-Policy", ICON_CSP_HEADER)
+          .header("X-Content-Type-Options", "nosniff")
+          .send(fallbackSvg);
+      }
+
       const queue: string[] = [
         `https://${hostname}/favicon.ico`,
         `http://${hostname}/favicon.ico`,
@@ -232,6 +245,7 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 3500);
+      activeUpstreamFetches += 1;
 
       try {
         /**
@@ -278,6 +292,7 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
         }
       } finally {
         clearTimeout(timeout);
+        activeUpstreamFetches = Math.max(0, activeUpstreamFetches - 1);
       }
 
       // 6. 成功抓取 -> 落地磁盘与内存缓存

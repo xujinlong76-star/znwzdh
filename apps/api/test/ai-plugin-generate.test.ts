@@ -70,8 +70,8 @@ describe("AI 自然语言插件生成与修饰端点 (POST /api/user/ai/plugin/g
   });
 
   it("根据自然语言成功生成 site-pack 网址包清单并完成格式自愈", async () => {
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => {
+    const originalFetch = ctx.config.llm.fetchImpl;
+    ctx.config.llm.fetchImpl = (async () => {
       return new Response(
         JSON.stringify({
           model: "test-model",
@@ -145,13 +145,13 @@ describe("AI 自然语言插件生成与修饰端点 (POST /api/user/ai/plugin/g
       expect(data.summary.siteCount).toBe(2);
       expect(data.rationale).toContain("Web3");
     } finally {
-      globalThis.fetch = originalFetch;
+      ctx.config.llm.fetchImpl = originalFetch;
     }
   });
 
   it("支持 search-pack 并自动修补搜索引擎前缀 ! 与 {q} 占位符", async () => {
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => {
+    const originalFetch = ctx.config.llm.fetchImpl;
+    ctx.config.llm.fetchImpl = (async () => {
       return new Response(
         JSON.stringify({
           model: "test-model",
@@ -217,12 +217,12 @@ describe("AI 自然语言插件生成与修饰端点 (POST /api/user/ai/plugin/g
       expect(engines[1].prefix).toBe("!scholar");
       expect(engines[1].searchUrl).toContain("{q}");
     } finally {
-      globalThis.fetch = originalFetch;
+      ctx.config.llm.fetchImpl = originalFetch;
     }
   });
 
   it("支持多轮增量微调模式 (传入 existingManifest)", async () => {
-    const originalFetch = globalThis.fetch;
+    const originalFetch = ctx.config.llm.fetchImpl;
     const baseManifest = {
       manifestVersion: 1,
       kind: "site-pack",
@@ -244,7 +244,7 @@ describe("AI 自然语言插件生成与修饰端点 (POST /api/user/ai/plugin/g
       },
     };
 
-    globalThis.fetch = (async () => {
+    ctx.config.llm.fetchImpl = (async () => {
       return new Response(
         JSON.stringify({
           model: "test-model",
@@ -298,13 +298,13 @@ describe("AI 自然语言插件生成与修饰端点 (POST /api/user/ai/plugin/g
       expect(data.manifest.payload.sites).toHaveLength(2);
       expect(data.manifest.payload.sites[1].title).toBe("GitHub");
     } finally {
-      globalThis.fetch = originalFetch;
+      ctx.config.llm.fetchImpl = originalFetch;
     }
   });
 
   it("上游模型调用失败时返回 502 及结构化错误细节", async () => {
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => {
+    const originalFetch = ctx.config.llm.fetchImpl;
+    ctx.config.llm.fetchImpl = (async () => {
       throw new Error("connect ECONNREFUSED 93.184.216.34:443");
     }) as typeof fetch;
 
@@ -325,7 +325,7 @@ describe("AI 自然语言插件生成与修饰端点 (POST /api/user/ai/plugin/g
       expect(data.code).toBe("network");
       expect(data.detail).toContain("ECONNREFUSED");
     } finally {
-      globalThis.fetch = originalFetch;
+      ctx.config.llm.fetchImpl = originalFetch;
     }
   });
 });

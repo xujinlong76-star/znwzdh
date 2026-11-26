@@ -18,6 +18,6 @@
     "src/app/admin/navigation/[id]/page.tsx",
     "src/app/admin/navigation/[id]/subcategory/[subId]/page.tsx",
     "src/app/admin/resources/download/page.tsx",
-    "src/app/api/site-config/route.ts"
+    "src/app/admin/submissions/page.tsx"
   ]
 }

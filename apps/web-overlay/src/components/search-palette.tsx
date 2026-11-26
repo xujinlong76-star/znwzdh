@@ -240,6 +240,10 @@ interface SearchPaletteProps {
   /** 类目筛选（侧栏点击类目时带入） */
   categoryId?: string
   placeholder?: string
+  /** 按需挂载后自动聚焦，承接轻量搜索入口的点击与 / 快捷键。 */
+  autoFocus?: boolean
+  /** 快捷键在 chunk 到达前发出的 AI / 相似模式意图。 */
+  initialDiscoveryMode?: 'ai' | 'similar'
   /** 三合一搜索窗「大窗工作台 / VS 深度横评」回调，由首页顶栏透传打开 AiFinderDialog */
   onOpenDiscoveryDialog?: (mode?: 'ai' | 'similar', initialQuery?: string) => void
 }
@@ -294,7 +298,7 @@ export function PaletteFooterHint() {
   )
 }
 
-export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导航…（中文 / 拼音 / 语义）（按 / 快速搜索）', onOpenDiscoveryDialog }: SearchPaletteProps) {
+export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导航…（中文 / 拼音 / 语义）（按 / 快速搜索）', autoFocus = false, initialDiscoveryMode, onOpenDiscoveryDialog }: SearchPaletteProps) {
   const [query, setQuery] = useState('')
   const [isFocused, setIsFocused] = useState(false)
   /**
@@ -303,8 +307,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
    *   - `similarMode`：SimilarSites 级 5 维找相似平替（支持 sim / 相似 前缀与回车直查）；
    *   - 两者均关时为默认「全站检索」。
    */
-  const [aiMode, setAiMode] = useState<boolean>(() => readSearchAiMode())
-  const [similarMode, setSimilarMode] = useState<boolean>(false)
+  const [aiMode, setAiMode] = useState<boolean>(() =>
+    initialDiscoveryMode ? initialDiscoveryMode === 'ai' : readSearchAiMode(),
+  )
+  const [similarMode, setSimilarMode] = useState<boolean>(() => initialDiscoveryMode === 'similar')
   const [aiAutoRun, setAiAutoRun] = useState<{ query: string; sceneId?: string; seq: number } | null>(null)
   const [similarSubmitReq, setSimilarSubmitReq] = useState<{ query: string; resetTrail?: boolean; seq: number } | null>(null)
   const similarKeyNavRef = useRef<((key: 'ArrowDown' | 'ArrowUp' | 'Enter') => boolean) | null>(null)
@@ -470,6 +476,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const searchRef = useRef<HTMLDivElement>(null)
   const resultsPanelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (!autoFocus) return
+    setIsFocused(true)
+    const frame = requestAnimationFrame(() => inputRef.current?.focus())
+    return () => cancelAnimationFrame(frame)
+  }, [autoFocus])
   /**
    * 外部请求聚焦（2026-11-21）：裸 / 快捷键与 ?scene= 深链都走这个事件，
    * 而不是各自去摸 DOM 找 input——本组件是 dynamic({ ssr:false }) 挂载的，
@@ -843,7 +855,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       let pluginRequestFailed = false
       void searchPlugins({ q, limit: 5 }, () => {
         pluginRequestFailed = true
-      })
+      }, controller.signal)
         .then((res) => {
           if (controller.signal.aborted || activeQueryRef.current !== q) return
           const status = searchChannelStatus({
@@ -890,9 +902,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           setLoading(false)
           setDegraded(true)
         })
-    }, 200)
+    }, delay)
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
+      abortRef.current?.abort()
+      moreAbortRef.current?.abort()
     }
   }, [query, categoryId, identity, retryToken, nocorrectQuery])
 
@@ -2386,14 +2400,14 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
           <div className="p-3 bg-card">
             <div className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-2">
-              <Sparkles className="h-3 w-3 text-amber-500" />
+              <Sparkles className="h-3 w-3 text-pinned" />
               下一代认知推测与架构探索（点击立即体验）
             </div>
 
             <div className="space-y-2">
               <div>
                 <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                  <GitCompare className="h-2.5 w-2.5 text-blue-500" /> 竞品选型多维判胜矩阵
+                  <GitCompare className="h-2.5 w-2.5 text-info" /> 竞品选型多维判胜矩阵
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {[
@@ -2404,7 +2418,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     <button
                       key={chip.q}
                       onClick={() => setQuery(chip.q)}
-                      className="px-2 py-0.5 rounded text-xs bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors"
+                      className="px-2 py-0.5 rounded text-xs bg-info/10 text-info-foreground hover:bg-info/20 border border-info/25 transition-colors"
                     >
                       {chip.label}
                     </button>
@@ -2414,7 +2428,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
               <div>
                 <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                  <Layers className="h-2.5 w-2.5 text-purple-500" /> Graph-RAG 技术栈蓝图配方
+                  <Layers className="h-2.5 w-2.5 text-category" /> Graph-RAG 技术栈蓝图配方
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {[
@@ -2424,7 +2438,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     <button
                       key={chip.q}
                       onClick={() => setQuery(chip.q)}
-                      className="px-2 py-0.5 rounded text-xs bg-purple-500/10 text-purple-700 dark:text-purple-400 hover:bg-purple-500/20 border border-purple-500/20 transition-colors"
+                      className="px-2 py-0.5 rounded text-xs bg-category/10 text-category-foreground hover:bg-category/20 border border-category/25 transition-colors"
                     >
                       {chip.label}
                     </button>
@@ -2434,7 +2448,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
               <div>
                 <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                  <Zap className="h-2.5 w-2.5 text-emerald-500" /> 0-RTT 端侧推测执行
+                  <Zap className="h-2.5 w-2.5 text-success" /> 0-RTT 端侧推测执行
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {[
@@ -2449,7 +2463,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     <button
                       key={chip.q}
                       onClick={() => setQuery(chip.q)}
-                      className="px-2 py-0.5 rounded text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors font-mono"
+                      className="px-2 py-0.5 rounded text-xs bg-success/10 text-success-foreground hover:bg-success/20 border border-success/25 transition-colors font-mono"
                     >
                       {chip.label}
                     </button>
@@ -2466,9 +2480,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           {unifiedModeHeader}
           {/* 智能跨模式直达微条：输网址一键查相似 / 输需求句一键 AI 找站 / 命中站点一键找同类平替 */}
           {searchIntentHint === 'similar' ? (
-            <div className="px-3 py-2 bg-sky-500/10 border-b border-sky-500/25 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="px-3 py-2 bg-info/10 border-b border-info/25 flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="text-foreground truncate">
-                <Radar className="mr-1 inline h-3.5 w-3.5 text-sky-700 dark:text-sky-300" />
+                <Radar className="mr-1 inline h-3.5 w-3.5 text-info-foreground" />
                 检测到网址/域名「<strong className="font-semibold">{query.trim()}</strong>」
               </span>
               <button
@@ -2481,9 +2495,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               </button>
             </div>
           ) : searchIntentHint === 'ai' ? (
-            <div className="px-3 py-2 bg-violet-500/10 border-b border-violet-500/25 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="px-3 py-2 bg-category/10 border-b border-category/25 flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="text-foreground truncate">
-                <Sparkles className="mr-1 inline h-3.5 w-3.5 text-violet-700 dark:text-violet-300" />
+                <Sparkles className="mr-1 inline h-3.5 w-3.5 text-category-foreground" />
                 检测到任务需求句，可让 AI 直接匹配站单
               </span>
               <button

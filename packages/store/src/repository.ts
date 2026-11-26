@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import {
   type Category,
   type Collection,
@@ -14,6 +13,7 @@ import {
   type SiteOfflineArchive,
 } from "@navhub/core";
 import type { Db } from "./driver.ts";
+import { getDbAccessState, isActiveTransaction, registerDbAccessAlias, type TransactionContext } from "./db-access.ts";
 import { collectionInPredicate } from "./sql-in.ts";
 import type {
     ApiTokenRecord,
@@ -159,57 +159,12 @@ function isWriteStatement(sqlText: string): boolean {
   return !READ_SQL_RE.test(sqlText);
 }
 
-/**
- * 数据库访问闸门（读写锁）。
- *
- * SQLite 只有一个连接，事务一旦 BEGIN，任何在 `await` 期间插进来的普通查询
- * 都会落进这个事务；事务回滚时，普通查询的写入会被一起抹掉。
- * 事务持有写锁、普通查询持有读锁，确保「事务期间没有外部 SQL」。
- *
- * 注意：`read()` 只接受**只读**语句。调用方（`raw`/`runCount`）已按 SQL
- * 类型自动路由，写语句不会再进到这里——见 `isWriteStatement`。
- */
-class DbAccessGate {
-  private writing = false;
-  private readonly writeQueue: Array<() => void> = [];
+function isBusyLockedError(err: unknown): boolean {
+  return /BUSY|LOCKED/i.test(err instanceof Error ? err.message : String(err));
+}
 
-  /**
-   * 读操作零阻塞执行。
-   * SQLite WAL 模式原生支持多读并发，查询不排队、不被写锁阻断，极大提升搜索与浏览吞吐。
-   */
-  async read<T>(fn: () => Promise<T>): Promise<T> {
-    return fn();
-  }
-
-  /**
-   * 写操作 FIFO 串行互斥队列。
-   * 确保单连接/单写模型下写事务按序执行，彻底消除 SQLITE_BUSY。
-   */
-  async write<T>(fn: () => Promise<T>): Promise<T> {
-    await this.acquireWrite();
-    try {
-      return await fn();
-    } finally {
-      this.releaseWrite();
-    }
-  }
-
-  private acquireWrite(): Promise<void> {
-    if (!this.writing) {
-      this.writing = true;
-      return Promise.resolve();
-    }
-    return new Promise((resolve) => this.writeQueue.push(resolve));
-  }
-
-  private releaseWrite(): void {
-    const next = this.writeQueue.shift();
-    if (next) {
-      next();
-    } else {
-      this.writing = false;
-    }
-  }
+function transactionRetryDelay(attempt: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 50 * 2 ** (attempt - 1)));
 }
 
 /**
@@ -235,63 +190,100 @@ export class Repository {
    * 其写入被并入 A 的事务 —— A 回滚时 B 已「提交」的数据一起消失。
    * AsyncLocalStorage 把判断范围收窄到「同一条异步调用链」，并发请求互不可见。
    */
-  private readonly txContext = new AsyncLocalStorage<{ inTx: boolean; pgClient?: unknown }>();
+  private readonly txContext: ReturnType<typeof getDbAccessState>["txContext"];
   /**
    * 事务 / 普通查询互斥闸门。
    *
    * SQLite 只有一个连接；PostgreSQL 分支为了原子性会临时把 `db.pg` 指向独占连接。
    * 事务期间必须阻止普通查询插进同一个连接，否则事务回滚会连带丢失外部写入。
    */
-  private readonly dbGate = new DbAccessGate();
+  private readonly dbGate: ReturnType<typeof getDbAccessState>["gate"];
   /** 集合绑定（json_each / ANY）能力探测结果：null = 尚未探测 */
   private collectionBindOk: boolean | null = null;
 
   constructor(db: Db) {
+    // 同一 Db 的 Repository、SearchEngine 与直接 SQLite 读取共享门禁/事务上下文。
+    // 只有 SQLite 共用同一连接，写事务期间必须阻塞事务外读；PG 事务使用独占
+    // 客户端，普通读仍走 pool，可并发执行而不受写闸门影响。
+    const access = getDbAccessState(db);
+    this.txContext = access.txContext;
+    this.dbGate = access.gate;
     // 代理 db 对象：当处于事务作用域且存在事务独占 PG 连接时，db.pg 自动安全路由到该连接，
     // 彻底解耦对全局共享 db.pg 单例属性的破坏性重写，保证并发只读查询不受阻塞且避免连接池引用损坏。
     this.db = new Proxy(db, {
       get: (target, prop, receiver) => {
         if (prop === 'pg') {
           const store = this.txContext.getStore();
-          if (store?.pgClient) return store.pgClient;
+          if (store?.pgClient && isActiveTransaction(store)) return store.pgClient;
         }
         return Reflect.get(target, prop, receiver);
       },
     });
+    // 让 readWithDbGate(repo.db) 与原始 Db 使用同一访问状态；Proxy 本身不是新库。
+    registerDbAccessAlias(this.db, db);
   }
 
   async withTransaction<T>(action: () => Promise<T>): Promise<T> {
     // 真嵌套（同一异步调用链）：复用外层事务，不重复 BEGIN
-    if (this.txContext.getStore()?.inTx) return action();
+    if (isActiveTransaction(this.txContext.getStore())) return action();
 
     // 写锁覆盖整个 BEGIN ... COMMIT，普通查询在此期间排队
     return this.dbGate.write(() => this.runTransaction(action));
   }
 
+  private async runActionInTransaction<T>(action: () => Promise<T>, pgClient?: unknown): Promise<T> {
+    const context: TransactionContext = {
+      inTx: true,
+      active: true,
+      ...(pgClient === undefined ? {} : { pgClient }),
+    };
+    try {
+      return await this.txContext.run(context, action);
+    } finally {
+      context.active = false;
+    }
+  }
+
   private async runTransaction<T>(action: () => Promise<T>): Promise<T> {
     if (this.db.dialect === "sqlite" && this.db.sqlite) {
-      try { this.db.sqlite.exec("PRAGMA busy_timeout = 5000"); } catch { /* ignore */ }
-      let lastErr: unknown = null;
+      const sqlite = this.db.sqlite;
+      try { sqlite.exec("PRAGMA busy_timeout = 5000"); } catch { /* ignore */ }
+
+      // BEGIN 尚未进入事务，BUSY/LOCKED 可以安全重试。action 绝不能放进这个重试环：
+      // 它可能已经发过网络请求、写过向量库或产生其它不可回滚的外部副作用。
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          this.db.sqlite.exec("BEGIN IMMEDIATE");
-          try {
-            const result = await this.txContext.run({ inTx: true }, action);
-            this.db.sqlite.exec("COMMIT");
-            return result;
-          } catch (err) {
-            try { this.db.sqlite.exec("ROLLBACK"); } catch { /* ignore */ }
-            throw err;
-          }
+          sqlite.exec("BEGIN IMMEDIATE");
+          break;
         } catch (err) {
-          lastErr = err;
-          const msg = err instanceof Error ? err.message : String(err);
-          // 只有 BUSY/LOCKED 才重试，其它错误直接抛
-          if (!/BUSY|LOCKED/i.test(msg) || attempt === 3) throw err;
-          await new Promise((r) => setTimeout(r, 50 * 2 ** (attempt - 1)));
+          if (!isBusyLockedError(err) || attempt === 3) throw err;
+          await transactionRetryDelay(attempt);
         }
       }
-      throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+
+      let result: T;
+      try {
+        result = await this.runActionInTransaction(action);
+      } catch (err) {
+        try { sqlite.exec("ROLLBACK"); } catch { /* ignore */ }
+        throw err;
+      }
+
+      // SQLite 的 COMMIT BUSY 不会结束当前事务。只重试 COMMIT，不能重跑 action，
+      // 否则外部副作用会重复执行；非 BUSY 错误或重试耗尽才回滚并抛给调用方。
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          sqlite.exec("COMMIT");
+          return result;
+        } catch (err) {
+          if (!isBusyLockedError(err) || attempt === 3) {
+            try { sqlite.exec("ROLLBACK"); } catch { /* ignore */ }
+            throw err;
+          }
+          await transactionRetryDelay(attempt);
+        }
+      }
+      throw new Error("SQLite COMMIT 重试意外终止");
     } else if (this.db.dialect === "pg" && this.db.pg) {
       // 必须在独占连接上跑 BEGIN/COMMIT，否则 pool 会把语句打散到不同连接，原子性丢失。
       const poolAny = this.db.pg as unknown as {
@@ -302,7 +294,7 @@ export class Repository {
         const client = await poolAny.connect();
         try {
           await client.query("BEGIN", []);
-          const result = await this.txContext.run({ inTx: true, pgClient: client }, action);
+          const result = await this.runActionInTransaction(action, client);
           await client.query("COMMIT", []);
           return result;
         } catch (err) {
@@ -314,7 +306,7 @@ export class Repository {
       }
       try {
         await this.db.pg.query("BEGIN");
-        const result = await this.txContext.run({ inTx: true }, action);
+        const result = await this.runActionInTransaction(action);
         await this.db.pg.query("COMMIT");
         return result;
       } catch (err) {
@@ -322,7 +314,7 @@ export class Repository {
         throw err;
       }
     }
-    return this.txContext.run({ inTx: true }, action);
+    return this.runActionInTransaction(action);
   }
 
   /* ------------------------- 站点 ------------------------- */
@@ -1304,9 +1296,9 @@ async savedPluginEmbeddings(filter?: {
     return sessionsRepo.upsertSessionActivity(this, input);
   }
 
-/** 会话是否已被用户踢出；无行且有整体吊销记录即已吊销（revoked_users 兜底） */
-async isSessionRevoked(token: string, userId?: string, issuedAt?: number): Promise<boolean> {
-  return sessionsRepo.isSessionRevoked(this, token, userId, issuedAt);
+  /** 会话是否已被踢出/改密；无行时由 revoked_users 与口令版本共同兜底 */
+  async isSessionRevoked(token: string, userId?: string, issuedAt?: number, passwordVersion?: number): Promise<boolean> {
+    return sessionsRepo.isSessionRevoked(this, token, userId, issuedAt, passwordVersion);
   }
 
   /** 设备列表：未吊销且未过期的会话，按最近活跃排序 */
@@ -1314,15 +1306,30 @@ async isSessionRevoked(token: string, userId?: string, issuedAt?: number): Promi
     return sessionsRepo.listSessionDevices(this, userId);
   }
 
+  /** 设备列表：按用户全部身份别名查询未吊销且未过期的会话，按最近活跃排序 */
+  async listSessionDevicesForUser(userId: string): Promise<SessionDeviceRecord[]> {
+    return sessionsRepo.listSessionDevicesForUser(this, userId);
+  }
+
   /** 踢出设备；跨用户 token 无效返回 false */
   async revokeSessionDevice(userId: string, token: string): Promise<boolean> {
     return sessionsRepo.revokeSessionDevice(this, userId, token);
   }
 
-/** 整体吊销（P0-2）：吊销全部已登记会话并写 revoked_users 兜底行，返回吊销数。 */
-async revokeAllSessions(userId: string): Promise<number> {
-  return sessionsRepo.revokeAllSessions(this, userId);
-}
+  /** 按用户全部身份别名踢出设备；跨用户 token 无效返回 false */
+  async revokeSessionDeviceForUser(userId: string, token: string): Promise<boolean> {
+    return sessionsRepo.revokeSessionDeviceForUser(this, userId, token);
+  }
+
+  /** 整体吊销单个身份（P0-2），返回吊销数 */
+  async revokeAllSessions(userId: string): Promise<number> {
+    return sessionsRepo.revokeAllSessions(this, userId);
+  }
+
+  /** 按 users.id 吊销 raw / credentials / canonical provider 等全部别名会话 */
+  async revokeAllSessionsForUser(userId: string): Promise<number> {
+    return sessionsRepo.revokeAllSessionsForUser(this, userId);
+  }
 
   /* --------------------------- 站内通知（T13） --------------------------- */
 
@@ -1336,7 +1343,7 @@ async revokeAllSessions(userId: string): Promise<number> {
 
   async relayNotifications(limit = 50, emailSender?: notificationsRepo.NotificationEmailSender): Promise<notificationsRepo.RelayNotificationsResult> {
     // 必须拥有顶层事务边界，失败后才能完整回滚并独立记录重试。
-    if (this.txContext.getStore()?.inTx) throw new Error("relayNotifications must run outside a transaction");
+    if (isActiveTransaction(this.txContext.getStore())) throw new Error("relayNotifications must run outside a transaction");
     return notificationsRepo.relayNotifications(this, limit, emailSender);
   }
 
@@ -1929,6 +1936,23 @@ async revokeAllSessions(userId: string): Promise<number> {
 
   /* ------------------------- 任务队列 ------------------------- */
 
+  /** SQLite JobRunner 的独立租约：不经过主库写门禁，长事务期间仍可按时续期。 */
+  async acquireJobRunnerLease(holder: string, ttlMs: number, now = Date.now()): Promise<boolean> {
+    return jobsRepo.acquireJobRunnerLease(this, holder, ttlMs, now);
+  }
+
+  async renewJobRunnerLease(holder: string, now = Date.now()): Promise<number> {
+    return jobsRepo.renewJobRunnerLease(this, holder, now);
+  }
+
+  async releaseJobRunnerLease(holder: string): Promise<void> {
+    jobsRepo.releaseJobRunnerLease(this, holder);
+  }
+
+  async getJobRunnerLease(): Promise<jobsRepo.JobRunnerLease | null> {
+    return jobsRepo.getJobRunnerLease(this);
+  }
+
   async enqueueJob(kind: string, payload: unknown): Promise<string> {
     return jobsRepo.enqueueJob(this, kind, payload);
   }
@@ -1938,16 +1962,16 @@ async revokeAllSessions(userId: string): Promise<number> {
     return jobsRepo.enqueueJobIfAbsent(this, kind, payload);
   }
 
-  /** 长任务进度上报（只对 running 生效，同时刷新 updated_at 供僵尸判定） */
-  async updateJobProgress(id: string, progress: { done: number; total: number }): Promise<void> {
-    return jobsRepo.updateJobProgress(this, id, progress);
+  /** 长任务进度上报（只对当前执行代次的 running 生效，同时刷新 updated_at） */
+  async updateJobProgress(id: string, progress: { done: number; total: number }, runToken: string): Promise<void> {
+    return jobsRepo.updateJobProgress(this, id, progress, runToken);
   }
 
-  async claimNextJob(opts: jobsRepo.ClaimJobOptions = {}): Promise<JobRecord | null> {
+  async claimNextJob(opts: jobsRepo.ClaimJobOptions = {}): Promise<jobsRepo.ClaimedJob | null> {
     return jobsRepo.claimNextJob(this, opts);
   }
 
-  async completeJob(id: string, error?: string | null, opts: { retryAt?: number | null; exhausted?: boolean; durationMs?: number } | null = null): Promise<boolean> {
+  async completeJob(id: string, error: string | null | undefined, opts: jobsRepo.JobCompletionOptions): Promise<boolean> {
     return jobsRepo.completeJob(this, id, error, opts);
   }
 
@@ -1955,8 +1979,8 @@ async revokeAllSessions(userId: string): Promise<number> {
    * 执行心跳：续期并回报当前执行态。
    * `running` = 正常；`cancelling` = 已要求停手；`null` = 行已离开执行态，必须停手。
    */
-  async heartbeatJob(id: string): Promise<"running" | "cancelling" | null> {
-    return jobsRepo.heartbeatJob(this, id);
+  async heartbeatJob(id: string, runToken: string): Promise<"running" | "cancelling" | null> {
+    return jobsRepo.heartbeatJob(this, id, runToken);
   }
 
   async listJobs(status?: string, limit = 50, offset = 0, options: { cursor?: string } = {}): Promise<JobRecord[]> {
@@ -1978,15 +2002,15 @@ async revokeAllSessions(userId: string): Promise<number> {
   }
 
   /** 预算到点：由 Runner 把 running 标成「已要求停手、尚未确认」 */
-  async markJobCancelling(id: string, note: string): Promise<boolean> {
-    return jobsRepo.markJobCancelling(this, id, note);
+  async markJobCancelling(id: string, note: string, runToken: string): Promise<boolean> {
+    return jobsRepo.markJobCancelling(this, id, note, runToken);
   }
 
   /** handler 确认停手后，把 `cancelling` 收成 cancelled / failed 终态 */
   async settleCancellingJob(
     id: string,
     terminal: "cancelled" | "failed",
-    opts: { error?: string | null; durationMs?: number } = {},
+    opts: { error?: string | null; durationMs?: number; runToken: string },
   ): Promise<boolean> {
     return jobsRepo.settleCancellingJob(this, id, terminal, opts);
   }
@@ -1999,8 +2023,8 @@ async revokeAllSessions(userId: string): Promise<number> {
     return jobsRepo.pruneJobs(this, olderThanDays, statuses);
   }
 
-  async reapStaleJobs(timeoutMs = 15 * 60 * 1000): Promise<number> {
-    return jobsRepo.reapStaleJobs(this, timeoutMs);
+  async reapStaleJobs(timeoutMs = 15 * 60 * 1000, maxAttempts = 3): Promise<number> {
+    return jobsRepo.reapStaleJobs(this, timeoutMs, maxAttempts);
   }
 
 
@@ -2364,14 +2388,14 @@ async revokeAllSessions(userId: string): Promise<number> {
    * 只读语句才走零阻塞读路径。`runCount` 名字看着像读，实际几乎都是写（DELETE/UPDATE）。
    */
   async runCount(sqlText: string, params: unknown[]): Promise<number> {
-    if (this.txContext.getStore()?.inTx) return ioRepo.runCount(this, sqlText, params);
+    if (isActiveTransaction(this.txContext.getStore())) return ioRepo.runCount(this, sqlText, params);
     const exec = () => ioRepo.runCount(this, sqlText, params);
     return isWriteStatement(sqlText) ? this.dbGate.write(exec) : this.dbGate.read(exec);
   }
 
   /** @internal repository/* 域函数使用（同上：写语句走写队列，只读走读路径） */
   async raw(sqlText: string, params: unknown[] = []): Promise<Record<string, any>[]> {
-    if (this.txContext.getStore()?.inTx) return ioRepo.raw(this, sqlText, params);
+    if (isActiveTransaction(this.txContext.getStore())) return ioRepo.raw(this, sqlText, params);
     const exec = () => ioRepo.raw(this, sqlText, params);
     return isWriteStatement(sqlText) ? this.dbGate.write(exec) : this.dbGate.read(exec);
   }
@@ -2412,7 +2436,7 @@ async revokeAllSessions(userId: string): Promise<number> {
 
   /** @internal repository/* 域函数使用 */
   async run(sqlText: string, params: unknown[] = []): Promise<void> {
-    if (this.txContext.getStore()?.inTx) return ioRepo.run(this, sqlText, params);
+    if (isActiveTransaction(this.txContext.getStore())) return ioRepo.run(this, sqlText, params);
     return this.dbGate.write(() => ioRepo.run(this, sqlText, params));
   }
 

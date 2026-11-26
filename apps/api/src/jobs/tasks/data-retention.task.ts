@@ -18,25 +18,32 @@ import {
 import type { AppContext } from "../../context.ts";
 import type { DataRetentionPayload, JobRunHandle } from "../../jobs.ts";
 
+function isSerializationFailure(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  return (err as { code?: unknown }).code === "40001";
+}
+
 export function createRetentionAdapter(ctx: AppContext): RetentionAdapter {
-  const db = ctx.db;
-  const isPg = db.dialect === "pg";
   return {
-    placeholder: (i: number) => (isPg ? "$" + i : "?"),
-    select: async (sql: string, params: readonly unknown[]) => {
-      if (isPg) {
-        const res = await db.pg!.query(sql, params as unknown[]);
-        return res.rows as never;
+    placeholder: () => "?",
+    select: async (sql: string, params: readonly unknown[]) => ctx.repo.raw(sql, [...params]),
+    execute: async (sql: string, params: readonly unknown[]) => ctx.repo.runCount(sql, [...params]),
+    transaction: async <T>(fn: () => Promise<T>) => {
+      const maxAttempts = ctx.db.dialect === "pg" ? 3 : 1;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return await ctx.repo.withTransaction(async () => {
+            if (ctx.db.dialect === "pg") {
+              // READ COMMITTED 仍可能把聚合后插入的幻行删掉；SERIALIZABLE 会让冲突事务回滚重试。
+              await ctx.repo.run("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE");
+            }
+            return fn();
+          });
+        } catch (err) {
+          if (ctx.db.dialect !== "pg" || !isSerializationFailure(err) || attempt >= maxAttempts) throw err;
+          await new Promise((resolve) => setTimeout(resolve, 25 * 2 ** (attempt - 1)));
+        }
       }
-      return db.sqlite!.prepare(sql).all(...(params as unknown[])) as never;
-    },
-    execute: async (sql: string, params: readonly unknown[]) => {
-      if (isPg) {
-        const res = await db.pg!.query(sql, params as unknown[]);
-        return Number(res.rowCount ?? 0);
-      }
-      const info = db.sqlite!.prepare(sql).run(...(params as unknown[])) as { changes?: number };
-      return Number(info?.changes ?? 0);
     },
   };
 }

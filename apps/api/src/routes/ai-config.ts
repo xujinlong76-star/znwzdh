@@ -54,7 +54,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   ): { error: string; code?: string } {
     if (err instanceof LlmError) {
       reply.code(400);
-      if (err.code === "ssrf" && err.message.includes("受保护网段")) {
+      if (err.code === "ssrf" && (err.message.includes("受保护网段") || err.message.includes("受保护地址"))) {
         const hint =
           scope === "user"
             ? "个人配置出于安全原因不支持内网/受保护网段的接口地址，只能填写公网可访问的地址（例如 https://api.example.com/v1）。如需连接本地模型，请联系站点管理员在系统配置中开启。"

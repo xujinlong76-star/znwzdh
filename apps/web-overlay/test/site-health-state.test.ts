@@ -235,6 +235,38 @@ describe("isFailingHealthState（只看失效开关的过滤口径）", () => {
   });
 });
 
+describe("可访问档延迟分档（2026-11-25 UI 评审 P1-4）", () => {
+  it("≤1s 可访问 / 1–3s 响应较慢 / >3s 响应缓慢；state/tone 不变，慢站不进失效侧", () => {
+    const base = { ok: true, httpStatus: 200, lastCheckedAt: CHECKED };
+    expect(siteHealthState({ ...base, latencyMs: 1000 })).toMatchObject({
+      state: "accessible",
+      tone: "ok",
+      label: "可访问",
+    });
+    expect(siteHealthState({ ...base, latencyMs: 1001 })).toMatchObject({
+      state: "accessible",
+      tone: "ok",
+      label: "响应较慢",
+    });
+    expect(siteHealthState({ ...base, latencyMs: 3000 })).toMatchObject({
+      state: "accessible",
+      tone: "ok",
+      label: "响应较慢",
+    });
+    const sluggish = siteHealthState({ ...base, latencyMs: 7035 });
+    expect(sluggish).toMatchObject({ state: "accessible", tone: "ok", label: "响应缓慢", latencyMs: 7035 });
+    // 慢 ≠ 失效：「只看失效」过滤口径不受延迟分档影响（tone 仍是 ok）
+    expect(isFailingHealthState(sluggish)).toBe(false);
+    expect(isFailingHealthState(siteHealthState({ ...base, latencyMs: 1500 }))).toBe(false);
+  });
+
+  it("延迟无值仍报可访问（不臆测快慢）", () => {
+    expect(
+      siteHealthState({ ok: true, httpStatus: 200, latencyMs: null, lastCheckedAt: CHECKED }),
+    ).toMatchObject({ label: "可访问" });
+  });
+});
+
 describe("siteHealthTitle（§7 悬停格式）", () => {
   it("HTTP <code> · <latency>ms · 巡检于 <YYYY-MM-DD>；延迟无值时不写延迟段", () => {
     expect(

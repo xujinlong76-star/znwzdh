@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { createContext, loadConfig, type AppContext } from "@navhub/api";
 import { UNCATEGORIZED_CATEGORY_ID } from "@navhub/core";
 import { createHandlers } from "../src/handlers.ts";
-import { qualifyIdempotencyKey } from "../src/handlers/shared.ts";
+import { makeWithIdempotency, qualifyIdempotencyKey } from "../src/handlers/shared.ts";
 import type { McpScope, ToolContext } from "../src/tools.ts";
 
 let dir: string;
@@ -107,6 +107,99 @@ describe("幂等键必须带工具与身份作用域", () => {
     expect(again.replayed).toBe(true);
     const rows = await ctx.repo.listSites({ limit: 1000 });
     expect(rows.filter((s) => s.url === args.url).length).toBe(1);
+  });
+
+  it("并发同键只执行一次，后到请求返回已提交的完整响应", async () => {
+    const withIdempotency = makeWithIdempotency(ctx);
+    const url = "https://key-scope.example/concurrent";
+    let executions = 0;
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const entered = new Promise<void>((resolve) => { started = resolve; });
+    const compute = async () => {
+      executions++;
+      started();
+      await gate;
+      const site = await ctx.repo.createSite({ url, title: "并发幂等", categoryId: "c1" });
+      return { created: true, site };
+    };
+    const first = withIdempotency("concurrent-key", compute);
+    await entered;
+    const second = withIdempotency("concurrent-key", compute);
+    release();
+    const [a, b] = await Promise.all([first, second]);
+    expect(executions).toBe(1);
+    expect(payload(a).created).toBe(true);
+    expect(payload(b).replayed).toBe(true);
+    expect(payload(b).result.site.url).toBe(url);
+    expect(await ctx.repo.findSiteByUrl(url)).not.toBeNull();
+  });
+
+  it("业务失败回滚写入与幂等记录，重试不会拿到半状态", async () => {
+    const withIdempotency = makeWithIdempotency(ctx);
+    const url = "https://key-scope.example/rollback";
+    let afterCommitCalls = 0;
+    await expect(withIdempotency("rollback-key", async () => {
+      await ctx.repo.createSite({ url, title: "必须回滚", categoryId: "c1" });
+      throw new Error("模拟后续失败");
+    }, {
+      afterCommit: async () => { afterCommitCalls++; },
+    })).rejects.toThrow("模拟后续失败");
+    expect(afterCommitCalls).toBe(0);
+    expect(await ctx.repo.findSiteByUrl(url)).toBeNull();
+    expect(await ctx.repo.raw("SELECT response FROM idempotency WHERE key = ?", ["rollback-key"])).toEqual([]);
+
+    const retried = payload(await withIdempotency("rollback-key", async () => ({ complete: true })));
+    expect(retried).toEqual({ complete: true });
+  });
+
+  it("prepare 在事务外执行，afterCommit 只在提交后执行且重放可补偿", async () => {
+    const withIdempotency = makeWithIdempotency(ctx);
+    const original = ctx.repo.withTransaction.bind(ctx.repo);
+    let transactionDepth = 0;
+    (ctx.repo as unknown as { withTransaction: typeof ctx.repo.withTransaction }).withTransaction = async (action) => {
+      transactionDepth++;
+      try {
+        return await original(action);
+      } finally {
+        transactionDepth--;
+      }
+    };
+    const phases: string[] = [];
+    let afterCommitCalls = 0;
+    try {
+      const first = await withIdempotency("phase-key", async () => {
+        phases.push("compute:tx");
+        expect(transactionDepth).toBe(1);
+        return { id: "phase-result" };
+      }, {
+        prepare: async () => {
+          phases.push("prepare:outside");
+          expect(transactionDepth).toBe(0);
+        },
+        afterCommit: async (result) => {
+          phases.push("after:committed");
+          expect(transactionDepth).toBe(0);
+          expect(result).toEqual({ id: "phase-result" });
+          afterCommitCalls++;
+          if (afterCommitCalls === 1) throw new Error("模拟向量索引中断");
+        },
+      });
+      expect(payload(first)).toEqual({ id: "phase-result" });
+
+      const replay = await withIdempotency("phase-key", async () => {
+        throw new Error("重放不得重跑业务 compute");
+      }, {
+        prepare: async () => { throw new Error("重放不得重跑 enrich"); },
+        afterCommit: async () => { afterCommitCalls++; },
+      });
+      expect(payload(replay).replayed).toBe(true);
+      expect(afterCommitCalls).toBe(2);
+      expect(phases).toEqual(["prepare:outside", "compute:tx", "after:committed"]);
+    } finally {
+      (ctx.repo as unknown as { withTransaction: typeof ctx.repo.withTransaction }).withTransaction = original;
+    }
   });
 });
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, useRef, useEffect, type ReactNode } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect, startTransition, type ReactNode } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import type { DragEndEvent } from '@dnd-kit/react'
@@ -42,6 +42,27 @@ import {
   syncHiddenCategoriesFromDIY,
 } from '@/lib/modular/feature-mask-store'
 import { Footer } from '@/components/footer'
+import { BentoStaticGrid } from '@/components/diy/bento-static-grid'
+import {
+  BentoDockBlock,
+  BentoHotlistBlock,
+  BentoSearchBlock,
+} from '@/components/diy/bento-block-widgets'
+import {
+  migrateLayoutToV2,
+  reconcileBreakpointBlocks,
+  type AvailableWorkspaceBlock,
+  type LayoutBlock,
+  type WorkspaceBreakpointKey,
+} from '@/lib/modular/workspace-layout-v2'
+const BentoWorkspaceCanvas = dynamic(
+  () => import('@/components/diy/bento-workspace-canvas').then((m) => m.BentoWorkspaceCanvas),
+  { ssr: false, loading: () => null },
+)
+const BentoBlockInspector = dynamic(
+  () => import('@/components/diy/bento-block-inspector').then((m) => m.BentoBlockInspector),
+  { ssr: false, loading: () => null },
+)
 const TodayCenterDialog = dynamic(
   () => import('@/components/home-windows/today-center-dialog').then((m) => m.TodayCenterDialog),
   { ssr: false, loading: () => null },
@@ -119,7 +140,6 @@ import {
   type FeatureKey,
 } from '@/lib/site-settings'
 import { readLocalHiddenHomeModules } from '@/lib/personal-home-modules'
-import { CategoryInSituControls } from '@/components/category-in-situ-controls'
 import { CategoryQuickJumpBar } from '@/components/category-quick-jump-bar'
 
 // 性能优化：动态懒加载大型组件，大幅缩减首屏 JS 体积与主线程阻塞时间
@@ -156,7 +176,8 @@ const BatchOperationDock = dynamic(
 )
 import { Button } from '@/registry/new-york/ui/button'
 
-import { Eye, EyeOff, RotateCcw, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, Menu, RotateCcw, Trash2 } from 'lucide-react'
+import { preferredScrollBehavior } from '@/lib/motion'
 
 import { cn } from '@/lib/utils'
 import { type WorkspaceId } from '@/components/workspace-filter'
@@ -285,6 +306,12 @@ export function NavigationContent({
   const isMobileViewport = useIsMobileViewport()
   const { toast } = useToast()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  // 2026-11-25 左侧分类点击直达聚焦：点哪个分类就直接完整展示该分类全部子分类与全部站点（不截断折叠），
+  // 同时自动收起首页顶部无关窗口（工作区切换 + 高频直达坞），按需通过下拉按钮展开显示。
+  const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null)
+  const [focusedSubCategoryId, setFocusedSubCategoryId] = useState<string | null>(null)
+  const [focusedQuickDrawerOpen, setFocusedQuickDrawerOpen] = useState(false)
+  const focusedQuickDrawerTriggerRef = useRef<HTMLButtonElement | null>(null)
   // P1-5：移动抽屉闭合时不挂载 Sidebar（省一份完整分类树）。
   // 抽屉容器本身常驻 DOM（useOverlayBehavior 需要稳定节点做焦点圈养），
   // 但其内的 Sidebar 只在打开时挂载；关闭后延迟 200ms 卸载，
@@ -444,6 +471,7 @@ export function NavigationContent({
 
   const {
     mounted,
+    config: homeDiyConfig,
     viewMode,
     cardDisplayMode,
     canvasBackground,
@@ -453,6 +481,7 @@ export function NavigationContent({
     collapsedCategoryIds,
     collapseAllCategories,
     expandAllCategories,
+    expandCategory,
     setCollapsedCategoryIds,
     customCategories,
     addSiteToCustomCategory,
@@ -471,7 +500,18 @@ export function NavigationContent({
     unhideAllCategories,
     speedDialPinnedIds,
     quickDialSlots,
+    workspaceLayoutV2,
+    activeDragLayer,
+    setActiveDragLayer,
+    outlineMode,
+    selectedBlockId,
+    setSelectedBlockId,
+    commitWorkspaceBreakpointLayout,
+    updateWorkspaceBlock,
+    syncBlockAutoHeight,
+    trashWorkspaceBlock,
   } = useHomeDIY(ssrCardDisplayMode)
+  const [activeBentoBreakpoint, setActiveBentoBreakpoint] = useState<WorkspaceBreakpointKey>('lg')
 
   const activeCardDisplayMode = mounted
     ? normalizeCardDisplayMode(cardDisplayMode)
@@ -708,6 +748,9 @@ export function NavigationContent({
   // 分发时全局 hook 直接调 undoLastFeatureRemove + 分类双写。
 
   const handleWorkspaceChange = useCallback((nextWorkspace: WorkspaceId) => {
+    setFocusedQuickDrawerOpen(false)
+    setFocusedCategoryId(null)
+    setFocusedSubCategoryId(null)
     setActiveWorkspace(nextWorkspace)
     if (nextWorkspace === 'all') {
       expandAllCategories()
@@ -719,6 +762,93 @@ export function NavigationContent({
       setCollapsedCategoryIds(toCollapse)
     }
   }, [expandAllCategories, setCollapsedCategoryIds, navigationData.navigationItems])
+
+  const handleSelectSidebarCategory = useCallback(
+    (categoryId: string | null, subCategoryId?: string | null) => {
+      // 点击/切换任何分类时，自动收起所有无关窗口（顶部快捷面板、今日中心、工具箱、外观面板、AI小窗、速览等）
+      setFocusedQuickDrawerOpen(false)
+      setTodayOpen(false)
+      setWidgetBoxOpen(false)
+      setAppearanceOpen(false)
+      setToolbarAiOpen(false)
+      setIsToolsOpen(false)
+      setIsShortcutsOpen(false)
+      setPeek(null)
+
+      if (!categoryId) {
+        startTransition(() => {
+          setFocusedCategoryId(null)
+          setFocusedSubCategoryId(null)
+        })
+        return
+      }
+      expandCategory(categoryId)
+      startTransition(() => {
+        setFocusedCategoryId(categoryId)
+        setFocusedSubCategoryId(subCategoryId ?? null)
+      })
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: preferredScrollBehavior() })
+      }
+    },
+    [expandCategory],
+  )
+
+  const handleClearFocusedCategory = useCallback(() => {
+    setFocusedQuickDrawerOpen(false)
+    setFocusedCategoryId(null)
+    setFocusedSubCategoryId(null)
+  }, [])
+
+  const handleFocusedSubCategoryChange = useCallback((subId: string | null) => {
+    setFocusedSubCategoryId(subId)
+  }, [])
+
+  const handleToggleFocusedQuickDrawer = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    focusedQuickDrawerTriggerRef.current = event.currentTarget
+    setFocusedQuickDrawerOpen((prev) => !prev)
+  }, [])
+
+  // 快捷抽屉关闭提交后，Drawer 内的焦点节点才会卸载；等一帧再把焦点还给触发钮。
+  useEffect(() => {
+    if (focusedQuickDrawerOpen) return
+    const trigger = focusedQuickDrawerTriggerRef.current
+    if (!trigger) return
+    const frame = window.requestAnimationFrame(() => {
+      focusedQuickDrawerTriggerRef.current = null
+      if (document.contains(trigger)) trigger.focus()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [focusedQuickDrawerOpen])
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const active = document.activeElement as HTMLElement | null
+      const inEditable = Boolean(
+        active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable),
+      )
+      if (e.key === 'Escape' && focusedQuickDrawerOpen && !inEditable) {
+        setFocusedQuickDrawerOpen(false)
+        return
+      }
+      // 分类聚焦态顶栏收起时，按 / 或 Ctrl/Cmd+K 自动下拉展开顶栏并聚焦搜索框
+      if (
+        focusedCategoryId &&
+        !focusedQuickDrawerOpen &&
+        !inEditable &&
+        ((e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) ||
+          ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'))
+      ) {
+        e.preventDefault()
+        setFocusedQuickDrawerOpen(true)
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('navhub:focus-search'))
+        }, 90)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [focusedCategoryId, focusedQuickDrawerOpen])
 
   /**
    * P0-2：工具栏 7 个打开/切换回调全部 useCallback 化——它们传给 memo 的
@@ -817,6 +947,16 @@ export function NavigationContent({
    * 选中态本身（可见站点收集 / 剪枝 / 切换 / 全选）已抽到
    * `lib/modular/use-site-selection.ts`，组件只消费返回值。
    */
+  const selectionCategories = useMemo(() => {
+    const category = sortedCategories.find((item) => item.id === focusedCategoryId)
+    if (!category) return sortedCategories
+    if (!focusedSubCategoryId) return [category]
+    if (focusedSubCategoryId === '__direct__') return [{ ...category, subCategories: [] }]
+    const subCategory = category.subCategories?.find((sub) => sub.id === focusedSubCategoryId)
+    if (!subCategory) return [category]
+    return [{ ...category, items: [], subCategories: [subCategory] }]
+  }, [sortedCategories, focusedCategoryId, focusedSubCategoryId])
+
   const {
     selectionMode,
     selectedIds,
@@ -826,7 +966,7 @@ export function NavigationContent({
     toggleSelectMode,
     toggleSelectOne,
     selectAllVisible,
-  } = useSiteSelection(sortedCategories, collapsedCategoryIds)
+  } = useSiteSelection(selectionCategories, collapsedCategoryIds)
 
   /* ------------------------- 首屏数字直达 -------------------------
    *
@@ -1186,13 +1326,244 @@ export function NavigationContent({
     )
   }, [customSiteTitle, customSiteHref, customSiteDesc, sortedCategories])
 
+  // 7. 分类直达聚焦态上下文（用于自动收起无关顶部窗口、渲染面包屑与邻近分类切换）
+  const focusedIndex = useMemo(
+    () => (focusedCategoryId ? sortedCategories.findIndex((c) => c.id === focusedCategoryId) : -1),
+    [focusedCategoryId, sortedCategories],
+  )
+  const focusedCategory = focusedIndex >= 0 ? sortedCategories[focusedIndex] : null
+  const isCategoryFocused = Boolean(focusedCategory) && viewMode !== 'workbench'
+  const focusedSubCategoryTitle = useMemo(() => {
+    if (!focusedCategory || !focusedSubCategoryId) return null
+    if (focusedSubCategoryId === '__direct__') return '精选直属'
+    return focusedCategory.subCategories?.find((sub) => sub.id === focusedSubCategoryId)?.title ?? null
+  }, [focusedCategory, focusedSubCategoryId])
+
+  const effectiveWorkspaceLayoutV2 = useMemo(
+    () =>
+      workspaceLayoutV2 ??
+      migrateLayoutToV2(homeDiyConfig, {
+        catalogCategoryIds: allCategoryIds,
+      }),
+    [workspaceLayoutV2, homeDiyConfig, allCategoryIds],
+  )
+
+  const categoryByIdMap = useMemo(() => {
+    const map = new Map<string, (typeof renderedCategories)[number]>()
+    for (const cat of renderedCategories) {
+      map.set(cat.id, cat)
+    }
+    return map
+  }, [renderedCategories])
+
+  const availableWorkspaceBlocks = useMemo<AvailableWorkspaceBlock[]>(() => {
+    const blocks: AvailableWorkspaceBlock[] = []
+    // 若 V2 配置里包含统一顶层模块（search / dock / hotlist），优先纳入统一区块列表
+    const savedLg = effectiveWorkspaceLayoutV2.breakpoints.lg
+    for (const saved of savedLg) {
+      if (saved.type === 'search' || saved.type === 'dock' || saved.type === 'hotlist') {
+        blocks.push({ id: saved.id, type: saved.type, refId: saved.refId, defaultW: saved.w, defaultH: saved.h })
+      }
+    }
+    for (const cat of renderedCategories) {
+      blocks.push({
+        id: cat.id,
+        type: (cat as { isCustom?: boolean }).isCustom ? 'custom_group' : 'category',
+        refId: cat.id,
+      })
+    }
+    return blocks
+  }, [effectiveWorkspaceLayoutV2.breakpoints.lg, renderedCategories])
+
+  const selectedBentoBlock = useMemo(() => {
+    if (!isEditingLayout || !selectedBlockId) return null
+    const list = reconcileBreakpointBlocks(
+      effectiveWorkspaceLayoutV2,
+      activeBentoBreakpoint,
+      availableWorkspaceBlocks,
+    )
+    return list.find((b) => b.id === selectedBlockId) ?? null
+  }, [isEditingLayout, selectedBlockId, effectiveWorkspaceLayoutV2, activeBentoBreakpoint, availableWorkspaceBlocks])
+
+  const renderUnifiedBentoBlock = useCallback(
+    (
+      block: LayoutBlock,
+      meta: {
+        breakpoint: WorkspaceBreakpointKey
+        totalCols: number
+        index: number
+        isCompactOutline?: boolean
+      },
+    ) => {
+      if (block.type === 'search') {
+        return (
+          <BentoSearchBlock
+            block={block}
+            isEditing={isEditingLayout}
+            isSelected={selectedBlockId === block.id}
+            isCompactOutline={Boolean(meta.isCompactOutline)}
+            totalCols={meta.totalCols}
+            onSelect={setSelectedBlockId}
+            onTriggerSearch={() => {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))
+              }
+            }}
+          />
+        )
+      }
+      if (block.type === 'dock') {
+        return (
+          <BentoDockBlock
+            block={block}
+            isEditing={isEditingLayout}
+            isSelected={selectedBlockId === block.id}
+            isCompactOutline={Boolean(meta.isCompactOutline)}
+            totalCols={meta.totalCols}
+            onSelect={setSelectedBlockId}
+            speedSites={dialSites}
+            dialDigitById={mounted ? dialMap.digitById : undefined}
+          />
+        )
+      }
+      if (block.type === 'hotlist') {
+        return (
+          <BentoHotlistBlock
+            block={block}
+            isEditing={isEditingLayout}
+            isSelected={selectedBlockId === block.id}
+            isCompactOutline={Boolean(meta.isCompactOutline)}
+            totalCols={meta.totalCols}
+            onSelect={setSelectedBlockId}
+            hotSites={dialSites}
+          />
+        )
+      }
+
+      const category = categoryByIdMap.get(block.refId || block.id)
+      if (!category) return null
+      const section = (
+        <NavigationCategorySection
+          key={category.id}
+          category={category}
+          index={meta.index}
+          totalCategories={sortedCategories.length}
+          allCategoryIds={allCategoryIds}
+          gridColumnsClass={gridColumnsClass}
+          cardDisplayMode={effectiveCardDisplayMode}
+          selectionMode={selectionMode}
+          selectedIds={selectedIds}
+          siteData={siteData}
+          setAddSiteTargetCatId={setAddSiteTargetCatId}
+          setPeekItem={openPeek}
+          keyboardHintId="navhub-card-keyboard-hint"
+          toggleSelectOne={toggleSelectOne}
+          cardsPerGroup={cardsPerGroup}
+          dialDigitById={mounted ? dialMap.digitById : undefined}
+          siteTitleById={siteTitleById}
+          embeddedInBento
+          bentoBlock={block}
+          bentoTotalCols={meta.totalCols}
+          isBlockSelected={selectedBlockId === block.id}
+          onSelectBlock={setSelectedBlockId}
+          isCompactOutline={Boolean(meta.isCompactOutline)}
+        />
+      )
+
+      const isFreshCustom = Boolean((category as { isCustom?: boolean }).isCustom)
+      const isSideBySide = block.w < meta.totalCols
+      if (isEditingLayout || isFreshCustom || isSideBySide || meta.index < EAGER_CATEGORY_COUNT) {
+        return section
+      }
+      return (
+        <LazyMountSection
+          key={category.id}
+          sectionId={category.id}
+          title={category.title}
+          count={countCategorySites(category)}
+          estimatedHeight={estimateTruncatedSectionHeight(category, cardsPerGroup)}
+          force={false}
+        >
+          {section}
+        </LazyMountSection>
+      )
+    },
+    [
+      isEditingLayout,
+      selectedBlockId,
+      setSelectedBlockId,
+      dialSites,
+      mounted,
+      dialMap.digitById,
+      categoryByIdMap,
+      sortedCategories.length,
+      allCategoryIds,
+      gridColumnsClass,
+      effectiveCardDisplayMode,
+      selectionMode,
+      selectedIds,
+      siteData,
+      setAddSiteTargetCatId,
+      openPeek,
+      toggleSelectOne,
+      cardsPerGroup,
+      siteTitleById,
+    ],
+  )
+
+  // P0-2 / Step 2：移动端顶行「快捷坞」入口与坞内「展开全部」共用同一个弹窗开关。
+  const [quickDockOpen, setQuickDockOpen] = useState(false)
+
+  const renderHomeQuickToolsRow = () => (
+    <div className="flex flex-col gap-1.5 min-[1400px]:flex-row min-[1400px]:items-center min-[1400px]:gap-2.5">
+      <div className="min-w-0 min-[1400px]:shrink-0">
+        <HomeCapsuleRow
+          cinemaInitial={cinemaInitial}
+          pluginItems={pluginItems}
+          showDramaCapsule={sectionOn('dramaCinema')}
+          showAiCapsule={sectionOn('aiFinder')}
+          showGuideBadge={!isModuleHidden('mod:onboarding-card')}
+          activeWorkspace={activeWorkspace}
+          onWorkspaceChange={handleWorkspaceChange}
+          initialSceneParam={sceneParam}
+          onOpenQuickDock={() => setQuickDockOpen(true)}
+          onOpenGuideTab={() => {
+            setAppearanceTab('guide')
+            setAppearanceOpen(true)
+          }}
+        />
+      </div>
+      {/* 三合一单行高频直达坞（A4：合并 SpeedDialDock / 常用 / 最近访问） */}
+      {!isModuleHidden('mod:speed-dial') && (
+        <>
+          {/* P0-2 / A′：工作区（页面级视角）与快捷坞（局部模式）之间的语义分隔线。
+              只在 ≥1400 两者并排时出现；竖排（<1400）时由行距天然分组，无需分隔。 */}
+          <span aria-hidden className="hidden min-[1400px]:block h-5 w-px shrink-0 bg-border" />
+          <div data-feature-id="mod:speed-dial" className="relative min-w-0 min-[1400px]:flex-1">
+            <HomeQuickDock
+              dialDigitById={mounted ? dialMap.digitById : undefined}
+              // P2-14：速拨顺序由父级 dialSites 一次算好透传，坞不再自己重算。
+              speedSites={dialSites}
+              // P0-2 / Step 2 在途（并行会话）：quickDockOpen 父级提升草稿保留；
+              // 远端 731bdf82 的 HomeQuickDock 暂为弹窗内部自管（allDialogOpen/
+              // onAllDialogOpenChange props 已删），两边对齐由该草稿收尾时定夺。
+            />
+          </div>
+        </>
+      )}
+    </div>
+  )
+
   return (
     <InitialViewModeProvider value={ssrCardDisplayMode}>
     <div className="flex flex-col md:flex-row min-h-screen">
-      <nav aria-label="站点分类导航" className="hidden md:block">
+      <nav aria-label="站点分类导航" className="hidden md:block relative z-20">
         <Sidebar
           navigationData={sidebarNavigationData}
           siteInfo={siteData}
+          focusedCategoryId={focusedCategoryId}
+          focusedSubCategoryId={focusedSubCategoryId}
+          onSelectCategory={handleSelectSidebarCategory}
           className="sticky top-0 h-screen"
         />
       </nav>
@@ -1219,6 +1590,9 @@ export function NavigationContent({
               navigationData={sidebarNavigationData}
               siteInfo={siteData}
               brandAsHeading={false}
+              focusedCategoryId={focusedCategoryId}
+              focusedSubCategoryId={focusedSubCategoryId}
+              onSelectCategory={handleSelectSidebarCategory}
               onClose={handleCloseSidebar}
             />
           )}
@@ -1256,42 +1630,187 @@ export function NavigationContent({
           </p>
         )}
 
-        <NavigationToolbar
-          siteConfig={siteData}
-          isSidebarOpen={isSidebarOpen}
-          onToggleSidebar={handleToggleSidebar}
-          onOpenTools={handleOpenTools}
-          onOpenShortcuts={handleOpenShortcuts}
-          selectionMode={selectionMode}
-          selectedIds={selectedIds}
-          visibleSiteCount={visibleSites.length}
-          onToggleSelectMode={toggleSelectMode}
-          onSelectAllVisible={selectAllVisible}
-          todayBadge={todayBadge}
-          pinnedWidgetCount={pinnedMounted ? pinnedCornerWidgets.length : 0}
-          /* 接受上游把内联箭头抽成 handleXxx 回调（更利于 memo 稳定）；
-             本分支新增的 unreadNotifications（铃铛红点）追加在末尾。 */
-          onOpenTodayCenter={handleOpenTodayCenter}
-          onOpenWidgetBox={handleOpenWidgetBox}
-          onOpenAppearanceGuide={handleOpenAppearanceGuide}
-          onOpenAiFinder={handleOpenAiFinder}
-          unreadNotifications={unreadNotifications}
-        />
+        {/* 未聚焦单分类时正常展示顶部搜索工具栏；点击任意分类后与工作区、高频直达坞一并自动收起，
+            用户可随时通过顶部聚焦条的「展开顶栏 ▾」下拉显示。 */}
+        {!isCategoryFocused && (
+          <NavigationToolbar
+            siteConfig={siteData}
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={handleToggleSidebar}
+            onOpenTools={handleOpenTools}
+            onOpenShortcuts={handleOpenShortcuts}
+            selectionMode={selectionMode}
+            selectedIds={selectedIds}
+            visibleSiteCount={visibleSites.length}
+            onToggleSelectMode={toggleSelectMode}
+            onSelectAllVisible={selectAllVisible}
+            todayBadge={todayBadge}
+            pinnedWidgetCount={pinnedMounted ? pinnedCornerWidgets.length : 0}
+            /* 接受上游把内联箭头抽成 handleXxx 回调（更利于 memo 稳定）；
+               本分支新增的 unreadNotifications（铃铛红点）追加在末尾。 */
+            onOpenTodayCenter={handleOpenTodayCenter}
+            onOpenWidgetBox={handleOpenWidgetBox}
+            onOpenAppearanceGuide={handleOpenAppearanceGuide}
+            onOpenAiFinder={handleOpenAiFinder}
+            unreadNotifications={unreadNotifications}
+          />
+        )}
 
-        {/* 半屏下沉栏（Batch 3 第 12 项）：挂在这里而非工具栏内——工具栏没有
-            isEditingLayout 这个 prop，编辑态隐藏无法在该文件内直接实现；
-            本文件已同时持有 isEditingLayout、selectionMode、selectedIds
-            与 setIsToolsOpen，少一次 prop 透传。仅首页挂载，其它路由零变化。 */}
-        <HalfScreenDock
-          activeWorkspace={activeWorkspace}
-          onOpenTools={handleOpenTools}
-          isEditingLayout={isEditingLayout}
-          selectionMode={selectionMode}
-          selectedIds={selectedIds}
-        />
+        {/* 单分类聚焦吸顶极简操控条：顶栏/工作区/直达坞三块无关窗口全收起后直接顶到视口最上方，
+            提供一键「展开顶栏 ▾」下拉显示全部顶栏与快捷坞、返回全部以及上/下一类切换 */}
+        {isCategoryFocused && focusedCategory && (
+          <div className="sticky top-0 z-30">
+            <div
+              data-testid="focused-category-bar"
+              className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border/50 bg-background/92 px-3 py-1.5 pt-[max(env(safe-area-inset-top,0px),0.375rem)] backdrop-blur-md sm:px-6 md:px-8"
+            >
+              <div className="flex min-w-0 items-center gap-1.5 text-xs">
+                <button
+                  type="button"
+                  onClick={handleToggleSidebar}
+                  aria-label="打开分类导航"
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground pointer-coarse:min-h-11 pointer-coarse:min-w-11 md:hidden cursor-pointer"
+                >
+                  <Menu className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearFocusedCategory}
+                  className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-border/60 bg-background px-2.5 font-medium text-foreground transition-colors hover:border-primary/50 hover:text-primary pointer-coarse:min-h-11 pointer-coarse:min-w-11 cursor-pointer"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>返回全部</span>
+                </button>
+                <span aria-hidden="true" className="px-0.5 text-muted-foreground">/</span>
+                {focusedSubCategoryTitle ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setFocusedSubCategoryId(null)}
+                      className="truncate font-medium text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
+                      title={`查看「${focusedCategory.title}」全部分组`}
+                    >
+                      {focusedCategory.title}
+                    </button>
+                    <span aria-hidden="true" className="px-0.5 text-muted-foreground">/</span>
+                    <span className="truncate font-semibold text-foreground">{focusedSubCategoryTitle}</span>
+                  </>
+                ) : (
+                  <span className="truncate font-semibold text-foreground">{focusedCategory.title}</span>
+                )}
+                <span className="hidden sm:inline-flex shrink-0 items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                  完整展示
+                </span>
+              </div>
 
-        {/* 吸顶分类快捷直达导航轨 */}
-        {viewMode !== 'workbench' && sortedCategories.length > 0 && !isModuleHidden('mod:workspace-bar') && (
+              <div className="flex shrink-0 items-center gap-1">
+                {/* 下拉按钮：一键下拉展开已收起的顶部搜索工具栏 + 工作区切换 + 高频直达坞 */}
+                <button
+                  type="button"
+                  data-testid="focused-tools-dropdown-toggle"
+                  onClick={handleToggleFocusedQuickDrawer}
+                  aria-expanded={focusedQuickDrawerOpen}
+                  aria-controls="focused-quick-tools-drawer"
+                  title={focusedQuickDrawerOpen ? '收起顶部搜索栏、工作区与高频直达坞' : '下拉显示顶部搜索栏、工作区与高频直达坞'}
+                  className={cn(
+                    "inline-flex h-7 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors pointer-coarse:min-h-11 pointer-coarse:min-w-11 cursor-pointer",
+                    focusedQuickDrawerOpen
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : "border-border/60 bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                  )}
+                >
+                  <span>{focusedQuickDrawerOpen ? '收起顶栏' : '展开顶栏'}</span>
+                  <ChevronDown
+                    className={cn(
+                      "h-3.5 w-3.5 transition-transform duration-200",
+                      focusedQuickDrawerOpen && "rotate-180"
+                    )}
+                    aria-hidden="true"
+                  />
+                </button>
+
+                <span aria-hidden="true" className="mx-0.5 h-3.5 w-px bg-border/60" />
+
+                {(() => {
+                  const prevCat = focusedIndex > 0 ? sortedCategories[focusedIndex - 1] : null
+                  const nextCat =
+                    focusedIndex < sortedCategories.length - 1 ? sortedCategories[focusedIndex + 1] : null
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        disabled={!prevCat}
+                        onClick={() => prevCat && handleSelectSidebarCategory(prevCat.id, null)}
+                        className="inline-flex h-7 items-center gap-1 rounded-lg border border-border/60 bg-background px-2 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground pointer-coarse:min-h-11 pointer-coarse:min-w-11 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                        title={prevCat ? `上一分类：${prevCat.title}` : '已是首个分类'}
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span className="hidden sm:inline max-w-[84px] truncate">{prevCat ? prevCat.title : '上一类'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!nextCat}
+                        onClick={() => nextCat && handleSelectSidebarCategory(nextCat.id, null)}
+                        className="inline-flex h-7 items-center gap-1 rounded-lg border border-border/60 bg-background px-2 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground pointer-coarse:min-h-11 pointer-coarse:min-w-11 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                        title={nextCat ? `下一分类：${nextCat.title}` : '已是最后一个分类'}
+                      >
+                        <span className="hidden sm:inline max-w-[84px] truncate">{nextCat ? nextCat.title : '下一类'}</span>
+                        <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                    </>
+                  )
+                })()}
+              </div>
+            </div>
+
+            {/* 下拉抽屉：点击「展开顶栏 ▾」后一次性显示搜索顶栏 + 工作区视图切换 + 高频直达坞 */}
+            {focusedQuickDrawerOpen && (
+              <div
+                id="focused-quick-tools-drawer"
+                data-testid="focused-quick-tools-drawer"
+                className="border-b border-border/60 bg-background/98 shadow-md backdrop-blur-md animate-in fade-in-0 slide-in-from-top-1 duration-150"
+              >
+                <NavigationToolbar
+                  embedded
+                  siteConfig={siteData}
+                  isSidebarOpen={isSidebarOpen}
+                  onToggleSidebar={handleToggleSidebar}
+                  onOpenTools={handleOpenTools}
+                  onOpenShortcuts={handleOpenShortcuts}
+                  selectionMode={selectionMode}
+                  selectedIds={selectedIds}
+                  visibleSiteCount={visibleSites.length}
+                  onToggleSelectMode={toggleSelectMode}
+                  onSelectAllVisible={selectAllVisible}
+                  todayBadge={todayBadge}
+                  pinnedWidgetCount={pinnedMounted ? pinnedCornerWidgets.length : 0}
+                  onOpenTodayCenter={handleOpenTodayCenter}
+                  onOpenWidgetBox={handleOpenWidgetBox}
+                  onOpenAppearanceGuide={handleOpenAppearanceGuide}
+                  onOpenAiFinder={handleOpenAiFinder}
+                  unreadNotifications={unreadNotifications}
+                />
+                <div className="px-3 py-2 sm:px-6 md:px-8">
+                  {renderHomeQuickToolsRow()}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 半屏下沉栏（Batch 3 第 12 项）：仅全景浏览态挂载，单分类聚焦时收起避免视觉干扰 */}
+        {!isCategoryFocused && (
+          <HalfScreenDock
+            activeWorkspace={activeWorkspace}
+            onOpenTools={handleOpenTools}
+            isEditingLayout={isEditingLayout}
+            selectionMode={selectionMode}
+            selectedIds={selectedIds}
+          />
+        )}
+
+        {/* 吸顶分类快捷直达导航轨（聚焦单分类时自动收起，避免与聚焦导航条重复占高） */}
+        {viewMode !== 'workbench' && !isCategoryFocused && sortedCategories.length > 0 && !isModuleHidden('mod:workspace-bar') && (
           <div data-feature-id="mod:workspace-bar" className="relative">
             <CategoryQuickJumpBar
               className="md:hidden"
@@ -1400,43 +1919,18 @@ export function NavigationContent({
           {/* 首屏瘦身：主内容区不再渲染大号 H1 标题块（品牌 h1 已移到左侧边栏，
               见 sidebar.tsx；不走 sr-only 隐藏术）。副标题只在首次访问或搜索
               聚焦时以单行轻量条出现，可关闭（见 home-subtitle-hint.tsx）。
-              旧 Hero 标题横幅模块（mod:hero-header）随之退役，见 feature-mask-store。 */}
-          <HomeSubtitleHint
-            tagline={homeControl.basic.tagline || siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
-          />
+              点击单分类直达时一并自动收起，聚焦当前分类内容。 */}
+          {!isCategoryFocused && (
+            <HomeSubtitleHint
+              tagline={homeControl.basic.tagline || siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
+            />
+          )}
 
-          {/* P1-3 首屏再瘦身（2026-11-24）：HomeCapsuleRow 剥离重复运营胶囊回归纯粹角色切换后，
-              <1400px 保持 6px 纵向呼吸间距（消除 1024px 贴边与 1280px 双栏拥挤）；
-              ≥1400px 宽屏严格单行并排：左侧工作区按自然内容宽度紧贴（零 80px 空隙），
-              右侧高频直达坞 flex-1 吃满剩余空间以展示更多置顶站点。 */}
-          {viewMode !== 'workbench' ? (
-            <div className="mb-2 flex flex-col gap-1.5 min-[1400px]:flex-row min-[1400px]:items-center min-[1400px]:gap-2.5">
-              <div className="min-w-0 min-[1400px]:shrink-0">
-                <HomeCapsuleRow
-                  cinemaInitial={cinemaInitial}
-                  pluginItems={pluginItems}
-                  showDramaCapsule={sectionOn('dramaCinema')}
-                  showAiCapsule={sectionOn('aiFinder')}
-                  showGuideBadge={!isModuleHidden('mod:onboarding-card')}
-                  activeWorkspace={activeWorkspace}
-                  onWorkspaceChange={handleWorkspaceChange}
-                  initialSceneParam={sceneParam}
-                  onOpenGuideTab={() => {
-                    setAppearanceTab('guide')
-                    setAppearanceOpen(true)
-                  }}
-                />
-              </div>
-              {/* 三合一单行高频直达坞（A4：合并 SpeedDialDock / 常用 / 最近访问） */}
-              {!isModuleHidden('mod:speed-dial') && (
-                <div data-feature-id="mod:speed-dial" className="relative min-w-0 min-[1400px]:flex-1">
-                  <HomeQuickDock
-                    dialDigitById={mounted ? dialMap.digitById : undefined}
-                    // P2-14：速拨顺序由父级 dialSites 一次算好透传，坞不再自己重算。
-                    speedSites={dialSites}
-                  />
-                </div>
-              )}
+          {/* P1-3 首屏再瘦身（2026-11-24）：未聚焦单分类时正常展示工作区与高频直达坞；
+              点击具体分类后自动收起此行，通过 focused-category-bar 的「快捷栏 ▾」下拉按钮按需展开。 */}
+          {viewMode !== 'workbench' && !isCategoryFocused ? (
+            <div className="mb-2">
+              {renderHomeQuickToolsRow()}
             </div>
           ) : null}
 
@@ -1460,125 +1954,134 @@ export function NavigationContent({
           ) : (
             <>
               <DiyGridDragBoundary kit={dragKit} enabled={isEditingLayout} onDragEnd={handleCategoryDragEnd}>
-              <div className="grid grid-cols-12 gap-6 sm:gap-8 items-start">
-                {renderedCategories.map((category, index) => {
-                  const section = (
-                    <NavigationCategorySection
-                      key={category.id}
-                      category={category}
-                      index={index}
-                      totalCategories={sortedCategories.length}
-                      allCategoryIds={allCategoryIds}
-                      gridColumnsClass={gridColumnsClass}
-                      cardDisplayMode={effectiveCardDisplayMode}
-                      selectionMode={selectionMode}
-                      selectedIds={selectedIds}
-                      siteData={siteData}
-                      setAddSiteTargetCatId={setAddSiteTargetCatId}
-                      setPeekItem={openPeek}
-                      keyboardHintId="navhub-card-keyboard-hint"
-                      toggleSelectOne={toggleSelectOne}
-                      cardsPerGroup={cardsPerGroup}
-                      dialDigitById={mounted ? dialMap.digitById : undefined}
-                      siteTitleById={siteTitleById}
-                    />
-                  )
-                  /**
-                   * 前 EAGER_CATEGORY_COUNT 个分类立即挂载，其余交给视口触发。
-                   *
-                   * 编辑态**不再**强制全量挂载（2026-11-08 实测修正）：一次性挂载
-                   * 873 张卡片 / 42,803 个节点要 20 秒以上，DIY 面板点下去像卡死。
-                   * 改为：编辑态下未挂载的分类在占位块里直接给出**分类级**操控条
-                   * （上移 / 下移 / 隐藏 / 形态 / 添加站点 + 拖拽手柄），这些操作本来就
-                   * 只需要 category 对象、不需要卡片子树；卡片级的钉入/置顶/编辑仍然在
-                   * 用户滚到该分类、卡片真正挂载后可用。
-                   *
-                   * 多选态仍然强制全量：批量操作的前提是「看得见才能选」。
-                   */
-                  /**
-                   * 新建的专属分类必须**立即挂载**：用户在 DIY 里刚点「确认创建」，
-                   * 这个分类要当场出现在导航区并可就地编排（E2E diy-shared-state
-                   * 的 baseline+1 断言钉的就是这条跨组件联动）。若它排在懒挂载区，
-                   * 用户看不到自己刚建的东西，等于功能失效。
-                   */
-                  const isFreshCustom = Boolean((category as { isCustom?: boolean }).isCustom)
-                  // P1-4：多选态不再强制全量挂载（旧逻辑 selectionMode 即挂 873 卡 /
-                  // 42,803 节点，低端机数秒卡死）。选中态是数据驱动
-                  //（useSiteSelection 的 visibleSites 来自数据、与 DOM 无关），
-                  // 全选仍覆盖全部站点；用户滚到某分类时它再懒挂载，挂载后
-                  // forceFull 展开全部卡片供点选。新建自定义分类仍须立即挂载
-                  //（用户刚创建，要当场看到并编排）。
-                  const mustMountAll = isFreshCustom
-                  if (mustMountAll || index < EAGER_CATEGORY_COUNT) return section
+              {(() => {
+                if (focusedCategory) {
                   return (
-                    <LazyMountSection
-                      key={category.id}
-                      sectionId={category.id}
-                      title={category.title}
-                      count={countCategorySites(category)}
-                      estimatedHeight={estimateTruncatedSectionHeight(category, cardsPerGroup)}
-                      force={false}
-                      placeholder={
-                        isEditingLayout ? (
-                          <section
-                            id={`${category.id}-placeholder`}
-                            className="group relative scroll-m-16 rounded-2xl border border-dashed border-primary/40 bg-primary/5 p-4"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="w-1.5 h-5 rounded-full bg-primary/60" />
-                                <h2 className="text-base sm:text-xl font-bold tracking-tight text-foreground truncate min-w-0">
-                                  {category.title}
-                                </h2>
-                                <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground border border-border/40 shrink-0">
-                                  {countCategorySites(category)} 站点
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <CategoryInSituControls
-                                  categoryId={category.id}
-                                  title={category.title}
-                                  isPinned={pinnedCategoryIds.includes(category.id)}
-                                  isCustom={Boolean((category as { isCustom?: boolean }).isCustom)}
-                                  canMoveUp={index > 0}
-                                  canMoveDown={index < renderedCategories.length - 1}
-                                  allCategoryIds={allCategoryIds}
-                                  dragEnabled
-                                  dragGrip={dragKit?.DiyCategoryDragGrip}
-                                />
-                              </div>
-                            </div>
-                            <p className="mt-2 text-xs text-muted-foreground">
-                              滚动到此处即自动展开卡片；上面的操控条对整类生效，无需等待卡片加载。
-                            </p>
-                          </section>
-                        ) : undefined
-                      }
-                    >
-                      {section}
-                    </LazyMountSection>
+                    <div className="grid grid-cols-12 gap-6 sm:gap-8 items-start pt-1">
+                      <NavigationCategorySection
+                        key={focusedCategory.id}
+                        category={focusedCategory}
+                        index={focusedIndex}
+                        totalCategories={sortedCategories.length}
+                        allCategoryIds={allCategoryIds}
+                        gridColumnsClass={gridColumnsClass}
+                        cardDisplayMode={effectiveCardDisplayMode}
+                        selectionMode={selectionMode}
+                        selectedIds={selectedIds}
+                        siteData={siteData}
+                        setAddSiteTargetCatId={setAddSiteTargetCatId}
+                        setPeekItem={openPeek}
+                        keyboardHintId="navhub-card-keyboard-hint"
+                        toggleSelectOne={toggleSelectOne}
+                        cardsPerGroup={0}
+                        showCompleteContent
+                        initialSelectedSubCatId={focusedSubCategoryId}
+                        onSubCategoryChange={handleFocusedSubCategoryChange}
+                        dialDigitById={mounted ? dialMap.digitById : undefined}
+                        siteTitleById={siteTitleById}
+                      />
+                    </div>
                   )
-                })}
+                }
 
-                {sortedCategories.length === 0 && (
-                  <div className="col-span-12 text-center py-16 text-muted-foreground space-y-3">
-                    <p className="text-sm">
-                      {allCategoriesHidden
-                        ? '当前所有分类已被隐藏'
-                        : '当前所有分类已被隐藏或工作台下暂无匹配站点'}
-                    </p>
-                    {allCategoriesHidden ? (
-                      <Button variant="outline" size="sm" onClick={handleRecoverHiddenCategories}>
-                        恢复全部隐藏分类
-                      </Button>
-                    ) : (
-                      <Button variant="outline" size="sm" onClick={() => setActiveWorkspace('all')}>
-                        查看全部站点
-                      </Button>
+                return (
+                  <div className="w-full">
+                    {renderedCategories.length > 0 && (
+                      isEditingLayout ? (
+                        <BentoWorkspaceCanvas
+                          layout={effectiveWorkspaceLayoutV2}
+                          availableBlocks={availableWorkspaceBlocks}
+                          isEditing={isEditingLayout}
+                          activeDragLayer={activeDragLayer}
+                          outlineMode={outlineMode}
+                          selectedBlockId={selectedBlockId}
+                          onActiveDragLayerChange={setActiveDragLayer}
+                          onSelectBlock={setSelectedBlockId}
+                          onCommitBreakpointLayout={(bp, committed, opts) => {
+                            commitWorkspaceBreakpointLayout(bp, committed, availableWorkspaceBlocks, opts)
+                          }}
+                          onSyncAutoHeight={(bp, blockId, nextH) => {
+                            syncBlockAutoHeight(bp, blockId, nextH, availableWorkspaceBlocks)
+                          }}
+                          onBreakpointChange={setActiveBentoBreakpoint}
+                          renderBlock={(block, meta) => renderUnifiedBentoBlock(block, meta)}
+                        />
+                      ) : (
+                        <BentoStaticGrid
+                          layout={effectiveWorkspaceLayoutV2}
+                          availableBlocks={availableWorkspaceBlocks}
+                          renderBlock={(block, meta) => renderUnifiedBentoBlock(block, meta)}
+                        />
+                      )
+                    )}
+
+                    {sortedCategories.length === 0 && (
+                      <div className="text-center py-16 text-muted-foreground space-y-3">
+                        <p className="text-sm">
+                          {allCategoriesHidden
+                            ? '当前所有分类已被隐藏'
+                            : '当前所有分类已被隐藏或工作台下暂无匹配站点'}
+                        </p>
+                        {allCategoriesHidden ? (
+                          <Button variant="outline" size="sm" onClick={handleRecoverHiddenCategories}>
+                            恢复全部隐藏分类
+                          </Button>
+                        ) : (
+                          <Button variant="outline" size="sm" onClick={() => setActiveWorkspace('all')}>
+                            查看全部站点
+                          </Button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Phase 2：右侧轻量区块属性检查器（窄屏底部抽屉） */}
+                    {isEditingLayout && selectedBentoBlock && (
+                      <BentoBlockInspector
+                        block={selectedBentoBlock}
+                        title={
+                          selectedBentoBlock.type === 'search'
+                            ? '聚合搜索'
+                            : selectedBentoBlock.type === 'dock'
+                              ? '高频速览坞'
+                              : selectedBentoBlock.type === 'hotlist'
+                                ? '全站热榜精选'
+                                : categoryTitleMap[selectedBentoBlock.id] || selectedBentoBlock.id
+                        }
+                        breakpoint={activeBentoBreakpoint}
+                        canDelete={selectedBentoBlock.type !== 'search'}
+                        onUpdate={(patch) => {
+                          updateWorkspaceBlock(
+                            activeBentoBreakpoint,
+                            selectedBentoBlock.id,
+                            patch,
+                            availableWorkspaceBlocks,
+                          )
+                        }}
+                        onTrash={() => {
+                          const label =
+                            categoryTitleMap[selectedBentoBlock.id] || selectedBentoBlock.id
+                          trashWorkspaceBlock(selectedBentoBlock.id, label, availableWorkspaceBlocks)
+                          if (
+                            selectedBentoBlock.type === 'category' ||
+                            selectedBentoBlock.type === 'custom_group'
+                          ) {
+                            removeFeature({
+                              id: `cat:${selectedBentoBlock.id}`,
+                              level: 'L2_CATEGORY',
+                              title: label,
+                            })
+                          }
+                          toast({
+                            title: `🗑️ 已移入回收站：${label}`,
+                            description: '已保存原坐标，随时可在回收站一键原位恢复或按 Ctrl+Z 撤销。',
+                          })
+                        }}
+                        onClose={() => setSelectedBlockId(null)}
+                      />
                     )}
                   </div>
-                )}
-              </div>
+                )
+              })()}
               </DiyGridDragBoundary>
             </>
           )}
@@ -1691,26 +2194,30 @@ export function NavigationContent({
         )}
 
         {/* 4.0 弹窗：空格键沙箱速览与行动视窗 */}
-        <SitePeekDialog
-          item={peek?.item ?? null}
-          open={!!peek}
-          onOpenChange={(open) => !open && setPeek(null)}
-          onCloseAutoFocus={() => restorePeekFocus()}
-          categoryId={peek?.categoryId}
-          isPinnedInCategory={
-            peek?.categoryId
-              ? (pinnedSiteIdsByCategory[peek.categoryId] ?? []).includes(peek.item.id)
-              : false
-          }
-          onTogglePinInCategory={
-            peek?.categoryId
-              ? (siteId) => togglePinSiteInCategory(peek.categoryId!, siteId)
-              : undefined
-          }
-        />
+        {peek ? (
+          <SitePeekDialog
+            item={peek.item}
+            open
+            onOpenChange={(open) => !open && setPeek(null)}
+            onCloseAutoFocus={() => restorePeekFocus()}
+            categoryId={peek.categoryId}
+            isPinnedInCategory={
+              peek.categoryId
+                ? (pinnedSiteIdsByCategory[peek.categoryId] ?? []).includes(peek.item.id)
+                : false
+            }
+            onTogglePinInCategory={
+              peek.categoryId
+                ? (siteId) => togglePinSiteInCategory(peek.categoryId!, siteId)
+                : undefined
+            }
+          />
+        ) : null}
 
         {/* 4.0 弹窗：内置开发者微工具抽屉 */}
-        <QuickToolsDrawer open={isToolsOpen} onOpenChange={setIsToolsOpen} />
+        {isToolsOpen ? (
+          <QuickToolsDrawer open onOpenChange={setIsToolsOpen} />
+        ) : null}
 
         {/* 首屏瘦身：底部悬浮快捷导航胶囊已移除（回顶 / 呼出超级搜索 / 微工具
             三键已由顶栏搜索 + ⌘K 命令面板 + T 键覆盖；回顶另见命令面板
@@ -1794,19 +2301,21 @@ export function NavigationContent({
         ) : null}
 
         {/* 自定义站点录入弹窗（懒加载：Radix Dialog 约 144 KB 不再进首屏） */}
-        <AddSiteDialog
-          open={!!addSiteTargetCatId}
-          onOpenChange={(open) => !open && setAddSiteTargetCatId(null)}
-          title={customSiteTitle}
-          href={customSiteHref}
-          desc={customSiteDesc}
-          onTitleChange={setCustomSiteTitle}
-          onHrefChange={setCustomSiteHref}
-          onDescChange={setCustomSiteDesc}
-          suggestion={categorySuggestion}
-          onPickSuggestion={setAddSiteTargetCatId}
-          onSubmit={handleAddCustomSiteSubmit}
-        />
+        {addSiteTargetCatId ? (
+          <AddSiteDialog
+            open
+            onOpenChange={(open) => !open && setAddSiteTargetCatId(null)}
+            title={customSiteTitle}
+            href={customSiteHref}
+            desc={customSiteDesc}
+            onTitleChange={setCustomSiteTitle}
+            onHrefChange={setCustomSiteHref}
+            onDescChange={setCustomSiteDesc}
+            suggestion={categorySuggestion}
+            onPickSuggestion={setAddSiteTargetCatId}
+            onSubmit={handleAddCustomSiteSubmit}
+          />
+        ) : null}
       </main>
     </div>
     </InitialViewModeProvider>

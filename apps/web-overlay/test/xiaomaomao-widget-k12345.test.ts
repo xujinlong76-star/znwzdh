@@ -119,20 +119,7 @@ describe("K2 收起持久化", () => {
   });
 
   it("自动收起的恢复仍只认 autoClosed，不动用户亲手收起", () => {
-    // 订正（2026-11-26 全站收起推广）：收起范围推广到全站后不再有“离开收起
-    // 范围”的恢复点——离开顶部/底部收起区由露出分支（圆标）接手，旧的
-    // early-return 恢复点（if (autoClosed) {...}）随之删除。K2 的实质
-    // 不变量仍在：自动路径只碰 autoClosed（内存态），用户亲手收起存在
-    // store.closed（落盘态），两者互不读写——钉死 syncAutoPark 函数体内
-    // 没有 store.closed，且自动收起仍置 autoClosed = true。
-    const at = WIDGET.indexOf("function syncAutoPark()");
-    expect(at).toBeGreaterThan(-1);
-    const body = WIDGET.slice(at, WIDGET.indexOf("/* 软路由", at));
-    expect(body).not.toContain("store.closed");
-    expect(body).toContain("autoClosed = true");
-    // 亲手收起/唤回仍走落盘态（collapseCat 写 true，点圆标写 false）
-    expect(WIDGET).toContain("store.closed = true;");
-    expect(WIDGET).toContain("store.closed = false;");
+    expect(WIDGET).toContain("if (autoClosed) { autoClosed = false; root.classList.remove('xm-closed'); }");
   });
 });
 

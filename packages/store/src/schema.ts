@@ -286,6 +286,8 @@ export const users = sqliteTable("users", {
   source: text("source").notNull().default("local"),
   /** 邮箱是否已验证（注册/找回密码流程）：0=未验证，1=已验证 */
   emailVerified: integer("email_verified", { mode: "boolean" }).notNull().default(false),
+  /** 每次改密/重置自增；登录结果、JWT 与 session 校验共同消费 */
+  passwordVersion: integer("password_version").notNull().default(0),
   createdAt: integer("created_at").notNull().$defaultFn(now),
 }, (t) => [uniqueIndex("users_username_idx").on(t.username)]);
 
@@ -469,6 +471,7 @@ export const jobs = sqliteTable("jobs", {
   payload: text("payload"),
   status: text("status").notNull().default("pending"),
   attempts: integer("attempts").notNull().default(0),
+  runToken: text("run_token"),
   error: text("error"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
@@ -942,7 +945,7 @@ export const dataVersion = sqliteTable("data_version", {
 
 export const schema = {
   categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
-  users, sessions, authTokens, notifications, wantedSearches, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings, siteRadar,
+  users, sessions, revokedUsers, authTokens, notifications, wantedSearches, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings, siteRadar,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, userSyncState, userWorkspaceBlobs, systemStates, taxonomyProposals,
   plugins, pluginInstalls, pluginStars, pluginReports, pluginVersions, pluginReviews, shortLinks, siteArchives, llmUsage,
   llmModelPrices, llmQuotaReservations, dataVersion,

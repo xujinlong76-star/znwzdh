@@ -49,7 +49,7 @@ function buttonBlock(src: string, ariaLabel: string): string {
 describe("U-155：外观按钮是图标 + 可见文字「DIY 排版」", () => {
   it("按钮含可见文字标签「DIY 排版」，全宽度可见（无 <390px 隐藏）", () => {
     const src = overlayFile("src/components/navigation-toolbar.tsx");
-    const block = buttonBlock(src, "DIY 排版：打开外观排版与新手向导小窗");
+    const block = buttonBlock(src, "打开外观排版与新手向导小窗");
     expect(block, "按钮应有可见文字标签「DIY 排版」").toContain(">DIY 排版</span>");
     expect(block, "按钮仍应是 h-11 w-11（44px 触摸目标）").toContain("h-11 w-11");
     expect(block, "按钮不应再用 size=\"icon\"（已是文字按钮，见「今日」按钮先例）").not.toContain('size="icon"');
@@ -60,7 +60,7 @@ describe("U-155：外观按钮是图标 + 可见文字「DIY 排版」", () => {
 
   it("<sm 用「今日」按钮同款上下叠排，仍占 44px 宽；≥sm 横排", () => {
     const src = overlayFile("src/components/navigation-toolbar.tsx");
-    const block = buttonBlock(src, "DIY 排版：打开外观排版与新手向导小窗");
+    const block = buttonBlock(src, "打开外观排版与新手向导小窗");
     expect(block).toContain("flex-col");
     expect(block).toContain("sm:flex-row");
     expect(block).toContain("sm:w-auto");
@@ -69,7 +69,7 @@ describe("U-155：外观按钮是图标 + 可见文字「DIY 排版」", () => {
 
   it("点击路径不动：仍调 onOpenAppearanceGuide（外观向导小窗）", () => {
     const src = overlayFile("src/components/navigation-toolbar.tsx");
-    const block = buttonBlock(src, "DIY 排版：打开外观排版与新手向导小窗");
+    const block = buttonBlock(src, "打开外观排版与新手向导小窗");
     // U-155 埋点（51f00576）：点击改为“先上报后打开”，onClick 由直传
     // onOpenAppearanceGuide 包成箭头函数；行为不变——向导仍在同一 handler
     // 内无条件打开，上报 fire-and-forget 绝不阻塞。断言改为钉新形式。
@@ -92,7 +92,7 @@ describe("U-155：360px/390px 融合宽度账（小组件盒并入今日效率�
       "<FontSizeToggle",
       "<AppearanceQuickPopover",
       'aria-label="打开菜单"',
-      'aria-label="DIY 排版：打开外观排版与新手向导小窗"',
+      'aria-label="打开外观排版与新手向导小窗"',
     ]) {
       expect(src, `顶栏应有 ${marker}`).toContain(marker);
     }

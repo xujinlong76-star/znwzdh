@@ -237,10 +237,21 @@ describe("源码守卫：入口真的存在，且默认行为不被改变", () =
     expect(src).toContain("if (!selectable) {");
     expect(src).toContain("e.preventDefault()");
     expect(src).toContain("onToggleSelect?.(item.id)");
-    // 紧凑 / 标准 / 丰富 三个分支都要挂上（漏一个就会「有的卡片点了没用」）
-    expect(countOccurrences(src, "onClick={handleLinkClick}")).toBe(3);
-    expect(countOccurrences(src, "data-navhub-site-id={item.id}")).toBe(3);
-    expect(countOccurrences(src, "data-navhub-selected={selected ? 'true' : undefined}")).toBe(3);
+    // 紧凑 / 标准 / 丰富 三个分支都要挂上（漏一个就会「有的卡片点了没用」）。
+    // S2–S4 迁移（2026-11-26）：三档壳收进 SiteCard，这些接线经 rootProps /
+    // overlayProps 对象字面量透传——JSX 属性与对象字面量两种形态合计各 3。
+    expect(
+      countOccurrences(src, "onClick={handleLinkClick}") +
+        countOccurrences(src, "onClick: handleLinkClick,"),
+    ).toBe(3);
+    expect(
+      countOccurrences(src, "data-navhub-site-id={item.id}") +
+        countOccurrences(src, "'data-navhub-site-id': item.id,"),
+    ).toBe(3);
+    expect(
+      countOccurrences(src, "data-navhub-selected={selected ? 'true' : undefined}") +
+        countOccurrences(src, "'data-navhub-selected': selected ? 'true' : undefined,"),
+    ).toBe(3);
   });
 
   it("默认（非多选）模式必须不受影响：没有 selectable 时直接放行", () => {

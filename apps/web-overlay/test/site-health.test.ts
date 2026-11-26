@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { siteHealthBadge, isBotBlockStatus } from "../src/lib/site-health";
+import {
+  healthDotClass,
+  healthPillClass,
+  healthVisualTone,
+  isBotBlockStatus,
+  isFailingHealthState,
+  siteHealthBadge,
+  siteHealthState,
+} from "../src/lib/site-health";
 
 /**
  * 站点巡检徽标守卫（2026-10-22）。
@@ -71,5 +79,59 @@ describe("站点巡检徽标", () => {
     const src = overlayFile("src/components/site-detail-view.tsx");
     expect(src).toContain("isBotBlockStatus(site.health?.httpStatus)");
     expect(src).toContain("不代表站点无法打开");
+  });
+});
+
+describe("徽标配色 Token 化（2026-11-25 UI 评审 P1-4）", () => {
+  const CHECKED = 1792581464978;
+  const fast = siteHealthState({ ok: true, httpStatus: 200, latencyMs: 87, lastCheckedAt: CHECKED });
+  const slow = siteHealthState({ ok: true, httpStatus: 200, latencyMs: 7035, lastCheckedAt: CHECKED });
+  const warn = siteHealthState({ ok: false, httpStatus: null, latencyMs: null, lastCheckedAt: CHECKED });
+  const dead = siteHealthState({
+    ok: false,
+    httpStatus: 404,
+    latencyMs: null,
+    lastCheckedAt: CHECKED,
+    consecutiveFailures: 2,
+  });
+
+  it("点色三档全走 Token：快站绿、慢站琥珀、失效红；慢站不亮绿灯", () => {
+    expect(healthVisualTone(fast)).toBe("ok");
+    expect(healthDotClass(fast)).toBe("bg-success");
+    expect(healthVisualTone(slow)).toBe("warn");
+    expect(healthDotClass(slow)).toBe("bg-pinned");
+    expect(healthDotClass(warn)).toBe("bg-pinned");
+    expect(healthVisualTone(dead)).toBe("error");
+    expect(healthDotClass(dead)).toBe("bg-destructive");
+    // 慢站转琥珀警示档，但语义 tone 保持 ok（慢 ≠ 失效）
+    expect(slow?.tone).toBe("ok");
+    expect(isFailingHealthState(slow)).toBe(false);
+  });
+
+  it("胶囊文字档走 Token，不再出现 raw palette 类", () => {
+    expect(healthPillClass(fast)).toContain("text-success-foreground");
+    expect(healthPillClass(slow)).toContain("text-pinned-foreground");
+    expect(healthPillClass(dead)).toContain("text-destructive-text");
+    // 危险文字配方钉死 text-destructive-text + bg-destructive/15（/10 对比度不足，见 a11y-token-contrast）
+    expect(healthPillClass(dead)).toContain("bg-destructive/15");
+    for (const s of [fast, slow, warn, dead]) {
+      expect(healthPillClass(s)).not.toMatch(/emerald|amber|rose-/);
+      expect(healthDotClass(s)).not.toMatch(/emerald|amber|rose-/);
+    }
+  });
+
+  it("三处徽章渲染点共用 healthDotClass：不再有 raw 点色、无条件脉动与内联延迟", () => {
+    for (const rel of [
+      "src/components/navigation-card.tsx",
+      "src/components/site-detail-view.tsx",
+      "src/components/site-peek-dialog.tsx",
+    ]) {
+      const src = overlayFile(rel);
+      expect(src).toContain("healthDotClass(");
+      // 旧点色三连（raw palette + 静态数据脉动）必须清零
+      expect(src).not.toContain("bg-emerald-500 animate-pulse");
+      // 延迟数字不进徽标正文（完整事实留在 title）
+      expect(src).not.toMatch(/latencyMs\}ms/);
+    }
   });
 });

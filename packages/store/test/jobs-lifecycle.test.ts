@@ -16,8 +16,8 @@ describe("任务取消与僵尸回收", () => {
 
   const insertJob = async (id: string, status: string, attempts: number, updatedAt: number) => {
     await repo.run(
-      "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
-      [id, "health_check", null, status, attempts, updatedAt, updatedAt],
+      "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at, run_token) VALUES (?,?,?,?,?,?,?,?)",
+      [id, "health_check", null, status, attempts, updatedAt, updatedAt, "token-" + id],
     );
   };
   const statusOf = async (id: string): Promise<string> =>
@@ -83,7 +83,7 @@ describe("任务取消与僵尸回收", () => {
     expect(await statusOf("cancel-running")).toBe("cancelling");
 
     // 心跳必须能看清自己处在过渡态（Runner 靠这个在取消后主动停手）
-    expect(await repo.heartbeatJob("cancel-running")).toBe("cancelling");
+    expect(await repo.heartbeatJob("cancel-running", "token-cancel-running")).toBe("cancelling");
 
     // 过渡态既不可重试也不可被再次认领：否则就是「假取消 → 两个执行流」。
     // 这里不能用单次 claimNextJob 断言 null —— 同一内存库前面几个用例留下了
@@ -105,31 +105,31 @@ describe("任务取消与僵尸回收", () => {
     await insertJob("settle-running", "running", 1, Date.now());
     await insertJob("settle-done", "done", 1, Date.now());
 
-    expect(await repo.settleCancellingJob("settle-ok", "cancelled", { error: "已取消", durationMs: 12 })).toBe(true);
+    expect(await repo.settleCancellingJob("settle-ok", "cancelled", { error: "已取消", durationMs: 12, runToken: "token-settle-ok" })).toBe(true);
     const row = await rowOf("settle-ok");
     expect(String(row.status)).toBe("cancelled");
     expect(Number(row.duration_ms)).toBe(12);
 
     // 还在跑（没确认停手）或已是终态：都不能被「迟到的收尾」改写
-    expect(await repo.settleCancellingJob("settle-running", "cancelled", {})).toBe(false);
+    expect(await repo.settleCancellingJob("settle-running", "cancelled", { runToken: "token-settle-running" })).toBe(false);
     expect(await statusOf("settle-running")).toBe("running");
-    expect(await repo.settleCancellingJob("settle-done", "failed", {})).toBe(false);
+    expect(await repo.settleCancellingJob("settle-done", "failed", { runToken: "token-settle-done" })).toBe(false);
     expect(await statusOf("settle-done")).toBe("done");
 
     // 收尾后恢复心跳语义：终态不再续期
-    expect(await repo.heartbeatJob("settle-ok")).toBeNull();
+    expect(await repo.heartbeatJob("settle-ok", "token-settle-ok")).toBeNull();
   });
 
   it("markJobCancelling 只作用于 running（预算到点的入口）", async () => {
     await insertJob("mark-running", "running", 1, Date.now());
     await insertJob("mark-done", "done", 1, Date.now());
 
-    expect(await repo.markJobCancelling("mark-running", "超出单次预算")).toBe(true);
+    expect(await repo.markJobCancelling("mark-running", "超出单次预算", "token-mark-running")).toBe(true);
     expect(await statusOf("mark-running")).toBe("cancelling");
     const row = await rowOf("mark-running");
     expect(String(row.error)).toContain("超出单次预算");
 
-    expect(await repo.markJobCancelling("mark-done", "不该写")).toBe(false);
+    expect(await repo.markJobCancelling("mark-done", "不该写", "token-mark-done")).toBe(false);
     expect(await statusOf("mark-done")).toBe("done");
   });
 
@@ -156,6 +156,35 @@ describe("任务取消与僵尸回收", () => {
     // kind 过滤：lane 只认领自己那一类，别的 kind 不会被顺手拿走
     expect(await repo.claimNextJob({ kinds: ["backup_restore"] })).toBeNull();
     expect((await repo.claimNextJob({ kinds: ["reindex"] }))?.id).toBe(long);
+  });
+
+  it("回收后重新认领会更换 run_token，旧执行体不能心跳、报进度或覆盖终态", async () => {
+    await repo.run("DELETE FROM jobs");
+    const id = await repo.enqueueJob("reindex", {});
+    const first = await repo.claimNextJob();
+    expect(first?.runToken).toBeTruthy();
+
+    await repo.run("UPDATE jobs SET updated_at = ? WHERE id = ?", [Date.now() - 60_000, id]);
+    expect(await repo.reapStaleJobs(1_000, 3)).toBe(1);
+    const second = await repo.claimNextJob();
+    expect(second?.id).toBe(id);
+    expect(second?.runToken).toBeTruthy();
+    expect(second?.runToken).not.toBe(first?.runToken);
+
+    expect(await repo.heartbeatJob(id, first!.runToken)).toBeNull();
+    await repo.updateJobProgress(id, { done: 99, total: 100 }, first!.runToken);
+    expect((await repo.getJob(id))?.progressDone).toBe(0);
+    expect(await repo.markJobCancelling(id, "旧执行体超时", first!.runToken)).toBe(false);
+    expect(await repo.settleCancellingJob(id, "failed", { runToken: first!.runToken })).toBe(false);
+    expect(await repo.completeJob(id, "旧执行体失败", { exhausted: true, runToken: first!.runToken })).toBe(false);
+    expect((await repo.getJob(id))?.status).toBe("running");
+
+    expect(await repo.heartbeatJob(id, second!.runToken)).toBe("running");
+    await repo.updateJobProgress(id, { done: 5, total: 10 }, second!.runToken);
+    expect((await repo.getJob(id))?.progressDone).toBe(5);
+    expect(await repo.cancelJob(id)).toBe("cancelling");
+    expect(await repo.settleCancellingJob(id, "cancelled", { runToken: second!.runToken })).toBe(true);
+    expect((await repo.getJob(id))?.status).toBe("cancelled");
   });
 
   it("enqueueJobIfAbsent：同 kind 有存活任务就不重复入队，跑完可再入队", async () => {

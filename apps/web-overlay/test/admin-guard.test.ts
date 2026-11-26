@@ -43,6 +43,12 @@ vi.mock('next-auth/providers/github', () => ({
 vi.mock('next-auth/providers/credentials', () => ({
   default: (o: Record<string, unknown>) => ({ ...o, id: 'credentials' }),
 }))
+vi.mock('../src/lib/server/hub', () => ({
+  hubSessionRevoked: vi.fn(async () => false),
+}))
+vi.mock('../src/lib/session-governance', () => ({
+  readRequestSessionGovernance: vi.fn(async () => ({ sid: 'test-session-sid', issuedAt: 1, passwordVersion: 0 })),
+}))
 
 type GuardModule = typeof import('../src/lib/admin-guard')
 

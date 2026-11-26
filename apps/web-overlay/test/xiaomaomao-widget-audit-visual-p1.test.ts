@@ -3,7 +3,7 @@
  *
  * 覆盖：A P1-4（坞改回横条药丸）、B-01（减动效见猫）、B-02（扑播满 5 秒）、
  * B-03（走路接缝交叉淡化）、B-04（WebP 兜底懒加载）、B-08（焦点陷阱 + Esc）、
- * B-25a（发送按钮/坞聊天钮/深色收起角标对比度）。
+ * B-25a（发送按钮/坞聊天钮/浅深收起箭头对比度）。
  *
  * 与既有 7 个守卫文件同款写法：读 overlay 侧挂件源码做断言（仓库无 jsdom，
  * 行为级验证走本机无头 Chromium + CDP 探针，见 VERIFICATION.md；对比度数值
@@ -68,6 +68,19 @@ function contrast(a: string, b: string): number {
   const l1 = luminance(a);
   const l2 = luminance(b);
   return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+/** 半透明前景先合成到实际背景，再算对比度；不能直接用合成前颜色虚报可读性。 */
+function composite(foreground: string, background: string, alpha: number): string {
+  const channels = (hex: string) => {
+    let value = hex.replace("#", "");
+    if (value.length === 3) value = value.split("").map((ch) => ch + ch).join("");
+    return [0, 2, 4].map((i) => parseInt(value.slice(i, i + 2), 16));
+  };
+  const fg = channels(foreground);
+  const bg = channels(background);
+  return "#" + fg.map((channel, i) => (
+    Math.round(channel * alpha + bg[i]! * (1 - alpha)).toString(16).padStart(2, "0")
+  )).join("");
 }
 /** 从 linear-gradient(135deg,#xxx,#yyy) 里取两端色 */
 function gradientEnds(rule: string): [string, string] {
@@ -180,11 +193,15 @@ describe("B-04：WebP 兜底只在需要时加载", () => {
     expect(open).toContain("setIconImg(root.querySelector('.xm-p-head img'))");
   });
 
-  it("收起圆标懒加载：收起时与启动恢复收起态时才设 src", () => {
-    const collapse = fnBody("collapseCat");
-    expect(collapse).toContain("setIconImg(root.querySelector('.xm-tab img'))");
-    const bootClosed = sliceBetween("root.classList.add('xm-closed');", "var wrapEl = root.querySelector('.xm-wrap');");
-    expect(bootClosed).toContain("setIconImg(root.querySelector('.xm-tab img'))");
+  it("收起入口改为内联 SVG 箭头：启动、收起与恢复收起都不加载图片", () => {
+    const sk = sliceBetween("root.innerHTML =", "document.body.appendChild(root)");
+    const tabAt = sk.indexOf('<button class="xm-tab"');
+    expect(tabAt).toBeGreaterThan(-1);
+    const tab = sk.slice(tabAt, sk.indexOf("</button>", tabAt) + "</button>".length);
+    expect(tab).toContain('<svg viewBox="0 0 24 24"');
+    expect(tab).toContain('aria-hidden="true"');
+    expect(tab).not.toContain("<img");
+    expect(tab).not.toContain("xm-tab-badge");
   });
 
   it("主题切换刷新只动已加载过的图标（没加载过的不提前拉取）", () => {
@@ -250,7 +267,7 @@ describe("B-08：聊天面板/游戏焦点陷阱 + Esc", () => {
   });
 });
 
-describe("B-25a：发送按钮/坞聊天钮/深色收起角标对比度", () => {
+describe("B-25a：发送按钮/坞聊天钮/浅深收起箭头对比度", () => {
   it("发送按钮白字在新渐变两端都 ≥4.5:1（双模式同一条渐变）", () => {
     const send = cssRule("#xiaomaomao .xm-send");
     expect(send).not.toContain("var(--xm-accent),#ff8fab");
@@ -267,15 +284,39 @@ describe("B-25a：发送按钮/坞聊天钮/深色收起角标对比度", () => 
     expect(contrast("#fff", b)).toBeGreaterThanOrEqual(3);
   });
 
-  it("深色收起角标白图标 ≥3:1（旧 #ff7096 实底只有 2.62:1）", () => {
-    const badge = cssRule("html.dark #xiaomaomao .xm-tab-badge");
-    expect(badge).toContain("background:#d6336c");
-    expect(contrast("#fff", "#d6336c")).toBeGreaterThanOrEqual(3);
+  it("浅色收起箭头合成透明度后仍 ≥3:1，悬停态 ≥4.5:1", () => {
+    const tab = cssRule("#xiaomaomao .xm-tab");
+    const root = cssRule("#xiaomaomao");
+    const hover = cssRule("#xiaomaomao .xm-tab:hover");
+    const soft = /--xm-ink-soft:(#[0-9a-f]{6})/i.exec(root)?.[1];
+    const accentDeep = /--xm-accent-deep:(#[0-9a-f]{6})/i.exec(root)?.[1];
+    const alpha = Number(/opacity:([0-9.]+)/.exec(tab)?.[1]);
+    expect(tab).toContain("background:transparent");
+    expect(tab).toContain("color:var(--xm-ink-soft)");
+    expect(alpha).toBe(0.72);
+    expect(soft).toBeDefined();
+    expect(accentDeep).toBeDefined();
+    expect(contrast(composite(soft!, "#ffffff", alpha), "#ffffff")).toBeGreaterThanOrEqual(3);
+    expect(hover).toContain("opacity:1");
+    expect(hover).toContain("color:var(--xm-accent-deep)");
+    expect(contrast(accentDeep!, "#ffffff")).toBeGreaterThanOrEqual(4.5);
   });
 
-  it("浅色收起角标仍过 3:1（旧 #f4507e 实底 3.34:1，未动）", () => {
-    const badge = cssRule("#xiaomaomao .xm-tab-badge");
-    expect(badge).toContain("background:var(--xm-accent)");
-    expect(contrast("#fff", "#f4507e")).toBeGreaterThanOrEqual(3);
+  it("深色收起箭头合成透明度后仍 ≥3:1，悬停态 ≥4.5:1", () => {
+    const tab = cssRule("html.dark #xiaomaomao .xm-tab");
+    const root = cssRule("html.dark #xiaomaomao");
+    const hover = cssRule("#xiaomaomao .xm-tab:hover");
+    const soft = /--xm-ink-soft:(#[0-9a-f]{6})/i.exec(root)?.[1];
+    const accentDeep = /--xm-accent-deep:(#[0-9a-f]{6})/i.exec(root)?.[1];
+    const alpha = Number(/opacity:([0-9.]+)/.exec(cssRule("#xiaomaomao .xm-tab"))?.[1]);
+    expect(tab).toContain("background:transparent");
+    expect(tab).toContain("border:none");
+    expect(alpha).toBe(0.72);
+    expect(soft).toBeDefined();
+    expect(accentDeep).toBeDefined();
+    expect(contrast(composite(soft!, "#18181b", alpha), "#18181b")).toBeGreaterThanOrEqual(3);
+    expect(hover).toContain("opacity:1");
+    expect(hover).toContain("color:var(--xm-accent-deep)");
+    expect(contrast(accentDeep!, "#18181b")).toBeGreaterThanOrEqual(4.5);
   });
 });

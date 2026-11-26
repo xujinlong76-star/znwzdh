@@ -290,6 +290,8 @@ export interface UserRecord {
   source: string;
   /** 邮箱是否已验证（注册/找回密码流程） */
   emailVerified: boolean;
+  /** 口令版本：每次改密/重置自增，旧登录校验结果不得建立新会话 */
+  passwordVersion: number;
 }
 
 /** API token 记录（**不含 token_hash 明文**——哈希只在查询入参里出现，不进返回值） */

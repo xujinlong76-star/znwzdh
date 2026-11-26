@@ -1,6 +1,8 @@
 import type { VectorMatch, VectorRecord, VectorStore } from "./types.ts";
 import { clampSimilarity, normalize } from "./types.ts";
 import { fitDimension } from "./codec.ts";
+import type { Db } from "../driver.ts";
+import { readWithDbGate, writeWithDbGate } from "../db-access.ts";
 
 /**
  * sqlite-vec (vec0) 实现。
@@ -35,12 +37,15 @@ export interface SqliteVecStoreOptions {
   dim: number;
   /** 虚拟表名 */
   table?: string;
+  /** 与 Repository 共享的物理库；生产装配必须传入，避免向量写落入无关事务 */
+  gateDb?: Db;
 }
 
 export class SqliteVecStore implements VectorStore {
   readonly kind = "sqlite-vec" as const;
   readonly dim: number;
   private db: SqliteLike;
+  private gateDb?: Db;
   private table: string;
   private keyToSite = new Map<number, string>();
   private siteToKey = new Map<string, number>();
@@ -48,6 +53,7 @@ export class SqliteVecStore implements VectorStore {
 
   constructor(opts: SqliteVecStoreOptions) {
     this.db = opts.db;
+    this.gateDb = opts.gateDb;
     this.dim = opts.dim;
     this.table = opts.table ?? "sites_vec";
   }
@@ -88,59 +94,79 @@ export class SqliteVecStore implements VectorStore {
     this.db.exec(this.ddl());
   }
 
-  async upsert(records: VectorRecord[]): Promise<void> {
-    this.init();
-    if (records.length === 0) return;
-    const del = this.db.prepare(`DELETE FROM ${this.table} WHERE site_key = ?`);
-    const ins = this.db.prepare(`INSERT INTO ${this.table}(site_key, site_id, embedding) VALUES (?, ?, ?)`);
-    for (const r of records) {
-      if (r.vector.length !== this.dim) {
-        throw new Error(`${r.siteId} 向量维度 ${r.vector.length} != ${this.dim}`);
-      }
-      // vec0 不接受重复主键，先删后插实现 upsert
-      del.run(BigInt(r.key));
-      // 必须传 BigInt —— 传 number 会抛 "Only integers are allows for primary key values"
-      ins.run(BigInt(r.key), r.siteId, normalize(r.vector));
-      this.keyToSite.set(r.key, r.siteId);
-      this.siteToKey.set(r.siteId, r.key);
+  private async withWrite<T>(fn: () => T): Promise<T> {
+    if (!this.gateDb) {
+      this.init();
+      return fn();
     }
+    return writeWithDbGate(this.gateDb, () => {
+      this.init();
+      return fn();
+    });
+  }
+
+  private async withRead<T>(fn: () => T): Promise<T> {
+    if (!this.ready) await this.withWrite(() => undefined);
+    if (!this.gateDb) return fn();
+    return readWithDbGate(this.gateDb, fn);
+  }
+
+  async upsert(records: VectorRecord[]): Promise<void> {
+    if (records.length === 0) return;
+    await this.withWrite(() => {
+      const del = this.db.prepare(`DELETE FROM ${this.table} WHERE site_key = ?`);
+      const ins = this.db.prepare(`INSERT INTO ${this.table}(site_key, site_id, embedding) VALUES (?, ?, ?)`);
+      for (const r of records) {
+        if (r.vector.length !== this.dim) {
+          throw new Error(`${r.siteId} 向量维度 ${r.vector.length} != ${this.dim}`);
+        }
+        // vec0 不接受重复主键，先删后插实现 upsert
+        del.run(BigInt(r.key));
+        // 必须传 BigInt —— 传 number 会抛 "Only integers are allows for primary key values"
+        ins.run(BigInt(r.key), r.siteId, normalize(r.vector));
+        this.keyToSite.set(r.key, r.siteId);
+        this.siteToKey.set(r.siteId, r.key);
+      }
+    });
   }
 
   async remove(siteIds: string[]): Promise<void> {
-    this.init();
-    // 优先按 site_id 直接删（不依赖进程内映射）
-    const delById = this.db.prepare(`DELETE FROM ${this.table} WHERE site_id = ?`);
-    const delByKey = this.db.prepare(`DELETE FROM ${this.table} WHERE site_key = ?`);
-    for (const siteId of siteIds) {
-      delById.run(siteId);
-      const key = this.siteToKey.get(siteId);
-      if (key !== undefined) delByKey.run(BigInt(key));
-      this.siteToKey.delete(siteId);
-      if (key !== undefined) this.keyToSite.delete(key);
-    }
+    await this.withWrite(() => {
+      // 优先按 site_id 直接删（不依赖进程内映射）
+      const delById = this.db.prepare(`DELETE FROM ${this.table} WHERE site_id = ?`);
+      const delByKey = this.db.prepare(`DELETE FROM ${this.table} WHERE site_key = ?`);
+      for (const siteId of siteIds) {
+        delById.run(siteId);
+        const key = this.siteToKey.get(siteId);
+        if (key !== undefined) delByKey.run(BigInt(key));
+        this.siteToKey.delete(siteId);
+        if (key !== undefined) this.keyToSite.delete(key);
+      }
+    });
   }
 
   async search(query: Float32Array, limit: number): Promise<VectorMatch[]> {
-    this.init();
     if (limit <= 0) return [];
-    // LIMIT 必须在 vec0 自己的查询块里 —— 这是 vec0 的硬性约束
-    const rows = this.db
-      .prepare(
-        `SELECT site_id AS siteId, site_key AS siteKey, distance FROM ${this.table} WHERE embedding MATCH ? ORDER BY distance LIMIT ?`,
-      )
-      .all(normalize(fitDimension(query, this.dim)), limit) as Array<{ siteId: string | null; siteKey: number | bigint; distance: number }>;
+    return this.withRead(() => {
+      // LIMIT 必须在 vec0 自己的查询块里 —— 这是 vec0 的硬性约束
+      const rows = this.db
+        .prepare(
+          `SELECT site_id AS siteId, site_key AS siteKey, distance FROM ${this.table} WHERE embedding MATCH ? ORDER BY distance LIMIT ?`,
+        )
+        .all(normalize(fitDimension(query, this.dim)), limit) as Array<{ siteId: string | null; siteKey: number | bigint; distance: number }>;
 
-    const out: VectorMatch[] = [];
-    for (const row of rows) {
-      const key = Number(row.siteKey);
-      // site_id 列是唯一事实源；仅在旧数据（site_id 为 NULL）时才退回进程内映射，
-      // 再退回哈希值（后两者都不是站点 UUID，只是尽力而为的兜底）。
-      const siteId = row.siteId ?? this.keyToSite.get(key) ?? String(key);
-      const distance = Number(row.distance);
-      // vec0 默认 L2：归一化向量间 d² = 2 - 2·cos，换算回余弦相似度
-      out.push({ siteId, distance, similarity: clampSimilarity(1 - (distance * distance) / 2) });
-    }
-    return out;
+      const out: VectorMatch[] = [];
+      for (const row of rows) {
+        const key = Number(row.siteKey);
+        // site_id 列是唯一事实源；仅在旧数据（site_id 为 NULL）时才退回进程内映射，
+        // 再退回哈希值（后两者都不是站点 UUID，只是尽力而为的兜底）。
+        const siteId = row.siteId ?? this.keyToSite.get(key) ?? String(key);
+        const distance = Number(row.distance);
+        // vec0 默认 L2：归一化向量间 d² = 2 - 2·cos，换算回余弦相似度
+        out.push({ siteId, distance, similarity: clampSimilarity(1 - (distance * distance) / 2) });
+      }
+      return out;
+    });
   }
 
   /**
@@ -200,15 +226,17 @@ export class SqliteVecStore implements VectorStore {
   }
 
   async count(): Promise<number> {
-    this.init();
-    const row = this.db.prepare(`SELECT COUNT(*) AS c FROM ${this.table}`).get() as { c: number };
-    return Number(row?.c ?? 0);
+    return this.withRead(() => {
+      const row = this.db.prepare(`SELECT COUNT(*) AS c FROM ${this.table}`).get() as { c: number };
+      return Number(row?.c ?? 0);
+    });
   }
 
   async clear(): Promise<void> {
-    this.init();
-    this.db.exec(`DELETE FROM ${this.table}`);
-    this.keyToSite.clear();
-    this.siteToKey.clear();
+    await this.withWrite(() => {
+      this.db.exec(`DELETE FROM ${this.table}`);
+      this.keyToSite.clear();
+      this.siteToKey.clear();
+    });
   }
 }

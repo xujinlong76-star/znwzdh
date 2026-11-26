@@ -288,10 +288,8 @@ export async function listVideoCategories(repo: Repository): Promise<VideoCatego
   })
 
   if (repo.db.dialect === "sqlite") {
-    const rows = repo.db.sqlite!
-      .prepare("SELECT * FROM video_categories ORDER BY sort, id")
-      .all() as Array<Record<string, unknown>>
-    return rows.map(map)
+    const rows = await repo.raw("SELECT * FROM video_categories ORDER BY sort, id", []);
+    return rows.map(map);
   }
   const res = await repo.db.pg!.query("SELECT * FROM video_categories ORDER BY sort, id")
   return (res.rows as Array<Record<string, unknown>>).map(map)
@@ -335,9 +333,7 @@ export async function listVideoItems(
       "SELECT * FROM video_items" +
       (where.length ? " WHERE " + where.join(" AND ") : "") +
       ` ORDER BY category_id, sort, id LIMIT ?${keyset ? "" : " OFFSET ?"}`
-    const rows = repo.db.sqlite!
-      .prepare(sql)
-      .all(...args, limit, ...(keyset ? [] : [offset])) as RawVideoItemRow[]
+    const rows = (await repo.raw(sql, [...args, limit, ...(keyset ? [] : [offset])])) as unknown as RawVideoItemRow[];
     return rows.map(rowToVideoItem)
   }
 
@@ -364,7 +360,7 @@ export async function listVideoItems(
 
 export async function getVideoItem(repo: Repository, id: string): Promise<VideoItemRow | null> {
   if (repo.db.dialect === "sqlite") {
-    const row = repo.db.sqlite!.prepare("SELECT * FROM video_items WHERE id = ?").get(id) as RawVideoItemRow | undefined
+    const row = (await repo.raw("SELECT * FROM video_items WHERE id = ?", [id]))[0] as RawVideoItemRow | undefined
     return row ? rowToVideoItem(row) : null
   }
   const res = await repo.db.pg!.query("SELECT * FROM video_items WHERE id = $1", [id])
@@ -398,7 +394,7 @@ export async function countVideoItems(
     if (f.platform) { where.push("platform = ?"); args.push(f.platform) }
     if (f.healthStatus) { where.push("health_status = ?"); args.push(f.healthStatus) }
     const sql = "SELECT COUNT(*) AS n FROM video_items" + (where.length ? " WHERE " + where.join(" AND ") : "")
-    const row = repo.db.sqlite!.prepare(sql).get(...args) as { n: number }
+    const row = (await repo.raw(sql, args))[0] as { n: number } | undefined
     return Number(row?.n ?? 0)
   }
 
@@ -421,21 +417,9 @@ export async function logVideoReplacement(
   const oldItem = JSON.stringify(record.oldItem ?? {})
   const newItem = JSON.stringify(record.newItem ?? {})
 
-  if (repo.db.dialect === "sqlite") {
-    repo.db.sqlite!.prepare(
-      "INSERT INTO video_replacements (id,category_id,category_title,old_item,new_item,reason,score_diff,trend_keyword,rolled_back,created_at) VALUES (?,?,?,?,?,?,?,?,?,?) " +
-      "ON CONFLICT(id) DO UPDATE SET rolled_back = excluded.rolled_back",
-    ).run(
-      record.id, record.categoryId, record.categoryTitle ?? null, oldItem, newItem,
-      record.reason ?? null, record.scoreDiff ?? null, record.trendKeyword ?? null,
-      boolFor(repo, record.rolledBack, false), createdAt,
-    )
-    return
-  }
-
-  await repo.db.pg!.query(
-    "INSERT INTO video_replacements (id,category_id,category_title,old_item,new_item,reason,score_diff,trend_keyword,rolled_back,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) " +
-    "ON CONFLICT (id) DO UPDATE SET rolled_back = EXCLUDED.rolled_back",
+  await repo.run(
+    "INSERT INTO video_replacements (id,category_id,category_title,old_item,new_item,reason,score_diff,trend_keyword,rolled_back,created_at) VALUES (?,?,?,?,?,?,?,?,?,?) " +
+    "ON CONFLICT(id) DO UPDATE SET rolled_back = excluded.rolled_back",
     [
       record.id, record.categoryId, record.categoryTitle ?? null, oldItem, newItem,
       record.reason ?? null, record.scoreDiff ?? null, record.trendKeyword ?? null,
@@ -465,8 +449,8 @@ export async function listVideoReplacements(
 
   if (repo.db.dialect === "sqlite") {
     const rows = opts.categoryId
-      ? (repo.db.sqlite!.prepare("SELECT * FROM video_replacements WHERE category_id = ? ORDER BY created_at DESC LIMIT ?").all(opts.categoryId, limit) as Array<Record<string, unknown>>)
-      : (repo.db.sqlite!.prepare("SELECT * FROM video_replacements ORDER BY created_at DESC LIMIT ?").all(limit) as Array<Record<string, unknown>>)
+      ? await repo.raw("SELECT * FROM video_replacements WHERE category_id = ? ORDER BY created_at DESC LIMIT ?", [opts.categoryId, limit])
+      : await repo.raw("SELECT * FROM video_replacements ORDER BY created_at DESC LIMIT ?", [limit])
     return rows.map(map)
   }
 

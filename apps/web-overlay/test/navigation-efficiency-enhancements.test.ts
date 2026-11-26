@@ -156,7 +156,8 @@ describe('导航效率增强与用户体验治理', () => {
     const src = loadSource('src/app/sites/sites-directory.tsx')
     expect(src).toContain('SitesDirectoryFilterableGrid')
     expect(src).toContain('MonitorPlay')
-    expect(src).toContain('href="/videos"')
+    // 阶段 B 后推广位走 PromoBanner 原语，CTA 目标由 actionHref 承载（口径不变：链到 /videos）
+    expect(src).toContain('actionHref="/videos"')
   })
 
   it('站点详情页集成跨生态实战视频教程与优雅回退', () => {

@@ -426,6 +426,7 @@ export function rowToUser(row: Record<string, any>): UserRecord {
     avatar: row.avatar ?? null,
     source: String(row.source ?? "local"),
     emailVerified: row.email_verified === 1 || row.email_verified === true,
+    passwordVersion: Number(row.password_version ?? 0),
   };
 }
 

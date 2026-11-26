@@ -1,10 +1,10 @@
 packages:
   - 'packages/*'
   - 'apps/*'
-  # apps/web-overlay 是「覆盖层镜像」而不是独立包：它的 package.json 只是
-  # apps/web 清单的一份副本（Docker/vendor 用来保证前端依赖与自研改动同步）。
+  # apps/web-overlay 是「覆盖层事实源」而不是独立 workspace 包：它的 package.json
+  # 描述最终 apps/web 清单（Docker 安装时复制为 apps/web/package.json），不单独安装或构建。
   # 不排除的话，pnpm 会把它当成第二个名为 navsphere 的 workspace 项目，
-  # `pnpm --filter navsphere` 会同时命中两个目录，tsc/build 在 overlay 里跑并失败。
+  # `pnpm --filter navsphere` 会同时命中两个目录，造成依赖/构建入口分叉。
   - '!apps/web-overlay'
 
 # 版本锁定：包管理器版本由根 package.json 的 `packageManager: pnpm@11.7.0` 声明，
@@ -76,7 +76,7 @@ minimumReleaseAgeExclude:
 #  sharp                                         native 依赖安全维护版               2026-12-31
 #  undici                                        >=7.29.1                            2026-12-31
 #  body-parser                                   express@5 经 MCP SDK 仍解析到 2.3.0（高危 DoS） 2026-12-31
-#  next 16.4.2                                   硬钉：与 minimumReleaseAgeExclude 平台包绑定 2027-03-31
+#  next 16.4.5                                   硬钉：与 minimumReleaseAgeExclude 平台包绑定 2027-03-31
 #  tinypool / postcss / ws / esbuild             工具链安全版本                     2026-12-31
 #  nodemailer                                    GHSA-p6gq-j5cr-w38f / GHSA-8h2f-cmhf-554p 2026-12-31
 #  fast-uri                                      GHSA-333x-w4r6-6crp                 2026-12-31

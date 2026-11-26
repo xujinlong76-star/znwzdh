@@ -38,7 +38,7 @@ function snapshot(jobs: unknown[], headSha: string | null = SAME) {
 
 const GREEN = snapshot([
   row({ job: "test-sqlite", name: "测试（SQLite 默认方言，分片 1/3）" }),
-  row({ job: "test-web", name: "前端门禁", gateTotal: 6, ran: 2, defused: 4, conclusion: "failure" }),
+  row({ job: "test-web", name: "前端门禁", gateTotal: 7, ran: 2, defused: 5, conclusion: "failure" }),
   row({ job: "check-web-overlay", name: "覆盖层规范", gateTotal: 9, ran: 9 }),
 ]);
 
@@ -76,7 +76,7 @@ describe("check-defused-thickness CLI：三档退出码各有各的形状", () =
     expect(out).toContain("口径可比");
     expect(out).toContain("账的厚度与登记表一致");
     expect(out).toContain("读到账 3 个作业实例");
-    // 撤防 4 道不算厚度问题：那是撤防账那一档的话，这里不许重复判红
+    // 撤防 5 道不算厚度问题：那是撤防账那一档的话，这里不许重复判红
     expect(out).not.toContain("账厚度不符");
     expect(out).not.toContain("[口径]");
   });
@@ -145,15 +145,16 @@ describe("check-defused-thickness CLI：三档退出码各有各的形状", () =
     // 2026-11-07：29 → 30（check-web-overlay 的 check-web-config-parity +1）
     // 2026-11-09：30 → 31（test-web 的 web-no-explicit-any +1）
     // 2026-11-21：31 → 32（check-web-overlay 的 check-hub-id +1，Batch 1 W2b hubId 校验进 CI）
-    expect(j.registryGateTotal).toBe(32);
+    // 任务 #10：补登 raw palette、聚合生成链与 Docker 运行冒烟，移除被聚合的独立 core mirror → 34
+    expect(j.registryGateTotal).toBe(34);
     expect(j.exitCode).toBe(0);
   });
 
   it("消融：判据改用 ran 与期望比 ⇒ web 真红那轮会被误报成薄账（基准必须是写侧报的总数）", async () => {
     const { rc } = await run(["--from", "-"], GREEN, LOCAL);
     expect(rc).toBe(0);
-    // 同一份数据，若拿 ran 当基准：test-web 期望 6、ran 2 ⇒ 假红一条
-    const naive = 6 - 2;
+    // 同一份数据，若拿 ran 当基准：test-web 期望 7、ran 2 ⇒ 假红一条
+    const naive = 7 - 2;
     expect(naive).toBeGreaterThan(0);
   });
 });

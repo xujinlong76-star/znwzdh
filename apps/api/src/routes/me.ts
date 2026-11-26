@@ -1010,13 +1010,19 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
           userAgent: z.string().max(300).nullable().optional(),
           expiresAt: z.number().int().positive().optional(),
           issuedAt: z.number().int().positive().optional(),
+          passwordVersion: z.number().int().nonnegative().optional(),
         })
         .safeParse(req.body ?? {});
       if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
       const canonical = await ctx.repo.resolveIdentity(identity);
       const sidHash = createHash("sha256").update(body.data.sid).digest("hex");
     // 先核对再登记：登记会建行，无行兜底须在建行前查。
-    const revoked = await ctx.repo.isSessionRevoked(sidHash, canonical, body.data.issuedAt);
+    const revoked = await ctx.repo.isSessionRevoked(
+      sidHash,
+      canonical,
+      body.data.issuedAt,
+      body.data.passwordVersion,
+    );
     if (revoked) return { ok: true, revoked: true };
       // 过期时间缺失时给 7 天兜底：老客户端不带 expiresAt 也不至于把行写成永不过期
       const expiresAt = body.data.expiresAt ?? Date.now() + 7 * 86_400_000;
@@ -1202,7 +1208,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     const canonical = await ctx.repo.resolveIdentity(identity);
-    const devices = await ctx.repo.listSessionDevices(canonical);
+    const devices = await ctx.repo.listSessionDevicesForUser(canonical);
     return { ok: true, devices };
   });
 
@@ -1214,7 +1220,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     const id = String((req.params as { id: string }).id || "");
     if (!/^[a-f0-9]{64}$/.test(id)) { reply.code(400); return { error: "会话 id 无效" }; }
     const canonical = await ctx.repo.resolveIdentity(identity);
-    const removed = await ctx.repo.revokeSessionDevice(canonical, id);
+    const removed = await ctx.repo.revokeSessionDeviceForUser(canonical, id);
     if (!removed) { reply.code(404); return { error: "会话不存在或已吊销" }; }
     await ctx.repo.audit({
       ip: req.ip,
@@ -1664,10 +1670,10 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     reply.code(403);
     return { error: "内置管理员账号不允许注销" };
   }
-  // 凭据用户在库内的会话与域表身份是 credentials:<uuid>，而令牌里的身份可能是裸 UUID；
-  // 与 account.ts 密码重置同一口径，先规范化再吊销/删除。
+  // 会话可能仍登记在 raw UUID、credentials:<uuid> 或 provider canonical 下；
+  // 删除域数据前必须先按全部别名整体吊销，不能只处理当前规范化身份。
   const canonicalIdentity = canonical.includes(":") ? canonical : "credentials:" + canonical;
-  await ctx.repo.revokeAllSessions(canonicalIdentity);
+  await ctx.repo.revokeAllSessionsForUser(canonical);
   const counts = await ctx.repo.deleteUserData(canonicalIdentity);
     recordUserCenterMetric("dataSovereignty.deleteAccount");
     await ctx.repo.audit({

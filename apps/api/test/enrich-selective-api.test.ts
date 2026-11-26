@@ -8,13 +8,16 @@
  *   2. 取消 title 又不给标题 → 400，不建半残站点；
  *   3. 拼错的字段名出现在 ignoredFields 里，不静默吞掉。
  *
- * 抓取整段用公网 IP 字面量 + 桩 fetch：guardedFetch 对 IP 字面量跳过 DNS，
- * 因此不需要网络，也不会触碰本机任何服务。
+ * 抓取整段用公网 IP 字面量 + 桩原生 HTTP 请求：guardedFetch 对 IP 字面量跳过 DNS，
+ * 连接级 pinning 仍走 node:http，因此不需要网络，也不会触碰本机任何服务。
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
+import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
@@ -23,7 +26,7 @@ let dir: string;
 let ctx: AppContext;
 let app: Awaited<ReturnType<typeof buildServer>>;
 
-/** 公网 IP 字面量：SSRF 校验不做 DNS，桩 fetch 也不会真的出网 */
+/** 公网 IP 字面量：SSRF 校验不做 DNS，桩原生请求也不会真的出网 */
 const HOST = "http://93.184.216.34";
 
 const HTML = `<!doctype html>
@@ -55,6 +58,7 @@ beforeAll(async () => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -64,12 +68,25 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function stubFetch() {
-  const spy = vi.fn(async () =>
-    new Response(HTML, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }),
-  );
-  vi.stubGlobal("fetch", spy);
-  return spy;
+function stubFetch(html = HTML) {
+  return vi.spyOn(http, "request").mockImplementation(((options: Record<string, unknown>, callback: (res: unknown) => void) => {
+    expect(options.hostname).toBe("93.184.216.34");
+    const req = new EventEmitter() as EventEmitter & {
+      write: ReturnType<typeof vi.fn>;
+      end: ReturnType<typeof vi.fn>;
+      destroy: ReturnType<typeof vi.fn>;
+    };
+    req.write = vi.fn();
+    req.destroy = vi.fn();
+    req.end = vi.fn(() => {
+      const res = PassThrough() as PassThrough & { statusCode: number; headers: Record<string, string> };
+      res.statusCode = 200;
+      res.headers = { "content-type": "text/html; charset=utf-8" };
+      callback(res);
+      res.end(html);
+    });
+    return req;
+  }) as unknown as typeof http.request);
 }
 
 describe("POST /api/sites/auto · enrichFields 选择性应用", () => {
@@ -156,13 +173,7 @@ describe("POST /api/sites/auto · enrichFields 选择性应用", () => {
   });
 
   it("页面没有 description 时该字段进 skipped，不用空值覆盖", async () => {
-    const spy = vi.fn(async () =>
-      new Response("<html><head><title>Only Title</title></head><body>hello</body></html>", {
-        status: 200,
-        headers: { "content-type": "text/html" },
-      }),
-    );
-    vi.stubGlobal("fetch", spy);
+    stubFetch("<html><head><title>Only Title</title></head><body>hello</body></html>");
 
     const res = await app.inject({
       method: "POST",

@@ -257,8 +257,8 @@ describe("系统级配置（管理端）", () => {
   });
 
   it("连通性测试：mock 成功返回延迟与回复预览", async () => {
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () =>
+    const originalFetch = ctx.config.llm.fetchImpl;
+    ctx.config.llm.fetchImpl = (async () =>
       new Response(
         JSON.stringify({
           model: "test-model",
@@ -279,7 +279,7 @@ describe("系统级配置（管理端）", () => {
       expect(result.replyPreview).toBe("ok");
       expect(result.model).toBe("test-model");
     } finally {
-      globalThis.fetch = originalFetch;
+      ctx.config.llm.fetchImpl = originalFetch;
     }
   });
 
@@ -375,8 +375,8 @@ describe("用户级配置（个人设置）", () => {
     });
     expect(res.statusCode).toBe(200);
 
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const originalFetch = ctx.config.llm.fetchImpl;
+    ctx.config.llm.fetchImpl = (async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("127.0.0.1:9")) throw new TypeError("fetch failed");
       return new Response(
@@ -403,7 +403,7 @@ describe("用户级配置（个人设置）", () => {
       expect(body.model).toBe("test-model");
       expect(body.usage.totalTokens).toBe(4);
     } finally {
-      globalThis.fetch = originalFetch;
+      ctx.config.llm.fetchImpl = originalFetch;
       await app.inject({ method: "POST", url: "/api/admin/ai/config/reset" });
     }
   });
@@ -430,8 +430,8 @@ describe("用户级配置（个人设置）", () => {
     expect(res.statusCode).toBe(400);
 
     // 模拟 LLM 成功返回 JSON 布局
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => {
+    const originalFetch = ctx.config.llm.fetchImpl;
+    ctx.config.llm.fetchImpl = (async () => {
       return new Response(
         JSON.stringify({
           model: "test-model",
@@ -475,7 +475,7 @@ describe("用户级配置（个人设置）", () => {
       expect(data.layout.widgets[1].type).toBe("favorites-dock");
       expect(data.model).toBe("test-model");
     } finally {
-      globalThis.fetch = originalFetch;
+      ctx.config.llm.fetchImpl = originalFetch;
     }
   });
 
@@ -484,8 +484,8 @@ describe("用户级配置（个人设置）", () => {
    * 所以这里不需要网络，也不需要真模型。
    */
   async function generateCanvasWithLayout(anonId: string, content: unknown) {
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () =>
+    const originalFetch = ctx.config.llm.fetchImpl;
+    ctx.config.llm.fetchImpl = (async () =>
       new Response(
         JSON.stringify({
           model: "test-model",
@@ -503,7 +503,7 @@ describe("用户级配置（个人设置）", () => {
       });
       return { status: res.statusCode, body: res.json() as Record<string, any> };
     } finally {
-      globalThis.fetch = originalFetch;
+      ctx.config.llm.fetchImpl = originalFetch;
     }
   }
 

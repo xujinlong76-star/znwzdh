@@ -9,14 +9,6 @@
  * 底部安全区垫层、页脚三段底垫未被动过、猫滚到底收起放宽到 ≤1023px、
  * P1-1 收起核心（位移量取、用户唤回、守门）一字未动。
  *
- * 2026-11-26 全站收起推广：P1-1 原只在 /marketplace 窄屏生效，但主线 CI
- * #1777 证实同一缺陷遍及全站——首页与 /hot 首屏猫盖住卡片收藏按钮
- * （390/1024/1366 三档），390px 滚到底压住页脚链接行。收起规则推广到
- * 全站全宽度（syncMarketPark → syncAutoPark），顶部收起不再只限窄屏，
- * “平板跳回顶部放回圆标”分支随之失效删除；页脚移动端底垫 7rem→9rem
- * （11-22 的 116px 浮坞叠层模型少算了猫带顶沿 128px）。位移实时量取、
- * 用户唤回、守门机制一字未动，仍由本文件钉死。
- *
  * 纯字符串断言，不引业务模块、无 vi.mock，不触发 mock-hygiene 清理要求。
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -123,19 +115,17 @@ describe("P2-16 市场页底部安全区", () => {
     expect(src).toContain("sm:pb-0");
   });
 
-  it("页脚底垫已抬升避开右下浮坞：<640 留 9rem、≥640 留 6rem（2026-11-26 修正 11-22 值）", () => {
+  it("页脚底垫已抬升避开右下浮坞：<640 留 7rem、≥640 留 6rem（2026-11-22）", () => {
     const src = readOverlay("components/footer.tsx");
-    // 11-22 的 7rem 按浮坞叠层（猫+回顶钮≈116px）算，但猫是独立 fixed 元素，
-    // 移动端猫带顶沿 = bottom 88px + 猫高 40px = 128px，7rem=112px 仍短 16px，
-    // 390x844 滚到底实测仍压住页脚链接行；9rem=144px 留 16px 余量。
-    // 平板/桌面猫带顶沿 160px、文本止于 96px，本就清开，6rem 不动。
-    expect(src).toContain("pb-[calc(9rem+env(safe-area-inset-bottom,0px))]");
+    // 原 5.5/4.5rem + lg:pb-8(2rem) 不够：右下浮坞（猫+回顶钮≈116px）
+    // 在 390x844 与 1366x768 下都压住了页脚右端链接，实测复现后抬升。
+    expect(src).toContain("pb-[calc(7rem+env(safe-area-inset-bottom,0px))]");
     expect(src).toContain("min-[640px]:max-[1024px]:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]");
     expect(src).toContain("lg:pb-[calc(6rem+env(safe-area-inset-bottom,0px))]");
   });
 });
 
-describe("P2-16 猫挂件页脚避让（2026-11-26：收起推广到全站）", () => {
+describe("P2-16 猫挂件页脚避让（P1-1 收起核心不动）", () => {
   it("滚到底收起放宽到 ≤1023px：isFooterParkViewport 与 641–1023px 收起位移规则都在", () => {
     const js = readPublic("xiaomaomao/xiaomaomao.js");
     expect(js).toContain("function isFooterParkViewport()");
@@ -143,16 +133,14 @@ describe("P2-16 猫挂件页脚避让（2026-11-26：收起推广到全站）", 
     expect(js).toContain(
       "'@media (min-width:641px) and (max-width:1023px){#xiaomaomao.xm-parked{transform:translateX(var(--xm-park-x,calc(100vw + 12px)))}}'",
     );
-    expect(js).toContain("nearPageBottom() && isFooterParkViewport()");
+    expect(js).toContain("!isFooterParkViewport()");
   });
 
-  it("全站收起核心：顶部全宽收起、位移实时量取、用户唤回与守门都在（2026-11-26 由 P1-1 推广）", () => {
+  it("P1-1 核心未动：顶部收起仍只窄屏、位移实时量取、用户唤回与守门都在", () => {
     const js = readPublic("xiaomaomao/xiaomaomao.js");
-    // 顶部收起不再只限窄屏：首页//hot 首屏卡片收藏按钮在 390/1024/1366 三档
-    // 都会被猫盖住；滚到底收起仍只在 ≤1023px（P2-16 页脚避让范围）。
-    expect(js).toContain("y <= 30 || (nearPageBottom() && isFooterParkViewport())");
+    expect(js).toContain("(y <= 30 && isNarrowViewport()) || nearPageBottom()");
     expect(js).toContain("function nearPageBottom()");
-    expect(js).toContain("function syncAutoPark()");
+    expect(js).toContain("function syncMarketPark()");
     expect(js).toContain("root.style.setProperty('--xm-park-x'");
     expect(js).toContain("userUnparked");
     expect(js).toContain("function parkBlocked()");
@@ -160,13 +148,8 @@ describe("P2-16 猫挂件页脚避让（2026-11-26：收起推广到全站）", 
     expect(js).toContain("void root.offsetWidth");
   });
 
-  it("已删除的窄屏限定：顶部收起不再只限窄屏、平板回顶分支已失效（2026-11-26）", () => {
+  it("平板跳回顶部放回圆标：y≤30 非窄屏且已收起时清位移", () => {
     const js = readPublic("xiaomaomao/xiaomaomao.js");
-    // 顶部收起推广到全宽度后，旧的窄屏限定条件与“平板跳回顶部放回圆标”
-    // 分支都已失效：回到顶部现在重新收起，与进页一致。钉死它们不在场，
-    // 防止有人把旧条件悄悄恢复回来。
-    expect(js).not.toContain("(y <= 30 && isNarrowViewport())");
-    expect(js).not.toContain("y <= 30 && !isNarrowViewport() && autoParked");
-    expect(js).not.toContain("function syncMarketPark()");
+    expect(js).toContain("y <= 30 && !isNarrowViewport() && autoParked");
   });
 });

@@ -24,14 +24,17 @@ describe("撤防账厚度棘轮：写侧报的道数必须等于登记表期望"
       row({ job: "test-sqlite", name: "测试（SQLite 默认方言，分片 2/3）", gateTotal: 3, ran: 3 }),
       row({ job: "test-postgres", gateTotal: 2, ran: 2 }),
       // 2026-11-09：test-web 增了 web-no-explicit-any，期望 5 → 6
-      row({ job: "test-web", gateTotal: 6, ran: 2, defused: 4 }),
+      // 任务 #10：补登已有 web-no-raw-palette 门禁，期望 6 → 7
+      row({ job: "test-web", gateTotal: 7, ran: 2, defused: 5 }),
       // 2026-11-06：test-e2e 增了 quarantine-e2e（E2E 隔离取证），期望 1 → 2
       row({ job: "test-e2e", gateTotal: 2, ran: 2 }),
       row({ job: "check-isr-live", gateTotal: 4, ran: 4 }),
       // 2026-11-07：check-web-overlay 增了 check-web-config-parity，期望 7 → 8
       // 2026-11-21：check-web-overlay 增了 check-hub-id（Batch 1 W2b hubId 校验），期望 8 → 9
+      // 任务 #10：check:generated 聚合入口替换独立 core mirror 检查，期望仍为 9
       row({ job: "check-web-overlay", gateTotal: 9, ran: 9 }),
-      row({ job: "docker-smoke", gateTotal: 2, ran: 2 }),
+      // 任务 #10：Docker 作业增加启动 / health / 首页 / 空库迁移冒烟，期望 2 → 3
+      row({ job: "docker-smoke", gateTotal: 3, ran: 3 }),
       row({ job: "audit", gateTotal: 2, ran: 2 }),
     ];
     expect(thicknessFindings(rows, REG).findings).toEqual([]);
@@ -69,7 +72,7 @@ describe("撤防账厚度棘轮：写侧报的道数必须等于登记表期望"
   });
 
   it("厚账 ⇒ 说「新门禁进了 ci.yml 没进登记表」，不许反写成薄账", () => {
-    const out = thicknessFindings([row({ job: "test-web", gateTotal: 7, ran: 7 })], REG);
+    const out = thicknessFindings([row({ job: "test-web", gateTotal: 8, ran: 8 })], REG);
     expect(out.findings[0].kind).toBe("fat");
     expect(out.findings[0].message).toContain("没进登记表");
   });
@@ -121,21 +124,22 @@ describe("撤防账厚度棘轮：写侧报的道数必须等于登记表期望"
   });
 
   it("消融：基准退回「比 ran 与期望」⇒ web 真红那轮会被多造一条假薄账", () => {
-    // 真实形状：test-web 6 道里 2 道跑过、4 道被上游红跳过——道数没错，是门禁没跑成。
-    const rows = [row({ job: "test-web", ran: 2, defused: 4, gateTotal: 6 })];
+    // 真实形状：test-web 7 道里 2 道跑过、5 道被上游红跳过——道数没错，是门禁没跑成。
+    const rows = [row({ job: "test-web", ran: 2, defused: 5, gateTotal: 7 })];
     expect(thicknessFindings(rows, REG).findings).toEqual([]);
     const naive = rows.filter((r) => r.ran !== REG.registry.find((e) => e.job === r.job)!.gates.length);
     expect(naive).toHaveLength(1);
   });
 
-  it("登记表唯一合计仍是 32（改登记表要连带改这里的期望）", () => {
+  it("登记表唯一合计仍是 34（改登记表要连带改这里的期望）", () => {
     // 2026-11-06：26 → 29。增量为三处，逐一说明，避免「数字对不上就随手改大」：
     //   +1 coverage 作业的 2 道（vitest-coverage / coverage-threshold）→ +2
     //   +1 test-e2e 的 quarantine-e2e（E2E 隔离用例取证，不阻塞但必须进读数）→ +1
     // 2026-11-07：29 → 30（check-web-overlay 的 check-web-config-parity +1）。
     // 2026-11-09：30 → 31（test-web 的 web-no-explicit-any +1，显式 any 棘轮进 CI）。
     // 2026-11-21：31 → 32（check-web-overlay 的 check-hub-id +1，Batch 1 W2b hubId 校验进 CI）。
-    // 合计 26 + 2 + 1 + 1 + 1 + 1 = 32。
-    expect(DEFUSED_GATES.reduce((s, e) => s + (e.gates ?? []).length, 0)).toBe(32);
+    // 任务 #10：32 → 34。raw palette 是补登已有门禁（+1）、gate-generated 聚合入口（+1）、
+    // docker-runtime 启动与迁移冒烟（+1）；原独立 gate-core-mirrors 被聚合入口覆盖（-1）。
+    expect(DEFUSED_GATES.reduce((s, e) => s + (e.gates ?? []).length, 0)).toBe(34);
   });
 });

@@ -166,10 +166,16 @@ describe("无障碍细节（footer 分隔符与移动表单字号）", () => {
       hits,
       "仅紧凑行操作簇保留 pointer-coarse:opacity-100（标准/丰富卡底部操作栏已改走 globals.css 的 @media (hover: none)）",
     ).toBe(1);
-    // 底部操作栏确实存在于标准/丰富卡：className 里 "nav-card-actionbar
-    // absolute bottom-0" 出现 2 次（两处注释提及不计）。
-    const bars = src.split('"nav-card-actionbar absolute bottom-0').length - 1;
-    expect(bars, "标准卡与丰富卡各应有一处底部操作栏 nav-card-actionbar").toBe(2);
+    // 底部操作栏确实存在于标准/丰富卡（S2 迁移后两种形态，合计 2 处）：
+    //   · 富卡：className 以 nav-card-actionbar + absolute bottom-0 开头（自身定位）；
+    //   · 标准档：解剖已收进 SiteCard，定位由组件统一（absolute inset-x-0 bottom-0
+    //     覆盖层容器），调用方只保留 nav-card-actionbar + flex 的可见性配方。
+    const absoluteBars = src.split('"nav-card-actionbar absolute bottom-0').length - 1;
+    const slotBars = src.split('"nav-card-actionbar flex items-center gap-0.5').length - 1;
+    expect(
+      absoluteBars + slotBars,
+      "标准卡与丰富卡各应有一处底部操作栏 nav-card-actionbar（富卡自定位 + 标准档槽位配方）",
+    ).toBe(2);
     // 触屏可见规则必须落在 globals.css 的非分层区（任何块之外，含 @layer）：
     // 未分层声明才能压过卡片内联的 opacity-0 / pointer-events-none。
     // 注意：文件里另有一处 "@media (hover: none) or (pointer: coarse)" 在

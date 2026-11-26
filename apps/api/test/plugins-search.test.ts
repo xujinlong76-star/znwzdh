@@ -14,6 +14,7 @@ import type { EmbeddingService } from "@navhub/ai";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
+import { removePluginIndex } from "../src/index-plugin.ts";
 
 let dir: string;
 let ctx: AppContext;
@@ -203,6 +204,16 @@ describe("插件检索：桩编码器下的语义通道", () => {
       url: "/api/plugins/search?q=" + encodeURIComponent("开发者效率工具"),
     });
     expect(search.json().items.map((p: { slug: string }) => p.slug)).not.toContain(devSlug);
+  });
+
+  it("迟到的删索引遇到并发发布时恢复当前插件索引", async () => {
+    expect(await ctx.repo.getPluginEmbedding(designSlug)).not.toBeNull();
+
+    await removePluginIndex(ctx, designSlug);
+
+    expect(await ctx.repo.getPluginEmbedding(designSlug)).not.toBeNull();
+    const hits = await ctx.pluginVectors.search(vDesign, 10);
+    expect(hits.some((hit) => hit.siteId === pluginVectorId(designSlug))).toBe(true);
   });
 
   it("语义闸门：低于阈值的向量命中不算语义结果（回退关键词 + degraded）", async () => {

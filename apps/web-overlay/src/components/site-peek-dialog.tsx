@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { isSafeHttpUrl, safeHref, safeSrc, safeWindowOpen } from '@/lib/safe-url'
 import { buildWaybackSnapshotUrl } from '@/lib/wayback-resolver'
-import { siteHealthState, siteHealthTitle } from '@/lib/site-health'
+import { healthDotClass, siteHealthState, siteHealthTitle } from '@/lib/site-health'
 import { probeSiteLatency, type PingResult } from '@/lib/site-ping'
 
 interface SitePeekDialogProps {
@@ -911,22 +911,19 @@ export function SitePeekDialog({
                 className="flex items-center gap-1.5 font-mono"
                 title={siteHealthTitle(item.health) ?? '服务端远端巡检结果'}
               >
-                <span
-                  className={`w-2 h-2 rounded-full ${healthState.tone === 'ok' ? 'bg-emerald-500 animate-pulse' : healthState.tone === 'error' ? 'bg-rose-500' : 'bg-amber-500'}`}
-                />
+                <span className={`w-2 h-2 rounded-full ${healthDotClass(healthState)}`} />
                 <span>{healthState.label}</span>
-                {healthState.latencyMs != null && <span>({healthState.latencyMs}ms)</span>}
               </div>
             )}
 
             {/* 本地测速探针 */}
             {livePing ? (
-              <span
-                className={`inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full border ${
-                  livePing.reachable
-                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
-                    : 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20'
-                }`}
+                <span
+                  className={`inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full border ${
+                    livePing.reachable
+                      ? 'bg-success/10 text-success-foreground border-success/20'
+                      : 'bg-destructive/15 text-destructive-text border-destructive/20'
+                  }`}
                 title={`本机浏览器探测：${livePing.error || livePing.label}`}
               >
                 <Activity className="w-3 h-3" />

@@ -63,6 +63,7 @@ export interface RetentionAdapter {
    *
    * 目前只有 rollup 使用（"写聚合 + 删明细"按天原子化）。清理模式刻意不用 ——
    * 它靠小批量删除切碎锁粒度，包进一个大事务会适得其反。
+   * PostgreSQL 实现必须用 SERIALIZABLE（或等价锁表），否则幻行可能在聚合后插入并被删除。
    */
   transaction?<T>(fn: () => Promise<T>): Promise<T>;
 }

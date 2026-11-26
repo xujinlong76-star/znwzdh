@@ -194,7 +194,7 @@ function openPg() {
         const client = await pool.connect();
         txClient = client;
         try {
-          await client.query("BEGIN");
+          await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
           const result = await fn();
           await client.query("COMMIT");
           return result;

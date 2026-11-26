@@ -112,6 +112,7 @@ declare module "fastify" {
   interface FastifyRequest {
     /** 鉴权结果；buildAuthHook 挂载，未启用鉴权时为匿名身份 */
     auth: AuthIdentity;
+    identitySignature?: { mode?: "v3" | "v2" | "legacy"; purpose?: "user" | "anon" };
   }
 }
 

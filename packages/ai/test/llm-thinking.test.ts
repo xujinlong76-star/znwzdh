@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { chatCompletion, resetLlmCapabilityCache, type LlmProvider } from "../src/llm.ts";
 import { enrichUrl } from "../src/enrich.ts";
 
@@ -33,33 +35,35 @@ afterEach(() => {
 });
 
 describe("富化：深度思考必须真的下发（不是只记在用量里）", () => {
-  /** 捕获 LLM 请求体；页面抓取一律回一段最小 HTML */
-  function stubNetwork() {
+  /** 捕获 LLM 请求体；页面抓取走本地 HTTP，模型调用显式注入 fetchImpl。 */
+  async function captureThinking(thinking: boolean) {
     const bodies: Record<string, unknown>[] = [];
-    vi.stubGlobal(
-      "fetch",
-      async (input: unknown, init?: RequestInit) => {
-        const url = String(input);
-        if (url.includes("/chat/completions")) {
-          bodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
-          return jsonResponse(
-            okBody('{"title":"示例站点","description":"一个用于回归测试的站点描述。","tags":["测试"],"keywords":["test"],"category":"工具"}'),
-          );
-        }
-        return new Response("<html><head><title>示例站点</title></head><body>hi</body></html>", {
-          status: 200,
-          headers: { "Content-Type": "text/html" },
-        });
-      },
-    );
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return jsonResponse(
+        okBody('{"title":"示例站点","description":"一个用于回归测试的站点描述。","tags":["测试"],"keywords":["test"],"category":"工具"}'),
+      );
+    };
+    const pageServer = createServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end("<html><head><title>示例站点</title></head><body>hi</body></html>");
+    });
+    await new Promise<void>((resolve) => pageServer.listen(0, "127.0.0.1", resolve));
+    const address = pageServer.address() as AddressInfo;
+    try {
+      await enrichUrl(`http://127.0.0.1:${address.port}/`, {
+        llm: { baseUrl: BASE, apiKey: "sk-test-1234567890", model: "test-model", timeoutMs: 800, allowPrivateNetwork: true, thinking },
+        guard: { allowPrivateNetworks: true },
+        llmCall: (provider, opts) => chatCompletion(provider, { ...opts, fetchImpl }),
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) => pageServer.close((err) => err ? reject(err) : resolve()));
+    }
     return bodies;
   }
 
   it("llm.thinking=true 时请求体带 thinking 与 chat_template_kwargs，且 max_tokens 预留输出空间防截断", async () => {
-    const bodies = stubNetwork();
-    await enrichUrl("http://127.0.0.1:9/", {
-      llm: { baseUrl: BASE, apiKey: "sk-test-1234567890", model: "test-model", timeoutMs: 800, allowPrivateNetwork: true, thinking: true },
-    });
+    const bodies = await captureThinking(true);
     expect(bodies.length).toBeGreaterThan(0);
     expect(bodies[0]!.thinking).toMatchObject({ type: "enabled" });
     expect(bodies[0]!.chat_template_kwargs).toEqual({ enable_thinking: true });
@@ -68,10 +72,7 @@ describe("富化：深度思考必须真的下发（不是只记在用量里）"
   });
 
   it("llm.thinking=false 时这两个字段都不出现（开关不是摆设）", async () => {
-    const bodies = stubNetwork();
-    await enrichUrl("http://127.0.0.1:9/", {
-      llm: { baseUrl: BASE, apiKey: "sk-test-1234567890", model: "test-model", timeoutMs: 800, allowPrivateNetwork: true, thinking: false },
-    });
+    const bodies = await captureThinking(false);
     expect(bodies.length).toBeGreaterThan(0);
     expect(bodies[0]!.thinking).toBeUndefined();
     expect(bodies[0]!.chat_template_kwargs).toBeUndefined();

@@ -42,7 +42,12 @@ const richStart = src.indexOf("cardDisplayMode === 'rich'");
 const standardStart = src.indexOf("// 3. 标准现代卡片");
 const richSrc = src.slice(richStart, standardStart);
 
-describe("卡片 #tag 内链化（rich 模式）", () => {
+describe("卡片 #tag 内链化（rich 模式，S4 迁移后双源口径）", () => {
+  // S4 迁移（2026-11-26）：rich 档解剖收进 SiteCard（banner 槽落 grid），
+  // 手写的覆盖层/CardHeader/标签池结构断言移交原语契约；调用方只断言
+  // 槽位字面量（标签芯片 / 平替 / 深链）与迁移完成度（Card 系列归零）。
+  const siteCardSrc = overlayFile("src/components/site-card.tsx");
+
   it("切片定位成功（守卫自身没失效）", () => {
     expect(richStart).toBeGreaterThan(-1);
     expect(standardStart).toBeGreaterThan(richStart);
@@ -50,52 +55,35 @@ describe("卡片 #tag 内链化（rich 模式）", () => {
 
   it("#tag 渲染成真 <Link>，href 走 /tags/{slug}", () => {
     expect(richSrc).toContain("href={'/tags/' + encodeURIComponent(tagSlug(tag))}");
-    // 视觉形态不能丢：还是原来那个 10px mono 小芯片（只加 hover 反馈）。
-    // 订正（2026-11-20 首屏瘦身）：标签改为 rounded-full 浅灰胶囊（最多 2 个），
-    // 仍是 10px mono 小芯片 + hover 反馈。
+    // 视觉形态不能丢：10px mono 圆角胶囊（最多 2 个）+ hover 反馈。
     expect(richSrc).toContain("text-[10px] px-1.5 py-0.5 rounded-full bg-muted/70 text-muted-foreground font-mono");
     expect(richSrc).toContain("hover:bg-primary/10 hover:text-primary transition-colors");
   });
 
-  it("外链是自闭合覆盖层：CardHeader 不在 <a> 里——结构上杜绝 <a> 嵌 <a>", () => {
-    const overlayAnchor = richSrc.indexOf("href={safeHref(item.href)}");
-    const anchorOpen = richSrc.lastIndexOf("<a", overlayAnchor);
-    const anchorClose = richSrc.indexOf("</a>", overlayAnchor);
-    const headerOpen = richSrc.indexOf("<CardHeader");
-    expect(overlayAnchor).toBeGreaterThan(-1);
-    expect(anchorOpen).toBeGreaterThan(-1);
-    // 覆盖层在 CardHeader 之前就关闭：它没有包住 CardHeader
-    expect(anchorClose).toBeGreaterThan(overlayAnchor);
-    expect(anchorClose).toBeLessThan(headerOpen);
-    expect(richSrc.slice(anchorOpen, anchorClose)).not.toContain("<CardHeader");
+  it("rich 段不再自绘解剖：shadcn Card 系列与手写 <a> 全部归零", () => {
+    // 注意：CardThumbnailVisual / CardHealthBadge 是槽位内容组件（Card 前缀巧合），
+    // 不在本断言范围；精确匹配 shadcn Card 系列标签。
+    expect(richSrc).not.toMatch(/<Card[\s/>]/);
+    expect(richSrc).not.toContain("<CardHeader");
+    expect(richSrc).not.toContain("<CardTitle");
+    expect(richSrc).not.toContain("<CardDescription");
+    // 覆盖层锚点也移交原语：richSrc 不再手写 <a，改经 overlayProps 透传
+    expect(richSrc).not.toMatch(/<a\s/);
+    expect(richSrc).toContain("'data-prefetch-target': 'true'");
   });
 
-  it("标签池在 CardHeader 之后（手序上不可能嵌进外链或标题内链）", () => {
-    const headerClose = richSrc.indexOf("</CardHeader>");
-    const tagLink = richSrc.indexOf("href={'/tags/'");
-    expect(headerClose).toBeGreaterThan(-1);
-    expect(tagLink).toBeGreaterThan(headerClose);
-  });
-
-  it("内容层 pointer-events-none，只有真可点元素放行（点空白仍走外链）", () => {
-    expect(richSrc).toContain("relative z-10 pointer-events-none");
-    // 标题内链
-    const titleLink = richSrc.indexOf("href={siteDetailHref}");
-    expect(titleLink).toBeGreaterThan(-1);
-    const titleTag = richSrc.slice(richSrc.lastIndexOf("<Link", titleLink), richSrc.indexOf(">", titleLink));
-    expect(titleTag).toContain("pointer-events-auto");
-    // 标签芯片（订正 2026-11-20 首屏瘦身：rounded-full 浅灰胶囊）
+  it("外链覆盖层是自闭合兄弟锚点（SiteCard 原语契约：无 <a> 嵌 <a>）", () => {
+    // 原语侧：覆盖层与内容层互为兄弟，内容层 pointer-events-none
+    expect(siteCardSrc).toContain("absolute inset-0 z-0");
+    expect(siteCardSrc).toContain("pointer-events-none relative z-10");
+    // 调用方侧：rich 槽内容里可点元素显式 pointer-events-auto（标签芯片）
     expect(richSrc).toContain("pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full bg-muted/70");
   });
 
   it("外链覆盖层绝对定位铺满且不带 h-full（不参与网格同行拉伸）", () => {
-    const overlayAnchor = richSrc.indexOf("href={safeHref(item.href)}");
-    const anchorTag = richSrc.slice(richSrc.lastIndexOf("<a", overlayAnchor), richSrc.indexOf(">", overlayAnchor));
-    // P1-19（2026-11-21）：外链覆盖层加 peer 类（供键盘提示 peer-focus-visible 用），
-    // className 由 "absolute inset-0 ..." 变为 "peer absolute inset-0 ..."；
-    // 覆盖层仍是绝对定位铺满（absolute inset-0 未动），断言只查定位类本身，不再要求它排第一。
-    expect(anchorTag).toContain('absolute inset-0');
-    expect(anchorTag).not.toContain("h-full");
+    const anchorCls = siteCardSrc.slice(siteCardSrc.indexOf("absolute inset-0 z-0"));
+    expect(anchorCls).toContain("absolute inset-0 z-0");
+    expect(anchorCls.slice(0, 200)).not.toContain("h-full");
   });
 
   it("多选模式下标签点击与整卡同语义：不导航，只切换选中", () => {

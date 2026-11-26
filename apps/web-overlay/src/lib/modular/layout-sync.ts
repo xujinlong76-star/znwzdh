@@ -18,7 +18,12 @@ export type LayoutSlotClocks = Record<string, number>
 
 export const LAYOUT_SLOT_SEP = '::'
 
-const ELEMENT_CONTAINER_FIELDS = new Set(['customCategories', 'pinnedSiteIdsByCategory'])
+const ELEMENT_CONTAINER_FIELDS = new Set([
+  'customCategories',
+  'pinnedSiteIdsByCategory',
+  'siteOrderByCategory',
+  'blockOverrides',
+])
 const NON_MERGEABLE_FIELDS = new Set(['updatedAt'])
 
 export const LAYOUT_SYNC_CHANNEL = 'navhub_home_diy_sync_v1'
@@ -85,7 +90,7 @@ export function diffChangedSlots(prev: any, next: any): string[] {
       }
     }
 
-    if (k === 'pinnedSiteIdsByCategory') {
+    if (k === 'pinnedSiteIdsByCategory' || k === 'siteOrderByCategory' || k === 'blockOverrides') {
       const prevMap = new Map(entriesOfRecord(av))
       const nextMap = new Map(entriesOfRecord(bv))
       for (const id of new Set([...prevMap.keys(), ...nextMap.keys()])) {
@@ -143,6 +148,9 @@ const LAYOUT_SLOT_LABELS: Record<string, string> = {
   hiddenCategoryIds: '隐藏分类',
   collapsedCategoryIds: '折叠分类',
   pinnedSiteIdsByCategory: '分类内置顶站点',
+  siteOrderByCategory: '分类内卡片排序',
+  blockOverrides: '区块网格坐标',
+  workspaceLayoutV2: '12 列 Bento 自由画布',
   categoryDensityOverrides: '分类卡片密度',
   speedDialEnabled: '速览坞开关',
   speedDialPinnedIds: '速览坞站点',

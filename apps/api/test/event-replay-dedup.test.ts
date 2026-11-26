@@ -15,10 +15,28 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
+import { signIdentity, signIdentityV3 } from "../src/identity-signature.ts";
+import { generateToken, hashToken } from "../src/auth.ts";
+
+const IDENTITY_SECRET = "event-replay-test-secret";
+const USER = "github:event-replay-user";
+const TOKEN_USER = "github:event-replay-token-user";
+const signed = (identity = USER) => {
+  const ts = Math.floor(Date.now() / 1000);
+  const nonce = randomUUID().replace(/-/g, "");
+  return {
+    "x-navhub-user-id": identity,
+    "x-navhub-identity-signature": signIdentity(IDENTITY_SECRET, identity),
+    "x-navhub-identity-signature-v3": signIdentityV3(IDENTITY_SECRET, identity, ts, nonce, "user"),
+    "x-navhub-identity-ts": String(ts),
+    "x-navhub-identity-nonce": nonce,
+  };
+};
 
 const base = {
   mode: "lite" as const,
@@ -53,13 +71,13 @@ async function visitCount(): Promise<number> {
   return Number(rows[0]?.visit_count ?? 0);
 }
 
-async function postEvent(payload: Record<string, unknown>) {
-  return app.inject({ method: "POST", url: "/api/events", payload });
+async function postEvent(payload: Record<string, unknown>, headers?: Record<string, string>) {
+  return app.inject({ method: "POST", url: "/api/events", payload, headers });
 }
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navhub-event-replay-"));
-  ctx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "replay.db") }));
+  ctx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "replay.db"), identitySecret: IDENTITY_SECRET }));
   app = await buildServer(ctx);
   await app.ready();
   const cat = await ctx.repo.createCategory({ title: "重放测试" });
@@ -83,8 +101,8 @@ describe("同一次点击的重放", () => {
 
   it("重放不再更新在线学习权重（点一次不该被学两次）", async () => {
     const spy = vi.spyOn(ctx.search, "recordFeedback");
-    await postEvent({ kind: "click", siteId, eventId: "replay-b", query: "重放测试词", channel: "fts" });
-    await postEvent({ kind: "click", siteId, eventId: "replay-b", query: "重放测试词", channel: "fts" });
+    await postEvent({ kind: "click", siteId, eventId: "replay-b", query: "重放测试词", channel: "fts" }, signed());
+    await postEvent({ kind: "click", siteId, eventId: "replay-b", query: "重放测试词", channel: "fts" }, signed());
     expect(spy).toHaveBeenCalledTimes(1);
     spy.mockRestore();
   });
@@ -99,10 +117,96 @@ describe("同一次点击的重放", () => {
 
   it("不带 eventId 的旧客户端逐条都记（去重不能反过来把证据吃掉）", async () => {
     const spy = vi.spyOn(ctx.search, "recordFeedback");
-    await postEvent({ kind: "click", siteId, query: "旧客户端词" });
-    await postEvent({ kind: "click", siteId, query: "旧客户端词" });
+    await postEvent({ kind: "click", siteId, query: "旧客户端词", channel: "fts" }, signed());
+    await postEvent({ kind: "click", siteId, query: "旧客户端词", channel: "fts" }, signed());
     expect(spy).toHaveBeenCalledTimes(2);
     spy.mockRestore();
+  });
+
+  it("匿名与 body 自称身份不更新全局 LinUCB", async () => {
+    const spy = vi.spyOn(ctx.search, "recordFeedback");
+    await postEvent({ kind: "click", siteId, query: "匿名词", channel: "fts" });
+    await postEvent({ kind: "click", siteId, query: "冒充词", channel: "fts", userId: USER, anonId: USER });
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("已签名的匿名 anonId 仍不更新全局 LinUCB", async () => {
+    const anon = "anon-event-replay";
+    const ts = Math.floor(Date.now() / 1000);
+    const nonce = randomUUID().replace(/-/g, "");
+    const spy = vi.spyOn(ctx.search, "recordFeedback");
+    await postEvent(
+      { kind: "click", siteId, query: "签名匿名词", channel: "fts" },
+      {
+        "x-navhub-anon-id": anon,
+        "x-navhub-anon-signature-v3": signIdentityV3(IDENTITY_SECRET, anon, ts, nonce, "anon"),
+        "x-navhub-anon-ts": String(ts),
+        "x-navhub-anon-nonce": nonce,
+      },
+    );
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("匿名 v3 签名改头成登录身份也会被拒绝，不能污染全局模型", async () => {
+    const anon = "anon-event-replay-moved";
+    const ts = Math.floor(Date.now() / 1000);
+    const nonce = randomUUID().replace(/-/g, "");
+    const spy = vi.spyOn(ctx.search, "recordFeedback");
+    const res = await postEvent(
+      { kind: "click", siteId, query: "改头匿名词", channel: "fts" },
+      {
+        "x-navhub-user-id": anon,
+        "x-navhub-identity-signature-v3": signIdentityV3(IDENTITY_SECRET, anon, ts, nonce, "anon"),
+        "x-navhub-identity-ts": String(ts),
+        "x-navhub-identity-nonce": nonce,
+      },
+    );
+    expect(res.statusCode).toBe(401);
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("可信身份缺渠道时按未归因而跳过，不默认记为 exact", async () => {
+    const spy = vi.spyOn(ctx.search, "recordFeedback");
+    await postEvent({ kind: "click", siteId, query: "无渠道词" }, signed());
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("用户令牌 owner 可学习，匿名身份头不能覆盖它", async () => {
+    const token = generateToken();
+    await ctx.repo.createApiToken({
+      name: "event-replay-user-token",
+      tokenHash: hashToken(token),
+      scopes: "read,write",
+      ownerIdentity: TOKEN_USER,
+    });
+    const anon = "event-replay-shadow-anon";
+    const spy = vi.spyOn(ctx.search, "recordFeedback");
+    await postEvent(
+      { kind: "click", siteId, query: "令牌身份词", channel: "fts" },
+      {
+        authorization: `Bearer ${token}`,
+        "x-navhub-anon-id": anon,
+        "x-navhub-identity-signature": signIdentity(IDENTITY_SECRET, anon),
+      },
+    );
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+
+  it("关闭遥测的可信身份也不更新全局 LinUCB", async () => {
+    await ctx.repo.updateUserSettings(USER, { telemetryEnabled: false });
+    try {
+      const spy = vi.spyOn(ctx.search, "recordFeedback");
+      await postEvent({ kind: "click", siteId, query: "关闭遥测词", channel: "fts" }, signed());
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    } finally {
+      await ctx.repo.updateUserSettings(USER, { telemetryEnabled: true });
+    }
   });
 
   it("离线攒了 6 天的证据补报后，事件时间是点击当天而不是送达当天", async () => {

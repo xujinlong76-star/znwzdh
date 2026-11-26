@@ -81,7 +81,8 @@ describe("纠正横幅：search-palette", () => {
   });
 
   it("200ms 防抖与 AbortController 逻辑不动", () => {
-    expect(src).toContain("}, 200)");
+    expect(src).toContain("const delay = skipDebounceRef.current ? 0 : 200");
+    expect(src).toContain("}, delay)");
     expect(src).toContain("new AbortController()");
   });
 });

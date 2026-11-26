@@ -113,8 +113,8 @@ async function openCopilot(page: import('@playwright/test').Page) {
   page.on('pageerror', (e) => logs.push('[pageerror] ' + e.message))
 
   await page.goto('/', { waitUntil: 'domcontentloaded' })
-  // 等客户端挂载：搜索框是首屏交互元素，它可见说明 React 已水合
-  await expect(page.getByPlaceholder(/搜索(导航|站点)/).first()).toBeVisible({ timeout: 60_000 })
+  // 等客户端挂载：首屏搜索触发器可见说明 React 已水合。
+  await expect(page.getByRole('button', { name: /搜索站点、标签或拼音/ }).first()).toBeVisible({ timeout: 60_000 })
 
   const dialog = page.getByRole('dialog', { name: '智能导航伴侣' })
   // 首屏网关可能尚未挂载：重复派发直到抽屉出现（网关会把意图寄存给懒加载的抽屉）

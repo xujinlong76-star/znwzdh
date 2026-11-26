@@ -78,7 +78,8 @@ describe("豁免前提仍然成立", () => {
   });
 
   it("指南弹窗与图谱页照常讲键盘（它们就是键盘文档）", () => {
-    expect(overlayFile("src/components/keyboard-shortcuts-dialog.tsx")).toContain("kbd");
+    expect(overlayFile("src/components/keyboard-shortcuts-dialog-content.tsx")).toContain("kbd");
+    expect(overlayFile("src/components/keyboard-shortcuts-dialog.tsx")).toContain("keyboard-shortcuts-dialog-content");
     expect(overlayFile("src/app/graph/page.tsx")).toContain("键盘漫游");
   });
 });

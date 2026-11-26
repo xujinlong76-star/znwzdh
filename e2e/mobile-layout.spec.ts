@@ -42,6 +42,32 @@ const MOBILE_ROUTES: Array<{ path: string; heading: RegExp }> = [
 ];
 
 test.describe('移动端布局冒烟（Pixel 7）', () => {
+  test('粗指针下推广与首页快捷入口具备 44px 触控高度', async ({ page }) => {
+    await page.goto('/sites');
+    const promo = page.getByRole('note').filter({ hasText: '除了工具网站，还想看技术视频教程？' });
+    const cta = promo.getByRole('link', { name: /探索精选视频库/ });
+    const close = promo.getByRole('button', { name: /关闭此提示/ });
+    await expect(cta).toBeVisible();
+    await expect(close).toBeVisible();
+    for (const target of [cta, close]) {
+      const box = await target.boundingBox();
+      expect(box, '触控目标应参与布局').not.toBeNull();
+      expect(box!.height).toBeGreaterThanOrEqual(43.5);
+    }
+    expect((await close.boundingBox())!.width).toBeGreaterThanOrEqual(43.5);
+
+    await page.goto('/');
+    const workspace = page.getByRole('button', { name: '切换工作区与快捷功能' });
+    const quickDock = page.getByRole('button', { name: /快捷坞：极速置顶/ });
+    await expect(workspace).toBeVisible();
+    await expect(quickDock).toBeVisible();
+    for (const target of [workspace, quickDock]) {
+      const box = await target.boundingBox();
+      expect(box, '触控目标应参与布局').not.toBeNull();
+      expect(box!.height).toBeGreaterThanOrEqual(43.5);
+    }
+  });
+
   for (const { path, heading } of MOBILE_ROUTES) {
     test(`${path} 无横向溢出且主标题可见`, async ({ page }) => {
       const errors: string[] = [];

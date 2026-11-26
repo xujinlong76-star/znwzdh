@@ -8,9 +8,9 @@
  * 不该出现一次性产物——既干扰阅读，也让真正的入口文件（package.json、
  * README、配置文件）难以辨认。
  *
- * 本门禁检查**已被 git 跟踪的**根目录文件，命中下面任一模式即报错：
+ * 本门禁检查**已跟踪与未跟踪且未忽略的**根目录文件，命中下面任一模式即报错：
  *   - 一次性探针脚本：diag-*.mjs / measure-*.mjs / verify-*.mjs /
- *     shot-*.mjs / probe-*.mjs
+ *     shot-*.mjs / probe-*.mjs / .probe-*
  *   - 过程笔记：*-notes.md（审计结论应进 docs/audits/）
  *   - 验证据目录：verify-evidence/、*-evidence/
  *
@@ -31,7 +31,8 @@ const REPO_ROOT = resolve(__dirname, '..')
 
 /** 根目录禁止出现的文件名模式（只匹配第一层）。 */
 export const FORBIDDEN_ROOT_PATTERNS = [
-  { re: /^(diag|measure|verify|shot|probe)-.+.(mjs|mts|cjs|js)$/, why: '一次性探针脚本' },
+  { re: /^(diag|measure|verify|shot|probe)-.+\.(mjs|mts|cjs|js)$/, why: '一次性探针脚本' },
+  { re: /^\.probe-.+$/, why: '一次性探针或走查截图' },
   { re: /-notes\.md$/, why: '过程笔记（审计结论请放 docs/audits/）' },
   { re: /^verify-evidence$/, why: '验证据目录' },
   { re: /-evidence$/, why: '验证据目录' },
@@ -48,32 +49,41 @@ export function classifyRootEntry(name) {
   return { forbidden: false }
 }
 
-/** 列出被 git 跟踪的根目录条目（名字，不含子目录内部文件）。 */
-function trackedRootEntries() {
-  const raw = execFileSync('git', ['ls-files', '-z', '--', ':/*'], {
-    cwd: REPO_ROOT,
-    encoding: 'utf8',
-    maxBuffer: 32 * 1024 * 1024,
-  })
+/** 合并 git 的 NUL 分隔输出，只保留根目录第一层。 */
+export function collectRootEntries(tracked, untracked) {
   const names = new Set()
-  for (const line of raw.split('\0')) {
+  for (const line of `${tracked}${untracked}`.split('\0')) {
     if (!line) continue
     const slash = line.indexOf('/')
-    // 只保留第一层；子目录内部文件不计入根目录卫生
     names.add(slash === -1 ? line : line.slice(0, slash))
   }
   return [...names].sort()
 }
 
+/** 列出已跟踪及未跟踪且未忽略的根目录条目（不含子目录内部文件）。 */
+export function rootEntries(cwd = REPO_ROOT) {
+  const tracked = execFileSync('git', ['ls-files', '-z', '--', ':/*'], {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+  })
+  const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard', '-z', '--', ':/*'], {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+  })
+  return collectRootEntries(tracked, untracked)
+}
+
 function main(argv) {
   const strict = argv.includes('--strict')
-  const entries = trackedRootEntries()
+  const entries = rootEntries()
   const violations = entries
     .map((name) => ({ name, ...classifyRootEntry(name) }))
     .filter((e) => e.forbidden)
 
   console.log('='.repeat(62))
-  console.log(`[check-root-hygiene] 根目录已跟踪条目 ${entries.length} 个`)
+  console.log(`[check-root-hygiene] 根目录受管条目 ${entries.length} 个`)
   if (violations.length === 0) {
     console.log('  ✅ 无临时探针 / 过程笔记残留')
   } else {
@@ -82,7 +92,7 @@ function main(argv) {
     console.log('\n  处理方式：')
     console.log('   • 长期探针 → 移到 scripts/perf/ 并在 package.json 登记')
     console.log('   • 审计笔记 → 合并进 docs/audits/')
-    console.log('   • 一次性产物 → git rm 删除')
+    console.log('   • 未跟踪一次性产物 → 移入本地 .workbuddy/ 归档')
   }
   console.log('='.repeat(62))
 

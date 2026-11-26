@@ -54,6 +54,13 @@ describe("upsertOauthUser：username 兜底的认领边界", () => {
     const rows = await repo.raw("SELECT * FROM users WHERE username = 'legacy-bob'");
     expect(rows).toHaveLength(1);
     expect(String(rows[0]!.email)).toBe("bob@example.com");
+    const aliases = await repo.raw(
+      "SELECT alias, canonical FROM identity_aliases WHERE alias = ?",
+      ["legacy-uuid-1"],
+    );
+    expect(aliases).toEqual([
+      { alias: "legacy-uuid-1", canonical: "github:2002" },
+    ]);
   });
 
   it("username 兜底不可冒领已绑定 provider 身份的行（改名抢注防护）", async () => {

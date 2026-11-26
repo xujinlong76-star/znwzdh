@@ -12,11 +12,13 @@ import {
   FolderPlus,
   Pin,
   Download,
+  LayoutGrid,
   Layers,
   Wand2,
   Undo2,
   Redo2,
   Trash2,
+  MoreHorizontal,
   X,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
@@ -131,7 +133,12 @@ export function HomeDIYToolbar({
     applySmartAutoTune,
     storageWarning,
     dismissStorageWarning,
+    workspaceLayoutV2,
+    outlineMode,
+    toggleOutlineMode,
+    setWorkspaceCompactType,
   } = useHomeDIY()
+  const compactType = workspaceLayoutV2?.gridConfig.compactType ?? 'vertical'
 
   const { density, setDensity } = useDensity()
   const { toast } = useToast()
@@ -449,20 +456,19 @@ export function HomeDIYToolbar({
         <div
           ref={toolbarRootRef}
           data-diy-hud="true"
+          data-testid="diy-toolbar"
           className={cn(
             'fixed left-1/2 lg:left-[calc(50%+110px)] -translate-x-1/2 z-50 pointer-events-auto',
             'bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.5rem)] sm:bottom-4',
-            'max-w-[92vw] w-max rounded-2xl',
-            'bg-white/90 dark:bg-slate-900/90 backdrop-blur-md shadow-2xl border border-slate-200/80 dark:border-slate-800/80 px-3 py-2',
-            // 横向滚动只发生在左侧控制簇里：右侧撤销/备份/重置/完成簇在滚动区之外，
-            // 窄屏上「完成」也不会被横向滚出视野（原来整条工具栏一起 overflow-x-auto，
-            // 完成按钮在滚动区最右端，手机上默认看不见）。
-            'flex items-center justify-between gap-2',
+            // Phase 1 A2：375px–1440px 全视口零溢出零裁切——取消 w-max，保证右侧主操作簇（撤销/重做/完成）始终 shrink-0 完整可见
+            'w-[calc(100vw-1rem)] sm:w-auto sm:max-w-[94vw] rounded-2xl',
+            'bg-white/92 dark:bg-slate-900/92 backdrop-blur-md shadow-2xl border border-slate-200/80 dark:border-slate-800/80 px-2 sm:px-3 py-1.5 sm:py-2',
+            'flex items-center justify-between gap-1.5 sm:gap-2',
             'animate-in fade-in slide-in-from-bottom-3 duration-200'
           )}
         >
-          {/* 左侧控制簇：快捷预设、智能自适应调优、卡片形态、速览坞 */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0 flex-1">
+          {/* 左侧控制簇：桌面端直出全部工具，窄视口（<lg）自动将低频工具收拢进「更多」弹出菜单，彻底杜绝溢出裁切 */}
+          <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1 overflow-hidden">
             {/* 快捷预设 */}
             <DropdownMenu onOpenChange={(open) => { if (!open) handlePresetHover(null) }}>
               <DropdownMenuTrigger asChild>
@@ -523,12 +529,12 @@ export function HomeDIYToolbar({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* 智能自适应调优 */}
+            {/* 智能自适应调优（lg+ 直出，窄视口收进「更多」菜单） */}
             <Button
               variant="outline"
               size="sm"
               onClick={handleRunSmartAutoTune}
-              className="min-h-11 px-2.5 rounded-xl text-xs gap-1.5 border-violet-500/30 text-violet-700 dark:text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 font-medium"
+              className="hidden lg:inline-flex min-h-11 px-2.5 rounded-xl text-xs gap-1.5 shrink-0 border-violet-500/30 text-violet-700 dark:text-violet-200 bg-violet-500/10 dark:bg-violet-500/20 hover:bg-violet-500/20 font-medium"
               title="根据本地访问频次与星标收藏，提取高频 Top 站点至速览坞，优化分类次序并折叠长尾分类"
             >
               <Sparkles className="w-3.5 h-3.5 text-violet-500 animate-pulse" />
@@ -571,30 +577,30 @@ export function HomeDIYToolbar({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* 首屏常驻速览星标坞开关 */}
+            {/* 首屏常驻速览星标坞开关（xl+ 直出，窄视口收进「更多」） */}
             <Button
               variant={speedDialEnabled ? 'default' : 'outline'}
               size="sm"
               onClick={toggleSpeedDial}
-              className={cn('min-h-11 px-2.5 rounded-xl text-xs gap-1 border-border/70 transition-all', speedDialEnabled ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-xs' : 'text-muted-foreground hover:text-foreground')}
+              className={cn('hidden xl:inline-flex min-h-11 px-2.5 rounded-xl text-xs gap-1 shrink-0 border-border/70 transition-all', speedDialEnabled ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-xs' : 'text-muted-foreground hover:text-foreground')}
               title="开启或关闭首屏常驻速览星标坞"
             >
               <Pin className={cn('w-3.5 h-3.5', speedDialEnabled ? 'fill-white' : 'text-amber-500')} />
-              <span className="hidden sm:inline">速览坞:</span>
+              <span>速览坞:</span>
               <span>{speedDialEnabled ? '已开' : '关'}</span>
             </Button>
 
-            {/* 美学背景、列数与强调色 */}
+            {/* 美学背景、列数与强调色（md+ 直出） */}
             <DropdownMenu onOpenChange={(open) => { if (!open) commitOpacityDraft() }}>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="min-h-11 px-2 rounded-xl text-xs gap-1 border-border/70"
+                  className="hidden md:inline-flex min-h-11 px-2 rounded-xl text-xs gap-1 shrink-0 border-border/70"
                   title="美学背景、网格列数与强调色"
                 >
                   <Palette className="w-3.5 h-3.5 text-pink-500" />
-                  <span className="hidden sm:inline">美学</span>
+                  <span className="hidden lg:inline">美学</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-60 p-2">
@@ -698,7 +704,48 @@ export function HomeDIYToolbar({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* 大纲与功能矩阵管理 */}
+            {/* Phase 2：大纲全景切换（md+ 直出，窄屏同步收进「更多」菜单） */}
+            <Button
+              variant={outlineMode ? 'default' : 'outline'}
+              size="sm"
+              data-testid="diy-btn-outline"
+              aria-pressed={outlineMode}
+              onClick={toggleOutlineMode}
+              className={cn(
+                'hidden md:inline-flex min-h-11 px-2 rounded-xl text-xs gap-1 shrink-0',
+                outlineMode
+                  ? 'bg-primary text-primary-foreground shadow-xs'
+                  : 'border-border/70',
+              )}
+              title="切换紧凑大纲全景态：所有区块折叠为紧凑胶囊，像拼积木一样俯瞰并排与调序"
+              aria-label={outlineMode ? '退出大纲全景模式' : '开启大纲全景模式'}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline">{outlineMode ? '退出大纲' : '大纲全景'}</span>
+            </Button>
+
+            {/* Phase 2：吸附策略切换（2xl+ 直出，中窄视口自动收拢进「更多」菜单，保证 375px–1440px 工具栏零裁切） */}
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="diy-compact-type-toggle"
+              onClick={() => setWorkspaceCompactType(compactType === 'vertical' ? null : 'vertical')}
+              className={cn(
+                'hidden 2xl:inline-flex min-h-11 px-2 rounded-xl text-xs gap-1 shrink-0',
+                compactType === null
+                  ? 'border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+                  : 'border-border/70',
+              )}
+              title={
+                compactType === 'vertical'
+                  ? '当前：自动紧凑吸附（区块自动上吸对齐），点击切换为自由留白'
+                  : '当前：自由留白模式（允许任意空隙摆放），点击切换为自动紧凑吸附'
+              }
+            >
+              <span>{compactType === 'vertical' ? '自动吸附' : '自由留白'}</span>
+            </Button>
+
+            {/* 大纲与功能矩阵管理（2xl+ 直出，中窄视口收拢进「更多」菜单，保证 375px–1440px 底部栏零裁切） */}
             <Button
               variant="outline"
               size="sm"
@@ -706,33 +753,34 @@ export function HomeDIYToolbar({
                 setManagerTab('outline')
                 setIsManagerOpen(true)
               }}
-              className="min-h-11 px-2 rounded-xl text-xs gap-1 border-border/70"
+              className="hidden 2xl:inline-flex min-h-11 px-2 rounded-xl text-xs gap-1 shrink-0 border-border/70"
               title="主分类全景大纲与功能矩阵管理器"
               aria-label="大纲与功能矩阵管理器"
             >
               <Layers className="w-3.5 h-3.5 text-indigo-500" />
-              <span className="hidden sm:inline">大纲/矩阵</span>
+              <span>大纲/矩阵</span>
             </Button>
 
-            {/* 时间轴回收站入口 */}
+            {/* 时间轴回收站入口（md+ 直出，窄屏收进「更多」菜单） */}
             <Button
               variant="outline"
               size="sm"
+              data-testid="diy-btn-trash"
               onClick={() => {
                 setManagerTab('trash')
                 setIsManagerOpen(true)
               }}
               className={cn(
-                'min-h-11 px-2 rounded-xl text-xs gap-1',
+                'hidden md:inline-flex min-h-11 px-2 rounded-xl text-xs gap-1 shrink-0',
                 trashBin.length > 0 || totalPrunedCount > 0
-                  ? 'border-amber-500/40 text-amber-700 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20'
+                  ? 'border-amber-500/40 text-amber-700 dark:text-amber-300 bg-amber-500/10 dark:bg-amber-500/20 hover:bg-amber-500/20'
                   : 'border-border/70'
               )}
               title="打开时间轴回收站，一键恢复任意已删减模块或站点"
               aria-label="回收站：恢复已删减模块或站点"
             >
               <Trash2 className="w-3.5 h-3.5 text-amber-500" />
-              <span className="hidden sm:inline">回收站</span>
+              <span className="hidden lg:inline">回收站</span>
               {(trashBin.length > 0 || totalPrunedCount > 0) && (
                 <span className="text-[10px] font-mono px-1 rounded-full bg-amber-500/20">
                   {Math.max(trashBin.length, totalPrunedCount)}
@@ -740,22 +788,104 @@ export function HomeDIYToolbar({
               )}
             </Button>
 
-            {/* 新建分类 */}
+            {/* 新建分类（md+ 直出，窄屏收进「更多」菜单） */}
             <Button
               variant="outline"
               size="sm"
               onClick={() => setIsAddCatOpen(true)}
-              className="min-h-11 px-2 rounded-xl text-xs gap-1 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
+              className="hidden md:inline-flex min-h-11 px-2 rounded-xl text-xs gap-1 shrink-0 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 dark:bg-emerald-500/20 hover:bg-emerald-500/20"
               title="新建专属分类"
               aria-label="新建专属分类"
             >
               <FolderPlus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">新建</span>
+              <span className="hidden lg:inline">新建</span>
             </Button>
+
+            {/* 窄视口低频工具收纳菜单（< 2xl 可见）：保证 375px–1440px 所有工具零遗漏、零裁切 */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="diy-toolbar-more"
+                  className="2xl:hidden min-h-11 px-2 rounded-xl text-xs gap-1 shrink-0 border-border/70"
+                  title="更多排版工具（回收站 / 新建 / 智能调优 / 蓝图 / 重置）"
+                  aria-label="更多排版工具"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                  <span className="hidden sm:inline">更多</span>
+                  {(trashBin.length > 0 || totalPrunedCount > 0) && (
+                    <span className="md:hidden text-[10px] font-mono px-1 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                      {Math.max(trashBin.length, totalPrunedCount)}
+                    </span>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56 p-1.5">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">排版工具箱</DropdownMenuLabel>
+                <DropdownMenuSeparator className="my-1" />
+                <DropdownMenuItem onClick={toggleOutlineMode} className="min-h-10 text-xs gap-2 cursor-pointer">
+                  <LayoutGrid className="w-3.5 h-3.5 text-primary" />
+                  <span>{outlineMode ? '退出大纲全景态' : '开启大纲全景态'}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setWorkspaceCompactType(compactType === 'vertical' ? null : 'vertical')}
+                  className="min-h-10 text-xs gap-2 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-violet-500" />
+                  <span>吸附模式：{compactType === 'vertical' ? '自动吸附 → 自由留白' : '自由留白 → 自动吸附'}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setIsAddCatOpen(true)} className="min-h-10 text-xs gap-2 cursor-pointer">
+                  <FolderPlus className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>新建专属分类</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setManagerTab('trash')
+                    setIsManagerOpen(true)
+                  }}
+                  className="min-h-10 text-xs gap-2 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-amber-500" />
+                  <span>时间轴回收站 ({Math.max(trashBin.length, totalPrunedCount)})</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setManagerTab('outline')
+                    setIsManagerOpen(true)
+                  }}
+                  className="min-h-10 text-xs gap-2 cursor-pointer"
+                >
+                  <Layers className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>分类大纲与功能矩阵</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleRunSmartAutoTune} className="min-h-10 text-xs gap-2 cursor-pointer">
+                  <Sparkles className="w-3.5 h-3.5 text-violet-500" />
+                  <span>智能自适应调优</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={toggleSpeedDial} className="min-h-10 text-xs gap-2 cursor-pointer">
+                  <Pin className="w-3.5 h-3.5 text-amber-500" />
+                  <span>首屏速览坞：{speedDialEnabled ? '已开启' : '已关闭'}</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="my-1" />
+                <DropdownMenuItem onClick={handleSaveAsScene} className="min-h-10 text-xs gap-2 cursor-pointer">
+                  <Layers className="w-3.5 h-3.5 text-primary" />
+                  <span>一键存为我的场景</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setIsBackupOpen(true)} className="min-h-10 text-xs gap-2 cursor-pointer">
+                  <Download className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>蓝图 JSON 导入与导出</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleReset} className="min-h-10 text-xs gap-2 cursor-pointer text-destructive-text">
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>恢复系统默认排版</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
-          {/* 右侧动作控制簇：撤销、重做、蓝图JSON、重置、完成编排 */}
-          <div className="flex items-center gap-1 shrink-0 ml-auto">
+          {/* 右侧主操作控制簇（shrink-0）：撤销、重做、完成编排在 375px–1440px 永远固定可见零裁切 */}
+          <div className="flex items-center gap-0.5 sm:gap-1 shrink-0 ml-auto">
             {/* 撤销 / 重做 */}
             <Button
               variant="ghost"
@@ -763,7 +893,7 @@ export function HomeDIYToolbar({
               disabled={!canUndo}
               onClick={undo}
               className={cn(
-                'h-8 w-8 rounded-full',
+                'h-9 w-9 sm:h-8 sm:w-8 rounded-full shrink-0',
                 !canUndo ? 'opacity-30 cursor-not-allowed' : 'hover:bg-muted text-muted-foreground hover:text-foreground'
               )}
               title={isMac ? '撤销 (↩ ⌘Z)' : '撤销 (↩ Ctrl+Z)'}
@@ -777,7 +907,7 @@ export function HomeDIYToolbar({
               disabled={!canRedo}
               onClick={redo}
               className={cn(
-                'h-8 w-8 rounded-full',
+                'h-9 w-9 sm:h-8 sm:w-8 rounded-full shrink-0',
                 !canRedo ? 'opacity-30 cursor-not-allowed' : 'hover:bg-muted text-muted-foreground hover:text-foreground'
               )}
               title={isMac ? '重做 (↪ ⌘⇧Z)' : '重做 (↪ Ctrl+Y)'}
@@ -786,55 +916,52 @@ export function HomeDIYToolbar({
               <Redo2 className="w-3.5 h-3.5" />
             </Button>
 
-            {/* 一键存为场景：当前置顶 + 皮肤 + 布局存成新场景 */}
+            {/* 一键存为场景 / 蓝图 JSON / 重置（xl+ 直出，窄视口已收进「更多」菜单） */}
             <Button
               variant="ghost"
               size="icon"
               onClick={handleSaveAsScene}
-              className="h-11 w-11 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+              className="hidden xl:inline-flex h-8 w-8 rounded-full shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted"
               title="一键存为场景：把当前置顶、皮肤与布局存成我的场景"
               aria-label="一键存为场景"
             >
               <Layers className="w-3.5 h-3.5" />
             </Button>
-
-            {/* 蓝图 JSON 管理 */}
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setIsBackupOpen(true)}
-              className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+              className="hidden xl:inline-flex h-8 w-8 rounded-full shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted"
               title="排版蓝图 JSON 导入与导出"
               aria-label="排版蓝图 JSON 导入与导出"
             >
               <Download className="w-3.5 h-3.5" />
             </Button>
-
-            {/* 一键重置 */}
             <Button
               variant="ghost"
               size="icon"
               onClick={handleReset}
-              className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+              className="hidden xl:inline-flex h-8 w-8 rounded-full shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted"
               title="🔄 恢复系统默认排版，同时恢复所有已删减功能"
               aria-label="恢复系统默认排版，同时恢复所有已删减功能"
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </Button>
 
-            <div className="h-4 w-px bg-border/60 mx-1" />
+            <div className="h-4 w-px bg-border/60 mx-0.5 sm:mx-1 shrink-0" />
 
             {/* 完成编排 */}
             <Button
               variant="default"
               size="sm"
+              data-testid="diy-btn-done"
               onClick={handleFinishEditing}
-              className="min-h-11 px-3.5 rounded-xl text-xs font-bold gap-1 bg-primary text-primary-foreground shadow-sm hover:opacity-90"
+              className="min-h-10 sm:min-h-11 px-3 sm:px-3.5 rounded-xl text-xs font-bold gap-1 shrink-0 bg-primary text-primary-foreground shadow-sm hover:opacity-90"
               title="保存并退出编排模式 (快捷键: Esc)"
             >
-              <Check className="w-3.5 h-3.5" />
-              <span>✓ 完成</span>
-              <kbd className="hidden sm:inline-block sm:pointer-coarse:hidden text-[10px] px-1 py-0.2 bg-primary-foreground/20 rounded font-mono ml-0.5">
+              <Check className="w-3.5 h-3.5 shrink-0" />
+              <span className="whitespace-nowrap">完成</span>
+              <kbd className="hidden md:inline-block sm:pointer-coarse:hidden text-[10px] px-1 py-0.2 bg-primary-foreground/20 rounded font-mono ml-0.5">
                 Esc
               </kbd>
             </Button>

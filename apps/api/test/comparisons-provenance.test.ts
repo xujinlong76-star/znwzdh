@@ -40,10 +40,10 @@ let generations: number[];
 let lastPrompt = "";
 
 function stubLlm(payload: Record<string, unknown> | ((n: number) => Record<string, unknown>)) {
-  const original = globalThis.fetch;
+  const original = ctx.config.llm.fetchImpl;
   generations = [];
   lastPrompt = "";
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  ctx.config.llm.fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (!url.includes("/chat/completions")) {
       return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -61,7 +61,7 @@ function stubLlm(payload: Record<string, unknown> | ((n: number) => Record<strin
     );
   }) as typeof fetch;
   return () => {
-    globalThis.fetch = original;
+    ctx.config.llm.fetchImpl = original;
   };
 }
 
@@ -222,16 +222,14 @@ describe("GET /api/comparisons 无 Key：结构化对照表", () => {
     await noKeyCtx.repo.setSiteFacets(String(e.id), { pricing: ["freemium"], platform: ["web"], form: ["saas"] });
     await noKeyCtx.repo.updateSiteHealth(String(e.id), { httpStatus: 200, ok: true, latencyMs: 90, redirectTo: null, error: null });
     // 无 Key 服务端装一个“模型被调即炸”的桩：结构化路径绝不能碰 LLM
-    const original = globalThis.fetch;
-    (globalThis as unknown as { __provNoKeyFetch: typeof fetch }).__provNoKeyFetch = original;
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
+    noKeyCtx.config.llm.fetchImpl = (async (input: RequestInfo | URL) => {
       if (String(input).includes("/chat/completions")) throw new Error("无 Key 路径调用了 LLM");
       return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
     }) as typeof fetch;
   });
 
   afterAll(async () => {
-    globalThis.fetch = (globalThis as unknown as { __provNoKeyFetch: typeof fetch }).__provNoKeyFetch;
+    noKeyCtx.config.llm.fetchImpl = undefined;
     await noKeyApp.close();
     await noKeyCtx.close();
   });

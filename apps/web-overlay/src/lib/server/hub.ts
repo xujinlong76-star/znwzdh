@@ -9,7 +9,6 @@
  */
 import { HUB_CACHE_TAG } from '@/lib/server/hub-cache'
 import { hubIdentitySecret, identitySignatureHeaders } from '@/lib/identity-signature'
-import { buildHubUrl } from '@/lib/ssrf-guard'
 
 const HUB_BASE = (
   process.env.NAVHUB_STORAGE_BASE_URL ??
@@ -72,11 +71,7 @@ export async function hubGet<T>(
     // 没有 tags 的 Data Cache 条目只能等 revalidate 窗口自然过期。
     if (revalidate > 0) init.next = { revalidate, tags: [HUB_CACHE_TAG] }
     if (timeoutMs > 0) init.signal = AbortSignal.timeout(timeoutMs)
-    // SSRF 2026-11-25：path 至少一处调用方带用户污点（admin/audit 的 searchParams），
-    // 拼之前先校验并钉死 host。故意不用 guardedFetch：这里依赖 Next Data Cache
-    //（next.revalidate/tags），守卫的 redirect 循环不透传 next 选项，改走它会改 ISR 语义；
-    // host 已由 buildHubUrl 钉死，path 只能改同 host 下的路径与查询串。
-    const res = await fetch(buildHubUrl(HUB_BASE, path).toString(), init)
+    const res = await fetch(`${HUB_BASE}${path}`, init)
     if (!res.ok) return null
     return (await res.json()) as T
   } catch {
@@ -109,8 +104,7 @@ export async function hubGetProbe<T>(
     }
     if (revalidate > 0) init.next = { revalidate }
     if (timeoutMs > 0) init.signal = AbortSignal.timeout(timeoutMs)
-    // SSRF 2026-11-25：同 hubGet，path 校验 + host 钉死（见上）；失败收敛为 failed。
-    const res = await fetch(buildHubUrl(HUB_BASE, path).toString(), init)
+    const res = await fetch(`${HUB_BASE}${path}`, init)
     if (res.status === 404) return { status: 'miss' }
     if (!res.ok) return { status: 'failed' }
     return { status: 'ok', data: (await res.json()) as T }
@@ -120,16 +114,12 @@ export async function hubGetProbe<T>(
 }
 
 /**
- * 已确认吊销的 sid 短 TTL 本地缓存（P2-4：吊销核对 fail-open 的安全缺口）。
+ * 已确认吊销的 sid 短 TTL 本地缓存（P2-4）。
  *
- * 背景：中枢 sessions/check 不可用时核对返回 null，三处调用方（admin 会话、hub 代理、
- * 登录登记）一致 fail-open 放行——这是避免中枢抖动导致全员登出的知情权衡。但代价是
- * 「刚被踢出/改密的会话，恰逢中枢短暂不可达」窗口内仍能访问高权限接口。
- *
- * 这里用有界 TTL 缓存记住「中枢曾明确判为已吊销」的 sid：一旦确认吊销，即便随后中枢
- * 不可达，也在 TTL 内继续返回 true（fail-closed 只针对已确认吊销的会话，不误伤普通
- * 管理员，不引入全员锁死的新故障面）。TTL 到期后重新核对；sid 本身随机且带 issuedAt，
- * 缓存上限有界，不会随请求无界增长。
+ * 中枢 sessions/check 不可用时核对返回 null，认证调用方对所有已登录会话
+ * （含 OAuth）fail-closed。缓存让「已明确吊销」在随后的中枢抖动窗口内继续
+ * 返回 true；未确认吊销的会话不会因缓存被误杀。TTL 到期后重新核对，sid
+ * 本身随机且带 issuedAt，缓存上限有界，不会随请求无界增长。
  */
 const REVOKED_SID_TTL_MS = 15 * 60_000
 const revokedSidCache = new Map<string, number>()
@@ -158,7 +148,12 @@ function rememberRevoked(sid: string): void {
 }
 
 /** 会话吊销核对（P0-2）：调中枢 sessions/check。true=已吊销，false=未吊销，null=核对不可用。 */
-export async function hubSessionRevoked(sid: string, identity: string, issuedAt?: number): Promise<boolean | null> {
+export async function hubSessionRevoked(
+  sid: string,
+  identity: string,
+  issuedAt?: number,
+  passwordVersion?: number,
+): Promise<boolean | null> {
   // 命中「已确认吊销」缓存：即便此刻中枢不可达也要 fail-closed 拦住。
   if (isKnownRevoked(sid)) return true
   const secret = hubIdentitySecret()
@@ -166,14 +161,16 @@ export async function hubSessionRevoked(sid: string, identity: string, issuedAt?
     accept: "application/json",
     "content-type": "application/json",
     "x-navhub-user-id": identity,
+    ...(INTERNAL_TOKEN ? { "x-navhub-internal-token": INTERNAL_TOKEN } : {}),
   }
   if (secret) {
     Object.assign(headers, await identitySignatureHeaders(secret, identity))
   }
   const token = process.env.NAVHUB_ADMIN_TOKEN || process.env.NAVHUB_BOOTSTRAP_TOKEN || process.env.NAVHUB_STORAGE_TOKEN
   if (token) headers.authorization = "Bearer " + token
-  const payload: { sid: string; issuedAt?: number } = { sid }
+  const payload: { sid: string; issuedAt?: number; passwordVersion?: number } = { sid }
   if (typeof issuedAt === "number") payload.issuedAt = issuedAt
+  if (typeof passwordVersion === "number") payload.passwordVersion = passwordVersion
   try {
     const res = await fetch(HUB_BASE + "/api/me/sessions/check", {
       method: "POST",

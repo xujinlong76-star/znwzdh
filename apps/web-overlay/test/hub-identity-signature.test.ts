@@ -15,6 +15,7 @@ import {
   identitySignatureHeaders,
   signIdentity,
   signIdentityV2,
+  signIdentityV3,
 } from '../src/lib/identity-signature'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -30,7 +31,7 @@ describe('signIdentityV2：时间戳与 nonce 一起进 MAC（重放防护）', 
     expect(await signIdentityV2(SECRET, 'github:alice', 1700000000, 'abcdefghijklmnop')).toBe(VECTOR_V2)
   })
 
-  it('identitySignatureHeaders 下发 v1 + v2 三件套（ts 按秒、nonce 合规）', async () => {
+  it('identitySignatureHeaders 下发 v1 + v2 + 域分离 v3（ts 按秒、nonce 合规）', async () => {
     const h = await identitySignatureHeaders(SECRET, 'github:alice', 'x-navhub-identity', 1_700_000_000_000)
     expect(h['x-navhub-identity-ts']).toBe('1700000000')
     expect(h['x-navhub-identity-nonce']).toMatch(/^[A-Za-z0-9_-]{16,64}$/)
@@ -38,17 +39,25 @@ describe('signIdentityV2：时间戳与 nonce 一起进 MAC（重放防护）', 
     expect(h['x-navhub-identity-signature-v2']).toBe(
       await signIdentityV2(SECRET, 'github:alice', 1700000000, h['x-navhub-identity-nonce']),
     )
+    expect(h['x-navhub-identity-signature-v3']).toBe(
+      await signIdentityV3(SECRET, 'github:alice', 1700000000, h['x-navhub-identity-nonce'], 'user'),
+    )
     expect(h['x-navhub-identity-signature-v2']).not.toBe(h['x-navhub-identity-signature'])
+    expect(h['x-navhub-identity-signature-v3']).not.toBe(h['x-navhub-identity-signature-v2'])
   })
 
-  it('anon 前缀自成一套头，不与登录身份头撞名', async () => {
+  it('anon 前缀自成一套头，v3 用途也与登录身份不同', async () => {
     const headers = await identitySignatureHeaders(SECRET, 'anon-1', 'x-navhub-anon', 1_700_000_000_000)
     expect(Object.keys(headers).sort()).toEqual([
       'x-navhub-anon-nonce',
       'x-navhub-anon-signature',
       'x-navhub-anon-signature-v2',
+      'x-navhub-anon-signature-v3',
       'x-navhub-anon-ts',
     ])
+    expect(headers['x-navhub-anon-signature-v3']).toBe(
+      await signIdentityV3(SECRET, 'anon-1', 1700000000, headers['x-navhub-anon-nonce'], 'anon'),
+    )
   })
 
   it('每次调用 nonce 都不同（同一秒内也不复用）', async () => {
@@ -148,12 +157,11 @@ describe('hubIdentitySecret：未配置时必须完全不影响行为', () => {
 describe('接线：代理必须真的把签名加上', () => {
   const src = readFileSync(resolve(ROOT, 'src/app/api/hub/[...path]/route.ts'), 'utf8')
 
-  it('从环境读取密钥，并写身份签名头（v1+v2 双发）', () => {
+  it('从环境读取密钥，并写身份签名头（v1+v2+v3）', () => {
     expect(src).toContain('hubIdentitySecret()')
-    // 2026-10-27：单写 v1 改成 identitySignatureHeaders 双发
-    // （v2 = HMAC(secret, [identity, ts, nonce])，中枢据此做重放防护）
-    expect(src).toContain('identitySignatureHeaders(identitySecret, resolvedIdentity)')
-    expect(src).toContain('Object.assign(headers,')
+    expect(src).toContain('identitySignatureHeaders(')
+    expect(src).toContain("verdict.kind === 'anon' ? 'x-navhub-anon' : 'x-navhub-identity'")
+    expect(src).toContain('Object.assign(')
   })
 
   it('签名取值走 identityFromRequest 并带入请求头（header-only 身份不能丢）', () => {
@@ -165,7 +173,7 @@ describe('接线：代理必须真的把签名加上', () => {
     // 2026-10-22 口径变更：会话优先，客户端自称的非匿名身份一律拒绝。
     // 详细用例见 hub-identity-guard.test.ts。
     expect(src).toContain('resolveHubIdentity(')
-    expect(src).toMatch(/identitySignatureHeaders\(identitySecret, resolvedIdentity\)/)
+    expect(src).toMatch(/identitySignatureHeaders\(\s*identitySecret,\s*resolvedIdentity,/)
     expect(src).not.toMatch(/identitySignatureHeaders\(identitySecret, identity\)/)
   })
 })

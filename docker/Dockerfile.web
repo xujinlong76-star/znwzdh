@@ -14,55 +14,26 @@ RUN npm install -g pnpm@11.7.0 --registry=https://registry.npmmirror.com
 
 WORKDIR /app
 
-# 1) 依赖层：镜像里前端就是 workspace 成员 apps/web（与仓库同构），直接吃仓库根的
-#    pnpm-lock.yaml。先只放清单再装依赖 —— 这一层只随清单/锁文件变化，改自研源码不必重装依赖。
-#    frozen 安装 = 镜像里装的就是 CI/仓库锁定的那一套版本（此前 lockfile 没进镜像、只能
-#    --no-frozen-lockfile，等于每次构建重新解一遍版本范围，镜像不可复现）。
-#    根 workspace 配置同时是 overrides / allowBuilds 的唯一事实源，不需要复制副本或改写。
+# 1) 依赖层：镜像里前端就是 workspace 成员 apps/web，直接吃仓库根的
+#    pnpm-lock.yaml。先只放清单再装依赖，改自研源码不必重装依赖。
+#    frozen 安装保证镜像与 CI 使用同一套锁定版本；workspace 配置是 overrides / allowBuilds
+#    的唯一事实源，不复制副本、不改写。
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # 根 package.json 的 prepare 钩子会执行它（镜像里没有 .git，脚本只打印一行跳过）
-COPY scripts/install-git-hooks.mjs ./scripts/
-# 它的相对 import 闭包（scripts/lib/hooks-fresh.mjs）同样要进镜像；漏拷 = prepare 阶段直接失败。
-COPY scripts/lib/hooks-fresh.mjs ./scripts/lib/
-# 覆盖层的清单（vendor 之后它才是最终清单；这里先只放清单供解析）
+COPY scripts ./scripts
+# 覆盖层清单是最终 apps/web 清单；先复制供依赖解析，vendor 时会再次从事实源恢复。
 COPY apps/web-overlay/package.json ./apps/web/package.json
 COPY packages/core/package.json ./packages/core/
 RUN pnpm install --frozen-lockfile --filter "./apps/web"
 
-# 2) 上游底座（NavSphere，MIT）拉进 apps/web，再用 NavHub 覆盖层覆盖存储层
-#    默认固定到具体 commit（与 scripts/vendor-web.mjs 的 DEFAULT_REF、UPSTREAM.md 同源），
-#    保证同一个仓库标签构建的镜像可复现；升级底座时显式传 --build-arg NAVSPHERE_REF=<新 sha>。
-#    codeload 的 /tar.gz/<ref> 对 branch / tag / sha 都有效，故不再拼 refs/heads/。
-#    注意：底座 tarball 自带的上游 package.json / pnpm-lock.yaml 会被覆盖层覆盖，
-#    镜像里的依赖解析与已装依赖始终以仓库根的清单 + 锁文件为准（见上面第 1 步）。
-ARG NAVSPHERE_REF=6ba74fab9f86aa6ba4e276c002128a8f5a0acc0a
-# codeload 在 CI 上偶发 TLS 超时 / 连接重置（scripts/vendor-web.mjs 也遇到过，那边已有
-# 60s 超时 + 3 次重试）。没有超时/重试的 curl 会一直挂着，直到撞上 job 的 30 分钟超时，
-# 日志里只剩一句超时、看不出真正原因。这里补齐同样的语义：连接超时 10s、单次总计 300s、
-# 瞬时错误重试 3 次；坏 ref（404）等确定性错误不重试，直接快速失败。
-RUN curl -fsSL --connect-timeout 10 --max-time 300 --retry 3 --retry-delay 2 --retry-connrefused \
-      "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/${NAVSPHERE_REF}" -o /tmp/ns.tgz \
-    && mkdir -p /tmp/ns && tar -xzf /tmp/ns.tgz -C /tmp/ns --strip-components=1 \
-    && mkdir -p /app/apps/web && cp -a /tmp/ns/. /app/apps/web/ \
-    && rm -rf /tmp/ns /tmp/ns.tgz
-
-# 注入 NavHub 的前端覆盖层（唯一事实源：apps/web-overlay/）
-#    - src/lib/storage-adapter.ts: 三种后端（http | github | sqlite）的实现
-#    - src/lib/github.ts:          保持原函数签名的门面，内部改走适配器。
-#                                  因此 NavSphere 那 16 个 route / 约 69 处调用点一行都不用改。
-#    - src/lib/navhub-api.ts 等:   混合检索面板 / 收藏夹 / 标签 / 榜单 / 站点详情 /
-#                                  后台任务面板与运营看板（第二轮导航增强）
-#    - next.config.js:             构建输出目录可覆盖（NEXT_DIST_DIR）
-#    注意：/api/hub/* 代理是 src/app/api/hub/[...path]/route.ts 路由（运行时读
-#    NAVHUB_STORAGE_BASE_URL），已包含在覆盖层里，无需在 Dockerfile 额外配置。
-COPY apps/web-overlay/ /app/apps/web/
-
-# 3) 修剪上游遗留文件（与 scripts/vendor-web.mjs 的 prune 列表保持一致）
-#    Next 16 起 middleware 更名为 proxy；上游 tarball 仍带 src/middleware.ts，
-#    与覆盖层的 src/proxy.ts 并存会让 next build 直接报错
-#    ("Both middleware file ... and proxy file ... are detected")。
-#    vendor 脚本在宿主机已修剪，但镜像构建不跑 vendor —— 必须在这里同步修剪。
-RUN rm -f /app/apps/web/src/middleware.ts /app/apps/web/.eslintrc.json
+# 2) 上游底座 + NavHub 覆盖层统一走 scripts/vendor-web.mjs。
+#    下载、缓存/重试、NavHub 自有文件保护、overlay 覆写与上游遗留修剪只有这一份实现；
+#    本地 vendor:web、CI 与 Docker 不再各自维护 curl/tar/cp/prune 逻辑。
+#    NAVSPHERE_REF 默认值仍由 scripts/vendor-web.mjs 的 DEFAULT_REF 提供，
+#    check-upstream-ref.mjs 校验它与 compose / UPSTREAM.md 同源；这里只保留可选覆盖口。
+COPY apps/web-overlay/ ./apps/web-overlay/
+ARG NAVSPHERE_REF
+RUN NAVSPHERE_REF="$NAVSPHERE_REF" node scripts/vendor-web.mjs
 
 WORKDIR /app/apps/web
 

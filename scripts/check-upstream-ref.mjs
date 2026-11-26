@@ -1,18 +1,18 @@
 /**
  * 上游底座 ref 一致性校验（升级建议：构建可复现）。
  *
- * 校验四处"上游 commit"声明同源且彼此相等：
- *   1. scripts/vendor-web.mjs 的 DEFAULT_REF（本地 / CI vendor 的默认来源）
- *   2. docker/Dockerfile.web 的 ARG NAVSPHERE_REF 默认值（镜像构建来源）
- *   3. apps/web-overlay/UPSTREAM.md 记录的 Upstream commit（人工事实源）
- *   4. docker/docker-compose.yml 里 web 服务的 build arg 默认值
+ * 校验三处"上游 commit"声明同源且彼此相等：
+ *   1. scripts/vendor-web.mjs 的 DEFAULT_REF（本地 / CI / Docker 唯一默认来源）
+ *   2. apps/web-overlay/UPSTREAM.md 记录的 Upstream commit（人工事实源）
+ *   3. docker/docker-compose.yml 里 web 服务的 build arg 默认值
+ * Dockerfile.web / .web.slim 只调用 vendor 脚本，不再复制 ref 默认值。
  * 若 apps/web/UPSTREAM.md 已生成（vendor 之后），再额外校验它记录的 commit 未漂移。
  *
  * 第 4 处是后加的：compose 曾经写 `${NAVSPHERE_REF:-main}`，默认值直接覆盖掉镜像里的
  * pin，于是"按 --profile web 构建"这条最常用的路径拉的是**会动的 main 分支**，
  * 前三处一致也没用（同一个标签的镜像每次构建内容不同）。
  *
- * 升级底座的正确顺序：显式传 ref 跑 vendor → 回归通过 → 把新 sha 同时写回上面 1/2/3/4。
+ * 升级底座的正确顺序：显式传 ref 跑 vendor → 回归通过 → 把新 sha 同时写回上面 1/2/3。
  * 只改一处会让本脚本失败，正是它存在的意义：防止"本地和镜像拉的不是同一份上游"。
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -36,7 +36,6 @@ function firstSha(file, pick) {
 
 const sources = [
   { name: "scripts/vendor-web.mjs (DEFAULT_REF)", file: join(ROOT, "scripts", "vendor-web.mjs"), sha: null },
-  { name: "docker/Dockerfile.web (ARG NAVSPHERE_REF)", file: join(ROOT, "docker", "Dockerfile.web"), sha: null },
   { name: "apps/web-overlay/UPSTREAM.md", file: join(ROOT, "apps", "web-overlay", "UPSTREAM.md"), sha: null },
   {
     name: "docker/docker-compose.yml (web build arg NAVSPHERE_REF)",
@@ -59,7 +58,7 @@ if (!bad) {
   if (uniq.size !== 1) {
     console.error("[upstream-ref] 上游 commit 声明不一致：");
     for (const s of sources) console.error("  - " + s.sha + "  " + s.name);
-    console.error("修复：把新 sha 同时写回 scripts/vendor-web.mjs、docker/Dockerfile.web、apps/web-overlay/UPSTREAM.md、docker/docker-compose.yml");
+    console.error("修复：把新 sha 同时写回 scripts/vendor-web.mjs、apps/web-overlay/UPSTREAM.md、docker/docker-compose.yml");
     bad = true;
   } else {
     console.log("[upstream-ref] " + sources.length + " 处声明一致：" + sources[0].sha);

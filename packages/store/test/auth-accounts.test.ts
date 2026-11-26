@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openDb, type Db } from "../src/driver.ts";
 import { Repository } from "../src/repository.ts";
 import { generateToken, hashToken } from "@navhub/core";
+import { createHash } from "node:crypto";
 
 /**
  * 账号生命周期仓储测试（注册 / 邮箱验证 / 登录 / 找回密码）。
@@ -102,6 +103,7 @@ describe("账号生命周期仓储", () => {
 
     const ok = await repo.verifyUserPassword("carol@example.com", "S3cret-Passw0rd!");
     expect(ok?.id).toBe(user.user.id);
+    expect(ok?.passwordVersion).toBe(0);
 
     const wrong = await repo.verifyUserPassword("carol@example.com", "wrong-password");
     expect(wrong).toBeNull();
@@ -197,7 +199,7 @@ describe("账号生命周期仓储", () => {
     expect(consumed).toBe(false);
   });
 
-  it("重置密码后新口令可登录、旧口令失效", async () => {
+  it("重置密码后新口令可登录、旧口令失效，旧登录版本快照同步失效", async () => {
     const user = await repo.createUserWithPassword({
       username: "grace",
       email: "grace@example.com",
@@ -205,6 +207,11 @@ describe("账号生命周期仓储", () => {
     });
     expect(user.ok).toBe(true);
     if (!user.ok) return;
+
+    const staleLogin = await repo.verifyUserPassword("grace@example.com", "OldPassw0rd!");
+    expect(staleLogin?.passwordVersion).toBe(0);
+    const canonical = "credentials:" + user.user.id;
+    const staleSid = createHash("sha256").update("stale-login-before-reset").digest("hex");
 
     const token = generateToken(32);
     await repo.createAuthToken({
@@ -221,8 +228,19 @@ describe("账号生命周期仓储", () => {
     expect(consumed).toBe(true);
 
     expect(await repo.updateUserPassword(user.user.id, "NewPassw0rd!")).toBe(true);
-    expect(await repo.verifyUserPassword("grace@example.com", "NewPassw0rd!")).not.toBeNull();
+    const freshLogin = await repo.verifyUserPassword("grace@example.com", "NewPassw0rd!");
+    expect(freshLogin?.passwordVersion).toBe(1);
     expect(await repo.verifyUserPassword("grace@example.com", "OldPassw0rd!")).toBeNull();
+
+    // 模拟旧密码已在重置前验完，但旧登录结果现在才去建立会话。
+    expect(await repo.isSessionRevoked(staleSid, canonical, Date.now() + 1000, staleLogin?.passwordVersion)).toBe(true);
+    const freshSid = createHash("sha256").update("fresh-login-after-reset").digest("hex");
+    await repo.upsertSessionActivity({
+      token: freshSid,
+      userId: canonical,
+      expiresAt: Date.now() + 86_400_000,
+    });
+    expect(await repo.isSessionRevoked(freshSid, canonical, Date.now() + 1000, freshLogin?.passwordVersion)).toBe(false);
   });
 
   it("按 id 查邮箱：无邮箱用户返回 null", async () => {

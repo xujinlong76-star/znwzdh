@@ -5,9 +5,12 @@
  *  2. 正常路径：桩取数返回真实录制 fixture，30 条入库且热度全 null、链接干净；
  *  3. /api/hotlist 下发知乎 30 条，uncovered 只剩快手。
  */
+import { EventEmitter } from "node:events";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import https from "node:https";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildServer } from "../src/server.ts";
@@ -151,22 +154,30 @@ describe("makeGuardedHotlistFetch 白名单（U-284）", () => {
     );
   });
 
-  it("白名单主机解析到被禁段时仍能取数入库（桩掉全局 fetch，不碰外网）", async () => {
+  it("白名单主机解析到被禁段时仍能取数入库（桩原生 HTTPS 请求，不碰外网）", async () => {
     // 本机网关把 weibo.com 解析到 198.18.246.9，无白名单时 guardedFetch
     // 会在 resolveAndCheck 抛 SsrfBlockedError；白名单命中则跳过 DNS 校验。
     const def = hotlistSourceById("weibo")!;
     const fetchImpl = makeGuardedHotlistFetch(ctx);
     let calledUrl = "";
-    vi.stubGlobal(
-      "fetch",
-      async (input: unknown) => {
-        calledUrl = String(input);
-        return new Response(fixtureBody("weibo.json"), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      },
-    );
+    const requestSpy = vi.spyOn(https, "request").mockImplementation(((options: Record<string, unknown>, callback: (res: unknown) => void) => {
+      const req = new EventEmitter() as EventEmitter & {
+        write: ReturnType<typeof vi.fn>;
+        end: ReturnType<typeof vi.fn>;
+        destroy: ReturnType<typeof vi.fn>;
+      };
+      req.write = vi.fn();
+      req.destroy = vi.fn();
+      req.end = vi.fn(() => {
+        calledUrl = `https://${String(options.hostname)}${String(options.path)}`;
+        const res = PassThrough() as PassThrough & { statusCode: number; headers: Record<string, string> };
+        res.statusCode = 200;
+        res.headers = { "content-type": "application/json" };
+        callback(res);
+        res.end(fixtureBody("weibo.json"));
+      });
+      return req;
+    }) as unknown as typeof https.request);
     try {
       const entry = await refreshHotlistSource(ctx, def, fetchImpl, Date.now());
       expect(entry.ok).toBe(true);
@@ -179,7 +190,7 @@ describe("makeGuardedHotlistFetch 白名单（U-284）", () => {
       const states = await ctx.repo.listHotlistSources();
       expect(states.find((s) => s.source === "weibo")?.status).toBe("ok");
     } finally {
-      vi.unstubAllGlobals();
+      requestSpy.mockRestore();
     }
   });
 });

@@ -49,12 +49,11 @@ describe('/hot 点击上报接线', () => {
   it('卡片标题内链点击上报', () => {
     const tag = windowAround(
       code,
-      'className="block min-w-0 flex-1"',
-      200,
+      'onTitleClick={() => handleSiteClick(site, i + 1)}',
+      260,
       0,
     )
     expect(tag).toContain('href={`/site/${encodeURIComponent(site.id)}`}')
-    expect(tag).toContain('onClick={() => handleSiteClick(site, i + 1)}')
   })
 
   it('ExternalLink 直达按钮点击上报', () => {

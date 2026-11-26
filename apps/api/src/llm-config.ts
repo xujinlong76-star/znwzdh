@@ -1080,6 +1080,7 @@ export async function testLlmProvider(
         ],
         temperature: 0,
         maxTokens: 32,
+        fetchImpl: ctx.config.llm.fetchImpl,
       },
     );
     const latencyMs = result.latencyMs || (Date.now() - startedAt);

@@ -17,6 +17,25 @@ export const CHANNELS: RetrievalChannel[] = ['exact', 'fts', 'pinyin', 'semantic
 
 export const CONTEXT_DIM = 5;
 
+/** 反馈奖励的有界定义：负向最低 -1，复制/收藏等强正向最高 2。 */
+export const LINUCB_REWARD_MIN = -1;
+export const LINUCB_REWARD_MAX = 2;
+
+export function isValidLinUCBReward(reward: number): boolean {
+  return Number.isFinite(reward) && reward >= LINUCB_REWARD_MIN && reward <= LINUCB_REWARD_MAX;
+}
+
+/** 驻留时长必须先于奖励映射校验，避免 Infinity 被对数曲线钳成合法正奖励。 */
+export function isValidDwellSeconds(dwellSeconds: number): boolean {
+  return Number.isFinite(dwellSeconds) && dwellSeconds >= 0;
+}
+
+function assertValidReward(reward: number): void {
+  if (!isValidLinUCBReward(reward)) {
+    throw new RangeError(`LinUCB reward 必须是 [${LINUCB_REWARD_MIN}, ${LINUCB_REWARD_MAX}] 内的有限数`);
+  }
+}
+
 export interface ContextVector {
   /** 长度归一化 [0, 1] */
   lengthNorm: number;
@@ -228,7 +247,7 @@ export function predictArmWeights(
 
 /**
  * 在线强化学习反馈更新 (Update Bandit with observed reward)
- * @param reward 奖励值（如被采纳/点击则 reward = 1.0；跳出则 reward = 0.0）
+ * @param reward 奖励值（如被采纳/点击则 reward = 1.0；跳出则 reward = 0.0），有限且 [-1, 2]
  */
 export function updateArmReward(
   model: LinUCBModel,
@@ -236,6 +255,7 @@ export function updateArmReward(
   query: string,
   reward: number
 ): void {
+  assertValidReward(reward);
   const arm = model.arms[channel];
   if (!arm) return;
 
@@ -305,12 +325,13 @@ export function updateDiscountedArmReward(
   reward: number,
   gamma = 0.98
 ): void {
+  assertValidReward(reward);
   const arm = model.arms[channel];
   if (!arm) return;
 
   const x = extractContextFeatures(query);
   const dim = model.dimension;
-  const safeGamma = Math.min(1.0, Math.max(0.8, gamma));
+  const safeGamma = Number.isFinite(gamma) ? Math.min(1.0, Math.max(0.8, gamma)) : 0.98;
 
   // 1) 协方差矩阵时序折扣更新：gamma * A + (1 - gamma) * I + x * x^T
   for (let i = 0; i < dim; i++) {
@@ -341,6 +362,9 @@ export function computeDwellTimeReward(
   dwellSeconds: number,
   interactionType: 'click' | 'copy' | 'bounce' = 'click'
 ): number {
+  if (!isValidDwellSeconds(dwellSeconds)) {
+    throw new RangeError("dwellSeconds 必须是有限非负数");
+  }
   if (interactionType === 'copy') {
     // 触发有效复制或书签操作：极强正反馈（必须先判，否则短驻留 copy 被误判为 bounce）
     return 2.0;

@@ -1215,17 +1215,17 @@ describe('W2-9：同一按键只撤销一步（认领制）', () => {
   })
 
   it('接线守则：Ctrl+Z 监听收敛为一处分发，不再三处各撤一步（第 1 批第 4 项）', () => {
-    // 旧三处监听（use-home-diy 仅编排态、modular-canvas、navigation-content）
-    // 已删除，只留 hooks/use-global-undo.ts 一处真源；DIY/画布/回收站的
-    // 按钮仍调各自 undo，只监听收敛。认领制本身还在新 hook 里。
+    // 旧三处撤销监听（use-home-diy 仅编排态、modular-canvas、navigation-content）
+    // 已删除，只留 hooks/use-global-undo.ts 一处真源。navigation-content 仍可
+    // 为聚焦栏处理 Esc / 搜索热键，但不能再次认领 Ctrl/Cmd+Z。
     for (const rel of [
       'src/lib/modular/use-home-diy.ts',
       'src/components/modular/modular-canvas.tsx',
       'src/components/navigation-content.tsx',
     ]) {
       const src = readSrc(rel)
-      expect(src, rel + ' 仍挂着 window keydown').not.toContain("window.addEventListener('keydown'")
-      expect(src, rel + ' 仍挂着 window keydown').not.toContain('window.addEventListener("keydown"')
+      expect(src, rel + ' 仍处理 Z 撤销热键').not.toMatch(/e\.key(?:\.toLowerCase\(\))?\s*===\s*['"][zZ]['"]/)
+      expect(src, rel + ' 仍调用全局撤销决策').not.toContain('decideGlobalUndoKey')
     }
     const globalUndo = readSrc('src/hooks/use-global-undo.ts')
     // 新 hook 里仍是认领制：先认领，认领失败直接返回；没得撤/重做时放行

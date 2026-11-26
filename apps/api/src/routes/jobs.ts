@@ -18,6 +18,7 @@ import {
   requestJobAbort,
   type DataRetentionPayload,
   type JobEventPayload,
+  type JobKind,
 } from "../jobs.ts";
 import {
   badRequest,
@@ -198,6 +199,12 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
     if (!job) {
       return notFound(reply, "任务不存在");
     }
+    // 路由静态 scope 只保证 write；破坏性任务必须按库里真实 kind/payload 再次提级，
+    // 否则 write 令牌可绕过入队时的 admin 门槛，直接取消恢复/清空/真删任务。
+    const requiredScope = jobEnqueueScope(job.kind as JobKind, job.payload);
+    if (!scopeSatisfies(req.auth.scopes, requiredScope)) {
+      return forbidden(reply, `任务 ${job.kind} 需要 ${requiredScope} 权限（当前令牌不足）`);
+    }
 
     const result = await ctx.repo.cancelJob(id);
 
@@ -248,7 +255,7 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
       actorKind: req.auth.kind,
       action: "job.cancel",
       target: id,
-      diff: { kind: job.kind, result, abortedLocally },
+      diff: { kind: job.kind, requiredScope, result, abortedLocally },
     });
 
     return { ok: true, id, status: result, abortedLocally };
@@ -262,6 +269,12 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
     const job = await ctx.repo.getJob(id);
     if (!job) {
       return notFound(reply, "任务不存在");
+    }
+    // 重试等于再次允许执行原 payload，不能复用入队时已通过的权限结论；
+    // 必须按当前任务重新计算 scope，拦住 write 令牌重试破坏性任务。
+    const requiredScope = jobEnqueueScope(job.kind as JobKind, job.payload);
+    if (!scopeSatisfies(req.auth.scopes, requiredScope)) {
+      return forbidden(reply, `任务 ${job.kind} 需要 ${requiredScope} 权限（当前令牌不足）`);
     }
     // 仓储层的 CAS 会兜住并发，但这里先给出明确原因：
     // pending/running 重试会清零 attempts 或造成双跑，done 重试会抹掉历史结果。
@@ -285,7 +298,7 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
       actorKind: req.auth.kind,
       action: "job.retry",
       target: id,
-      diff: { kind: job.kind },
+      diff: { kind: job.kind, requiredScope },
     });
 
     return { ok: true, job: retried };

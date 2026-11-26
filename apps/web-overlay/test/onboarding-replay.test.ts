@@ -12,7 +12,8 @@ import {
 /**
  * B11：引导卡注释承诺「设置页可重新打开」，此前却没有任何入口——
  * 关掉引导的用户除手动清 localStorage 外再也看不到它。
- * 修复：设置页加「重新查看新手引导」入口（清除关闭记录 + 回首页），
+ * 修复：设置页加「新手引导」入口（清除关闭记录 + 回首页）。
+ * 当前打开路径是首页顶栏「DIY 排版 → 外观与向导」，不再承诺回首页后卡片自动出现；
  * 键名只在 lib/onboarding.ts 定义一处，引导卡与设置入口共用。
  */
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -91,15 +92,12 @@ describe('B11 设置页重看入口（源码守卫）', () => {
     expect(panel).toContain('OnboardingReplayField')
     expect(panel).toContain('resetOnboarding')
     expect(panel).toContain('isOnboardingDismissed')
-    // e502fa5f 跟随：设置页文案已修正「回首页就能看到引导」的失真说法——
-    // 引导实际藏在首页顶栏「DIY 排版 → 外观与向导」里。按钮文案随之改写：
-    // 关过引导时「重置并回到首页」，没关过时「去首页打开引导」。
-    expect(panel).toContain('重置并回到首页')
-    expect(panel).toContain('href="/"')
-    // 未关过时不说「重新查看」的假话：直接去首页看
-    expect(panel).toContain('去首页打开引导')
-    // 新文案必须指明真实入口，否则「回首页就能看到」会再次失真
     expect(panel).toContain('DIY 排版 → 外观与向导')
+    expect(panel).toContain('重置并回到首页')
+    expect(panel).toContain('去首页打开引导')
+    expect(panel).toContain('href="/"')
+    expect(panel).toContain('onClick={replay}')
+    expect(panel).toContain('<OnboardingReplayField />')
   })
 
   it('引导卡与设置入口共用同一把键：卡片不再自写字面量', () => {
@@ -112,9 +110,10 @@ describe('B11 设置页重看入口（源码守卫）', () => {
     expect(card).not.toContain("setItem(STORAGE_KEY, 'done')")
   })
 
-  it('引导卡注释指向真实入口，不再是空头承诺', () => {
+  it('引导卡注释指向真实入口与打开路径，不再是空头承诺', () => {
     const card = read('src/components/onboarding-card.tsx')
     expect(card).toContain('/me/settings')
-    expect(card).toContain('重新查看新手引导')
+    expect(card).toContain('新手引导')
+    expect(card).toContain('DIY 排版 → 外观与向导')
   })
 })

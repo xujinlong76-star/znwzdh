@@ -182,7 +182,7 @@ describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", ()
     expect(job!.nextRunAt).toBeNull();
 
     // 失败退避：回 pending 且到点前不被再次认领
-    await ctx!.repo.completeJob(id, "测试失败", { retryAt: Date.now() + 3_600_000 });
+    await ctx!.repo.completeJob(id, "测试失败", { retryAt: Date.now() + 3_600_000, runToken: job!.runToken });
     const pending = await ctx!.repo.claimNextJob();
     expect(pending === null || pending.id !== id).toBe(true);
     // 到点后可再次认领：把退避时间拨到过去模拟时间流逝（与 apps/api/test/jobs.test.ts 同做法）。
@@ -191,7 +191,7 @@ describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", ()
     const again = await ctx!.repo.claimNextJob();
     expect(again?.id).toBe(id);
     expect(again!.attempts).toBe(2);
-    await ctx!.repo.completeJob(again!.id, null);
+    await ctx!.repo.completeJob(again!.id, null, { runToken: again!.runToken });
   });
 
   it("审计与事件落库（BIGSERIAL 与 INTEGER 自增差异）", async () => {

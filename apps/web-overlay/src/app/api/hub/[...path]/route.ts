@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { revalidateTag } from 'next/cache'
 import { auth, verifyAdminSession } from '@/lib/auth'
+import { readRequestSessionGovernance } from '@/lib/session-governance'
 import { canonicalUserId } from '@/lib/me-identity'
 import { HUB_CACHE_TAG, shouldInvalidateAfter } from '@/lib/server/hub-cache'
 import { hubSessionRevoked } from '@/lib/server/hub'
@@ -11,21 +12,20 @@ import {
 } from '@/lib/hub-identity-guard'
 import {
   FORWARD_REQUEST_HEADERS,
+  MAX_UPSTREAM_RESPONSE_BYTES,
+  UpstreamBodyTooLargeError,
   createDeadline,
+  decodeBody,
   isNullBodyStatus,
   isStreamingContentType,
   isTextContentType,
+  limitResponseStream,
   pickResponseHeaders,
+  readBodyLimited,
   sanitizeForwardedFor,
   upstreamTimeoutMs,
 } from '@/lib/hub-proxy'
 import { hubIdentitySecret, identityFromRequest, identitySignatureHeaders, signIdentity } from '@/lib/identity-signature'
-import {
-  buildPinnedHubUrl,
-  guardedFetch,
-  hubGuardOptions,
-  SsrfBlockedError,
-} from '@/lib/ssrf-guard'
 import { decideHubRequest } from '@/lib/hub-route-policy'
 
 /**
@@ -72,6 +72,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   const cleanPath = path[0] === 'api' ? path.slice(1) : path
   const method = request.method.toUpperCase()
   const normalizedBase = HUB_BASE.endsWith('/api') ? HUB_BASE.slice(0, -4) : HUB_BASE
+  const target = normalizedBase + '/api/' + cleanPath.join('/') + url.search
 
   // 能力判决（安全边界）：此前只护住 /admin/*，其余路径在枢纽「开放模式」
   // （匿名=全量 scope）下可被匿名直达——实测可下载全站备份、读 Token 名册、
@@ -132,24 +133,21 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   if (xff) headers['x-forwarded-for'] = xff
 
   const hasBody = method !== 'GET' && method !== 'HEAD'
-  // 先看声明长度：request.text() 会把整个请求体读进内存，事后再判 1MB 上限
-  // 等于先让任意大包把进程内存打满（chunked 无 content-length 时靠下面的兜底）。
+  // 请求体在读取过程中按字节计量，不能先完整缓冲再判上限。
   const bodyLimit = bodyLimitFor(cleanPath)
+  let rawBody: string | undefined
   if (hasBody) {
-    const declared = Number(request.headers.get('content-length') ?? '')
-    if (Number.isFinite(declared) && declared > bodyLimit) {
-      return NextResponse.json(
-        { error: `请求体过大（上限 ${Math.round(bodyLimit / 1024 / 1024)}MB）` },
-        { status: 413, headers: { 'cache-control': 'no-store' } },
-      )
+    try {
+      rawBody = decodeBody(await readBodyLimited(request.body, bodyLimit, request.headers))
+    } catch (error) {
+      if (error instanceof UpstreamBodyTooLargeError) {
+        return NextResponse.json(
+          { error: `请求体过大（上限 ${Math.round(bodyLimit / 1024 / 1024)}MB）` },
+          { status: 413, headers: { 'cache-control': 'no-store' } },
+        )
+      }
+      throw error
     }
-  }
-  const rawBody = hasBody ? await request.text() : undefined
-  if (rawBody && rawBody.length > bodyLimit) {
-    return NextResponse.json(
-      { error: `请求体过大（上限 ${Math.round(bodyLimit / 1024 / 1024)}MB）` },
-      { status: 413, headers: { 'cache-control': 'no-store' } },
-    )
   }
   const hasValidBody = hasBody && typeof rawBody === 'string' && rawBody.trim().length > 0
   const body = hasValidBody ? rawBody : undefined
@@ -173,18 +171,26 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     const session = await auth()
     const user = session?.user as { id?: string; provider?: string } | undefined
     sessionIdentity = canonicalUserId(user) ?? null
-    // 吊销检查（P0-2）：被踢出/改密的会话经 /api/hub/* 须 401；核对不可用时 fail-open。
-    const sessionSid = (session as { sessionSid?: string } | null)?.sessionSid
-    if (typeof sessionSid === 'string' && sessionSid && sessionIdentity) {
-      const issuedAt = (session as { sessionIssuedAt?: number } | null)?.sessionIssuedAt
-      const revoked = await hubSessionRevoked(sessionSid, sessionIdentity, issuedAt).catch(() => { /* 核对失败按不可用处理，fail-open */ return null })
-      if (revoked === true) {
+    // 吊销检查（P0-2）：被踢出/改密/无法核验的会话经 /api/hub/* 须 401。
+    // OAuth 与 credentials 一律 fail-closed；真正未登录的请求仍可走匿名/public 路径。
+    if (user) {
+      const { sid: sessionSid, issuedAt, passwordVersion } = await readRequestSessionGovernance(session)
+      if (!sessionSid || !sessionIdentity) {
         return NextResponse.json(
-          { error: '会话已被吊销，请重新登录' },
+          { error: '会话无法校验，请重新登录' },
           { status: 401, headers: { 'cache-control': 'no-store' } },
         )
       }
-      if (revoked === null) console.warn('[hub-session] sessions/check unavailable, fail-open')
+      const revoked = await hubSessionRevoked(sessionSid, sessionIdentity, issuedAt, passwordVersion).catch(() => {
+        // 核对异常按不可用处理，随后拒绝而不是降级放行。
+        return null
+      })
+      if (revoked !== false) {
+        return NextResponse.json(
+          { error: '会话已被吊销或暂时无法校验，请重新登录' },
+          { status: 401, headers: { 'cache-control': 'no-store' } },
+        )
+      }
     }
   } catch {
     // 会话读取失败按匿名处理：宁可按匿名域降级，也不放行会话覆盖
@@ -224,8 +230,15 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   }
 
   if (identitySecret && resolvedIdentity) {
-    // v1 + v2 双发：v2 带时间戳/nonce 由新中枢做重放防护，v1 留给还没升级的中枢
-    Object.assign(headers, await identitySignatureHeaders(identitySecret, resolvedIdentity))
+    // v3 绑定 user/anon 用途；v1/v2 继续双发以兼容尚未升级的中枢。
+    Object.assign(
+      headers,
+      await identitySignatureHeaders(
+        identitySecret,
+        resolvedIdentity,
+        verdict.kind === 'anon' ? 'x-navhub-anon' : 'x-navhub-identity',
+      ),
+    )
   }
 
   /** 统一出口：匿名请求附加绑定 cookie（共享设备防串号） */
@@ -256,29 +269,13 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   const upstreamSignal = AbortSignal.any([deadline.signal, request.signal])
 
   try {
-    // SSRF 2026-11-25：路径段逐段编码拼进中枢 URL，host 钉死到 HUB_BASE 的 hostname。
-    // cleanPath 来自路由 [...path]（用户可控）：'..' 段与 '//' 绝对形式在拼之前就拒，
-    // 不再用字符串拼接 + 默认跟随重定向的裸 fetch（中枢一个 302 就能把响应带离 host）。
-    // 注意：不用默认 guardedFetch——中枢本就是 localhost:8787/docker 内网主机名，
-    // 私网拦截会自断代理；hubGuardOptions 钉死 host+端口并显式放行私网。
-    // 放在 try 内：非法路径抛 SsrfBlockedError，由下方 catch 统一转 403。
-    const target = buildPinnedHubUrl(normalizedBase, cleanPath, url.search).toString()
-    const { response: upstream } = await guardedFetch(
-      target,
-      {
-        ...hubGuardOptions(normalizedBase),
-        timeoutMs,
-        // 备份下载走流式透传、不进内存；上限只拦声明长度，512MB 覆盖全量备份体量。
-        maxBytes: 512 * 1024 * 1024,
-        signal: upstreamSignal,
-      },
-      {
-        method,
-        headers,
-        body,
-        cache: 'no-store',
-      },
-    )
+    const upstream = await fetch(target, {
+      method,
+      headers,
+      body,
+      cache: 'no-store',
+      signal: upstreamSignal,
+    })
 
     // 写成功即失效中枢取数的 Data Cache。为什么需要：hubGet 的收录面取数带
     // revalidate=60，收藏/审核/投稿/安装之后，公开页面最多还会按窗口继续展示旧数据。
@@ -298,7 +295,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
       // 长连接：立刻解除定时器，否则推流会在超时后被 abort 掐断
       deadline.clear()
       return finish(
-        new Response(upstream.body, {
+        new Response(limitResponseStream(upstream.body, MAX_UPSTREAM_RESPONSE_BYTES, upstream.headers), {
           status: upstream.status,
           headers: {
             ...pickResponseHeaders(upstream.headers),
@@ -320,21 +317,22 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
 
     // 二进制响应按字节透传：走 .text() 会按 UTF-8 解码把内容解码坏
     if (!isTextContentType(contentType)) {
+      const bytes = await readBodyLimited(upstream.body, MAX_UPSTREAM_RESPONSE_BYTES, upstream.headers)
       return finish(
-        new NextResponse(await upstream.arrayBuffer(), { status: upstream.status, headers: responseHeaders }),
+        new Response(bytes as BodyInit, { status: upstream.status, headers: responseHeaders }),
       )
     }
 
-    const text = await upstream.text()
+    const bytes = await readBodyLimited(upstream.body, MAX_UPSTREAM_RESPONSE_BYTES, upstream.headers)
+    const text = decodeBody(bytes)
     // 中枢返回空体时给 {}，避免前端 JSON.parse 炸裂
     return finish(new NextResponse(text || '{}', { status: upstream.status, headers: responseHeaders }))
   } catch (error) {
-    // SSRF 2026-11-25：非法路径段或重定向逃离钉死的 host——不是上游故障，403 明说。
-    if (error instanceof SsrfBlockedError) {
+    if (error instanceof UpstreamBodyTooLargeError) {
       return finish(
         NextResponse.json(
-          { error: '上游重定向目标不在允许范围内', code: 'hub_upstream_redirect_blocked' },
-          { status: 403, headers: { 'cache-control': 'no-store' } },
+          { error: '中枢响应体超过代理上限', code: 'hub_upstream_too_large', retryable: false },
+          { status: 502, headers: { 'cache-control': 'no-store' } },
         ),
       )
     }

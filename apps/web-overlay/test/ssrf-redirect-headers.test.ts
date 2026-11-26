@@ -39,17 +39,18 @@ describe("SSRF 守卫跨源重定向剥离敏感头", () => {
     expect(AI_SSRF).toMatch(/origin\s*!==\s*prevOrigin|prevOrigin\s*!==\s*\w+\.origin/)
   });
 
-  it("web 层不再自带第二份实现（收口为薄壳 re-export）", () => {
+  it("web 层保持独立实现与敏感头集合（依赖边界禁止 @navhub/*）", () => {
     // overlay 是独立 vendored 底座，禁止依赖 @navhub/*；两侧行为由 parity 测试守
     expect(GUARD).not.toContain("from '@navhub/ai/ssrf'")
-    // 薄壳里不应再出现独立的敏感头集合定义（那是权威层的职责）
-    expect(GUARD).not.toContain("SENSITIVE_REDIRECT_HEADERS = new Set")
+    expect(GUARD).toContain("SENSITIVE_REDIRECT_HEADERS = new Set")
   });
 
-  it("web 层自带独立的 guardedFetch 实现（依赖边界禁止 @navhub/*）", () => {
+  it("web 层自带独立的 guardedFetch 实现与逐跳重定向校验", () => {
     // overlay 不能依赖 workspace 包，因此恢复独立实现；
     // 两侧行为一致性由 ssrf-parity.test.ts 守。
     expect(GUARD).toContain("export async function guardedFetch")
-    expect(GUARD).toContain("redirect: 'manual'")
+    expect(GUARD).toMatch(/for \(let hop = 0; hop <= opts\.maxRedirects; hop\+\+\)/)
+    expect(GUARD).toContain("assertUrlShape(next)")
+    expect(GUARD).toContain("stripSensitiveHeaders(carriedHeaders)")
   });
 });

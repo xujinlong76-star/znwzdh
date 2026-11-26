@@ -16,6 +16,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList } from '@/registry/new-york/ui/command'
@@ -264,8 +265,9 @@ export function NavDigitBadge({ index }: { index: number }) {
 
 /**
  * 面板底部快捷键提示（04 §7.3）：文案一字不差——
- * `↑↓ 选择 · Enter 打开 · Alt+1–0 直达前 10 条 · Esc 关闭`
+ * `↑↓ 选择 · Enter 搜索 · Alt+1–0 直达前 10 条 · Esc 关闭`
  *（`·` 为分隔，`–` 为 en dash；kbd 键位芯片只影响样式，不影响文案）。
+ * F-01：回车不再打开首条结果，改为进搜索结果页，文案随之从「打开」改「搜索」。
  */
 export function PaletteFooterHint() {
   return (
@@ -278,7 +280,7 @@ export function PaletteFooterHint() {
       {' · '}
       <span className="inline-flex items-center gap-1">
         <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Enter</kbd>
-        {' '}打开
+        {' '}搜索
       </span>
       {' · '}
       <span className="inline-flex items-center gap-1">
@@ -295,6 +297,7 @@ export function PaletteFooterHint() {
 }
 
 export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导航…（中文 / 拼音 / 语义）（按 / 快速搜索）', onOpenDiscoveryDialog }: SearchPaletteProps) {
+  const router = useRouter()
   const [query, setQuery] = useState('')
   const [isFocused, setIsFocused] = useState(false)
   /**
@@ -1429,8 +1432,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
    * lib/palette-actions 的 buildPaletteNavItems，渲染与导航共用它，
    * 改一边不改另一边索引就会错位。
    * 站点命中里 site 为空的脏数据不渲染，也不进导航列表——否则索引会错位。
-   * 建议行也在列表里：↑↓ 能走到建议上，回车采纳；但「没有高亮时回车」的
-   * 默认目标仍是第一条结果（见 onSearchKeyDown），不能被建议抢走。
+   * 建议行也在列表里：↑↓ 能走到建议上，点行采纳（填回输入框或进专题页）；
+   * 回车不再打开首条结果（F-01：回车进搜索结果页，见 onSearchKeyDown）。
    */
   /**
    * 客户端重排（2026-11-20 搜索假空态与相关性修复）：后端 RRF 会把弱语义命中
@@ -1497,6 +1500,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       // 不 preventDefault。写法照抄 batch-keyboard.ts 与 cmdk 源码守卫
       // 的同一条件（isComposing || keyCode === 229）。
       if (e.nativeEvent.isComposing || e.keyCode === 229) return
+      // F-01：回车用的查询词以输入框的实时 DOM 值为准（inputRef.current?.value），
+      // 只在 input 未挂载时回落到 React state 的 query。state 是异步刷新的，
+      // 只依赖它，回车就可能拿着上一拍的词走；DOM 值在 keydown 这一刻恒为最新。
+      const liveQ = (inputRef.current?.value ?? query).trim()
       if (e.key === 'Escape') {
         e.preventDefault()
         setIsFocused(false)
@@ -1506,7 +1513,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       if (e.key === 'Enter' && aiMode) {
         // AI 模式：回车不打开站内结果，直接把整句查询发给 AI 找站。
         // 空查询不发（抽屉打开却没问题，等于白点一下）。
-        const q = query.trim()
+        const q = liveQ
         if (!q) return
         e.preventDefault()
         setIsFocused(false)
@@ -1524,11 +1531,62 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           e.preventDefault()
           return
         }
-        const q = query.trim()
+        const q = liveQ
         if (!q) return
         e.preventDefault()
         setIsFocused(true)
         setSimilarSubmitReq((prev) => ({ query: q, resetTrail: true, seq: (prev?.seq ?? 0) + 1 }))
+        return
+      }
+      // F-01：默认模式回车进搜索结果页（/search?q=<query>），与面板底部
+      // 「查看全部结果」同一个目的地（searchHref({ q })）。
+      // 这一支必须放在 `if (!showResults) return` 门之前：showResults =
+      // isFocused && query 非空，isFocused 是 React state——外部 mousedown
+      // 等路径可以把它置 false 而 DOM 焦点仍在输入框里（state 与 DOM 焦点
+      // 脱节），门后的回车会被整段吞掉；A 线只改了门后的分支，早期回车
+      // 20 次里仍有 2 次无反应。放在门前、且查询词取 liveQ（实时 DOM 值），
+      // 回车就不再依赖 isFocused / 结果是否已加载 / 结果有几条三种时序：
+      // 已加载、加载中、零结果都进 /search?q=。空查询仍 no-op。
+      // 快捷链接 / omni 命令的优先级不变（从 liveQ 重算，不用可能滞后的
+      // quicklinkMatch memo）；AI / 找相似模式在前面已拦截，不受影响。
+      // 高亮行 + 回车也不再打开该行：要打开某行请点它或用 Alt+数字直达。
+      if (e.key === 'Enter') {
+        // 优先级：quicklink 精确匹配 > 内置引擎 > 搜索结果页。
+        // 前缀命中但代入失败（参数超 500 字符 / 模板已不安全）时 toast、
+        // 不开页，也不落到内置引擎或搜索结果页——否则超长参数会悄悄走另一条路。
+        // 未知前缀 / 模板无占位符时不拦截：落到后面的普通搜索（Enter 进
+        // 结果页，与明示行文案「按 Enter 按普通搜索」一致）。
+        const liveQuicklink = matchQuicklinkCommand(liveQ, quicklinkEntries)
+        if (liveQuicklink.kind === 'hit') {
+          e.preventDefault()
+          if (liveQuicklink.url) {
+            openQuicklink({
+              key: `quicklink-${liveQuicklink.entry.siteId}`,
+              entry: liveQuicklink.entry,
+              arg: liveQuicklink.arg,
+              url: liveQuicklink.url,
+            })
+          } else {
+            toast({
+              title: '快捷链接打不开',
+              description: '参数超过 500 字符或模板不安全，已拦截。',
+              variant: 'destructive',
+            })
+          }
+          return
+        }
+        const omni = parseOmniCommand(liveQ)
+        if (omni) {
+          e.preventDefault()
+          safeWindowOpen(omni.url)
+          setIsFocused(false)
+          return
+        }
+        const q = liveQ
+        if (!q) return
+        e.preventDefault()
+        setIsFocused(false)
+        router.push(searchHref({ q }))
         return
       }
       if (!showResults) return
@@ -1551,9 +1609,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         const digit = altDigitFromKeyOrCode(e.key, e.code)
         const target = digit !== null ? altDigitTargetIndex(digit, navItems.length) : null
         if (target !== null) {
-          // 与 Enter 打开同一行完全相同的打开逻辑：点真实元素（站点行 onClick
+          // 与点击打开同一行完全相同的打开逻辑：点真实元素（站点行 onClick
           // 打开、插件行 Link 跳转、建议行采纳），打开后按各行既有行为关闭面板
           // 并 recordOfflineVisit；先滚进可视区再打开（§7.4）。
+          // F-01 后 Enter 不再走这条打开逻辑（回车进结果页），Alt+数字仍走这里。
           const el = findOptionElement(target)
           if (el) {
             e.preventDefault()
@@ -1565,58 +1624,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         // Alt+数字但超出结果数（如只有 3 条时 Alt+5）：静默无操作，不落到其他分支。
         if (digit !== null) return
       }
-      if (e.key === 'Enter') {
-        // 优先级：quicklink 精确匹配 > 内置引擎 > 导航第一条结果。
-        // 前缀命中但代入失败（参数超 500 字符 / 模板已不安全）时 toast、
-        // 不开页，也不落到内置引擎或导航首条——否则超长参数会悄悄走另一条路。
-        // 未知前缀 / 模板无占位符时不拦截：落到后面的普通搜索（Enter 打开
-        // 首条结果，与明示行文案「按 Enter 按普通搜索」一致）。
-        if (quicklinkMatch.kind === 'hit') {
-          e.preventDefault()
-          if (quicklinkMatch.url) {
-            openQuicklink({
-              key: `quicklink-${quicklinkMatch.entry.siteId}`,
-              entry: quicklinkMatch.entry,
-              arg: quicklinkMatch.arg,
-              url: quicklinkMatch.url,
-            })
-          } else {
-            toast({
-              title: '快捷链接打不开',
-              description: '参数超过 500 字符或模板不安全，已拦截。',
-              variant: 'destructive',
-            })
-          }
-          return
-        }
-        const omni = parseOmniCommand(query)
-        if (omni) {
-          e.preventDefault()
-          safeWindowOpen(omni.url)
-          setIsFocused(false)
-          return
-        }
-        if (navItems.length === 0) return
-        // 没有高亮项时回车 = 打开第一条结果。原实现在 activeIndex === -1（默认态）
-        // 直接忽略，「输完词直接回车」这个最常见的动作等于完全没反应。
-        // 默认目标必须是第一条「结果」（DIY/收藏/操作/工具/插件/站点），而不是第一条建议：
-        // 建议是用来采纳改词的，直接回车的用户要的是打开，不是换词。
-        const firstResultIndex = navItems.findIndex((item) => item.kind !== 'suggestion')
-        const target = activeIndex >= 0 ? activeIndex : firstResultIndex >= 0 ? firstResultIndex : 0
-        // 交给真实元素处理：站点行是 role=option 的 div（onClick 打开），插件行是 Link（路由跳转）
-        const el = findOptionElement(target)
-        if (el) {
-          e.preventDefault()
-          el.click()
-        }
-        return
-      }
       if (e.key === 'Escape') {
         setIsFocused(false)
         inputRef.current?.blur()
       }
     },
-    [showResults, navItems.length, activeIndex, findOptionElement, aiMode, similarMode, query, quicklinkMatch, openQuicklink, toast],
+    [showResults, navItems.length, activeIndex, findOptionElement, aiMode, similarMode, query, quicklinkEntries, openQuicklink, toast, router],
   )
 
   const panel = planSearchPanel({
@@ -2624,9 +2637,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 </div>
               )}
               {/* 分组建议（research #2）：打字时即时给出的快捷入口，排在结果分组之前。
-                  历史 / 专题 / 相关搜索三组，匹配词加粗（Highlighted），↑↓/Enter 可达：
+                  历史 / 专题 / 相关搜索三组，匹配词加粗（Highlighted），↑↓ 可达：
                   建议行与 DIY/插件/站点行共用同一条 navItems 扁平列表，DOM 顺序
-                  即导航顺序；回车采纳建议（历史/相关搜索填回输入框，专题直接进页）。 */}
+                  即导航顺序；点建议行采纳（历史/相关搜索填回输入框，专题直接进页），
+                  回车进结果页（F-01，不再回车采纳）。 */}
               {suggestionGroups.map((group) => (
                 <div key={group.kind} className="border-b border-border/60">
                   <div className="px-3.5 py-2 flex items-center gap-1.5 bg-muted/30">

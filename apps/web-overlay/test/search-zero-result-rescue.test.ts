@@ -91,9 +91,10 @@ describe("分组建议下拉：键盘可达", () => {
     );
   });
 
-  it("没有高亮时回车打开第一条结果，而不是第一条建议", () => {
-    expect(src).toContain("navItems.findIndex((item) => item.kind !== 'suggestion')");
-    expect(src).toContain("firstResultIndex >= 0 ? firstResultIndex : 0");
+  it("回车进搜索结果页，而不是打开第一条结果（F-01）", () => {
+    expect(src).toContain("router.push(searchHref({ q }))");
+    expect(src).not.toContain("navItems.findIndex((item) => item.kind !== 'suggestion')");
+    expect(src).not.toContain("firstResultIndex >= 0 ? firstResultIndex : 0");
   });
 
   it("采纳建议只改查询词、不关闭面板（可继续改词）", () => {

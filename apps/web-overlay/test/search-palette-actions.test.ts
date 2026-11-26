@@ -332,7 +332,7 @@ describe('buildPaletteNavItems', () => {
     })
   })
 
-  it('无高亮回车默认打开第一条非建议结果：有收藏时是收藏，没有时顺延到操作 / 工具', () => {
+  it('键盘导航顺序默认首个非建议结果：有收藏时是收藏，没有时顺延到操作 / 工具（F-01 后回车进结果页，不再打开它）', () => {
     const withFavorite = buildPaletteNavItems({
       suggestionIds: ['suggestion-history:react'],
       diyIds: [],

@@ -86,9 +86,9 @@ describe('SearchPalette 接线（源码守卫）', () => {
     expect(src).toContain('resolveAiModeInput(e.target.value)')
   })
 
-  it('普通搜索行为没动：回车仍打开第一条结果、方向键仍在', () => {
+  it('普通搜索行为：回车进结果页（F-01）、方向键仍在', () => {
     expect(src).toContain("e.key === 'ArrowDown'")
     expect(src).toContain("e.key === 'Enter'")
-    expect(src).toContain('findOptionElement(target)')
+    expect(src).toContain('router.push(searchHref({ q }))')
   })
 })

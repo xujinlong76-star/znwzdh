@@ -11,7 +11,8 @@
  *    因为 SearchPalette 整组件在 node 环境挂不起来（hooks + 检索 + 面板状态）。
  *
  * 真机才能验的（记为「需真人/真机验证」，不伪造通过）：
- *  - D1 的端到端：真键盘 Alt+1 打开第 1 条且与 Enter 同结果（含 recordOfflineVisit）；
+ *  - D1 的端到端：真键盘 Alt+1 打开第 1 条（含 recordOfflineVisit；F-01 后
+ *    Enter 不再与 Alt+1 同结果——回车进搜索结果页，Alt+1 仍打开对应行）；
  *  - D2 的真键盘：输入框里敲 123 正常进文本、Ctrl+1/⌘+1 不触发本站直达；
  *  - macOS 上 Option+数字的 e.key 是特殊字符（¡/™ 等）而非数字，Alt+数字
  *    在 macOS 键盘上可能不触发——方案只写了 e.key 口径，须真机核实后定是否补 e.code；
@@ -96,9 +97,9 @@ describe('NavDigitBadge（D3：徽标）', () => {
 })
 
 describe('PaletteFooterHint（D3：底部提示行文案逐字）', () => {
-  it('文案一字不差：↑↓ 选择 · Enter 打开 · Alt+1–0 直达前 10 条 · Esc 关闭', () => {
+  it('文案一字不差：↑↓ 选择 · Enter 搜索 · Alt+1–0 直达前 10 条 · Esc 关闭', () => {
     const text = textOf(renderToString(createElement(PaletteFooterHint)))
-    expect(text).toBe('↑↓ 选择 · Enter 打开 · Alt+1–0 直达前 10 条 · Esc 关闭')
+    expect(text).toBe('↑↓ 选择 · Enter 搜索 · Alt+1–0 直达前 10 条 · Esc 关闭')
   })
 
   it('标点是全角 ·（U+00B7）与 en dash –（U+2013），不是半角点与连字符', () => {
@@ -118,25 +119,27 @@ describe('PaletteFooterHint（D3：底部提示行文案逐字）', () => {
 })
 
 describe('onSearchKeyDown 的 Alt+数字分支（D1/D2 接线守卫）', () => {
-  it('分支在 ArrowDown/ArrowUp 之后、Enter 之前', () => {
-    const arrowAt = paletteSrc.indexOf("e.key === 'ArrowUp'")
-    // W6b 补丁 3：Alt 分支先经 altDigitFromKeyOrCode(e.key, e.code) 取数字
-    // （macOS e.code 回退），再调 altDigitTargetIndex(digit, …)
-    const altAt = paletteSrc.indexOf('altDigitFromKeyOrCode(e.key, e.code)')
+  it('分支顺序（F-01）：默认 Enter 在 showResults 门前，Alt+数字在门后方向键之后', () => {
+    // F-01：默认 Enter 必须在 `if (!showResults) return` 之前处理，否则
+    // isFocused 脱节时回车被整段吞掉；Alt+数字仍在门后（它依赖结果列表）。
     const enterAt = paletteSrc.indexOf("if (e.key === 'Enter') {")
-    expect(arrowAt).toBeGreaterThan(-1)
-    expect(altAt).toBeGreaterThan(arrowAt)
-    expect(enterAt).toBeGreaterThan(altAt)
+    // 门用 6 空格缩进的 handler 内版本：注释里也写着这串字、navItems 里还有
+    // 4 空格的 `if (!showResults) return []`，裸串 indexOf 会找错。
+    const gateAt = paletteSrc.indexOf('      if (!showResults) return')
+    const altAt = paletteSrc.indexOf('altDigitFromKeyOrCode(e.key, e.code)')
+    expect(enterAt).toBeGreaterThan(-1)
+    expect(gateAt).toBeGreaterThan(enterAt)
+    expect(altAt).toBeGreaterThan(gateAt)
   })
 
   it('触发条件：altKey 且 meta/ctrl 不同时按下（D2：裸数字与浏览器组合键不触发）', () => {
     expect(paletteSrc).toContain('if (e.altKey && !e.metaKey && !e.ctrlKey) {')
   })
 
-  it('命中后与 Enter 打开同一行：先滚进可视区再点真实元素（与 Enter 分支同款）', () => {
+  it('命中后与点击打开同一行：先滚进可视区再点真实元素（F-01 后 Enter 不再走这条打开逻辑）', () => {
     const altAt = paletteSrc.indexOf('altDigitFromKeyOrCode(e.key, e.code)')
-    const enterAt = paletteSrc.indexOf("if (e.key === 'Enter') {")
-    const segment = paletteSrc.slice(altAt, enterAt)
+    const escapeAt = paletteSrc.indexOf("if (e.key === 'Escape')", altAt)
+    const segment = paletteSrc.slice(altAt, escapeAt)
     expect(segment).toContain('const el = findOptionElement(target)')
     expect(segment).toContain("el.scrollIntoView({ block: 'nearest' })")
     expect(segment).toContain('el.click()')

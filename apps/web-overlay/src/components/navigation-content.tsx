@@ -167,6 +167,13 @@ import {
   isSafeSiteHref,
 } from '@/lib/modular/diy-presets'
 import { filterNavigationByWorkspace } from '@/lib/modular/workspace-matching'
+import {
+  readStoredWorkspace,
+  readWorkspaceParam,
+  resolveWorkspace,
+  syncWorkspaceToUrl,
+  writeStoredWorkspace,
+} from '@/lib/workspace-persist'
 import { countCategorySites, estimateTruncatedSectionHeight } from '@/lib/modular/category-counts'
 import {
   combineAndSortCategories,
@@ -720,6 +727,41 @@ export function NavigationContent({
       setCollapsedCategoryIds(toCollapse)
     }
   }, [expandAllCategories, setCollapsedCategoryIds, navigationData.navigationItems])
+
+  // U-362：工作区选择持久化 + `?workspace=` 深链。
+  // 挂载时恢复一次：URL 参数（有效时）> localStorage > 'all'；非法值回落默认，
+  // 并把解析结果规范化回存储与 URL（非法参被替换、恢复出的非默认选择补进 URL）。
+  // did-init 守卫：handleWorkspaceChange 的依赖含 navigationItems，身份变化时
+  // 不能重跑恢复——否则会把用户切走后的选择再拉回旧值。
+  const workspaceInitDoneRef = useRef(false)
+  useEffect(() => {
+    if (workspaceInitDoneRef.current) return
+    workspaceInitDoneRef.current = true
+    const resolved = resolveWorkspace({
+      param: readWorkspaceParam(window.location.search),
+      stored: readStoredWorkspace(),
+    })
+    writeStoredWorkspace(resolved)
+    syncWorkspaceToUrl(resolved)
+    if (resolved !== 'all') {
+      handleWorkspaceChange(resolved)
+    }
+  }, [handleWorkspaceChange])
+
+  // U-362：选择变化时写盘 + 同步 URL（replaceState，不污染后退历史）。
+  // 跳过挂载那一轮：初始化 effect 已按解析结果写过一次，避免把启动态 'all'
+  // 回写覆盖恢复值；初始化触发的状态更新会在下一轮按新值再写一次（同值幂等）。
+  // 其它直接 setActiveWorkspace 的路径（恢复隐藏分类、"查看全部站点"）也经由此
+  // 同步持久化，不必逐处改 handleWorkspaceChange。
+  const workspaceFirstSyncRef = useRef(true)
+  useEffect(() => {
+    if (workspaceFirstSyncRef.current) {
+      workspaceFirstSyncRef.current = false
+      return
+    }
+    writeStoredWorkspace(activeWorkspace)
+    syncWorkspaceToUrl(activeWorkspace)
+  }, [activeWorkspace])
 
   /**
    * P0-2：工具栏 7 个打开/切换回调全部 useCallback 化——它们传给 memo 的

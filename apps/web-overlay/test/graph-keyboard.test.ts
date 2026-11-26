@@ -319,3 +319,35 @@ describe("图谱拖拽平移：rAF 合帧", () => {
     expect(cleanup).toContain("cancelAnimationFrame(dragRafRef.current)");
   });
 });
+
+describe("簇 chip 可点筛选（F-05，2026-11-24）", () => {
+  const src = overlaySource(GRAPH)
+
+  it("chips 是真按钮（不是纯 <span>）：type + aria-pressed + onClick 切换", () => {
+    const start = src.indexOf('aria-label="本次生态簇"')
+    expect(start, "找不到本次生态簇 chips 区").toBeGreaterThan(-1)
+    const section = src.slice(start, src.indexOf("</div>", start) + 6)
+    expect(section).toContain("<button")
+    expect(section).toContain('type="button"')
+    expect(section).toContain("aria-pressed={active}")
+    expect(section).toContain("setActiveClusterKey((k) => (k === c.key ? null : c.key))")
+    expect(section).not.toContain("<span")
+  })
+
+  it("语义是筛选：filteredNodes 按激活簇的成员 id 过滤", () => {
+    expect(src).toContain("activeClusterNodeIds")
+    expect(src).toContain("cluster.siteIds.map((id) => `db_${id}`)")
+    expect(src).toContain("const clusterMatch = activeClusterNodeIds ? activeClusterNodeIds.has(n.id) : true")
+    expect(src).toContain("return catMatch && legendMatch && clusterMatch")
+  })
+
+  it("簇集合变化时过期筛选自动取消（换一批/场景/雷达不留僵尸过滤）", () => {
+    expect(src).toContain("if (activeClusterKey && !clusters.some((c) => c.key === activeClusterKey))")
+    expect(src).toContain("setActiveClusterKey(null)")
+  })
+
+  it("键盘漫游仍走 lib/graph-nav（本修法不动 graph-nav.ts）", () => {
+    expect(src).toContain("nextNodeInDirection(navPoints, fromId, direction)")
+    expect(src).toContain("rovingNodeId(displayNodes, focusedNodeId)")
+  })
+})

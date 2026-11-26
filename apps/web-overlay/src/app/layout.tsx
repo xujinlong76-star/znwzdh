@@ -295,7 +295,7 @@ export default async function RootLayout({
             {children}
           </Providers>
           {/* 账号级偏好落地：登录后把云端主题/首页模块隐藏同步到本机运行时 */}
-          <UserPrefsSync />
+          <UserPrefsSync defaultTheme={resolveDefaultTheme(settings)} />
           {/* 移动端底部导航（sm 以下可见；footer 已预留安全区，勿再加负 margin） */}
           <MobileNav />
           {/* 网络状态提示：全站可见。离线时告诉用户「是你的网络断了，不是站点没数据」 */}

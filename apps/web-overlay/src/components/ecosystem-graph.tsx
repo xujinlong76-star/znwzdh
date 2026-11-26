@@ -211,6 +211,11 @@ export function EcosystemGraph() {
   const [radarCenter, setRadarCenter] = useState<FlatSite | null>(null)
   /** 图例过滤器：单选 toggle，再点一次取消 */
   const [legendFilter, setLegendFilter] = useState<'all' | 'opensource' | 'alternative' | 'ecosystem'>('all')
+  /** 簇筛选：点「本次生态簇」chip 只看该簇成员（单选 toggle，再点取消）。
+   * 2026-11-26 F-05：chips 原先是纯 <span> 无 onClick，点了图无任何变化。
+   * 语义 = 筛选（只留簇成员节点与簇内边），不是高亮；再点同一 chip 取消。
+   * 键盘漫游（lib/graph-nav.ts）不改：navPoints 取自 displayNodes，本就跟随筛选。 */
+  const [activeClusterKey, setActiveClusterKey] = useState<string | null>(null)
   /** 本次抽中的子簇（工具栏 chips 展示用） */
   const [clusters, setClusters] = useState<GraphCluster[]>([])
   /** 全站检索下拉 */
@@ -601,6 +606,22 @@ export function EcosystemGraph() {
     return () => ro.disconnect()
   }, [])
 
+  /** 激活簇的成员节点 id（`db_${siteId}`）；簇不存在/未激活时为 null = 不筛选。 */
+  const activeClusterNodeIds = useMemo(() => {
+    if (!activeClusterKey) return null
+    const cluster = clusters.find((c) => c.key === activeClusterKey)
+    if (!cluster) return null
+    return new Set(cluster.siteIds.map((id) => `db_${id}`))
+  }, [clusters, activeClusterKey])
+
+  // 换一批/场景切换/雷达后簇集合会变：激活的簇不在新集合里时自动取消筛选，
+  // 否则画布会被一个已不存在的簇筛空。
+  useEffect(() => {
+    if (activeClusterKey && !clusters.some((c) => c.key === activeClusterKey)) {
+      setActiveClusterKey(null)
+    }
+  }, [clusters, activeClusterKey])
+
   // 过滤后的节点与连线
   const filteredNodes = useMemo(() => {
     return nodes.filter((n) => {
@@ -611,9 +632,11 @@ export function EcosystemGraph() {
       const catMatch = radarCenter ? true : focusedCategory ? true : activeCategory === 'all' || n.category === activeCategory
       // 图例过滤器「只看开源」：只要开源节点（边类过滤在 visibleEdges 里做）。
       const legendMatch = legendFilter === 'opensource' ? !!n.openSource : true
-      return catMatch && legendMatch
+      // 簇筛选（F-05）：只留激活簇的成员节点；边由 visibleEdges 按节点集自动收窄。
+      const clusterMatch = activeClusterNodeIds ? activeClusterNodeIds.has(n.id) : true
+      return catMatch && legendMatch && clusterMatch
     })
-  }, [nodes, activeCategory, legendFilter, focusedCategory, radarCenter])
+  }, [nodes, activeCategory, legendFilter, focusedCategory, radarCenter, activeClusterNodeIds])
 
   const nodeMap = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
   const filteredNodeIds = useMemo(() => new Set(filteredNodes.map((n) => n.id)), [filteredNodes])
@@ -689,6 +712,7 @@ export function EcosystemGraph() {
     setSearchQuery('')
     setSearchOpen(false)
     setLegendFilter('all')
+    setActiveClusterKey(null)
     setRadarCenter(site)
   }, [])
 
@@ -725,6 +749,7 @@ export function EcosystemGraph() {
   /** 场景切换：分类域里点场景 = 切回全局场景（与「查看全部」同一语义） */
   const handleSceneClick = (cat: 'all' | 'dev' | 'design' | 'ai' | 'efficiency') => {
     setSelectedNode(null)
+    setActiveClusterKey(null)
     setRadarCenter(null)
     if (focusedCategory) {
       // 先本地清掉焦点即刻重抽，再把 URL 写回 /graph（刷新后不再跳回分类）。
@@ -970,18 +995,28 @@ export function EcosystemGraph() {
               ))}
             </div>
 
-            {/* 本次抽中的生态簇（悬停看成员） */}
+            {/* 本次抽中的生态簇：可点 chip，点即只看该簇成员（再点取消）。
+                2026-11-26 F-05：此前是纯 <span>，点击无任何反应。 */}
             {clusters.length > 0 && !radarCenter && (
-              <div className="flex items-center gap-1 shrink-0" aria-label="本次生态簇">
-                {clusters.map((c) => (
-                  <span
-                    key={c.key}
-                    title={`「${c.label}」成员：${c.siteIds.map((id) => nodeMap.get(`db_${id}`)?.title || id).join('、')}`}
-                    className="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium bg-violet-500/10 text-violet-700 dark:text-violet-300 border border-violet-500/25 whitespace-nowrap"
-                  >
-                    {c.label}·{c.siteIds.length}
-                  </span>
-                ))}
+              <div className="flex items-center gap-1 shrink-0" role="group" aria-label="本次生态簇">
+                {clusters.map((c) => {
+                  const active = activeClusterKey === c.key
+                  return (
+                    <button
+                      key={c.key}
+                      type="button"
+                      aria-pressed={active}
+                      title={`「${c.label}」成员：${c.siteIds.map((id) => nodeMap.get(`db_${id}`)?.title || id).join('、')}（点击只看该簇，再点一次取消）`}
+                      onClick={() => {
+                        setActiveClusterKey((k) => (k === c.key ? null : c.key))
+                        setSelectedNode(null)
+                      }}
+                      className={`inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium border whitespace-nowrap transition-colors cursor-pointer ${active ? 'bg-violet-500/25 text-violet-800 dark:text-violet-200 border-violet-500/50 ring-2 ring-violet-500/30' : 'bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-500/25 hover:bg-violet-500/20'}`}
+                    >
+                      {c.label}·{c.siteIds.length}
+                    </button>
+                  )
+                })}
               </div>
             )}
           </div>
@@ -1000,7 +1035,7 @@ export function EcosystemGraph() {
             className="h-7 text-xs px-2.5 rounded-lg shrink-0 gap-1.5"
             title="重新抽取另一批高连通生态簇（同类簇结构，不退回随机抽样）"
             disabled={radarCenter !== null || dataSource !== 'live'}
-            onClick={() => { setSampleRound((r) => r + 1); setSelectedNode(null); }}
+            onClick={() => { setSampleRound((r) => r + 1); setSelectedNode(null); setActiveClusterKey(null) }}
           >
             <RefreshCw className="w-3.5 h-3.5" />
             换一批生态簇

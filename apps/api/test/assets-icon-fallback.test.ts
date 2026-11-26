@@ -158,4 +158,29 @@ describe("GET /api/assets/icon 兜底路径", () => {
     expect(res.statusCode).toBe(400);
     expect(probeLog.outbound).toHaveLength(before);
   });
+
+  it("出站抓取超 300/min 时回 200 SVG 兜底而不是 429（F-07/F-12）", async () => {
+    // 机制：路由级限流已放宽到 3000/min（缓存命中零出站成本）；贵的出站抓取
+    // 另由 allowOutboundFetch 按 300/min/IP 限，超限直接回 SVG 兜底 200。
+    // 400 个不同 host 连续 miss：全部 200、无 429，且出站探测数 < 400×2
+    // （限流确实介入）；被限流的 host 也进了内存缓存，重请求不再出站。
+    const outboundBefore = probeLog.outbound.length;
+    const tag = Math.random().toString(36).slice(2, 8);
+    const statuses: number[] = [];
+    for (let i = 0; i < 400; i++) {
+      const res = await icon(`https://throttle-${tag}-${i}.example.com`);
+      statuses.push(res.statusCode);
+      expect(res.headers["content-type"]).toContain("image/svg+xml");
+    }
+    expect(statuses.every((s) => s === 200)).toBe(true);
+    const growth = probeLog.outbound.length - outboundBefore;
+    expect(growth).toBeLessThan(400 * 2);
+    expect(growth % 2).toBe(0);
+
+    const beforeAgain = probeLog.outbound.length;
+    const again = await icon(`https://throttle-${tag}-399.example.com`);
+    expect(again.statusCode).toBe(200);
+    expect(again.headers["content-type"]).toContain("image/svg+xml");
+    expect(probeLog.outbound).toHaveLength(beforeAgain);
+  });
 });

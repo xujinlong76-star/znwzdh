@@ -67,6 +67,36 @@ const PRESET_GRADIENTS = [
   { from: "#0ea5e9", to: "#6366f1" },
 ] as const;
 
+/**
+ * 出站抓取的按 IP 滑窗计数（F-07/F-12，2026-11-26）。
+ *
+ * 路由级限流按「请求数」计（见下 max: 3000），但首页快速滚动一次就
+ * 发出数百个图标请求——其中绝大多数是内存/磁盘缓存命中，零出站成本，
+ * 却一样被 300/min 挡出 429（实测：600 请求/7.8 秒 → 300×200 + 300×429）。
+ * 贵的是出站抓取（DNS + favicon 探测），所以贵的这条路单独再限一次：
+ * 每 IP 每分钟最多 300 次出站抓取；超了不 429、不出站，直接回与 DNS
+ * 失败同款的确定性 SVG 兜底（200，照常进内存缓存），图标只降级不报错。
+ *
+ * 移植自 C 线分支 10d8522f（未合 main），按当前 main（已含 P1-4 并发
+ * 抓取上限 8）重新编号：本限流是第 4 节，SSRF/探测/落盘/兜底顺延一位。
+ */
+const MISS_WINDOW_MS = 60_000;
+const MAX_OUTBOUND_FETCHES_PER_MIN = 300;
+const outboundMissLog = new Map<string, number[]>();
+
+function allowOutboundFetch(ip: string): boolean {
+  const now = Date.now();
+  const log = outboundMissLog.get(ip) ?? [];
+  const fresh = log.filter((t) => now - t < MISS_WINDOW_MS);
+  if (fresh.length >= MAX_OUTBOUND_FETCHES_PER_MIN) {
+    outboundMissLog.set(ip, fresh);
+    return false;
+  }
+  fresh.push(now);
+  outboundMissLog.set(ip, fresh);
+  return true;
+}
+
 function fnv1aHash(str: string): number {
   let hash = 2166136261;
   for (let i = 0; i < str.length; i++) {
@@ -112,7 +142,11 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
     {
       config: {
         scope: "public",
-        rateLimit: { max: 300, timeWindow: "1 minute" },
+        // F-07/F-12（2026-11-26）：300/min 挡不住首页合法的突发量——单页
+        // 400+ 站点图标在一次快速滚动里全量到达，缓存命中也被 429 挡掉。
+        // 命中缓存的请求零出站成本，放宽到 3000/min；真正的出站抓取另由
+        // 下面的 allowOutboundFetch 按 300/min 单独限（超限回 SVG 兜底，不 429）。
+        rateLimit: { max: 3000, timeWindow: "1 minute" },
       },
     },
     async (req, reply) => {
@@ -188,7 +222,29 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
         // 磁盘缺失、损坏或类型不合规，继续向下抓取
       }
 
-      // 4. SSRF 安全防线：进行 DNS 解析与内网 IP 过滤
+      // 4. 出站抓取限流（F-07/F-12）：只有缓存未命中的请求才走到这里。
+      //    超限不 429、不出站，直接回确定性 SVG 兜底（200，进内存缓存——
+      //    与 DNS 失败同款待遇，前端 <img> 不报错，图标降级为首字母徽标）。
+      if (!allowOutboundFetch(req.ip)) {
+        const throttledSvg = generateFallbackSvg(monogram, hostname);
+        const throttledBuf = Buffer.from(throttledSvg, "utf-8");
+        const throttledEtag = `W/"svg_${hostHash}"`;
+        rememberIcon(hostHash, {
+          buffer: throttledBuf,
+          contentType: "image/svg+xml",
+          etag: throttledEtag,
+          updatedAt: Date.now(),
+        });
+        return reply
+          .header("Content-Type", "image/svg+xml")
+          .header("Cache-Control", "public, max-age=604800")
+          .header("Content-Security-Policy", ICON_CSP_HEADER)
+          .header("X-Content-Type-Options", "nosniff")
+          .header("ETag", throttledEtag)
+          .send(throttledSvg);
+      }
+
+      // 5. SSRF 安全防线：进行 DNS 解析与内网 IP 过滤
       try {
         const addresses = await lookup(hostname, { all: true });
         for (const addr of addresses) {
@@ -214,7 +270,7 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
           .send(fallbackSvg);
       }
 
-      // 5. 服务端发起探测抓取（带 SSRF 防护：guardedFetch 逐跳校验 + maxBytes 截断）
+      // 6. 服务端发起探测抓取（带 SSRF 防护：guardedFetch 逐跳校验 + maxBytes 截断）
       // P0-1 修复：此前裸 fetch 完整绕过 ssrf-guard 的 DNS 重绑定/重定向/MIME 防线，
       // 且 image/svg+xml 被缓存后以本站源回显（存储型 XSS）。修复三管齐下：
       //   a) Accept 头排除 svg+xml；b) Content-Type 白名单只放位图；
@@ -280,7 +336,7 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
         clearTimeout(timeout);
       }
 
-      // 6. 成功抓取 -> 落地磁盘与内存缓存
+      // 7. 成功抓取 -> 落地磁盘与内存缓存
       if (iconBuffer) {
         const etag = `W/"${createHash("md5").update(iconBuffer).digest("hex")}"`;
         rememberIcon(hostHash, { buffer: iconBuffer, contentType, etag, updatedAt: Date.now() });
@@ -303,7 +359,7 @@ export const assetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app) 
           .send(iconBuffer);
       }
 
-      // 7. 兜底策略：生成高质感 SVG 徽标（无网络红字，视觉统一）
+      // 8. 兜底策略：生成高质感 SVG 徽标（无网络红字，视觉统一）
       const fallbackSvg = generateFallbackSvg(monogram, hostname);
       const svgBuf = Buffer.from(fallbackSvg, "utf-8");
       const etag = `W/"svg_${hostHash}"`;

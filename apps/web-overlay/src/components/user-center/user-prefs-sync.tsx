@@ -13,21 +13,45 @@
  * 未登录/取不到云端设置时什么都不做：本机既有状态保持原样，绝不因一次
  * 同步失败把用户的主题或模块掩码清掉。
  */
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useTheme } from 'next-themes'
 import { probeClientSession } from '@/lib/client-session'
-import { readLocalUserSettings } from '@/lib/user-settings'
+import { readLocalUserSettings, type ThemePreference } from '@/lib/user-settings'
 import { parseHiddenHomeModules, writeLocalHiddenHomeModules } from '@/lib/personal-home-modules'
 
-export function UserPrefsSync() {
+export function UserPrefsSync({ defaultTheme = 'system' }: { defaultTheme?: 'light' | 'dark' | 'system' }) {
   const { setTheme } = useTheme()
+
+  /**
+   * 上一次见过的账号级主题偏好。M-04：只在「有值 → 未设置」的跃迁时才复位
+   * 本机主题——偏好一直是 null（从未设过）时不碰：工具栏的手动切换只影响
+   * 本机，必须在不相关的设置改动后继续保留。
+   */
+  const prevPreferenceRef = useRef<ThemePreference | undefined>(undefined)
 
   useEffect(() => {
     let cancelled = false
 
     const applyFromLocal = () => {
       const s = readLocalUserSettings()
-      if (s.themePreference) setTheme(s.themePreference)
+      const prev = prevPreferenceRef.current
+      prevPreferenceRef.current = s.themePreference
+      if (s.themePreference) {
+        setTheme(s.themePreference)
+      } else if (prev) {
+        // M-04：选回「未设置」= 跟随全站默认。只把 themePreference 置 null
+        // 不够：next-themes 早把旧值（dark/light）写进了本机 `theme` 键，
+        // 之后每次加载都以它为准，ThemeProvider 的 defaultTheme 再也生效不了。
+        // 先 setTheme(全站默认)让当前会话立即回到默认（setTheme 在
+        // next-themes 0.2.1 里同步写键），再删 `theme` 键，使下次加载时
+        // next-themes 直接用 defaultTheme；顺序不能反。
+        setTheme(defaultTheme)
+        try {
+          window.localStorage.removeItem('theme')
+        } catch {
+          /* localStorage 不可用时退化为仅 setTheme，不阻断 */
+        }
+      }
       writeLocalHiddenHomeModules(parseHiddenHomeModules(s.hiddenHomeModules))
     }
     const onSettingsChanged = () => applyFromLocal()
@@ -72,7 +96,7 @@ export function UserPrefsSync() {
       cancelled = true
       window.removeEventListener('navhub_settings_changed', onSettingsChanged)
     }
-  }, [setTheme])
+  }, [setTheme, defaultTheme])
 
   return null
 }

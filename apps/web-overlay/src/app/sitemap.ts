@@ -164,7 +164,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // 并行取六路数据；任何一路失败都返回 null，由下面的纯函数自然产出空数组。
   // 场景一路不进下面「全线失败」的判定：场景接口是新增只读面，它的抖动
   // 不该让整张 sitemap 退回上个版本，老四路的防降级判据保持原样。
-  // 对比分享同理不计入判据（见 loadPublishedCompareShares 的阻塞说明）。
+  // 对比分享同理不计入判据（见 loadPublishedCompareShares 的说明）。
   const [plugins, sites, tags, categories, collections, scenePayload, shares] = await Promise.all([
     loadPublishedPlugins(),
     loadActiveSites(),
@@ -204,10 +204,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 /**
  * 已发布对比分享清单（P13）。
  *
- * 阻塞（2026-11-26 实测）：中枢只有 `GET /api/compare/shares/:slug` 单查，
- * 没有 `GET /api/compare/shares` 列表接口——下面这次 hubGet 目前恒为 null，
- * 本函数返回 []，sitemap 里 0 条快照 URL。待 apps/api 补列表接口后，
- * 本函数不改签名即可打通（响应形态约定：`{ items: [{ slug, updatedAt,
+ * 取数：中枢 `GET /api/compare/shares?status=published&limit=100` 列表接口
+ * （只返回已发布分享，响应形态 `{ items: [{ slug, updatedAt,
  * publishedAt }] }`，裸数组也兼容）；不要为凑数在这里手写 slug。
  * 取数失败只产空数组，不计入上面的「四路全线失败」判据，不拖垮整份 sitemap。
  */

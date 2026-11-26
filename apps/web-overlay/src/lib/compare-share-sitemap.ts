@@ -5,12 +5,9 @@
  * 路由（app/sitemap.ts）只负责取数与拼装，「选哪些 URL、如何编码、时间戳
  * 是否有效」抽成纯函数。
  *
- * 阻塞（2026-11-26 实测）：中枢 `apps/api/src/routes/compare-share.ts`
- * 只有 POST 发布 / GET :slug 单查 / PATCH / DELETE，没有
- * `GET /api/compare/shares` 列表接口；仓库里也没有对应的 repo 列表方法。
- * 因此 app/sitemap.ts 里的 loader 目前取不到任何 slug、产出 0 条——这是
- * 待中枢补列表接口后才能打通的最后一环，不是本文件的缺陷；不要为凑数
- * 在这里手写 slug、猜 URL 或读快照表。
+ * 取数口径（P13 补齐）：中枢 `GET /api/compare/shares` 列表接口只返回
+ * 已发布分享（`{ items: [{ slug, updatedAt, publishedAt }] }`），
+ * app/sitemap.ts 的 loader 直接取它；不要在这里手写 slug、猜 URL 或读快照表。
  */
 
 import { toDate } from '@/lib/seo/sitemap-entries'

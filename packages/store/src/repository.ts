@@ -1826,6 +1826,17 @@ async revokeAllSessions(userId: string): Promise<number> {
     return compareSnapshotSharesRepo.getPublishedComparisonSnapshotShareBySlug(this, slug);
   }
 
+  /**
+   * 已发布分享列表（P13 sitemap 用）：只含 status = 'published' 的行，
+   * 按 updated_at 倒序；未发布/草稿行永不出现。
+   */
+  async listPublishedComparisonSnapshotShares(opts: {
+    limit: number;
+    offset: number;
+  }): Promise<compareSnapshotSharesRepo.ComparisonSnapshotShare[]> {
+    return compareSnapshotSharesRepo.listPublishedComparisonSnapshotShares(this, opts);
+  }
+
   async getComparisonSnapshotShareBySnapshotId(
     snapshotId: string,
   ): Promise<compareSnapshotSharesRepo.ComparisonSnapshotShare | null> {

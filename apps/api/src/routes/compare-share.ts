@@ -31,6 +31,7 @@ import type { PublishedComparisonItem } from "@navhub/store";
 import type { AppContext } from "../context.ts";
 import { sendError } from "../error-envelope.ts";
 import { requireAskIdentity } from "./ask.ts";
+import { parsePagination } from "./shared.ts";
 import { allocatePublicSlug } from "./public-pages.ts";
 
 /**
@@ -241,6 +242,37 @@ export const compareShareRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async
       return {
         ok: true,
         share: { ...shareView(share), url: `/pub/compare/${share.slug}` },
+      };
+    },
+  );
+
+  /**
+   * 公开列表（P13 sitemap 用）：只返回已发布的分享，免登、只读。
+   * status 只认 published（缺省即 published），其它值 → 400——未发布 /
+   * 草稿行永不经此口径泄露。只返回 sitemap 所需的最小字段
+   * （slug / updatedAt / publishedAt），不含 owner、不含 published_json。
+   * publishedAt 取分享行 createdAt（建行即以 published 状态发布）；
+   * updatedAt 优先于它（上下线/重发都会刷 updated_at，见 sitemap loader）。
+   * 缓存与单查同口径：public, max-age=60 + s-maxage=60 + etag。
+   */
+  app.get(
+    "/api/compare/shares",
+    { config: { scope: "public", cache: { maxAge: 60, sharedMaxAge: 60, etag: true } } },
+    async (req, reply) => {
+      const query = (req.query ?? {}) as Record<string, unknown>;
+      const status = query.status;
+      if (status !== undefined && status !== "published") {
+        return sendError(reply, 400, "BAD_REQUEST", "status 只支持 published");
+      }
+      const { limit, offset } = parsePagination(req.query, { defaultLimit: 100, maxLimit: 500 });
+      const shares = await ctx.repo.listPublishedComparisonSnapshotShares({ limit, offset });
+      return {
+        ok: true,
+        items: shares.map((share) => ({
+          slug: share.slug,
+          updatedAt: share.updatedAt,
+          publishedAt: share.createdAt,
+        })),
       };
     },
   );

@@ -125,6 +125,22 @@ export async function getPublishedComparisonSnapshotShareBySlug(
   return share;
 }
 
+/**
+ * 列出已发布分享（P13 sitemap 用）：只返回 status = 'published' 的行，
+ * 未发布/草稿行永不出现。按 updated_at 倒序（上下线与重发都会刷
+ * updated_at，最新状态在前），created_at 倒序兜底同毫秒并列。
+ */
+export async function listPublishedComparisonSnapshotShares(
+  repo: Repository,
+  opts: { limit: number; offset: number },
+): Promise<ComparisonSnapshotShare[]> {
+  const rows = (await repo.raw(
+    "SELECT * FROM comparison_snapshot_shares WHERE status = 'published' ORDER BY updated_at DESC, created_at DESC LIMIT ? OFFSET ?",
+    [opts.limit, opts.offset],
+  )) as ComparisonSnapshotShareRow[];
+  return rows.map(rowToShare);
+}
+
 export async function getComparisonSnapshotShareBySnapshotId(
   repo: Repository,
   snapshotId: string,

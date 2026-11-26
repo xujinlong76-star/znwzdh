@@ -378,8 +378,16 @@ describe('rose/sky 残留 32 处：正文小字 -600→-700 配 dark:-400', () =
     expect(widget).not.toContain('text-rose-600')
   })
 
-  it('分类区移除按钮与收起提示：R24/S8，浅色 -700 配 dark:-400', () => {
-    expect(categorySection).toContain('text-[11px] font-medium text-rose-700 dark:text-rose-400 bg-rose-500/10')
+  it('分类区移除按钮与收起提示：R24/S8，浅色 -700 配 dark:rose-200', () => {
+    // U-447（2026-11-26）：1b363e65 子分类头布局重排时把该移除 chip 的深色文字由
+    // rose-400 改为 rose-200，并补 dark:bg-rose-500/20 / dark:hover:bg-rose-500/30 /
+    // dark:border-rose-400/40。rose-200 更亮、深底对比度反而更高（14.10 vs 旧 7.39），
+    // 不是回归；浅色 rose-700 未动。断言按新行为改写，未删除（rose-600 禁令仍锁）。
+    expect(categorySection).toContain('text-[11px] font-medium text-rose-700 dark:text-rose-200 bg-rose-500/10 dark:bg-rose-500/20')
+    // rose-200 #fecdd3：深卡 #09090b 上 14.10:1、chip 自身深底（rose-500/20 叠深卡 ≈ #38141c）11.59:1，均 ≥4.5
+    expect(ux9Contrast('#fecdd3', '#09090b')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#fecdd3', '#38141c')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#be123c', '#ffffff')).toBeGreaterThanOrEqual(4.5)
     expect(categorySection).toContain('bg-sky-500/10 text-sky-700 dark:text-sky-400 border border-sky-500/20')
     expect(categorySection).not.toContain('text-rose-600')
     expect(categorySection).not.toContain('text-sky-600')
@@ -489,6 +497,7 @@ describe('rose/sky 第二档 21 处：管理后台/纯图标/大字 -600→-700 
   const trafficChart = overlayFile('src/components/admin/dashboard/dashboard-traffic-chart.tsx')
   const deliveryPanel = overlayFile('src/components/admin/notification-delivery-panel.tsx')
   const navCard = overlayFile('src/components/navigation-card.tsx')
+  const itemShell = overlayFile('src/components/site-item-shell.tsx')
   const watchlistPage2 = overlayFile('src/app/me/watchlist/page.tsx')
   const spotlight2 = overlayFile('src/components/search/spotlight-modal.tsx')
   const healthPanel2 = overlayFile('src/components/plugins/plugin-url-health-panel.tsx')
@@ -522,8 +531,17 @@ describe('rose/sky 第二档 21 处：管理后台/纯图标/大字 -600→-700 
     // P1-15（2026-11-21）：卡片删除钮由 rose-700 改为语义 token text-destructive-text。
     // destructive-text 浅色 #BA1C1C（hsl 0 74% 42%）白底 6.42:1、深色 #F37272 深底 7.07:1，
     // 均超 AA 4.5:1，与 rose-700（6.29:1）等效；dark: 变体由 token 自身处理，不再单写。
+    // U-447（2026-11-26）：1b363e65 S3 解剖迁移把紧凑条形卡的编辑态内联隐藏钮撤掉，
+    // 编辑态改走 controller.renderEditCapsule()（右上角悬停/聚焦浮现迷你胶囊操作条，
+    // 注释见 navigation-card.tsx「Phase 1 编辑态彻底去除常驻内联挤字图标」）。
+    // 隐藏 affordance 未丢：胶囊里的隐藏钮仍是 text-destructive-text（6.42/7.07:1），
+    // 只是从 navigation-card.tsx 搬到 site-item-shell.tsx，且 hover 不再重复写
+    // hover:text-destructive-text（基底已是 destructive-text）。navigation-card 内
+    // 只剩 rich/grid 两处三元，计数 3→2；新增胶囊断言锁住迁移后的落点，不只放宽计数。
     expect(navCard).toContain('"text-destructive-text hover:text-destructive-text hover:bg-destructive/15"')
-    expect(navCard.split('\n').filter((l) => l.includes('text-destructive-text hover:text-destructive-text'))).toHaveLength(3)
+    expect(navCard.split('\n').filter((l) => l.includes('text-destructive-text hover:text-destructive-text'))).toHaveLength(2)
+    expect(itemShell).toContain('data-testid="card-action-hide"')
+    expect(itemShell).toContain('text-destructive-text transition-colors hover:bg-destructive/15')
     expect(navCard).not.toContain('text-rose-600')
     expect(spotlight2).toContain('bg-rose-500/10 text-rose-700 dark:text-rose-400 flex items-center justify-center shrink-0')
     expect(pluginsPage).toContain("tone: 'text-sky-700 dark:text-sky-400'")

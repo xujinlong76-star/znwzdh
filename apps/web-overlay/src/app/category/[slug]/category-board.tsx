@@ -334,7 +334,10 @@ export async function CategoryBoard({
           {/* 分类页此前没有任何搜索入口，却在「翻不到更后面」的提示里让用户
               「用页内搜索」——指着一个不存在的控件。这里挂全站搜索面板：
               分类翻页有深度上限，搜索是唯一能真正找到长尾站点的路径。 */}
-          <SearchPalette placeholder="没找到想要的？搜索全部站点（中文 / 拼音 / 语义）（按 / 快速搜索）" />
+          <SearchPalette
+            categoryId={category?.id}
+            placeholder={`在「${name}」分类内搜索…（中文 / 拼音 / 语义）（无结果时自动放宽到全库）（按 / 快速搜索）`}
+          />
 
           {origin && indexable ? (
             // 根页的结构化数据列**子分类页**（它是目录，不是终点）；

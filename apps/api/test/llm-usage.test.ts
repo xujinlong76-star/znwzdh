@@ -232,6 +232,89 @@ describe("aggregateLlmUsage 聚合语义", () => {
  * 本地自托管网关（Ollama 等）不需要 API 密钥。
  * 配置预设明确写着「可留空」，但旧实现只看 apiKey，导致这类 provider 永远被跳过。
  */
+describe("备用模型系统额度保护", () => {
+  it("BYOK 主模型失败后，备用模型必须单独预留系统额度；额度用尽时不再调用备用模型", async () => {
+    const originalQuota = { ...ctx.config.llmQuota };
+    await ctx.repo.run("DELETE FROM llm_usage");
+    await ctx.repo.run("DELETE FROM llm_quota_reservations");
+    ctx.config.llmQuota = {
+      ...originalQuota,
+      identityDailyCalls: 0,
+      identityDailyTokens: 0,
+      anonymousDailyCalls: 0,
+      anonymousDailyTokens: 0,
+      systemDailyCalls: 1,
+      systemDailyTokens: 0,
+      reserveTokens: 0,
+    };
+
+    let primaryAttempts = 0;
+    let fallbackAttempts = 0;
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes(":11434/")) {
+        primaryAttempts++;
+        return new Response(JSON.stringify({ error: { message: "primary unavailable" } }), { status: 503 });
+      }
+      fallbackAttempts++;
+      return new Response(
+        JSON.stringify({
+          model: "system-fallback",
+          choices: [{ message: { content: "fallback answer" } }],
+          usage: { prompt_tokens: 5, completion_tokens: 2 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+
+    const resolved = {
+      provider: {
+        baseUrl: "http://127.0.0.1:11434/v1",
+        model: "byok-primary",
+        apiKey: "sk-user",
+        allowPrivateNetwork: true,
+        thinking: false,
+      },
+      fallbacks: [{
+        baseUrl: "http://127.0.0.1:11435/v1",
+        model: "system-fallback",
+        apiKey: "sk-system",
+        allowPrivateNetwork: true,
+        thinking: false,
+      }],
+      source: "user",
+    } as unknown as ResolvedLlm;
+
+    const opts = {
+      scenario: "ai_chat",
+      identity: "user-fallback-quota",
+      messages: [{ role: "user" as const, content: "hello" }],
+      fetchImpl,
+      thinking: false,
+    };
+
+    try {
+      const first = await callLlm(ctx, resolved, opts);
+      expect(first.content).toBe("fallback answer");
+      expect(primaryAttempts).toBe(1);
+      expect(fallbackAttempts).toBe(1);
+
+      const rows = await ctx.repo.raw("SELECT source, model, ok FROM llm_usage ORDER BY created_at ASC");
+      expect(rows.some((row) => row.source === "user" && row.ok === 0)).toBe(true);
+      expect(rows.some((row) => row.source === "fallback" && row.model === "system-fallback" && row.ok === 1)).toBe(true);
+
+      await expect(callLlm(ctx, resolved, opts)).rejects.toMatchObject({ code: "rate_limit" });
+      expect(primaryAttempts).toBe(2);
+      // 系统额度已经由第一次 fallback 用完；第二次不能再向系统备用端点发请求。
+      expect(fallbackAttempts).toBe(1);
+    } finally {
+      ctx.config.llmQuota = originalQuota;
+      await ctx.repo.run("DELETE FROM llm_quota_reservations");
+      await ctx.repo.run("DELETE FROM llm_usage");
+    }
+  });
+});
+
 describe("本地免密钥网关（allowPrivateNetwork）", () => {
   const stubCtx = {
     // 没有单价配置的最小上下文：单价解析按「未采集」走，不把 stderr 打成噪声

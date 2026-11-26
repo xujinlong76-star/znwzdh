@@ -624,6 +624,17 @@
        与 ≤640px 同款滑出视口。顶部收起（y≤30）自 2026-11-26 起全站全宽度生效
        （首页/热榜首屏卡片收藏按钮三档皆被盖住），见 syncAutoPark。 */
     '@media (min-width:641px) and (max-width:1023px){#xiaomaomao.xm-parked{transform:translateX(var(--xm-park-x,calc(100vw + 12px)))}}' +
+    /* 2026-11-26 E2E 第五轮复验补漏（两处）：
+       ① ≥1024px 一直没有收起位移规则——P1-1 只写到 1023px，顶部收起推广到全站后
+       1024x768 首屏圆标仍留在视口内盖住「收藏：豆包」（3/3 稳定失败，截图证实）；
+       补与上两档同款滑出视口，位移仍走 --xm-park-x 实时量取。
+       ② 收起态禁入场动画：#xiaomaomao.xm-enter 的 xmPop（.32s）动画进行期间，
+       动画的 transform 会压过 .xm-parked 的位移——首帧量矩形时猫还在视口内
+       （768x1024 三连败，失败截图里猫已离场，说明是量取时序撞上动画窗口而非位移失效）；
+       收起态下 animation:none，首帧即在视口外；圆标本就不可见，省掉入场动画无产品损失。
+       露出圆标（y>60 去收起）时 xm-enter 早已跑完，不受影响。 */
+    '@media (min-width:1024px){#xiaomaomao.xm-parked{transform:translateX(var(--xm-park-x,calc(100vw + 12px)))}}' +
+    '#xiaomaomao.xm-parked{animation:none}' +
     /* 半屏下沉栏避让（Batch 3 第 12 项 BLOCK 修复）：640–1024px 首页底部有 56px 高的常驻栏
        （HalfScreenDock，z-40），猫默认 bottom:18px 会整只盖住栏右侧、.xm-lean 拦截指针，
        栏的关闭 × 完全点不到。媒体规则只抬未拖动过的默认位置：拖动后行内 left/top +

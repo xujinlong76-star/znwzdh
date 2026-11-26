@@ -143,12 +143,19 @@ describe('公开页：只读冻结页，只渲染白名单字段', () => {
     expect(code).toContain("if (probe.status === 'miss') notFound()")
   })
 
-  it('格子渲染与 CellValue 同规则：值 + 可能过期徽标 + 来源·核实于/更新于·未验证', () => {
+  it('格子渲染走 compareShareCellDisplay：值 + 来源·核实于/现待复核·未验证（P13 三态）', () => {
     const code = stripComments(publicPage)
-    expect(code).toContain('formatCellValue(cell)')
-    expect(code).toContain('formatVerifiedDate(cell.verifiedAt)')
-    expect(code).toContain('可能过期')
-    expect(code).toContain('来源：')
+    expect(code).toContain('compareShareCellDisplay(cell, dimensionKey, nowMs)')
+    expect(code).toContain('display.valueText')
+    expect(code).toContain('display.noteText')
+    expect(code).toContain('现待复核')
     expect(code).toContain('未验证')
+    // 旧的 price stale“可能过期”徽标已随 P13 三态退役，值/日期口径
+    // 收进 lib/compare-share-ttl.ts（formatCellValue / formatVerifiedDate
+    // 仍在该文件里被 compareShareCellDisplay 调用，不在页面里直写）。
+    expect(code).not.toContain('可能过期')
+    const ttlLib = overlaySource('src/lib/compare-share-ttl.ts')
+    expect(stripComments(ttlLib)).toContain('formatCellValue(cell)')
+    expect(stripComments(ttlLib)).toContain('formatVerifiedDate(')
   })
 })

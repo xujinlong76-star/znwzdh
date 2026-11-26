@@ -181,6 +181,98 @@ export function itemListLd(origin: string, sites: ItemListSite[], name = '站点
 }
 
 /**
+ * 对比分享公开页的 WebPage（P13）。
+ *
+ * 红线（与本文件头三条同级）：
+ * - **只收调用方传来的可见文案**：`valueText` / `noteText` 必须与表格格子
+ *   逐字一致（调用方用 `compareShareCellDisplay` 一份来源同时喂表格与这里，
+ *   本函数不重算、不改写、不补值）；过期 / 未核实字段调用方根本不传进来，
+ *   本函数也不设“兜底收录”——过期字段退出 JSON-LD。
+ * - **dateModified 只随实质更新改**：冻结快照永不更新，传快照 createdAt；
+ *   传 null / 非法值时直接省略该字段，绝不编造一个日期。
+ * - 不写 aggregateRating / Review / Offer / 佣金链：对照页一律不带佣金链，
+ *   也不打分、不排名。
+ */
+export interface CompareShareWebPageLdField {
+  /** 维度中文名（表格列头原文）。 */
+  label: string
+  /** 格子主值（表格格子原文）。 */
+  valueText: string
+  /** 格子副行（表格格子副行原文：来源 · 日期 · 状态）。 */
+  noteText: string
+}
+
+export interface CompareShareWebPageLdItem {
+  /** 站点名（表格首列原文）。 */
+  name: string
+  /** 站点 URL（表格首列链接原文），空则不写。 */
+  url?: string | null
+  /** 只含「已核验」态的字段；过期 / 未核实字段调用方不传。 */
+  fields: CompareShareWebPageLdField[]
+}
+
+export function compareShareWebPageLd(
+  origin: string,
+  input: {
+    slug: string
+    title: string
+    description: string
+    /** 快照冻结时间（毫秒戳）：dateModified 的唯一来源，null 则省略。 */
+    frozenAtMs: number | null
+    items: CompareShareWebPageLdItem[]
+  },
+): Record<string, unknown> {
+  const slug = (input?.slug ?? '').trim()
+  const title = (input?.title ?? '').trim() || '对照表分享'
+  const description = (input?.description ?? '').trim()
+  const frozenMs = input?.frozenAtMs
+  const dateModified =
+    typeof frozenMs === 'number' && Number.isFinite(frozenMs) && !Number.isNaN(new Date(frozenMs).getTime())
+      ? new Date(frozenMs).toISOString()
+      : null
+  const items = (input?.items ?? [])
+    .map((item) => ({
+      name: (item?.name ?? '').trim(),
+      url: typeof item?.url === 'string' ? item.url.trim() : '',
+      fields: (item?.fields ?? [])
+        .map((f) => ({
+          label: (f?.label ?? '').trim(),
+          valueText: (f?.valueText ?? '').trim(),
+          noteText: (f?.noteText ?? '').trim(),
+        }))
+        .filter((f) => f.label && f.valueText),
+    }))
+    .filter((item) => item.name)
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebPage',
+    name: title,
+    url: absUrl(origin, `/pub/compare/${encodeURIComponent(slug)}`),
+    inLanguage: 'zh-CN',
+    ...(description ? { description: description.slice(0, 300) } : {}),
+    ...(dateModified ? { dateModified } : {}),
+    mainEntity: {
+      '@type': 'ItemList',
+      name: title,
+      numberOfItems: items.length,
+      itemListElement: items.map((item, i) => ({
+        '@type': 'ListItem',
+        position: i + 1,
+        name: item.name,
+        ...(item.url ? { url: item.url } : {}),
+        ...(item.fields.length > 0
+          ? {
+              description: item.fields
+                .map((f) => `${f.label}：${f.valueText}（${f.noteText}）`)
+                .join('；'),
+            }
+          : {}),
+      })),
+    },
+  }
+}
+
+/**
  * 序列化为可安全内插进 `<script>` 的字符串。
  *
  * `</script>` 会提前关闭脚本上下文（XSS），U+2028/2029 在 JS 里是行终止符

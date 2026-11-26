@@ -5,6 +5,10 @@ import { MIN_SITES_FOR_CATEGORY_INDEX, MIN_SITES_FOR_TAG_INDEX } from '@/lib/seo
 import { descendantSiteCounts } from '@/lib/seo/category-totals'
 import { pluginSitemapEntries, authorSitemapEntries, type SitemapPluginRef } from '@/lib/plugins/sitemap'
 import {
+  compareShareSitemapEntries,
+  type CompareShareSitemapRef,
+} from '@/lib/compare-share-sitemap'
+import {
   categoryEntries,
   collectionEntries,
   countCategorySites,
@@ -160,13 +164,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // 并行取六路数据；任何一路失败都返回 null，由下面的纯函数自然产出空数组。
   // 场景一路不进下面「全线失败」的判定：场景接口是新增只读面，它的抖动
   // 不该让整张 sitemap 退回上个版本，老四路的防降级判据保持原样。
-  const [plugins, sites, tags, categories, collections, scenePayload] = await Promise.all([
+  // 对比分享同理不计入判据（见 loadPublishedCompareShares 的阻塞说明）。
+  const [plugins, sites, tags, categories, collections, scenePayload, shares] = await Promise.all([
     loadPublishedPlugins(),
     loadActiveSites(),
     hubGet<TagRef[]>('/api/tags', 3600),
     hubGet<CategoryRef[]>('/api/categories', 3600),
     hubGet<CollectionRef[]>('/api/collections', 3600),
     hubGet<{ scenes?: SceneRef[] }>('/api/scenes', 3600),
+    loadPublishedCompareShares(),
   ])
 
   // 四路内容数据全线失败：抛错让 ISR 保留上次的好版本（文件头第 4 条），
@@ -191,5 +197,36 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...sceneEntries(origin, scenePayload?.scenes ?? []),
     ...pluginSitemapEntries(origin, plugins),
     ...authorSitemapEntries(origin, plugins),
+    ...compareShareSitemapEntries(origin, shares ?? []),
   ]
+}
+
+/**
+ * 已发布对比分享清单（P13）。
+ *
+ * 阻塞（2026-11-26 实测）：中枢只有 `GET /api/compare/shares/:slug` 单查，
+ * 没有 `GET /api/compare/shares` 列表接口——下面这次 hubGet 目前恒为 null，
+ * 本函数返回 []，sitemap 里 0 条快照 URL。待 apps/api 补列表接口后，
+ * 本函数不改签名即可打通（响应形态约定：`{ items: [{ slug, updatedAt,
+ * publishedAt }] }`，裸数组也兼容）；不要为凑数在这里手写 slug。
+ * 取数失败只产空数组，不计入上面的「四路全线失败」判据，不拖垮整份 sitemap。
+ */
+async function loadPublishedCompareShares(): Promise<CompareShareSitemapRef[] | null> {
+  const body = await hubGet<{ items?: unknown } | CompareShareSitemapRef[]>(
+    '/api/compare/shares?status=published&limit=100',
+    300,
+  )
+  if (!body) return null
+  const rows = Array.isArray(body) ? body : Array.isArray(body.items) ? body.items : []
+  const out: CompareShareSitemapRef[] = []
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue
+    const record = row as { slug?: unknown; updatedAt?: unknown; publishedAt?: unknown }
+    out.push({
+      slug: typeof record.slug === 'string' ? record.slug : '',
+      updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : null,
+      publishedAt: typeof record.publishedAt === 'number' ? record.publishedAt : null,
+    })
+  }
+  return out
 }

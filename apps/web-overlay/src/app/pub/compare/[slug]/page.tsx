@@ -5,35 +5,42 @@ import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { EmptyState } from '@/components/ui/empty-state'
+import { JsonLd } from '@/components/json-ld'
 import { hubGetProbe } from '@/lib/server/hub'
 import { safeDecodeParam } from '@/lib/server/route-params'
 import { safeHref } from '@/lib/safe-url'
+import { siteOrigin } from '@/lib/seo/origin'
+import { compareShareWebPageLd } from '@/lib/seo/json-ld'
 import { cn } from '@/lib/utils'
 import {
   COMPARE_DIMENSIONS,
   COMPARE_DIMENSION_LABELS,
-  formatCellValue,
-  formatVerifiedDate,
   normalizeComparisonItem,
   type ComparisonCell,
   type ComparisonItem,
   type CompareDimensionKey,
 } from '@/lib/compare'
+import { COMPARE_SHARE_FIELD_TTL_DAYS, compareShareCellDisplay } from '@/lib/compare-share-ttl'
 
 /**
  * 分享的对照表公开页（/pub/compare/{slug}，服务端渲染 + 按需 ISR，
- * Batch 4 Phase 2 P2-4）。
+ * Batch 4 Phase 2 P2-4；P13 2026-11-26 改为语义化对照表 + 字段级 TTL 三态）。
  *
  * 只读冻结页：内容是发布那一刻从快照复制进 published_json 的副本，
  * 公开后原快照再变也不影响这里；页头明说冻结日期与“内容不再更新”。
  * 只渲染发布者勾选的白名单字段（share.fields）；note / migration
  * 永不可公开——服务端就不返回，页面也绝不渲染。
  * 公开页不挂“刷新验证”与“填写价格”按钮：冻结页是只读的，没有写入口。
+ * 对照页一律不带佣金链、不打分、不排名。
  *
- * 格子渲染复用 lib/compare.ts 的值+来源+日期口径（formatCellValue /
- * formatVerifiedDate，与 compare-view.tsx 的 CellValue 同样式）：
- * CellValue 本身是 compare-view.tsx 的模块私有函数，本项不改该文件，
- * 故此处按同一规则重绘（值 + 可能过期徽标 + 来源·核实于/更新于·未验证）。
+ * 呈现（P13）：
+ * - 真 <table>：首列实体名（th scope="row"），其余列一个字段一格，
+ *   原子单元格，不再用卡片 + <dl>（AI 爬虫不执行 JS，事实必须在服务端 HTML 里）；
+ * - 字段级 TTL 三态（见 lib/compare-share-ttl.ts）：已核验 / 已过期 /
+ *   未核实；过期字段灰显 + “截至 YYYY-MM-DD 核验，现待复核”，且退出 JSON-LD；
+ * - 页顶固定方法论块：比较范围、核验日期、TTL 含义；
+ * - WebPage JSON-LD：只取表格格子的可见文案（同一份 compareShareCellDisplay
+ *   输出），逐字一致；dateModified = 快照冻结时间，只随实质更新改。
  *
  * 404 纪律与 /pub 一致：只有中枢明确回 404（不存在或已下线）才
  * notFound()；中枢不可达是降级渲染（通用元数据 + 说明壳），不把抖动
@@ -94,31 +101,38 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   }
 }
 
-/** 冻结格子：与 CellValue 同规则——值 + 可能过期徽标 + 来源·日期·未验证。 */
-function FrozenCellValue({ cell, dimensionKey }: { cell: ComparisonCell; dimensionKey: CompareDimensionKey }) {
-  const verified = cell.verified && formatCellValue(cell) !== '未验证'
-  const date = formatVerifiedDate(cell.verifiedAt)
-  const dateLabel = dimensionKey === 'maintenance' || dimensionKey === 'price' ? '核实于' : '更新于'
-  const isPrice = dimensionKey === 'price'
-  const hasValue = formatCellValue(cell) !== '未验证'
-  const expired = isPrice && !cell.verified && hasValue
+/**
+ * 冻结格子：文案唯一来源是 compareShareCellDisplay（表格与 JSON-LD 共用），
+ * 本组件只负责按三态着色，不再各算一份值/日期/状态。
+ * - 已核验：正常显示；
+ * - 已过期：灰显 + “截至 YYYY-MM-DD 核验，现待复核”；
+ * - 未核实：值为空时显示“未验证”，有值也必须在副行标“未验证”，绝不写成已核实。
+ */
+function FrozenCellValue({
+  cell,
+  dimensionKey,
+  nowMs,
+}: {
+  cell: ComparisonCell
+  dimensionKey: CompareDimensionKey
+  nowMs: number
+}) {
+  const display = compareShareCellDisplay(cell, dimensionKey, nowMs)
+  const expired = display.state === 'expired'
   return (
     <div className={cn('min-w-0', expired && 'opacity-60')}>
-      <div className="text-sm text-foreground break-words">
-        {formatCellValue(cell)}
-        {isPrice && cell.stale === true && (
-          <span className="ml-1.5 px-1.5 py-px rounded text-[10px] font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30">
-            可能过期
-          </span>
-        )}
-      </div>
-      <div className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-        {cell.source ? `来源：${cell.source}` : '来源未标注'}
-        {date ? ` · ${dateLabel} ${date}` : ''}
-        {verified ? '' : ' · 未验证'}
-      </div>
+      <div className="text-sm text-foreground break-words">{display.valueText}</div>
+      <div className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{display.noteText}</div>
     </div>
   )
+}
+
+/** TTL 分档文案：数字取自 COMPARE_SHARE_FIELD_TTL_DAYS，不手写第二份数字。 */
+function ttlMethodText(): string {
+  const priceTtl = COMPARE_SHARE_FIELD_TTL_DAYS.price
+  const platformTtl = COMPARE_SHARE_FIELD_TTL_DAYS.platform
+  const maintenanceTtl = COMPARE_SHARE_FIELD_TTL_DAYS.maintenance
+  return `价格与套餐 ${priceTtl} 天、功能清单 ${platformTtl} 天、上线状态 ${maintenanceTtl} 天`
 }
 
 export default async function CompareSharePage({ params }: { params: Promise<{ slug: string }> }) {
@@ -141,9 +155,41 @@ export default async function CompareSharePage({ params }: { params: Promise<{ s
     ? COMPARE_DIMENSIONS.filter((d) => probe.data.share.fields.includes(d.key))
     : []
   const frozen = ok ? formatFrozenDate(probe.data.snapshot.createdAt) : ''
+  const frozenAtMs = ok ? probe.data.snapshot.createdAt : null
+  const nowMs = Date.now()
+
+  // JSON-LD 与可见表格同一份来源：每格先算 display，表格渲染它，
+  // JSON-LD 只收其中 state === 'verified' 的格子（过期 / 未核实退出）。
+  const ldItems = items.map((item) => ({
+    name: item.title,
+    url: item.url || null,
+    fields: fields
+      .filter((dim) => compareShareCellDisplay(item[dim.key], dim.key, nowMs).state === 'verified')
+      .map((dim) => {
+        const display = compareShareCellDisplay(item[dim.key], dim.key, nowMs)
+        return {
+          label: COMPARE_DIMENSION_LABELS[dim.key],
+          valueText: display.valueText,
+          noteText: display.noteText,
+        }
+      }),
+  }))
+  const ldDescription = ok ? `此对照表冻结于 ${frozen}，内容不再更新 · 共 ${items.length} 个站点` : ''
+  const origin = await siteOrigin()
 
   return (
     <Container as="main" id="main-content">
+      {ok && items.length > 0 && origin ? (
+        <JsonLd
+          data={compareShareWebPageLd(origin, {
+            slug: safeSlug,
+            title: '对照表分享',
+            description: ldDescription,
+            frozenAtMs,
+            items: ldItems,
+          })}
+        />
+      ) : null}
       <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">
         <Breadcrumbs
           jsonLd={ok}
@@ -172,6 +218,23 @@ export default async function CompareSharePage({ params }: { params: Promise<{ s
                 发布者只公开了勾选的字段，备注与迁移成本永不公开。
               </p>
             </header>
+            <section aria-label="比较方法" className="rounded-xl border border-border/70 bg-card p-4 sm:p-5 space-y-2">
+              <h2 className="text-sm font-semibold text-foreground">比较方法</h2>
+              <ul className="list-disc pl-5 space-y-1 text-xs leading-relaxed text-muted-foreground">
+                <li>
+                  比较范围：本次对照只比较
+                  {fields.length > 0
+                    ? fields.map((dim) => COMPARE_DIMENSION_LABELS[dim.key]).join('、')
+                    : '发布者勾选的字段'}
+                  ；不比较官网域名、备注与迁移成本。
+                </li>
+                <li>核验日期：本表冻结于 {frozen}；每个格子的核实日期见格内标注，无核实日期的格子一律标“未验证”。</li>
+                <li>
+                  核验有效期（TTL）：{ttlMethodText()}
+                  ；超出有效期的字段灰显并标注“截至 YYYY-MM-DD 核验，现待复核”，且不进入结构化数据。
+                </li>
+              </ul>
+            </section>
             {items.length === 0 ? (
               <EmptyState
                 icon={Link2}
@@ -179,34 +242,46 @@ export default async function CompareSharePage({ params }: { params: Promise<{ s
                 description="这张分享里没有可展示的站点，等发布者重新分享后再来看看。"
               />
             ) : (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {items.map((item) => (
-                  <article key={item.siteId} className="rounded-xl border border-border/70 bg-card p-5 space-y-3">
-                    <h2 className="text-base font-semibold text-foreground">
-                      <a
-                        href={safeHref(item.url)}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        className="inline-flex items-center gap-1.5 break-words"
-                      >
-                        <span className="break-words">{item.title}</span>
-                        <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                      </a>
-                    </h2>
-                    <dl className="space-y-3">
+              <div className="overflow-x-auto rounded-xl border border-border/70">
+                <table className="w-full border-collapse bg-card text-left">
+                  <caption className="sr-only">
+                    对照表分享：冻结于 {frozen} 的只读对照表，共 {items.length} 个站点
+                  </caption>
+                  <thead>
+                    <tr className="border-b border-border/70">
+                      <th scope="col" className="px-4 py-3 text-xs font-semibold text-muted-foreground">
+                        站点
+                      </th>
                       {fields.map((dim) => (
-                        <div key={dim.key} className="space-y-1">
-                          <dt className="text-xs font-medium text-muted-foreground">
-                            {COMPARE_DIMENSION_LABELS[dim.key]}
-                          </dt>
-                          <dd>
-                            <FrozenCellValue cell={item[dim.key]} dimensionKey={dim.key} />
-                          </dd>
-                        </div>
+                        <th key={dim.key} scope="col" className="px-4 py-3 text-xs font-semibold text-muted-foreground">
+                          {COMPARE_DIMENSION_LABELS[dim.key]}
+                        </th>
                       ))}
-                    </dl>
-                  </article>
-                ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item) => (
+                      <tr key={item.siteId} className="border-b border-border/70 last:border-b-0 align-top">
+                        <th scope="row" className="px-4 py-3 text-sm font-semibold text-foreground">
+                          <a
+                            href={safeHref(item.url)}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="inline-flex items-center gap-1.5 break-words"
+                          >
+                            <span className="break-words">{item.title}</span>
+                            <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                          </a>
+                        </th>
+                        {fields.map((dim) => (
+                          <td key={dim.key} className="px-4 py-3">
+                            <FrozenCellValue cell={item[dim.key]} dimensionKey={dim.key} nowMs={nowMs} />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </>

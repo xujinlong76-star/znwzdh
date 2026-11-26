@@ -614,16 +614,27 @@ export function useHomeDIY(initialCardDisplayMode?: CanonicalCardDisplayMode) {
    * 返回值是调用方弹提示的唯一依据：
    *  - `added`：真的写进了分类；
    *  - `duplicate`：分类里已有同 id / 同 href 的条目（不是失败，但不该说「已添加」）；
-   *  - `failed`：写盘失败（隐私模式 / 配额满），改动只在内存里，刷新即消失。
+   *  - `failed`：写盘失败（隐私模式 / 配额满），改动只在内存里，刷新即消失；
+   *    或目标分类不存在（U-449：分类已被删、调用方传了失效 id 时什么都没
+   *    写进去，报 `added` 是假成功，调用方会弹「已添加」且压一条空历史）。
    */
   const addSiteToCustomCategory = useCallback(
     (categoryId: string, site: CustomCategoryItem): 'added' | 'duplicate' | 'failed' => {
-      let outcome: 'added' | 'duplicate' = 'added'
+      // U-449：outcome 用 { value } 持有者而不用裸 let 变量——它在 updater
+      // 闭包内赋值、闭包外读取；目标分类不存在时记 'missing'，updater 返回
+      // prev 同一引用（commitHomeDiyConfig 的 next === prev 空操作分支：
+      // 不写盘、不压历史，与批量版 addSitesToCustomCategory 同款约定）。
+      const outcome: { value: 'added' | 'duplicate' | 'missing' } = { value: 'added' }
       const result = persistConfig((prev) => {
+        const target = prev.customCategories.find((cat) => cat.id === categoryId)
+        if (!target) {
+          outcome.value = 'missing'
+          return prev
+        }
         const nextCats = prev.customCategories.map((cat) => {
           if (cat.id !== categoryId) return cat
           if (cat.items.some((i) => i.id === site.id || i.href === site.href)) {
-            outcome = 'duplicate'
+            outcome.value = 'duplicate'
             return cat
           }
           return {
@@ -633,8 +644,8 @@ export function useHomeDIY(initialCardDisplayMode?: CanonicalCardDisplayMode) {
         })
         return { ...prev, customCategories: nextCats, updatedAt: Date.now() }
       })
-      if (!result.ok) return 'failed'
-      return outcome
+      if (!result.ok || outcome.value === 'missing') return 'failed'
+      return outcome.value
     },
     [persistConfig],
   )

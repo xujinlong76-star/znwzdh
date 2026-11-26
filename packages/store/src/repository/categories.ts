@@ -15,6 +15,7 @@ import {
   rowToCategory,
 } from "./dialect.ts";
 import { chunkList, inPredicate } from "../sql-in.ts";
+import { escapeLike } from "../sql-like.ts";
 import { buildKeysetPredicate, encodeKeysetCursor, parseKeysetCursor, type KeysetKey } from "../keyset.ts";
 
 export async function listCategories(repo: Repository): Promise<Category[]> {
@@ -127,6 +128,61 @@ export async function getCategoryBySlug(repo: Repository, slug: string): Promise
   const rows = await repo.raw("SELECT * FROM categories WHERE slug = ? LIMIT 1", [norm]);
   const row = rows[0];
   return row ? rowToCategory(row) : null;
+}
+
+/** 类目解析所需的最小查询能力：检索侧（SearchEngine.rawRows）与仓储侧（repo.raw）都满足。 */
+export type CategoryTreeQueryFn = (sql: string, params: unknown[]) => Promise<Array<Record<string, unknown>>>;
+
+/**
+ * 类目解析：id → slug → 唯一标题/altLabel，并展开到全部后代（anchor 物化路径前缀）。
+ *
+ * 与检索侧同一口径——此前这段逻辑只内联在 search.ts 的 categoryWithDescendants
+ * 里，/api/sites 的 listSites 却用精确等值匹配，导致同一 categoryId 在两个接口
+ * 上语义不同（2026-11-26 20:22 轮 W-cat 实测：父分类在 /api/search 有 5 条、
+ * 在 /api/sites 是 []）。解析逻辑抽到这里后两处同源，口径再分叉时只改一处。
+ *
+ * 解析不到（不存在/重名歧义）返回**空集**：调用方按「零结果」处理，不要把原字符串
+ * 当 id 去匹配——SQL 里 `category_id IN ('zzz')` 与空集都是 0 行，但空集让调用方
+ * 能区分「分类不存在」与「分类存在但无站」（检索侧的 buildPreFilter/browse
+ * 早有 `ids.size === 0 → 空结果` 分支，此前因永不为空而走不到）。
+ *
+ * 特殊别名 `duanju` → `short-drama` 沿用检索侧既有映射（/category/duanju 直链）。
+ */
+export async function resolveCategoryWithDescendants(
+  query: CategoryTreeQueryFn,
+  categoryId: string,
+): Promise<Set<string>> {
+  const norm = categoryId.trim();
+  const byId = (await query(`SELECT id, anchor FROM categories WHERE id = ?`, [norm])) as Array<{
+    id?: string;
+    anchor?: string;
+  }>;
+  let target = byId[0];
+  if (!target) {
+    // /category/{slug} 的读路径要把 slug 直接透给检索，否则前端得先换成 id 多一跳
+    const slugNorm = norm.toLowerCase() === "duanju" ? "short-drama" : norm.toLowerCase();
+    const bySlug = (await query(`SELECT id, anchor FROM categories WHERE slug = ? LIMIT 1`, [slugNorm])) as Array<{
+      id?: string;
+      anchor?: string;
+    }>;
+    target = bySlug[0];
+  }
+  if (!target) {
+    const byName = (await query(
+      `SELECT id, anchor FROM categories WHERE title = ? OR alt_labels LIKE ? ESCAPE '!' LIMIT 2`,
+      [norm, `%${escapeLike(JSON.stringify(norm))}%`],
+    )) as Array<{ id?: string; anchor?: string }>;
+    if (byName.length === 1) target = byName[0];
+  }
+  if (!target?.id) return new Set<string>();
+  const ids = new Set<string>([String(target.id)]);
+  const anchor = target.anchor;
+  if (!anchor) return ids;
+  const descendants = (await query(`SELECT id AS categoryid FROM categories WHERE anchor LIKE ?`, [anchor + "/%"])) as Array<{
+    categoryid?: string;
+  }>;
+  for (const d of descendants) if (d.categoryid) ids.add(String(d.categoryid));
+  return ids;
 }
 
 /**

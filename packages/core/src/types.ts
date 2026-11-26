@@ -384,6 +384,16 @@ export interface SearchResult {
    */
   relaxedFacets?: Record<string, string[]>;
   /**
+   * fallback="filter" 时被丢弃的显式 categoryId（仅 URL 参数传入的才点名）。
+   *
+   * 与 relaxedFacets 同款 A3 诚实化：类目内零结果时 L1 兜底会丢掉类目过滤、
+   * 给全站结果——调用方若不读 fallback 字段，会把全站结果当成分类内结果。
+   * 点名被丢弃的类目后，不读 fallback 的调用方至少能从本字段察觉过滤已被放宽。
+   * 推断出的类目不点名（它已由 inferredCategory 字段上报，且本就可放宽）。
+   * 仅在确实丢弃了显式 categoryId 时出现。
+   */
+  relaxedCategoryId?: string;
+  /**
    * Query Planner 决策（v2 新增）。
    *   "early-exit"  exact 强命中，语义通道被剪枝（省一次 embedding 推理）
    *   缺席        全通道正常跑（或 fuzzy 兜底）

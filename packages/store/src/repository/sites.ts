@@ -27,6 +27,7 @@ import {
   slugify,
 } from "./dialect.ts";
 import { chunkList, inPredicate, SQL_IN_CHUNK } from "../sql-in.ts";
+import { resolveCategoryWithDescendants } from "./categories.ts";
 import {
   buildKeysetPredicate,
   parseKeysetCursor,
@@ -91,7 +92,21 @@ export async function listSites(repo: Repository, filter: { categoryId?: string;
   const keysetValues = parseKeysetCursor(filter.cursor, SITE_KEYSET_KEYS.length);
   const where: string[] = ["s.deleted_at IS NULL"];
   const params: unknown[] = [];
-  if (filter.categoryId) { where.push("s.category_id = ?"); params.push(filter.categoryId); }
+  if (filter.categoryId) {
+    // 类目过滤与检索侧同一口径：id/slug/唯一标题解析 + 含后代（resolveCategoryWithDescendants）。
+    // 旧实现是精确等值匹配，而站点只挂叶子分类，父分类自身 0 站 → 恒返 []。
+    // 解析不到（不存在/重名歧义）直接返回 []，不要把原字符串当 id 去匹配。
+    const ids = await resolveCategoryWithDescendants((sql, params) => repo.raw(sql, params), filter.categoryId);
+    if (ids.size === 0) return [];
+    const preds = await siteIdPredicates(repo, "s.category_id", [...ids]);
+    if (preds.length === 1) {
+      where.push(preds[0]!.sql);
+      params.push(...preds[0]!.params);
+    } else {
+      where.push("(" + preds.map((p) => p.sql).join(" OR ") + ")");
+      for (const p of preds) params.push(...p.params);
+    }
+  }
   if (filter.status) { where.push("s.status = ?"); params.push(filter.status); }
   // 数据面最小化：把编辑工作面的中间态（pending/archived）排除在只读集成之外。
   // 用 <> 逐条排除而不是 NOT IN：要排除的状态最多两个，不必引入分片复杂度。

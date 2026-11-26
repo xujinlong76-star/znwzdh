@@ -28,6 +28,7 @@ import {
 import type { Db, Dialect } from "./driver.ts";
 import type { FullTextStore } from "./fts.ts";
 import { bindSqlite, slugify, toPgSql } from "./repository.ts";
+import { resolveCategoryWithDescendants } from "./repository/categories.ts";
 import { containsLike, escapeLike, prefixLike } from "./sql-like.ts";
 import { chunkList } from "./sql-in.ts";
 import type { VectorStore } from "./vector/types.ts";
@@ -586,6 +587,8 @@ export class SearchEngine {
     let fallback: SearchResult["fallback"];
     /** A3：放宽时被丢弃的分面条件，随结果回前端点名提示（见 SearchResult.relaxedFacets）。 */
     let relaxedFacets: Record<string, string[]> | undefined;
+    /** A3 同款：L1 放宽时被丢弃的显式 categoryId（仅 URL 参数传入的才点名；推断出的类目不点名，它已由 inferredCategory 字段上报）。 */
+    let relaxedCategoryId: string | undefined;
     // 过滤集合按「一次 search」缓存，四个通道共用 —— 见 FilterCache 注释
     const filterCache: FilterCache = {};
     let { candidates, timings } = await this.runChannels(
@@ -618,6 +621,8 @@ export class SearchEngine {
         if (effectiveOpt.facets && Object.keys(effectiveOpt.facets).length > 0) {
           relaxedFacets = effectiveOpt.facets;
         }
+        // 同理点名被丢弃的显式类目条件（仅 URL 参数传入的；推断类目本就可放宽，不点名）。
+        if (q.categoryId) relaxedCategoryId = q.categoryId;
       }
     }
     // 第 2 级：拼音从「前缀」放宽为「包含」、英文多词改逐词 OR。
@@ -746,6 +751,8 @@ export class SearchEngine {
               if (effectiveOpt.facets && Object.keys(effectiveOpt.facets).length > 0) {
                 relaxedFacets = effectiveOpt.facets;
               }
+              // 同 L1：点名被丢弃的显式类目条件（仅 URL 参数传入的）。
+              if (q.categoryId) relaxedCategoryId = q.categoryId;
             }
           }
           if (secondCandidates.length === 0) {
@@ -761,6 +768,12 @@ export class SearchEngine {
             candidates = secondCandidates;
             timings = secondTimings;
             fallback = secondFallback;
+            // 纠正后重算覆盖了第一轮的 fallback：未放宽（undefined/fuzzy）时，
+            // 第一轮 L1 点名的 relaxedCategoryId 已过期，随 fallback 一起清掉；
+            // 为 "filter" 时第二轮 L1 已重新点名，无需动。
+            // 注意只清 relaxedCategoryId：relaxedFacets 还可能来自字面回落
+            // （L637 处 inferredFacets 的点名），与纠正重算无关，不能一起清。
+            if (secondFallback !== "filter") relaxedCategoryId = undefined;
             lexicalHits = candidates.filter((c) => c.channel !== "semantic" && c.channel !== "personal");
             semanticOnly = candidates.length > 0 && lexicalHits.length === 0;
           }
@@ -834,6 +847,7 @@ export class SearchEngine {
       hasMore: offset + limit < hits.length,
       ...(fallback ? { fallback } : {}),
       ...(relaxedFacets ? { relaxedFacets } : {}),
+      ...(relaxedCategoryId ? { relaxedCategoryId } : {}),
       ...(timings.skippedSemantic && !effectiveOpt.disableSemantic ? { planner: "early-exit" as const } : {}),
       channelTimings: timings,
       ...(hasInferredFacets && !literalFallback ? { inferredFacets: parsedIntent.inferredFacets } : {}),
@@ -1413,50 +1427,26 @@ export class SearchEngine {
    * 旧实现把三种解析并成一条 `LIMIT 1`，
    * 而标题既不唯一也不受约束（实测「语言」×3、「操作系统」×2），
    * 于是同名类目的过滤结果由存储顺序决定 —— 静默选错节点。
-   * 歧义时按「无法解析」处理：返回只含入参的集合，结果为空而不是选错的那个。
+   * 歧义时按「无法解析」处理：返回空集，调用方按零结果处理
+   * （buildPreFilter/browse 均有 `ids.size === 0 → 空结果` 分支），
+   * 而不是选错节点。解析逻辑见 repository/categories.ts 的
+   * resolveCategoryWithDescendants（与 listSites 同源）。
    */
   private async categoryWithDescendants(categoryId: string): Promise<Set<string>> {
     const norm = categoryId.trim();
     const cached = this.categoryTreeCache.get(norm);
     if (cached && Date.now() - cached.at < SearchEngine.CATEGORY_TREE_TTL_MS) return cached.ids;
-    const byId = (await this.rawRows(`SELECT id, anchor FROM categories WHERE id = ?`, [norm])) as unknown as Array<{ id?: string; anchor?: string }>;
-    let target = byId[0];
-    if (!target) {
-      // /category/{slug} 的读路径要把 slug 直接透给检索，否则前端得先换成 id 多一跳
-      const slugNorm = norm.toLowerCase() === "duanju" ? "short-drama" : norm.toLowerCase();
-      const bySlug = (await this.rawRows(`SELECT id, anchor FROM categories WHERE slug = ? LIMIT 1`, [slugNorm])) as unknown as Array<{ id?: string; anchor?: string }>;
-      target = bySlug[0];
-    }
-    if (!target) {
-      const byName = (await this.rawRows(
-        `SELECT id, anchor FROM categories WHERE title = ? OR alt_labels LIKE ? ESCAPE '!' LIMIT 2`,
-        [norm, `%${escapeLike(JSON.stringify(norm))}%`],
-      )) as unknown as Array<{ id?: string; anchor?: string }>;
-      if (byName.length === 1) target = byName[0];
-    }
-
-    const ids = new Set<string>([target?.id ? String(target.id) : norm]);
-    const anchor = target?.anchor;
+    const ids = await resolveCategoryWithDescendants(
+      (sql, params) => this.rawRows(sql, params) as unknown as Promise<Array<Record<string, unknown>>>,
+      norm,
+    );
     // 未解析到（歧义/不存在）也缓存：这是「每次都要重跑 3 条查询仍得到空」的最坏路径，
     // 缓存它才挡得住扫描式调用。缩短到 60s 由调用方 invalidateCategoryTree() 兜底。
-    const remember = () => {
-      if (this.categoryTreeCache.size >= SearchEngine.CATEGORY_TREE_CACHE_MAX) {
-        const oldest = this.categoryTreeCache.keys().next();
-        if (!oldest.done) this.categoryTreeCache.delete(oldest.value);
-      }
-      this.categoryTreeCache.set(norm, { at: Date.now(), ids });
-    };
-    if (!anchor) {
-      remember();
-      return ids;
+    if (this.categoryTreeCache.size >= SearchEngine.CATEGORY_TREE_CACHE_MAX) {
+      const oldest = this.categoryTreeCache.keys().next();
+      if (!oldest.done) this.categoryTreeCache.delete(oldest.value);
     }
-
-    const descendants = await this.rawRows(
-      `SELECT id AS categoryid FROM categories WHERE anchor LIKE ?`,
-      [anchor + "/%"],
-    ) as unknown as Array<{ categoryid?: string }>;
-    for (const d of descendants) if (d.categoryid) ids.add(d.categoryid);
-    remember();
+    this.categoryTreeCache.set(norm, { at: Date.now(), ids });
     return ids;
   }
 

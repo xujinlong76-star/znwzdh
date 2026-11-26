@@ -52,9 +52,9 @@ export interface RouteEntry {
 const DESCRIPTIONS: Record<string, string> = {
   "GET /api/health": "健康与能力：模式、capabilities、统计",
   "POST /api/warmup": "预热 embedding 模型（默认惰性加载）",
-  "GET /api/search": "混合检索（四路召回 + RRF）；limit/offset 分页",
+  "GET /api/search": "混合检索（四路召回 + RRF）；categoryId 接受 id 或 slug、含后代；零结果放宽时 fallback 标记并点名 relaxedCategoryId/relaxedFacets；limit/offset 分页",
   "POST /api/search": "混合检索（JSON 体，与 GET 共用 schema）",
-  "GET /api/sites": "站点列表（categoryId/status/limit 过滤，含软删排除）",
+  "GET /api/sites": "站点列表（categoryId 接受 id 或 slug、含后代，不存在/歧义返回空；status/limit 过滤，含软删排除）",
   "GET /api/sites/{id}": "站点详情，支持 id 或 URL（URL 须 encodeURIComponent）",
   "POST /api/sites": "创建站点（URL 重复 → 409）",
   "PATCH /api/sites/{id}": "部分更新站点",

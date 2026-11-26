@@ -92,6 +92,10 @@ let BASELINE = [
   "apps/web-overlay/src/components/favorites/favorite-sync-dot.tsx",
   "apps/web-overlay/src/components/favorites/favorites-sync-badge.tsx",
   "apps/web-overlay/src/lib/favorites-sync-adapter.ts",
+  // --- 2026-11-26 回归登记（理由见 BASELINE_NOTES）---
+  "apps/web-overlay/src/app/admin/navigation/components/AddCategoryForm.tsx",
+  "apps/web-overlay/src/app/admin/navigation/components/AddItemForm.tsx",
+  "apps/web-overlay/src/registry/new-york/ui/toggle.tsx",
 ];
 
 /**
@@ -191,6 +195,17 @@ let BASELINE_NOTES = {
     "keep（E 产品欠账·合并孤儿）：Local-First 同步六态徽标（SyncBadgeState），合并后远程页改用 FavoritesSyncStatus 状态条而未接线；待类型适配后接回或裁撤（2026-11-24 复核）",
   "apps/web-overlay/src/lib/favorites-sync-adapter.ts":
     "keep（E 产品欠账·合并孤儿）：SyncEngineSnapshot ↔ 页面同步状态的适配层，正是补回上述三项所需的桥；合并后无消费方，随上组一并处置（2026-11-24 复核）",
+  // --- 2026-11-26 回归登记：eafc9c27 懒加载拆分 + 引用方清理后重新变 0 引用 ---
+  // 这三文件在 2026-11-16 曾因「已获真实引用」移出 BASELINE（见文件头注释），
+  // 但后续提交删掉了那些引用方，于是又变回候选。三者都不是可随手删的死代码：
+  // 两个 Form wrapper 有 test/admin-lazy-guard.test.ts 按源码路径读取（盲区 C），
+  // toggle.tsx 是 registry vendored 组件（盲区 D，toggleVariants 导出契约）。
+  "apps/web-overlay/src/app/admin/navigation/components/AddCategoryForm.tsx":
+    "keep（C 守卫测试）：test/admin-lazy-guard.test.ts 按路径读本文件，断言同路径 dynamic 包装且不引 react-hook-form/zod；删除先让守卫变红（2026-11-26 复核）",
+  "apps/web-overlay/src/app/admin/navigation/components/AddItemForm.tsx":
+    "keep（C 守卫测试）：同上 admin-lazy-guard.test.ts 断言 dynamic 包装与表单库不进首屏；删除先让守卫变红（2026-11-26 复核）",
+  "apps/web-overlay/src/registry/new-york/ui/toggle.tsx":
+    "keep（D vendored 覆盖）：registry primitive，导出 Toggle/toggleVariants；引用方 toggle-group.tsx 在后续清理中不再 import，但删本文件会让 vendored 重建与 tsc 回归（2026-11-26 复核）",
 };
 
 // ---------- 形状校验（退出码 2） ----------

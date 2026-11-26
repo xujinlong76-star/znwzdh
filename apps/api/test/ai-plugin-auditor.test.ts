@@ -11,6 +11,7 @@ import {
   evaluatePluginAudit,
   executeAutoAuditAndPublish,
   autoRemediatePluginManifest,
+  parsePluginAuditModelResult,
 } from "../src/ai-plugin-auditor.ts";
 import type { PluginManifest } from "@navhub/core";
 
@@ -119,6 +120,23 @@ afterEach(() => {
 const SLOW_AUDIT_MS = 20_000;
 
 describe("AI 专业级自动化插件审查与审批引擎 (AI Plugin Auditor)", () => {
+  it("模型裁决缺少 decision 必须拒绝解析，不能把分数当成通过", () => {
+    expect(() => parsePluginAuditModelResult(JSON.stringify({ complianceScore: 99, relevanceScore: 99, rationale: "高分" }))).toThrow(/decision/);
+  });
+
+  it("模型裁决包含未知 decision 必须拒绝解析", () => {
+    expect(() => parsePluginAuditModelResult(JSON.stringify({ decision: "maybe", complianceScore: 99, relevanceScore: 99, rationale: "未知裁决" }))).toThrow(/decision/);
+  });
+
+  it("模型分数为 Infinity 或超出范围必须拒绝解析", () => {
+    expect(() => parsePluginAuditModelResult('{"decision":"approve","complianceScore":1e309,"relevanceScore":99,"rationale":"异常分数"}')).toThrow(/有限数字/);
+    expect(() => parsePluginAuditModelResult(JSON.stringify({ decision: "approve", complianceScore: 101, relevanceScore: 99, rationale: "越界分数" }))).toThrow(/有限数字/);
+  });
+
+  it("模型裁决完整合法时才返回经过校验的结构", () => {
+    expect(parsePluginAuditModelResult(AUDIT_APPROVE)).toMatchObject({ decision: "approve", complianceScore: 92, relevanceScore: 88 });
+  });
+
   const validSitePack: PluginManifest = {
     manifestVersion: 1,
     kind: "site-pack",

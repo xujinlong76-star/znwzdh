@@ -613,7 +613,7 @@
     /* P1-1：市场页窄屏自动收起态——根节点整体滑出视口右侧（transform 只写位移，
        不动 left/top、不覆盖用户拖动位置；圆标本体随根节点一起出视口，点按与包围盒都不再挡页面元素）。
        Q1 返工：位移量不用固定值——拖动过的猫 left 不同，固定 70px 会留一部分在视口内；
-       收起时按实时矩形算进 --xm-park-x（见 syncMarketPark）。
+       收起时按实时矩形算进 --xm-park-x（见 syncAutoPark）。
        回落值 calc(100vw + 12px)：只有 JS 量取抛错时才走；按视口宽算，从任何 left 出发
        都能整只滑出视口（旧 calc(100% + 12px) 按自身宽度算，只对默认位置成立）。 */
     '@media (max-width:640px){#xiaomaomao.xm-parked{transform:translateX(var(--xm-park-x,calc(100vw + 12px)))}}' +
@@ -621,7 +621,8 @@
        猫在 640–1023px 默认 bottom 112px（K1 悬浮栈规范，与桌面默认同值；原 4.5rem+18px
        =90px 会蹭胶囊顶部），拖动过的猫会直接盖住版权行与备案链接；滚到底时沿用 P1-1 的收起
        位移（--xm-park-x 实时量取），
-       与 ≤640px 同款滑出视口。顶部收起（y≤30，防盖搜索行）仍只在 ≤640px 生效，见 syncMarketPark。 */
+       与 ≤640px 同款滑出视口。顶部收起（y≤30）自 2026-11-26 起全站全宽度生效
+       （首页/热榜首屏卡片收藏按钮三档皆被盖住），见 syncAutoPark。 */
     '@media (min-width:641px) and (max-width:1023px){#xiaomaomao.xm-parked{transform:translateX(var(--xm-park-x,calc(100vw + 12px)))}}' +
     /* 半屏下沉栏避让（Batch 3 第 12 项 BLOCK 修复）：640–1024px 首页底部有 56px 高的常驻栏
        （HalfScreenDock，z-40），猫默认 bottom:18px 会整只盖住栏右侧、.xm-lean 拦截指针，
@@ -750,7 +751,7 @@
     '<button class="xm-tab" type="button" title="叫出小猫猫" aria-label="叫出小猫猫"><img alt="小猫猫"><span class="xm-tab-badge" aria-hidden="true">' + ICONS.chat + '</span></button>';
   document.body.appendChild(root);
   /* K2：启动时恢复持久收起态——7 天内收起过则仍收着（圆标可唤回）；超过 7 天
-     自动过期恢复展开（关一次不等于永久消失）。自动收起（syncMarketPark 的
+     自动过期恢复展开（关一次不等于永久消失）。自动收起（syncAutoPark 的
      autoClosed）不走这条：它只在本页滚动时生效，不落盘。
      首屏瘦身（2026-11-20）：默认收起（closedAt === 0）不设过期，永久收起直到
      用户点圆标展开；仅亲手收起（closedAt > 0）才走 7 天 TTL。 */
@@ -2432,19 +2433,26 @@
     lastScrollY = y;
     if (down && y > 300) doDock();
     if (typeof syncFabAvoid === 'function') syncFabAvoid();
-    syncMarketPark(); /* P1-1：滚动即重新判断市场页收起/露出 */
+    syncAutoPark(); /* 全站自动收起：滚动即重新判断收起/露出 */
   }, { passive: true });
 
-  /* ---------- P1-1：市场页窄屏自动收起（390px 下猫身盖住搜索框右端） ----------
-     /marketplace 窄屏（≤640px，与 CSS 媒体规则同断点）时，猫自动收进圆标并整体
-     滑出视口右侧（.xm-parked，只写 transform 位移、不动 left/top、不覆盖用户
-     已保存的拖动位置）；滚过搜索行（scrollY>60）后露出圆标入口（仍收起态，
-     点圆标唤回），滚回顶部或滚到底（页脚/回到顶部正处猫的高度）时重新收走。
-     离开市场页时自动收起的状态原样恢复；用户亲手唤回/收起后本页不再自动收。
-     面板/游戏/聊天请求开着时不自动收（parkBlocked，复用 dockBlocked 的守门语义）。
-     P2-16：滚到底分支放宽到 ≤1023px（页脚避让，见 isFooterParkViewport 与 641–1023px
-     的 .xm-parked 媒体规则）；顶部收起与位移量取逻辑（竞态修复）一字未动。 */
-  var autoParked = false, autoClosed = false, userUnparked = false, marketPath = '';
+  /* ---------- 全站自动收起（P1-1 机制推广，2026-11-26） ----------
+     原 P1-1 只在 /marketplace 窄屏生效（猫盖住搜索框右端）；2026-11-26 CI
+     证实同一缺陷遍及全站：首页与 /hot 首屏右下角的猫（40–48px）盖住卡片
+     收藏按钮（390/1024/1366 三档皆中），390px 滚到底还压住页脚链接行。
+     因此收起规则推广到全站全宽度：
+       · 顶部（scrollY≤30）：一律收起——进页首屏右下角不再有猫挡住卡片；
+       · 滚到底（≤1023px）：收起——页脚避让（P2-16 原范围，见 isFooterParkViewport）；
+       · 滚过 60px：露出圆标入口（仍收起态，点圆标唤回整猫）；
+       · 换页时用户亲手唤回的状态清零（本页不再自动收只限当页）；
+       · 面板/游戏/聊天请求开着时不自动收（parkBlocked，复用 dockBlocked 的守门语义）。
+     收起只写 transform 位移、不动 left/top、不覆盖用户已保存的拖动位置；
+     位移每次进入收起区都实时量取（竞态修复，一字未动）。
+     注意：顶部收起不再只限窄屏——P2-16 的“平板跳回顶部放回圆标”分支
+     （y≤30 非窄屏时清位移）随之失效已删除：回到顶部现在重新收起，与进页一致。
+     代价：进页 850ms 自动招呼气泡在收起态下跳过（原有守门），猫以圆标形态
+     在用户第一次滚动后出现；与 /marketplace 现状一致。 */
+  var autoParked = false, autoClosed = false, userUnparked = false, parkPath = '';
   function isNarrowViewport() {
     try { return window.matchMedia('(max-width: 640px)').matches; } catch (e) { return window.innerWidth <= 640; }
   }
@@ -2465,7 +2473,7 @@
       !!busy || !!document.hidden ||
       (typeof play === 'object' && play !== null && play.on); /* 互动玩法：游乐场模式下不自动收起 */
   }
-  /* Q1 返工：清除收起位移变量（解除收起/离开市场页时调用；未设变量时 CSS 回落到 calc(100vw + 12px)）。 */
+  /* Q1 返工：清除收起位移变量（解除收起时调用；未设变量时 CSS 回落到 calc(100vw + 12px)）。 */
   function clearParkX() {
     try { root.style.removeProperty('--xm-park-x'); } catch (e) { /* 忽略 */ }
   }
@@ -2490,23 +2498,16 @@
       root.classList.remove('xm-me-safe');
     }
   }
-  function syncMarketPark() {
+  function syncAutoPark() {
     syncMeRouteSafeAnchor();
     var p = '';
     try { p = window.location.pathname || ''; } catch (e) { /* 忽略 */ }
-    var onMarket = p === '/marketplace' || p.indexOf('/marketplace/') === 0;
-    if (!onMarket || !isFooterParkViewport()) {
-      if (autoParked) { autoParked = false; root.classList.remove('xm-parked'); clearParkX(); }
-      if (autoClosed) { autoClosed = false; root.classList.remove('xm-closed'); }
-      marketPath = onMarket ? p : '';
-      return;
-    }
-    if (marketPath !== p) { marketPath = p; userUnparked = false; }
+    if (parkPath !== p) { parkPath = p; userUnparked = false; }
     if (parkBlocked() || userUnparked) return;
     var y = window.scrollY || 0;
-    /* P2-16：顶部收起（y≤30）仍只在窄屏生效（防盖搜索行是窄屏问题）；滚到底收起放宽到
-       ≤1023px（页脚避让）。窄屏下本条件与 P1-1 原式逐字等价，≤640px 行为零变化。 */
-    if ((y <= 30 && isNarrowViewport()) || nearPageBottom()) {
+    /* 顶部收起不限窄屏：卡片收藏按钮在 390/1024/1366 三档首屏都会被猫盖住；
+       滚到底收起仍只在 ≤1023px（P2-16 页脚避让范围；桌面端页脚 pb 已清开猫带）。 */
+    if (y <= 30 || (nearPageBottom() && isFooterParkViewport())) {
       if (docked) undock(); /* 贴边写的是行内 transform，会压过 .xm-parked 的位移，先清掉 */
       if (!root.classList.contains('xm-closed')) { ensureTabIcon(); root.classList.add('xm-closed'); autoClosed = true; }
       /* 竞态修复（独立复审问题 1）+ 视口变宽重算（问题 2）：每次进入收起区都重算位移。
@@ -2538,25 +2539,19 @@
       root.classList.remove('xm-parked');
       clearParkX();
       autoParked = false;
-    } else if (y <= 30 && !isNarrowViewport() && autoParked) {
-      /* P2-16：平板跳回顶部（回到顶部按钮直达 y=0，不经过 y>60 的露出分支）时放回圆标，
-         否则猫会一直收在视口外。只清位移、不碰 xm-closed（仍是收起态圆标，点圆标唤回）。 */
-      root.classList.remove('xm-parked');
-      clearParkX();
-      autoParked = false;
     }
   }
   /* 软路由（Next.js Link）不重载脚本：history 变化与视口变化后重新同步一次。 */
-  window.addEventListener('popstate', syncMarketPark);
+  window.addEventListener('popstate', syncAutoPark);
   try {
     var _xmPushState = history.pushState, _xmReplaceState = history.replaceState;
-    if (_xmPushState) history.pushState = function () { var r = _xmPushState.apply(this, arguments); syncMarketPark(); return r; };
-    if (_xmReplaceState) history.replaceState = function () { var r = _xmReplaceState.apply(this, arguments); syncMarketPark(); return r; };
+    if (_xmPushState) history.pushState = function () { var r = _xmPushState.apply(this, arguments); syncAutoPark(); return r; };
+    if (_xmReplaceState) history.replaceState = function () { var r = _xmReplaceState.apply(this, arguments); syncAutoPark(); return r; };
   } catch (e) { /* 忽略 */ }
   var _xmResizeT = 0;
   window.addEventListener('resize', function () {
     window.clearTimeout(_xmResizeT);
-    _xmResizeT = window.setTimeout(syncMarketPark, 200);
+    _xmResizeT = window.setTimeout(syncAutoPark, 200);
   });
   root.addEventListener('pointerenter', function () {
     xmHovering = true; /* K3：悬停猫时“滚动停止 8 秒自动半藏”不触发 */
@@ -3971,9 +3966,15 @@
   var festToday = festivalToday();
   if (festToday) showDeco(festToday.deco);
   initGrowthWatch();
-  /* P1-1：市场页窄屏进页即自动收起（须在 850ms 招呼前生效，招呼的
-     !xm-closed 守门会顺带跳过它）。 */
-  syncMarketPark();
+  /* 全站自动收起：进页即同步一次（须在 850ms 招呼前生效，招呼的
+     !xm-closed 守门会顺带跳过它）。首帧禁过渡：猫直接从视口外起步，
+     不走 .45s 滑出动画——既避免首屏量到半滑出的猫，也避免进页就看到猫滑走。 */
+  try {
+    root.style.transition = 'none';
+    syncAutoPark();
+    void root.offsetWidth; /* 回流：把收起位置落到位 */
+  } catch (e) { /* 忽略，首帧收起失败不阻塞后续初始化 */ }
+  try { root.style.transition = ''; } catch (e) { /* 忽略 */ }
   window.setTimeout(function () { burst(8); }, 380);
   window.setTimeout(function () {
     greeted = true;

@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { countCategorySites, estimateTruncatedSectionHeight } from "../src/lib/modular/category-counts";
+import { countCategorySites, estimateTruncatedSectionHeight, homeSeoTreeCounts } from "../src/lib/modular/category-counts";
 import { filterNavigationData, processNavigationData } from "../src/lib/data-loader";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -143,5 +143,59 @@ describe("首屏三个出口共用同一份算式", () => {
     const src = overlayFile("src/app/page.tsx");
     expect(src).toContain("会不会 404");
     expect(src).toContain("不是「有几张卡片」");
+  });
+});
+
+describe("homeSeoTreeCounts：首页 SEO 描述的计数与首屏同口径", () => {
+  it("总数 = 各有站根的树计数之和，空根不计入大类数", () => {
+    expect(
+      homeSeoTreeCounts([
+        mixed as never,
+        { id: "reg-empty", title: "空根", items: [], subCategories: [] } as never,
+      ]),
+    ).toEqual({ totalSites: 6, rootCount: 1 });
+  });
+
+  it("巡检标 broken 的站仍计入：首页照常渲染它们（带检测异常徽标），描述不能把它们减掉", () => {
+    const withBroken = {
+      id: "reg-x",
+      title: "有坏链的分类",
+      items: [item("ok1"), { ...item("bad1"), status: "broken" }],
+      subCategories: [{ id: "s", title: "子", items: [{ ...item("bad2"), status: "broken" }] }],
+    };
+    // 2026-11-26 实测口径：树 388 − broken 50 = active 338；描述若用 active 口径就少 50
+    expect(homeSeoTreeCounts([withBroken as never])).toEqual({ totalSites: 3, rootCount: 1 });
+  });
+
+  it("空树 / undefined → 零，调用方退回中枢计数链路、绝不编数字", () => {
+    expect(homeSeoTreeCounts([])).toEqual({ totalSites: 0, rootCount: 0 });
+    expect(homeSeoTreeCounts(undefined)).toEqual({ totalSites: 0, rootCount: 0 });
+  });
+
+  it("停用项被 filterNavigationData 摘掉后，SEO 计数一起变小", () => {
+    const raw = {
+      navigationItems: [
+        {
+          ...mixed,
+          items: [...mixed.items, { ...item("a3"), enabled: false }],
+          subCategories: mixed.subCategories.map((s, i) =>
+            i === 0 ? { ...s, items: [...s.items, { ...item("b4"), enabled: false }] } : s,
+          ),
+        },
+      ],
+    };
+    const visible = filterNavigationData(processNavigationData(raw as never));
+    expect(homeSeoTreeCounts(visible.navigationItems as never)).toEqual({ totalSites: 6, rootCount: 1 });
+  });
+
+  it("首页 getHomeSeo 优先用树计数合成描述，中枢 active 计数只作树取不到时的回退", () => {
+    const src = overlayFile("src/app/page.tsx");
+    const seoBlock = src.slice(src.indexOf("const getHomeSeo"), src.indexOf("export async function generateMetadata"));
+    expect(seoBlock).toContain("homeSeoTreeCounts(");
+    expect(seoBlock).toContain("树口径");
+    // 描述模板先用树数（treeCounts），中枢计数只出现在其后的 else 回退分支里
+    expect(seoBlock).toContain("treeCounts.totalSites");
+    expect(seoBlock.indexOf("treeCounts.totalSites")).toBeLessThan(seoBlock.indexOf("loadActiveCategoryCounts"));
+    expect(seoBlock).toContain("树取不到");
   });
 });

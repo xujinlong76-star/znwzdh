@@ -26,6 +26,38 @@ export function countCategorySites(category: CountableCategory | undefined): num
 }
 
 /**
+ * 首页 SEO 描述（meta description / JSON-LD 共用）的计数：与首屏 pills /
+ * 区块头同口径的树计数（见本文件头注释的定稿规则：首屏只有一个平面）。
+ *
+ * 为什么不能用中枢 `/api/categories/counts`：它是 active 口径（SQL 只计
+ * `status = 'active'`，见 packages/store/src/repository/categories.ts），
+ * 巡检标 broken 的站会被减掉（2026-11-26 实测：树 388 站 − broken 50 =
+ * active 338）；而首页照常渲染这 50 站（带「检测异常」徽标），描述写 338
+ * 就与页面实际内容差 50，搜索用户点进来数出来对不上。根分类同样：中枢有
+ * 20 个根，树里有站点的只有 14 个（其余 6 个是 0 站点的空根），描述写 20
+ * 个大类与首页实际呈现的 14 组不符。
+ *
+ * 规则：只计树里有站点的根（`countCategorySites > 0`），总数 = 各根树计数之和。
+ * 输入是 `getProcessedData` 之后、已按 `enabled` 过滤的导航树，与 pills 的
+ * `treeSiteCounts` 同源（`navigation-content.tsx`），做到「数出来等于划得到」。
+ * 树取不到（总数 0）时调用方应退回旧的中枢计数链路，再取不到退回后台原文案，
+ * 绝不编数字。
+ */
+export function homeSeoTreeCounts(
+  categories: readonly CountableCategory[] | undefined | null,
+): { totalSites: number; rootCount: number } {
+  let totalSites = 0;
+  let rootCount = 0;
+  for (const category of categories ?? []) {
+    const n = countCategorySites(category);
+    if (n <= 0) continue;
+    rootCount += 1;
+    totalSites += n;
+  }
+  return { totalSites, rootCount };
+}
+
+/**
  * 截断态分区高度估算（P1-7）：懒挂载占位块应与真实截断渲染等高，否则滚动/锚点跳动。
  *
  * 旧公式按 min(count, 6) 封顶（最多 2 行、288px），与真实截断高度（每组 4 张卡、

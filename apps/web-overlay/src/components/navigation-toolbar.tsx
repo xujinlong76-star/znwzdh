@@ -101,10 +101,13 @@ const SearchPalette = dynamic(
 
 function LazySearchPalette({
   siteConfig,
+  categoryId,
   placeholder,
   onOpenDiscoveryDialog,
 }: {
   siteConfig: SiteConfig
+  /** 类目筛选：聚焦分类抽屉内透传，分类页由 category-board 直接挂 SearchPalette */
+  categoryId?: string
   placeholder: string
   onOpenDiscoveryDialog?: (mode?: 'ai' | 'similar', initialQuery?: string) => void
 }) {
@@ -125,6 +128,7 @@ function LazySearchPalette({
     return (
       <SearchPalette
         siteConfig={siteConfig}
+        categoryId={categoryId}
         placeholder={placeholder}
         onOpenDiscoveryDialog={onOpenDiscoveryDialog}
         autoFocus
@@ -178,6 +182,8 @@ export interface NavigationToolbarProps {
   onOpenAppearanceGuide?: () => void
   onOpenAiFinder?: (mode?: 'ai' | 'similar', initialQuery?: string) => void
   unreadNotifications?: number
+  /** 类目筛选：聚焦分类抽屉内限定搜索范围；未传则全站（首页顶栏） */
+  categoryId?: string
   /** 嵌入分类聚焦下拉抽屉时去掉 sticky，由外层抽屉承接定位与底色 */
   embedded?: boolean
 }
@@ -200,6 +206,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
   onOpenWidgetBox,
   onOpenAppearanceGuide,
   onOpenAiFinder,
+  categoryId,
   embedded = false,
 }: NavigationToolbarProps) {
   const hasTodayAlert = Boolean(todayBadge && (todayBadge.urgentCount > 0 || todayBadge.todayCount > 0))
@@ -218,7 +225,12 @@ export const NavigationToolbar = memo(function NavigationToolbar({
             {/* 山羊胡三合一融合检索引擎（全站检索 × AI 找站 × 找相似） */}
             <LazySearchPalette
               siteConfig={siteConfig}
-              placeholder="搜索站点、标签或拼音…"
+              categoryId={categoryId}
+              placeholder={
+                categoryId
+                  ? '在当前分类内搜索…（无结果时自动放宽到全库）'
+                  : '搜索站点、标签或拼音…'
+              }
               onOpenDiscoveryDialog={onOpenAiFinder}
             />
           </div>

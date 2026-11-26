@@ -18,6 +18,7 @@ import { JsonLd } from "@/components/json-ld";
 import { normalizeBrandName, pageShareMetadata } from "@/lib/seo/metadata";
 import { MIN_SITES_FOR_CATEGORY_INDEX } from "@/lib/seo/thresholds";
 import { descendantSiteCounts } from "@/lib/seo/category-totals";
+import { homeSeoTreeCounts } from "@/lib/modular/category-counts";
 import { categoryUrlKey, isHiddenCategory } from "@/lib/seo/category-url";
 import {
   categoryDisplayName,
@@ -237,8 +238,10 @@ function searchEngineVerification(): Metadata['verification'] | undefined {
  *   时拼成「品牌 - 网址导航 | AI工具、短剧与在线工具大全」（每个词都有站内
  *   真实内容对应：AI 工具一级分类、短剧专区、在线工具与场景包）。
  * - description：后台文案 ≥60 字视为已认真写过、原样用；否则用真实计数合成
- *   （收录站点数按一级分类后代聚合，与 sitemap/分类页同口径），计数取不到
- *   时退回后台原文案，绝不编数字。
+ *   （收录站点数与大类数都按首页实际渲染的导航树算，与 pills/区块头同口径，
+ *   见 lib/modular/category-counts.ts 的定稿规则「首屏只有一个平面」；
+ *   中枢 active 计数不含巡检标 broken 的站，而首页照常渲染它们，描述用
+ *   active 口径会与页面内容差数），计数取不到时退回后台原文案，绝不编数字。
  * generateMetadata 与页面 JSON-LD 共用这一份（React cache 去重），保证
  * head 与结构化数据口径一致。
  */
@@ -256,20 +259,33 @@ const getHomeSeo = cache(async () => {
   const rawDesc = (siteData.basic.description ?? "").trim();
   let description = rawDesc;
   if (rawDesc.length < 60) {
-    const [categories, rawCounts] = await Promise.all([
-      loadCategories(3600),
-      loadActiveCategoryCounts(60),
-    ]);
-    if (categories && rawCounts) {
-      const counts = descendantSiteCounts(categories, rawCounts);
-      const roots = categories.filter((c) => !c.parentId && c.enabled !== false);
-      const totalSites = counts
-        ? roots.reduce((sum, c) => sum + (counts.get(c.id) ?? 0), 0)
-        : 0;
-      if (counts && totalSites > 0) {
-        description =
-          `${brand}收录 ${totalSites} 个精选网站的网址导航，按 ${roots.length} 个大类与使用场景整理，` +
-          `覆盖 AI 工具、热门短剧、效率办公、学习考试与设计创作；输入一句需求，AI 帮你找到顺手的网站与工具。`;
+    // 首选树口径：与首页 pills/区块头同一份算式（homeSeoTreeCounts），描述的数字
+    // 必须等于页面实际渲染的卡片数与分组数。2026-11-26 实测：树 388 站 / 14 组，
+    // 中枢 active 口径 338 站 / 20 个根（broken 50 站被减掉、6 个 0 站点空根被
+    // 算进大类数），描述若用后者，与点进来的用户数出来的不一致。
+    const { navigationData } = await getData();
+    const treeCounts = homeSeoTreeCounts(navigationData?.navigationItems);
+    if (treeCounts.totalSites > 0) {
+      description =
+        `${brand}收录 ${treeCounts.totalSites} 个精选网站的网址导航，按 ${treeCounts.rootCount} 个大类与使用场景整理，` +
+        `覆盖 AI 工具、热门短剧、效率办公、学习考试与设计创作；输入一句需求，AI 帮你找到顺手的网站与工具。`;
+    } else {
+      // 树取不到（中枢抖动）时退回中枢 active 计数（旧行为），再取不到退回后台原文案。
+      const [categories, rawCounts] = await Promise.all([
+        loadCategories(3600),
+        loadActiveCategoryCounts(60),
+      ]);
+      if (categories && rawCounts) {
+        const counts = descendantSiteCounts(categories, rawCounts);
+        const roots = categories.filter((c) => !c.parentId && c.enabled !== false);
+        const totalSites = counts
+          ? roots.reduce((sum, c) => sum + (counts.get(c.id) ?? 0), 0)
+          : 0;
+        if (counts && totalSites > 0) {
+          description =
+            `${brand}收录 ${totalSites} 个精选网站的网址导航，按 ${roots.length} 个大类与使用场景整理，` +
+            `覆盖 AI 工具、热门短剧、效率办公、学习考试与设计创作；输入一句需求，AI 帮你找到顺手的网站与工具。`;
+        }
       }
     }
   }

@@ -22,6 +22,7 @@
  * 「HTTP code · latency · 巡检日期」），避免与状态词抢注意力。
  */
 import type { HealthStatus } from './health-sentinel'
+import type { SiteNotice } from './site-notices'
 
 export interface SiteHealthLike {
   ok?: boolean
@@ -51,6 +52,7 @@ export type SiteHealthStateName =
   | 'suspect-server-error'
   | 'anomaly'
   | 'dead'
+  | 'maintenance'
 
 export interface SiteHealthState {
   state: SiteHealthStateName
@@ -102,7 +104,20 @@ function accessibleLabel(latencyMs: number | null): string {
   return '可访问'
 }
 
-export function siteHealthState(health: SiteHealthInput | null | undefined): SiteHealthState | null {
+/**
+ * 维护中（人工标注，见 site-notices.ts）：有效 notice 独立生效，
+ * 不依赖 lastCheckedAt——巡检暂停期间 lastCheckedAt 会变陈旧，
+ * 但人工确认的维护事实不应因此消失。tone 为 warn：自动进「只看失效」
+ * 侧、复用琥珀点/胶囊；showArchive 只认 dead/suspect-soft404，
+ * 维护档不挂「看存档」链接。
+ */
+export function siteHealthState(
+  health: SiteHealthInput | null | undefined,
+  notice?: SiteNotice,
+): SiteHealthState | null {
+  if (notice) {
+    return { state: 'maintenance', tone: 'warn', label: '维护中', latencyMs: health?.latencyMs ?? null }
+  }
   if (!health || !health.lastCheckedAt) return null
   const latencyMs = health.latencyMs ?? null
   // 无计数时按单次失败计：拿不出“连续两次”的证据，就永不直升已失效。
@@ -175,8 +190,11 @@ export function siteHealthState(health: SiteHealthInput | null | undefined): Sit
  * `siteHealthBadge()` 保持不动的兼容薄壳：内部改调 `siteHealthState()`，
  * 再取 tone/label/latencyMs。现有调用方（详情页、速览弹窗）不受影响。
  */
-export function siteHealthBadge(health: SiteHealthInput | null | undefined): SiteHealthBadge | null {
-  const state = siteHealthState(health)
+export function siteHealthBadge(
+  health: SiteHealthInput | null | undefined,
+  notice?: SiteNotice,
+): SiteHealthBadge | null {
+  const state = siteHealthState(health, notice)
   if (!state) return null
   return { tone: state.tone, label: state.label, latencyMs: state.latencyMs }
 }
@@ -202,8 +220,21 @@ export function isFailingHealthState(state: SiteHealthState | null | undefined):
  * 徽标悬停 title（§7 写死）：`HTTP <code> · <latency>ms · 巡检于 <YYYY-MM-DD>`；
  * 延迟无值时不写延迟段；无状态码时写 `近期检测异常 · 巡检于 <YYYY-MM-DD>`；
  * 未巡检返回 null（无徽标、无 title）。
+ *
+ * 维护档：第二参数传已算出的 state（调用方手头已有，无需再传 notice，
+ * CardHealthBadge 因此零改动）；维护时返回 `维护中 · 巡检于 <YYYY-MM-DD>`，
+ * health 为空（未巡检）时只返回 `维护中`。
  */
-export function siteHealthTitle(health: SiteHealthInput | null | undefined): string | null {
+export function siteHealthTitle(
+  health: SiteHealthInput | null | undefined,
+  state?: SiteHealthState | null,
+): string | null {
+  if (state?.state === 'maintenance') {
+    if (!health || !health.lastCheckedAt) return '维护中'
+    const d = new Date(health.lastCheckedAt)
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    return `维护中 · 巡检于 ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  }
   if (!health || !health.lastCheckedAt) return null
   const d = new Date(health.lastCheckedAt)
   const pad = (n: number): string => String(n).padStart(2, '0')

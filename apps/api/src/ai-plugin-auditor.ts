@@ -518,7 +518,7 @@ export async function evaluatePluginAudit(
         "审核钓鱼盗号、品牌冒充、恶意内容、违规内容、语义相关性和实际收录价值。",
         "静态安全检查和探活证据由程序独立执行；不得声称覆盖程序未提供的证据。",
         "仅输出 JSON 对象，字段必须完整：decision 必须为 approve 或 reject；complianceScore 与 relevanceScore 必须是 0 到 100 的数字；rationale 必须是非空字符串；suggestions 必须是字符串数组。",
-      ].join("\\n");
+      ].join("\n");
 
       const chatRes = await callLlm(ctx, resolved, {
         scenario: "plugin_audit",

@@ -305,14 +305,14 @@ describe("全仓：可点击的 <g> 必须可聚焦", () => {
 });
 
 describe("图谱拖拽平移：rAF 合帧", () => {
-  it("mousemove 不直接 setPan，走 rAF 队列且卸载时清理", () => {
+  it("pointermove 不直接 setPan，走 rAF 队列且卸载时清理", () => {
     const src = overlaySource(GRAPH);
-    const move = src.match(/const handleMouseMove = [\s\S]*?\n  }/)?.[0] ?? "";
+    const move = src.match(/const handlePointerMove = [\s\S]*?\n  }/)?.[0] ?? "";
     expect(move).toContain("requestAnimationFrame");
-    // 直接 setPan 只允许出现在 rAF 回调与 mouseup 冲刷里，不能在 move 顶层逐事件调用
+    // 直接 setPan 只允许出现在 rAF 回调与 pointerup 冲刷里，不能在 move 顶层逐事件调用
     expect(move).not.toContain("setPan({");
     expect(move).toContain("pendingPanRef.current");
-    const up = src.match(/const handleMouseUp = [\s\S]*?\n  }/)?.[0] ?? "";
+    const up = src.match(/const handlePointerUp = [\s\S]*?\n  }/)?.[0] ?? "";
     expect(up).toContain("cancelAnimationFrame");
     expect(up).toContain("setPan(pendingPanRef.current)");
     const cleanup = src.match(/useEffect\(\(\) => \{[\s\S]*?return \(\) => \{[\s\S]*?\n  }, \[\]\)/)?.[0] ?? "";

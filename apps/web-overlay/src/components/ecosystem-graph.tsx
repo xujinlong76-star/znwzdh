@@ -23,12 +23,17 @@ import {
 import {
   capsuleTextWidth,
   computeGraphFit,
+  computeGraphReadableFloor,
   computeNodeDegrees,
   edgeCapsuleText,
   graphContentBox,
   nodeRadiusForDegree,
+  pinchGraphView,
+  toGraphViewBoxPoint,
   truncateGraphLabel,
   resolveIsOpenSource,
+  GRAPH_MIN_NODE_RADIUS,
+  GRAPH_NARROW_CONTAINER_PX,
 } from '@/lib/graph-polish'
 import { extractFaviconMonogram, resolveSiteIcon } from '@/components/site-favicon'
 import {
@@ -756,9 +761,45 @@ export function EcosystemGraph() {
   }, [focusId, visibleEdges])
 
   /**
+   * 视图补间：350ms 缓动从当前 zoom/pan 平滑过渡到目标值。
+   * applyFit 与窄屏「点节点放大到可读」共用同一段动画。
+   */
+  const tweenView = useCallback((targetZoom: number, targetPan: { x: number; y: number }) => {
+    if (viewTweenRef.current !== null) {
+      cancelAnimationFrame(viewTweenRef.current)
+      viewTweenRef.current = null
+    }
+    const startZoom = zoomRef.current
+    const startPan = panRef.current
+    const start = performance.now()
+    const duration = 350
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration)
+      const eased = 1 - Math.pow(1 - t, 3)
+      setZoom(startZoom + (targetZoom - startZoom) * eased)
+      setPan({
+        x: startPan.x + (targetPan.x - startPan.x) * eased,
+        y: startPan.y + (targetPan.y - startPan.y) * eased,
+      })
+      if (t < 1) {
+        viewTweenRef.current = requestAnimationFrame(tick)
+      } else {
+        viewTweenRef.current = null
+      }
+    }
+    viewTweenRef.current = requestAnimationFrame(tick)
+  }, [])
+
+  /**
    * 自动 fitView：算出全部可见节点（含文字包围盒）的并集，按画布实际宽高比
    * 缩放并居中，强制预留 56px 四周安全边距，彻底杜绝裁切。
    * animate=true 时用 350ms 缓动从当前视图平滑过渡过去。
+   *
+   * U-399 窄屏（<768px）：fit-all 在 390px 上会把节点压到约 5.4px、标签约 2.1px，
+   * 既读不了也点不中。窄屏改走「可读缩放」：zoom 下限按最小节点直径 ≥24px
+   * 反推（约 1.98），视图中心对准连接度最高的可见节点（环形布局的包围盒
+   * 中心是空心，定在节点上首屏中央才有可点的东西）。桌面（≥768px）不传
+   * 任何新参数，fit 数学与旧版逐字节一致。
    */
   const applyFit = useCallback(
     (animate: boolean) => {
@@ -772,37 +813,38 @@ export function EcosystemGraph() {
         (i) => truncateGraphLabel(filteredNodes[i]!.title),
       )
       if (!box) return
-      const target = computeGraphFit(box, rect.width, rect.height)
-      if (viewTweenRef.current !== null) {
-        cancelAnimationFrame(viewTweenRef.current)
-        viewTweenRef.current = null
+      const isNarrow = rect.width < GRAPH_NARROW_CONTAINER_PX
+      let target: { zoom: number; pan: { x: number; y: number } }
+      if (isNarrow) {
+        // 焦点 = 连接度最高的可见节点（并列取先者，结果稳定）；没有边时取首个节点。
+        let focusNode = filteredNodes[0]!
+        let focusDegree = -1
+        for (const n of filteredNodes) {
+          const d = degreeMap.get(n.id) ?? 0
+          if (d > focusDegree) {
+            focusDegree = d
+            focusNode = n
+          }
+        }
+        target = computeGraphFit(box, rect.width, rect.height, {
+          minReadableZoom: computeGraphReadableFloor(
+            rect.width,
+            rect.height,
+            GRAPH_MIN_NODE_RADIUS,
+          ),
+          focusPoint: { x: focusNode.x ?? 450, y: focusNode.y ?? 300 },
+        })
+      } else {
+        target = computeGraphFit(box, rect.width, rect.height)
       }
       if (!animate) {
         setZoom(target.zoom)
         setPan(target.pan)
         return
       }
-      const startZoom = zoomRef.current
-      const startPan = panRef.current
-      const start = performance.now()
-      const duration = 350
-      const tick = (now: number) => {
-        const t = Math.min(1, (now - start) / duration)
-        const eased = 1 - Math.pow(1 - t, 3)
-        setZoom(startZoom + (target.zoom - startZoom) * eased)
-        setPan({
-          x: startPan.x + (target.pan.x - startPan.x) * eased,
-          y: startPan.y + (target.pan.y - startPan.y) * eased,
-        })
-        if (t < 1) {
-          viewTweenRef.current = requestAnimationFrame(tick)
-        } else {
-          viewTweenRef.current = null
-        }
-      }
-      viewTweenRef.current = requestAnimationFrame(tick)
+      tweenView(target.zoom, target.pan)
     },
-    [filteredNodes, degreeMap],
+    [filteredNodes, degreeMap, tweenView],
   )
 
   // 自动 fitView 触发点：布局收敛后、可见集变化（筛选/搜索/分类域）后、
@@ -819,16 +861,106 @@ export function EcosystemGraph() {
     return edges.filter((e) => e.source === selectedNode.id || e.target === selectedNode.id)
   }, [edges, selectedNode])
 
-  // 画布鼠标拖拽平移
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.target instanceof SVGElement && e.target.tagName !== 'circle') {
-      isDraggingRef.current = true
-      dragStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y }
+  /** 窄屏标志（容器实测宽 <768）：缩放按钮上限 2→3、底部手势提示只在窄屏出现 */
+  const isNarrowView =
+    containerSize.w !== 0 && containerSize.w < GRAPH_NARROW_CONTAINER_PX
+
+  // U-399：画布手势统一走 Pointer Events（鼠标/触摸/触控笔同一套）。
+  // 旧版只有 onMouseDown/Move/Up，手机上手指拖动收不到任何事件，画布拖不动、
+  // 捏合也没有。单指 = 平移（沿用旧版 1:1 client px 口径，桌面拖拽手感不变），
+  // 双指 = 捏合缩放 + 跟手平移（纯函数 pinchGraphView，见 lib/graph-polish.ts）。
+  // 刻意不用 setPointerCapture：capture 会把 click 重定向到容器，节点点选会被吞；
+  // 手指滑出画布时 onPointerLeave 收尾，isDragging 不会卡住。
+  const pointersRef = useRef(
+    new Map<number, { x: number; y: number; downX: number; downY: number }>(),
+  )
+  const pinchRef = useRef<null | {
+    startDist: number
+    startZoom: number
+    startPan: { x: number; y: number }
+    startMidVb: { x: number; y: number }
+  }>(null)
+  /** 本次手势是否真的移动过（>4px）：节点 onClick 靠它区分「点按」与「拖完松手」 */
+  const dragMovedRef = useRef(false)
+
+  const endPointerGesture = useCallback(() => {
+    isDraggingRef.current = false
+    pinchRef.current = null
+    pointersRef.current.clear()
+  }, [])
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    pointersRef.current.set(e.pointerId, {
+      x: e.clientX,
+      y: e.clientY,
+      downX: e.clientX,
+      downY: e.clientY,
+    })
+    dragMovedRef.current = false
+    if (pointersRef.current.size === 2) {
+      // 第二指落下：由单指拖拽切到双指捏合（落点是否在节点上不影响捏合）
+      isDraggingRef.current = false
+      const pts = [...pointersRef.current.values()]
+      const rect = containerRef.current?.getBoundingClientRect()
+      const midClient = { x: (pts[0]!.x + pts[1]!.x) / 2, y: (pts[0]!.y + pts[1]!.y) / 2 }
+      pinchRef.current = {
+        startDist: Math.hypot(pts[0]!.x - pts[1]!.x, pts[0]!.y - pts[1]!.y),
+        startZoom: zoomRef.current,
+        startPan: panRef.current,
+        startMidVb: rect
+          ? toGraphViewBoxPoint(midClient.x, midClient.y, rect)
+          : { x: 450, y: 300 },
+      }
+      return
     }
+    // 与旧版鼠标守卫同口径：只在非节点圆点处起拖（点节点圆点走 onClick 选节点）；
+    // 触摸/触控笔落在节点上时先不拖，移动超 8px 再升级为拖拽（见 handlePointerMove），
+    // 否则手指从节点上起拖永远拖不动。
+    if (e.target instanceof SVGElement && e.target.tagName === 'circle') return
+    isDraggingRef.current = true
+    dragStartRef.current = { x: e.clientX - panRef.current.x, y: e.clientY - panRef.current.y }
   }
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDraggingRef.current) return
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const tracked = pointersRef.current.get(e.pointerId)
+    if (!tracked) return
+    tracked.x = e.clientX
+    tracked.y = e.clientY
+    if (pointersRef.current.size === 2 && pinchRef.current) {
+      const pts = [...pointersRef.current.values()]
+      const rect = containerRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const midClient = { x: (pts[0]!.x + pts[1]!.x) / 2, y: (pts[0]!.y + pts[1]!.y) / 2 }
+      const next = pinchGraphView({
+        startZoom: pinchRef.current.startZoom,
+        startPan: pinchRef.current.startPan,
+        startMidVb: pinchRef.current.startMidVb,
+        startDist: pinchRef.current.startDist,
+        currentMidVb: toGraphViewBoxPoint(midClient.x, midClient.y, rect),
+        currentDist: Math.hypot(pts[0]!.x - pts[1]!.x, pts[0]!.y - pts[1]!.y),
+        minZoom: 0.5,
+        maxZoom: isNarrowView ? 3 : 2,
+      })
+      if (Math.hypot(e.clientX - tracked.downX, e.clientY - tracked.downY) > 4) {
+        dragMovedRef.current = true
+      }
+      // 真正移动才算手动移动：光点下不算，避免一次点击就关掉自动 fit
+      setUserMoved(true)
+      setZoom(next.zoom)
+      setPan(next.pan)
+      return
+    }
+    if (!isDraggingRef.current) {
+      // 触摸/触控笔从节点圆点上起拖：移动超 8px 升级为拖拽（落点锚定，不跳变）；
+      // 鼠标沿用旧版行为（圆点上起拖恒不拖），桌面行为不变。
+      if (e.pointerType === 'mouse') return
+      if (Math.hypot(e.clientX - tracked.downX, e.clientY - tracked.downY) <= 8) return
+      isDraggingRef.current = true
+      dragStartRef.current = { x: tracked.downX - panRef.current.x, y: tracked.downY - panRef.current.y }
+    }
+    if (Math.hypot(e.clientX - tracked.downX, e.clientY - tracked.downY) > 4) {
+      dragMovedRef.current = true
+    }
     // 真正拖动才算手动移动：光点下不算，避免一次点击就关掉自动 fit
     setUserMoved(true)
     const next = {
@@ -845,9 +977,10 @@ export function EcosystemGraph() {
     })
   }
 
-  const handleMouseUp = () => {
-    isDraggingRef.current = false
-    // 收尾必须冲刷最后一帧：否则松手时指针停在两帧之间，画面落后一个位置。
+  const handlePointerUp = (e: React.PointerEvent) => {
+    pointersRef.current.delete(e.pointerId)
+    // main eeca6c14 的 rAF 收尾（原 handleMouseUp）：松手时冲刷最后一帧，否则指针停在
+    // 两帧之间、画面落后一个位置；放在分支前，全松开与捏合剩一指接管两条出路都经过它。
     if (dragRafRef.current !== null) {
       cancelAnimationFrame(dragRafRef.current)
       dragRafRef.current = null
@@ -856,7 +989,42 @@ export function EcosystemGraph() {
       setPan(pendingPanRef.current)
       pendingPanRef.current = null
     }
+    if (pointersRef.current.size === 0) {
+      isDraggingRef.current = false
+      pinchRef.current = null
+      return
+    }
+    // 捏合剩一指：该指无缝接管为单指拖拽（落点锚定，不跳变）
+    pinchRef.current = null
+    const remaining = [...pointersRef.current.values()][0]!
+    isDraggingRef.current = true
+    dragStartRef.current = { x: remaining.x - panRef.current.x, y: remaining.y - panRef.current.y }
   }
+
+  /**
+   * 节点点选：选中 + 窄屏下若缩放低于可读下限，单点一次把该节点居中放大
+   * 到可读缩放（直径 ≥24px、标签 ≥9px）。拖完松手触发的 click 只选中、
+   * 不缩放；桌面（≥768px）只选中，行为与旧版一致。
+   */
+  const handleNodeClick = useCallback(
+    (node: GraphNode) => {
+      setSelectedNode(node)
+      const wasDrag = dragMovedRef.current
+      dragMovedRef.current = false
+      if (wasDrag) return
+      const el = containerRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      if (rect.width >= GRAPH_NARROW_CONTAINER_PX) return
+      const floor = computeGraphReadableFloor(rect.width, rect.height, GRAPH_MIN_NODE_RADIUS)
+      if (zoomRef.current >= floor) return
+      tweenView(floor, {
+        x: 900 / 2 - (node.x ?? 450) * floor,
+        y: 600 / 2 - (node.y ?? 300) * floor,
+      })
+    },
+    [tweenView],
+  )
 
   return (
     <main
@@ -1056,7 +1224,7 @@ export function EcosystemGraph() {
             )}
           </div>
           <div className="flex items-center gap-1 bg-muted/30 p-0.5 rounded-lg border border-border/50 shrink-0">
-            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="放大" title="放大" onClick={() => { setUserMoved(true); setZoom((z) => Math.min(z + 0.15, 2)) }}>
+            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="放大" title="放大" onClick={() => { setUserMoved(true); setZoom((z) => Math.min(z + 0.15, isNarrowView ? 3 : 2)) }}>
               <ZoomIn className="w-3.5 h-3.5" />
             </Button>
             <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="缩小" title="缩小" onClick={() => { setUserMoved(true); setZoom((z) => Math.max(z - 0.15, 0.5)) }}>
@@ -1107,9 +1275,11 @@ export function EcosystemGraph() {
            桌面端若也设 none，触控板双指滚动会失效。
            注意：图例条（下方 overflow-x-auto）仍保留 touch-pan-x，两者不冲突。 */
         className="flex-1 w-full h-full cursor-grab active:cursor-grabbing relative overflow-hidden bg-dot-grid max-md:touch-none"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={endPointerGesture}
+        onPointerLeave={endPointerGesture}
       >
         {graphMounted ? (
         <svg
@@ -1243,7 +1413,7 @@ export function EcosystemGraph() {
                   tabIndex={rovingId === n.id ? 0 : -1}
                   aria-label={nodeAccessibleName(n.title, CATEGORY_COLORS[n.category].name)}
                   aria-pressed={isSelected}
-                  onClick={() => setSelectedNode(n)}
+                  onClick={() => handleNodeClick(n)}
                   onFocus={() => setFocusedNodeId(n.id)}
                   onKeyDown={(event) => handleNodeKeyDown(event, n)}
                   onMouseEnter={() => setHoveredNodeId(n.id)}
@@ -1349,6 +1519,13 @@ export function EcosystemGraph() {
         ) : (
           <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
             图谱加载中…
+          </div>
+        )}
+
+        {/* U-399 窄屏手势提示：首屏已是可读缩放，告诉用户单指拖动、双指捏合；不拦截点按 */}
+        {graphMounted && isNarrowView && !selectedNode && (
+          <div className="absolute left-2 bottom-2 z-10 pointer-events-none rounded-full bg-background/85 border border-border/60 px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm">
+            单指拖动平移 · 双指捏合缩放 · 点节点看详情
           </div>
         )}
 

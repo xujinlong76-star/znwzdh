@@ -1789,6 +1789,16 @@ export function NavigationContent({
                   onOpenAppearanceGuide={handleOpenAppearanceGuide}
                   onOpenAiFinder={handleOpenAiFinder}
                   unreadNotifications={unreadNotifications}
+                  // 聚焦抽屉内搜索限定到当前分类：子分类优先；'__direct__'（精选直属）
+                  // 是前端哨兵值、不是真实分类 id，原样传会让中枢解析失败、零命中后
+                  // 误挂放宽横幅，故回落父级。已知近似：回落时搜索范围是父级整树
+                  // （含各子分类），比可见的「仅直属」略宽——中枢没有「仅直属」
+                  // 检索模式，可接受，不是 bug。
+                  categoryId={
+                    focusedSubCategoryId && focusedSubCategoryId !== '__direct__'
+                      ? focusedSubCategoryId
+                      : (focusedCategoryId ?? undefined)
+                  }
                 />
                 <div className="px-3 py-2 sm:px-6 md:px-8">
                   {renderHomeQuickToolsRow()}

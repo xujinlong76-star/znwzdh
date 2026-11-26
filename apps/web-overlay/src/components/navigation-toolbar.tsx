@@ -492,7 +492,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                 }}
                 className="relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-0 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors sm:w-auto sm:flex-row sm:gap-1.5 sm:px-2.5"
                 title="DIY 排版、外观与皮肤（打开外观向导小窗）"
-                aria-label="打开外观排版与新手向导小窗"
+                aria-label="DIY 排版：打开外观排版与新手向导小窗"
               >
                 <SlidersHorizontal className="h-4 w-4 shrink-0" />
                 <span className="text-center text-[10px] leading-none whitespace-nowrap tracking-tight sm:text-xs sm:tracking-normal">DIY 排版</span>

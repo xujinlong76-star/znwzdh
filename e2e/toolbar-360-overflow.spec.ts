@@ -187,7 +187,7 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     // 不断言行内按钮（产品侧不把入口搬回行内，与首屏批目标一致）。只改测试。
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    const moreMenu = page.getByRole('button', { name: '切换工作区与快捷功能', exact: true });
+    const moreMenu = page.getByRole('button', { name: /切换工作区与快捷功能$/, exact: true });
     await expect(moreMenu).toBeVisible({ timeout: 60_000 });
     await moreMenu.click();
     // 菜单条目由客户端水合后据 localStorage 决定是否渲染（guidePending 默认 false，

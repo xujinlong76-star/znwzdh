@@ -154,7 +154,7 @@ export function HomeCapsuleRow({
             <button
               type="button"
               className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-2xs transition-opacity hover:opacity-95 cursor-pointer"
-              aria-label="切换工作区与快捷功能"
+              aria-label={`${currentWorkspace.label}：切换工作区与快捷功能`}
             >
               <ActiveWsIcon className="h-3.5 w-3.5 shrink-0" />
               <span>{currentWorkspace.label}</span>

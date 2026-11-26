@@ -44,10 +44,10 @@ export interface SignInFailureNotice {
 export const NETWORK_FAILURE_STATUS = 0
 
 export const PASSWORD_MISMATCH =
-  "管理员账号密码或 Token 不匹配。请重新输入（默认口令 admin123，或留空直接快捷进入）。";
+  "管理员账号密码或 Token 不匹配，请重新输入。";
 
 export const ACCESS_DENIED =
-  "该账号不在管理员白名单 (NAVHUB_ADMIN_IDS) 中，因此无法访问后台。请换用白名单内的账号。";
+  "该账号无后台访问权限，请换用有权限的账号。";
 
 export const OAUTH_BROKEN =
   "GitHub 授权登录未能完成（可能是 OAuth 应用配置或回调地址不对）。可以改用管理密码登录。";

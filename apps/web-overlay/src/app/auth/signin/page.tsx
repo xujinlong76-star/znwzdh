@@ -148,6 +148,12 @@ function SignInContent() {
 
   const hasGithub = availableProviders.includes('github')
 
+  // 本地快捷进入只在开发环境可见：服务端 lib/auth.ts 的 allowInsecureLogin
+  // 同样只在非生产环境开启（生产上快捷登录与默认口令根本不可用）。
+  // 生产构建里这段 UI 根本不渲染，不向未登录访客宣扬快捷通道的存在；
+  // 开发调试仍可一键进入。U-431 / O-01。
+  const showDevShortcut = process.env.NODE_ENV !== 'production'
+
   return (
     <div className="grid min-h-screen w-full lg:grid-cols-2 bg-background">
       {/* 左侧品牌展示 */}
@@ -280,7 +286,7 @@ function SignInContent() {
                       <Input
                         id="password"
                         type="password"
-                        placeholder="输入管理口令 (默认 admin123)"
+                        placeholder="输入管理口令"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         disabled={isLoading || isBypassLoading}
@@ -307,37 +313,42 @@ function SignInContent() {
                     </Button>
                   </form>
 
-                  {/* 本地快捷登录按钮 */}
-                  <div className="relative my-3">
-                    <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t border-border/60" />
-                    </div>
-                    <div className="relative flex justify-center text-[10px] uppercase">
-                      <span className="bg-card px-2 text-muted-foreground">
-                        本地单机 / 开发调试通道
-                      </span>
-                    </div>
-                  </div>
+                  {/* 本地快捷登录按钮：仅开发环境可见（见 showDevShortcut），
+                      生产构建不渲染，不向未登录访客宣扬快捷通道 */}
+                  {showDevShortcut && (
+                    <>
+                      <div className="relative my-3">
+                        <div className="absolute inset-0 flex items-center">
+                          <span className="w-full border-t border-border/60" />
+                        </div>
+                        <div className="relative flex justify-center text-[10px] uppercase">
+                          <span className="bg-card px-2 text-muted-foreground">
+                            本地单机 / 开发调试通道
+                          </span>
+                        </div>
+                      </div>
 
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleBypassSignIn}
-                    className="w-full h-8 text-xs border-dashed border-primary/40 text-primary hover:bg-primary/10 gap-1.5"
-                    disabled={isLoading || isBypassLoading}
-                  >
-                    {isBypassLoading ? (
-                      <>
-                        <Icons.spinner className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        正在进入...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="h-3.5 w-3.5 text-primary" />
-                        以管理员身份一键进入 (快捷通道)
-                      </>
-                    )}
-                  </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleBypassSignIn}
+                        className="w-full h-8 text-xs border-dashed border-primary/40 text-primary hover:bg-primary/10 gap-1.5"
+                        disabled={isLoading || isBypassLoading}
+                      >
+                        {isBypassLoading ? (
+                          <>
+                            <Icons.spinner className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            正在进入...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-3.5 w-3.5 text-primary" />
+                            以管理员身份一键进入 (快捷通道)
+                          </>
+                        )}
+                      </Button>
+                    </>
+                  )}
                 </TabsContent>
 
                 {/* GitHub OAuth 面板 */}
@@ -372,17 +383,19 @@ function SignInContent() {
                         <span>未配置 GitHub OAuth</span>
                       </div>
                       <p className="text-muted-foreground leading-relaxed">
-                        当前环境未配置 <code className="text-xs bg-muted px-1 py-0.5 rounded">GITHUB_CLIENT_ID</code> 与 <code className="text-xs bg-muted px-1 py-0.5 rounded">GITHUB_CLIENT_SECRET</code>，请切换至「管理员密码」标签登录，或点击快捷通道进入。
+                        当前环境未配置 <code className="text-xs bg-muted px-1 py-0.5 rounded">GITHUB_CLIENT_ID</code> 与 <code className="text-xs bg-muted px-1 py-0.5 rounded">GITHUB_CLIENT_SECRET</code>，请切换至「管理员密码」标签登录{showDevShortcut ? '，或点击快捷通道进入' : ''}。
                       </p>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleBypassSignIn}
-                        className="w-full h-8 text-xs mt-1"
-                      >
-                        使用本地快捷通道登录
-                      </Button>
+                      {showDevShortcut && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleBypassSignIn}
+                          className="w-full h-8 text-xs mt-1"
+                        >
+                          使用本地快捷通道登录
+                        </Button>
+                      )}
                     </div>
                   )}
                 </TabsContent>

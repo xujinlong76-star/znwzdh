@@ -215,3 +215,83 @@ describe("登录页接线", () => {
     expect(src).toContain("notice.userInput ? '本地快捷登录未启用，请输入管理密码' : notice.message");
   });
 });
+
+describe("登录失败文案不泄露默认口令与内部变量名（U-431 / U-433 / O-01）", () => {
+  // 泄露面：默认口令明文、留空快捷进入的走法、内部环境变量名。
+  // 注意 AUTH_SECRET 不在此列：它是服务端配置错误的既有提示（另有测试锁定），
+  // 本项只守住「口令 / 快捷进入 / NAVHUB_ADMIN_IDS」三类泄露。
+  const LEAKED_STRINGS = ["admin123", "NAVHUB_ADMIN_IDS", "快捷进入", "留空"];
+
+  function expectNoLeak(message: string, label: string) {
+    for (const leaked of LEAKED_STRINGS) {
+      expect(message, `${label} 泄露了「${leaked}」：${message}`).not.toContain(leaked);
+    }
+  }
+
+  it("凭证不对的失败文案只说「不匹配、请重新输入」，不提默认口令也不提留空进入", () => {
+    expect(PASSWORD_MISMATCH).toContain("不匹配");
+    expect(PASSWORD_MISMATCH).toContain("请重新输入");
+    expectNoLeak(PASSWORD_MISMATCH, "PASSWORD_MISMATCH");
+    for (const input of [{ error: "CredentialsSignin" }, { status: 401 }]) {
+      expectNoLeak(describeSignInFailure(input as never).message, JSON.stringify(input));
+    }
+  });
+
+  it("白名单拒绝的文案只说「无后台访问权限」，不出现内部环境变量名", () => {
+    expect(ACCESS_DENIED).toContain("无后台访问权限");
+    expectNoLeak(ACCESS_DENIED, "ACCESS_DENIED");
+    for (const input of [{ error: "AccessDenied" }, { status: 403 }]) {
+      expectNoLeak(describeSignInFailure(input as never).message, JSON.stringify(input));
+    }
+  });
+
+  it("不变量：describeSignInFailure 的任何输出都不泄露口令、快捷进入或环境变量名", () => {
+    const inputs = [
+      null,
+      undefined,
+      {},
+      { ok: false },
+      { status: 0 },
+      { status: 401 },
+      { status: 403 },
+      { status: 500 },
+      { status: 503, error: "Callback" },
+      { error: "Configuration" },
+      { error: "CredentialsSignin" },
+      { error: "AccessDenied" },
+      { error: "OAuthSignin" },
+      { error: "OAuthCallbackError" },
+      { error: "OAuthCreateAccount" },
+      { error: "Whatever" },
+    ];
+    for (const input of inputs) {
+      expectNoLeak(
+        describeSignInFailure(input as never).message,
+        `describeSignInFailure(${JSON.stringify(input)})`,
+      );
+    }
+  });
+
+  it("登录页不再出现默认口令明文（占位符也不许写）", () => {
+    const src = pageSource();
+    expect(src).not.toContain("admin123");
+    expect(src).not.toContain("默认 admin123");
+    expect(src).not.toContain("NAVHUB_ADMIN_IDS");
+    expect(src).toContain('placeholder="输入管理口令"');
+  });
+
+  it("快捷通道入口只在开发环境渲染：生产构建里不向未登录访客宣扬它", () => {
+    const src = pageSource();
+    // 门控本身：与服务端 lib/auth.ts 的 allowInsecureLogin 用同一口径
+    // （NODE_ENV !== 'production'），UI 可见性与服务端可用性一致。
+    expect(src).toContain("const showDevShortcut = process.env.NODE_ENV !== 'production'");
+    // 两处按钮型入口（密码 tab 的一键进入、GitHub 未配置时的备用按钮）
+    // 都包在 showDevShortcut 门内；GitHub 未配置提示里的「或点击快捷通道进入」
+    // 也是同一门控的三元分支。
+    expect((src.match(/\{showDevShortcut && \(/g) || []).length).toBe(2);
+    expect(src).toContain("{showDevShortcut ? '，或点击快捷通道进入' : ''}");
+    // 门控之外不许再有裸露的快捷入口：全页 5 处「快捷通道」——2 处是门控注释里的
+    // 说明文字，另 3 处是门内 UI 文案（一键进入按钮、GitHub 未配置提示、备用按钮）。
+    expect((src.match(/快捷通道/g) || []).length).toBe(5);
+  });
+});

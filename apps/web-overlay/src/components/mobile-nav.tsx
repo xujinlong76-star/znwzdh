@@ -86,9 +86,12 @@ export default function MobileNav() {
                 href={href}
                 aria-label={
                   href === '/me' && unread > 0
-                    ? `${label}，${unread} 条未读通知`
+                    // WCAG 2.5.3 label-in-name（a58021ed）：徽章数前置到可见文字前，
+                    // 可访问名与可见顺序一致（角标数字在先、标签文字在后）；
+                    // 1b363e65 工作树快照误把两处模板 revert 回旧式，U-448 恢复。
+                    ? `${unread} ${label}，未读通知`
                     : href === '/drama' && dueCount > 0
-                      ? `${label}，今日待看 ${dueCount} 部`
+                      ? `${dueCount} ${label}，今日待看`
                       : label
                 }
                 aria-current={active ? 'page' : undefined}

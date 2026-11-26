@@ -41,6 +41,10 @@ describe("搜索面板键盘导航", () => {
     expect(src).toContain("e.key === 'Escape'");
   });
 
+  it("失焦后不拦截其它弹窗的 Escape", () => {
+    expect(src).toContain("if (document.activeElement !== inputRef.current) return");
+  });
+
   it("导航列表与 DOM 顺序一致：插件在前、站点命中在后", () => {
     // P1 #8：导航列表的组装从组件移进了 lib/palette-actions.ts 的
     // buildPaletteNavItems，组件只负责传各组 id；顺序的唯一来源在那里。

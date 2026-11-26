@@ -1,4 +1,17 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+async function openSearch(page: Page) {
+  const trigger = page.getByRole('button', { name: /搜索站点、标签或拼音/ });
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  const input = page.locator('[data-search-input]');
+  await expect(input).toBeVisible();
+  await page.waitForFunction(() => {
+    const el = document.querySelector('[data-search-input]');
+    return !!el && Object.keys(el).some((key) => key.startsWith('__reactFiber$'));
+  });
+  return input;
+}
 
 test.describe('核心旅程 1：首页检索与 0-RTT 意图微部件', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,14 +20,13 @@ test.describe('核心旅程 1：首页检索与 0-RTT 意图微部件', () => {
 
   test('页面成功加载且包含导航中枢标题与检索框', async ({ page }) => {
     await expect(page).toHaveTitle(/Nav|导航/i);
-    const searchInput = page.getByPlaceholder(/搜索(导航|站点)/);
+    const searchInput = await openSearch(page);
     await expect(searchInput).toBeVisible();
   });
 
   test('支持快捷键激活检索框并触发 0-RTT 意图卡片 (Speculative Intent)', async ({ page }) => {
     // 聚焦检索框
-    const searchInput = page.getByPlaceholder(/搜索(导航|站点)/);
-    await searchInput.click();
+    const searchInput = await openSearch(page);
 
     // 输入 JSON 串触发 0-RTT 格式化 / 验证意图微部件
     await searchInput.fill('{"name":"navhub"}');
@@ -23,8 +35,7 @@ test.describe('核心旅程 1：首页检索与 0-RTT 意图微部件', () => {
   });
 
   test('输入对比类查询触发技术选型对比矩阵 (Tech Comparison)', async ({ page }) => {
-    const searchInput = page.getByPlaceholder(/搜索(导航|站点)/);
-    await searchInput.click();
+    const searchInput = await openSearch(page);
 
     // 输入框架对比查询
     await searchInput.fill('react vs vue');
@@ -34,8 +45,7 @@ test.describe('核心旅程 1：首页检索与 0-RTT 意图微部件', () => {
   });
 
   test('输入架构方案查询触发脚手架决策卡片 (Architecture Recipe)', async ({ page }) => {
-    const searchInput = page.getByPlaceholder(/搜索(导航|站点)/);
-    await searchInput.click();
+    const searchInput = await openSearch(page);
 
     // 输入全栈架构方案
     await searchInput.fill('nextjs supabase');
@@ -52,7 +62,10 @@ test.describe('冷启动搜索快捷键：首访第一次 ⌘K 不应静默失�
     // 等 React 水合把全局网守的 keydown 监听挂上（网守在 useEffect 里注册）。
     // 仍不点击搜索框，[data-search-input] 保持未挂载——测的正是兜底路径。
     await expect(page.getByRole('button', { name: /搜索站点、标签或拼音/ })).toBeVisible();
-    await page.waitForTimeout(800);
+    await page.waitForFunction(() => {
+      const trigger = document.querySelector('button[aria-label^="搜索站点、标签或拼音"]');
+      return !!trigger && Object.keys(trigger).some((key) => key.startsWith('__reactFiber$'));
+    });
     await page.keyboard.press('ControlOrMeta+k');
     const input = page.locator('[data-search-input]');
     await expect(input).toBeVisible({ timeout: 10_000 });

@@ -112,13 +112,16 @@ test.describe('插件市场 Phase 2 批 A：搜索、排序注明、空态、ban
     await expect(page.getByText(/E2E 站点名包/, { exact: false }).first()).toBeVisible();
   });
 
-  test('bang：首页搜索面板输 !gh react 出现直达建议行', async ({ page }) => {
-    // 首页重、O2M 压力下 load 事件常超时：输入框是 SSR 直出的，等 domcontentloaded
-    // + 输入框可见即可测「输入 !gh react → omni 行」这一行为，不必等整页 load。
+  test('bang：视频页搜索栏输 !gh react 出现直达建议行', async ({ page }) => {
+    // 首页顶栏已改为三合一搜索面板；内置 !gh 直达由视频页 SearchBar 保留。
     test.setTimeout(180_000)
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
-    const searchInput = page.getByPlaceholder(/搜索(导航|站点)/);
+    await page.goto('/videos', { waitUntil: 'domcontentloaded' });
+    const searchInput = page.getByRole('combobox', { name: '搜索导航' });
     await expect(searchInput).toBeVisible({ timeout: 60_000 });
+    await page.waitForFunction(() => {
+      const input = document.querySelector('input[aria-label="搜索导航"]');
+      return !!input && Object.keys(input).some((key) => key.startsWith('__reactFiber$'));
+    }, undefined, { timeout: 60_000 });
     await searchInput.fill('!gh react');
     // Batch 1（f3f68008）后直达建议行是 quicklink 横幅（源码注释写明「命中时 OMNI 横幅让位」）：
     // 旧断言的 OMNI 行文案「按 Enter 直达外部搜索：」/ 裸词 'react' / github 锚链自此不再渲染——

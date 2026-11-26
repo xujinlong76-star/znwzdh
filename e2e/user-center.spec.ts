@@ -147,7 +147,7 @@ test.describe('用户中心：三态', () => {
     await expect(page.getByText('云端金库暂时取不到')).toHaveCount(0)
   })
 
-  test('/favorites 匿名态：可以建本地收藏夹并持久化（P2）', async ({ page }) => {
+  test('/favorites 匿名态：可以建本地收藏夹并持久化（P2） @desktop-only', async ({ page }) => {
     // 先塞一条本地收藏：收藏夹面板只在有收藏时出现（没有收藏时不需要分组）
     // 只播种、不清空：addInitScript 在每次导航（含 reload）都会跑，
     // 若在里面 clear() 就会把刚建好的分组一起清掉，测的就不是持久化了。

@@ -783,6 +783,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     if (!isFocused) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' && e.code !== 'Escape') return
+      if (document.activeElement !== inputRef.current) return
       e.preventDefault()
       e.stopPropagation()
       setIsFocused(false)

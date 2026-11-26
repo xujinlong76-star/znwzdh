@@ -75,9 +75,14 @@ async function waitForHomeReady(page: Page) {
     state: 'visible',
     timeout: 60_000,
   })
-  await page.waitForSelector('input[placeholder*="搜索"]', {
-    state: 'visible',
-    timeout: 60_000,
+  const searchInput = page.locator('[data-search-input]')
+  if (!(await searchInput.isVisible())) {
+    await page.getByRole('button', { name: /搜索站点、标签或拼音/ }).click()
+  }
+  await expect(searchInput).toBeVisible({ timeout: 60_000 })
+  await page.waitForFunction(() => {
+    const el = document.querySelector('[data-search-input]')
+    return !!el && Object.keys(el).some((key) => key.startsWith('__reactFiber$'))
   })
   await page.waitForSelector('button[aria-label*="AI 模式"]', {
     state: 'visible',

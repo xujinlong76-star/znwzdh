@@ -40,6 +40,15 @@ const SnapshotPanel = dynamic(
   },
 )
 
+/** P12 对比卡 PoC：对比篮视图（篮模式只读本机 localStorage，不要求登录、不发请求）。 */
+const DecisionCompareBasketView = dynamic(
+  () => import('@/components/decision-compare-basket-view').then((m) => m.DecisionCompareBasketView),
+  {
+    ssr: false,
+    loading: () => <p className="text-sm text-muted-foreground">正在读取对比篮…</p>,
+  },
+)
+
 function ComparePageBody() {
   const searchParams = useSearchParams()
   const siteIds = parseCompareSiteIds(searchParams.get('siteIds'))
@@ -48,6 +57,27 @@ function ComparePageBody() {
   // 就绪后仍匿名则直接亮登录墙，不挂载 CompareView、不发 /api/compare。
   const identityReady = useIdentityReady()
   const isAnonymous = identityReady.ready && (!identityReady.identity || identityReady.isAnonymous)
+
+  // P12 对比卡 PoC：篮模式（`?basket=1`）走本机对比篮，与收藏夹对照流
+  // （`?siteIds=`，登录 + 收藏）是两条独立入口：篮内容只存在本机、
+  // 不发请求，故不进登录墙、不校验 siteIds。
+  if (searchParams.get('basket') === '1') {
+    return (
+      <Container as="main" id="main-content">
+        <div className="py-6 sm:py-10 max-w-6xl mx-auto space-y-6">
+          <header className="space-y-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground">横向对比</h1>
+            <p className="text-xs sm:text-sm leading-relaxed text-muted-foreground">
+              并排对照对比篮里的同类站点：只比能验证的硬字段，每个格子带来源与日期，缺失写“未验证”；不排名、不打分。
+            </p>
+          </header>
+
+          <DecisionCompareBasketView />
+        </div>
+        <Footer />
+      </Container>
+    )
+  }
 
   if (!validated.ok) {
     return (

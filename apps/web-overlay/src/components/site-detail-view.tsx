@@ -20,6 +20,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Container } from '@/components/ui/container'
 import { FavoriteButton } from '@/components/favorite-button'
+import { DecisionCompareBasketButton } from '@/components/decision-compare-basket-button'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { tagSlug } from '@/lib/seo/tag-slug'
@@ -857,6 +858,8 @@ export function SiteDetailView({
                   description: site.description ?? undefined,
                 }}
               />
+              {/* P12 对比卡 PoC：本机对比篮入口（与收藏夹对照流独立，不要求登录/收藏） */}
+              <DecisionCompareBasketButton site={site} />
               {/* 纠错上报（升级第 10 条）：站内按钮，不是外链；零门槛，匿名可报 */}
               <Button
                 type="button"

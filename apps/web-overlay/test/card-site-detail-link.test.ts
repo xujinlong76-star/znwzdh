@@ -49,9 +49,22 @@ describe('卡片标题站内详情内链', () => {
   it('多选模式下标题点击与整卡同语义：不导航，只切换选中', () => {
     const idx = code.indexOf('const handleDetailClick')
     expect(idx).toBeGreaterThan(-1)
-    const body = code.slice(idx, idx + 220)
+    // U-452（2026-11-26）：窗口 220 → 280，否则 onToggleSelect 落在窗口外；
+    // 1b363e65 的 S2–S4 迁移在 handler 开头加了 `if (isEditingLayout)` 守卫
+    // （排版编辑中点卡片不导航，是有意行为），它先于 `if (!selectable)`
+    // 调了 preventDefault。旧断言用「第一个 preventDefault」当多选态的代理，
+    // 撞上这个合法守卫就误报（expected 154 to be less than 88）。改按
+    // onToggleSelect 之前最后一个 preventDefault 定位多选态拦截，并把
+    // 排版编辑守卫在最前的顺序也钉住，比旧断言只紧不松。
+    const body = code.slice(idx, idx + 280)
     expect(body).toContain('if (!selectable) return')
-    expect(body.indexOf('if (!selectable) return')).toBeLessThan(body.indexOf('preventDefault'))
+    const notSelectableAt = body.indexOf('if (!selectable) return')
+    const toggleAt = body.indexOf('onToggleSelect?.(item.id)')
+    expect(toggleAt).toBeGreaterThan(-1)
+    const selectionPreventAt = body.lastIndexOf('preventDefault', toggleAt)
+    expect(selectionPreventAt).toBeGreaterThan(-1)
+    expect(notSelectableAt).toBeLessThan(selectionPreventAt)
+    expect(body.indexOf('if (isEditingLayout) {')).toBeLessThan(notSelectableAt)
     expect(body).toContain('onToggleSelect?.(item.id)')
   })
 

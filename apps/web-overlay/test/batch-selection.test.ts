@@ -261,7 +261,28 @@ describe("源码守卫：入口真的存在，且默认行为不被改变", () =
     expect(idx).toBeGreaterThan(-1);
     const body = src.slice(idx, idx + 420);
     expect(body).toContain("if (!selectable) {");
-    expect(body.indexOf("if (!selectable) {")).toBeLessThan(body.indexOf("preventDefault"));
+    // U-452（2026-11-26）：1b363e65 的 S2–S4 迁移在 handleLinkClick 开头加了
+    // `if (isEditingLayout)` 守卫（排版编辑中点卡片不导航，是有意行为，
+    // handleTagClick 有同款守卫），它先于 `if (!selectable)` 调了
+    // preventDefault。旧断言用「第一个 preventDefault」当多选态的代理，
+    // 撞上这个合法守卫就误报（expected 152 to be less than 86）。
+    // 改按「多选态 preventDefault」定位：即 onToggleSelect 之前最后一个
+    // preventDefault，它必须在 `if (!selectable)` 之后——非多选分支仍先
+    // return，导航不受阻；同时把排版编辑守卫在最前、非多选分支先记访问
+    // 再上报的顺序也一并钉住，比旧断言只紧不松。
+    const notSelectableAt = body.indexOf("if (!selectable) {");
+    const toggleAt = body.indexOf("onToggleSelect?.(item.id)");
+    expect(toggleAt).toBeGreaterThan(-1);
+    const selectionPreventAt = body.lastIndexOf("preventDefault", toggleAt);
+    expect(selectionPreventAt).toBeGreaterThan(-1);
+    expect(notSelectableAt).toBeLessThan(selectionPreventAt);
+    const recordAt = body.indexOf("recordOfflineVisit");
+    const reportAt = body.indexOf("reportClick");
+    expect(recordAt).toBeGreaterThan(notSelectableAt);
+    expect(recordAt).toBeLessThan(selectionPreventAt);
+    expect(reportAt).toBeGreaterThan(notSelectableAt);
+    expect(reportAt).toBeLessThan(selectionPreventAt);
+    expect(body.indexOf("if (isEditingLayout) {")).toBeLessThan(notSelectableAt);
   });
 });
 

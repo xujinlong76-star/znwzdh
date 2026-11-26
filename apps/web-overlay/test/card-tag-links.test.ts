@@ -93,7 +93,20 @@ describe("卡片 #tag 内链化（rich 模式，S4 迁移后双源口径）", ()
     const idx = src.indexOf("const handleTagClick");
     const body = src.slice(idx, idx + 320);
     expect(body).toContain("if (!selectable) return");
-    expect(body.indexOf("if (!selectable) return")).toBeLessThan(body.indexOf("preventDefault"));
+    // U-452（2026-11-26）：1b363e65 的 S2–S4 迁移在 handler 开头加了
+    // `if (isEditingLayout)` 守卫（排版编辑中点卡片不导航，是有意行为），
+    // 它先于 `if (!selectable)` 调了 preventDefault。旧断言用「第一个
+    // preventDefault」当多选态的代理，撞上这个合法守卫就误报
+    // （expected 151 to be less than 85）。改按 onToggleSelect 之前最后
+    // 一个 preventDefault 定位多选态拦截，并把排版编辑守卫在最前的顺序
+    // 也钉住，比旧断言只紧不松。
+    const notSelectableAt = body.indexOf("if (!selectable) return");
+    const toggleAt = body.indexOf("onToggleSelect?.(item.id)");
+    expect(toggleAt).toBeGreaterThan(-1);
+    const selectionPreventAt = body.lastIndexOf("preventDefault", toggleAt);
+    expect(selectionPreventAt).toBeGreaterThan(-1);
+    expect(notSelectableAt).toBeLessThan(selectionPreventAt);
+    expect(body.indexOf("if (isEditingLayout) {")).toBeLessThan(notSelectableAt);
     expect(body).toContain("onToggleSelect?.(item.id)");
   });
 

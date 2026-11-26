@@ -17,6 +17,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
+import { useRouter } from 'next/navigation'
 import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList } from '@/registry/new-york/ui/command'
 import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download, ExternalLink, PencilLine, Share2, Upload, RotateCcw, LayoutTemplate, Sun, Moon, Accessibility, Plus, Wrench, Calculator, Braces, Binary, Link2, KeyRound, Timer, Terminal, Hash, Globe, Network, Palette, CalendarDays, Regex, Scale, Activity, Ruler, Fingerprint, Radar, Maximize2 } from 'lucide-react'
@@ -295,6 +296,7 @@ export function PaletteFooterHint() {
 }
 
 export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导航…（中文 / 拼音 / 语义）（按 / 快速搜索）', onOpenDiscoveryDialog }: SearchPaletteProps) {
+  const router = useRouter()
   const [query, setQuery] = useState('')
   const [isFocused, setIsFocused] = useState(false)
   /**
@@ -1386,6 +1388,32 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     inputRef.current?.focus()
   }, [])
 
+  /**
+   * 过期导航守卫（B2 搜索框失焦复现的根因）：
+   * 建议行里的专题是 <Link>，点它即发起客户端导航；慢网 / 开发栈下 RSC
+   * 载荷要 2–3s 才落地，落地时整棵首页（含顶栏搜索框）卸载，目标页挂
+   * 一个全新空查询的输入框。用户若在这 2–3s 里点回输入框、清空、重打，
+   * 新输入会在打字中途被落地导航抹掉（值停在 ''、焦点丢到 body）。
+   * 解法：点专题行时记下这笔待定导航；用户重新聚焦输入框或继续打字
+   * 即视为改主意，用一次同址 replace 把路由器的最新导航指回当前页，
+   * 顶掉那笔过期导航，输入框（同一 DOM 节点、同一 query state）全程
+   * 保留。用户不回头则不触发取消，导航照常落地。
+   */
+  const pendingSuggestionNavRef = useRef<string | null>(null)
+  const cancelPendingSuggestionNav = useCallback(() => {
+    if (!pendingSuggestionNavRef.current) return
+    pendingSuggestionNavRef.current = null
+    router.replace(window.location.pathname + window.location.search, { scroll: false })
+  }, [router])
+  const handleSuggestionLinkClick = useCallback((href: string) => {
+    pendingSuggestionNavRef.current = href
+    setIsFocused(false)
+  }, [])
+  const handleInputFocus = useCallback(() => {
+    setIsFocused(true)
+    cancelPendingSuggestionNav()
+  }, [cancelPendingSuggestionNav])
+
   const openSite = useCallback((hit: HubSearchHit) => {
     const site = hit.site
     if (!site) return
@@ -1919,6 +1947,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           placeholder={effectivePlaceholder}
           value={query}
           onChange={(e) => {
+            // 键盘回车点行（el.click()）不会移走焦点：用户不点输入框直接打字
+            // 同样是改主意，同样要顶掉待定导航；见 cancelPendingSuggestionNav。
+            cancelPendingSuggestionNav()
             // 与 Spotlight 同一约定：行首 `?` / `ai ` 自动进 AI 模式；`sim ` / `相似 ` 自动进找相似模式。
             const resolvedSimilar = resolveSimilarModeInput(e.target.value)
             if (resolvedSimilar.similarMode) {
@@ -1952,7 +1983,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             isComposingRef.current = false
             skipDebounceRef.current = true
           }}
-          onFocus={() => setIsFocused(true)}
+          onFocus={handleInputFocus}
           className="h-9.5 min-w-0 flex-1 border-0 bg-transparent px-0 py-1 shadow-none focus-visible:ring-0 text-base sm:text-sm placeholder:text-[13px] sm:placeholder:text-sm [&::-webkit-search-cancel-button]:hidden"
         />
         <div className="flex shrink-0 items-center gap-1.5">
@@ -2666,7 +2697,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                         <Link
                           key={item.key}
                           href={safeHref(item.href)}
-                          onClick={() => setIsFocused(false)}
+                          onClick={() => handleSuggestionLinkClick(safeHref(item.href))}
                           role="option"
                           id={`navhub-search-opt-${idx}`}
                           data-nav-index={idx}

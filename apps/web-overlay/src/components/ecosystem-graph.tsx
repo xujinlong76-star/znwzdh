@@ -842,12 +842,16 @@ export function EcosystemGraph() {
       id="main-content"
       className="relative w-full h-[calc(100vh-64px)] overflow-hidden bg-background select-none flex flex-col"
     >
-      {/* 顶部控制栏：固定 2 行（第 1 行标题 + 场景胶囊，第 2 行图例过滤 + 换簇 + 搜索 + 缩放），
-          行内超宽时组内横向滚动、不换行，画布始终占满剩余视口高度 */}
+      {/* 顶部控制栏：窄屏时两行各自换行（标题行：场景胶囊换到第二行；
+          控制行：图例条占满一行，换一批 + 搜索 + 缩放换到第二行），
+          行内超宽时组内横向滚动、不换行，画布始终占满剩余视口高度。
+          U-444：旧实现两行都不换行、左组 shrink-0，390px 下左组按内容
+          定宽 565px，场景胶囊被挤到 8px 宽且推出视口、实时抽样徽章被裁
+          175px；图例条也被挤到约 22px。换行后 390px 下全部控件可见可点。 */}
       <div className="border-b border-border/60 glass-surface subtle-mesh z-20 shadow-xs">
         {/* 第 1 行：返回 + 标题/徽章 + 场景胶囊（分类域里也展示，点场景即切回全局场景） */}
-        <div className="flex items-center gap-3 px-3 sm:px-6 pt-2 pb-1.5">
-          <div className="flex items-center gap-3 min-w-0 shrink-0">
+        <div className="flex flex-wrap items-center gap-3 px-3 sm:px-6 pt-2 pb-1.5">
+          <div className="flex min-w-0 items-center gap-3">
             <Button asChild variant="ghost" size="sm" className="gap-1.5 text-xs h-8 border border-border/50 hover:bg-background/80 shrink-0">
               <Link href="/">
                 <ArrowLeft className="w-3.5 h-3.5" />
@@ -859,8 +863,8 @@ export function EcosystemGraph() {
                 <Sparkles className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <h1 className="text-sm sm:text-base font-bold flex items-center gap-2 flex-wrap">
-                  <span className="whitespace-nowrap">工具链关系图谱与平替雷达</span>
+                <h1 className="text-sm sm:text-base font-bold flex min-w-0 items-center gap-2 flex-wrap">
+                  <span>工具链关系图谱与平替雷达</span>
                   <Badge variant="outline" className="hidden sm:inline-flex text-xs text-indigo-500 border-indigo-500/30 font-mono">
                     Poincaré Graph v5.0
                   </Badge>
@@ -925,9 +929,11 @@ export function EcosystemGraph() {
           </div>
         </div>
 
-        {/* 第 2 行：图例过滤器 + 本次生态簇 + 换一批 + 搜索 + 缩放 */}
-        <div className="flex items-center gap-2 px-3 sm:px-6 pb-2 pt-0.5">
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar min-w-0 flex-1">
+        {/* 第 2 行：图例过滤器 + 本次生态簇 + 换一批 + 搜索 + 缩放；
+            窄屏时图例条占满一行（w-full），换一批 + 搜索 + 缩放换到第二行，
+            否则三组固定控件（约 336px）会把图例条挤到约 22px 窄条（U-444）。 */}
+        <div className="flex flex-wrap items-center gap-2 px-3 sm:px-6 pb-2 pt-0.5">
+          <div className="flex min-w-0 grow items-center gap-2 overflow-x-auto no-scrollbar w-full sm:w-auto">
             {/* 图例升级为可点击过滤器：再点一次取消 */}
             <div className="flex items-center gap-1 shrink-0" role="group" aria-label="图例过滤">
               {([

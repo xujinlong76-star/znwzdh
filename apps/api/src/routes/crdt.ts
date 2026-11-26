@@ -99,6 +99,7 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     };
 
     const maxRetries = 3;
+    let saved = false;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       const existing = await ctx.repo.getUserVault(crdtKey);
       let serverOps: CRDTOperation[] = [];
@@ -125,12 +126,25 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       const expectedVersion = existing?.version ?? 0;
       const saveRes = await ctx.repo.saveUserVaultIfUnchanged(crdtKey, payloadStr, expectedVersion);
       if (saveRes.ok) {
+        saved = true;
         break;
       }
-      if (attempt === maxRetries - 1) {
-        // 重试耗尽后的兜底保底写入
-        await ctx.repo.saveUserVault(crdtKey, payloadStr);
-      }
+    }
+
+    if (!saved) {
+      // U-414：重试耗尽后不再无条件覆盖。最后一轮读之后到达的 op 若被兜底写覆盖
+      // 就会静默丢失，而调用方拿到的是 200 ok:true（复现见
+      // apps/api/test/crdt-fallback-repro.test.ts）。改回 409（带当前版本），
+      // 客户端重拉（GET /api/crdt/sync）合流后再重推，op 一个都不丢。
+      const current = await ctx.repo.getUserVault(crdtKey);
+      reply.code(409);
+      return {
+        ok: false,
+        error: "conflict",
+        code: "version_conflict",
+        retryable: true,
+        currentVersion: current?.version ?? null,
+      };
     }
 
     return {

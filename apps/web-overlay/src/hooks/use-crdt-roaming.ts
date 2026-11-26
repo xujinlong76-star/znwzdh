@@ -192,19 +192,38 @@ export function useCrdtRoaming({ enabled = true }: UseCrdtRoamingOptions = {}) {
       // 3. 异步回写云端服务端合流
       pendingOpsRef.current.push(op)
       setStatus('syncing')
+      const identity = getIdentity()
       try {
-        const identity = getIdentity()
         const res = await pushCrdtSync(pendingOpsRef.current, identity)
         if (res.ok) {
           pendingOpsRef.current = []
           setLastSyncedAt(Date.now())
           setStatus('synced')
         }
-      } catch {
+      } catch (err) {
+        // U-414：服务端 CAS 重试耗尽回 409（带 currentVersion，不再无条件覆盖，
+        // 见 apps/api/src/routes/crdt.ts）——先重拉云端合流进本地 Store，再把
+        // 未确认的 ops 重推一次（仅一次，避免无界重试）。pendingOps 不清空：
+        // 重推失败时下次 dispatch 仍会带上它们，op 不丢。
+        const status = (err as { status?: unknown } | null)?.status
+        if (status === 409 && pendingOpsRef.current.length > 0) {
+          try {
+            await syncWithServer()
+            const retryRes = await pushCrdtSync(pendingOpsRef.current, identity)
+            if (retryRes.ok) {
+              pendingOpsRef.current = []
+              setLastSyncedAt(Date.now())
+              setStatus('synced')
+              return
+            }
+          } catch {
+            // 重拉/重推失败：按离线处理，ops 仍在队列里
+          }
+        }
         setStatus('offline')
       }
     },
-    [enabled]
+    [enabled, syncWithServer]
   )
 
   return {

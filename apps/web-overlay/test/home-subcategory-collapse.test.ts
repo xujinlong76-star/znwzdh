@@ -21,8 +21,18 @@ describe("首页：子分类较多的分类默认只展开第一个子类", () =
   });
 
   it("selectedSubCatId 初值走 defaultSubCatIdFor，且显式 initialSelectedSubCatId 优先", () => {
-    expect(src).toContain("initialSelectedSubCatId ?? defaultSubCatIdFor(category)");
-    // 聚焦直达（显式传子类）与编辑态不受默认折叠影响
-    expect(src).toMatch(/useEffect\(\(\) => \{\s*setSelectedSubCatId\(initialSelectedSubCatId \?\? defaultSubCatIdFor\(category\)\)/);
+    // U-450（2026-11-26）：旧断言按字面钉死 `initialSelectedSubCatId ?? defaultSubCatIdFor(category)`，
+    // 与 81f7a3fc 引入时的写法一致；1b363e65（wip 全量快照，「仅存档当前工作树，未逐项验收」）
+    // 把默认值抽成 `const defaultSubCatId = defaultSubCatIdFor(category)` 并给同步 effect 加了
+    // ref 守卫，却没同步改测试——行为没变（显式 prop 优先，否则首个非空子类），断言先过期了。
+    // 下面两处合起来与旧断言等价：初值 = 显式 prop ?? defaultSubCatIdFor(category)。
+    expect(src).toContain("const defaultSubCatId = defaultSubCatIdFor(category)");
+    expect(src).toContain("initialSelectedSubCatId ?? defaultSubCatId,");
+    // 聚焦直达（显式传子类）与编辑态不受默认折叠影响：分类 id 或显式 prop 真变时才重设，
+    // 同步表达式仍是显式 prop 优先、否则走默认子类；ref 守卫保证父级重传同 id 对象时
+    // 不会把用户已点的子类选择重置掉（旧 effect 无守卫，category 对象引用一变就重设）。
+    expect(src).toMatch(/useEffect\(\(\) => \{\s*if \(prevCatIdRef\.current !== category\.id \|\| prevInitialSubRef\.current !== initialSelectedSubCatId\) \{/);
+    expect(src).toContain("setSelectedSubCatId(initialSelectedSubCatId ?? defaultSubCatId)");
+    expect(src).toContain("}, [category.id, initialSelectedSubCatId, defaultSubCatId])");
   });
 });

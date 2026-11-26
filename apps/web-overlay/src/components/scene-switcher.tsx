@@ -27,6 +27,7 @@ import { getHomeDiySnapshot } from '@/lib/modular/home-diy-storage'
 import { getActiveTheme, isThemeSuspended } from '@/lib/plugins/theme-runtime'
 import {
   applyScene,
+  buildFreshSceneSiteIndex,
   getRegisteredSceneSiteIndex,
   sceneSwitchSuccessText,
   type SceneSwitchResult,
@@ -135,8 +136,13 @@ export async function performSceneSwitch(
   // flight 分片：场景应用前先取齐全部分类——置顶站点若在未下发的分类里，
   // derivePinnedSites 会把它当成「已删除」剪掉。ensureHomeCategoriesLoaded
   // 在非首页上下文直接 resolve，不阻塞。
-  await ensureHomeCategoriesLoaded()
-  deps.siteIndex = getRegisteredSceneSiteIndex()
+  // 用取数返回的最新分类直接建索引，不要读模块级索引：await 续体执行时
+  // React 尚未重渲染，注册表仍是取数前的旧版（与工作区折叠同根的时序竞态）。
+  // 未注册时（非首页上下文）回落到注册表。
+  const freshItems = await ensureHomeCategoriesLoaded()
+  deps.siteIndex = freshItems
+    ? buildFreshSceneSiteIndex(freshItems)
+    : getRegisteredSceneSiteIndex()
   const result = await applyScene(scene, doc, deps)
   if (flagStorage && shouldClearSwitchFlag(result)) clearSceneSwitchFlag(flagStorage)
   if (!result.ok) {

@@ -34,6 +34,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { getActiveTheme } from '@/lib/plugins/theme-runtime'
 import {
   applyScene,
+  buildFreshSceneSiteIndex,
   deleteActiveSceneFallback,
   getRegisteredSceneSiteIndex,
   rollbackSceneSwitch,
@@ -92,9 +93,12 @@ export function SceneManagerDialog({
     const deps = scene.theme.skinSlug
       ? await buildLiveSceneDepsAsync(base)
       : buildLiveSceneDeps(base)
-    // flight 分片：场景应用前先取齐全部分类（同 scene-switcher）。
-    await ensureHomeCategoriesLoaded()
-    deps.siteIndex = getRegisteredSceneSiteIndex()
+    // flight 分片：场景应用前先取齐全部分类（同 scene-switcher），用取数
+    // 返回的最新分类直接建索引，不要读模块级索引（同根的时序竞态）。
+    const freshItems = await ensureHomeCategoriesLoaded()
+    deps.siteIndex = freshItems
+      ? buildFreshSceneSiteIndex(freshItems)
+      : getRegisteredSceneSiteIndex()
     return deps
   }, [theme, setTheme])
 

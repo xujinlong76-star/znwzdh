@@ -595,15 +595,46 @@ export function NavigationContent({
     [loadedItemsById],
   )
 
-  /** 把索引里尚未加载的分类一次取齐（工作区筛选 / 场景应用前调用）。 */
-  const loadAllCategories = useCallback(async (): Promise<void> => {
-    if (!categoryIndex || categoryIndex.length === 0) return
+  /**
+   * 把索引里尚未加载的分类一次取齐（工作区筛选 / 场景应用前调用），并返回
+   * 取齐后的完整分类列表（按索引顺序）。
+   *
+   * 必须返回最新数据、调用方必须用返回值计算，不要读闭包里的
+   * effectiveNavigationItems：await 续体执行时 React 尚未重渲染，闭包仍是
+   * 取数前的占位版（后加载分类无 items，会被误判为无匹配而全部折叠；
+   * 2026-11-26 flight 分片回归）。取数完成后也立即用最新数据刷新模块级
+   * 场景索引——它只在重渲染后的 effect 里重建，场景切换在 await 后读到
+   * 的会是旧索引，置顶站点会被当成已删除剪掉（同根的时序竞态）。
+   */
+  const loadAllCategories = useCallback(async (): Promise<NavigationItem[]> => {
+    // 用取数后的最新数据拼完整列表：已加载的取闭包里的；刚取到的取本次
+    // fetch 的返回值；取数失败的仍为占位（与旧行为一致，继续切换）。
+    const assemble = (freshById: Map<string, NavigationItem>): NavigationItem[] => {
+      if (!categoryIndex || categoryIndex.length === 0) return navigationData.navigationItems
+      const items = categoryIndex.map(
+        (entry) =>
+          loadedItemsById.get(entry.id) ?? freshById.get(entry.id) ?? categoryIndexToStub(entry),
+      )
+      for (const item of navigationData.navigationItems) {
+        if (!categoryIndex.some((entry) => entry.id === item.id)) items.push(item)
+      }
+      return items
+    }
+    if (!categoryIndex || categoryIndex.length === 0) return assemble(new Map())
     const missing = categoryIndex
       .map((entry) => entry.id)
       .filter((id) => !loadedItemsById.has(id))
-    if (missing.length === 0) return
-    await Promise.all(missing.map((id) => loadCategory(id)))
-  }, [categoryIndex, loadedItemsById, loadCategory])
+    if (missing.length === 0) return assemble(new Map())
+    const fetched = await Promise.all(missing.map((id) => loadCategory(id)))
+    const freshById = new Map(
+      fetched
+        .filter((c): c is NavigationItem => c !== null)
+        .map((c) => [c.id, c] as const),
+    )
+    const items = assemble(freshById)
+    registerSceneSiteIndex(buildSceneSiteIndex(items, customCategories))
+    return items
+  }, [categoryIndex, loadedItemsById, loadCategory, navigationData.navigationItems, customCategories])
 
   const effectiveNavigationItems = useMemo(() => {
     if (!categoryIndex || categoryIndex.length === 0) {
@@ -819,20 +850,21 @@ export function NavigationContent({
   // 分发时全局 hook 直接调 undoLastFeatureRemove + 分类双写。
 
   const handleWorkspaceChange = useCallback(async (nextWorkspace: WorkspaceId) => {
-    if (nextWorkspace !== 'all') {
-      // 工作区筛选要整树在手（按标题/描述/标签关键词匹配）：先把未下发的
-      // 分类一次取齐再切工作区。否则筛选在只有前 4 个分类时，会把其余分类
-      // 误判为「无匹配」而折叠/隐藏，等于功能丢失。取数失败时仍继续切换，
-      // 已加载的分类照常筛选，未加载的在滚动到时补取。
-      await loadAllCategories()
-    }
+    // 工作区筛选要整树在手（按标题/描述/标签关键词匹配）：先把未下发的
+    // 分类一次取齐再切工作区，并直接用取数返回的最新列表算折叠——不要读
+    // 闭包里的 effectiveNavigationItems：await 续体执行时 React 尚未重渲染，
+    // 闭包仍是取数前的占位版，后加载分类会被误判为「无匹配」而全部折叠
+    // （2026-11-26 flight 分片回归）。取数失败时仍继续切换，已加载的分类
+    // 照常筛选，未加载的在滚动到时补取。
+    const items =
+      nextWorkspace === 'all' ? effectiveNavigationItems : await loadAllCategories()
     setActiveWorkspace(nextWorkspace)
     if (nextWorkspace === 'all') {
       expandAllCategories()
     } else {
-      const matchedCats = filterNavigationByWorkspace(effectiveNavigationItems, nextWorkspace)
+      const matchedCats = filterNavigationByWorkspace(items, nextWorkspace)
       const matchedCatIds = new Set(matchedCats.map((c) => c.id))
-      const allIds = effectiveNavigationItems.map((c) => c.id)
+      const allIds = items.map((c) => c.id)
       const toCollapse = allIds.filter((id) => !matchedCatIds.has(id))
       setCollapsedCategoryIds(toCollapse)
     }

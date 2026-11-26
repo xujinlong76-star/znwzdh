@@ -383,6 +383,19 @@ export function getRegisteredSceneSiteIndex(): Map<string, SceneSiteEntry> {
   return registeredSiteIndex
 }
 
+/**
+ * 用取数后的最新分类建场景站点索引：新索引优先，注册表里仅有的条目
+ * （自建分类）保留。场景切换在 await ensureHomeCategoriesLoaded() 后
+ * 用返回的列表调它，不要直接读注册表——await 续体执行时 React 尚未
+ * 重渲染，注册表仍是取数前的旧版，置顶站点会被当成已删除剪掉
+ * （与工作区折叠同根的时序竞态，2026-11-26 flight 分片回归）。
+ */
+export function buildFreshSceneSiteIndex(
+  freshCategories: SceneSiteCategoryLike[],
+): Map<string, SceneSiteEntry> {
+  return new Map([...registeredSiteIndex, ...buildSceneSiteIndex(freshCategories)])
+}
+
 export interface SceneSiteCategoryLike {
   id: string
   items?: Array<{ id: string; title: string }>

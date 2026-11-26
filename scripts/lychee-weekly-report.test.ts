@@ -318,3 +318,26 @@ describe("lychee-weekly-report：CLI（--dry-run，不调网络）", () => {
     }
   });
 });
+
+describe("lychee-weekly-report：Wayback 建议链接须严格比对 host（CodeQL #154）", () => {
+  it("真 web.archive.org 建议原样返回；子串绕过走 Wayback 前缀", async () => {
+    const { waybackUrl } = await load();
+    const url = "https://example.com/gone";
+    const prefixed = "https://web.archive.org/web/*/https://example.com/gone";
+    // 真快照链接：原样返回
+    expect(waybackUrl(url, "https://web.archive.org/web/2024/https://example.com/gone")).toBe(
+      "https://web.archive.org/web/2024/https://example.com/gone",
+    );
+    // host 大小写不敏感
+    expect(waybackUrl(url, "https://WEB.ARCHIVE.ORG/web/2024/https://example.com/gone")).toBe(
+      "https://WEB.ARCHIVE.ORG/web/2024/https://example.com/gone",
+    );
+    // 绕过 1：查询串里含子串，host 是 evil.com
+    expect(waybackUrl(url, "https://evil.com/?web.archive.org")).toBe(prefixed);
+    // 绕过 2：子域名伪装，host 是 web.archive.org.evil.com
+    expect(waybackUrl(url, "https://web.archive.org.evil.com/x")).toBe(prefixed);
+    // 非 URL / 无建议：走 Wayback 前缀
+    expect(waybackUrl(url, null)).toBe(prefixed);
+    expect(waybackUrl(url, "not-a-url")).toBe(prefixed);
+  });
+});

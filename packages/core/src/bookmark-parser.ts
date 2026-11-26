@@ -442,6 +442,59 @@ export function parseMarkdownBookmarks(markdownText: string): ParsedBookmarkFold
 
 export type BookmarkSourceFormat = 'netscape_html' | 'onetab_text' | 'markdown' | 'json'
 
+// Markdown 链接探测的针点：`](http://` / `](https://`
+const MARKDOWN_LINK_PREFIXES = ['](http://', '](https://'] as const
+
+// 正则 `.` 不匹配的行终止符。
+const LINE_TERMINATORS = ['\n', '\r', '\u2028', '\u2029'] as const
+
+/**
+ * 判断单行内是否存在 Markdown 链接 `[text](http(s)://...)`。
+ * 与原正则 /\[.+?\]\(https?:\/\/.+?\)/ 等价（`.` 不跨行）：
+ * - `[` 须在 `]` 之前且中间至少 1 字符；
+ * - `://` 之后与 `)` 之间至少 1 字符。
+ * 全程只用 indexOf 递增扫描，线性时间、无回溯。
+ */
+function hasMarkdownLinkInLine(line: string): boolean {
+  const openIdx = line.indexOf('[')
+  if (openIdx === -1) return false
+  for (const needle of MARKDOWN_LINK_PREFIXES) {
+    let from = 0
+    for (;;) {
+      const closeIdx = line.indexOf(needle, from)
+      if (closeIdx === -1) break
+      if (openIdx < closeIdx - 1) {
+        if (line.indexOf(')', closeIdx + needle.length + 1) !== -1) return true
+        // 该位置之后已无 `)`，更靠后的针点也不可能有，直接结束
+        break
+      }
+      from = closeIdx + 1
+    }
+  }
+  return false
+}
+
+/**
+ * 线性检测文本中是否存在 Markdown 链接。
+ * 原正则对 `[`×n 输入呈平方级回溯（CodeQL #20）；
+ * 本实现按行切分后逐行 indexOf 判定，整体线性。
+ */
+function hasMarkdownLink(text: string): boolean {
+  let lineStart = 0
+  const len = text.length
+  while (lineStart <= len) {
+    let lineEnd = len
+    for (const terminator of LINE_TERMINATORS) {
+      const pos = text.indexOf(terminator, lineStart)
+      if (pos !== -1 && pos < lineEnd) lineEnd = pos
+    }
+    if (hasMarkdownLinkInLine(text.slice(lineStart, lineEnd))) return true
+    if (lineEnd === len) break
+    lineStart = lineEnd + 1
+  }
+  return false
+}
+
 /**
  * 自动嗅探格式并调用对应解析引擎
  */
@@ -487,7 +540,10 @@ export function parseUniversalBookmarks(content: string): {
   }
 
   // 3. 检查是否为 Markdown 格式（含 # 和 [title](url)）
-  if (/^#{1,4}\s+/m.test(trimmed) || /\[.+?\]\(https?:\/\/.+?\)/.test(trimmed)) {
+  // 注意：链接探测不用正则 /\[.+?\]\(https?:\/\/.+?\)/——该式对 `[`×n
+  // 输入呈平方级回溯（CodeQL #20，100KB 全 `[` 阻塞事件循环约 4 秒）；
+  // 改用 hasMarkdownLink 线性扫描（indexOf 递增），语义等价。
+  if (/^#{1,4}\s+/m.test(trimmed) || hasMarkdownLink(trimmed)) {
     const folders = parseMarkdownBookmarks(trimmed)
     const total = folders.reduce((acc, f) => acc + f.items.length, 0)
     return { format: 'markdown', folders, totalItems: total }

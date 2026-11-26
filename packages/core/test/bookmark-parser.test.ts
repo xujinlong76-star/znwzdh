@@ -146,6 +146,54 @@ describe('全格式书签智能解析与语义去重清洗引擎 (Universal Book
     expect(mdResult.totalItems).toBe(1)
   })
 
+  it('Markdown 嗅探：链接探测是线性的，100KB 全 `[` 不阻塞（CodeQL #20）', () => {
+    const input = '['.repeat(100000)
+    const t0 = Date.now()
+    const result = parseUniversalBookmarks(input)
+    const elapsed = Date.now() - t0
+    expect(result.format).toBe('onetab_text')
+    // 旧正则 /\[.+?\]\(https?:\/\/.+?\)/ 在此输入上约 4 秒；线性实现应远低于此
+    expect(elapsed).toBeLessThan(1000)
+  })
+
+  it('Markdown 嗅探：链接探测覆盖边界形态（与旧正则等价）', () => {
+    const cases: Array<[string, 'markdown' | 'onetab_text']> = [
+      ['[Test](https://test.com)', 'markdown'],
+      ['- [Test](http://test.com)', 'markdown'],
+      ['[a](http://))', 'markdown'], // `)` 可作链接文本
+      ['[a[](http://x)', 'markdown'], // 外层 `[` 与后一个 `]` 配对
+      ['[](http://x)', 'onetab_text'], // 空文本不是链接
+      ['[a](http://)', 'onetab_text'], // URL 部分为空
+      ['[a](http://x)', 'markdown'],
+      ['[a]\n(http://x)', 'onetab_text'], // 链接不能跨行
+      ['https://plain-url.com', 'onetab_text'], // 裸 URL 不是 Markdown 链接
+      ['[a](https://x) [b](http://y)', 'markdown'],
+    ]
+    for (const [input, expected] of cases) {
+      expect(parseUniversalBookmarks(input).format).toBe(expected)
+    }
+  })
+
+  it('Markdown 嗅探：链接探测与旧正则逐字等价（定种子随机语料，CodeQL #20）', () => {
+    const oldLinkRe = /\[.+?\]\(https?:\/\/.+?\)/
+    // 定种子伪随机，保证可复现；字母表含链接构件与行终止符
+    let seed = 0xc0de20
+    const next = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0
+      return seed / 0x100000000
+    }
+    const alphabet = ['[', ']', '(', ')', 'h', 't', 'p', ':', '/', 's', 'a', ' ', '\n', '\r', 'x']
+    for (let i = 0; i < 500; i += 1) {
+      const len = 1 + Math.floor(next() * 60)
+      let input = ''
+      for (let j = 0; j < len; j += 1) input += alphabet[Math.floor(next() * alphabet.length)]
+      // 排除会触发 JSON/HTML/标题分支的输入，只比链接探测
+      if (input.includes('#') || input.includes('<') || input.startsWith('{')) continue
+      const expected = oldLinkRe.test(input) ? 'markdown' : 'onetab_text'
+      expect(parseUniversalBookmarks(input).format).toBe(expected)
+    }
+  })
+
   it('精准与弱语义查重清洗 (deduplicateBookmarkItems)', () => {
     const existing = [
       { id: '1', title: 'React 官网', href: 'https://react.dev' },

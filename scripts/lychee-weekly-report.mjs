@@ -74,8 +74,24 @@ export function registrableDomain(url) {
 }
 
 export function waybackUrl(url, suggestion) {
-  if (typeof suggestion === "string" && suggestion.includes("web.archive.org")) return suggestion;
+  if (typeof suggestion === "string" && isWaybackUrl(suggestion)) return suggestion;
   return `${WAYBACK_PREFIX}${url}`;
+}
+
+/**
+ * 严格判定是否为 web.archive.org 的快照链接：解析后比对 hostname。
+ * 旧的 `includes("web.archive.org")` 可被 `https://evil.com/?web.archive.org`
+ * 或 `https://web.archive.org.evil.com/...` 绕过（CodeQL #154）。
+ */
+function isWaybackUrl(suggestion) {
+  let hostname;
+  try {
+    hostname = new URL(suggestion).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (hostname.endsWith(".")) hostname = hostname.slice(0, -1);
+  return hostname === "web.archive.org";
 }
 
 /** ISO 周次（UTC 口径），如 2026-W47；--week 可显式覆盖（测试用）。 */

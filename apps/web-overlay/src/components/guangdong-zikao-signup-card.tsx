@@ -19,8 +19,9 @@ import { safeHref } from '@/lib/safe-url'
  * 门控唯一事实源是 exam-calendar.ts 里的 guangdongZikaoSignupPhase，
  * 本文件不写日期字面量做门控，不算天数倒计时。
  *
- * 落点：首页 navigation-content.tsx 一处，dynamic(ssr: false)；
- * /brief 不上，AnnouncementBar 不挂。CTA 是站外直链（无站 id 可报），
+ * 落点：/exam 广东自考卡片内挂载（U-436，2026-11-27），与国考提醒岛同款
+ * per-exam 位；不上首页顶置（C4-G7 清退，2026-11-24 定稿），/brief 不上。
+ * CTA 是站外直链（无站 id 可报），
  * 点击不记录、不上报（D3 定稿）。外链一律过 safeHref，
  * target _blank + noopener noreferrer。整卡不可点，只有 CTA 是链接；
  * 无入场动画，无闪烁徽章。
@@ -106,7 +107,10 @@ export function guangdongZikaoSignupCardCopy(
 /**
  * 纯展示视图（内部函数）：调用方按门控算好 copy 传进来。
  * 外壳照抄 home-exam-strip-view.tsx 同款 section + 渐变卡片容器与 flex-wrap
- * 结构（wrap-guard 教训：文案块含 basis-full sm:basis-0，360px 窄屏不逐字竖排）。
+ * 结构。文案块 min-w 守卫（U-455，2026-11-27）：/exam 文章列只有约 585px
+ * 宽，旧写法 min-w-0 + sm:basis-0 会让文案块在 ≥sm 时缩到徽章与 CTA 剩下的
+ * 约 60px、逐字竖排；min-w-[min(280px,100%)] 使容器放不下三件套时文案块先
+ * 换到自成一行（flex-wrap），280px 以下仍可读，100% 上限保 360px 窄屏不溢出。
  * 徽章 chip 用 sky 档（与 C1 红系拉开，RW-C4-03/S5 定稿）；正文一律 text-sm，
  * CTA min-h-11（44px），只在 ctaLabel 非空时渲染（P3 无链接）。
  */
@@ -122,7 +126,7 @@ function GuangdongZikaoSignupCardView({ copy }: { copy: GuangdongZikaoSignupCard
             <CalendarDays className="h-3.5 w-3.5" aria-hidden />
             {copy.badge}
           </span>
-          <div className="min-w-0 flex-1 basis-full sm:basis-0">
+          <div className="min-w-[min(280px,100%)] flex-1 basis-full sm:basis-0">
             <p className="text-sm font-semibold text-sky-700 dark:text-sky-400">{copy.title}</p>
             {copy.statusLines.map((line) => (
               <p key={line} className="mt-0.5 text-sm leading-relaxed text-muted-foreground">

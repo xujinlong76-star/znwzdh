@@ -480,6 +480,23 @@ describe('U-436：/exam 考历页挂载（2026-11-27，截止日 11-27 在即）
   })
 })
 
+describe('U-455：窄容器内文案块不逐字竖排（2026-11-27，B5 二轮复核 F1）', () => {
+  it('文案块带 min-w 换行守卫：窄容器放不下三件套时先换行，不缩到 60px', () => {
+    // 复现：/exam 文章列约 585px 宽时，旧写法 min-w-0 + sm:basis-0 让文案块
+    // 缩到徽章与 CTA 剩下的约 60px、逐字竖排（1366px 实测 section 585×585、
+    // 文案块 60×547）。jsdom 无布局引擎，锁源码类名 + live 实测数值为准。
+    const src = read('src/components/guangdong-zikao-signup-card.tsx')
+    expect(src).toContain('min-w-[min(280px,100%)] flex-1 basis-full sm:basis-0')
+    expect(src).not.toContain('min-w-0 flex-1 basis-full')
+  })
+
+  it('组件头注释不再写已作废的首页落点：落点是 /exam，不上首页顶置', () => {
+    const src = read('src/components/guangdong-zikao-signup-card.tsx')
+    expect(src).not.toContain('落点：首页 navigation-content.tsx 一处')
+    expect(src).toContain('落点：/exam 广东自考卡片内挂载')
+  })
+})
+
 describe('挂载前 null 与 60 秒 tick（U-235 同款，1022-W2 §5.4）', () => {
   it('组件源码：挂载前渲染 null、60 秒 interval + 清理，不许 1 秒 tick', () => {
     const src = read('src/components/guangdong-zikao-signup-card.tsx')

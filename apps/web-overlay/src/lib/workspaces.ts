@@ -6,9 +6,9 @@
  * `@/components/workspace-filter` 拿——于是首屏静态 import 图里多带了整段
  * `WorkspaceFilter` 组件体（约 5.6KB 源码，含长串 Tailwind 类名与键盘漫游），
  * 而该组件在首屏早已被 HomeCapsuleRow 取代、没有任何挂载点。数据抽到这里后，
- * 首屏图里只剩本文件；workspace-filter.tsx 仍 re-export WORKSPACES，旧导入方
- * 与读源码的守卫测试（daypart-hydration / mobile-touch-targets /
- * user-preferences）不受影响。数据本身逐字照搬，不改任何 id / 文案 / 图标。
+ * 首屏图里只剩本文件；workspace-filter.tsx 已随 B5（2026-11-27）删除，
+ * 不再 re-export WORKSPACES——本文件就是 WORKSPACES 的唯一来源
+ * （home-capsule-row 等旧导入方改从这里取）。数据本身逐字照搬，不改任何 id / 文案 / 图标。
  */
 import type { ComponentType } from 'react'
 import { Bot, Code2, Coffee, Compass, Palette } from 'lucide-react'

@@ -292,7 +292,11 @@ describe("越权 404 不可区分：同码同 body，不点名 id，不返回部
       expect(JSON.stringify(body)).not.toContain(pendingSiteId);
       expect(JSON.stringify(body)).not.toContain(archivedSiteId);
       expect(JSON.stringify(body)).not.toContain(neverFavoritedSiteId);
-      bodies.push(body);
+      // requestId 按请求唯一且与响应头同源，不属于可被探测的差异：只比对 body 形状
+      expect(body.requestId).toBe(res.headers["x-request-id"]);
+      const shape: Record<string, unknown> = { ...body };
+      delete shape.requestId;
+      bodies.push(shape);
     }
     for (const b of bodies.slice(1)) expect(b).toEqual(bodies[0]);
   });

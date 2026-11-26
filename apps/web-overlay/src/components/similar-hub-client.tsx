@@ -312,8 +312,13 @@ export function SimilarHubClient() {
                   onKeyDown={handleInputKeyDown}
                   placeholder="输入网址、域名或站名，如 douban.com、github.com、豆瓣…"
                   aria-label="输入网址、域名或站点名称查找相似网站"
+                  role="combobox"
                   aria-expanded={acOpen && acItems.length > 0}
                   aria-autocomplete="list"
+                  aria-controls={acOpen && acItems.length > 0 ? 'similar-autocomplete-listbox' : undefined}
+                  aria-activedescendant={
+                    acOpen && acIndex >= 0 && acItems[acIndex] ? `similar-option-${acIndex}` : undefined
+                  }
                   className="h-10 min-w-0 flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
                 />
                 {inputValue && (
@@ -350,6 +355,7 @@ export function SimilarHubClient() {
             {/* 实时站内自动补全联想下拉 */}
             {acOpen && acItems.length > 0 && (
               <ul
+                id="similar-autocomplete-listbox"
                 role="listbox"
                 data-testid="similar-autocomplete-list"
                 className="absolute left-0 right-0 top-full z-30 mt-1.5 overflow-hidden rounded-2xl border border-border/80 bg-popover p-1.5 shadow-xl backdrop-blur-md"
@@ -358,7 +364,7 @@ export function SimilarHubClient() {
                   const host = safeHostname(site.url)
                   const highlighted = idx === acIndex
                   return (
-                    <li key={site.id} role="option" aria-selected={highlighted}>
+                    <li key={site.id} id={`similar-option-${idx}`} role="option" aria-selected={highlighted}>
                       <button
                         type="button"
                         onMouseDown={(e) => {

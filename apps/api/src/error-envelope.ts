@@ -14,7 +14,8 @@
  *   - `error` 与 `code` 是同一份机器码（双写只为兼容：404 处理器与部分测试
  *     读 `error`，全局兜底读 `code`；两者不再各说各话）；
  *   - `message` 是给人看的文案，不做分支判断；
- *   - `requestId` 只有服务端能给时才出现（路由层没有 req.id 概念时省略）；
+ *   - `requestId` 与响应头 `x-request-id`、日志子字段同源（2026-11-26 起路由层
+ *     包络也带：此前只有全局两处带，路由层报错在日志里对不上号）；
  *   - `retryable` 只在全局兜底里按状态码推导（5xx / 429 为 true）。
  *
  * 迁移范围：本文件落地的同时，server.ts 两个全局处理器与 keyset 改造涉及的
@@ -84,6 +85,15 @@ export function buildErrorEnvelope(input: {
 }
 
 /**
+ * 取对外 requestId：与 server.ts 的 onRequest 别名、响应头 x-request-id 同源。
+ * 路由层没有该别名时退回 Fastify 内部 req.id，至少保证日志能对上一条。
+ */
+export function requestIdOf(reply: FastifyReply): string {
+  const req = reply.request as unknown as { requestId?: string; id?: string };
+  return req.requestId ?? req.id ?? "";
+}
+
+/**
  * 路由层回错误：设状态码并返回包络。
  * `code` 缺省时按状态码取默认码（见 ERROR_CODE_BY_STATUS）。
  */
@@ -95,5 +105,7 @@ export function sendError(
   details?: unknown,
 ): ErrorEnvelope {
   reply.code(status);
-  return buildErrorEnvelope({ status, code, message, details });
+  // requestId 必须带上：此前路由层包络只有 error/code/message，
+  // 客户端拿到的 body 与响应头/日志对不上，报障时无法定位。
+  return buildErrorEnvelope({ status, code, message, details, requestId: requestIdOf(reply) });
 }

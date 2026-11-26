@@ -151,8 +151,10 @@ export async function buildServer(ctx: AppContext) {
           "req.headers.cookie",
           "req.headers['x-navhub-identity-signature']",
           "req.headers['x-navhub-identity-signature-v2']",
+          "req.headers['x-navhub-identity-signature-v3']",
           "req.headers['x-navhub-anon-signature']",
           "req.headers['x-navhub-anon-signature-v2']",
+          "req.headers['x-navhub-anon-signature-v3']",
           // 限流豁免凭据：泄露它等于拿到「不吃按 IP 额度」的通道，绝不能进日志聚合。
           "req.headers['x-navhub-internal-token']",
           "res.headers['set-cookie']",
@@ -325,7 +327,9 @@ export async function buildServer(ctx: AppContext) {
   // `message` 是人话；`details` 仅在框架给出校验明细时出现。`error` 此前是
   // 人话——与 404 处理器的机器码不一致，M13 起统一为机器码，人话只放 message。
   app.setErrorHandler((err, req, reply) => {
-    app.log.error(err);
+    // 必须走 req.log（onRequest 里已挂上 requestId 子字段）：根 logger 那行
+    // 既没有对外 x-request-id 也没有内部 reqId，报错恰恰在链路尽头断掉。
+    req.log.error(err);
     // Keyset 游标无效是客户端错误（M12）：仓储层抛 InvalidKeysetCursorError
     // （按 name 判定，避免跨包 instanceof 不稳），这里映射成 400
     // INVALID_CURSOR，不让它冒泡成 500。
@@ -348,7 +352,9 @@ export async function buildServer(ctx: AppContext) {
           : undefined,
       message,
       details,
-      requestId: req.id,
+      // 与响应头、日志、404 处理器同一口径：对外别名（客户端自带优先），
+      // 拿 body 里的 id 必须能查到日志。
+      requestId: (req as unknown as { requestId?: string }).requestId ?? req.id,
       retryable: isRetryableStatus(safeStatus),
     }));
   });
@@ -706,12 +712,16 @@ export async function buildServer(ctx: AppContext) {
     if ((req as { auth?: { ownerIdentity?: string | null } }).auth?.ownerIdentity) return;
     const identity = identityOf(req as never);
     if (!identity) return;
+    const hasUserHeader = Boolean(req.headers["x-navhub-user-id"] ?? req.headers["x-user-id"]);
+    const hasAnonV3 = Boolean(req.headers["x-navhub-anon-signature-v3"]);
     const verdict = verifyIdentityHeaders({
       secret: ctx.config.identitySecret,
       identity,
       headers: req.headers as Record<string, unknown>,
+      prefix: !hasUserHeader && hasAnonV3 ? "x-navhub-anon" : "x-navhub-identity",
       strict: ctx.config.identitySignatureStrict,
     });
+    req.identitySignature = verdict;
     if (!verdict.ok) {
       return reply.code(401).send({ error: "身份签名缺失或无效" });
     }

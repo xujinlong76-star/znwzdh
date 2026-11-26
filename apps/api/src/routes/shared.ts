@@ -6,6 +6,7 @@
  */
 import type { FastifyReply } from "fastify";
 import { clampFacetFilter, type FacetFilterResult } from "@navhub/core";
+import { requestIdOf } from "../error-envelope.ts";
 import type { AppContext } from "../context.ts";
 
 /* ------------------------------------------------------------------ *
@@ -38,11 +39,30 @@ export function safeJsonParse<T>(raw: string | null | undefined, fallback: T, la
  * ------------------------------------------------------------------ */
 
 /**
+ * 错误体契约（2026-11-26 起，本助手家族的过渡口径）：
+ * - 这 5 个助手沿用 `error`=人话的历史契约：前端有十几处直接读 `data.error`
+ *   展示，改成机器码会让「你没有权限」变成 "FORBIDDEN"；
+ * - 新增 `code`（稳定机器码）与 `requestId`（与响应头 x-request-id、日志同源），
+ *   新客户端可以只读 code，报障时拿 body 就能查日志；
+ * - 标准包络仍是 error-envelope.ts 的 `{ error: <CODE>, message: <人话> }`
+ *   （sendError 与全局兜底在用）。两家族彻底收敛要同步改那些 `data.error`
+ *   消费点，单独一轮做，不混在这次可观测性改造里。
+ */
+export interface RouteErrorBody {
+  /** 人话（历史契约，前端直接展示） */
+  error: string;
+  /** 机器码：NOT_FOUND / BAD_REQUEST / FORBIDDEN / UNAUTHORIZED / CONFLICT */
+  code: string;
+  /** 与响应头 x-request-id 一致（客户端自带优先） */
+  requestId: string;
+}
+
+/**
  * 404 资源不存在
  */
-export function notFound(reply: FastifyReply, message = "资源不存在"): { error: string } {
+export function notFound(reply: FastifyReply, message = "资源不存在"): RouteErrorBody {
   reply.code(404);
-  return { error: message };
+  return { error: message, code: "NOT_FOUND", requestId: requestIdOf(reply) };
 }
 
 /**
@@ -52,9 +72,14 @@ export function badRequest(
   reply: FastifyReply,
   message = "参数无效",
   detail?: unknown
-): { error: string; detail?: unknown } {
+): RouteErrorBody & { detail?: unknown } {
   reply.code(400);
-  return detail !== undefined ? { error: message, detail } : { error: message };
+  return {
+    error: message,
+    code: "BAD_REQUEST",
+    requestId: requestIdOf(reply),
+    ...(detail !== undefined ? { detail } : {}),
+  };
 }
 
 /**
@@ -64,25 +89,26 @@ export function conflict<T extends Record<string, unknown>>(
   reply: FastifyReply,
   message = "资源冲突",
   extra?: T
-): { error: string } & Partial<T> {
+): RouteErrorBody & Partial<T> {
   reply.code(409);
-  return { error: message, ...(extra ?? {}) } as { error: string } & Partial<T>;
+  return { error: message, code: "CONFLICT", requestId: requestIdOf(reply), ...(extra ?? {}) } as RouteErrorBody &
+    Partial<T>;
 }
 
 /**
  * 403 权限不足
  */
-export function forbidden(reply: FastifyReply, message = "权限不足"): { error: string } {
+export function forbidden(reply: FastifyReply, message = "权限不足"): RouteErrorBody {
   reply.code(403);
-  return { error: message };
+  return { error: message, code: "FORBIDDEN", requestId: requestIdOf(reply) };
 }
 
 /**
  * 401 未授权
  */
-export function unauthorized(reply: FastifyReply, message = "未授权"): { error: string } {
+export function unauthorized(reply: FastifyReply, message = "未授权"): RouteErrorBody {
   reply.code(401);
-  return { error: message };
+  return { error: message, code: "UNAUTHORIZED", requestId: requestIdOf(reply) };
 }
 
 /**

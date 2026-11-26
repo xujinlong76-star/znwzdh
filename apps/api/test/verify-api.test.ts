@@ -231,7 +231,11 @@ describe("越权 404 不可区分：探活一次都没调", () => {
       expect(body.error).toBe("NOT_FOUND");
       expect(body.code).toBe("NOT_FOUND");
       expect(JSON.stringify(body)).not.toContain(id);
-      bodies.push(body);
+      // requestId 按请求唯一且与响应头同源，不属于可被探测的差异：只比对 body 形状
+      expect(body.requestId).toBe(res.headers["x-request-id"]);
+      const shape: Record<string, unknown> = { ...body };
+      delete shape.requestId;
+      bodies.push(shape);
     }
     for (const b of bodies.slice(1)) expect(b).toEqual(bodies[0]);
     expect(probeCalls).toHaveLength(0);

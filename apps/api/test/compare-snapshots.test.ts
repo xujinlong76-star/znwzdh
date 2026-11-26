@@ -233,7 +233,11 @@ describe("只含本人站点：越权 404，不留快照", () => {
       expect(body).not.toHaveProperty("snapshot");
       expect(JSON.stringify(body)).not.toContain(otherSiteId);
       expect(JSON.stringify(body)).not.toContain("ghost-id-404");
-      bodies.push(body);
+      // requestId 按请求唯一且与响应头同源，不属于可被探测的差异：只比对 body 形状
+      expect(body.requestId).toBe(res.headers["x-request-id"]);
+      const shape: Record<string, unknown> = { ...body };
+      delete shape.requestId;
+      bodies.push(shape);
     }
     for (const b of bodies.slice(1)) expect(b).toEqual(bodies[0]);
     const after = (await listSnapshots()).json().snapshots.length;

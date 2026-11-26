@@ -1593,7 +1593,6 @@ export default function FavoritesPage() {
               type="button"
               role="tab"
               aria-selected={activeView === view}
-              aria-pressed={activeView === view}
               title={tip}
               onClick={() => {
                 setActiveView(view)

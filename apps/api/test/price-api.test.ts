@@ -236,7 +236,11 @@ describe("身份与归属：匿名 401，越权 404 不可区分", () => {
       expect(body.error).toBe("NOT_FOUND");
       expect(body.code).toBe("NOT_FOUND");
       expect(JSON.stringify(body)).not.toContain(id);
-      bodies.push(body);
+      // requestId 按请求唯一且与响应头同源，不属于可被探测的差异：只比对 body 形状
+      expect(body.requestId).toBe(res.headers["x-request-id"]);
+      const shape: Record<string, unknown> = { ...body };
+      delete shape.requestId;
+      bodies.push(shape);
     }
     for (const b of bodies.slice(1)) expect(b).toEqual(bodies[0]);
     // 他人用自己的身份调自己的收藏仍可写入

@@ -414,6 +414,13 @@ function GrowthBanner() {
   const lp = levelProgress(profile.totalXp)
   const status = dailyTaskStatus(profile, new Date())
   const doneCount = status.slots.filter((s) => s.done).length
+  // 宝箱按钮文案跟宝箱状态走（U-403）：以前写死同一句去领文案，开过了也这么写。
+  // chestOpened → 已领；allDone（宝箱可领未开）→ 去领；默认（任务未做完）→ 先做任务。
+  const chestCta = status.chestOpened
+    ? '今日宝箱已领'
+    : status.allDone
+      ? '去领每日宝箱'
+      : '完成今日任务领宝箱'
   const streak = currentStreak(profile, new Date())
   // 横幅分数 = 总经验 / 下一级门槛，与文案「422/600 XP」同一口径。
   const totalProgress = lp.nextXp ? Math.min(1, Math.max(0, profile.totalXp / lp.nextXp)) : 1
@@ -457,7 +464,7 @@ function GrowthBanner() {
       <Button asChild size="sm" className="shrink-0 text-xs">
         <Link href="/me/growth">
           <Gift className="mr-1.5 h-3.5 w-3.5" aria-hidden />
-          去领每日宝箱
+          {chestCta}
           <ArrowRight className="ml-1 h-3.5 w-3.5" aria-hidden />
         </Link>
       </Button>

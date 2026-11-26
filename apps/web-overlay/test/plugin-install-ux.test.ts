@@ -57,6 +57,26 @@ describe("安装弹窗：跨包重复预览与耗时反馈", () => {
   })
 })
 
+describe("安装弹窗：数据写入作用域按类型如实说明（U-405）", () => {
+  const modal = overlaySource("src/components/plugins/plugin-install-modal.tsx")
+
+  it("组合包不写「快捷搜索拦截」：bundle 有自己的分支", () => {
+    expect(modal).toContain("plugin.kind === 'bundle'")
+    expect(modal).toContain("成员插件（组合登记）")
+    // 在「数据写入作用域」这一格里：bundle 分支必须在兜底 else（快捷搜索拦截）之前，否则仍会落进去
+    const scope = modal.slice(modal.indexOf('数据写入作用域'))
+    expect(scope.indexOf("plugin.kind === 'bundle'")).toBeGreaterThan(-1)
+    expect(scope.indexOf("plugin.kind === 'bundle'")).toBeLessThan(scope.indexOf('快捷搜索拦截'))
+  })
+
+  it("其余类型各有分支，搜索包仍走兜底「快捷搜索拦截」", () => {
+    expect(modal).toContain("书签分类 (只增不删)")
+    expect(modal).toContain("外观样式变量")
+    expect(modal).toContain("本地看板布局")
+    expect(modal).toContain("快捷搜索拦截")
+  })
+})
+
 describe("插件卡片与市场弹窗：已安装插件的卸载/管理联动", () => {
   const card = overlaySource("src/components/plugins/plugin-card.tsx")
   // Batch E 后市场首页是「服务端壳 + PluginMarketBoard 岛」，弹窗消费逻辑在岛里

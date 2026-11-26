@@ -676,6 +676,8 @@ export function PluginInstallModal({
                     ? '外观样式变量'
                     : plugin.kind === 'workspace-preset'
                     ? '本地看板布局'
+                    : plugin.kind === 'bundle'
+                    ? '成员插件（组合登记）'
                     : '快捷搜索拦截'}
                 </span>
               </div>

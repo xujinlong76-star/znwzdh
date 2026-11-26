@@ -20,6 +20,11 @@ export function MePluginsView() {
   const { state, overview, error, reload } = useMeOverview()
 
   const counts = overview?.counts
+  // 匿名态 overview 为 null、计数取不到：按本页提示「下方计数按 0 展示」显式传 0，
+  // 否则三张计数卡落进 cta 分支、只剩一个孤零零的「→」（U-406）。
+  // 注意：这里不是 `?? 0`——取数失败走上面的 error 态（带重试），绝不能把失败抹成 0。
+  const anonCount = (value: number | undefined): number | undefined =>
+    state === 'anonymous' ? 0 : value
   // 卡片语言与概览统计卡一致：专属色相芯片 + 悬浮微抬升；投稿是行动入口而非计数，
   // 用 cta 文案占住数字位，避免四张卡出现“缺一角”的节奏断层
   const cards: Array<{
@@ -36,7 +41,7 @@ export function MePluginsView() {
       title: '已安装插件',
       hint: '主题、搜索包、网址包；升级与卸载',
       icon: PackageCheck,
-      count: counts?.activePluginInstalls,
+      count: anonCount(counts?.activePluginInstalls),
       chip: 'bg-violet-500/10 text-violet-700 dark:text-violet-300',
     },
     {
@@ -44,7 +49,7 @@ export function MePluginsView() {
       title: '我发布的插件',
       hint: '版本、审核状态与更新',
       icon: Sparkles,
-      count: counts?.authoredPlugins,
+      count: anonCount(counts?.authoredPlugins),
       chip: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
     },
     {
@@ -52,7 +57,7 @@ export function MePluginsView() {
       title: '星标插件',
       hint: '只看你已星标的插件',
       icon: Star,
-      count: counts?.pluginStars,
+      count: anonCount(counts?.pluginStars),
       chip: 'bg-amber-500/10 text-amber-700 dark:text-amber-300',
     },
     {

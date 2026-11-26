@@ -42,4 +42,15 @@ describe('/me/plugins 插件中心', () => {
     expect(view).toContain('当前是匿名身份')
     expect(view).toContain('登录后自动同步')
   })
+
+  it('匿名态三张计数卡显式传 0，不只剩一个「→」（U-406）', () => {
+    const view = read('src/app/me/plugins/me-plugins-view.tsx')
+    // 匿名态 overview 为 null：三张卡必须显式拿到 0 才能进数字分支
+    for (const field of ['activePluginInstalls', 'authoredPlugins', 'pluginStars']) {
+      expect(view).toContain(`anonCount(counts?.${field})`)
+    }
+    expect(view).toContain("state === 'anonymous' ? 0")
+    // 失败态仍不抹成 0：第三张卡同样禁 ?? 0
+    expect(view).not.toContain('counts?.pluginStars ?? 0')
+  })
 })

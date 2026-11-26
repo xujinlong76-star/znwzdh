@@ -301,14 +301,30 @@ export default function InstalledPluginsPage() {
     if (!confirm(message)) return
     setUninstallingSlug(item.slug)
     try {
-      await uninstallPlugin(item.slug, undefined, removeSites)
+      const res = await uninstallPlugin(item.slug, undefined, removeSites)
       if (item.kind === 'theme' && activeThemeState?.slug === item.slug) {
         resetTheme()
       }
       if (item.kind === 'search-pack') {
         unregisterSearchPackEngines(item.slug)
       }
-      showActionMessage(`已成功卸载插件「${item.name}」，关联站点与分类已同步清理`)
+      // 卸载回执按实际清理结果说话（U-407，与安装弹窗的卸载文案同口径）：
+      // 以前不管什么类型都写同一句清理成功的文案；非网址包根本不清理，
+      // 不能再写这句。回执字段见 PluginUninstallResponse（sitesRemoved / categoriesRemoved）。
+      const removedSites = res.sitesRemoved ?? 0
+      const removedCategories = res.categoriesRemoved ?? 0
+      const cleanup =
+        removedSites > 0
+          ? `已清理关联站点（${removedSites} 个站点已移至回收站）` +
+            (removedCategories ? `，并同步删除 ${removedCategories} 个网址分类` : '')
+          : removedCategories > 0
+            ? `未移除站点，已同步删除 ${removedCategories} 个网址分类`
+            : removeSites
+              ? '没有需要移除的关联站点'
+              : ''
+      showActionMessage(
+        cleanup ? `已成功卸载插件「${item.name}」，${cleanup}` : `已成功卸载插件「${item.name}」`,
+      )
       await loadData()
     } catch (err) {
       showActionMessage(`卸载失败：${failureDescription(err)}`, () => void handleUninstall(item))

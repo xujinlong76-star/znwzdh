@@ -125,6 +125,8 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "PATCH /api/me/settings",
   // 公开导航页（Batch 3 第 6 项）：上下线只改调用者自己的发布关系（见上 DELETE 处注释）。
   "PATCH /api/public-pages/:slug",
+  // 管理员 MFA 核验：只有持有 Web/API 内部凭据的 BFF 能调用，不是匿名访客写面。
+  "POST /api/account/admin-mfa/verify",
   "POST /api/account/forgot-password",
   "POST /api/account/login",
   "POST /api/account/register",
@@ -163,6 +165,7 @@ const ANON_WRITE_SNAPSHOT: readonly string[] = [
   "POST /api/me/prune",
   "POST /api/me/sessions/check",
   "POST /api/me/tokens",
+  "POST /api/me/tokens/:id/rotate",
   "POST /api/me/wanted",
   // 追剧清单同步：写的是调用者自己的数据，处理器有 identityTrusted 签名校验
   // 与 userDomainWriteAllowed 域闸（favorites 档令牌不可写，走 write 域），与收藏同步同级。
@@ -292,6 +295,7 @@ const IMPLICIT_SCOPE_BASELINE: readonly string[] = [
   "POST /api/me/prune",
   "POST /api/me/sessions/check",
   "POST /api/me/tokens",
+  "POST /api/me/tokens/:id/rotate",
   "DELETE /api/me/tokens/:id",
   "POST /api/me/notifications/:id/read",
   "POST /api/me/notifications/read-all",

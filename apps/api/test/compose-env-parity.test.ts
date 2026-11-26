@@ -82,8 +82,11 @@ const SECURITY_KEYS_BY_SERVICE: Record<string, string[]> = {
     "NAVHUB_BOOTSTRAP_TOKEN",
     "NAVHUB_ADMIN_TOKEN",
     "NAVHUB_IDENTITY_SECRET",
+    "NAVHUB_IDENTITY_SIGNATURE_STRICT",
     // 限流豁免凭据：中枢这一侧没有它，web 侧发了头也换不到豁免（收录页照样刷成 noindex 壳）
     "NAVHUB_INTERNAL_TOKEN",
+    "NAVHUB_MFA_ENCRYPTION_KEY",
+    "NAVHUB_ADMIN_MFA_REQUIRED",
     "NAVHUB_SESSION_SECRET",
     "NAVHUB_SESSION_SECRET_PREV",
     "NAVHUB_TRUST_PROXY",
@@ -95,8 +98,11 @@ const SECURITY_KEYS_BY_SERVICE: Record<string, string[]> = {
     "NAVHUB_BOOTSTRAP_TOKEN",
     "NAVHUB_ADMIN_TOKEN",
     "NAVHUB_IDENTITY_SECRET",
+    "NAVHUB_IDENTITY_SIGNATURE_STRICT",
     // 限流豁免凭据：中枢这一侧没有它，web 侧发了头也换不到豁免（收录页照样刷成 noindex 壳）
     "NAVHUB_INTERNAL_TOKEN",
+    "NAVHUB_MFA_ENCRYPTION_KEY",
+    "NAVHUB_ADMIN_MFA_REQUIRED",
     "NAVHUB_SESSION_SECRET",
     "NAVHUB_SESSION_SECRET_PREV",
     "NAVHUB_TRUST_PROXY",
@@ -104,9 +110,13 @@ const SECURITY_KEYS_BY_SERVICE: Record<string, string[]> = {
     "NAVHUB_ALERT_WEBHOOK",
   ],
   web: [
+    "NAVHUB_ADMIN_PASSWORD",
+    "NAVHUB_ADMIN_TOKEN",
     "NAVHUB_SESSION_SECRET",
     "NAVHUB_IDENTITY_SECRET",
+    "NAVHUB_IDENTITY_SIGNATURE_STRICT",
     "NAVHUB_INTERNAL_TOKEN",
+    "NAVHUB_ADMIN_MFA_REQUIRED",
     // B 站高清解析：不透传则「面板上能填 key」这件事在容器里永远兑现不了，
     // 而 FORWARD_USER_KEY 是唯一能改变「访客凭据会不会出站」的开关。
     "NAVHUB_BILIBILI_ACCESS_KEY",
@@ -127,6 +137,16 @@ describe("docker compose 安全变量透传契约", () => {
           }`
         ).toBe(true);
       }
+    }
+  });
+
+  it("所有生产 Compose 服务默认启用严格 v2 身份签名", () => {
+    // 不能依赖应用代码默认值：Compose 显式注入环境变量，必须自身也采用安全默认。
+    for (const service of ["api", "api-standard", "web"]) {
+      expect(
+        envBlocks.get(service)?.get("NAVHUB_IDENTITY_SIGNATURE_STRICT"),
+        `${service} 未将身份签名默认设为严格模式`
+      ).toBe("${NAVHUB_IDENTITY_SIGNATURE_STRICT:-1}");
     }
   });
 

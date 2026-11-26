@@ -249,7 +249,8 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       .object({
         username: z.string().trim().min(1).max(40).regex(/^[^\u0000-\u001f<>]+$/, "昵称包含非法字符").optional(),
         avatar: z.string().max(500).nullable().optional(),
-        // 邮箱绑定（T3）：null = 解绑。当前部署不内置邮件服务，不做验证回执——
+        // 邮箱绑定：null = 解绑；更换为新邮箱后仓储层会将 email_verified 重置为 false，
+        // 用户需通过 /api/account/resend-verification 重新验证后才能再次使用密码登录。
         // 唯一性仍要保证（库里有部分唯一索引，先查后写给出 409 而不是裸撞索引）。
         email: z.email().nullable().optional(),
       })
@@ -1101,8 +1102,33 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         createdAt: t.createdAt,
         expiresAt: t.expiresAt,
         lastUsedAt: t.lastUsedAt,
+        rotatedAt: t.rotatedAt,
       })),
     };
+  });
+
+  app.post("/api/me/tokens/:id/rotate", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req, reply) => {
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+    const identity = requestIdentityOf(req as never);
+    if (!identity || identity.startsWith("anon-")) { reply.code(403); return { error: "只有已登录用户可以轮换个人令牌" }; }
+    const id = String((req.params as { id: string }).id || "");
+    if (!id || id.length > 64) { reply.code(400); return { error: "id 无效" }; }
+    const body = z.object({ expectedRotatedAt: z.number().int().nonnegative().nullable() }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "缺少有效的 expectedRotatedAt 版本；请先刷新个人令牌列表" }; }
+    const canonical = await ctx.repo.resolveIdentity(identity);
+    const raw = generateToken();
+    const record = await ctx.repo.rotateApiTokenByOwner(canonical, id, hashToken(raw), tokenPrefixOf(raw), body.data.expectedRotatedAt);
+    if (!record) { reply.code(404); return { error: "令牌不存在、已吊销或已过期" }; }
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: canonical,
+      actorKind: "user",
+      action: "user.token_rotate",
+      target: id,
+      diff: { name: record.name, scopes: record.scopes },
+    }).catch(() => { /* 审计失败不吞掉新令牌明文响应 */ });
+    reply.header("cache-control", "no-store");
+    return { ok: true, token: raw, record, note: "轮换成功：旧明文已立即失效，请立即保存新令牌。" };
   });
 
   app.delete("/api/me/tokens/:id", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
@@ -1719,12 +1745,18 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
 
     if (ctx.config.identitySecret) {
       // 匿名签名与登录身份签名是两组独立凭据：nonce 各自独立，重放缓存按签名去重
-      const verdict = verifyIdentityHeaders({
+      const verdict = await verifyIdentityHeaders({
         secret: ctx.config.identitySecret,
         identity: parsed.data.anonId,
         headers: req.headers,
         prefix: "x-navhub-anon",
         strict: ctx.config.identitySignatureStrict,
+        acceptReplay: (signature, nowMs, ttlMs) => ctx.repo.claimSystemState(
+          "identity-replay:" + createHash("sha256").update(signature).digest("hex"),
+          true,
+          ttlMs,
+          nowMs,
+        ),
       });
       if (!verdict.ok) {
         reply.code(401);

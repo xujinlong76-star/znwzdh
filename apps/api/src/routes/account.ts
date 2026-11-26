@@ -13,6 +13,8 @@
  *  - 每个写端点都有路由级限流，防刷邮件（邮件是真实成本）。
  */
 import type { FastifyPluginAsync } from "fastify";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { hashToken as hashApiToken, secureEqual } from "../auth.ts";
 import { z } from "zod";
 import { generateToken, hashPassword, hashToken, validatePassword } from "@navhub/core";
 
@@ -32,49 +34,199 @@ function isTest(): boolean {
   return process.env.NODE_ENV === "test";
 }
 
-/**
- * 登录失败计数（M15）：路由级 20 次/小时只限「请求数」，挡不住对着一个账号
- * 慢速撞密码（每小时 20 次、每天 480 次，弱口令早晚被撞开）。
- *
- * 同一标识连续失败 5 次 → 15 分钟内再试直接 429，不再查密码（也不再烧 scrypt）。
- * 成功登录清零；窗口外首败重新计数。进程内 Map：单进程部署够用，与
- * @fastify/rate-limit 的默认内存桶同一口径；多副本部署下每副本独立计数，
- * 仍比「只有限流」多一道按账号的闸。
- * 注意：失败计数按「归一化后的标识」分桶，`Foo@Example.com` 与 `foo@example.com`
- * 是同一个账号，必须共用一个计数器。
- */
+/** 登录失败锁定：数据库共享固定窗口，跨 API 副本统一计数。 */
 const LOGIN_FAIL_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_FAIL_MAX = 5;
-const loginFailures = new Map<string, { count: number; firstAt: number }>();
+let lastLoginFailurePruneAt = 0;
 
-function loginFailureKey(identifier: string): string {
-  return identifier.trim().toLowerCase();
+function loginFailureKey(ctx: AppContext, identifier: string): string {
+  // 使用跨副本共享的会话密钥 HMAC；普通 SHA-256 会允许数据库读取者离线枚举常见邮箱。
+  const digest = createHmac("sha256", ctx.config.sessionSecret)
+    .update(identifier.trim().toLowerCase())
+    .digest("hex");
+  return "auth:login-failure:" + digest;
 }
 
-function isLoginLocked(identifier: string, now: number): boolean {
-  const entry = loginFailures.get(loginFailureKey(identifier));
-  if (!entry) return false;
-  if (now - entry.firstAt > LOGIN_FAIL_WINDOW_MS) {
-    loginFailures.delete(loginFailureKey(identifier));
-    return false;
+
+/** 管理员 TOTP（RFC 6238）：密钥 AES-256-GCM 加密后存入共享 system_states；同一时间步验证码通过共享消费标记防重放。 */
+type AdminMfaState = {
+  iv: string;
+  ciphertext: string;
+  tag: string;
+  enabled: boolean;
+  recoveryHashes: string[];
+  recoveryVersion: string;
+  updatedAt: number;
+};
+
+const ADMIN_MFA_STATE_KEY = "auth:admin-mfa:v1";
+const ADMIN_MFA_FAILURE_KEY = "auth:admin-mfa-failure:global";
+const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function mfaEncryptionKey(): Buffer {
+  const raw = process.env.NAVHUB_MFA_ENCRYPTION_KEY ?? "";
+  const key = /^[a-f0-9]{64}$/i.test(raw) ? Buffer.from(raw, "hex") : Buffer.from(raw, "base64");
+  if (key.length !== 32) throw new Error("NAVHUB_MFA_ENCRYPTION_KEY 必须是 32 字节密钥（64 位 hex 或 base64）");
+  return key;
+}
+
+function base32Encode(input: Buffer): string {
+  let bits = 0, value = 0, output = "";
+  for (const byte of input) {
+    value = (value << 8) | byte; bits += 8;
+    while (bits >= 5) { output += BASE32[(value >>> (bits - 5)) & 31]; bits -= 5; }
   }
-  return entry.count >= LOGIN_FAIL_MAX;
+  if (bits > 0) output += BASE32[(value << (5 - bits)) & 31];
+  return output;
 }
 
-/** 记一次失败；返回累计次数（到阈值时调用方记锁定审计） */
-function recordLoginFailure(identifier: string, now: number): number {
-  const key = loginFailureKey(identifier);
-  const entry = loginFailures.get(key);
-  if (!entry || now - entry.firstAt > LOGIN_FAIL_WINDOW_MS) {
-    loginFailures.set(key, { count: 1, firstAt: now });
-    return 1;
+function base32Decode(input: string): Buffer {
+  let bits = 0, value = 0;
+  const out: number[] = [];
+  for (const ch of input.replace(/=+$/g, "").toUpperCase()) {
+    const n = BASE32.indexOf(ch);
+    if (n < 0) throw new Error("invalid base32");
+    value = (value << 5) | n; bits += 5;
+    if (bits >= 8) { out.push((value >>> (bits - 8)) & 255); bits -= 8; value &= (1 << bits) - 1; }
   }
-  entry.count += 1;
-  return entry.count;
+  return Buffer.from(out);
 }
 
-function clearLoginFailures(identifier: string): void {
-  loginFailures.delete(loginFailureKey(identifier));
+function totpAt(secret: string, timeMs: number): string {
+  const counter = BigInt(Math.floor(timeMs / 30_000));
+  const msg = Buffer.alloc(8);
+  msg.writeBigUInt64BE(counter);
+  const digest = createHmac("sha1", base32Decode(secret)).update(msg).digest();
+  // SHA-1 摘要恒为 20 字节，offset ∈ [0,15]，故 offset+3 ≤ 18 恒有定义；
+  // 仍做显式守卫，满足 noUncheckedIndexedAccess，不依赖隐式下标假设。
+  const lastByte = digest[digest.length - 1];
+  if (lastByte === undefined) throw new Error("TOTP digest unavailable");
+  const offset = lastByte & 15;
+  const b0 = digest[offset];
+  const b1 = digest[offset + 1];
+  const b2 = digest[offset + 2];
+  const b3 = digest[offset + 3];
+  if (b0 === undefined || b1 === undefined || b2 === undefined || b3 === undefined) {
+    throw new Error("TOTP digest unavailable");
+  }
+  const binary = ((b0 & 127) << 24) | ((b1 & 255) << 16) | ((b2 & 255) << 8) | (b3 & 255);
+  return String(binary % 1_000_000).padStart(6, "0");
+}
+
+function matchingTotpCounter(secret: string, supplied: string, now = Date.now()): number | null {
+  const code = supplied.replace(/\s+/g, "");
+  if (!/^\d{6}$/.test(code)) return null;
+  const actual = Buffer.from(code);
+  const currentCounter = Math.floor(now / 30_000);
+  for (const offset of [-1, 0, 1]) {
+    const counter = currentCounter + offset;
+    const expected = Buffer.from(totpAt(secret, counter * 30_000));
+    if (actual.length === expected.length && timingSafeEqual(actual, expected)) return counter;
+  }
+  return null;
+}
+
+
+let lastTotpReplayPruneAt = 0;
+
+async function claimTotpStep(ctx: AppContext, version: string, counter: number): Promise<boolean> {
+  const now = Date.now();
+  if (now - lastTotpReplayPruneAt > 60_000) {
+    lastTotpReplayPruneAt = now;
+    await ctx.repo.pruneSystemStatePrefix("auth:admin-mfa:totp:", now - 5 * 60 * 1000).catch(() => {
+      /* 过期重放清理是尽力而为：失败只让旧记录多留一轮，不影响本次验证码校验。 */
+      return 0;
+    });
+  }
+  return ctx.repo.claimSystemState(
+    "auth:admin-mfa:totp:" + version + ":" + counter,
+    true,
+    5 * 60 * 1000,
+    now,
+  );
+}
+
+function encryptMfaSecret(secret: string): Pick<AdminMfaState, "iv" | "ciphertext" | "tag"> {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", mfaEncryptionKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
+  return { iv: iv.toString("hex"), ciphertext: ciphertext.toString("hex"), tag: cipher.getAuthTag().toString("hex") };
+}
+
+function decryptMfaSecret(state: AdminMfaState): string {
+  const decipher = createDecipheriv("aes-256-gcm", mfaEncryptionKey(), Buffer.from(state.iv, "hex"));
+  decipher.setAuthTag(Buffer.from(state.tag, "hex"));
+  return Buffer.concat([decipher.update(Buffer.from(state.ciphertext, "hex")), decipher.final()]).toString("utf8");
+}
+
+function newRecoveryCodes(): string[] {
+  return Array.from({ length: 10 }, () => {
+    const raw = randomBytes(10).toString("hex").toUpperCase();
+    return raw.match(/.{1,4}/g)?.join("-") ?? raw;
+  });
+}
+
+async function readAdminMfa(ctx: AppContext): Promise<AdminMfaState | null> {
+  return ctx.repo.getSystemState<AdminMfaState>(ADMIN_MFA_STATE_KEY);
+}
+
+async function recordAdminMfaFailure(ctx: AppContext): Promise<void> {
+  const result = await ctx.repo.recordLoginFailure(ADMIN_MFA_FAILURE_KEY, Date.now(), LOGIN_FAIL_WINDOW_MS);
+  if (result.count === LOGIN_FAIL_MAX) {
+    await ctx.repo.audit({ actor: "admin-mfa-bff", actorKind: "system", action: "account.admin_mfa_locked" }).catch(() => {
+      /* 审计/遥测类写库是尽力而为：锁定已生效，失败不阻断主操作，写失败即丢弃。 */
+    });
+  }
+}
+
+async function verifyAdminMfa(ctx: AppContext, supplied: string): Promise<boolean> {
+  const now = Date.now();
+  const failures = await ctx.repo.getLoginFailureState(ADMIN_MFA_FAILURE_KEY);
+  if (failures && failures.count >= LOGIN_FAIL_MAX && now - failures.firstAt <= LOGIN_FAIL_WINDOW_MS) return false;
+
+  const state = await readAdminMfa(ctx);
+  const required = process.env.NAVHUB_ADMIN_MFA_REQUIRED === "1" || process.env.NAVHUB_ADMIN_MFA_REQUIRED === "true";
+  if (!state?.enabled) {
+    if (required) { await recordAdminMfaFailure(ctx); return false; }
+    await ctx.repo.clearLoginFailure(ADMIN_MFA_FAILURE_KEY);
+    return true;
+  }
+
+  const secret = decryptMfaSecret(state);
+  const matchedCounter = matchingTotpCounter(secret, supplied);
+  if (matchedCounter !== null) {
+    // TOTP 时间步只可消费一次；共享 DB 原子占坑防止跨副本重放同一验证码。
+    const accepted = await claimTotpStep(ctx, state.recoveryVersion, matchedCounter);
+    if (accepted) {
+      await ctx.repo.clearLoginFailure(ADMIN_MFA_FAILURE_KEY);
+      return true;
+    }
+  } else {
+    const normalized = supplied.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (normalized) {
+      const recoveryHash = hashApiToken(normalized);
+      if (state.recoveryHashes.includes(recoveryHash)) {
+        const accepted = await ctx.repo.claimSystemState(
+          "auth:admin-mfa:recovery:" + state.recoveryVersion + ":" + recoveryHash,
+          true,
+          10 * 365 * 24 * 60 * 60 * 1000,
+        );
+        if (accepted) {
+          await ctx.repo.clearLoginFailure(ADMIN_MFA_FAILURE_KEY);
+          return true;
+        }
+      }
+    }
+  }
+
+  await recordAdminMfaFailure(ctx);
+  return false;
+}
+
+function internalMfaRequest(ctx: AppContext, req: { headers: Record<string, unknown> }): boolean {
+  const expected = ctx.config.internalToken;
+  const supplied = req.headers["x-navhub-internal-token"];
+  return Boolean(expected && typeof supplied === "string" && secureEqual(supplied, expected));
 }
 
 /** 路由级限流：测试环境放开，真实环境限制为「小时级若干次」 */
@@ -150,6 +302,111 @@ async function sendResetMail(
 export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
+
+  /* ---------------- 管理员双因素认证（TOTP + 一次性恢复码） ---------------- */
+
+  app.get("/api/account/admin-mfa/status", { config: { scope: "admin" } }, async () => {
+    const state = await readAdminMfa(ctx);
+    return { enabled: Boolean(state?.enabled), required: process.env.NAVHUB_ADMIN_MFA_REQUIRED === "1" || process.env.NAVHUB_ADMIN_MFA_REQUIRED === "true" };
+  });
+
+  app.post("/api/account/admin-mfa/setup", { config: { scope: "admin" } }, async (_req, reply) => {
+    if (!ctx.config.internalToken) { reply.code(503); return { error: "启用管理员 MFA 前必须配置 Web/API 共享的 NAVHUB_INTERNAL_TOKEN" }; }
+    let encrypted: Pick<AdminMfaState, "iv" | "ciphertext" | "tag">;
+    let secret: string;
+    try {
+      // 先验证密钥配置，再生成并加密；不允许以明文或默认密钥落库。
+      mfaEncryptionKey();
+      secret = base32Encode(randomBytes(20));
+      encrypted = encryptMfaSecret(secret);
+    } catch (err) {
+      reply.code(503);
+      return { error: err instanceof Error ? err.message : "MFA 加密配置不可用" };
+    }
+    const existing = await readAdminMfa(ctx);
+    if (existing?.enabled) { reply.code(409); return { error: "管理员双因素认证已启用；请先使用恢复流程处理" }; }
+    await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, {
+      ...encrypted, enabled: false, recoveryHashes: [], recoveryVersion: randomBytes(12).toString("hex"), updatedAt: Date.now(),
+    } satisfies AdminMfaState);
+    await ctx.repo.audit({ actor: _req.auth.actor, actorKind: _req.auth.kind, action: "account.admin_mfa_setup_started" }).catch(() => {
+      /* 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。 */
+    });
+    reply.header("cache-control", "no-store");
+    const issuer = "山羊胡管理后台";
+    return {
+      ok: true,
+      secret,
+      otpauthUrl: "otpauth://totp/" + encodeURIComponent(issuer + ":admin") + "?secret=" + secret + "&issuer=" + encodeURIComponent(issuer) + "&algorithm=SHA1&digits=6&period=30",
+      message: "请在验证器 App 中添加密钥，再提交当前 6 位验证码确认启用。密钥只在本次响应中显示。",
+    };
+  });
+
+  app.post("/api/account/admin-mfa/confirm", { config: { scope: "admin" } }, async (req, reply) => {
+    const body = z.object({ code: z.string().regex(/^\d{6}$/) }).safeParse(req.body);
+    if (!body.success) { reply.code(400); return { error: "请输入 6 位验证码" }; }
+    const state = await readAdminMfa(ctx);
+    if (!state || state.enabled || Date.now() - state.updatedAt > 10 * 60 * 1000) { reply.code(409); return { error: "请先生成有效期 10 分钟内的待确认 MFA 密钥" }; }
+    let secret: string;
+    try { secret = decryptMfaSecret(state); } catch { reply.code(503); return { error: "MFA 密钥解密失败，请重新初始化" }; }
+    const matchedCounter = matchingTotpCounter(secret, body.data.code);
+    if (matchedCounter === null) { reply.code(401); return { error: "验证码无效或已过期" }; }
+    const consumed = await claimTotpStep(ctx, state.recoveryVersion, matchedCounter);
+    if (!consumed) { reply.code(401); return { error: "验证码已使用，请等待下一组验证码" }; }
+    // A TOTP window accepts adjacent counters; claim the enrollment version itself as a
+    // single-winner transition so concurrent valid codes cannot return competing recovery sets.
+    const enrollmentClaimed = await ctx.repo.claimSystemState(
+      "auth:admin-mfa-confirm:" + state.recoveryVersion,
+      { confirmedAt: Date.now() },
+      10 * 60 * 1000,
+    );
+    if (!enrollmentClaimed) { reply.code(409); return { error: "该 MFA 密钥已被其他确认请求启用，请重新查询状态" }; }
+    const codes = newRecoveryCodes();
+    await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, {
+      ...state, enabled: true, recoveryHashes: codes.map((code) => hashApiToken(code.replace(/-/g, ""))),
+      updatedAt: Date.now(),
+    } satisfies AdminMfaState);
+    await ctx.repo.clearLoginFailure(ADMIN_MFA_FAILURE_KEY);
+    await ctx.repo.audit({ actor: req.auth.actor, actorKind: req.auth.kind, action: "account.admin_mfa_enabled" }).catch(() => { /* 不得因审计故障吞掉一次性恢复码 */ });
+    reply.header("cache-control", "no-store");
+    return { ok: true, recoveryCodes: codes, message: "双因素认证已启用。请离线保存恢复码；每个恢复码只能使用一次，此后不会再次显示。" };
+  });
+
+  // 仅供受信任的 Web BFF 调用；不能使用普通浏览器 Bearer token 冒充内部调用。
+  app.post("/api/account/admin-mfa/verify", { config: { scope: "public", ...accountRateLimit(30) } }, async (req, reply) => {
+    if (!internalMfaRequest(ctx, req as never)) { reply.code(401); return { ok: false }; }
+    const body = z.object({ code: z.string().max(64).default(""), credentialValid: z.boolean().optional() }).safeParse(req.body);
+    if (!body.success) { reply.code(400); return { ok: false }; }
+    if (body.data.credentialValid === false) {
+      await recordAdminMfaFailure(ctx);
+      reply.code(401);
+      return { ok: false };
+    }
+    const ok = await verifyAdminMfa(ctx, body.data.code);
+    reply.header("cache-control", "no-store");
+    if (!ok) { reply.code(401); return { ok: false }; }
+    if (!/^\d{6}$/.test(body.data.code.trim())) {
+      await ctx.repo.audit({
+        actor: "admin-mfa-bff",
+        actorKind: "system",
+        action: "account.admin_mfa_recovery_used",
+        ip: req.ip,
+      }).catch(() => { /* MFA result must not depend on audit availability */ });
+    }
+    return { ok: true };
+  });
+
+  app.post("/api/account/admin-mfa/disable", { config: { scope: "admin" } }, async (req, reply) => {
+    const body = z.object({ code: z.string().min(1).max(64) }).safeParse(req.body);
+    if (!body.success) { reply.code(400); return { error: "验证码无效" }; }
+    const state = await readAdminMfa(ctx);
+    if (!state?.enabled || !(await verifyAdminMfa(ctx, body.data.code))) { reply.code(401); return { error: "验证码无效" }; }
+    await ctx.repo.setSystemState(ADMIN_MFA_STATE_KEY, { ...state, enabled: false, recoveryHashes: [], updatedAt: Date.now() });
+    await ctx.repo.audit({ actor: req.auth.actor, actorKind: req.auth.kind, action: "account.admin_mfa_disabled" }).catch(() => {
+      /* 审计/遥测类写库是尽力而为：禁用已生效，失败不阻断主操作，写失败即丢弃。 */
+    });
+    return { ok: true };
+  });
+
   /* ---------------- 注册 ---------------- */
 
   app.post(
@@ -219,6 +476,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         userId: result.user.id,
         purpose: "email_verification",
         tokenHash: hashToken(token),
+        targetEmail: email,
         expiresAt: Date.now() + VERIFY_TTL_MS,
       });
       // P0-3：username 用户可控 → HTML escape 防邮件内容注入/钓鱼（与 resend 路径同口径）
@@ -257,11 +515,11 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       // 令牌哈希无法反查用户，故先按哈希找到候选行，再校验归属
       const row = (
         await ctx.repo.raw(
-          "SELECT user_id, purpose, expires_at, consumed_at FROM auth_tokens WHERE token_hash = ? AND purpose = 'email_verification' LIMIT 1",
-          [hashToken(body.data.token)],
+          "SELECT user_id, target_email FROM auth_tokens WHERE token_hash = ? AND purpose = 'email_verification' AND consumed_at IS NULL AND expires_at > ? AND target_email IS NOT NULL LIMIT 1",
+          [hashToken(body.data.token), Date.now()],
         )
       )[0];
-      if (!row) {
+      if (!row || !row.target_email) {
         reply.code(400);
         return { error: "验证链接无效或已失效" };
       }
@@ -269,15 +527,16 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         userId: String(row.user_id),
         purpose: "email_verification",
         tokenHash: hashToken(body.data.token),
+        targetEmail: String(row.target_email),
       });
       if (!consumed) {
         reply.code(400);
         return { error: "验证链接无效或已使用" };
       }
-      const verified = await ctx.repo.setUserEmailVerified(String(row.user_id));
+      const verified = await ctx.repo.setUserEmailVerifiedForEmail(String(row.user_id), String(row.target_email));
       if (!verified) {
-        reply.code(500);
-        return { error: "验证状态更新失败" };
+        reply.code(400);
+        return { error: "验证链接已失效，请重新发送验证邮件" };
       }
       await ctx.repo.audit({
         actor: String(row.user_id),
@@ -329,6 +588,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         userId: user.id,
         purpose: "email_verification",
         tokenHash: hashToken(token),
+        targetEmail: email,
         expiresAt: Date.now() + VERIFY_TTL_MS,
       });
       // P0-3：username 用户可控 → HTML escape 防邮件内容注入/钓鱼
@@ -360,6 +620,7 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
           userId: user.id,
           purpose: "password_reset",
           tokenHash: hashToken(token),
+          targetEmail: email,
           expiresAt: Date.now() + RESET_TTL_MS,
         });
         await sendResetMail(ctx, ctx.mail, email, buildResetUrl(ctx, token));
@@ -404,11 +665,11 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       const tokenHash = hashToken(body.data.token);
       const row = (
         await ctx.repo.raw(
-          "SELECT user_id FROM auth_tokens WHERE token_hash = ? AND purpose = 'password_reset' LIMIT 1",
-          [tokenHash],
+          "SELECT user_id, target_email FROM auth_tokens WHERE token_hash = ? AND purpose = 'password_reset' AND consumed_at IS NULL AND expires_at > ? AND target_email IS NOT NULL LIMIT 1",
+          [tokenHash, Date.now()],
         )
       )[0];
-      if (!row) {
+      if (!row || !row.target_email) {
         reply.code(400);
         return { error: "重置链接无效或已失效" };
       }
@@ -416,16 +677,21 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         userId: String(row.user_id),
         purpose: "password_reset",
         tokenHash,
+        targetEmail: String(row.target_email),
       });
       if (!consumed) {
         reply.code(400);
         return { error: "重置链接无效或已使用" };
       }
-      const updated = await ctx.repo.updateUserPassword(String(row.user_id), body.data.password);
+      const updated = await ctx.repo.updateUserPasswordForEmail(String(row.user_id), body.data.password, String(row.target_email));
       if (!updated) {
         reply.code(400);
-        return { error: "密码不符合要求" };
+        return { error: "重置链接已失效，请重新申请密码重置" };
       }
+      // 重置链接本身就是发到该邮箱的一次性所有权证明：密码改掉的同时把该邮箱
+      // 标为已验证，否则登录侧的“未验证不得建会话”会让刚重置完的账号立刻 401，
+      // 形成“重置成功却登不进”的死路。若邮箱在此期间已被改走则不阻塞重置本身。
+      await ctx.repo.setUserEmailVerifiedForEmail(String(row.user_id), String(row.target_email));
     // 密码重置后吊销该用户全部已登录会话：旧的 next-auth JWT (sid) 即便未过期，
     // BFF 也会在下一个 /api/me/* 请求上经 isSessionRevoked 拦下 (401)。
     // row.user_id 是 users 表原始 id——凭据用户为裸 UUID，而 sessions 表按 canonical
@@ -469,26 +735,34 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(400);
         return { error: "参数无效" };
       }
-      // 返回 null = 用户不存在或密码错误（不区分，防账号枚举）；
-      // next-auth 的 authorize 收到 null 即登录失败。
-      // 失败计数先查：已锁定的标识不再查密码（M15），避免锁定期间继续烧 scrypt。
+      // 在 scrypt 前通过单条 UPSERT 原子预留尝试；多副本并发时也只有前 5 次进入密码校验。
       const identifier = body.data.identifier.trim();
-      if (isLoginLocked(identifier, Date.now())) {
+      const failureKey = loginFailureKey(ctx, identifier);
+      const loginNow = Date.now();
+      if (loginNow - lastLoginFailurePruneAt > 60_000) {
+        lastLoginFailurePruneAt = loginNow;
+        await ctx.repo.pruneSystemStatePrefix("auth:login-failure:", loginNow - LOGIN_FAIL_WINDOW_MS).catch(() => {
+          /* 过期失败计数清理是尽力而为：失败只让旧记录多留一轮，不影响本次登录限流判定。 */
+          return 0;
+        });
+      }
+      const attempt = await ctx.repo.recordLoginFailure(failureKey, loginNow, LOGIN_FAIL_WINDOW_MS);
+      if (attempt.count > LOGIN_FAIL_MAX) {
         reply.code(429);
         return { error: "登录失败次数过多，请 15 分钟后再试" };
       }
+      // 返回 null = 用户不存在、密码错误或邮箱未验证（不区分，防账号枚举）。
       const user = await ctx.repo.verifyUserPassword(identifier, body.data.password);
       if (!user) {
-        // 每次失败都记审计（M15）：只靠 429 计数看不见「谁在被撞」；
-        // 审计 target 只放标识本身，不放密码、不区分「账号不存在 / 密码错误」。
-        const failures = recordLoginFailure(identifier, Date.now());
+        // 审计只保存共享会话密钥生成的 HMAC 摘要，不持久化原始邮箱/用户名或密码。
+        const digest = failureKey.slice("auth:login-failure:".length);
         await ctx.repo
           .audit({
             actor: "anonymous",
             actorKind: "anonymous",
-            action: failures >= LOGIN_FAIL_MAX ? "account.login_locked" : "account.login_failed",
-            target: identifier,
-            diff: { failures },
+            action: attempt.count >= LOGIN_FAIL_MAX ? "account.login_locked" : "account.login_failed",
+            target: `hmac-sha256:${digest}`,
+            diff: { failures: attempt.count },
           })
           .catch(() => {
             // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
@@ -496,12 +770,12 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(401);
         return { error: "邮箱/用户名或密码错误" };
       }
-      clearLoginFailures(identifier);
+      await ctx.repo.clearLoginFailure(failureKey);
       await ctx.repo.audit({
         actor: user.id,
         actorKind: "user",
         action: "account.login",
-        target: user.email ?? undefined,
+        target: user.id,
       });
       return {
         ok: true,

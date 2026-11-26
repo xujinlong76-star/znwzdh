@@ -939,6 +939,14 @@ export const MeTokenCreateResponse = z.looseObject({
   record: MeApiTokenPayload,
 });
 
+/** POST /api/me/tokens/{id}/rotate：轮换回执与创建回执同形，多一句 note（旧明文已立即失效） */
+export const MeTokenRotateResponse = z.looseObject({
+  ok: z.literal(true),
+  token: z.string(),
+  record: MeApiTokenPayload,
+  note: z.string(),
+});
+
 /** POST /api/me/sessions/check：BFF 每次代理前核对会话是否已被踢出 */
 export const MeSessionCheckResponse = z.looseObject({
   ok: z.literal(true),
@@ -1945,6 +1953,32 @@ export const AccountLoginResponse = z.looseObject({
   }),
 });
 
+/** GET /api/account/admin-mfa/status：管理员 MFA 开关与是否强制 */
+export const AdminMfaStatusResponse = z.looseObject({
+  enabled: z.boolean(),
+  required: z.boolean(),
+});
+
+/** POST /api/account/admin-mfa/setup：待确认密钥只在本次响应中出现一次 */
+export const AdminMfaSetupResponse = z.looseObject({
+  ok: z.literal(true),
+  secret: z.string(),
+  otpauthUrl: z.string(),
+  message: z.string(),
+});
+
+/** POST /api/account/admin-mfa/confirm：启用成功回执，一次性恢复码只显示一次 */
+export const AdminMfaConfirmResponse = z.looseObject({
+  ok: z.literal(true),
+  recoveryCodes: z.array(z.string()),
+  message: z.string(),
+});
+
+/** POST /api/account/admin-mfa/verify：BFF 内部核验回执 */
+export const AdminMfaVerifyResponse = z.looseObject({
+  ok: z.boolean(),
+});
+
 /* ------------------------------------------------------------------ *
  * 通知中心（站内信 + 投递台账）
  * ------------------------------------------------------------------ */
@@ -2858,6 +2892,7 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "PATCH /api/me/settings": { schema: MeSettingsResponse, name: "MeSettingsResponse" },
   "PATCH /api/me/profile": { schema: MeProfileUpdateResponse, name: "MeProfileUpdateResponse" },
   "POST /api/me/tokens": { schema: MeTokenCreateResponse, name: "MeTokenCreateResponse" },
+  "POST /api/me/tokens/{id}/rotate": { schema: MeTokenRotateResponse, name: "MeTokenRotateResponse" },
   "DELETE /api/me/tokens/{id}": { schema: OkResponse, name: "OkResponse" },
   "DELETE /api/me/sessions/{id}": { schema: OkResponse, name: "OkResponse" },
   "POST /api/me/sessions/check": { schema: MeSessionCheckResponse, name: "MeSessionCheckResponse" },
@@ -2929,4 +2964,10 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "POST /api/account/forgot-password": { schema: OkMessageResponse, name: "OkMessageResponse" },
   "POST /api/account/reset-password": { schema: OkMessageResponse, name: "OkMessageResponse" },
   "POST /api/account/login": { schema: AccountLoginResponse, name: "AccountLoginResponse" },
+  /* 管理员双因素认证（TOTP + 一次性恢复码，#184 phase 2） */
+  "GET /api/account/admin-mfa/status": { schema: AdminMfaStatusResponse, name: "AdminMfaStatusResponse" },
+  "POST /api/account/admin-mfa/setup": { schema: AdminMfaSetupResponse, name: "AdminMfaSetupResponse" },
+  "POST /api/account/admin-mfa/confirm": { schema: AdminMfaConfirmResponse, name: "AdminMfaConfirmResponse" },
+  "POST /api/account/admin-mfa/verify": { schema: AdminMfaVerifyResponse, name: "AdminMfaVerifyResponse" },
+  "POST /api/account/admin-mfa/disable": { schema: OkResponse, name: "OkResponse" },
 };

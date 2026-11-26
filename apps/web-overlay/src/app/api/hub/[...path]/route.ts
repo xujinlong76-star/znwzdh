@@ -173,18 +173,24 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     const session = await auth()
     const user = session?.user as { id?: string; provider?: string } | undefined
     sessionIdentity = canonicalUserId(user) ?? null
-    // 吊销检查（P0-2）：被踢出/改密的会话经 /api/hub/* 须 401；核对不可用时 fail-open。
+    // 吊销检查（P0-2）：被踢出/改密的会话经 /api/hub/* 须 401；核对不可用时 fail-closed（503）。
     const sessionSid = (session as { sessionSid?: string } | null)?.sessionSid
     if (typeof sessionSid === 'string' && sessionSid && sessionIdentity) {
       const issuedAt = (session as { sessionIssuedAt?: number } | null)?.sessionIssuedAt
-      const revoked = await hubSessionRevoked(sessionSid, sessionIdentity, issuedAt).catch(() => { /* 核对失败按不可用处理，fail-open */ return null })
+      const revoked = await hubSessionRevoked(sessionSid, sessionIdentity, issuedAt).catch(() => { /* 核对失败按不可用处理，fail-closed */ return null })
       if (revoked === true) {
         return NextResponse.json(
           { error: '会话已被吊销，请重新登录' },
           { status: 401, headers: { 'cache-control': 'no-store' } },
         )
       }
-      if (revoked === null) console.warn('[hub-session] sessions/check unavailable, fail-open')
+      if (revoked === null) {
+        console.error('[hub-session] sessions/check unavailable; protected identity request denied')
+        return NextResponse.json(
+          { error: '会话核对服务暂时不可用，请稍后重试' },
+          { status: 503, headers: { 'cache-control': 'no-store' } },
+        )
+      }
     }
   } catch {
     // 会话读取失败按匿名处理：宁可按匿名域降级，也不放行会话覆盖

@@ -120,3 +120,42 @@
 | 验证 | 路由守卫 14 条 + 解析器 A3 组 9 条 + compose 透传守卫 8 条；14 条消融逐条变红并按 md5 还原。真人浏览器 + 独立进程实测：query 带 key ⇒ 400；页面里 `fetch` 拦截器记到 `POST /api/videos/bili-parse`（无 query，key 在 body）；同调用方 12 次后 429 + `retry-after: 10`，换一个 XFF 立刻回 200；额度打满后页面出现「解析太频繁…等十几秒再点【立即换源】」而非静默降画质；`NAVHUB_BILI_FORWARD_USER_KEY=1` 下两把 key 各自重新出站、同 key 命中同桶。机制与残留见 [`BILI-PARSE-CREDENTIAL-BUDGET-2026-11-01.md`](BILI-PARSE-CREDENTIAL-BUDGET-2026-11-01.md) |
 | 实测中修出的第二条 | 兜底的 `iframe_fallback` 结果原先不带 `accessKeyIgnored` ⇒ 被限流后徽标继续显示「VIP 密钥已启用」，而请求根本没进解析器。已改为「未被使用」，并由消融第 14 条钉住 |
 | 已知残留 | 预算按**进程**计，多副本总量 ≈ 副本数 × 阈值；`callerKey` 取自 `x-forwarded-for` 首段，未经信任反代时**可伪造**，只当限流桶、绝不当身份（前反代必须覆写该头，与 `bili-stream` 同一前提）；桶摘要不是加密承诺，不可当可公开的反查依据 |
+
+
+---
+
+## 七、2026-11-24：认证系统专项加固
+
+| 问题 | 处置 | 回归验证 |
+| --- | --- | --- |
+| 注册账号在邮箱未验证时仍可使用正确密码登录 | 在仓储层完成 scrypt 校验后检查 `emailVerified`；未验证账号与错误密码统一返回 null/401，避免状态枚举 | `packages/store/test/auth-accounts.test.ts`、`apps/api/test/account-api.test.ts` |
+| 用户资料编辑更换邮箱后仍保留已验证状态 | 更换为新邮箱时将 `email_verified` 重置为 false；解绑邮箱允许用户名登录；重新验证后恢复密码登录 | `packages/store/test/auth-accounts.test.ts` |
+| Storage / Bootstrap / MCP 静态凭据可被输入到 Web 登录框并提升为管理员 Session | Web Credentials 登录只接受专用 `NAVHUB_ADMIN_TOKEN`；其它服务凭据保留各自服务边界 | 由 `apps/web-overlay/test/auth-guard.test.ts` 的凭据边界守卫锁定 |
+| 生产默认仍允许 v1 恒定身份签名兼容 | `identitySignatureStrict` 默认跟随 `NODE_ENV=production`；`.env.example` 改为严格模式；只有显式设 0 才进入迁移兼容窗口 | `apps/api/test/identity-replay.test.ts`、`apps/api/test/security-readiness.test.ts` |
+| 管理员与用户中心会话核对故障时读请求 fail-open | 管理员守卫返回 503；`/api/hub/*` 与 `/api/me/*` 在吊销状态无法确认时 fail-closed；生产登录会话登记失败时拒绝签发 | 需运行 Web 集成测试与生产构建验证 |
+
+### 部署说明
+
+- 生产环境请将 `NAVHUB_IDENTITY_SIGNATURE_STRICT=1` 同时透传至 API 与 Web 相关服务。当前 BFF 已同时生成 v1/v2 头，但严格 API 只接受 v2。
+- 若存在绕过 BFF 的旧客户端，升级前可临时显式设置 `NAVHUB_IDENTITY_SIGNATURE_STRICT=0`；迁移完成后恢复 1。不要把该兼容值长期用于公网。
+- `NAVHUB_ADMIN_TOKEN` 是 Web 管理员静态凭据；`NAVHUB_STORAGE_TOKEN`、`NAVHUB_BOOTSTRAP_TOKEN`、`NAVHUB_MCP_TOKEN` 不再作为 Web 登录口令。请勿把这些值混用。
+- 会话核对服务不可用时，相关用户会看到 503，而不是被错误地当成有效会话。恢复 API/数据库后可重试登录。
+
+### 第二阶段已完成的安全能力
+
+跨实例共享 nonce 重放账本、数据库共享登录失败计数、管理员 TOTP/恢复码与个人 API Token 自助轮换已在本文件后续的 2026-11-24 记录中实现；部署前仍须按 `.env.example` 配置 MFA 加密密钥与 Web/API 内部令牌，并先完成 setup/confirm，再开启强制模式。
+
+
+## 2026-11-24 第二阶段认证加固（数据库共享）
+
+- 身份签名 v2 重放防护从进程内 Map 改为 `system_states` 原子 UPSERT 占坑；SQLite/PostgreSQL 多个 API 副本共享同一账本。过期重放行定时清理，避免长期累积。
+- 登录失败计数以共享会话密钥 HMAC-SHA256 对归一化标识生成键，使用 `system_states` 单条 UPSERT 在密码哈希校验前原子预留尝试；跨副本共用 5 次 / 15 分钟锁定状态，第 6 次请求直接 429，成功登录清零并定时清理过期行。失败审计仅保存 HMAC 摘要，成功审计仅保存 user ID，不写原始邮箱/用户名。
+- 管理员 MFA：TOTP（RFC 6238 / SHA-1 / 6 位 / 30 秒，±1 时间步容差），密钥以 AES-256-GCM 加密存储；10 个恢复码只存哈希、每个仅可原子消费一次。Web BFF 通过 `NAVHUB_INTERNAL_TOKEN` 调用内部核验接口；设置 `NAVHUB_ADMIN_MFA_REQUIRED=1` 强制管理员二次验证。需配置 `NAVHUB_MFA_ENCRYPTION_KEY`（32 字节）与 Web/API 共享的内部令牌。
+- 用户个人 API Token 新增 `/api/me/tokens/:id/rotate`；SQL 同时校验 owner、未吊销、未过期，轮换立即替换哈希，旧明文立即失效，新明文只返回一次。
+- MFA 初始化流程与部署环境变量见 `.env.example`。启用强制模式前必须完成 setup/confirm 并离线保存恢复码。
+
+- TOTP 验证码按 30 秒时间步记录共享消费标记，同一时间步验证码只能成功一次；待确认的 MFA enrollment 仅在 10 分钟内有效。恢复码使用记录进入审计日志。
+
+- 管理员 TOTP 目前保护 Web NextAuth Credentials 管理员登录与 GitHub 管理员 OAuth 的 MFA 绕过路径；直接调用管理 API 的 admin Bearer Token 仍是独立的 bearer 凭据，不会自动要求 TOTP，必须按高权限密钥管理并定期轮换。
+
+- 升级前已签发、尚未消费但没有 `target_email` 绑定的旧验证/重置链接会被拒绝；用户需重新发送验证邮件或重新申请密码重置。这是为了避免旧邮箱链接作用于新邮箱。

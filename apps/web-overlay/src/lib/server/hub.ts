@@ -172,6 +172,9 @@ export async function hubSessionRevoked(sid: string, identity: string, issuedAt?
   }
   const token = process.env.NAVHUB_ADMIN_TOKEN || process.env.NAVHUB_BOOTSTRAP_TOKEN || process.env.NAVHUB_STORAGE_TOKEN
   if (token) headers.authorization = "Bearer " + token
+  // 仅 Web 服务端会话核验调用携带内部凭据，避免每个 BFF 请求都消耗普通共享限流额度。
+  const internalToken = process.env.NAVHUB_INTERNAL_TOKEN
+  if (internalToken) headers["x-navhub-internal-token"] = internalToken
   const payload: { sid: string; issuedAt?: number } = { sid }
   if (typeof issuedAt === "number") payload.issuedAt = issuedAt
   try {

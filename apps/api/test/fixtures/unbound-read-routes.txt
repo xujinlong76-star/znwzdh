@@ -271,6 +271,7 @@ HEAD /api/workspaces
 HEAD /api/workspaces/{id}/members
 GET /api/account/email-status
 HEAD /api/account/email-status
+HEAD /api/account/admin-mfa/status
 GET /api/sites/{id}/health-history
 HEAD /api/sites/{id}/health-history
 GET /api/sites/{id}/localize

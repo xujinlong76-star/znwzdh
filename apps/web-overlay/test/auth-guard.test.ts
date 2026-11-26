@@ -12,6 +12,7 @@
  *   - 开发环境保留原回退值，本地行为零变化。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 const SECRET_KEYS = ["AUTH_SECRET", "NEXTAUTH_SECRET", "NAVHUB_SESSION_SECRET"] as const;
 const DEV_FALLBACK = "navhub-session-secret-dev-default-32-chars-long-auth-key";
@@ -163,6 +164,29 @@ describe("isAdminAccessAllowed（proxy / authorized / verifyAdminSession 的唯�
     expect(mod.isAdminAccessAllowed({ email: "DEV@example.com" })).toBe(true);
     expect(mod.isAdminAccessAllowed({ name: "koudev" })).toBe(true);
     expect(mod.isAdminAccessAllowed({ email: "stranger@example.com", name: "stranger" })).toBe(false);
+  });
+});
+
+describe("Web 管理员凭据隔离", () => {
+  it("Credentials 管理员登录只接受专用 NAVHUB_ADMIN_TOKEN", () => {
+    const source = readFileSync(new URL("../src/lib/auth.ts", import.meta.url), "utf8");
+    const start = source.indexOf("const adminToken = process.env.NAVHUB_ADMIN_TOKEN");
+    const end = source.indexOf("// 4. 真实用户凭证登录", start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const credentialGate = source.slice(start, end);
+    expect(credentialGate).toContain("process.env.NAVHUB_ADMIN_TOKEN");
+    expect(credentialGate).not.toContain("process.env.NAVHUB_STORAGE_TOKEN");
+    expect(credentialGate).not.toContain("process.env.NAVHUB_BOOTSTRAP_TOKEN");
+    expect(credentialGate).not.toContain("process.env.NAVHUB_MCP_TOKEN");
+  });
+});
+
+describe("BFF session-check rate-limit exemption", () => {
+  it("server-side session revocation checks send the internal token when configured", () => {
+    const source = readFileSync(new URL("../src/lib/server/hub.ts", import.meta.url), "utf8");
+    expect(source).toContain("const internalToken = process.env.NAVHUB_INTERNAL_TOKEN");
+    expect(source).toContain('headers["x-navhub-internal-token"] = internalToken');
   });
 });
 

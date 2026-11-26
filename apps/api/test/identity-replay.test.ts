@@ -36,6 +36,7 @@ interface Harness {
 
 let dir: string;
 let compat: Harness;
+let compatReplica: Harness;
 let strict: Harness;
 
 function makeConfig(name: string, strictMode: boolean) {
@@ -78,12 +79,15 @@ function hit(app: Harness["app"], headers: Record<string, string>) {
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navhub-identity-replay-"));
   compat = await boot("compat", false);
+  compatReplica = await boot("compat", false);
   strict = await boot("strict", true);
 });
 
 afterAll(async () => {
   await compat.app.close();
   await compat.ctx.close();
+  await compatReplica.app.close();
+  await compatReplica.ctx.close();
   await strict.app.close();
   await strict.ctx.close();
   rmSync(dir, { recursive: true, force: true });
@@ -95,10 +99,10 @@ describe("v2 请求头校验", () => {
     expect(res.statusCode).toBe(200);
   });
 
-  it("同一份签名第二次出现 → 判定重放并拒绝", async () => {
+  it("同一份签名跨两个 API 实例第二次出现 → 数据库共享账本拒绝重放", async () => {
     const headers = signedHeaders(USER);
     expect((await hit(compat.app, headers)).statusCode).toBe(200);
-    const replay = await hit(compat.app, headers);
+    const replay = await hit(compatReplica.app, headers);
     expect(replay.statusCode).toBe(401);
     expect(replay.json().error).toContain("签名");
   });
@@ -169,7 +173,7 @@ describe("兼容窗口", () => {
 describe("校验函数单元口径", () => {
   const base = { secret: SECRET, identity: USER };
 
-  it("anon 前缀只读 anon 头，不会误用 identity 头", () => {
+  it("anon 前缀只读 anon 头，不会误用 identity 头", async () => {
     const now = Date.now();
     const ts = Math.floor(now / 1000);
     const nonce = randomBytes(16).toString("hex");
@@ -178,14 +182,14 @@ describe("校验函数单元口径", () => {
       "x-navhub-identity-ts": String(ts),
       "x-navhub-identity-nonce": nonce,
     };
-    const withPrefix = verifyIdentityHeaders({
+    const withPrefix = await verifyIdentityHeaders({
       ...base,
       headers: identityOnly,
       prefix: "x-navhub-anon",
       guard: new IdentityReplayGuard(),
       nowMs: now,
     });
-    const withoutPrefix = verifyIdentityHeaders({
+    const withoutPrefix = await verifyIdentityHeaders({
       ...base,
       headers: identityOnly,
       guard: new IdentityReplayGuard(),
@@ -196,7 +200,7 @@ describe("校验函数单元口径", () => {
     expect(withoutPrefix.mode).toBe("v2");
   });
 
-  it("窗口边界：恰好 ±300s 仍可接受，301s 拒绝", () => {
+  it("窗口边界：恰好 ±300s 仍可接受，301s 拒绝", async () => {
     const now = Date.now();
     const ts = Math.floor(now / 1000);
     const nonce = randomBytes(16).toString("hex");
@@ -205,8 +209,8 @@ describe("校验函数单元口径", () => {
       "x-navhub-identity-ts": String(ts),
       "x-navhub-identity-nonce": nonce,
     };
-    const atEdge = verifyIdentityHeaders({ ...base, headers, guard: new IdentityReplayGuard(), nowMs: now + 300_000 });
-    const beyond = verifyIdentityHeaders({ ...base, headers, guard: new IdentityReplayGuard(), nowMs: now + 301_000 });
+    const atEdge = await verifyIdentityHeaders({ ...base, headers, guard: new IdentityReplayGuard(), nowMs: now + 300_000 });
+    const beyond = await verifyIdentityHeaders({ ...base, headers, guard: new IdentityReplayGuard(), nowMs: now + 301_000 });
     expect(atEdge.ok).toBe(true);
     expect(beyond).toMatchObject({ ok: false, reason: "stale" });
   });

@@ -4,6 +4,7 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync } from "fastify";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import type { AppContext } from "../context.ts";
@@ -99,11 +100,18 @@ export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     }
     // 没有 owner 绑定的调用方（匿名 / 实例令牌）配了签名密钥就必须证明目标身份
     if (!auth?.ownerIdentity && ctx.config.identitySecret) {
-      const verdict = verifyIdentityHeaders({
+      const alreadyVerified = (req as typeof req & { __navhubVerifiedIdentitySignature?: string }).__navhubVerifiedIdentitySignature === targetId;
+      const verdict = alreadyVerified ? { ok: true } : await verifyIdentityHeaders({
         secret: ctx.config.identitySecret,
         identity: targetId,
         headers: req.headers as Record<string, unknown>,
         strict: ctx.config.identitySignatureStrict,
+        acceptReplay: (signature, nowMs, ttlMs) => ctx.repo.claimSystemState(
+          "identity-replay:" + createHash("sha256").update(signature).digest("hex"),
+          true,
+          ttlMs,
+          nowMs,
+        ),
       });
       if (!verdict.ok) {
         reply.code(401);

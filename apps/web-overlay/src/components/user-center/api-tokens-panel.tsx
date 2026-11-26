@@ -3,13 +3,13 @@
 /**
  * 个人 API 令牌面板（T20）：自建令牌供扩展 / Raycast / MCP 等外部客户端
  * 以「你的身份」访问收藏 / 历史 / 画像 / 金库。三档：只读 / 收藏写入 / 完整写入。
- * 明文只在创建响应里出现一次。
+ * 明文只在创建 / 轮换响应里出现一次。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/use-toast'
-import { KeyRound, Loader2, Plus, Trash2 } from 'lucide-react'
+import { KeyRound, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { copyText } from '@/lib/clipboard'
 
 interface OwnedToken {
@@ -20,6 +20,7 @@ interface OwnedToken {
   createdAt: number
   expiresAt: number | null
   lastUsedAt: number | null
+  rotatedAt: number | null
 }
 
 type TokenPermission = 'read' | 'favorites' | 'write'
@@ -55,6 +56,7 @@ export function ApiTokensPanel() {
   const [revealed, setRevealed] = useState<{ raw: string; name: string } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
+  const [rotateConfirmId, setRotateConfirmId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -112,6 +114,40 @@ export function ApiTokensPanel() {
         }
         toast({ title: '令牌已吊销', description: '持有该令牌的客户端将立即失去访问能力。' })
         setConfirmId(null)
+        await load()
+      } finally {
+        setBusyId(null)
+      }
+    },
+    [busyId, load, toast],
+  )
+
+  const rotate = useCallback(
+    async (token: OwnedToken) => {
+      if (busyId) return
+      setBusyId(token.id)
+      try {
+        const res = await fetch('/api/me/tokens/' + token.id + '/rotate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ expectedRotatedAt: token.rotatedAt ?? null }),
+          cache: 'no-store',
+        })
+        const data = (await res.json().catch(() => ({}))) as { token?: string; error?: string }
+        if (!res.ok || !data.token) {
+          toast({
+            title: '轮换失败',
+            description: res.status === 404 ? '令牌状态已变化，请刷新列表后重试' : data.error ?? '请稍后重试',
+            variant: 'destructive',
+          })
+          setRotateConfirmId(null)
+          await load()
+          return
+        }
+        setRevealed({ raw: data.token, name: token.name })
+        setRotateConfirmId(null)
+        setConfirmId(null)
+        toast({ title: '令牌已轮换', description: '旧令牌已立即失效。请立即复制并保存新明文。' })
         await load()
       } finally {
         setBusyId(null)
@@ -202,26 +238,46 @@ export function ApiTokensPanel() {
                     </p>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
                       {scopeLabel(t.scopes)} · 创建于 {formatDate(t.createdAt)}
-                      {t.lastUsedAt ? ` · 最近使用 ${formatDate(t.lastUsedAt)}` : ' · 从未使用'}
+                      {t.lastUsedAt ? ` · 最近使用 ${formatDate(t.lastUsedAt)}` : ' · 从未使用'}{t.rotatedAt ? ` · 最近轮换 ${formatDate(t.rotatedAt)}` : ''}
                     </p>
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  variant={confirming ? 'destructive' : 'outline'}
-                  className="w-full shrink-0 text-xs sm:w-auto"
-                  disabled={busyId === t.id}
-                  onClick={() => {
-                    if (!confirming) {
-                      setConfirmId(t.id)
-                      return
-                    }
-                    void revoke(t.id)
-                  }}
-                >
-                  {busyId === t.id ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1.5 h-3.5 w-3.5" />}
-                  {confirming ? '确认吊销' : '吊销'}
-                </Button>
+                <div className="flex w-full gap-2 sm:w-auto">
+                  <Button
+                    size="sm"
+                    variant={rotateConfirmId === t.id ? 'destructive' : 'outline'}
+                    className="flex-1 text-xs sm:flex-none"
+                    disabled={busyId === t.id}
+                    onClick={() => {
+                      if (rotateConfirmId !== t.id) {
+                        setRotateConfirmId(t.id)
+                        setConfirmId(null)
+                        return
+                      }
+                      void rotate(t)
+                    }}
+                  >
+                    {busyId === t.id ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+                    {rotateConfirmId === t.id ? '确认轮换' : '轮换'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={confirming ? 'destructive' : 'outline'}
+                    className="flex-1 text-xs sm:flex-none"
+                    disabled={busyId === t.id}
+                    onClick={() => {
+                      if (!confirming) {
+                        setConfirmId(t.id)
+                        setRotateConfirmId(null)
+                        return
+                      }
+                      void revoke(t.id)
+                    }}
+                  >
+                    {busyId === t.id ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1.5 h-3.5 w-3.5" />}
+                    {confirming ? '确认吊销' : '吊销'}
+                  </Button>
+                </div>
               </li>
             )
           })}

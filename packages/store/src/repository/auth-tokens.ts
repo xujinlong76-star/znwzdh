@@ -18,6 +18,8 @@ export interface CreateAuthTokenInput {
   purpose: AuthTokenPurpose;
   /** 明文令牌的 sha256（hex） */
   tokenHash: string;
+  /** 发放时绑定的邮箱（邮箱验证/密码重置）；防止地址变更后旧链接作用于新邮箱 */
+  targetEmail: string;
   /** 过期时刻（毫秒） */
   expiresAt: number;
 }
@@ -28,10 +30,12 @@ export async function createAuthToken(
   input: CreateAuthTokenInput,
 ): Promise<string> {
   const id = randomUUID();
+  const targetEmail = input.targetEmail.trim().toLowerCase();
+  if (!targetEmail) throw new Error("Auth tokens must be bound to a target email");
   await repo.run(
-    "INSERT INTO auth_tokens (id, user_id, purpose, token_hash, expires_at, consumed_at, created_at) " +
-      "VALUES (?,?,?,?,?,NULL,?)",
-    [id, input.userId, input.purpose, input.tokenHash, input.expiresAt, Date.now()],
+    "INSERT INTO auth_tokens (id, user_id, purpose, token_hash, target_email, expires_at, consumed_at, created_at) " +
+      "VALUES (?,?,?,?,?,?,NULL,?)",
+    [id, input.userId, input.purpose, input.tokenHash, targetEmail, input.expiresAt, Date.now()],
   );
   return id;
 }
@@ -40,21 +44,38 @@ export async function createAuthToken(
  * 原子消费一条令牌。
  *
  * 成功返回 true 并把 consumed_at 置为当前时间；失败（不存在/已用/过期/用途不符/
- * 用户不符）返回 false 且不改任何行。**必须单条 UPDATE**——若拆成 SELECT+UPDATE，
+ * 用户/邮箱不符）返回 false 且不改任何行。**必须单条 UPDATE**——若拆成 SELECT+UPDATE，
  * 两个并发请求可能都读到「未消费」，从而用同一链接各重置一次密码。
  */
 export async function consumeAuthToken(
   repo: Repository,
-  input: { userId: string; purpose: AuthTokenPurpose; tokenHash: string; now?: number },
+  input: { userId: string; purpose: AuthTokenPurpose; tokenHash: string; targetEmail: string; now?: number },
 ): Promise<boolean> {
   const now = input.now ?? Date.now();
+  const targetEmail = input.targetEmail.trim().toLowerCase();
+  if (!targetEmail) return false;
+  // 原子校验发放邮箱仍是当前邮箱；地址变更与消费并发时，只有一个顺序能成功。
   const changes = await repo.runCount(
     "UPDATE auth_tokens SET consumed_at = ? " +
       "WHERE token_hash = ? AND user_id = ? AND purpose = ? " +
-      "AND consumed_at IS NULL AND expires_at > ?",
-    [now, input.tokenHash, input.userId, input.purpose, now],
+      "AND consumed_at IS NULL AND expires_at > ? AND target_email = ? " +
+      "AND EXISTS (SELECT 1 FROM users WHERE users.id = auth_tokens.user_id AND LOWER(users.email) = ?)",
+    [now, input.tokenHash, input.userId, input.purpose, now, targetEmail, targetEmail],
   );
   return changes > 0;
+}
+
+/** 使某用户指定用途的所有未消费令牌失效（邮箱变更时撤销旧验证链接）。 */
+export async function revokeAuthTokens(
+  repo: Repository,
+  userId: string,
+  purpose: AuthTokenPurpose,
+  now = Date.now(),
+): Promise<number> {
+  return repo.runCount(
+    "UPDATE auth_tokens SET consumed_at = ? WHERE user_id = ? AND purpose = ? AND consumed_at IS NULL",
+    [now, userId, purpose],
+  );
 }
 
 /** 该用户某用途下是否已有未消费且未过期的令牌（用于「重新发送」的节流判断） */
@@ -67,7 +88,7 @@ export async function hasActiveAuthToken(
   const t = now ?? Date.now();
   const row = (
     await repo.raw(
-      "SELECT id FROM auth_tokens WHERE user_id = ? AND purpose = ? AND consumed_at IS NULL AND expires_at > ? LIMIT 1",
+      "SELECT id FROM auth_tokens WHERE user_id = ? AND purpose = ? AND consumed_at IS NULL AND expires_at > ? AND target_email = (SELECT LOWER(email) FROM users WHERE users.id = auth_tokens.user_id) LIMIT 1",
       [userId, purpose, t],
     )
   )[0];

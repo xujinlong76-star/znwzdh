@@ -1415,7 +1415,7 @@ async revokeAllSessions(userId: string): Promise<number> {
     return usersRepo.createUserWithPassword(this, input);
   }
 
-  /** 校验口令登录；返回 null = 用户不存在或密码错误（不区分，防账号枚举） */
+  /** 校验口令登录；返回 null = 用户不存在、密码错误或邮箱未验证（不区分，防账号枚举） */
   async verifyUserPassword(identifier: string, password: string): Promise<UserRecord | null> {
     return usersRepo.verifyUserPassword(this, identifier, password);
   }
@@ -1424,8 +1424,16 @@ async revokeAllSessions(userId: string): Promise<number> {
     return usersRepo.updateUserPassword(this, userId, newPassword);
   }
 
+  async updateUserPasswordForEmail(userId: string, newPassword: string, email: string): Promise<boolean> {
+    return usersRepo.updateUserPasswordForEmail(this, userId, newPassword, email);
+  }
+
   async setUserEmailVerified(userId: string): Promise<boolean> {
     return usersRepo.setUserEmailVerified(this, userId);
+  }
+
+  async setUserEmailVerifiedForEmail(userId: string, email: string): Promise<boolean> {
+    return usersRepo.setUserEmailVerifiedForEmail(this, userId, email);
   }
 
   /* ------------------------- 认证令牌（邮箱验证/密码重置） ------------------------- */
@@ -1435,8 +1443,12 @@ async revokeAllSessions(userId: string): Promise<number> {
   }
 
   /** 原子消费一次性令牌；成功 true，失败（不存在/已用/过期/用途不符）false */
-  async consumeAuthToken(input: { userId: string; purpose: authTokensRepo.AuthTokenPurpose; tokenHash: string; now?: number }): Promise<boolean> {
+  async consumeAuthToken(input: { userId: string; purpose: authTokensRepo.AuthTokenPurpose; tokenHash: string; targetEmail: string; now?: number }): Promise<boolean> {
     return authTokensRepo.consumeAuthToken(this, input);
+  }
+
+  async revokeAuthTokens(userId: string, purpose: authTokensRepo.AuthTokenPurpose, now?: number): Promise<number> {
+    return authTokensRepo.revokeAuthTokens(this, userId, purpose, now);
   }
 
   async hasActiveAuthToken(userId: string, purpose: authTokensRepo.AuthTokenPurpose, now?: number): Promise<boolean> {
@@ -1615,6 +1627,10 @@ async revokeAllSessions(userId: string): Promise<number> {
   }
 
   /** 用户吊销自己的令牌（ownership 校验在 SQL 条件里） */
+  async rotateApiTokenByOwner(ownerIdentity: string, id: string, tokenHash: string, tokenPrefix: string, expectedRotatedAt: number | null): Promise<ApiTokenRecord | null> {
+    return tokensRepo.rotateApiTokenByOwner(this, ownerIdentity, id, tokenHash, tokenPrefix, expectedRotatedAt);
+  }
+
   async revokeApiTokenByOwner(ownerIdentity: string, id: string): Promise<boolean> {
     return tokensRepo.revokeApiTokenByOwner(this, ownerIdentity, id);
   }
@@ -2017,6 +2033,23 @@ async revokeAllSessions(userId: string): Promise<number> {
   /** @internal 多实例「窗口内只做一次」：单条 UPSERT 原子占坑，见 repository/system.ts */
   async claimSystemState(key: string, value: unknown, windowMs: number, now = Date.now()): Promise<boolean> {
     return systemRepo.claimSystemState(this, key, value, windowMs, now);
+  }
+
+  /** 多实例共享登录失败计数：原子递增并返回固定窗口起点。 */
+  async recordLoginFailure(key: string, now: number, windowMs: number): Promise<{ count: number; firstAt: number }> {
+    return systemRepo.recordLoginFailure(this, key, now, windowMs);
+  }
+
+  async getLoginFailureState(key: string): Promise<{ count: number; firstAt: number } | null> {
+    return systemRepo.getLoginFailureState(this, key);
+  }
+
+  async clearLoginFailure(key: string): Promise<void> {
+    return systemRepo.clearLoginFailure(this, key);
+  }
+
+  async pruneSystemStatePrefix(prefix: string, olderThan: number): Promise<number> {
+    return systemRepo.pruneSystemStatePrefix(this, prefix, olderThan);
   }
 
 

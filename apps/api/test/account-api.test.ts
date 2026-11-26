@@ -9,11 +9,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import type { MailMessage, MailResult, MailTransport } from "@navhub/ai";
+
+function requireHmac(key: Buffer, message: Buffer): Buffer { return createHmac("sha1", key).update(message).digest(); }
 
 const dir = mkdtempSync(join(tmpdir(), "navhub-account-"));
 const base = {
@@ -85,6 +87,103 @@ async function post(url: string, payload: unknown) {
 }
 
 describe("账号生命周期 API", () => {
+  it("管理员 TOTP 启用、一次性恢复码消费与强制关闭", async () => {
+    const previousKey = process.env.NAVHUB_MFA_ENCRYPTION_KEY;
+    const previousRequired = process.env.NAVHUB_ADMIN_MFA_REQUIRED;
+    const previousInternalToken = ctx.config.internalToken;
+    process.env.NAVHUB_MFA_ENCRYPTION_KEY = "ab".repeat(32);
+    process.env.NAVHUB_ADMIN_MFA_REQUIRED = "1";
+    ctx.config.internalToken = "mfa-test-internal-token";
+    let replicaCtx: AppContext | null = null;
+    let replica: Awaited<ReturnType<typeof buildServer>> | null = null;
+    const totp = (secret: string, timeMs = Date.now()) => {
+      const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+      let bits = 0, value = 0;
+      const bytes: number[] = [];
+      for (const ch of secret) {
+        value = (value << 5) | alphabet.indexOf(ch); bits += 5;
+        if (bits >= 8) { bytes.push((value >>> (bits - 8)) & 255); bits -= 8; value &= (1 << bits) - 1; }
+      }
+      const counter = Buffer.alloc(8);
+      counter.writeBigUInt64BE(BigInt(Math.floor(timeMs / 30_000)));
+      const hmac = requireHmac(Buffer.from(bytes), counter);
+      const offset = hmac[hmac.length - 1] & 15;
+      const binary = ((hmac[offset] & 127) << 24) | ((hmac[offset + 1] & 255) << 16) | ((hmac[offset + 2] & 255) << 8) | (hmac[offset + 3] & 255);
+      return String(binary % 1_000_000).padStart(6, "0");
+    };
+    try {
+      const setup = await post("/api/account/admin-mfa/setup", {});
+      expect(setup.statusCode).toBe(200);
+      const secret = setup.json().secret as string;
+      expect(secret).toMatch(/^[A-Z2-7]+$/);
+      const code = totp(secret);
+      const confirmed = await post("/api/account/admin-mfa/confirm", { code });
+      expect(confirmed.statusCode).toBe(200);
+      const recovery = confirmed.json().recoveryCodes as string[];
+      expect(recovery).toHaveLength(10);
+
+      replicaCtx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "account.db") }));
+      replicaCtx.config.internalToken = "mfa-test-internal-token";
+      replica = await buildServer(replicaCtx);
+      await replica.ready();
+      const verify = (target: typeof app, value: string) => target.inject({
+        method: "POST",
+        url: "/api/account/admin-mfa/verify",
+        headers: { "x-navhub-internal-token": "mfa-test-internal-token" },
+        payload: { code: value },
+      });
+      const currentCode = totp(secret, (Math.floor(Date.now() / 30_000) + 1) * 30_000);
+      expect((await verify(app, currentCode)).statusCode).toBe(200);
+      expect((await verify(replica!, currentCode)).statusCode).toBe(401);
+      expect((await verify(app, recovery[0])).statusCode).toBe(200);
+      expect((await verify(replica!, recovery[0])).statusCode).toBe(401);
+      expect((await post("/api/account/admin-mfa/disable", { code: recovery[1] })).statusCode).toBe(200);
+      expect((await verify(app, totp(secret))).statusCode).toBe(401);
+    } finally {
+      if (replica) await replica.close();
+      if (replicaCtx) await replicaCtx.close();
+      if (previousKey === undefined) delete process.env.NAVHUB_MFA_ENCRYPTION_KEY;
+      else process.env.NAVHUB_MFA_ENCRYPTION_KEY = previousKey;
+      if (previousRequired === undefined) delete process.env.NAVHUB_ADMIN_MFA_REQUIRED;
+      else process.env.NAVHUB_ADMIN_MFA_REQUIRED = previousRequired;
+      ctx.config.internalToken = previousInternalToken;
+    }
+  });
+
+  it("管理员静态凭据与 MFA 失败尝试跨 API 实例共享锁定", async () => {
+    const previousInternalToken = ctx.config.internalToken;
+    ctx.config.internalToken = "mfa-lock-test-internal-token";
+    const verify = (target: typeof app) => target.inject({
+      method: "POST",
+      url: "/api/account/admin-mfa/verify",
+      headers: { "x-navhub-internal-token": "mfa-lock-test-internal-token" },
+      payload: { code: "", credentialValid: false },
+    });
+    const key = "auth:admin-mfa-failure:global";
+    try {
+      for (let i = 0; i < 5; i++) expect((await verify(app)).statusCode).toBe(401);
+      const replicaCtx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "account.db") }));
+      replicaCtx.config.internalToken = "mfa-lock-test-internal-token";
+      const replica = await buildServer(replicaCtx);
+      await replica.ready();
+      try {
+        const locked = await replica.inject({
+          method: "POST",
+          url: "/api/account/admin-mfa/verify",
+          headers: { "x-navhub-internal-token": "mfa-lock-test-internal-token" },
+          payload: { code: "", credentialValid: true },
+        });
+        expect(locked.statusCode).toBe(401);
+      } finally {
+        await replica.close();
+        await replicaCtx.close();
+      }
+    } finally {
+      await ctx.repo.clearLoginFailure(key);
+      ctx.config.internalToken = previousInternalToken;
+    }
+  });
+
   it("注册成功并发送验证邮件", async () => {
     captured.length = 0;
     const res = await post("/api/account/register", {
@@ -161,6 +260,31 @@ describe("账号生命周期 API", () => {
     ).toBe(400);
   });
 
+  it("登录失败计数在两个 API 实例之间共享", async () => {
+    await post("/api/account/register", {
+      username: "shared-lock",
+      email: "shared-lock@example.com",
+      password: "S3cret-Passw0rd!",
+    });
+    for (let i = 0; i < 5; i++) {
+      expect((await post("/api/account/login", { identifier: "shared-lock@example.com", password: "wrong" })).statusCode).toBe(401);
+    }
+    const replicaCtx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "account.db") }));
+    const replica = await buildServer(replicaCtx);
+    await replica.ready();
+    try {
+      const locked = await replica.inject({
+        method: "POST",
+        url: "/api/account/login",
+        payload: { identifier: "shared-lock@example.com", password: "S3cret-Passw0rd!" },
+      });
+      expect(locked.statusCode).toBe(429);
+    } finally {
+      await replica.close();
+      await replicaCtx.close();
+    }
+  });
+
   it("注册：单字符 TLD 不是真实邮箱", async () => {
     const res = await post("/api/account/register", {
       username: "tld",
@@ -195,22 +319,35 @@ describe("账号生命周期 API", () => {
     expect(res.json().error).toContain("邮箱格式");
   });
 
-  // 注：锁定用例只保留一份。登录失败计数是进程内共享状态（见 routes/account.ts
-  // loginFailures），同一标识的第二份相同用例会在第一次错误登录时就拿到 429，
-  // 永远跑不绿——不是生产行为错了，是用例被粘贴重复了（2026-11-15 删重复）。
-
-  it("登录：正确口令返回用户，错误口令 401", async () => {
+  it("登录：未验证邮箱拒绝；完成验证后正确口令通过", async () => {
+    captured.length = 0;
     await post("/api/account/register", {
       username: "dave",
       email: "dave@example.com",
       password: "S3cret-Passw0rd!",
     });
+    const unverified = await post("/api/account/login", {
+      identifier: "dave@example.com",
+      password: "S3cret-Passw0rd!",
+    });
+    expect(unverified.statusCode).toBe(401);
+
+    const verificationToken = extractToken(captured[0], "verify-email");
+    const verified = await post("/api/account/verify-email", { token: verificationToken });
+    expect(verified.statusCode).toBe(200);
+
     const ok = await post("/api/account/login", {
       identifier: "dave@example.com",
       password: "S3cret-Passw0rd!",
     });
     expect(ok.statusCode).toBe(200);
     expect(ok.json().user.email).toBe("dave@example.com");
+    const successfulAudit = await ctx.repo.raw(
+      "SELECT target FROM audit_logs WHERE action = ? AND target = ? LIMIT 1",
+      ["account.login", ok.json().user.id],
+    );
+    expect(successfulAudit).toHaveLength(1);
+    expect(String(successfulAudit[0]?.target ?? "")).not.toBe("dave@example.com");
 
     const bad = await post("/api/account/login", {
       identifier: "dave@example.com",
@@ -223,6 +360,36 @@ describe("账号生命周期 API", () => {
       password: "x",
     });
     expect(missing.statusCode).toBe(401);
+  });
+
+  it("普通登录失败计数跨两个 API 实例共享且审计只存 HMAC 摘要", async () => {
+    const replicaCtx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "account.db") }));
+    const replica = await buildServer(replicaCtx);
+    await replica.ready();
+    const identifier = "shared-login-lock@example.com";
+    const send = (target: typeof app) => target.inject({
+      method: "POST",
+      url: "/api/account/login",
+      payload: { identifier, password: "wrong-password" },
+    });
+    try {
+      for (let i = 0; i < 5; i += 1) {
+        const response = await send(i % 2 === 0 ? app : replica);
+        expect(response.statusCode).toBe(401);
+      }
+      const blocked = await send(replica);
+      expect(blocked.statusCode).toBe(429);
+      const audit = await ctx.repo.raw(
+        "SELECT target FROM audit_logs WHERE action = ? AND target LIKE 'hmac-sha256:%' ORDER BY created_at DESC LIMIT 1",
+        ["account.login_locked"],
+      );
+      const target = String(audit[0]?.target ?? "");
+      expect(target).toMatch(/^hmac-sha256:[a-f0-9]{64}$/);
+      expect(target).not.toContain(identifier);
+    } finally {
+      await replica.close();
+      await replicaCtx.close();
+    }
   });
 
   it("忘记密码：无论邮箱是否存在都返回同一文案", async () => {
@@ -248,6 +415,9 @@ describe("账号生命周期 API", () => {
       email: "erin@example.com",
       password: "OldPassw0rd!",
     });
+    const verifyToken = extractToken(captured[0], "verify-email");
+    expect((await post("/api/account/verify-email", { token: verifyToken })).statusCode).toBe(200);
+    captured.length = 0;
     await post("/api/account/forgot-password", { email: "erin@example.com" });
     const resetMsg = captured.find((m) => m.text.includes("reset-password"));
     expect(resetMsg).toBeDefined();

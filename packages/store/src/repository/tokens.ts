@@ -57,6 +57,24 @@ export async function listApiTokensByOwner(repo: Repository, ownerIdentity: stri
 }
 
 /** 用户吊销自己的令牌：ownership 校验在 SQL 条件里，跨用户 id 无效返回 false */
+/** 用户轮换自己的令牌：ownership 与未吊销条件在同一 UPDATE 中校验。 */
+export async function rotateApiTokenByOwner(
+  repo: Repository,
+  ownerIdentity: string,
+  id: string,
+  tokenHash: string,
+  tokenPrefix: string,
+  expectedRotatedAt: number | null,
+): Promise<ApiTokenRecord | null> {
+  const now = Date.now();
+  // Compare-and-swap：客户端必须带上列表中的 rotatedAt 版本；同一旧版本的并发轮换只允许一个成功。
+  const sql = repo.db.dialect === "pg"
+    ? "UPDATE api_tokens SET token_hash = ?, token_prefix = ?, last_used_at = NULL, rotated_at = ? WHERE id = ? AND owner_identity = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?) AND rotated_at IS NOT DISTINCT FROM ? RETURNING *"
+    : "UPDATE api_tokens SET token_hash = ?, token_prefix = ?, last_used_at = NULL, rotated_at = ? WHERE id = ? AND owner_identity = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?) AND rotated_at IS ? RETURNING *";
+  const rows = await repo.raw(sql, [tokenHash, tokenPrefix, now, id, ownerIdentity, now, expectedRotatedAt]);
+  return rows[0] ? rowToApiToken(rows[0]) : null;
+}
+
 export async function revokeApiTokenByOwner(repo: Repository, ownerIdentity: string, id: string): Promise<boolean> {
   const changes = await repo.runCount(
     "UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND owner_identity = ? AND revoked_at IS NULL",

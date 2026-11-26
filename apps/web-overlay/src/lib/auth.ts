@@ -133,6 +133,28 @@ export const hasGithubAuth = Boolean(
   process.env.GITHUB_CLIENT_SECRET !== 'your-github-client-secret'
 )
 
+async function verifyAdminSecondFactor(code: string, credentialValid = true): Promise<boolean> {
+  const internalToken = process.env.NAVHUB_INTERNAL_TOKEN
+  const required = process.env.NAVHUB_ADMIN_MFA_REQUIRED === '1' || process.env.NAVHUB_ADMIN_MFA_REQUIRED === 'true'
+  if (!internalToken) return false
+  const apiBase =
+    process.env.NAVHUB_STORAGE_BASE_URL ||
+    process.env.NAVHUB_API_BASE_URL ||
+    'http://127.0.0.1:8787'
+  try {
+    const res = await fetch(`${apiBase.replace(/\/+$/, '')}/api/account/admin-mfa/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-navhub-internal-token': internalToken },
+      body: JSON.stringify({ code, credentialValid }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 const providers: NextAuthConfig['providers'] = [
   CredentialsProvider({
     id: 'credentials',
@@ -141,6 +163,7 @@ const providers: NextAuthConfig['providers'] = [
       username: { label: '账号/身份', type: 'text' },
       password: { label: '管理密码或 Token', type: 'password' },
       bypass: { label: '快捷通道', type: 'hidden' },
+      otp: { label: '管理员二次验证码 / 恢复码', type: 'text' },
     },
     async authorize(credentials) {
       const isDev = process.env.NODE_ENV !== 'production'
@@ -162,7 +185,7 @@ const providers: NextAuthConfig['providers'] = [
 
       // 1. 本地单机 / 开发调试快速登录通道
       if (credentials?.bypass === 'true') {
-        if (allowInsecureLogin) {
+        if (allowInsecureLogin && (await verifyAdminSecondFactor(typeof credentials?.otp === 'string' ? credentials.otp : ''))) {
           return {
             id: 'admin',
             name: '本地管理员',
@@ -179,33 +202,42 @@ const providers: NextAuthConfig['providers'] = [
 
       // 2. 环境变量管理员密码校验 (NAVHUB_ADMIN_PASSWORD / ADMIN_PASSWORD)
       // P0-6：timingSafeEqual 替代裸 ===，防时序泄露（普通用户口令链路已做到，管理员通道此前是裸比较）
+      const isAdminUsername = username.toLowerCase() === 'admin'
+      const otp = typeof credentials?.otp === 'string' ? credentials.otp : ''
       const envAdminPassword = process.env.NAVHUB_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD
-      if (envAdminPassword && timingSafeEq(rawPassword, envAdminPassword)) {
-        return {
-          id: 'admin',
-          name: username,
-          email: 'admin@navhub.local',
-          image: '/icons/icon-192.png',
-          role: 'admin',
+      let adminCredentialFailed = false
+      if (isAdminUsername && envAdminPassword) {
+        if (rawPassword && timingSafeEq(rawPassword, envAdminPassword)) {
+          if (!(await verifyAdminSecondFactor(otp))) return null;
+          return {
+            id: 'admin',
+            name: username,
+            email: 'admin@navhub.local',
+            image: '/icons/icon-192.png',
+            role: 'admin',
+          }
         }
+        adminCredentialFailed = Boolean(rawPassword)
       }
 
-      // 3. API Token / Master Token 静态凭证比对
-      const validTokens = [
-        process.env.NAVHUB_ADMIN_TOKEN,
-        process.env.NAVHUB_STORAGE_TOKEN,
-        process.env.NAVHUB_BOOTSTRAP_TOKEN,
-        process.env.NAVHUB_MCP_TOKEN,
-      ].filter(Boolean) as string[]
-
-      if (rawPassword && validTokens.some((t) => timingSafeEq(rawPassword, t))) {
-        return {
-          id: 'admin',
-          name: username || 'Token 管理员',
-          email: 'admin@navhub.local',
-          image: '/icons/icon-192.png',
-          role: 'admin',
+      // 3. 专用管理员静态凭据。Storage / Bootstrap / MCP 凭据有各自的服务边界，
+      // 不得被复用为浏览器管理员登录凭据，避免低信任服务凭据横向提升为后台会话。
+      const adminToken = process.env.NAVHUB_ADMIN_TOKEN
+      if (isAdminUsername && rawPassword && adminToken) {
+        if (timingSafeEq(rawPassword, adminToken)) {
+          if (!(await verifyAdminSecondFactor(otp))) return null;
+          return {
+            id: 'admin',
+            name: username || 'Token 管理员',
+            email: 'admin@navhub.local',
+            image: '/icons/icon-192.png',
+            role: 'admin',
+          }
         }
+        adminCredentialFailed = true
+      }
+      if (adminCredentialFailed) {
+        await verifyAdminSecondFactor('', false)
       }
 
       // 4. 真实用户凭证登录（邮箱/用户名 + 密码）
@@ -231,6 +263,7 @@ const providers: NextAuthConfig['providers'] = [
             };
             const u = data?.user;
             if (u?.id) {
+              if (u.role === 'admin' && !(await verifyAdminSecondFactor(typeof credentials?.otp === 'string' ? credentials.otp : ''))) return null;
               return {
                 id: u.id,
                 name: u.username ?? rawUsername,
@@ -245,10 +278,10 @@ const providers: NextAuthConfig['providers'] = [
       }
 
       // 5. 默认口令开箱即用支持——同样受 allowInsecureLogin 总闸管辖
-      if (!envAdminPassword && validTokens.length === 0) {
+      if (!envAdminPassword && !adminToken) {
         if (allowInsecureLogin) {
           const allowedDefaults = ['admin', 'admin123', 'navhub', '123456']
-          if (allowedDefaults.includes(rawPassword) || (!rawPassword && (isDev || !authRequired))) {
+          if ((allowedDefaults.includes(rawPassword) || (!rawPassword && (isDev || !authRequired))) && (await verifyAdminSecondFactor(typeof credentials?.otp === 'string' ? credentials.otp : ''))) {
             return {
               id: 'admin',
               name: username || '山羊胡管理员',
@@ -290,6 +323,15 @@ const config = {
         if (token.sub) serverTokenStore.set(token.sub, account.access_token)
       }
       if (account?.provider) token.provider = account.provider
+      if (
+        user &&
+        account?.provider === 'github' &&
+        isAdminAccessAllowed(user as { id?: string; email?: string | null; name?: string | null; role?: string }) &&
+        !(await verifyAdminSecondFactor(''))
+      ) {
+        // OAuth 回调没有可交互的 OTP 输入阶段；MFA 已启用或被强制时，管理员必须改走密码 + TOTP 凭证登录。
+        throw new Error('Administrator MFA is required; use credentials sign-in with a TOTP or recovery code')
+      }
       if (user) {
         token.role = (user as { role?: string }).role
         token.sub = user.id || token.sub || 'admin'
@@ -303,9 +345,17 @@ const config = {
       token.issuedAt = issuedAt
       const identity = canonicalUserId({ id: user.id, provider: account?.provider })
       if (identity) {
-        const revoked = await hubSessionRevoked(token.sid, identity, issuedAt).catch(() => { /* 核对失败按不可用处理，fail-open */ return null })
-        if (revoked === true) console.warn('[session-register] unexpected revoked at login')
-        else if (revoked === null) console.warn('[session-register] sessions/check unavailable')
+        const revoked = await hubSessionRevoked(token.sid, identity, issuedAt).catch(() => {
+          /* 核对失败按 null 处理：下方 revoked === null 分支决定结果（生产拒绝签发会话，
+             非生产记 warn 继续）；此处不吞错，只是把“不可用”交给调用方显式分支。 */
+          return null
+        })
+        if (revoked === true) throw new Error('Session registration rejected: session is revoked')
+        if (revoked === null && IS_PRODUCTION_RUNTIME) {
+          // 生产环境无法登记/核对会话时不签发可用登录态；避免形成无法吊销的 JWT。
+          throw new Error('Session verification unavailable')
+        }
+        if (revoked === null) console.warn('[session-register] sessions/check unavailable in non-production')
       }
     }
       return token
@@ -350,14 +400,14 @@ export async function verifyAdminSession() {
     return { ok: false as const, error: 'Forbidden', status: 403 }
   }
 
-  // 吊销检查（P0-2）：被踢出/改密的管理员 JWT 须 401；核对不可用时 fail-open。
+  // 吊销检查（P0-2）：被踢出/改密的管理员 JWT 须 401；核对不可用时 fail-closed（503）。
   const sessionSid = (session as { sessionSid?: string }).sessionSid
   if (typeof sessionSid === 'string' && sessionSid) {
     const identity = canonicalUserId(user)
     const issuedAt = (session as { sessionIssuedAt?: number }).sessionIssuedAt
-    const revoked = identity ? await hubSessionRevoked(sessionSid, identity, issuedAt).catch(() => { /* 核对失败按不可用处理，fail-open */ return null }) : null
+    const revoked = identity ? await hubSessionRevoked(sessionSid, identity, issuedAt).catch(() => { /* 核对失败按不可用处理；生产登录会拒绝签发会话 */ return null }) : null
     if (revoked === true) return { ok: false as const, error: 'Unauthorized', status: 401 }
-    if (revoked === null && identity) console.warn('[admin-session] sessions/check unavailable, fail-open')
+    if (revoked === null && identity) return { ok: false as const, error: 'Session verification unavailable', status: 503 }
   }
   const githubToken = getServerGithubToken(user.id) || process.env.GITHUB_PAT || ''
   return { ok: true as const, session, user, githubToken }

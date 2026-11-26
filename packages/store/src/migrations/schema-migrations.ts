@@ -13,6 +13,7 @@ import type { Db } from "../driver.ts";
 import {
   migrateColumns,
   dedupeUserEmails,
+  migrateNormalizedUserEmailUnique,
   migrateSiteIndexes,
   migrateEventIdentity,
   migrateCategorySlugs,
@@ -197,12 +198,31 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     checksum: "v1_col_alters",
   },
   {
+    // 2026-11-25：auth_tokens.target_email 在已应用旧列迁移的存量库上必须补跑。
+    // migrateColumns 是幂等的；独立版本确保旧部署不会因 20261001 已记录而跳过该列。
+    version: "20261125_auth_token_target_email",
+    name: "认证令牌目标邮箱绑定列补齐",
+    up: async (db: Db) => {
+      await migrateColumns(db);
+    },
+    checksum: "v1_auth_token_target_email",
+  },
+  {
     version: "20261010_dedupe_user_emails",
     name: "用户唯一邮箱清洗与多账号冲突处理",
     up: async (db: Db) => {
       await dedupeUserEmails(db);
     },
     checksum: "v1_dedupe_emails",
+  },
+  {
+    // 2026-11-25：历史 OAuth 邮箱可能保留大小写差异，新增规范化唯一索引前先按 LOWER(email) 去重。
+    version: "20261125_normalized_email_unique",
+    name: "邮箱大小写不敏感唯一约束",
+    up: async (db: Db) => {
+      await migrateNormalizedUserEmailUnique(db);
+    },
+    checksum: "v1_normalized_email_unique",
   },
   {
     version: "20261015_site_indexes",

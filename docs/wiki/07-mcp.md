@@ -285,9 +285,10 @@ compose 里的服务 `mcp`（[docker/docker-compose.yml](../../docker/docker-com
 
 1. 登录后打开 **`/me/account`** 页的「API 令牌」面板（`ApiTokensPanel`）；
 2. 填名称，权限档位选 **只读**（默认就是只读），创建；
-3. 明文（`nh_…`）只在创建响应里出现一次，立即复制保存——库里只存 sha256，丢了只能吊销重建。
+3. 明文（`nh_…`）只在创建或轮换响应里出现一次，立即复制保存——库里只存 sha256，丢了只能吊销重建。
+4. 令牌需要定期更换时，在同一面板点击「轮换」；系统以 `rotatedAt` 版本做 CAS，并发重复提交只有一个成功，旧明文立即失效。
 
-对应接口：`POST /api/me/tokens`（`{ name, permission: "read" }`，登录身份受信才放行，匿名身份 403；每人最多 10 条未吊销令牌）。落库形态：`api_tokens.scopes = "read"`，`owner_identity = 登录身份的规范化 identity`。
+对应接口：`POST /api/me/tokens`（`{ name, permission: "read" }`）、`POST /api/me/tokens/:id/rotate`（必须提交列表中的 `expectedRotatedAt` 版本）与 `DELETE /api/me/tokens/:id`；登录身份受信才放行，匿名身份 403；每人最多 10 条未吊销令牌。落库形态：`api_tokens.scopes = "read"`，`owner_identity = 登录身份的规范化 identity`。
 
 > ⚠️ **不要去 `/admin/tokens` 签发**：那是管理员的实例级凭据（`POST /api/tokens`，不带 `owner_identity`），能管站点但**读不到任何个人数据**——拿它调 `search_favorites` 会直接被「要求用户级个人令牌」拒绝。反过来，个人令牌即使带 `write` 也写不了实例级站点（`evaluateInstanceWrite` 拦截），两类凭据的边界是单向的。
 

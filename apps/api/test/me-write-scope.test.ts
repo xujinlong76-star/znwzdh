@@ -232,6 +232,28 @@ describe("/api/me 写面：只读令牌一律 403", () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it("验收 14：用户轮换个人令牌使用版本 CAS，并使旧明文立即失效", async () => {
+    const listed = await inject({ method: "GET", url: "/api/me/tokens", headers: write() });
+    expect(listed.statusCode).toBe(200);
+    const target = (listed.json() as { tokens: Array<{ id: string; rotatedAt: number | null }> }).tokens.find((t) => t.id === revokeTokenId);
+    expect(target).toBeTruthy();
+    const rotate = () => inject({
+      method: "POST",
+      url: `/api/me/tokens/${revokeTokenId}/rotate`,
+      headers: write(),
+      payload: { expectedRotatedAt: target!.rotatedAt },
+    });
+    const results = await Promise.all([rotate(), rotate()]);
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 404]);
+    const winner = results.find((r) => r.statusCode === 200)!;
+    const body = winner.json() as { token: string; record: { id: string; tokenPrefix: string | null } };
+    expect(body.token).toMatch(/^nh_/);
+    expect(body.record.id).toBe(revokeTokenId);
+    expect(body.record.tokenPrefix).toBe(body.token.slice(0, 12));
+    expect((await inject({ method: "GET", url: "/api/me", headers: { authorization: "Bearer " + revokeToken } })).statusCode).toBe(401);
+    expect((await inject({ method: "GET", url: "/api/me", headers: { authorization: "Bearer " + body.token } })).statusCode).toBe(200);
+  });
+
   it("验收 13：只读令牌 + 合法 bearer 头但坏 JSON 也是 403（锁定 onRequest 阶段）", async () => {
     const res = await inject({
       method: "PATCH",

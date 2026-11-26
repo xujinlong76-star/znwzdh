@@ -24,7 +24,9 @@ import {
   cleanTaxonomyAndDuplicates,
   normalizeSiteCreatedAt,
   migrateSiteReportsAndReviews,
-  migrateSitePatrolIndex,
+  migrateSitesPatrolIndex,
+  withMigrationTransaction,
+  recordMigrationFailure,
 } from "../migrate.ts";
 
 export interface MigrationRecord {
@@ -303,14 +305,25 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     checksum: "v1_site_reports_and_reviews",
   },
   {
-    // 2026-11-26：sites_patrol_idx 曾被追加进已记账的 20261015_site_indexes，
-    // 存量库永远缺这条巡检索引。单独版本补建；DDL 真相见 migrate.ts 的 SITE_PATROL_INDEX_DDL。
-    version: "20261126_site_patrol_index",
-    name: "巡检索引 sites_patrol_idx 补建",
+    // 2026-11-26：sites_patrol_idx 曾被追加进 20261015_site_indexes 的语句表
+    //（已记账版本不会再跑）→ 存量库缺索引、daily health_check 全表扫。
+    // 单独版本补建；DDL 真相见 migrate.ts 的 SITES_PATROL_INDEX_DDL。
+    version: "20261126_sites_patrol_idx",
+    name: "巡检索引 sites_patrol_idx 存量库补建",
     up: async (db: Db) => {
-      await migrateSitePatrolIndex(db);
+      await migrateSitesPatrolIndex(db);
     },
-    checksum: "v1_site_patrol_index",
+    checksum: "v1_sites_patrol_idx",
+  },
+  {
+    // 旧版本已记账的部署不会重跑 20261107；新的 v2 只做无损冲突报告。
+    // cleanTaxonomyAndDuplicates 默认 dry-run，即使 force 重跑也不会删站点。
+    version: "20261126_taxonomy_dedup_safety_v2",
+    name: "重复站点无损冲突报告（默认 dry-run，不自动删除）",
+    up: async (db: Db) => {
+      await cleanTaxonomyAndDuplicates(db, { dryRun: true });
+    },
+    checksum: "v2_clean_taxonomy_and_duplicates",
   },
 ];
 
@@ -322,28 +335,50 @@ export async function runVersionedMigrations(
   options?: { force?: boolean; migrations?: RegisteredMigration[] }
 ): Promise<{ applied: string[]; skipped: string[] }> {
   await initSchemaMigrationsTable(db);
-  const appliedSet = options?.force ? new Set<string>() : await getAppliedMigrations(db);
+  const force = options?.force === true;
   const migrationsToRun = options?.migrations ?? BUILTIN_MIGRATIONS;
 
-  const applied: string[] = [];
-  const skipped: string[] = [];
-
-  for (const m of migrationsToRun) {
-    if (appliedSet.has(m.version)) {
-      skipped.push(m.version);
-      continue;
-    }
-
-    // 执行迁移
-    await m.up(db);
-    // 写入台账
-    await recordMigration(db, {
-      version: m.version,
-      name: m.name,
-      checksum: m.checksum,
-    });
-    applied.push(m.version);
+  // 预查只是为了避免无谓地抢锁；真正的判重必须在锁内重做。两个进程可能同时
+  // 看到“未应用”，若直接各跑一次，破坏性数据迁移就会执行两遍。
+  const preliminaryApplied = force ? new Set<string>() : await getAppliedMigrations(db);
+  if (!force && migrationsToRun.every((m) => preliminaryApplied.has(m.version))) {
+    return { applied: [], skipped: migrationsToRun.map((m) => m.version) };
   }
+  let currentMigration: RegisteredMigration | undefined;
 
-  return { applied, skipped };
+  try {
+    return await withMigrationTransaction(db, async (txDb) => {
+      const tx = txDb as Db;
+      const appliedSet = force ? new Set<string>() : await getAppliedMigrations(tx);
+      const applied: string[] = [];
+      const skipped: string[] = [];
+
+      for (const m of migrationsToRun) {
+        if (appliedSet.has(m.version)) {
+          skipped.push(m.version);
+          continue;
+        }
+
+        currentMigration = m;
+        await m.up(tx);
+        // 台账与迁移同事务：up 抛错时 COMMIT 不会发生，下面的 INSERT 也不会执行。
+        await recordMigration(tx, {
+          version: m.version,
+          name: m.name,
+          checksum: m.checksum,
+        });
+        applied.push(m.version);
+        appliedSet.add(m.version);
+        currentMigration = undefined;
+      }
+
+      return { applied, skipped };
+    });
+  } catch (err) {
+    // 失败台账写在回滚后的连接上；它只是诊断记录，绝不能冒充 applied 台账。
+    if (currentMigration) {
+      await recordMigrationFailure(db, currentMigration.version, err);
+    }
+    throw err;
+  }
 }

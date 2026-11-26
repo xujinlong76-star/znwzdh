@@ -13,8 +13,9 @@
  * 重复执行不会报 "duplicate column"。
  */
 
-import { categorySlug } from "@navhub/core";
+import { canonicalizeUrl, categorySlug } from "@navhub/core";
 import { createHash } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { toPgSql } from "./repository/dialect.ts";
 
 export interface ColumnAlter {
@@ -35,6 +36,8 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "jobs", column: "progress_total", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   // 单次执行耗时：排查「这次 tick 为什么慢」时，不必再靠二分猜是哪个任务。
   { table: "jobs", column: "duration_ms", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
+  // 执行代次 fencing：回收后重新认领会换 token，旧执行体不能再心跳或覆盖终态。
+  { table: "jobs", column: "run_token", sqlite: "TEXT", pg: "TEXT" },
   { table: "categories", column: "source", sqlite: "TEXT", pg: "TEXT" },
   // 类目 URL 标识（/category/{slug}）。可空：历史行由 migrateCategorySlugs 回填，
   // 回填失败时读路径退回 id，不影响可用性。
@@ -42,6 +45,7 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "sites", column: "visit_count", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   { table: "sites", column: "last_visited_at", sqlite: "INTEGER", pg: "BIGINT" },
   { table: "sites", column: "trend_score", sqlite: "REAL NOT NULL DEFAULT 0", pg: "DOUBLE PRECISION NOT NULL DEFAULT 0" },
+  { table: "sites", column: "last_checked_at", sqlite: "INTEGER", pg: "BIGINT" },
   // 连续失败计数（03 §3.3，W1 §13 第 2 条 verdict ①）：sites 表内嵌列，
   // 由 updateSiteHealth 与 health 写回 + lastCheckedAt 同事务写。
   // 只改 CREATE TABLE / schema.ts 的话存量库永远缺列，所以 ALTER 必须同步登记。
@@ -72,6 +76,9 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   // 邮箱验证状态（注册/找回密码流程用）：0=未验证/待验证，1=已验证。
   // 老库补列默认 0：既有 OAuth/管理员行不会因为新流程被误判成「未验证」而无法登录。
   { table: "users", column: "email_verified", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
+  // 口令版本：改密/重置时原子自增。登录 API 返回快照版本，NextAuth JWT 与
+  // sessions/check 再消费它，关闭“旧密码已验证、重置后仍签发 30 天 JWT”的竞态。
+  { table: "users", column: "password_version", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   // 任务退避：失败后延迟到 next_run_at 才重新可被认领（见 jobs.ts 的指数退避）
   { table: "jobs", column: "next_run_at", sqlite: "INTEGER", pg: "BIGINT" },
   // API 凭据治理：
@@ -142,7 +149,7 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
  *
  * 背景：`users.email` 长期可重复（OAuth sync 曾按 email 绑定、也没有唯一约束），
  * 于是同一邮箱可能挂在多行上。一旦建唯一索引就会因为存量重复而**每次都失败**
- * （migrateSiteIndexes 里是逐语句 try/catch，失败被静默吞掉 → 规则写在文档里、
+ * （旧实现逐语句 try/catch 把失败吞掉 → 规则写在文档里、
  * 数据库不认的假绿灯）。所以先 dedupe，再建索引。
  *
  * 口径：
@@ -150,57 +157,52 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
  *   原始主人；其余行把 email 置 NULL，而不是删行（行上挂着收藏/画像/凭据，
  *   删行等于连带销毁数据）。
  * - `email = ''` 与 NULL 都属于「没有邮箱」，不参与去重（与部分索引条件一致）。
- * - best-effort：失败返回 0 不阻断启动，下次启动兜底（索引建不上就继续不建）。
+ * - 关键迁移：任何 SQL 错误都向外传播，由版本化事务整体回滚，不能返回 0 后写 applied。
  *
  * @returns 被清空 email 的行数
  */
 export async function dedupeUserEmails(db: { dialect: string; sqlite?: any; pg?: any }): Promise<number> {
-  try {
-    const isSqlite = db.dialect !== "pg" && !!db.sqlite;
-    const read = async (sql: string, params: unknown[] = []): Promise<Array<Record<string, any>>> => {
-      if (isSqlite) {
-        const maybe = db.sqlite.prepare(sql).all(...params);
-        // libsql 的 runner 返回 Promise，better-sqlite3 返回数组
-        return maybe && typeof maybe.then === "function" ? await maybe : maybe;
-      }
-      if (!db.pg) return [];
-      return (await db.pg.query(toPgSql(sql), params)).rows;
-    };
-    const write = async (sql: string, params: unknown[]): Promise<void> => {
-      if (isSqlite) {
-        const maybe = db.sqlite.prepare(sql).run(...params);
-        if (maybe && typeof maybe.then === "function") await maybe;
-        return;
-      }
-      await db.pg.query(toPgSql(sql), params);
-    };
-
-    const dupGroups = await read(
-      "SELECT email, COUNT(*) AS c FROM users WHERE email IS NOT NULL AND email <> '' GROUP BY email HAVING COUNT(*) > 1",
-    );
-    if (dupGroups.length === 0) return 0;
-
-    let cleared = 0;
-    for (const group of dupGroups) {
-      const email = String(group.email);
-      const ids = (await read(
-        "SELECT id FROM users WHERE email = ? ORDER BY created_at ASC, id ASC",
-        [email],
-      )).map((r) => String(r.id));
-      if (ids.length < 2) continue;
-      const keepId = ids[0]!;
-      const otherIds = ids.slice(1);
-      for (const id of otherIds) {
-        await write("UPDATE users SET email = NULL WHERE id = ?", [id]);
-        cleared += 1;
-      }
-      console.warn(`[migrate] users.email 重复，保留 ${keepId}，已清空 ${otherIds.join(",")} 的 email`);
+  const isSqlite = db.dialect !== "pg" && !!db.sqlite;
+  const read = async (sql: string, params: unknown[] = []): Promise<Array<Record<string, any>>> => {
+    if (isSqlite) {
+      const maybe = db.sqlite.prepare(sql).all(...params);
+      // libsql 的 runner 返回 Promise，better-sqlite3 返回数组
+      return maybe && typeof maybe.then === "function" ? await maybe : maybe;
     }
-    return cleared;
-  } catch (err) {
-    console.warn("[migrate] dedupeUserEmails 失败:", err instanceof Error ? err.message : err);
-    return 0;
+    if (!db.pg) return [];
+    return (await db.pg.query(toPgSql(sql), params)).rows;
+  };
+  const write = async (sql: string, params: unknown[]): Promise<void> => {
+    if (isSqlite) {
+      const maybe = db.sqlite.prepare(sql).run(...params);
+      if (maybe && typeof maybe.then === "function") await maybe;
+      return;
+    }
+    await db.pg.query(toPgSql(sql), params);
+  };
+
+  const dupGroups = await read(
+    "SELECT email, COUNT(*) AS c FROM users WHERE email IS NOT NULL AND email <> '' GROUP BY email HAVING COUNT(*) > 1",
+  );
+  if (dupGroups.length === 0) return 0;
+
+  let cleared = 0;
+  for (const group of dupGroups) {
+    const email = String(group.email);
+    const ids = (await read(
+      "SELECT id FROM users WHERE email = ? ORDER BY created_at ASC, id ASC",
+      [email],
+    )).map((r) => String(r.id));
+    if (ids.length < 2) continue;
+    const keepId = ids[0]!;
+    const otherIds = ids.slice(1);
+    for (const id of otherIds) {
+      await write("UPDATE users SET email = NULL WHERE id = ?", [id]);
+      cleared += 1;
+    }
+    console.warn(`[migrate] users.email 重复，保留 ${keepId}，已清空 ${otherIds.join(",")} 的 email`);
   }
+  return cleared;
 }
 
 /**
@@ -224,6 +226,115 @@ async function execSql(db: { dialect: string; sqlite?: any; pg?: any }, sqlText:
   } else if (db.pg) {
     await db.pg.query(sqlText);
   }
+}
+
+/**
+ * 数据迁移专用事务：SQLite 复用同一连接，PostgreSQL 必须独占一个连接。
+ *
+ * 不能把 PostgreSQL 的 BEGIN / COMMIT 直接发给 pool：池可能把下一条语句分配到
+ * 另一条连接，看起来“有事务”实际没有原子性。没有 connect() 的 pg 对象无法证明
+ * 是独占客户端，因此失败关闭，而不是退化成半完成迁移。
+ */
+const MIGRATION_LOCK_KEY = "navhub:schema-migrations:v1";
+const activeMigrationClients = new WeakSet<object>();
+const activeMigrationSqlite = new AsyncLocalStorage<object>();
+
+/**
+ * 数据迁移专用事务 + 跨进程迁移锁。
+ *
+ * SQLite 用 BEGIN IMMEDIATE 在读取版本台账前取得写锁；PostgreSQL 用会话级
+ * advisory lock（按 database + 固定 key 隔离），必须在独占连接上获取。锁必须先于
+ * applied 台账查询，且与迁移、写台账处于同一事务；失败回滚后不会留下 applied。
+ * PostgreSQL 的会话锁不随 ROLLBACK 释放，因此 finally 必须显式 unlock 再 release，
+ * 否则带锁连接回到池里会拖死后续所有迁移。
+ */
+export async function withMigrationTransaction<T>(
+  db: { dialect: string; sqlite?: any; pg?: any },
+  action: (txDb: { dialect: string; sqlite?: any; pg?: any }) => Promise<T>,
+): Promise<T> {
+  if (db.dialect !== "pg" && db.sqlite) {
+    const exec = async (sql: string): Promise<void> => {
+      const maybe = db.sqlite.exec(sql);
+      if (maybe && typeof maybe.then === "function") await maybe;
+    };
+    // 仅复用本 helper 在同一异步调用链中开启的事务；调用方自行 BEGIN 的 deferred
+    // 事务可能尚未取得写锁，不能冒充已加锁迁移。并发顶层调用也会 fail-closed，
+    // 而不是两个协程共用同一条 SQLite 连接的事务。
+    if (db.sqlite.inTransaction === true) {
+      if (activeMigrationSqlite.getStore() !== db.sqlite) {
+        throw new Error("SQLite 数据迁移需要独立连接，不能复用调用方未加迁移锁的事务");
+      }
+      return action(db);
+    }
+    await exec("BEGIN IMMEDIATE");
+    try {
+      const result = await activeMigrationSqlite.run(db.sqlite, () => action(db));
+      await exec("COMMIT");
+      return result;
+    } catch (err) {
+      try { await exec("ROLLBACK"); } catch { /* preserve original error */ }
+      throw err;
+    }
+  }
+
+  if (db.pg) {
+    // 版本化迁移器会把独占 client 传进来；嵌套迁移必须复用，不能再向 pool 取连接。
+    if (activeMigrationClients.has(db.pg)) return action(db);
+    if (typeof db.pg.connect !== "function") {
+      throw new Error("PostgreSQL 数据迁移需要可获取独占连接的 pg.connect()");
+    }
+    const client = await db.pg.connect();
+    activeMigrationClients.add(client);
+    let locked = false;
+    let unlocked = false;
+    let discardClient = false;
+    const unlockSql = "SELECT pg_advisory_unlock(hashtext(current_database()::text), hashtext($1))";
+    const lockSql = "SELECT pg_advisory_lock(hashtext(current_database()::text), hashtext($1))";
+    try {
+      // 会话锁先于 BEGIN：即使数据库默认隔离级别是 REPEATABLE READ，也不会在
+      // 等待锁期间固定事务快照，导致拿锁后仍看不到竞争进程刚提交的 applied 台账。
+      await client.query(lockSql, [MIGRATION_LOCK_KEY]);
+      locked = true;
+      await client.query("BEGIN");
+      const result = await action({ dialect: "pg", pg: client });
+      // 必须先提交再解锁：若先 unlock，等待中的进程会拿到锁并读到旧事务提交前的
+      // applied 台账，仍可能重复执行迁移。会话级 advisory lock 在 COMMIT 后仍持有。
+      await client.query("COMMIT");
+      await client.query(unlockSql, [MIGRATION_LOCK_KEY]);
+      unlocked = true;
+      return result;
+    } catch (err) {
+      try { await client.query("ROLLBACK"); } catch { /* preserve original error */ }
+      throw err;
+    } finally {
+      if (locked && !unlocked) {
+        try {
+          await client.query(unlockSql, [MIGRATION_LOCK_KEY]);
+          unlocked = true;
+        } catch (unlockErr) {
+          // 解锁失败时锁状态未知，绝不能把连接还给池子。PoolClient.release(error)
+          // 在真实 pg 驱动中会销毁连接；支持 destroy() 的客户端则显式销毁。
+          discardClient = true;
+          try {
+            const destroy = (client as unknown as { destroy?: () => void | Promise<void> }).destroy;
+            if (typeof destroy === "function") {
+              await destroy.call(client);
+            } else {
+              (client.release as unknown as (err: Error) => void)(
+                unlockErr instanceof Error ? unlockErr : new Error(String(unlockErr)),
+              );
+            }
+          } catch {
+            // 销毁也失败时仍不回池；连接已不可安全复用，保留原始迁移/解锁错误。
+          }
+        }
+      }
+      activeMigrationClients.delete(client);
+      if (!discardClient) client.release();
+    }
+  }
+
+  throw new Error("数据迁移需要可用的 SQLite 或 PostgreSQL 连接");
 }
 
 async function ensureMigrationFailures(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
@@ -267,12 +378,13 @@ export async function recordMigrationFailure(
 /**
  * 工作区明文从 `user_vault_sync` 搬到 `user_workspace_blobs`。
  *
- * 旧实现是「INSERT 一句 + DELETE 一句」并列在通用语句表里，各自 try/catch：
- * INSERT 失败（目标表缺失/权限/类型不匹配）时 DELETE 照跑，明文工作区永久丢失。
+ * 冲突键不能简单 DO NOTHING：目标行可能是迁移中断留下的旧快照，源行随后写入过
+ * 更新内容。这里仅在源 `updated_at` 更大时覆盖目标；DELETE 还必须同时核对
+ * payload 与时间戳，确保删除的确实是已经完整复制的那一份数据。
  *
- * 现在 DELETE 带 `EXISTS` 守卫：**只删已经在目标表里存在的键**。
- * 即使 INSERT 完全失败，DELETE 也一行都删不掉；INSERT 成功时两条语句天然幂等，
- * 不需要跨方言的长事务。
+ * 两条语句各自幂等：INSERT 后崩溃会留下源行，重跑补齐；DELETE 后崩溃源行已消失，
+ * 重跑无操作。若目标与源内容不同且目标并不更旧，则保留源行并返回 skipped，
+ * 等待人工合并，绝不静默丢弃任一版本。
  */
 export async function migrateWorkspaceBlobs(db: {
   dialect: string;
@@ -283,12 +395,22 @@ export async function migrateWorkspaceBlobs(db: {
        SELECT user_id, payload, updated_at FROM user_vault_sync
        WHERE (user_id LIKE 'workspaces:%' OR user_id LIKE 'ws\\_members:%' ESCAPE '\\')
          AND payload IS NOT NULL
-       ON CONFLICT(user_id) DO NOTHING`;
+       ON CONFLICT(user_id) DO UPDATE SET
+         payload = excluded.payload,
+         updated_at = excluded.updated_at
+       WHERE user_workspace_blobs.updated_at < excluded.updated_at`;
   const deleteSql = `DELETE FROM user_vault_sync
        WHERE (user_id LIKE 'workspaces:%' OR user_id LIKE 'ws\\_members:%' ESCAPE '\\')
-         AND EXISTS (SELECT 1 FROM user_workspace_blobs b WHERE b.user_id = user_vault_sync.user_id)`;
+         AND payload IS NOT NULL
+         AND EXISTS (
+           SELECT 1 FROM user_workspace_blobs b
+           WHERE b.user_id = user_vault_sync.user_id
+             AND b.payload = user_vault_sync.payload
+             AND b.updated_at >= user_vault_sync.updated_at
+         )`;
   const countSql = `SELECT COUNT(*) AS c FROM user_vault_sync
-       WHERE (user_id LIKE 'workspaces:%' OR user_id LIKE 'ws\\_members:%' ESCAPE '\\')`;
+       WHERE (user_id LIKE 'workspaces:%' OR user_id LIKE 'ws\\_members:%' ESCAPE '\\')
+         AND payload IS NOT NULL`;
 
   const countSource = async (): Promise<number> => {
     if (db.dialect !== "pg" && db.sqlite) {
@@ -307,11 +429,22 @@ export async function migrateWorkspaceBlobs(db: {
     await execSql(db, insertSql);
     await execSql(db, deleteSql);
     const remaining = await countSource();
-    return { copied: Math.max(0, before - remaining), skipped: false };
+    const copied = Math.max(0, before - remaining);
+    if (remaining > 0) {
+      // 内容冲突且无法证明目标至少一样新：保留源行，留下可查询的失败台账。
+      // driver 每次启动都会无条件重跑本迁移，因此修复冲突后无需改台账版本。
+      await recordMigrationFailure(
+        db,
+        "workspace_blobs_v1_conflict",
+        new Error(`仍有 ${remaining} 条工作区源行与目标内容冲突，已保留源行`),
+      );
+      return { copied, skipped: true };
+    }
+    return { copied, skipped: false };
   } catch (err) {
-    // 关键：失败时**不执行** DELETE。旧行全部保留，下次启动重试。
+    // INSERT 失败时不会执行 DELETE；错误必须传播，版本化事务才能回滚并拒绝写 applied。
     await recordMigrationFailure(db, "workspace_blobs_v1", err);
-    return { copied: 0, skipped: true };
+    throw err;
   }
 }
 
@@ -325,7 +458,7 @@ export async function migrateWorkspaceBlobs(db: {
  * 2. `sites_deleted_at_idx`：回收站探针的部分索引，体积只随删除量增长。
  * 3. `users_email_unique_idx`：users.email 部分唯一。调用顺序要求
  *    **dedupeUserEmails 在前**（见 driver.ts 的 openDb 序列），否则存量重复会让
- *    建索引失败并被逐语句 try/catch 静默跳过。
+ *    建索引失败却仍把版本写成 applied。
  */
 /**
  * 待找表（搜索容错纠错 · 出口一）：版本化迁移的执行体。
@@ -498,39 +631,27 @@ export const SITE_REPORTS_AND_REVIEWS_DDL: string[] = [
   "CREATE INDEX IF NOT EXISTS site_reports_status_created_idx ON site_reports(status, created_at DESC, id DESC)",
 ];
 
-/** 补建 site_reports / submission_reviews（存量库追加过 DDL 的救场迁移）。 */
-export async function migrateSiteReportsAndReviews(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
-  for (const sqlText of SITE_REPORTS_AND_REVIEWS_DDL) {
-    try {
-      await execSql(db, sqlText);
-    } catch (err) {
-      await recordMigrationFailure(db, sqlText, err);
-    }
-  }
-}
-
 /**
- * 巡检专用索引的救场 DDL（2026-11-26）。
+ * 巡检三条热查询的专用索引（未探测队列 / 复核队列 / 覆盖聚合）：
+ *   WHERE deleted_at IS NULL AND enabled = <lit> AND last_checked_at IS [NOT] NULL
+ *   ORDER BY created_at ASC / last_checked_at ASC
  *
- * sites_patrol_idx 的建表语句原本被追加进 20261015_site_indexes 的语句表——
- * 该版本在存量库上早已记账完成，追加的语句永远不会再跑。实测 5096 站的存量库
- * 缺这条索引，daily health_check 巡检列表只能全表扫 + 临时 B-tree 排序。
- * 与 site_reports 的救场同构：单独版本执行这段 DDL，真相放本常量。
+ * 2026-11-26：这条 DDL 原先只写在 migrateSiteIndexes 的语句表里，而那个函数挂在
+ * 已记账的 20261015_site_indexes 下 —— 存量库永远不会再跑，索引实际缺失
+ * （daily health_check 全表扫 + 临时 B-tree）。现由版本 20261126_sites_patrol_idx
+ * 单独补建；本常量是唯一真相，两处共用。
  */
-export const SITE_PATROL_INDEX_DDL: string[] = [
-  "CREATE INDEX IF NOT EXISTS sites_patrol_idx ON sites(deleted_at, enabled, last_checked_at, created_at)",
-];
+export const SITES_PATROL_INDEX_DDL =
+  "CREATE INDEX IF NOT EXISTS sites_patrol_idx ON sites(deleted_at, enabled, last_checked_at, created_at)";
 
 /** 补建 sites_patrol_idx（存量库追加过 DDL 的救场迁移）。 */
-export async function migrateSitePatrolIndex(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
-  await ensureMigrationFailures(db);
-  for (const sqlText of SITE_PATROL_INDEX_DDL) {
-    try {
-      await execSql(db, sqlText);
-    } catch (err) {
-      await recordMigrationFailure(db, sqlText, err);
-    }
-  }
+export async function migrateSitesPatrolIndex(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  await execSql(db, SITES_PATROL_INDEX_DDL);
+}
+
+/** 补建 site_reports / submission_reviews（存量库追加过 DDL 的救场迁移）。 */
+export async function migrateSiteReportsAndReviews(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  for (const sqlText of SITE_REPORTS_AND_REVIEWS_DDL) await execSql(db, sqlText);
 }
 
 export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
@@ -541,28 +662,14 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
    * 索引名改为 v2 是刻意的——旧名可能被部署脚本引用，直接复用会让「是否已建」
    * 无法判断；新名 + IF NOT EXISTS 天然幂等。
    *
-   * 这两句不能放进下面的语句表：那张表逐条 try/catch 且失败后继续执行，
-   * CREATE 失败时 DROP 仍会跑，唯一性会在「旧索引已删、新索引没建上」的
-   * 状态下静默消失——正是本次要修的空窗。
+   * 这两句必须保持严格的先建后删顺序：CREATE 失败时直接抛出，DROP 不会执行，
+   * 外层事务回滚，旧索引与 applied 台账都不会被破坏。
    */
   const createSitesUrlUnique =
     "CREATE UNIQUE INDEX IF NOT EXISTS sites_url_uniq_v2 ON sites(url) WHERE deleted_at IS NULL";
-  let uniqueIndexReady = false;
-  try {
-    await execSql(db, createSitesUrlUnique);
-    uniqueIndexReady = true;
-  } catch (err) {
-    // 建不上就保留旧索引（若有），留痕后下一轮启动再试
-    await recordMigrationFailure(db, createSitesUrlUnique, err);
-  }
-  if (uniqueIndexReady) {
-    try {
-      await execSql(db, "DROP INDEX IF EXISTS sites_url_idx");
-    } catch (err) {
-      // 新索引已经在位，旧索引删不掉只是冗余，不影响唯一性
-      await recordMigrationFailure(db, "DROP INDEX IF EXISTS sites_url_idx", err);
-    }
-  }
+  // 先建后删：CREATE 失败时直接抛出，旧索引仍在，DROP 也不会执行。
+  await execSql(db, createSitesUrlUnique);
+  await execSql(db, "DROP INDEX IF EXISTS sites_url_idx");
   const statements = [
     "CREATE INDEX IF NOT EXISTS sites_deleted_at_idx ON sites(deleted_at) WHERE deleted_at IS NOT NULL",
     // 存储层补索引（旧库补齐；幂等 IF NOT EXISTS；与 driver.ts DDL 保持一致）
@@ -587,12 +694,14 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     // 此前没有匹配索引 → daily health_check 每次对全库全表扫 + 临时 B-tree 排序。
     // 列序＝「等值过滤(deleted_at, enabled) → 巡检键(last_checked_at) → 排序键(created_at)」：
     // 未探测分支（last_checked_at IS NULL）与复核分支（IS NOT NULL）都能吃到该索引，
-    // 覆盖聚合只读前缀列即可。只在 migrateSiteIndexes 建（last_checked_at 属较新列，
-    // 放进 driver.ts DDL 会让老库整个 exec 因 "no such column" 失败）。
-    "CREATE INDEX IF NOT EXISTS sites_patrol_idx ON sites(deleted_at, enabled, last_checked_at, created_at)",
+    // 覆盖聚合只读前缀列即可。last_checked_at 属较新列，不能进 driver.ts DDL
+    //（老库整个 exec 会因 "no such column" 失败），所以只走迁移：
+    // 新库由本函数建，存量库由版本 20261126_sites_patrol_idx 补建
+    //（这条追加在已记账的 20261015 版本里，老库不会再跑）。
+    SITES_PATROL_INDEX_DDL,
     // 邮箱唯一（部分索引：NULL 与空串都不进索引，等于「没有邮箱」不互斥）。
     // 必须晚于 dedupeUserEmails —— 存量重复会让 CREATE UNIQUE INDEX 直接失败，
-    // 而这里逐语句 try/catch，失败只会静默跳过（下次启动再试）。
+    // 失败会中止迁移并回滚，不会把未建约束的版本写成 applied。
     "CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique_idx ON users(email) WHERE email IS NOT NULL AND email <> ''",
     "CREATE INDEX IF NOT EXISTS events_search_idx ON events(kind, created_at, query)",
     "CREATE INDEX IF NOT EXISTS search_history_user_created_idx ON search_history(user_id, created_at DESC, id DESC)",
@@ -790,27 +899,15 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
       : "CREATE TABLE IF NOT EXISTS short_links (code TEXT PRIMARY KEY, target TEXT NOT NULL, plugin_slug TEXT, clicks INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)",
   ];
   for (const sqlText of statements) {
-    try {
-      // 判据必须写「非 pg」：libsql 与 sqlite 共用同一个同步 runner 接口
-      // （见 driver.ts 的 libsql 分支），而它根本没有 db.pg。
-      // 旧代码写 `=== "sqlite"` 会让 libsql 落进 pg 分支抛错，随后被下面的
-      // catch 静默吞掉 —— 等于 libsql 部署的索引迁移从未执行过一次。
-      if (db.dialect !== "pg" && db.sqlite) {
-        db.sqlite.exec(sqlText);
-      } else if (db.pg) {
-        await db.pg.query(sqlText);
-      }
-    } catch (err) {
-      // 并发启动 / 只读副本等场景下允许跳过，但**必须留下痕迹**：
-      // 空 catch 会让「唯一索引没建上」和「建上了」在日志里长得一样。
-      await recordMigrationFailure(db, sqlText, err);
-    }
+    // 所有 schema 语句都是关键迁移；失败必须中止并由外层事务整体回滚，
+    // 不能留痕后继续，否则外层仍会把失败版本写成 applied。
+    await execSql(db, sqlText);
   }
 
   // 存量搬迁单独执行：DELETE 带 EXISTS 守卫，INSERT 失败时不会误删源数据。
   await migrateWorkspaceBlobs(db);
 
-  // 导航版本号触发器（P1-1）：与索引同属「失败留痕但不阻断启动」的一类。
+  // 导航版本号触发器（P1-1）：与索引同属关键 schema，失败由外层整体回滚。
   await migrateNavVersionTriggers(db);
 }
 
@@ -860,9 +957,8 @@ export function navVersionTriggerNames(): string[] {
  * 试过「按秒去重」（`WHERE <本秒> <> updated_at`）来省掉逐行开销： unsafe ——
  * 同一秒内的第二次写不会 bump，缓存就带着上一份数据继续命中，正是要防的丢数据。
  *
- * 建失败的处理与其它索引迁移一致：落进 migration_failures 留痕，不阻断启动。
- * 那种情况下读侧探针会报「触发器缺失」，快照退回「TTL + HTTP 写请求失效」——
- * 与引入版本号之前完全一致，不会更差。
+ * 触发器是缓存失效正确性的关键迁移：建失败必须向外传播并整体回滚，不能写 applied。
+ * 未升级完成的库不会带着缺失触发器的半状态启动；读侧探针仍用于诊断外部改库。
  */
 export async function migrateNavVersionTriggers(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
   const isPg = db.dialect === "pg";
@@ -912,42 +1008,35 @@ export async function migrateNavVersionTriggers(db: { dialect: string; sqlite?: 
     }
   }
 
-  for (const sqlText of statements) await runMigrationStatement(db, sqlText);
+  for (const sqlText of statements) await execSql(db, sqlText);
 }
 
-/** 单条迁移语句：失败只留痕（与其它索引迁移同口径） */
-async function runMigrationStatement(db: { dialect: string; sqlite?: any; pg?: any }, sqlText: string): Promise<void> {
-  try {
-    await execSql(db, sqlText);
-  } catch (err) {
-    await recordMigrationFailure(db, sqlText, err);
-  }
-}
-
-async function tableColumns(db: { dialect: string; sqlite?: any; pg?: any }, table: string): Promise<Set<string>> {
+async function tableColumns(db: { dialect: string; sqlite?: any; pg?: any }, table: string): Promise<Set<string> | null> {
   if (db.dialect !== "pg" && db.sqlite) {
     const prepared = db.sqlite.prepare("PRAGMA table_info(" + table + ")").all() as
       | Array<{ name: string }>
       | Promise<{ rows?: Array<{ name: string }> }>;
     // libsql 的 runner 是异步驱动（prepare().all() 返回 Promise 而非数组），
-    // better-sqlite3 是同步数组。两种形态在这里归一化：
-    // 否则 libsql 上 rows.map 直接抛错 → 被外层 catch 吞掉 → 列迁移永远空转。
+    // better-sqlite3 是同步数组。两种形态在这里归一化。
     const rows = typeof (prepared as Promise<unknown>)?.then === "function"
       ? ((await prepared) as { rows?: Array<{ name: string }> }).rows ?? []
       : (prepared as Array<{ name: string }>);
-    return new Set(rows.map((r) => r.name));
+    // SQLite 表不可能没有列；空集合表示表尚不存在（例如 notification_outbox
+    // 由后续 migrateSiteIndexes 建表），不是 ALTER 失败，留到对应建表迁移处理。
+    return rows.length === 0 ? null : new Set(rows.map((r) => r.name));
   }
-  if (!db.pg) return new Set();
+  if (!db.pg) return null;
   const res = await db.pg.query(
     "SELECT column_name FROM information_schema.columns WHERE table_name = $1",
     [table],
   );
-  return new Set((res.rows as Array<{ column_name: string }>).map((r) => r.column_name));
+  const rows = res.rows as Array<{ column_name: string }>;
+  return rows.length === 0 ? null : new Set(rows.map((r) => r.column_name));
 }
 
 /**
  * 执行列迁移，返回实际补齐的列名（空数组 = 已是最新）。
- * 单个列失败不阻断其它列（例如并发启动时的竞争），由下次启动兜底。
+ * 真实 ALTER 失败必须向外传播；仅当重查确认竞争进程已成功补列时才容忍竞态。
  */
 export async function migrateColumns(db: { dialect: string; sqlite?: any; pg?: any }): Promise<string[]> {
   const added: string[] = [];
@@ -964,6 +1053,7 @@ export async function migrateColumns(db: { dialect: string; sqlite?: any; pg?: a
     for (const a of alters) {
       try {
         if (!existing) existing = await tableColumns(db, table);
+        if (!existing) break;
         if (existing.has(a.column)) continue;
         const ddl = db.dialect === "pg" ? a.pg : a.sqlite;
         const statement = "ALTER TABLE " + table + " ADD COLUMN " + a.column + " " + ddl;
@@ -977,8 +1067,11 @@ export async function migrateColumns(db: { dialect: string; sqlite?: any; pg?: a
         }
         added.push(table + "." + a.column);
         existing.add(a.column);
-      } catch {
-        // 并发启动 / 只读副本等场景下允许跳过，下次启动再补
+      } catch (err) {
+        // 并发冷启动唯一可容忍的错误是：另一路已经把列建好。其它错误原样抛出，
+        // 让版本化事务回滚并拒绝写 applied，而不是把缺列库永久标记为已迁移。
+        existing = await tableColumns(db, table);
+        if (!existing?.has(a.column)) throw err;
       }
     }
   }
@@ -994,31 +1087,27 @@ export async function migrateColumns(db: { dialect: string; sqlite?: any; pg?: a
  * - 只扫「有 identity 键且未回填」的行；回填过的行不再扫，重复启动近似零成本。
  * - SQLite 用 json_valid 守护（meta 非法 JSON 时 json_extract 会抛错）；
  *   PG 用子串提取而非 meta::jsonb 转型（转型对非法 JSON 抛错，会中断整条 UPDATE）。
- * - best-effort：失败不阻断启动，下次启动兜底。
+ * - 关键数据回填：失败向外传播，不能返回 0 后把失败版本写成 applied。
  */
 export async function migrateEventIdentity(db: { dialect: string; sqlite?: any; pg?: any }): Promise<number> {
-  try {
-    if (db.dialect !== "pg" && db.sqlite) {
-      const maybe = db.sqlite.prepare(
-        `UPDATE events SET identity = json_extract(meta, '$.identity')
-          WHERE identity IS NULL AND meta IS NOT NULL AND meta LIKE '%"identity"%' AND json_valid(meta)`,
-      ).run() as { changes?: number } | Promise<{ rowsAffected?: number; changes?: number }>;
-      // libsql 返回 Promise（行数在 rowsAffected），better-sqlite3 同步返回 { changes }
-      const res: { changes?: number; rowsAffected?: number } =
-        maybe && typeof (maybe as Promise<unknown>).then === "function"
-          ? await (maybe as Promise<{ changes?: number; rowsAffected?: number }>)
-          : (maybe as { changes?: number });
-      return Number(res.changes ?? res.rowsAffected ?? 0);
-    }
-    if (!db.pg) return 0;
-    const res = await db.pg.query(
-      `UPDATE events SET identity = substring(meta from '"identity":"([^"]*)"')
-        WHERE identity IS NULL AND meta LIKE '%"identity"%'`,
-    );
-    return res.rowCount ?? 0;
-  } catch {
-    return 0;
+  if (db.dialect !== "pg" && db.sqlite) {
+    const maybe = db.sqlite.prepare(
+      `UPDATE events SET identity = json_extract(meta, '$.identity')
+        WHERE identity IS NULL AND meta IS NOT NULL AND meta LIKE '%"identity"%' AND json_valid(meta)`,
+    ).run() as { changes?: number } | Promise<{ rowsAffected?: number; changes?: number }>;
+    // libsql 返回 Promise（行数在 rowsAffected），better-sqlite3 同步返回 { changes }
+    const res: { changes?: number; rowsAffected?: number } =
+      maybe && typeof (maybe as Promise<unknown>).then === "function"
+        ? await (maybe as Promise<{ changes?: number; rowsAffected?: number }>)
+        : (maybe as { changes?: number });
+    return Number(res.changes ?? res.rowsAffected ?? 0);
   }
+  if (!db.pg) return 0;
+  const res = await db.pg.query(
+    `UPDATE events SET identity = substring(meta from '"identity":"([^"]*)"')
+      WHERE identity IS NULL AND meta LIKE '%"identity"%'`,
+  );
+  return res.rowCount ?? 0;
 }
 
 /**
@@ -1029,49 +1118,44 @@ export async function migrateEventIdentity(db: { dialect: string; sqlite?: any; 
  *   等于把已收录的 /category/{slug} 全部打成 404。
  * - **全局唯一**：URL 形如 /category/{slug}，不带父级路径，所以冲突判定看全表。
  *   「每父唯一」是标题的规矩（P2 数据干净后才建那个索引），不是 slug 的。
- * - best-effort：失败不阻断启动，下次启动兜底。因此读路径必须容忍 NULL slug
- *   （/category/{id} 的 UUID 形态在过渡期继续可用，并由路由 301 到新形态）。
+ * - 关键 URL 资产回填：失败向外传播，由版本化事务回滚，不能返回 0 后写 applied。
  */
 export async function migrateCategorySlugs(db: { dialect: string; sqlite?: any; pg?: any }): Promise<number> {
-  try {
-    const isSqlite = db.dialect !== "pg" && !!db.sqlite;
-    const read = async (sql: string, params: unknown[] = []): Promise<Array<Record<string, any>>> => {
-      if (isSqlite) {
-        const maybe = db.sqlite.prepare(sql).all(...params);
-        // libsql 的 runner 返回 Promise，better-sqlite3 返回数组
-        return maybe && typeof maybe.then === "function" ? await maybe : maybe;
-      }
-      return (await db.pg.query(toPgSql(sql), params)).rows;
-    };
-    const write = async (sql: string, params: unknown[]): Promise<void> => {
-      if (isSqlite) {
-        const maybe = db.sqlite.prepare(sql).run(...params);
-        if (maybe && typeof maybe.then === "function") await maybe;
-        return;
-      }
-      await db.pg.query(toPgSql(sql), params);
-    };
-
-    const pending = await read(
-      "SELECT id, title, title_en FROM categories WHERE slug IS NULL ORDER BY sort ASC, title ASC",
-    );
-    if (pending.length === 0) return 0;
-    const used = new Set<string>(
-      (await read("SELECT slug FROM categories WHERE slug IS NOT NULL")).map((r) => String(r.slug)),
-    );
-    let written = 0;
-    for (const row of pending) {
-      const base = categorySlug(row.title_en ?? null, String(row.title ?? ""));
-      let candidate = base;
-      for (let i = 2; used.has(candidate); i += 1) candidate = `${base}-${i}`;
-      used.add(candidate);
-      await write("UPDATE categories SET slug = ? WHERE id = ?", [candidate, String(row.id)]);
-      written += 1;
+  const isSqlite = db.dialect !== "pg" && !!db.sqlite;
+  const read = async (sql: string, params: unknown[] = []): Promise<Array<Record<string, any>>> => {
+    if (isSqlite) {
+      const maybe = db.sqlite.prepare(sql).all(...params);
+      // libsql 的 runner 返回 Promise，better-sqlite3 返回数组
+      return maybe && typeof maybe.then === "function" ? await maybe : maybe;
     }
-    return written;
-  } catch {
-    return 0;
+    return (await db.pg.query(toPgSql(sql), params)).rows;
+  };
+  const write = async (sql: string, params: unknown[]): Promise<void> => {
+    if (isSqlite) {
+      const maybe = db.sqlite.prepare(sql).run(...params);
+      if (maybe && typeof maybe.then === "function") await maybe;
+      return;
+    }
+    await db.pg.query(toPgSql(sql), params);
+  };
+
+  const pending = await read(
+    "SELECT id, title, title_en FROM categories WHERE slug IS NULL ORDER BY sort ASC, title ASC",
+  );
+  if (pending.length === 0) return 0;
+  const used = new Set<string>(
+    (await read("SELECT slug FROM categories WHERE slug IS NOT NULL")).map((r) => String(r.slug)),
+  );
+  let written = 0;
+  for (const row of pending) {
+    const base = categorySlug(row.title_en ?? null, String(row.title ?? ""));
+    let candidate = base;
+    for (let i = 2; used.has(candidate); i += 1) candidate = `${base}-${i}`;
+    used.add(candidate);
+    await write("UPDATE categories SET slug = ? WHERE id = ?", [candidate, String(row.id)]);
+    written += 1;
   }
+  return written;
 }
 
 /**
@@ -1169,22 +1253,125 @@ export async function cleanupOrphanPluginCategories(
 }
 
 
-/**
- * 20261107: 类目重构、错位纠偏与存量重复站点数据清洗
- *
- * 解决四大核心痛点：
- * 1. 类目树重构与补齐（落地 reg-prompt-engineering、reg-inference-and-deployment、reg-embodied-ai-and-robotics）；
- * 2. 严重错位站点纠偏（将稿定设计、创客贴迁至 设计与创意 reg-inspiration-and-showcase；
- *    将 llama.cpp、vLLM、TGI、OpenVINO 等迁至 reg-inference-and-deployment；
- *    将 提示词工程指南、Anthropic 提示词库 等迁至 reg-prompt-engineering）；
- * 3. 存量重复收录站点合并（Cursor、多邻国、新华网、达芬奇、LeetCode 等，将外键/收藏/事件安全迁移至主记录，删除冗余副本）；
- * 4. 规范化 URL 自动查重合并，确保未软删站点中无多余镜像副本。
- */
-export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?: any; pg?: any }): Promise<{
+export interface TaxonomyDuplicateConflict {
+  keepSiteId: string;
+  duplicateSiteIds: string[];
+  canonicalUrl: string;
+  reason: string;
+  detail: string;
+}
+
+export interface TaxonomyMigrationResult {
   categoriesCreated: number;
   sitesReclassified: number;
   sitesDeduplicated: number;
-}> {
+  dryRun: boolean;
+  mergeCandidates: number;
+  conflicts: TaxonomyDuplicateConflict[];
+}
+
+export interface TaxonomyMigrationOptions {
+  /** 默认 true：只生成合并计划与冲突报告，不写类别、不移动引用、不删除站点。 */
+  dryRun?: boolean;
+}
+
+/** canonical key 故意保留 www、scheme、有效 query 和非默认端口。 */
+export function taxonomyCanonicalUrlKey(rawUrl: string): string {
+  const raw = String(rawUrl ?? "").trim();
+  if (!raw) return "";
+  try {
+    const withScheme = /^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`;
+    const parsed = new URL(canonicalizeUrl(withScheme));
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    if (parsed.username || parsed.password) return "";
+    return `${parsed.protocol}//${parsed.hostname.toLowerCase()}${parsed.port ? `:${parsed.port}` : ""}${parsed.pathname.replace(/\/+$/, "")}${parsed.search}`;
+  } catch {
+    return "";
+  }
+}
+
+function normalizedSiteTitle(title: unknown): string {
+  return String(title ?? "").normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+function parseJsonObject(raw: unknown): Record<string, any> | null {
+  if (raw == null || raw === "") return {};
+  if (typeof raw !== "string") return raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, any> : null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseStringArray(raw: unknown): string[] | null {
+  if (raw == null || raw === "") return [];
+  if (typeof raw !== "string") return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.every((v) => typeof v === "string") ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function mergeNotes(...values: unknown[]): string | null {
+  const notes = [...new Set(values.map((v) => String(v ?? "").trim()).filter(Boolean))];
+  return notes.length > 0 ? notes.join("\n") : null;
+}
+
+/**
+ * 20261107: 类目重构、错位纠偏与存量重复站点数据清洗。
+ *
+ * 重复站点合并是显式、可审计的破坏性操作，因此默认 dry-run。自动合并必须同时满足：
+ * canonical URL 完全相同（保留 www / scheme / query / 非默认端口）、非空标题归一后相同、
+ * 且附属数据没有无法无损合并的冲突。旧 UUID 白名单不再拥有绕过证明的特权。
+ */
+export async function cleanTaxonomyAndDuplicates(
+  db: { dialect: string; sqlite?: any; pg?: any },
+  options: TaxonomyMigrationOptions = {},
+): Promise<TaxonomyMigrationResult> {
+  const dryRun = options.dryRun ?? true;
+  try {
+    const result = await withMigrationTransaction(db, (txDb) =>
+      cleanTaxonomyAndDuplicatesInTransaction(txDb, dryRun),
+    );
+    if (result.conflicts.length > 0) {
+      console.warn(
+        `[migrate] taxonomy 重复站点冲突 ${result.conflicts.length} 组，已保留重复；` +
+          `${dryRun ? "dry-run 未写库" : "冲突项未合并"}：${result.conflicts
+            .map((c) => `${c.duplicateSiteIds.join(",")} -> ${c.keepSiteId} (${c.reason})`)
+            .join("; ")}`,
+      );
+    }
+    console.info(
+      `[migrate] cleanTaxonomyAndDuplicates 完成：dry-run=${dryRun}，新增类目 ${result.categoriesCreated} 个，` +
+        `重分类站点 ${result.sitesReclassified} 个，消除重复站点 ${result.sitesDeduplicated} 个，` +
+        `可证明合并候选 ${result.mergeCandidates} 个`,
+    );
+    return result;
+  } catch (err) {
+    await recordMigrationFailure(db, "clean_taxonomy_and_duplicates_v3", err);
+    throw err;
+  }
+}
+
+async function cleanTaxonomyAndDuplicatesInTransaction(
+  db: { dialect: string; sqlite?: any; pg?: any },
+  dryRun: boolean,
+): Promise<TaxonomyMigrationResult> {
   const isSqlite = db.dialect !== "pg" && !!db.sqlite;
   const read = async (sql: string, params: unknown[] = []): Promise<Array<Record<string, any>>> => {
     if (isSqlite) {
@@ -1195,6 +1382,7 @@ export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?:
     return (await db.pg.query(toPgSql(sql), params)).rows;
   };
   const write = async (sql: string, params: unknown[] = []): Promise<void> => {
+    if (dryRun) return;
     if (isSqlite) {
       const maybe = db.sqlite.prepare(sql).run(...params);
       if (maybe && typeof maybe.then === "function") await maybe;
@@ -1209,7 +1397,6 @@ export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?:
   let sitesReclassified = 0;
   let sitesDeduplicated = 0;
 
-  try {
     const now = Date.now();
     // 1. 确保新类目在 categories 表中落地
     const newCats = [
@@ -1249,7 +1436,7 @@ export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?:
           "INSERT INTO categories (id, anchor, parent_id, title, slug, description, sort, enabled, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'registry', ?, ?)",
           [cat.id, cat.anchor, cat.parentId, cat.title, cat.slug, cat.description, cat.sort, now, now]
         );
-        categoriesCreated++;
+        if (!dryRun) categoriesCreated++;
       }
     }
 
@@ -1264,7 +1451,7 @@ export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?:
       );
       for (const row of misclassifiedDesign) {
         await write("UPDATE sites SET category_id = ?, updated_at = ? WHERE id = ?", [targetCatId, now, row.id]);
-        sitesReclassified++;
+        if (!dryRun) sitesReclassified++;
       }
     }
 
@@ -1279,7 +1466,7 @@ export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?:
       );
       for (const row of inferenceSites) {
         await write("UPDATE sites SET category_id = ?, updated_at = ? WHERE id = ?", [targetCatId, now, row.id]);
-        sitesReclassified++;
+        if (!dryRun) sitesReclassified++;
       }
     }
 
@@ -1294,7 +1481,7 @@ export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?:
       );
       for (const row of promptSites) {
         await write("UPDATE sites SET category_id = ?, updated_at = ? WHERE id = ?", [targetCatId, now, row.id]);
-        sitesReclassified++;
+        if (!dryRun) sitesReclassified++;
       }
     }
 
@@ -1305,7 +1492,7 @@ export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?:
       const embodiedSites = await read("SELECT id, title FROM sites WHERE category_id = 'reg-embodied-ai-and-robotics'");
       for (const row of embodiedSites) {
         await write("UPDATE sites SET category_id = ?, updated_at = ? WHERE id = ?", [hwCatId, now, row.id]);
-        sitesReclassified++;
+        if (!dryRun) sitesReclassified++;
       }
       await write("DELETE FROM categories WHERE id = 'reg-embodied-ai-and-robotics'");
       await write("UPDATE categories SET title = 'AI 硬件与具身' WHERE id = ?", [hwCatId]);
@@ -1317,105 +1504,340 @@ export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?:
       const fsSites = await read("SELECT id, title FROM sites WHERE title = 'Filesystem MCP Server' AND category_id != ?", [agentCatId]);
       for (const row of fsSites) {
         await write("UPDATE sites SET category_id = ?, updated_at = ? WHERE id = ?", [agentCatId, now, row.id]);
-        sitesReclassified++;
+        if (!dryRun) sitesReclassified++;
       }
     }
 
-    // 5. 辅助合并删除重复站点函数
-    const mergeAndDeleteDuplicate = async (keepId: string, dupId: string) => {
-      if (keepId === dupId) return;
-      const keep = await read("SELECT id FROM sites WHERE id = ?", [keepId]);
-      const dup = await read("SELECT id FROM sites WHERE id = ?", [dupId]);
-      if (keep.length === 0 || dup.length === 0) return;
-
-      // 转移 favorites
-      const dupFavs = await read("SELECT user_id, folder_id, note, tags, created_at, updated_at FROM favorites WHERE site_id = ?", [dupId]);
-      for (const fav of dupFavs) {
-        const hasKeepFav = await read("SELECT id FROM favorites WHERE user_id = ? AND site_id = ?", [fav.user_id, keepId]);
-        if (hasKeepFav.length === 0) {
-          await write("UPDATE favorites SET site_id = ? WHERE site_id = ? AND user_id = ?", [keepId, dupId, fav.user_id]);
-        } else {
-          await write("DELETE FROM favorites WHERE site_id = ? AND user_id = ?", [dupId, fav.user_id]);
-        }
-      }
-
-      // 转移 events
-      await write("UPDATE events SET site_id = ? WHERE site_id = ?", [keepId, dupId]);
-
-      // 转移 collection_items
-      const dupCollections = await read("SELECT collection_id FROM collection_items WHERE site_id = ?", [dupId]);
-      for (const col of dupCollections) {
-        const hasKeepCol = await read("SELECT collection_id FROM collection_items WHERE collection_id = ? AND site_id = ?", [col.collection_id, keepId]);
-        if (hasKeepCol.length === 0) {
-          await write("UPDATE collection_items SET site_id = ? WHERE site_id = ? AND collection_id = ?", [keepId, dupId, col.collection_id]);
-        } else {
-          await write("DELETE FROM collection_items WHERE site_id = ? AND collection_id = ?", [dupId, col.collection_id]);
-        }
-      }
-
-      // 清理关系与关联
-      await write("DELETE FROM site_tags WHERE site_id = ?", [dupId]);
-      await write("DELETE FROM site_facets WHERE site_id = ?", [dupId]);
-      await write("DELETE FROM site_relations WHERE source_site_id = ? OR target_site_id = ?", [dupId, dupId]);
-      await write("DELETE FROM sites WHERE id = ?", [dupId]);
-      sitesDeduplicated++;
+    // 5. 先规划、证明、报告，再决定是否应用。没有任何 UUID 白名单旁路。
+    const allSites = await read("SELECT * FROM sites WHERE deleted_at IS NULL ORDER BY created_at ASC, id ASC");
+    const conflicts: TaxonomyDuplicateConflict[] = [];
+    const candidates: Array<{ keep: Record<string, any>; dup: Record<string, any>; canonicalUrl: string }> = [];
+    const candidateKeys = new Set<string>();
+    const conflictKeys = new Set<string>();
+    const addConflict = (
+      keep: Record<string, any>,
+      dups: Array<Record<string, any>>,
+      canonicalUrl: string,
+      reason: string,
+      detail: string,
+    ) => {
+      const key = `${keep.id}\u0000${dups.map((d) => d.id).sort().join(",")}`;
+      if (conflictKeys.has(key)) return;
+      conflictKeys.add(key);
+      conflicts.push({ keepSiteId: String(keep.id), duplicateSiteIds: dups.map((d) => String(d.id)), canonicalUrl, reason, detail });
     };
 
-    // 精确消除用户指出的重复对
-    // Cursor
-    await mergeAndDeleteDuplicate("385c18b1-aa13-4a5c-a18c-be3fb3f9b51d", "ef75c24d-dcf0-45b9-9068-c15ef9d2ab29");
-    // 多邻国
-    await mergeAndDeleteDuplicate("bf2b2dc4-957a-43df-96e3-67b101fb419a", "d0c72c62-c39d-47e7-a0ae-59b04586e710");
-    // 新华网
-    await mergeAndDeleteDuplicate("34701294-dc83-4201-8c39-ca26937614a2", "d68c3fe6-859d-48dd-853c-f46313b4695b");
-    // 达芬奇 DaVinci Resolve
-    await mergeAndDeleteDuplicate("5311d2e0-8369-4235-8ca1-ebdf494159d1", "94d43da1-33eb-4703-be77-aad597071bf8");
-
-    // LeetCode 差异化处理：4b93a8b4-aee4-4707-a742-e7b80d254d84 转为 AcWing 算法交流
-    const leetCodeDup = await read("SELECT id, title, url FROM sites WHERE id = '4b93a8b4-aee4-4707-a742-e7b80d254d84'");
-    const firstLeetCode = leetCodeDup[0];
-    if (firstLeetCode && String(firstLeetCode.title).includes("LeetCode")) {
-      await write(
-        "UPDATE sites SET title = 'AcWing 算法交流', url = 'https://www.acwing.com/', description = '知名的中文算法与数据结构学习社区，包含 LeetCode 题解、算法基础课与周赛精讲。', updated_at = ? WHERE id = '4b93a8b4-aee4-4707-a742-e7b80d254d84'",
-        [now]
-      );
-      sitesReclassified++;
-    }
-
-    // 6. 通用 Canonical URL 深度查重与合并
-    const allSites = await read("SELECT id, url, title, created_at FROM sites WHERE deleted_at IS NULL ORDER BY created_at ASC");
-    const seenByCanonical = new Map<string, string>();
-
-    const getCanonicalUrlKey = (u: string): string => {
-      try {
-        const parsed = new URL(u.startsWith("http") ? u : `https://${u}`);
-        const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
-        let path = parsed.pathname.replace(/\/+$/, "");
-        if (!path) path = "";
-        return `${host}${path}`;
-      } catch {
-        return u.toLowerCase().replace(/^https?:\/\/(www\.)?/, "").replace(/\/+$/, "");
-      }
-    };
-
-    for (const s of allSites) {
-      const key = getCanonicalUrlKey(s.url);
+    const groups = new Map<string, Array<Record<string, any>>>();
+    for (const site of allSites) {
+      const key = taxonomyCanonicalUrlKey(String(site.url ?? ""));
       if (!key) continue;
-      const existingId = seenByCanonical.get(key);
-      if (!existingId) {
-        seenByCanonical.set(key, s.id);
-      } else if (existingId !== s.id) {
-        // 同 URL 重复，保留最先创建的现有站点，合并多余项
-        await mergeAndDeleteDuplicate(existingId, s.id);
+      const group = groups.get(key) ?? [];
+      group.push(site);
+      groups.set(key, group);
+    }
+    for (const [canonicalUrl, group] of groups) {
+      if (group.length < 2) continue;
+      const keep = group[0]!;
+      const dups = group.slice(1);
+      const keepTitle = normalizedSiteTitle(keep.title);
+      if (!keepTitle || dups.some((d) => normalizedSiteTitle(d.title) !== keepTitle)) {
+        addConflict(keep, dups, canonicalUrl, "title_mismatch", "规范化 URL 相同，但标题缺失或不一致；整组保留");
+        continue;
+      }
+      for (const dup of dups) {
+        const key = `${keep.id}\u0000${dup.id}`;
+        if (!candidateKeys.has(key)) {
+          candidateKeys.add(key);
+          candidates.push({ keep, dup, canonicalUrl });
+        }
       }
     }
 
-    console.info(`[migrate] cleanTaxonomyAndDuplicates 完成：新增类目 ${categoriesCreated} 个，重分类站点 ${sitesReclassified} 个，消除重复站点 ${sitesDeduplicated} 个`);
-  } catch (err) {
-    console.warn("[migrate] cleanTaxonomyAndDuplicates 异常:", err instanceof Error ? err.message : err);
-  }
+    const comparable = (row: Record<string, any>, omitId = false): string => stableJson(
+      Object.fromEntries(Object.entries(row).filter(([k]) => k !== "site_id" && (!omitId || k !== "id"))),
+    );
+    const groupBy = (rows: Array<Record<string, any>>, columns: string[]): Map<string, Array<Record<string, any>>> => {
+      const out = new Map<string, Array<Record<string, any>>>();
+      for (const row of rows) {
+        const key = columns.map((c) => String(row[c] ?? "")).join("\u0000");
+        const list = out.get(key) ?? [];
+        list.push(row);
+        out.set(key, list);
+      }
+      return out;
+    };
 
-  return { categoriesCreated, sitesReclassified, sitesDeduplicated };
+    /** 返回空数组才证明该 pair 的附属数据可无损合并。 */
+    const attachmentConflicts = async (keepId: string, dupId: string): Promise<string[]> => {
+      const reasons: string[] = [];
+      const aliases = await read("SELECT * FROM site_id_aliases WHERE old_site_id IN (?,?)", [keepId, dupId]);
+      for (const alias of aliases) {
+        const oldId = String(alias.old_site_id);
+        const canonical = String(alias.canonical_site_id);
+        if (oldId === dupId && canonical === keepId) continue;
+        reasons.push(`site_id_aliases 已有冲突映射 ${oldId} -> ${canonical}`);
+      }
+
+      const favorites = await read("SELECT * FROM favorites WHERE site_id IN (?,?)", [keepId, dupId]);
+      for (const rows of groupBy(favorites, ["user_id"]).values()) {
+        if (rows.length < 2) continue;
+        const a = rows[0]!;
+        const b = rows[1]!;
+        if (
+          a.folder_id !== b.folder_id || a.deleted_at !== b.deleted_at ||
+          parseStringArray(a.tags) === null || parseStringArray(b.tags) === null
+        ) {
+          reasons.push(`favorites 用户 ${a.user_id} 的文件夹/墓碑状态冲突或 tags 非字符串数组`);
+        }
+        if (![a.created_at, a.updated_at, b.created_at, b.updated_at].every((v) => Number.isFinite(Number(v)))) {
+          reasons.push(`favorites 用户 ${a.user_id} 的时间戳不是有限数值，无法证明合并顺序`);
+        }
+      }
+
+      const collectionItems = await read("SELECT * FROM collection_items WHERE site_id IN (?,?)", [keepId, dupId]);
+      if (collectionItems.some((row) => !Number.isFinite(Number(row.sort)))) {
+        reasons.push("collection_items.sort 不是有限数值，无法无损合并排序");
+      }
+
+      // 这些表在 site_id 或 (owner_identity, site_id) 上有唯一约束；内容不同则拒绝合并。
+      for (const table of ["embeddings", "site_radar", "site_prices", "submission_reviews", "submission_owners"]) {
+        const rows = await read(`SELECT * FROM ${table} WHERE site_id IN (?,?)`, [keepId, dupId]);
+        for (const pair of groupBy(rows, table === "site_prices" ? ["owner_identity"] : []).values()) {
+          if (pair.length > 1 && comparable(pair[0]!, table === "site_prices") !== comparable(pair[1]!, table === "site_prices")) {
+            reasons.push(`${table} 唯一键冲突且内容不同`);
+          }
+        }
+      }
+
+      const eventCollision = await read(
+        `SELECT d.id AS id FROM events d JOIN events k
+           ON k.kind = d.kind AND k.site_id = ? AND k.event_id = d.event_id AND k.event_day = d.event_day
+         WHERE d.site_id = ? AND d.event_id IS NOT NULL LIMIT 1`,
+        [keepId, dupId],
+      );
+      if (eventCollision.length > 0) reasons.push("events 幂等键在合并后冲突");
+
+      const keepRow = await read("SELECT metadata FROM sites WHERE id = ?", [keepId]);
+      if (keepRow[0]) {
+        const metadata = parseJsonObject(keepRow[0].metadata);
+        if (metadata === null) {
+          reasons.push("保留站点 metadata 不是合法 JSON 对象，无法追加合并审计快照");
+        } else if (
+          (metadata._navhubMigration != null && (typeof metadata._navhubMigration !== "object" || Array.isArray(metadata._navhubMigration))) ||
+          (metadata._navhubMigration?.mergedSites != null && (typeof metadata._navhubMigration.mergedSites !== "object" || Array.isArray(metadata._navhubMigration.mergedSites)))
+        ) {
+          reasons.push("保留站点 metadata._navhubMigration 结构冲突，拒绝覆盖");
+        }
+      }
+
+      const profiles = await read(
+        "SELECT user_id, visited_site_ids, favorite_site_ids FROM user_profiles WHERE visited_site_ids LIKE ? OR favorite_site_ids LIKE ?",
+        [`%${dupId}%`, `%${dupId}%`],
+      );
+      for (const profile of profiles) {
+        if (parseStringArray(profile.visited_site_ids) === null || parseStringArray(profile.favorite_site_ids) === null) {
+          reasons.push(`user_profiles ${profile.user_id} 的站点 ID 列表不是合法字符串数组`);
+          break;
+        }
+      }
+
+      const proposals = await read("SELECT id, target_id, meta FROM taxonomy_proposals WHERE target_id = ? OR meta LIKE ?", [dupId, `%${dupId}%`]);
+      for (const proposal of proposals) {
+        if (proposal.meta != null && parseJsonObject(proposal.meta) === null) {
+          reasons.push(`taxonomy_proposals ${proposal.id} 的 meta 不是合法 JSON 对象`);
+          break;
+        }
+      }
+      return [...new Set(reasons)];
+    };
+
+    const safeCandidates: typeof candidates = [];
+    for (const candidate of candidates) {
+      const reasons = await attachmentConflicts(String(candidate.keep.id), String(candidate.dup.id));
+      if (reasons.length > 0) {
+        addConflict(candidate.keep, [candidate.dup], candidate.canonicalUrl, "attachment_conflict", reasons.join("；"));
+      } else {
+        safeCandidates.push(candidate);
+      }
+    }
+
+    if (!dryRun) {
+      for (const candidate of safeCandidates) {
+        const keepId = String(candidate.keep.id);
+        const dupId = String(candidate.dup.id);
+        // 写前重新证明：前面的合并可能移动了附属数据，不能依赖规划时的快照。
+        const currentKeep = (await read("SELECT * FROM sites WHERE id = ? AND deleted_at IS NULL", [keepId]))[0];
+        const currentDup = (await read("SELECT * FROM sites WHERE id = ? AND deleted_at IS NULL", [dupId]))[0];
+        if (!currentKeep || !currentDup) continue;
+        const currentKey = taxonomyCanonicalUrlKey(String(currentKeep.url ?? ""));
+        if (
+          !currentKey || currentKey !== taxonomyCanonicalUrlKey(String(currentDup.url ?? "")) ||
+          !normalizedSiteTitle(currentKeep.title) ||
+          normalizedSiteTitle(currentKeep.title) !== normalizedSiteTitle(currentDup.title)
+        ) {
+          addConflict(currentKeep, [currentDup], currentKey, "proof_changed_before_merge", "写前 URL/标题证明已失效");
+          continue;
+        }
+        const reasons = await attachmentConflicts(keepId, dupId);
+        if (reasons.length > 0) {
+          addConflict(currentKeep, [currentDup], currentKey, "attachment_conflict", reasons.join("；"));
+          continue;
+        }
+
+        // 完整保留被删站点行（含未合并的 description/metadata）与撞 collection 的源行快照。
+        const keepMetadata = parseJsonObject(currentKeep.metadata)!;
+        const migrationMeta = keepMetadata._navhubMigration && typeof keepMetadata._navhubMigration === "object" && !Array.isArray(keepMetadata._navhubMigration)
+          ? keepMetadata._navhubMigration : {};
+        const mergedSites = migrationMeta.mergedSites && typeof migrationMeta.mergedSites === "object" && !Array.isArray(migrationMeta.mergedSites)
+          ? migrationMeta.mergedSites : {};
+        const dupCollections = await read("SELECT * FROM collection_items WHERE site_id = ?", [dupId]);
+        const keepCollectionIds = new Set(
+          (await read("SELECT collection_id FROM collection_items WHERE site_id = ?", [keepId])).map((r) => String(r.collection_id)),
+        );
+        mergedSites[dupId] = {
+          mergedAt: now,
+          reason: "canonical_url_and_normalized_title_equal",
+          site: currentDup,
+          collectionItems: dupCollections.filter((row) => keepCollectionIds.has(String(row.collection_id))),
+        };
+        migrationMeta.mergedSites = mergedSites;
+        keepMetadata._navhubMigration = migrationMeta;
+        const keepVisits = Number(currentKeep.visit_count ?? 0);
+        const dupVisits = Number(currentDup.visit_count ?? 0);
+        const lastVisitedValues = [currentKeep.last_visited_at, currentDup.last_visited_at]
+          .map((v) => Number(v ?? 0)).filter((v) => Number.isFinite(v) && v > 0);
+        const updatedAtValues = [currentKeep.updated_at, currentDup.updated_at, now]
+          .map((v) => Number(v ?? 0)).filter((v) => Number.isFinite(v));
+        await write(
+          "UPDATE sites SET metadata = ?, description = CASE WHEN description IS NULL OR description = '' THEN ? ELSE description END, visit_count = ?, last_visited_at = ?, updated_at = ? WHERE id = ?",
+          [
+            JSON.stringify(keepMetadata), currentDup.description ?? null,
+            (Number.isFinite(keepVisits) ? keepVisits : 0) + (Number.isFinite(dupVisits) ? dupVisits : 0),
+            lastVisitedValues.length > 0 ? Math.max(...lastVisitedValues) : null,
+            Math.max(...updatedAtValues), keepId,
+          ],
+        );
+
+        // favorites：同用户同文件夹且墓碑状态一致才合并；notes/tags 求并。
+        const dupFavorites = await read("SELECT * FROM favorites WHERE site_id = ?", [dupId]);
+        for (const fav of dupFavorites) {
+          const keepFav = (await read("SELECT * FROM favorites WHERE user_id = ? AND site_id = ?", [fav.user_id, keepId]))[0];
+          if (!keepFav) {
+            await write("UPDATE favorites SET site_id = ? WHERE id = ?", [keepId, fav.id]);
+            continue;
+          }
+          const tags = [...new Set([...(parseStringArray(keepFav.tags) ?? []), ...(parseStringArray(fav.tags) ?? [])])];
+          await write(
+            "UPDATE favorites SET note = ?, tags = ?, created_at = ?, updated_at = ?, deleted_at = ? WHERE id = ?",
+            [
+              mergeNotes(keepFav.note, fav.note), tags.length > 0 ? JSON.stringify(tags) : null,
+              Math.min(Number(keepFav.created_at), Number(fav.created_at)),
+              Math.max(Number(keepFav.updated_at), Number(fav.updated_at)), keepFav.deleted_at, keepFav.id,
+            ],
+          );
+          await write("DELETE FROM favorites WHERE id = ?", [fav.id]);
+        }
+
+        // tags / facets：唯一键相同仅代表同一事实。
+        await write("INSERT INTO site_tags (site_id, tag_id) SELECT ?, tag_id FROM site_tags WHERE site_id = ? ON CONFLICT DO NOTHING", [keepId, dupId]);
+        await write("DELETE FROM site_tags WHERE site_id = ?", [dupId]);
+        await write("INSERT INTO site_facets (site_id, facet_key, facet_value) SELECT ?, facet_key, facet_value FROM site_facets WHERE site_id = ? ON CONFLICT DO NOTHING", [keepId, dupId]);
+        await write("DELETE FROM site_facets WHERE site_id = ?", [dupId]);
+
+        // relations 两个方向都重定向；self relation 也保留。
+        await write("UPDATE site_relations SET source_site_id = ?, updated_at = ? WHERE source_site_id = ?", [keepId, now, dupId]);
+        await write("UPDATE site_relations SET target_site_id = ?, updated_at = ? WHERE target_site_id = ?", [keepId, now, dupId]);
+
+        for (const table of ["events", "health_checks", "site_archives", "site_reports", "site_discovery_candidates"]) {
+          await write(`UPDATE ${table} SET site_id = ? WHERE site_id = ?`, [keepId, dupId]);
+        }
+        await write("UPDATE wanted_searches SET notified_site_id = ? WHERE notified_site_id = ?", [keepId, dupId]);
+        await write("UPDATE watch_entries SET platform_site_id = ?, updated_at = ? WHERE platform_site_id = ?", [keepId, now, dupId]);
+
+        // 唯一附属表：完全相同的事实去重，其余行改指保留站点。
+        for (const table of ["embeddings", "site_radar", "site_prices", "submission_reviews", "submission_owners"]) {
+          const dupRows = await read(`SELECT * FROM ${table} WHERE site_id = ?`, [dupId]);
+          const keepRows = await read(`SELECT * FROM ${table} WHERE site_id = ?`, [keepId]);
+          const keyColumns = table === "site_prices" ? ["owner_identity"] : [];
+          const keepByKey = new Map([...groupBy(keepRows, keyColumns)].map(([key, rows]) => [key, rows[0]]));
+          for (const row of dupRows) {
+            const key = keyColumns.map((c) => String(row[c] ?? "")).join("\u0000");
+            const same = keepByKey.get(key);
+            if (same && comparable(same, table === "site_prices") === comparable(row, table === "site_prices")) {
+              await write(`DELETE FROM ${table} WHERE ${table === "site_prices" ? "id" : "site_id"} = ?`, [table === "site_prices" ? row.id : dupId]);
+            } else {
+              await write(`UPDATE ${table} SET site_id = ? WHERE ${table === "site_prices" ? "id" : "site_id"} = ?`, [keepId, table === "site_prices" ? row.id : dupId]);
+            }
+          }
+        }
+
+        // collection_items：撞同一 collection 时合并 note、取最早排序，并归档源行。
+        for (const collectionId of [...new Set(dupCollections.map((r) => String(r.collection_id)))]) {
+          const dupRows = dupCollections.filter((r) => String(r.collection_id) === collectionId);
+          const keepRows = await read("SELECT * FROM collection_items WHERE collection_id = ? AND site_id = ?", [collectionId, keepId]);
+          if (keepRows.length === 0) {
+            await write("UPDATE collection_items SET site_id = ? WHERE site_id = ? AND collection_id = ?", [keepId, dupId, collectionId]);
+          } else {
+            await write("UPDATE collection_items SET note = ?, sort = ? WHERE collection_id = ? AND site_id = ?", [
+              mergeNotes(...keepRows.map((r) => r.note), ...dupRows.map((r) => r.note)),
+              Math.min(...keepRows.map((r) => Number(r.sort ?? 0)), ...dupRows.map((r) => Number(r.sort ?? 0))),
+              collectionId, keepId,
+            ]);
+            await write("DELETE FROM collection_items WHERE site_id = ? AND collection_id = ?", [dupId, collectionId]);
+          }
+        }
+
+        // 用户画像里的站点 ID 数组也重定向并去重。
+        const profiles = await read(
+          "SELECT user_id, visited_site_ids, favorite_site_ids FROM user_profiles WHERE visited_site_ids LIKE ? OR favorite_site_ids LIKE ?",
+          [`%${dupId}%`, `%${dupId}%`],
+        );
+        for (const profile of profiles) {
+          const redirect = (raw: unknown): string => JSON.stringify([...new Set(
+            (parseStringArray(raw) ?? []).map((id) => id === dupId ? keepId : id),
+          )]);
+          await write("UPDATE user_profiles SET visited_site_ids = ?, favorite_site_ids = ?, updated_at = ? WHERE user_id = ?", [
+            redirect(profile.visited_site_ids), redirect(profile.favorite_site_ids), now, profile.user_id,
+          ]);
+        }
+
+        // 治理提案的 category_change target 与 meta.siteIds 指向同一站点。
+        const proposals = await read("SELECT * FROM taxonomy_proposals WHERE target_id = ? OR meta LIKE ?", [dupId, `%${dupId}%`]);
+        for (const proposal of proposals) {
+          const meta = parseJsonObject(proposal.meta) ?? {};
+          if (Array.isArray(meta.siteIds)) {
+            meta.siteIds = [...new Set(meta.siteIds.map((id: unknown) => String(id) === dupId ? keepId : id))];
+          }
+          await write("UPDATE taxonomy_proposals SET target_id = ?, meta = ? WHERE id = ?", [
+            proposal.kind === "category_change" && String(proposal.target_id) === dupId ? keepId : proposal.target_id,
+            proposal.meta == null ? proposal.meta : JSON.stringify(meta), proposal.id,
+          ]);
+        }
+
+        // 完整 alias：保留旧标题/旧 URL/原因，并压平所有指向 dup 的旧 alias 链。
+        await write("UPDATE site_id_aliases SET canonical_site_id = ? WHERE canonical_site_id = ?", [keepId, dupId]);
+        const existingAlias = (await read("SELECT * FROM site_id_aliases WHERE old_site_id = ?", [dupId]))[0];
+        const aliasReason = "taxonomy dedup: canonical URL and normalized title equal; full row archived in sites.metadata._navhubMigration.mergedSites";
+        if (existingAlias) {
+          await write("UPDATE site_id_aliases SET canonical_site_id = ?, old_title = ?, old_url = ?, reason = ?, merged_at = ? WHERE old_site_id = ?", [
+            keepId, currentDup.title, currentDup.url, aliasReason, now, dupId,
+          ]);
+        } else {
+          await write("INSERT INTO site_id_aliases (old_site_id, canonical_site_id, old_title, old_url, reason, merged_at) VALUES (?,?,?,?,?,?)", [
+            dupId, keepId, currentDup.title, currentDup.url, aliasReason, now,
+          ]);
+        }
+
+        await write("DELETE FROM sites WHERE id = ?", [dupId]);
+        sitesDeduplicated++;
+      }
+
+      if (conflicts.length > 0) {
+        await recordMigrationFailure(db, "taxonomy_dedup_v3_conflicts", new Error(JSON.stringify(conflicts)));
+      }
+    }
+
+  return { categoriesCreated, sitesReclassified, sitesDeduplicated, dryRun, mergeCandidates: safeCandidates.length, conflicts };
 }
 
 /**
@@ -1439,57 +1861,53 @@ export async function cleanTaxonomyAndDuplicates(db: { dialect: string; sqlite?:
  */
 export async function normalizeSiteCreatedAt(db: { dialect: string; sqlite?: any; pg?: any }): Promise<number> {
   let fixed = 0;
-  try {
-    const isSqlite = db.dialect !== "pg" && !!db.sqlite;
-    const read = async (sql: string): Promise<Array<Record<string, any>>> => {
-      if (isSqlite) {
-        const maybe = db.sqlite.prepare(sql).all();
-        return maybe && typeof maybe.then === "function" ? await maybe : maybe;
-      }
-      return (await db.pg.query(sql)).rows;
-    };
-    const write = async (sql: string, params: unknown[]): Promise<void> => {
-      if (isSqlite) {
-        const maybe = db.sqlite.prepare(sql).run(...params);
-        if (maybe && typeof maybe.then === "function") await maybe;
-        return;
-      }
-      // PG 的 BIGINT 不接受日期串，能进来本函数的基本只有 SQLite；这里仍保持一致口径
-      const pgSql = sql.replace(/\?/g, (_m, i) => "$" + (params.indexOf(params[i]) + 1));
-      await db.pg.query(pgSql, params);
-    };
-
-    // SQLite 用 typeof 精确挑出非整数行；PG 走 NULL 分支（类型系统本身就挡住了脏串）
-    const where = isSqlite
-      ? "WHERE created_at IS NULL OR typeof(created_at) <> 'integer'"
-      : "WHERE created_at IS NULL";
-    const rows = await read(`SELECT id, created_at FROM sites ${where}`);
-    if (rows.length === 0) return 0;
-
-    for (const row of rows) {
-      const raw = row.created_at;
-      const asNumber = Number(raw);
-      let epoch: number | null = null;
-      if (Number.isFinite(asNumber) && asNumber > 0) {
-        epoch = asNumber;
-      } else {
-        // 兼容 "YYYY-MM-DD HH:mm:ss"（SQLite datetime() 的默认格式）与 ISO 串
-        const parsed = Date.parse(String(raw ?? "").replace(" ", "T"));
-        if (Number.isFinite(parsed)) epoch = parsed;
-      }
-      // 解析不出来就按「建站时间未知」处理成当前时间：NOT NULL 列必须有值，
-      // 且用 now 等价于「新站」，不会因为脏数据把它排到热度榜底部。
-      if (epoch === null) epoch = Date.now();
-      if (Number(raw) === epoch) continue; // 幂等：无需改动
-      await write("UPDATE sites SET created_at = ? WHERE id = ?", [epoch, row.id]);
-      fixed += 1;
+  const isSqlite = db.dialect !== "pg" && !!db.sqlite;
+  const read = async (sql: string): Promise<Array<Record<string, any>>> => {
+    if (isSqlite) {
+      const maybe = db.sqlite.prepare(sql).all();
+      return maybe && typeof maybe.then === "function" ? await maybe : maybe;
     }
-
-    if (fixed > 0) {
-      console.info(`[migrate] normalizeSiteCreatedAt 完成：修正 ${fixed} 行非数值 created_at`);
+    return (await db.pg.query(sql)).rows;
+  };
+  const write = async (sql: string, params: unknown[]): Promise<void> => {
+    if (isSqlite) {
+      const maybe = db.sqlite.prepare(sql).run(...params);
+      if (maybe && typeof maybe.then === "function") await maybe;
+      return;
     }
-  } catch (err) {
-    console.warn("[migrate] normalizeSiteCreatedAt 异常:", err instanceof Error ? err.message : err);
+    // PG 的 BIGINT 不接受日期串，能进来本函数的基本只有 SQLite；这里仍保持一致口径
+    const pgSql = sql.replace(/\?/g, (_m, i) => "$" + (params.indexOf(params[i]) + 1));
+    await db.pg.query(pgSql, params);
+  };
+
+  // SQLite 用 typeof 精确挑出非整数行；PG 走 NULL 分支（类型系统本身就挡住了脏串）
+  const where = isSqlite
+    ? "WHERE created_at IS NULL OR typeof(created_at) <> 'integer'"
+    : "WHERE created_at IS NULL";
+  const rows = await read(`SELECT id, created_at FROM sites ${where}`);
+  if (rows.length === 0) return 0;
+
+  for (const row of rows) {
+    const raw = row.created_at;
+    const asNumber = Number(raw);
+    let epoch: number | null = null;
+    if (Number.isFinite(asNumber) && asNumber > 0) {
+      epoch = asNumber;
+    } else {
+      // 兼容 "YYYY-MM-DD HH:mm:ss"（SQLite datetime() 的默认格式）与 ISO 串
+      const parsed = Date.parse(String(raw ?? "").replace(" ", "T"));
+      if (Number.isFinite(parsed)) epoch = parsed;
+    }
+    // 解析不出来就按「建站时间未知」处理成当前时间：NOT NULL 列必须有值，
+    // 且用 now 等价于「新站」，不会因为脏数据把它排到热度榜底部。
+    if (epoch === null) epoch = Date.now();
+    if (Number(raw) === epoch) continue; // 幂等：无需改动
+    await write("UPDATE sites SET created_at = ? WHERE id = ?", [epoch, row.id]);
+    fixed += 1;
+  }
+
+  if (fixed > 0) {
+    console.info(`[migrate] normalizeSiteCreatedAt 完成：修正 ${fixed} 行非数值 created_at`);
   }
   return fixed;
 }

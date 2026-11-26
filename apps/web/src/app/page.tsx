@@ -260,9 +260,10 @@ const getHomeSeo = cache(async () => {
   let description = rawDesc;
   if (rawDesc.length < 60) {
     // 首选树口径：与首页 pills/区块头同一份算式（homeSeoTreeCounts），描述的数字
-    // 必须等于页面实际渲染的卡片数与分组数。2026-11-26 实测：树 388 站 / 14 组，
-    // 中枢 active 口径 338 站 / 20 个根（broken 50 站被减掉、6 个 0 站点空根被
-    // 算进大类数），描述若用后者，与点进来的用户数出来的不一致。
+    // 必须等于页面实际渲染的卡片数与分组数。2026-11-26 实测（:3000）：树 388 站 / 14 组，
+    // 中枢 active 口径 339 站 / 20 个根（broken 49 站被减掉、6 个 0 站点空根被
+    // 算进大类数），描述若用后者，与点进来的用户数出来的不一致。仓库导航树为 392 站，
+    // 中枢同步后描述自动变为 392/14（:3200 新鲜种子实渲已证实）。
     const { navigationData } = await getData();
     const treeCounts = homeSeoTreeCounts(navigationData?.navigationItems);
     if (treeCounts.totalSites > 0) {

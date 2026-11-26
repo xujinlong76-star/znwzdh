@@ -233,7 +233,7 @@ export async function callLlm(
     // 备用模型通常使用系统配置的密钥。主模型为 BYOK 时，初始预留只覆盖
     // 用户自己的额度；因此每次真正切换到系统备用模型前，必须单独原子预留系统档。
     let fallbackHold: Parameters<typeof settleLlmQuota>[1] = undefined;
-    if (source === "fallback") {
+    if (source === "fallback" && resolved.source === "user") {
       const reservation = await reserveLlmQuota(ctx, opts.identity, { source: "fallback" });
       if (!reservation.ok) {
         lastError = new LlmError("rate_limit", "系统备用模型额度已用完，已停止备用模型调用");
@@ -381,7 +381,7 @@ export async function* callLlmStream(
     // 流式备用模型同样必须先预留系统预算；客户端断开、上游失败或正常结束
     // 都在 finally 释放在途预留，实际成本仍以 llm_usage 结算。
     let fallbackHold: Parameters<typeof settleLlmQuota>[1] = null;
-    if (source === "fallback") {
+    if (source === "fallback" && resolved.source === "user") {
       const reservation = await reserveLlmQuota(ctx, opts.identity, { source: "fallback" });
       if (!reservation.ok) {
         lastError = new LlmError("rate_limit", "系统备用模型额度已用完，已停止备用模型调用");

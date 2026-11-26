@@ -313,9 +313,10 @@ export function HomeDIYToolbar({
   // 预设悬停/聚焦预览：只覆盖快照与 data-density 属性，不提交、不落盘、不进撤销栈。
   // 悬停结束 / 菜单关闭 / 点击应用 / 组件卸载时都要清掉，否则预览值会一直盖着真实配置。
   // 覆盖面 = setHomeDiyPreview 的 DiyPreviewPatch（home-diy-storage.ts）：
-  // cardDisplayMode / canvasBackground / viewMode / heroDeckCollapsed /
-  // heroDeckWidgets——渲染层读的是快照 config（真实配置 + 预览覆盖），所以悬停
-  // zen-focus 时就能看到 classic 视图 + 折叠展板，不必等点击。密度走 data-density。
+  // cardDisplayMode / canvasBackground / viewMode——渲染层读的是快照 config
+  // （真实配置 + 预览覆盖），所以悬停 zen-focus 时就能看到 classic 视图，
+  // 不必等点击。密度走 data-density。U-438：展板字段 heroDeckCollapsed /
+  // heroDeckWidgets 已随 HomeHeroDeck 的删除退出预览覆盖，不再往 patch 里写。
   // 键盘聚焦也要预览：只挂 onMouseEnter 是鼠标专属，键盘用户收不到任何预览。
   const handlePresetHover = (preset: DIYPreset | null) => {
     if (preset) {
@@ -323,8 +324,6 @@ export function HomeDIYToolbar({
         cardDisplayMode: preset.config.cardDisplayMode,
         canvasBackground: preset.config.canvasBackground,
         viewMode: preset.config.viewMode,
-        heroDeckCollapsed: preset.config.heroDeckCollapsed,
-        heroDeckWidgets: preset.config.heroDeckWidgets,
       })
       document.documentElement.setAttribute('data-density', preset.config.density)
     } else {

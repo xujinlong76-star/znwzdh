@@ -5,7 +5,7 @@
  * 不改任务判定。所有 href 均为站内真实路由（2026-11-21 逐个核实）：
  *  - `/`：首页（站点卡片、分类、AI 找站微胶囊、自定义站添加均在此）
  *  - `/?scene=make-ppt`：首页 + AI 找站小窗自动跑「做 PPT」场景
- *    （navigation-content 读 scene 参数 → HomeMicroStrip 自动开窗 →
+ *    （navigation-content 读 scene 参数 → HomeCapsuleRow 自动开窗 →
  *    ai-finder-dialog remount → ai-finder-panel 自动跑场景）
  *  - `/hot`：热榜页（growth-tracker 对其记 `recordPageVisitAction('hot')`）
  *  - `/brief`：每日简报（FEATURE_META.brief_read.href）

@@ -971,7 +971,6 @@
 html[data-pruned~="mod:workspace-bar"] [data-feature-id="mod:workspace-bar"],
 html[data-pruned~="mod:hero-header"] [data-feature-id="mod:hero-header"],
 html[data-pruned~="mod:onboarding-card"] [data-feature-id="mod:onboarding-card"],
-html[data-pruned~="mod:hero-deck"] [data-feature-id="mod:hero-deck"],
 html[data-pruned~="mod:speed-dial"] [data-feature-id="mod:speed-dial"],
 html[data-pruned~="mod:crdt-pill"] [data-feature-id="mod:crdt-pill"],
 html[data-pruned~="mod:footer-directory"] [data-feature-id="mod:footer-directory"],

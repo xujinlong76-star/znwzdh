@@ -33,6 +33,7 @@ import {
 } from '@/lib/exam-calendar'
 import { ExamCountdown } from './exam-countdown'
 import { GuokaoAdmissionReminderIsland } from '@/components/guokao-admission-reminder'
+import { GuangdongZikaoSignupCard } from '@/components/guangdong-zikao-signup-card'
 import { MyExamTracker } from './my-exam-tracker'
 
 /**
@@ -205,6 +206,12 @@ export default async function ExamPage() {
                       1 小时，故走客户端岛）。
                       官方链接在 exam-calendar 常量里，不在页面写死域名。 */}
                   {exam.id === 'guokao' ? <GuokaoAdmissionReminderIsland exam={exam} /> : null}
+                  {/* U-436：广东自考 2027 年 1 月报名报考卡——与国考提醒岛同款 per-exam
+                      挂载位，只在广东自考卡片、只在报名报考窗口内渲染（门控在组件内，
+                      11-27 12:00 预报名截止、17:00 正式报名截止）；2026-11-24 定稿明确
+                      该卡不上首页顶置（见 guangdong-zikao-signup-card.test.ts 的 C4-G7
+                      守卫），考试相关入口就是 /exam 本页。 */}
+                  {exam.id === 'guangdong-zikao-2027-01' ? <GuangdongZikaoSignupCard /> : null}
                   {/* U-285 D 步：国考卡片内清单页入口一行（提醒岛之后、note 之前）。
                       常驻显示，不随门控隐藏——清单页 11-23 前即可访问；内部
                       路由用 Next Link，不写死域名、不挂外链。 */}

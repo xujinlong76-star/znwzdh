@@ -195,8 +195,8 @@ export function resolveDiyDataAccent(
 /**
  * 为什么不是 useState（这是修一个真实缺陷，不是洁癖）：
  *
- * 首页有 6 个组件各自调用 useHomeDIY()（navigation-content / home-diy-toolbar /
- * home-hero-deck / view-mode-toggle / category-in-situ-controls /
+ * 首页有 5 个组件各自调用 useHomeDIY()（navigation-content / home-diy-toolbar /
+ * view-mode-toggle / category-in-situ-controls /
  * keyboard-shortcuts-dialog），而 useState 在**每个组件里各存一份**。于是：
  *
  *   - view-mode-toggle 里 setViewMode('classic') 只改了它自己那份，
@@ -287,16 +287,16 @@ export interface HomeDiySharedState {
   preview: DiyPreviewPatch | null
 }
 
-/** 预览覆盖的渲染字段：卡片形态 / 画布背景 / 视图模式 / 展板折叠 / 展板组件。
+/** 预览覆盖的渲染字段：卡片形态 / 画布背景 / 视图模式。
  * 密度走 document 的 data-density 属性覆盖，不在这里。
  * 渲染层读的是快照 config（真实配置 + 预览覆盖），所以扩这个类型即可生效，
- * 无需改渲染：viewMode 由 navigation-content 从快照读、heroDeckCollapsed /
- * heroDeckWidgets 由 home-hero-deck 从快照读。 */
+ * 无需改渲染：viewMode 由 navigation-content 从快照读。
+ * U-438：展板字段 heroDeckCollapsed / heroDeckWidgets 已随 HomeHeroDeck 的删除
+ * 从预览覆盖里移除——唯一的渲染方没了，预览再盖这两个字段无人读取。
+ * 持久化配置里的同名字段保留（旧配置/分享链接/导入仍按 zod 规则校验收敛，
+ * 见 diy-layout-schema-zod.ts），只删快照读写这一层。 */
 export type DiyPreviewPatch = Partial<
-  Pick<
-    HomeDIYConfig,
-    'cardDisplayMode' | 'canvasBackground' | 'viewMode' | 'heroDeckCollapsed' | 'heroDeckWidgets'
-  >
+  Pick<HomeDIYConfig, 'cardDisplayMode' | 'canvasBackground' | 'viewMode'>
 >
 
 /** 分享备份键前缀（`STORAGE_KEY.share-backup.<时间戳>`），剪枝与快照列表共用 */
@@ -611,8 +611,7 @@ export function getEffectiveSlotClocks(): Record<string, number> {
  * 提交后预览剩下的部分：只清本次提交确实改动的预览字段。
  * 拖拽改分类顺序、改强调色之类没碰预览字段的提交，预览原样保留；
  * 改了其中一个，只清那一个，其余继续盖着快照。按预览的键逐个比对，
- * 这样 patch 扩了新字段（viewMode / heroDeckCollapsed / heroDeckWidgets）
- * 也不用再改这里。
+ * 这样 patch 扩了新字段也不用再改这里。
  */
 function previewAfterCommit(
   prev: HomeDIYConfig,
@@ -847,7 +846,7 @@ export function describeCorruptHomeDiyConfig(backupKey: string | null): string {
 /**
  * 读本地存储（v3 → v2 → v1 迁移 + `#diy=` 免登分享链接）。**只执行一次**：
  * 共享状态只有一份，6 个组件各自挂载时都读一遍会互相覆盖；后挂载的组件
- * （例如切到 hybrid 才动态加载的 HomeHeroDeck）还会把撤销栈一起冲掉。
+ * （例如切到 hybrid 才动态加载的后挂载组件）还会把撤销栈一起冲掉。
  *
  * async 原因：#diy= 分享走唯一的 live 解码 parseSharePayload，它要 dynamic
  * import zod（首屏不付这笔账），所以分享挂起在一次 await 之后；v3 读取与

@@ -13,9 +13,11 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ArrowRight, ChevronDown, Clapperboard, Compass, Puzzle, Sparkles } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowRight, ChevronDown, Clapperboard, Compass, Layers, Puzzle, Sparkles } from 'lucide-react'
 import { useWatchlist } from '@/hooks/useWatchlist'
 import { HorizontalScrollFade } from '@/components/horizontal-scroll-fade'
+import { formatRelativeTime } from '@/lib/format-relative-time'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -116,6 +118,18 @@ export function HomeCapsuleRow({
   }, [initialSceneParam])
 
   const latestWatch = watchlistReady && watchlistEntries.length > 0 ? watchlistEntries[0] : null
+  // U-437：微胶囊行删除后，「继续追」的时间 meta 随胶囊并入本行——只写该剧真实
+  // 改进度的时间。还没开始看（episode = 0）或 lastProgressAt 非法时不写，
+  // 绝不渲染“—”（与已删 home-micro-strip 同款口径，见
+  // drama-continue-watch-time-meta.test.ts）。
+  const latestWatchProgress =
+    latestWatch &&
+    latestWatch.episode > 0 &&
+    typeof latestWatch.lastProgressAt === 'number' &&
+    Number.isFinite(latestWatch.lastProgressAt) &&
+    latestWatch.lastProgressAt > 0
+      ? formatRelativeTime(latestWatch.lastProgressAt)
+      : null
   const diyOptIn = useDramaHotlistOptIn()
   const inDramaCategoryContext =
     isDramaContextCategory(String(activeWorkspace ?? '')) ||
@@ -192,7 +206,7 @@ export function HomeCapsuleRow({
               >
                 <Clapperboard className="h-4 w-4 text-amber-500 shrink-0" />
                 <span className="font-medium text-foreground">
-                  {latestWatch ? `继续追《${latestWatch.title}》` : '今日短剧热榜'}
+                  {latestWatch ? `继续追《${latestWatch.title}》${latestWatchProgress ? ` · ${latestWatchProgress}` : ''}` : '今日短剧热榜'}
                 </span>
               </DropdownMenuItem>
             ) : null}
@@ -255,6 +269,17 @@ export function HomeCapsuleRow({
               )
             })}
           </div>
+
+          {/* U-441：场景包一级入口——已删 HomeMicroStrip 里唯一的首页 /scenes
+              链接（“场景”）随胶囊行合并到这里：与工作区胶囊同行同款幽灵样式，
+              不是 tab（不在 tablist 内、不参与方向键漫游与单行胶囊预算）。 */}
+          <Link
+            href="/scenes"
+            className="flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border/50 bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-all hover:border-border hover:bg-muted/80 hover:text-foreground"
+          >
+            <Layers className="h-3.5 w-3.5" aria-hidden />
+            <span>场景包</span>
+          </Link>
 
           {/* 时段场景推荐：≥1536px 宽屏空间充裕时呈现，1280–1535px 让位给同行的工作区与高频直达坞 */}
           <div className="hidden min-w-0 shrink-0 items-center gap-2 whitespace-nowrap pl-1 text-xs text-muted-foreground min-[1536px]:flex">

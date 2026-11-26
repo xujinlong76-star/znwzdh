@@ -46,7 +46,7 @@ export function daypartText(hint: DaypartHint): string {
 }
 
 /**
- * 工作区场景 id（与 `WorkspaceFilter` 的 WORKSPACES 同源，写在这里避免
+ * 工作区场景 id（与 `lib/workspaces` 的 WORKSPACES 同源，写在这里避免
  * 「纯模块反向 import 组件」的循环依赖）。
  */
 export type DaypartWorkspaceId = 'all' | 'dev' | 'design' | 'ai' | 'efficiency'

@@ -5,7 +5,7 @@
  * 组件中，无法在没有 DOM 的情况下验证「AI 工作台到底该显示哪些站点」。
  * 抽成纯函数后，关键词表即契约，改动有测试兜底。
  */
-import type { WorkspaceId } from '@/components/workspace-filter'
+import type { WorkspaceId } from '@/lib/workspaces'
 
 export type { WorkspaceId }
 

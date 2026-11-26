@@ -60,6 +60,7 @@ export function Footer({ siteInfo }: FooterProps) {
             <li><Link href="/graph" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">技术生态图谱</Link></li>
             <li><Link href="/algorithms" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">前沿算法实验室<span className="ml-1 rounded-full border border-primary/20 bg-primary/10 px-1.5 py-px text-[10px] font-semibold text-primary">Lab</span></Link></li>
             <li><Link href="/drama" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">短剧专区</Link></li>
+            <li><Link href="/scenes" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">场景包</Link></li>
             <li><Link href="/tags" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">标签云</Link></li>
             <li><Link href="/sites" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">站点目录</Link></li>
             <li><Link href="/collections" className="inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">精选合集</Link></li>

@@ -93,13 +93,6 @@ export const L1_MODULE_CATALOG: readonly FeatureCatalogDefinition[] = [
     parentTitle: 'L1 全局功能组件',
   },
   {
-    id: 'mod:hero-deck',
-    level: 'L1_MODULE',
-    title: '极速启动展板（多引擎聚合搜索 / 时钟 / 收藏足迹）',
-    description: '首屏 Bento 仪表盘，卸载后站点分类流直接置顶吸附',
-    parentTitle: 'L1 全局功能组件',
-  },
-  {
     id: 'mod:speed-dial',
     level: 'L1_MODULE',
     title: '⚡ 高频极速直达坞 Top 9',

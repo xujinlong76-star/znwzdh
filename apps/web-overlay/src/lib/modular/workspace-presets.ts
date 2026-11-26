@@ -7,7 +7,7 @@
  * 它**不进入 SEO 目录页（/category）**，也**不参与全站检索**：
  * 两者都走独立的数据加载与全量索引，不能因为用户当前工作台而少收录站点。
  */
-import type { WorkspaceId } from '@/components/workspace-filter'
+import type { WorkspaceId } from '@/lib/workspaces'
 export type { WorkspaceId }
 
 /** 生活与娱乐泛类目（默认折叠、非短剧场景隐藏） */

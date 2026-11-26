@@ -164,7 +164,7 @@ export function useHomeDIY(initialCardDisplayMode?: CanonicalCardDisplayMode) {
 
   // 1. 客户端挂载时读本地存储（v3 / v2 / v1 迁移 + #diy 分享链接）并填充共享状态。
   //    只让第一个挂载的组件去读：共享状态只有一份，后挂载的组件
-  //    （例如切到 hybrid 才动态加载的 HomeHeroDeck）再读一遍会把撤销栈冲掉。
+  //    （例如切到 hybrid 才动态加载的后挂载组件）再读一遍会把撤销栈冲掉。
   useEffect(() => {
     hydrateHomeDiy(initialCardDisplayMode)
     setMounted(true)

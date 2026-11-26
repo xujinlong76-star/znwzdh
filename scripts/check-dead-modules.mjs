@@ -67,24 +67,21 @@ let BASELINE = [
   // （属于门禁盲区 C：守卫测试按源码路径 import，删了测试先红）。
   // 它们不是"可随手删的死代码"，而是"等待决策的遗留实现"：
   // 要么把测试迁移到 HomeCapsuleRow 后删除，要么把组件重新接回。
+  // U-435/U-437/U-438（2026-11-27）：home-today-more、home-micro-strip、
+  // home-hero-deck 已按此决策删除（测试已迁移或随删件移除），home-announcement
+  // （其唯一消费者 home-micro-strip）的 store 一并删除，条目同步移出。
   "apps/web-overlay/src/components/growth/homepage-banner-lazy.tsx",
   "apps/web-overlay/src/components/home-frequent-visits.tsx",
-  "apps/web-overlay/src/components/home-hero-deck.tsx",
-  "apps/web-overlay/src/components/home-micro-strip.tsx",
   "apps/web-overlay/src/components/home-plugin-spotlight.tsx",
   "apps/web-overlay/src/components/home-recent-visits.tsx",
-  "apps/web-overlay/src/components/home-today-more.tsx",
   "apps/web-overlay/src/components/speed-dial-dock.tsx",
-  // home-announcement.ts 是 2026-11-21 我新增的通告条三态 store。
-  // 它的消费者 home-micro-strip.tsx 已失去渲染入口，本 store 因此也 0 引用；
-  // 若决定彻底移除旧胶囊行，这两项应一并删除（连同 drama-continue-watch-time-meta 测试）。
-  "apps/web-overlay/src/lib/home-announcement.ts",
   // --- 2026-11-24 仓库合并（2aa451fe）后的登记（远程 favorites 架构接管渲染位置）---
-  // 前四项是「已备好、刻意未接线」的组件：守卫测试按源码路径 import/读取，
+  // 前三项是「已备好、刻意未接线」的组件：守卫测试按源码路径 import/读取，
   // 且负空间断言明确锁住「导航/简报不得引用它们」的未接线状态（删了测试先红）。
   // 后四项是合并孤儿：Local-First 同步 UI（六态徽标/同步点/冲突抽屉/适配器）
   // 因远程 favorites 页改用 FavoritesSyncStatus 状态条而失去接线，详见 BASELINE_NOTES。
-  "apps/web-overlay/src/components/guangdong-zikao-signup-card.tsx",
+  // U-436（2026-11-27）：guangdong-zikao-signup-card 已接线到 /exam 考历页
+  // （guangdong-zikao-2027-01 卡片内），不再是 0 引用候选，条目同步移出。
   "apps/web-overlay/src/components/guokao-checklist-return-card.tsx",
   "apps/web-overlay/src/components/user-center/favorites-quickstart.tsx",
   "apps/web-overlay/src/hooks/useFavoritesSyncBridge.ts",
@@ -179,8 +176,6 @@ let BASELINE_NOTES = {
     "delete（真死）：除基线与文档索引外无任何引用（含字符串/测试/别名）",
   "apps/web-overlay/src/components/notification-badge.tsx":
     "delete（真死）：组件级死代码；勿与活跃的 lib/notification-badge.ts（unreadBadgeText）混淆",
-  "apps/web-overlay/src/components/guangdong-zikao-signup-card.tsx":
-    "keep（C 守卫测试 + 刻意未接线）：test/guangdong-zikao-signup-card.test.ts 直接 import 并读源码断言；负空间断言（:447/:450）明确锁住「导航/简报不得引用」的未接线状态，是作者备好待上线的报名卡，删了测试先红",
   "apps/web-overlay/src/components/guokao-checklist-return-card.tsx":
     "keep（C 守卫测试 + 刻意未接线）：test/guokao-checklist-return-card.test.ts 直接 import；负空间断言（:268/:272）锁住 brief/layout 不得引用的未接线状态，国考清单回流卡待作者接线",
   "apps/web-overlay/src/components/user-center/favorites-quickstart.tsx":

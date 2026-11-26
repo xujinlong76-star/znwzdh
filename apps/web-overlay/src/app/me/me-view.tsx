@@ -448,11 +448,16 @@ function GrowthBanner() {
         >
           <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progressPct}%` }} />
         </div>
-        {lp.nextXp && lp.nextLevel && (
-          <p className="mt-1.5 text-[11px] text-muted-foreground">
-            再赚 {lp.toNext} XP 升至 Lv.{lp.nextLevel} · {lp.nextTitle}
-          </p>
-        )}
+        {/* U-376：可见口径标注——这根条是「总进度」（总经验 / 下一级门槛），
+            与成长面板内的「本级进度」是另一口径；口径以前只在注释里，不标会打架。 */}
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          总进度 {progressPct}%
+          {lp.nextXp && lp.nextLevel ? (
+            <> · 再赚 {lp.toNext} XP 升至 Lv.{lp.nextLevel} · {lp.nextTitle}</>
+          ) : (
+            <> · 已是最高等级</>
+          )}
+        </p>
       </div>
       <Button asChild size="sm" className="shrink-0 text-xs">
         <Link href="/me/growth">

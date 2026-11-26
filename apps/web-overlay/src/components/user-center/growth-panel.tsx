@@ -290,14 +290,21 @@ export function GrowthPanel() {
             </div>
           </div>
 
-          {/* 升级进度条（克制琥珀金强调色） */}
+          {/* 升级进度条（克制琥珀金强调色）。
+              U-376：可见口径标注——这根条是「本级进度」（levelProgress.progress，
+              本级内已赚 / 本级跨度），与概览横幅的「总进度」（总经验 / 下一级门槛）
+              是另一口径；以前只有 aria-label，没有可见文案。 */}
+          <div className="mt-3.5 flex items-center justify-between text-[11px] text-muted-foreground">
+            <span>本级进度</span>
+            <span className="font-mono font-semibold text-amber-700 dark:text-amber-400 tabular-nums">{progressPct}%</span>
+          </div>
           <div
-            className="mt-3.5 h-2 overflow-hidden rounded-full bg-muted"
+            className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted"
             role="progressbar"
             aria-valuenow={progressPct}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label="升级进度"
+            aria-label="本级进度"
           >
             <div
               className="h-full rounded-full bg-amber-500 transition-all duration-300 dark:bg-amber-400"

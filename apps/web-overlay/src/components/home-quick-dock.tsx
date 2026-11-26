@@ -211,6 +211,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
               role="tab"
               aria-selected={activeTab === 'frequent'}
               disabled={!mounted || frequentVisits.length === 0}
+              title={mounted && frequentVisits.length === 0 ? '暂无常用站点' : undefined}
               onClick={() => chooseTab('frequent')}
               className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed ${
                 activeTab === 'frequent'
@@ -226,6 +227,7 @@ export const HomeQuickDock = memo(function HomeQuickDock({
               role="tab"
               aria-selected={activeTab === 'recent'}
               disabled={!mounted || recentVisits.length === 0}
+              title={mounted && recentVisits.length === 0 ? '暂无最近访问' : undefined}
               onClick={() => chooseTab('recent')}
               className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors cursor-pointer disabled:opacity-55 disabled:cursor-not-allowed ${
                 activeTab === 'recent'
@@ -237,6 +239,16 @@ export const HomeQuickDock = memo(function HomeQuickDock({
               <span>最近</span>
             </button>
           </div>
+
+        {/* U-365 子项：空 tab 不能只灰掉——灰掉的按钮不告诉用户「为什么没有」，
+            新用户会以为功能坏了。对应列表为空时在 tab 行后给一行可见解释文案；
+            列表非空时不渲染，不占地方。 */}
+        {mounted && frequentVisits.length === 0 && (
+          <span className="shrink-0 text-[11px] text-muted-foreground">暂无常用站点</span>
+        )}
+        {mounted && recentVisits.length === 0 && (
+          <span className="shrink-0 text-[11px] text-muted-foreground">暂无最近访问</span>
+        )}
 
         <HorizontalScrollFade
           className="order-3 w-full basis-full min-w-0 sm:order-none sm:w-auto sm:basis-auto sm:flex-1"

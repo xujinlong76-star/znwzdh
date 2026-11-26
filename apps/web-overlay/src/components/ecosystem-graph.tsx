@@ -32,6 +32,9 @@ import {
 } from '@/lib/graph-polish'
 import { extractFaviconMonogram, resolveSiteIcon } from '@/components/site-favicon'
 import {
+  resolveGraphUrlRestore,
+} from '@/lib/graph-url'
+import {
   buildGraphEdges,
   sampleClusterFirst,
   searchGraphSites,
@@ -179,6 +182,13 @@ export function EcosystemGraph() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const categoryParam = searchParams.get('category')
+  /**
+   * U-381：节点选择与雷达中心进 URL（?site= / ?center=），刷新/分享可恢复。
+   * site = 节点 id（live 节点为 `db_<站 id>`，示例节点为内置 id）；
+   * center = 雷达中心站 id（FlatSite.id，不带 db_ 前缀）。
+   */
+  const siteParam = searchParams.get('site')
+  const centerParam = searchParams.get('center')
   /** 分类域焦点：命中时只展示该分类自己的站点；null = 全局视图 */
   const [focusedCategory, setFocusedCategory] = useState<GraphCategoryFocus | null>(null)
   const [activeCategory, setActiveCategory] = useState<'all' | 'dev' | 'design' | 'ai' | 'efficiency'>('all')
@@ -259,6 +269,48 @@ export function EcosystemGraph() {
       return next
     })
   }
+
+  /**
+   * U-381：把 site/center 写回 URL（router.replace，不产生历史记录）。
+   * 其它参数（category 等）原样保留；值为空时删键。
+   * lastSyncedQueryRef 记下自己刚写回的 query——恢复 effect 靠它认出
+   * 「这是自己写回的 URL」，不再重复恢复，否则 replace → searchParams 变
+   * → 恢复 → 写回会自循环。
+   */
+  const lastSyncedQueryRef = useRef<string | null>(null)
+  const syncGraphParams = useCallback(
+    (next: { site?: string | null; center?: string | null }) => {
+      const params = new URLSearchParams(searchParams.toString())
+      if (next.site !== undefined) {
+        if (next.site) params.set('site', next.site)
+        else params.delete('site')
+      }
+      if (next.center !== undefined) {
+        if (next.center) params.set('center', next.center)
+        else params.delete('center')
+      }
+      const qs = params.toString()
+      lastSyncedQueryRef.current = qs
+      router.replace(qs ? `/graph?${qs}` : '/graph')
+    },
+    [router, searchParams],
+  )
+
+  /** U-381：选中节点 = 改状态 + 写 ?site=；取消选中 = 清掉 ?site=。 */
+  const selectNode = useCallback(
+    (node: GraphNode | null) => {
+      setSelectedNode(node)
+      syncGraphParams({ site: node ? node.id : null })
+    },
+    [syncGraphParams],
+  )
+
+  /** U-381：退出雷达 = 清状态 + 清掉 ?center= 与 ?site=。 */
+  const exitRadar = useCallback(() => {
+    setRadarCenter(null)
+    setSelectedNode(null)
+    syncGraphParams({ center: null, site: null })
+  }, [syncGraphParams])
 
   // SSR/CSR 水合：节点坐标由浮点运算得出，服务端与客户端的 Number 字符串化尾差
   // 会让 React 抛出「hydrated but some attributes didn't match」告警（/graph 控制台实测）。
@@ -531,6 +583,44 @@ export function EcosystemGraph() {
     }
   }, [allSites, focusedCategory, activeCategory, sampleRound, radarCenter, dataSource])
 
+  /**
+   * U-381：从 URL 恢复选中与雷达中心（?site= / ?center=）。
+   *
+   *  - center 优先：中心站只要还在全站母体（allSites）里就进雷达——ego 子图
+   *    走全站母体，不要求它在当前 24 站抽样内（雷达单开）；全站里都找不
+   *    到 = 已下线，退回默认视图并清掉 URL 里的 center。
+   *  - site：只在当前节点集里找得到时才选中；找不到（换了一批抽样、或
+   *    示例态 id 对不上）不强行选中，静默留在默认视图。
+   *  - 数据未就绪时等一等再恢复：live 靠 allSites，sample 靠初始
+   *    DEFAULT_NODES；自己刚写回的 URL（lastSyncedQueryRef）跳过，避免自循环。
+   *  - 外部改 URL（如浏览器后退）导致 center 消失时，雷达也跟着退出。
+   */
+  useEffect(() => {
+    const qs = searchParams.toString()
+    if (lastSyncedQueryRef.current !== null && qs === lastSyncedQueryRef.current) return
+    const liveReady = allSites.length > 0
+    if (!liveReady && dataSource !== 'sample') return
+    // 恢复决策是纯函数（lib/graph-url.ts），组件只按结果改状态与写 URL。
+    const restore = resolveGraphUrlRestore({ centerParam, siteParam, allSites, nodes, liveReady })
+    if (restore.centerSite) {
+      const centerSite = restore.centerSite
+      setRadarCenter((prev) => (prev?.id === centerSite.id ? prev : centerSite))
+    } else if (restore.delistedCenter) {
+      setRadarCenter(null)
+      syncGraphParams({ center: null })
+    } else if (!centerParam) {
+      if (radarCenter) {
+        setRadarCenter(null)
+        setSelectedNode(null)
+      }
+      if (restore.selectedNode) {
+        const node = restore.selectedNode
+        setSelectedNode((prev) => (prev?.id === node.id ? prev : node))
+      }
+    }
+    lastSyncedQueryRef.current = qs
+  }, [searchParams, siteParam, centerParam, allSites, nodes, dataSource, radarCenter, syncGraphParams])
+
   // 简易力导引松弛算法（使得连接更舒展）
   // layoutNonce 变化时重跑：live 数据回填替换了节点集，旧坐标只按圆周摆，
   // 不重跑就永远是初始圆环。45 帧跑完标记 layoutDone，触发 fitView。
@@ -625,7 +715,7 @@ export function EcosystemGraph() {
   const handleNodeKeyDown = (event: React.KeyboardEvent<SVGGElement>, node: GraphNode) => {
     if (isActivationKey(event.key)) {
       event.preventDefault()
-      setSelectedNode(node)
+      selectNode(node)
       return
     }
     const direction = directionFromKey(event.key)
@@ -686,7 +776,10 @@ export function EcosystemGraph() {
     setSearchOpen(false)
     setLegendFilter('all')
     setRadarCenter(site)
-  }, [])
+    // U-381：雷达中心进 URL（?center=）；选中随采样 effect 落到中心节点，
+    // ?site= 不另写（center 已唯一确定选中）。
+    syncGraphParams({ center: site.id, site: null })
+  }, [syncGraphParams])
 
   const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -722,6 +815,8 @@ export function EcosystemGraph() {
   const handleSceneClick = (cat: 'all' | 'dev' | 'design' | 'ai' | 'efficiency') => {
     setSelectedNode(null)
     setRadarCenter(null)
+    // U-381：切场景即退出雷达/取消选中，URL 里的 site/center 一并清掉。
+    syncGraphParams({ center: null, site: null })
     if (focusedCategory) {
       // 先本地清掉焦点即刻重抽，再把 URL 写回 /graph（刷新后不再跳回分类）。
       setFocusedCategory(null)
@@ -979,7 +1074,7 @@ export function EcosystemGraph() {
             className="h-7 text-xs px-2.5 rounded-lg shrink-0 gap-1.5"
             title="重新抽取另一批高连通生态簇（同类簇结构，不退回随机抽样）"
             disabled={radarCenter !== null || dataSource !== 'live'}
-            onClick={() => { setSampleRound((r) => r + 1); setSelectedNode(null); }}
+            onClick={() => { setSampleRound((r) => r + 1); selectNode(null); }}
           >
             <RefreshCw className="w-3.5 h-3.5" />
             换一批生态簇
@@ -1060,7 +1155,7 @@ export function EcosystemGraph() {
               </span>
               <button
                 type="button"
-                onClick={() => { setRadarCenter(null); setSelectedNode(null); }}
+                onClick={() => exitRadar()}
                 className="font-medium text-indigo-500 hover:underline"
               >
                 退出雷达
@@ -1222,7 +1317,7 @@ export function EcosystemGraph() {
                   tabIndex={rovingId === n.id ? 0 : -1}
                   aria-label={nodeAccessibleName(n.title, CATEGORY_COLORS[n.category].name)}
                   aria-pressed={isSelected}
-                  onClick={() => setSelectedNode(n)}
+                  onClick={() => selectNode(n)}
                   onFocus={() => setFocusedNodeId(n.id)}
                   onKeyDown={(event) => handleNodeKeyDown(event, n)}
                   onMouseEnter={() => setHoveredNodeId(n.id)}
@@ -1367,7 +1462,7 @@ export function EcosystemGraph() {
                 className="h-7 w-7 p-0 rounded-lg hover:bg-muted"
                 aria-label="关闭节点详情"
                 title="关闭节点详情"
-                onClick={() => setSelectedNode(null)}
+                onClick={() => selectNode(null)}
               >
                 ✕
               </Button>
@@ -1407,7 +1502,7 @@ export function EcosystemGraph() {
                     <button
                       key={idx}
                       type="button"
-                      onClick={() => setSelectedNode(otherNode)}
+                      onClick={() => selectNode(otherNode)}
                       className="w-full text-left p-2.5 rounded-xl border border-border/60 bg-background/70 hover:bg-background/95 hover:border-primary/40 cursor-pointer transition-all flex items-center justify-between text-xs shadow-2xs group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className="flex items-center">

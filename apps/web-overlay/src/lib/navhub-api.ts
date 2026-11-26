@@ -1820,6 +1820,50 @@ export async function fetchVisitsPage(
   )
 }
 
+/**
+ * U-375：删一条访问记录（DELETE /api/me/visits/:id，只删本身份的 click 事件）。
+ * 与 deleteSearchHistoryItem 同款 degrade 口径：失败返回 false。
+ */
+export async function deleteVisitItem(identity: string, id: number, onDegraded?: DegradedHandler): Promise<boolean> {
+  return degrade(
+    false,
+    async () => {
+      await sendJson(
+        '/api/me/visits/' + id,
+        'DELETE',
+        undefined,
+        undefined,
+        anonHeaders(identity),
+      )
+      return true
+    },
+    onDegraded,
+  )
+}
+
+/**
+ * U-375：清空本身份的全部访问流水（DELETE /api/me/visits）。
+ *
+ * 与旧 clearProfileSignals(identity, 'click') 的区别：只删访问流水，
+ * 不碰画像行、不重建画像。失败返回 false。
+ */
+export async function clearVisits(identity: string, onDegraded?: DegradedHandler): Promise<boolean> {
+  return degrade(
+    false,
+    async () => {
+      await sendJson(
+        '/api/me/visits',
+        'DELETE',
+        undefined,
+        undefined,
+        anonHeaders(identity),
+      )
+      return true
+    },
+    onDegraded,
+  )
+}
+
 /* ------------------------------ 画像 ------------------------------ */
 
 export interface HubProfileExplain {

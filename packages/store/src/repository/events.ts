@@ -200,6 +200,38 @@ export async function countVisits(repo: Repository, identity: string): Promise<n
   return Number(row?.c ?? 0);
 }
 
+/**
+ * U-375：删一条访问记录——只删本身份的 click 事件。
+ *
+ * WHERE 同时限定 identity + kind='click' + site_id 非空 + id，与
+ * listVisitsPage 的可见口径一致：他人 id 猜中也删不掉（返回 0，
+ * 路由层映射 404）；搜索事件（kind='search'）不在此表口径内。
+ */
+export async function deleteVisit(repo: Repository, identity: string, id: number): Promise<number> {
+  const where = "identity = ? AND kind = 'click' AND site_id IS NOT NULL AND id = ?";
+  const rows = await repo.raw(`SELECT COUNT(*) AS c FROM events WHERE ${where}`, [identity, id]);
+  const removed = Number(rows[0]?.c ?? 0);
+  if (removed > 0) {
+    await repo.run(`DELETE FROM events WHERE ${where}`, [identity, id]);
+  }
+  return removed;
+}
+
+/**
+ * U-375：清空本身份的全部访问流水——只删 click 事件。
+ *
+ * 与 DELETE /api/profile/signals/click 的区别：这里只删流水，不碰
+ * user_profiles 行、不重建画像。「清空访问记录」不等于「清空画像」：
+ * 画像仍是清空前那份，下次重建时才不再计入这些访问。
+ */
+export async function clearVisits(repo: Repository, identity: string): Promise<number> {
+  const where = "identity = ? AND kind = 'click' AND site_id IS NOT NULL";
+  const rows = await repo.raw(`SELECT COUNT(*) AS c FROM events WHERE ${where}`, [identity]);
+  const removed = Number(rows[0]?.c ?? 0);
+  await repo.run(`DELETE FROM events WHERE ${where}`, [identity]);
+  return removed;
+}
+
 export async function listAuditLogs(repo: Repository, filter: {
     limit?: number;
     offset?: number;

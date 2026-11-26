@@ -766,6 +766,16 @@ async savedPluginEmbeddings(filter?: {
     return eventsRepo.countVisits(this, identity);
   }
 
+  /** U-375：删一条访问记录（只删本身份的 click 事件，返回实际删除条数） */
+  async deleteVisit(identity: string, id: number): Promise<number> {
+    return eventsRepo.deleteVisit(this, identity, id);
+  }
+
+  /** U-375：清空本身份的全部访问流水（只删 click 事件，不动画像行） */
+  async clearVisits(identity: string): Promise<number> {
+    return eventsRepo.clearVisits(this, identity);
+  }
+
   async audit(entry: { actor: string; actorKind?: string; action: string; target?: string; diff?: unknown; ip?: string }): Promise<void> {
     return eventsRepo.audit(this, entry);
   }

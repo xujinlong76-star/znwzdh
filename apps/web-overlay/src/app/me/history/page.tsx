@@ -18,7 +18,7 @@ import { copyText } from '@/lib/clipboard'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { HandoffCardWithCloud } from '@/components/handoff-card-with-cloud'
 import { SectionState } from '@/components/user-center/section-state'
-import { fetchVisitsPage, clearProfileSignals, type HubVisitItem } from '@/lib/navhub-api'
+import { fetchVisitsPage, clearVisits as clearCloudVisits, deleteVisitItem, type HubVisitItem } from '@/lib/navhub-api'
 import { safeHref } from '@/lib/safe-url'
 import {
   batchCleanZeroResultSearchHistory,
@@ -29,7 +29,9 @@ import {
 } from '@/lib/navhub-api'
 import {
   clearSearchHistorySnapshot,
+  clearVisitHistorySnapshot,
   SEARCH_HISTORY_SNAPSHOT_KEY,
+  VISIT_HISTORY_SNAPSHOT_KEY,
 } from '@/lib/recent-search'
 import { ArrowUpRight, Copy, Filter, History, Loader2, Search, Sparkles, Trash2 } from 'lucide-react'
 
@@ -58,6 +60,36 @@ function readHistorySnapshot(): { at: number; items: HubSearchHistoryItem[] } | 
     const raw = window.localStorage.getItem(SEARCH_HISTORY_SNAPSHOT_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as { at?: number; items?: HubSearchHistoryItem[] }
+    if (!Array.isArray(parsed.items) || typeof parsed.at !== 'number') return null
+    return { at: parsed.at, items: parsed.items }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * U-375：访问历史离线快照（与搜索快照同一口径：只存最近一页 ≤20 条 + 时间戳）。
+ * 键名唯一事实源在 lib/recent-search.ts（VISIT_HISTORY_SNAPSHOT_KEY，
+ * 清空路径共用）。访问 tab 断网时展示它并如实标注，而不是直接落 error。
+ */
+const HISTORY_VISIT_SNAPSHOT_MAX = 20
+
+function writeVisitSnapshot(items: HubVisitItem[]): void {
+  try {
+    window.localStorage.setItem(
+      VISIT_HISTORY_SNAPSHOT_KEY,
+      JSON.stringify({ at: Date.now(), items: items.slice(0, HISTORY_VISIT_SNAPSHOT_MAX) }),
+    )
+  } catch {
+    // 隐私模式写不进：快照是尽力而为的增强，不构成功能承诺
+  }
+}
+
+function readVisitSnapshot(): { at: number; items: HubVisitItem[] } | null {
+  try {
+    const raw = window.localStorage.getItem(VISIT_HISTORY_SNAPSHOT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { at?: number; items?: HubVisitItem[] }
     if (!Array.isArray(parsed.items) || typeof parsed.at !== 'number') return null
     return { at: parsed.at, items: parsed.items }
   } catch {
@@ -105,6 +137,11 @@ export default function SearchHistoryPage() {
   const [visitNextOffset, setVisitNextOffset] = useState(0)
   const [visitBusy, setVisitBusy] = useState(false)
   const [confirmClearVisits, setConfirmClearVisits] = useState(false)
+  /** U-375：当前处于「已武装、待第二击确认」的那条访问记录 id；null = 无武装 */
+  const [confirmDeleteVisitId, setConfirmDeleteVisitId] = useState<number | null>(null)
+  const [deletingVisitId, setDeletingVisitId] = useState<number | null>(null)
+  /** U-375：非空 = 访问 tab 当前展示的是离线快照（与搜索 tab 的 offlineSnapshotAt 同款，互不干扰） */
+  const [visitOfflineSnapshotAt, setVisitOfflineSnapshotAt] = useState<number | null>(null)
   /** A7：访问 tab 检索关键词（与搜索 tab 的 keyword 同款，跨 tab 保留） */
   const [visitKeyword, setVisitKeyword] = useState('')
   /** 非空 = 当前展示的是离线快照（时间戳用于如实标注） */
@@ -310,9 +347,23 @@ export default function SearchHistoryPage() {
     // A5：身份已变（登录/退出/合并）——旧身份的在途响应不得写回列表。
     if (identityRef.current !== requestIdentity) return
     if (degraded || page === null) {
-      // 降级 ≠ 空：首次加载失败落 error（带重试），加载更多失败保持原列表
-      if (offset === 0) setVisitState('error')
-      else setVisitHasMore(true)
+      // U-375：降级 ≠ 空——访问 tab 复用搜索 tab 的离线快照机制（T24 同款）：
+      // 本机有最近快照时展示它并明确标注「这是快照」，没有快照才落纯 error 态。
+      // 加载更多失败时保持原列表（与旧行为一致）。
+      if (offset === 0) {
+        const snapshot = readVisitSnapshot()
+        if (snapshot) {
+          setVisits(snapshot.items)
+          // 快照只存最近 20 条，总数未知：如实按快照条数展示，横幅会说明这不是实时总数。
+          setVisitTotal(snapshot.items.length)
+          setVisitHasMore(false)
+          setVisitNextOffset(0)
+          setVisitOfflineSnapshotAt(snapshot.at)
+          setVisitState('ready')
+        } else {
+          setVisitState('error')
+        }
+      } else setVisitHasMore(true)
       return
     }
     setVisits((prev) => (offset === 0 ? page.items : [...prev, ...page.items]))
@@ -320,6 +371,11 @@ export default function SearchHistoryPage() {
     setVisitHasMore(page.hasMore)
     setVisitNextOffset(page.nextOffset)
     setVisitState('ready')
+    // 首屏成功取回后写快照，供下次断网时展示（只存最近 20 条）。
+    if (offset === 0) {
+      writeVisitSnapshot(page.items)
+      setVisitOfflineSnapshotAt(null)
+    }
   }, [visitBusy, identity])
 
   // A5：身份变化后访问历史必须失效——3c2470e3（U-239）只修了取数时传
@@ -337,6 +393,8 @@ export default function SearchHistoryPage() {
       setVisitHasMore(false)
       setVisitNextOffset(0)
       setVisitState('idle')
+      setVisitOfflineSnapshotAt(null)
+      setConfirmDeleteVisitId(null)
     })
   }, [identity])
 
@@ -347,6 +405,33 @@ export default function SearchHistoryPage() {
     if (visitState === 'idle') void Promise.resolve().then(() => loadVisits(0))
   }, [tab, visitState, loadVisits])
 
+  const removeVisit = useCallback(async (id: number) => {
+    // U-375：离线快照守卫前置到武装之前——快照态点删除不武装、不静默吞第二击
+    // （快照是本机旧数据，删它不等于删云端）。
+    if (!identity || visitOfflineSnapshotAt) return
+    // 与搜索 tab 的 removeItem 同款两步确认：第一击只武装、不调接口；
+    // 第二击才执行删除。
+    if (confirmDeleteVisitId !== id) {
+      setConfirmDeleteVisitId(id)
+      return
+    }
+    setDeletingVisitId(id)
+    try {
+      const ok = await deleteVisitItem(identity, id)
+      if (!ok) {
+        toast({ title: '删除失败', description: '云端暂不可用，请稍后重试', variant: 'destructive' })
+        return
+      }
+      setVisits((prev) => prev.filter((v) => v.id !== id))
+      setVisitTotal((prev) => Math.max(0, prev - 1))
+    } finally {
+      // 成功与失败两路都清零：失败后用户可重新两击重试；不清零则武装残留，
+      // 下一次点击会直接删除、两步确认被绕过。
+      setDeletingVisitId(null)
+      setConfirmDeleteVisitId(null)
+    }
+  }, [confirmDeleteVisitId, identity, toast, visitOfflineSnapshotAt])
+
   const clearVisits = useCallback(async () => {
     if (!identity || visitBusy) return
     // 与 clearAll 同款两步确认：第一击只武装、不调接口；第二击才执行删除。
@@ -355,7 +440,9 @@ export default function SearchHistoryPage() {
       return
     }
     setVisitBusy(true)
-    const ok = await clearProfileSignals(identity, 'click')
+    // U-375：清空只删访问流水（DELETE /api/me/visits），不再走画像信号清理——
+    // 后者会删画像信号并立即重建画像，「清空访问记录」不等于「清空画像」。
+    const ok = await clearCloudVisits(identity)
     setVisitBusy(false)
     setConfirmClearVisits(false)
     if (!ok) {
@@ -366,7 +453,11 @@ export default function SearchHistoryPage() {
     setVisitTotal(0)
     setVisitHasMore(false)
     setVisitNextOffset(0)
-    toast({ title: '访问记录已清空', description: '画像已按剩余行为重建；收藏与搜索历史不受影响。' })
+    // R4 同款：清空成功后同步删快照键，否则下次降级加载会把已清空的访问
+    // 记录当快照「复活」；同时清掉快照态时间戳，不让横幅残留。
+    clearVisitHistorySnapshot()
+    setVisitOfflineSnapshotAt(null)
+    toast({ title: '访问记录已清空', description: '仅删除访问记录；画像未改动，收藏与搜索历史不受影响。' })
   }, [confirmClearVisits, identity, toast, visitBusy])
 
   const handleCopyQuery = useCallback(
@@ -459,6 +550,8 @@ export default function SearchHistoryPage() {
               setConfirmCleanZero(false)
               // 访问侧同款：切 tab 清「清空访问记录」武装，避免武装态跨 tab 残留。
               setConfirmClearVisits(false)
+              // U-375：同款清单条删除武装，避免武装态跨 tab 残留。
+              setConfirmDeleteVisitId(null)
               setTab(key)
             }}
             className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
@@ -506,6 +599,13 @@ export default function SearchHistoryPage() {
 
           {visitState === 'ready' && (
             <>
+              {/* U-375：快照态如实标注（与搜索 tab 同口径）——展示的是本机离线
+                  快照，不是实时数据；联网后重试可获取最新记录。 */}
+              {visitOfflineSnapshotAt && (
+                <p role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2 text-[11px] leading-relaxed text-amber-800 dark:text-amber-200">
+                  云端暂时取不到，正在展示本机离线快照（截至 {new Date(visitOfflineSnapshotAt).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' })}）。这不是实时数据，联网后重试可获取最新记录。
+                </p>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[11px] text-muted-foreground">
                   共 {visitTotal} 条站点访问记录（用于画像与「最近访问」，不含搜索词）。
@@ -581,6 +681,39 @@ export default function SearchHistoryPage() {
                         >
                           {formatTime(v.at)}
                         </time>
+                        {/* U-375：单条删除（与搜索 tab 的 removeItem 同款两步确认）。
+                            快照态不渲染删除按钮：快照是本机旧数据，删它不等于删云端。 */}
+                        {!visitOfflineSnapshotAt && (
+                          <Button
+                            variant={confirmDeleteVisitId === v.id ? 'destructive' : 'ghost'}
+                            size={confirmDeleteVisitId === v.id ? 'sm' : 'icon'}
+                            className={
+                              confirmDeleteVisitId === v.id
+                                ? 'h-8 shrink-0 px-2 text-xs'
+                                : 'h-8 w-8 shrink-0 text-muted-foreground hover:bg-destructive/15 hover:text-destructive-text'
+                            }
+                            disabled={deletingVisitId === v.id}
+                            onClick={() => void removeVisit(v.id)}
+                            aria-label={
+                              confirmDeleteVisitId === v.id
+                                ? `确认删除访问记录 ${v.site?.title ?? ''}`
+                                : `删除访问记录 ${v.site?.title ?? ''}`
+                            }
+                            aria-pressed={confirmDeleteVisitId === v.id}
+                            title={confirmDeleteVisitId === v.id ? '确认删除' : undefined}
+                          >
+                            {deletingVisitId === v.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : confirmDeleteVisitId === v.id ? (
+                              <>
+                                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                                确认删除
+                              </>
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        )}
                       </li>
                     ))}
                   </ul>

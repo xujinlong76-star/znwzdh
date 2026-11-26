@@ -990,6 +990,50 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     },
   );
 
+  /**
+   * U-375：删一条访问记录。
+   *
+   * 只删本身份的 click 事件（store 层 WHERE 限定 identity + kind + id）：
+   * 他人 id 猜中也删不掉，返回 404 而不是 200——否则调用方会以为删掉了。
+   * 搜索事件与画像行都不动。
+   */
+  app.delete(
+    "/api/me/visits/:id",
+    { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) return sendError(reply, 401, "UNAUTHORIZED", "身份未受信：需要 Bearer <redacted> 或有效的身份签名");
+      const identity = requestIdentityOf(req as never);
+      if (!identity) return sendError(reply, 401, "UNAUTHORIZED", "缺少登录身份");
+      const id = Number((req.params as { id?: string }).id ?? "");
+      if (!Number.isInteger(id) || id <= 0) return sendError(reply, 400, "INVALID_ID", "id 无效");
+      const canonical = await ctx.repo.resolveIdentity(identity);
+      const removed = await ctx.repo.deleteVisit(canonical, id);
+      if (removed === 0) return sendError(reply, 404, "NOT_FOUND", "该访问记录不存在");
+      return { ok: true, removed };
+    },
+  );
+
+  /**
+   * U-375：清空本身份的全部访问流水。
+   *
+   * 与 DELETE /api/profile/signals/click 的区别：这里只删 click 事件，
+   * 不碰 user_profiles 行、不重建画像。旧客户端 clearVisits 走信号清理，
+   * 清空访问记录的同时把画像也清了、toast 还写「画像已重建」——
+   * 「清空访问记录」不等于「清空画像」，两者必须分离。
+   */
+  app.delete(
+    "/api/me/visits",
+    { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) return sendError(reply, 401, "UNAUTHORIZED", "身份未受信：需要 Bearer <redacted> 或有效的身份签名");
+      const identity = requestIdentityOf(req as never);
+      if (!identity) return sendError(reply, 401, "UNAUTHORIZED", "缺少登录身份");
+      const canonical = await ctx.repo.resolveIdentity(identity);
+      const removed = await ctx.repo.clearVisits(canonical);
+      return { ok: true, removed };
+    },
+  );
+
   /* --------------------------- 会话治理（T8） --------------------------- */
 
   /**

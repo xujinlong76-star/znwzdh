@@ -175,6 +175,73 @@ describe("/api/me/visits（T23 访问历史）", () => {
     const res = await app.inject({ method: "GET", url: "/api/me/visits" });
     expect(res.statusCode).toBe(401);
   });
+
+  it("U-375：DELETE /api/me/visits/:id 只删本身份的一条 click，不动他人与搜索事件", async () => {
+    const ME = "github:u-visit-del";
+    const OTHER = "github:u-visit-del-other";
+    const cat = await ctx.repo.createCategory({ title: "访问删除" });
+    const site = await ctx.repo.createSite({ url: "https://visit-del.example.com", title: "访问删", categoryId: cat.id });
+    await ctx.repo.recordEvent("click", { siteId: site.id, identity: ME });
+    await ctx.repo.recordEvent("click", { siteId: site.id, identity: ME });
+    await ctx.repo.recordEvent("click", { siteId: site.id, identity: OTHER });
+    await ctx.repo.recordEvent("search", { query: "删不掉我", identity: ME });
+
+    const before = await app.inject({ method: "GET", url: "/api/me/visits", headers: headersFor(ME) });
+    expect(before.json().total).toBe(2);
+    const targetId = before.json().items[0].id as number;
+
+    const del = await app.inject({ method: "DELETE", url: `/api/me/visits/${targetId}`, headers: headersFor(ME) });
+    expect(del.statusCode).toBe(200);
+    expect(del.json().ok).toBe(true);
+    expect(del.json().removed).toBe(1);
+
+    const after = await app.inject({ method: "GET", url: "/api/me/visits", headers: headersFor(ME) });
+    expect(after.json().total).toBe(1);
+    expect(after.json().items.map((v: { id: number }) => v.id)).not.toContain(targetId);
+
+    // 他人的一条还在
+    const other = await app.inject({ method: "GET", url: "/api/me/visits", headers: headersFor(OTHER) });
+    expect(other.json().total).toBe(1);
+  });
+
+  it("U-375：DELETE 不存在的 id 返回 404，不删任何记录", async () => {
+    const res = await app.inject({ method: "DELETE", url: "/api/me/visits/987654321", headers: userHeaders() });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("U-375：DELETE 未受信身份 401", async () => {
+    const res = await app.inject({ method: "DELETE", url: "/api/me/visits/1" });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("U-375：DELETE /api/me/visits 只清本身份访问流水，画像行不动、搜索历史端点不受影响", async () => {
+    const ME = "github:u-visit-clear";
+    const cat = await ctx.repo.createCategory({ title: "访问清空" });
+    const site = await ctx.repo.createSite({ url: "https://visit-clear.example.com", title: "访问清", categoryId: cat.id });
+    await ctx.repo.recordEvent("click", { siteId: site.id, identity: ME });
+    await ctx.repo.recordEvent("click", { siteId: site.id, identity: ME });
+
+    const before = await app.inject({ method: "GET", url: "/api/me/visits", headers: headersFor(ME) });
+    expect(before.json().total).toBe(2);
+
+    // 画像行本身未被重建/清空：清空前后同一份画像原样返回。
+    const profileBefore = await app.inject({ method: "GET", url: "/api/profile", headers: headersFor(ME) });
+    expect(profileBefore.statusCode).toBe(200);
+
+    const res = await app.inject({ method: "DELETE", url: "/api/me/visits", headers: headersFor(ME) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    expect(res.json().removed).toBe(2);
+
+    const after = await app.inject({ method: "GET", url: "/api/me/visits", headers: headersFor(ME) });
+    expect(after.json().total).toBe(0);
+
+    const profileAfter = await app.inject({ method: "GET", url: "/api/profile", headers: headersFor(ME) });
+    expect(profileAfter.json()).toEqual(profileBefore.json());
+
+    const search = await app.inject({ method: "GET", url: "/api/search-history", headers: headersFor(ME) });
+    expect(search.statusCode).toBe(200);
+  });
 });
 
 describe("/api/me/sessions（T8 会话治理）", () => {

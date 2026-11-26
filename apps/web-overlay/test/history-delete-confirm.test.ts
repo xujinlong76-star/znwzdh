@@ -95,12 +95,12 @@ describe('U-145：单条删除两步确认', () => {
   })
 
   it('断言 5：切 tab 时清武装', () => {
-    const tabIdx = PAGE.indexOf('setTab(key)')
-    expect(tabIdx, 'tab 切换应存在').toBeGreaterThanOrEqual(0)
-    const before = PAGE.slice(Math.max(0, tabIdx - 400), tabIdx)
-    // 窗口 400：切 tab 处理器随武装复位项增多而变长（访问侧 setConfirmClearVisits(false)），
-    // 200 已装不下首项 setConfirmDeleteId(null)；窗口仍只覆盖本处理器。
-    expect(before).toContain('setConfirmDeleteId(null)')
+    // U-375 起用 tabSwitchHandler 全量截取：切 tab 处理器随武装复位项增多
+    // 而变长（访问侧 setConfirmClearVisits(false) + setConfirmDeleteVisitId(null)），
+    // 固定 400 字符窗口已装不下首项 setConfirmDeleteId(null)；窗口仍只覆盖本处理器。
+    const handler = tabSwitchHandler(PAGE)
+    expect(handler).toContain('setConfirmDeleteId(null)')
+    expect(handler).toContain('setTab(key)')
   })
 
   it('断言 6：离线快照守卫前置到武装之前', () => {
@@ -362,7 +362,7 @@ describe('访问历史清空两步确认（clearVisits 与 clearAll 同构）', 
     expect(PAGE).toContain('setConfirmClearVisits(true)')
   })
 
-  it('断言 2：武装分支先于接口调用——第一击只武装、不调 clearProfileSignals', () => {
+  it('断言 2：武装分支先于接口调用——第一击只武装、不调 clearCloudVisits', () => {
     const body = clearVisitsBody(PAGE)
     // 武装分支：条件 → 置武装 → return，且该 return 之前没有接口调用。
     assertOrder(
@@ -371,24 +371,29 @@ describe('访问历史清空两步确认（clearVisits 与 clearAll 同构）', 
       'clearVisits 武装分支',
     )
     const armReturn = body.indexOf('return', body.indexOf('setConfirmClearVisits(true)'))
-    const apiCall = body.indexOf('clearProfileSignals')
+    // U-375：清空改走 DELETE /api/me/visits（clearCloudVisits），不再走
+    // clearProfileSignals(identity, 'click')——后者会删画像信号并立即重建
+    // 画像，「清空访问记录」不等于「清空画像」。两步确认结构本身不变。
+    const apiCall = body.indexOf('clearCloudVisits')
     expect(apiCall, '接口调用应在武装分支的 return 之后').toBeGreaterThan(armReturn)
     // 武装分支内无删除调用：第一击零网络请求。
-    expect(body.slice(0, armReturn)).not.toContain('clearProfileSignals')
+    expect(body.slice(0, armReturn)).not.toContain('clearCloudVisits')
     // 依赖数组含武装态，否则闭包读到旧值、第二击仍走武装分支。
     const depStart = PAGE.indexOf('}, [', PAGE.indexOf('const clearVisits = useCallback'))
     const depEnd = PAGE.indexOf('])', depStart)
     expect(PAGE.slice(depStart, depEnd)).toContain('confirmClearVisits')
   })
 
-  it('断言 3：第二击才调接口删 click 信号，成功清空列表、失败保留记录', () => {
+  it('断言 3：第二击才调接口清空访问流水，成功清空列表、失败保留记录', () => {
     const body = clearVisitsBody(PAGE)
-    expect(body).toContain("clearProfileSignals(identity, 'click')")
+    // U-375：接口改走 clearCloudVisits(identity)（DELETE /api/me/visits，
+    // 只删访问流水、不动画像行）；两步确认与成功/失败两路结构不变。
+    expect(body).toContain('clearCloudVisits(identity)')
     // 成功/失败两路：失败先 toast 并 return，列表清空只在成功之后。
     assertOrder(
       body,
       [
-        "clearProfileSignals(identity, 'click')",
+        'clearCloudVisits(identity)',
         'setConfirmClearVisits(false)',
         "title: '清空访问记录失败'",
         'setVisits([])',

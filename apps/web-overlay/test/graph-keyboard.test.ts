@@ -218,7 +218,8 @@ describe("图谱组件接线", () => {
     const section = src.slice(start, src.indexOf("</div>", start));
     expect(section).toContain("<button");
     expect(section).toContain('type="button"');
-    expect(section).toContain("onClick={() => setSelectedNode(otherNode)}");
+    // U-381：选中改走 selectNode（改状态 + 写 ?site=），仍是真正的按钮。
+    expect(section).toContain("onClick={() => selectNode(otherNode)}");
     expect(/<div[^>]*onClick/.test(section)).toBe(false);
     // 按钮里不许塞块级元素（无效嵌套）
     expect(/<button[^>]*>\s*<div/.test(section)).toBe(false);

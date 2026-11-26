@@ -21,6 +21,13 @@ import type { HubSearchHistoryItem } from '@/lib/navhub-api'
 export const SEARCH_HISTORY_SNAPSHOT_KEY = 'navhub.search_history.cache.v1'
 
 /**
+ * U-375：访问历史离线快照键——与搜索快照同一口径（最近一页 ≤20 条 + 时间戳）。
+ * 访问 tab 断网时复用同一机制：有快照展示快照并如实标注，无快照才落 error。
+ * 本键是唯一事实源——/me/history 的读写与清空都要走它。
+ */
+export const VISIT_HISTORY_SNAPSHOT_KEY = 'navhub.visit_history.cache.v1'
+
+/**
  * 删掉本机历史快照。清空成功后必须调：否则下次取数降级时
  * /me/history 会把快照里的旧记录原样展示出来，清空等于没清。
  * 隐私模式 / 非浏览器环境写不进也不抛错（快照只是尽力而为的增强）。
@@ -28,6 +35,15 @@ export const SEARCH_HISTORY_SNAPSHOT_KEY = 'navhub.search_history.cache.v1'
 export function clearSearchHistorySnapshot(): void {
   try {
     window.localStorage.removeItem(SEARCH_HISTORY_SNAPSHOT_KEY)
+  } catch {
+    // 尽力而为：删不掉也不构成功能承诺
+  }
+}
+
+/** U-375：删掉本机访问历史快照（与 clearSearchHistorySnapshot 同款语义）。 */
+export function clearVisitHistorySnapshot(): void {
+  try {
+    window.localStorage.removeItem(VISIT_HISTORY_SNAPSHOT_KEY)
   } catch {
     // 尽力而为：删不掉也不构成功能承诺
   }

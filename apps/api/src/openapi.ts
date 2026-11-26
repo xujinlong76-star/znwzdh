@@ -72,6 +72,8 @@ const DESCRIPTIONS: Record<string, string> = {
   "DELETE /api/profile": "重置个性化画像（清画像 + 该身份行为事件；收藏与搜索历史保留）",
   "GET /api/admin/audit": "审计日志（分页 + action/actor 过滤 + actions 全集）",
   "GET /api/admin/health/trend": "健康巡检趋势（按天分桶：checked/failed/rate/avgLatencyMs）",
+  "GET /api/admin/semantic-coverage": "语义向量覆盖率（当前模型/维度：在库总数/已有向量/缺失，现算）",
+  "POST /api/admin/semantic-coverage/backfill": "手动触发缺失向量补齐（仅补缺失，入队 reindex）",
   "GET /api/admin/stats/trends": "运营看板（热门搜索/零结果/热度榜）",
   "GET /api/jobs/stream": "全量任务实时 SSE 事件流（控制台与运维仪表盘）",
   "GET /api/jobs/{id}/events": "单任务实时 SSE 事件流（等待任务执行完成）",

@@ -82,6 +82,8 @@ export const HUB_ROUTES: readonly HubRouteEntry[] = [
   { method: "GET", path: "/api/admin/plugins/metrics", scope: "read" },
   { method: "GET", path: "/api/admin/plugins/seed-status", scope: "admin" },
   { method: "POST", path: "/api/admin/plugins/seed-sync", scope: "admin" },
+  { method: "GET", path: "/api/admin/semantic-coverage", scope: "read" },
+  { method: "POST", path: "/api/admin/semantic-coverage/backfill", scope: "write" },
   { method: "GET", path: "/api/admin/site-reports", scope: "admin" },
   { method: "PATCH", path: "/api/admin/site-reports/:id", scope: "admin" },
   { method: "GET", path: "/api/admin/stats/trends", scope: "read" },

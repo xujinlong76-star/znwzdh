@@ -799,7 +799,16 @@ export class JobRunner {
       await this.runRefetch((payload ?? {}) as { siteId?: string; llm?: boolean });
     });
     this.taskRegistry.register("reindex", async ({ payload, run }) => {
-      await this.runReindex((payload ?? {}) as { siteId?: string; vectors?: boolean }, run);
+      await this.runReindex(
+        (payload ?? {}) as {
+          siteId?: string;
+          siteIds?: string[];
+          vectors?: boolean;
+          targets?: Array<"sites" | "plugins">;
+          missingVectorsOnly?: boolean;
+        },
+        run,
+      );
     });
     this.taskRegistry.register("site_self_healing", async ({ payload }) => {
       await this.runSiteSelfHealing((payload ?? {}) as { siteId?: string });
@@ -1800,6 +1809,12 @@ export class JobRunner {
     vectors?: boolean;
     targets?: Array<"sites" | "plugins">;
     /**
+     * 仅补缺失向量（U-369）：运行时现算缺失当前模型/维度的站点 id，只索引那批。
+     * 与 siteId/siteIds 互斥——同时传时以显式 id 为准；本分支是增量语义，
+     * 不做全量扫描、不清旧模型残留（与 siteIds 分支一致）。
+     */
+    missingVectorsOnly?: boolean;
+    /**
      * 执行句柄：重建按 32 条一批推进，批与批之间是天然的安全停手点。
      * 到这里才停而不是每批都查库——`shouldStop()` 读的是进程内的 AbortSignal
      * 与截止时间，零 IO 成本，因此每批查一次不会比「只在开头查」更贵。
@@ -1811,6 +1826,40 @@ export class JobRunner {
       await this.runReindexPlugins();
     }
     if (!targets.includes("sites")) return;
+
+    // U-369 仅补缺失向量：运行时现算缺失 id（分页取，不塞进 payload），
+    // 再走已有的 siteIds 增量分支。显式 siteId/siteIds 优先。
+    const missingVectorsOnly =
+      payload.missingVectorsOnly === true &&
+      !payload.siteId &&
+      !(Array.isArray(payload.siteIds) && payload.siteIds.length > 0);
+    if (missingVectorsOnly) {
+      const missingIds: string[] = [];
+      const PAGE = 500;
+      for (let offset = 0; ; offset += PAGE) {
+        const page = await this.ctx.repo.listSiteIdsMissingEmbeddings({
+          model: this.ctx.config.embedding.model,
+          dim: this.ctx.config.embedding.dim,
+          limit: PAGE,
+          offset,
+        });
+        missingIds.push(...page);
+        if (page.length < PAGE) break;
+        if (run.shouldStop()) break;
+      }
+      if (missingIds.length === 0) {
+        // 入队时缺失 > 0，执行时已被别的任务补完：如实记一条空结果，不静默跳过。
+        await this.ctx.repo
+          .recordEvent("reindex", {
+            meta: { sites: 0, vectors: payload.vectors !== false, staleEmbeddingsPurged: 0, missingVectorsOnly: true, missingVectorsBackfilled: 0 },
+          })
+          .catch(() => {
+            // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
+          });
+        return;
+      }
+      payload = { ...payload, siteIds: missingIds };
+    }
 
     // 全量重建 = 换代的时刻：先清掉旧模型/旧维度的向量残留。
     // 它们永远进不了 KNN（rehydrate 只灌当前模型/维度），却会永久占空间，
@@ -1921,10 +1970,18 @@ export class JobRunner {
         );
       }
     }
+    const eventMeta: Record<string, unknown> = {
+      sites: sites.length,
+      vectors: payload.vectors !== false,
+      staleEmbeddingsPurged: stalePurged,
+    };
+    if (missingVectorsOnly) {
+      // U-369：补齐任务的执行口径留在事件里，管理端可凭此区分「全量重建」与「仅补缺失」。
+      eventMeta.missingVectorsOnly = true;
+      eventMeta.missingVectorsBackfilled = sites.length;
+    }
     await this.ctx.repo
-      .recordEvent("reindex", {
-        meta: { sites: sites.length, vectors: payload.vectors !== false, staleEmbeddingsPurged: stalePurged },
-      })
+      .recordEvent("reindex", { meta: eventMeta })
       .catch(() => {
         // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
       });

@@ -17,6 +17,7 @@ import { sendWebhookAlert, ALERT_DEDUPE_WINDOW_MS } from "./alerts.ts";
 import { createStoreAlertDeduper } from "./alert-dedupe.ts";
 import { reconcileVideoCatalogOnBoot } from "./video-catalog-boot.ts";
 import { ensureNavigationShardsFresh } from "./storage.ts";
+import { ensureSemanticVectorBackfill } from "./semantic-backfill.ts";
 
 // 本地/容器启动时加载仓库根目录的 .env（Node 原生能力，零依赖）。
 // 注意：dev-all 以 apps/api 为 CWD 启动，默认的 loadEnvFile() 会找 apps/api/.env，
@@ -55,6 +56,26 @@ const runner = jobsEnabled
     })
   : null;
 if (runner) runner.start();
+
+// 语义向量冷启动补齐（U-369）：启用 embedding 或换模型后，已入库站点的缺失向量
+// 不会自动回来——reindex 从不排期，index-site 只在写站点时编码。
+// 启动时现算一次覆盖率，缺失 > 0 就入队一条仅补缺失的 reindex；缺失为 0、
+// embedding 未启用、已有未跑完的 reindex 时都不入队。
+// fire-and-forget：检查失败只记日志、下次启动重试，绝不阻断/拖慢启动；
+// NAVHUB_JOBS_ENABLED=0 时 runner 不存在，本检查也不跑。
+if (runner) {
+  void ensureSemanticVectorBackfill(ctx)
+    .then((r) => {
+      if (r.enqueued) {
+        console.info(`[navhub-job] 语义向量冷启动补齐：${r.missing}/${r.total} 条缺失向量已入队 reindex（仅补缺失）`, { jobId: r.jobId });
+      } else if (r.reason === "none-missing") {
+        console.info(`[navhub-job] 语义向量覆盖完整：${r.withVector}/${r.total} 条已有当前模型向量，无需补齐`);
+      }
+    })
+    .catch((err) => {
+      console.warn("[navhub-job] 语义向量冷启动补齐检查失败，下次启动重试:", err);
+    });
+}
 
 // 启动对账（影子表自愈）：见 video-catalog-boot.ts 头注释。fire-and-forget，
 // 绝不阻断/拖慢启动；NAVHUB_VIDEO_CATALOG_RECONCILE_ON_BOOT=0 可关闭。

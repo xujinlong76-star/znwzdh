@@ -21,6 +21,11 @@ import {
   type JobKind,
 } from "../jobs.ts";
 import {
+  ensureSemanticVectorBackfill,
+  findQueuedSemanticBackfillJob,
+  getSemanticVectorCoverage,
+} from "../semantic-backfill.ts";
+import {
   badRequest,
   created,
   forbidden,
@@ -134,6 +139,44 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
         diff: { mode: payload.mode ?? "rollup", apply: false },
       });
       return summary;
+    },
+  );
+
+  /**
+   * 语义向量覆盖率（U-369，dry-run 口径）。
+   *
+   * 三数全部现算（当前模型/维度）：在库总数 / 已有向量 / 缺失。管理端凭此看到
+   * 「语义通道空了多少」，而不必等一次搜索零结果才发现。embedding 关闭时也
+   * 照算（enabled=false），只表示补齐不会触发。
+   */
+  app.get("/api/admin/semantic-coverage", { config: { scope: "read" } }, async (req, reply) => {
+    reply.header("cache-control", "private, no-store");
+    const coverage = await getSemanticVectorCoverage(ctx);
+    const queuedBackfillJobId = await findQueuedSemanticBackfillJob(ctx);
+    return { ...coverage, queuedBackfillJobId };
+  });
+
+  /**
+   * 手动触发缺失向量补齐（U-369，管理端重建按钮的服务端入口）。
+   *
+   * 与启动时自动触发走同一函数 `ensureSemanticVectorBackfill`：缺失为 0、
+   * embedding 未启用、已有未跑完的 reindex 时都不重复入队，如实返回 reason。
+   * 只补缺失，不做全量重建、不清旧模型残留。
+   */
+  app.post(
+    "/api/admin/semantic-coverage/backfill",
+    { config: { rateLimit: { max: 30, timeWindow: "1 minute" }, scope: "write" } },
+    async (req) => {
+      const result = await ensureSemanticVectorBackfill(ctx);
+      await ctx.repo.audit({
+        ip: req.ip,
+        actor: req.auth.actor,
+        actorKind: req.auth.kind,
+        action: "job.semantic_backfill",
+        target: result.jobId ?? "semantic-coverage",
+        diff: { enqueued: result.enqueued, reason: result.reason, missing: result.missing, total: result.total },
+      });
+      return result;
     },
   );
 

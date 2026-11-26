@@ -673,6 +673,27 @@ async savedPluginEmbeddings(filter?: {
     return embeddingsRepo.savedPluginEmbeddingIndex(this, filter);
   }
 
+  /**
+   * 语义向量覆盖率（U-369）：当前模型/维度下在库站点「总数 / 已有向量 / 缺失」。
+   * 只做 COUNT，不读向量 BLOB；换模型后旧行不再匹配，全部计入缺失。
+   */
+  async countSemanticVectorCoverage(filter: {
+    model: string;
+    dim: number;
+  }): Promise<{ total: number; withVector: number; missing: number }> {
+    return embeddingsRepo.countSemanticVectorCoverage(this, filter);
+  }
+
+  /** 分页列出缺失当前模型/维度向量的在库站点 id（U-369 增量补齐用）。 */
+  async listSiteIdsMissingEmbeddings(filter: {
+    model: string;
+    dim: number;
+    limit: number;
+    offset: number;
+  }): Promise<string[]> {
+    return embeddingsRepo.listSiteIdsMissingEmbeddings(this, filter);
+  }
+
   async getPluginEmbedding(slug: string): Promise<Float32Array | null> {
     return embeddingsRepo.getPluginEmbedding(this, slug);
   }

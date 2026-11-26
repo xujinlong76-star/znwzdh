@@ -118,6 +118,57 @@ export async function savedEmbeddingIndex(
   return rows.map((r) => ({ key: hashSiteId(String(r.siteId)), siteId: String(r.siteId) }));
 }
 
+/**
+ * 语义向量覆盖率（U-369）：当前模型/维度下，有多少在库站点已有向量、缺多少。
+ *
+ * 口径与 `savedEmbeddings` / `savedEmbeddingIndex` 严格一致（同 model/dim 过滤、
+ * 同跳过 NULL 向量），外加「站点未被软删除」这一限定：
+ *  - total：未删除站点数；
+ *  - withVector：embeddings 里有当前模型/维度、非 NULL 向量、且站点未删除的行数；
+ *  - missing = total - withVector。
+ * 换模型或换维度后旧行不再匹配 → 全部计入 missing，冷启动/换模型都走同一口径。
+ * 只做两条 COUNT，不读向量 BLOB，50k 库也是 O(1) 行返回。
+ */
+export async function countSemanticVectorCoverage(
+  repo: Repository,
+  filter: { model: string; dim: number },
+): Promise<{ total: number; withVector: number; missing: number }> {
+  const total = Number(
+    (await repo.raw("SELECT COUNT(*) AS c FROM sites WHERE deleted_at IS NULL"))[0]?.c ?? 0,
+  );
+  const withVector = Number(
+    (
+      await repo.raw(
+        "SELECT COUNT(*) AS c FROM embeddings e JOIN sites s ON s.id = e.site_id " +
+          "WHERE s.deleted_at IS NULL AND e.model = ? AND e.dim = ? AND e.vector IS NOT NULL",
+        [filter.model, filter.dim],
+      )
+    )[0]?.c ?? 0,
+  );
+  return { total, withVector, missing: Math.max(0, total - withVector) };
+}
+
+/**
+ * 分页列出缺失当前模型/维度向量的在库站点 id（U-369 增量补齐用）。
+ *
+ * 按 id 排序、LIMIT/OFFSET 翻页：调用方按页取、按页入队/索引，不把全库 id
+ * 一次性塞进内存或任务 payload。`vector IS NOT NULL` 与覆盖率计数同口径。
+ */
+export async function listSiteIdsMissingEmbeddings(
+  repo: Repository,
+  filter: { model: string; dim: number; limit: number; offset: number },
+): Promise<string[]> {
+  const limit = Math.max(1, Math.floor(filter.limit));
+  const offset = Math.max(0, Math.floor(filter.offset));
+  const rows = await repo.raw(
+    "SELECT s.id AS id FROM sites s WHERE s.deleted_at IS NULL AND NOT EXISTS (" +
+      "SELECT 1 FROM embeddings e WHERE e.site_id = s.id AND e.model = ? AND e.dim = ? AND e.vector IS NOT NULL" +
+      ") ORDER BY s.id LIMIT ? OFFSET ?",
+    [filter.model, filter.dim, limit, offset],
+  );
+  return rows.map((r) => String(r.id));
+}
+
 /* ------------------------------------------------------------------ *
  * 插件向量：与站点同构，但落在独立的 plugin_embeddings 表 / plugins_vec 表
  * ------------------------------------------------------------------ */

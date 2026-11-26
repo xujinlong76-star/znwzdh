@@ -40,6 +40,12 @@ export const JobPayloadSchemas = {
       siteIds: z.array(SiteId).min(1).max(5000).optional(),
       targets: z.array(z.enum(["sites", "plugins"])).min(1).optional(),
       vectors: z.boolean().optional(),
+      /**
+       * 仅补缺失向量（U-369）：运行时现算缺失当前模型/维度的站点 id，只索引那批，
+       * 不做全量扫描、不清旧模型残留（增量语义，与 siteIds 分支一致）。
+       * 与 siteId/siteIds 互斥——同时传时以显式 id 为准（见 jobs.ts runReindex）。
+       */
+      missingVectorsOnly: z.boolean().optional(),
     })
     .strict(),
 

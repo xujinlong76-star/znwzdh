@@ -217,6 +217,17 @@ export function HomeCapsuleRow({
               <Puzzle className="h-4 w-4 text-primary shrink-0" />
               <span className="font-medium text-foreground">插件精选</span>
             </DropdownMenuItem>
+            {/* U-441：场景包一级入口（移动端）——与桌面胶囊行、页脚同款一级入口；
+                asChild 让菜单项直接渲染为 /scenes 链接（Radix 只负责菜单行为）。 */}
+            <DropdownMenuItem asChild>
+              <Link
+                href="/scenes"
+                className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent"
+              >
+                <Layers className="h-4 w-4 text-primary shrink-0" />
+                <span className="font-medium text-foreground">场景包</span>
+              </Link>
+            </DropdownMenuItem>
             {showGuideBadge && guidePending && onOpenGuideTab ? (
               <DropdownMenuItem
                 onClick={onOpenGuideTab}

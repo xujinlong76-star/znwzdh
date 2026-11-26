@@ -433,7 +433,9 @@ describe('接线守卫：这五项偏好各自都有真实消费者', () => {
   })
 
   it('daypartSceneEnabled → 筛选行确实按开关换文案；默认引擎接进零结果出口', () => {
-    const filter = overlayCode('src/components/workspace-filter.tsx')
+    // U-439：时段开关的旧载体 workspace-filter.tsx 已删除，同一行文案现住在
+    // HomeCapsuleRow（开关关闭时渲染「时段场景推荐已关闭」）。
+    const filter = overlayCode('src/components/home-capsule-row.tsx')
     expect(filter).toContain("useUserPreference('daypartSceneEnabled')")
     expect(filter).toContain('时段场景推荐已关闭')
     expect(overlayCode('src/components/search-palette.tsx')).toContain(

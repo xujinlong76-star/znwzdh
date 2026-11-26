@@ -451,6 +451,35 @@ describe('C4-G7 首页清退守卫（2026-11-24：不再在首页顶置堆叠考
   })
 })
 
+describe('U-436：/exam 考历页挂载（2026-11-27，截止日 11-27 在即）', () => {
+  it('/exam 在 guangdong-zikao-2027-01 卡片内挂载该卡（与国考提醒岛同款 per-exam 位）', () => {
+    const page = read('src/app/exam/page.tsx')
+    expect(page).toContain(
+      "import { GuangdongZikaoSignupCard } from '@/components/guangdong-zikao-signup-card'",
+    )
+    expect(page).toContain(
+      "{exam.id === 'guangdong-zikao-2027-01' ? <GuangdongZikaoSignupCard /> : null}",
+    )
+  })
+
+  it('今天（2026-11-26）处于 signup 相位：文案含 11-27 双截止时刻', () => {
+    // 11-26 12:00（上海）仍在预报名窗口内（11-24 10:00 起、11-27 12:00 止）。
+    const noon = shanghaiMidnightMs('2026-11-26') + 12 * 3600 * 1000
+    expect(guangdongZikaoSignupPhase(noon)).toBe('signup')
+    const copy = guangdongZikaoSignupCardCopy('signup')
+    expect(copy.statusLines[0]).toContain('11 月 27 日 12:00')
+    expect(copy.statusLines[0]).toContain('同日 17:00')
+    expect(copy.ctaLabel).toContain('报名')
+  })
+
+  it('首页与 /brief 仍不挂载该卡（C4-G7 清退守卫不因 /exam 接线而松动）', () => {
+    const nav = read('src/components/navigation-content.tsx')
+    expect(nav).not.toContain('@/components/guangdong-zikao-signup-card')
+    const brief = read('src/app/brief/page.tsx')
+    expect(brief).not.toContain('guangdong-zikao-signup-card')
+  })
+})
+
 describe('挂载前 null 与 60 秒 tick（U-235 同款，1022-W2 §5.4）', () => {
   it('组件源码：挂载前渲染 null、60 秒 interval + 清理，不许 1 秒 tick', () => {
     const src = read('src/components/guangdong-zikao-signup-card.tsx')

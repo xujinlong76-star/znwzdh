@@ -13,8 +13,7 @@
 //  - module-resize-store.ts 零改动：尺寸状态仍由父组件静态 import 使用
 //    （nav-cat-section / speed-dial-dock / category-in-situ-controls
 //    的 store import 必须在位）。
-//  - home-hero-deck 的静态 import 不动：它已在 dynamic 边界之后，
-//    本刀不碰。
+//  - U-438：home-hero-deck 已删除，本刀原「其静态 import 不动」的豁免随之失效。
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -74,12 +73,5 @@ describe('模块缩放手柄按需加载（Bundle 第三刀 a）', () => {
     }
     expect(navCat).toContain('useModuleWindowSize(')
     expect(dock).toContain('useModuleWindowSize(')
-  })
-
-  it('home-hero-deck 的静态 import 不动（已在 dynamic 边界之后，本刀不碰）', () => {
-    const hero = read('src/components/home-hero-deck.tsx')
-    expect(hero).toContain(
-      "import { ModuleResizeHandles } from '@/components/modular/module-resize-handles'",
-    )
   })
 })

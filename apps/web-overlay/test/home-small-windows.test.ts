@@ -122,7 +122,9 @@ describe('首页极简结构与小窗懒加载边界', () => {
   it('navigation-content.tsx 采用 HomeCapsuleRow + HomeQuickDock 与 dynamic({ ssr: false }) 小窗', () => {
     const src = readOverlay('src/components/navigation-content.tsx')
     // 29489f4c 首屏瘦身：运营胶囊行 HomeMicroStrip 已内联进 HomeCapsuleRow（合并行），
-    // navigation-content 只挂载 <HomeCapsuleRow；旧文件 home-micro-strip.tsx 保留但不再挂载。
+    // navigation-content 只挂载 <HomeCapsuleRow；U-437 旧文件 home-micro-strip.tsx
+    // 已删除（其“继续追”时间 meta 与 AI 找站“场景”入口随合并行保留，见
+    // home-capsule-row.tsx 与 drama-continue-watch-time-meta.test.ts）。
     expect(src).toContain('<HomeCapsuleRow')
     expect(readOverlay('src/components/home-capsule-row.tsx')).toContain('运营胶囊')
     expect(src).toContain('<HomeQuickDock')

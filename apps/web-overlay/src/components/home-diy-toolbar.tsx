@@ -499,7 +499,7 @@ export function HomeDIYToolbar({
                   </p>
                 </div>
                 <DropdownMenuLabel className="text-xs text-muted-foreground px-2 py-1">
-                  经典场景预设方案 (悬停或聚焦即时预览：卡片形态、背景、密度、视图与首屏展板)
+                  经典场景预设方案 (悬停或聚焦即时预览：卡片形态、背景、密度、视图)
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator className="my-1" />
                 {BUILTIN_DIY_PRESETS.map((preset: DIYPreset) => (

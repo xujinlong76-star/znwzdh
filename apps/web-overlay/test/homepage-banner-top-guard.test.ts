@@ -36,7 +36,7 @@ const LAYOUT = 'src/app/layout.tsx'
 const BANNER = 'src/components/growth/homepage-banner.tsx'
 const BANNER_TAG = '<HomepageBanner />'
 const GUIDE_DIALOG = 'src/components/home-windows/appearance-guide-dialog.tsx'
-const MICRO_STRIP = 'src/components/home-micro-strip.tsx'
+const CAPSULE_ROW = 'src/components/home-capsule-row.tsx'
 
 describe('首页「设为首页」引导已收拢进向导小窗（不再 fixed top-0 遮挡正文）', () => {
   it('layout 不再顶部固定渲染遮挡正文的 <HomepageBanner />', () => {
@@ -55,8 +55,10 @@ describe('首页「设为首页」引导已收拢进向导小窗（不再 fixed 
     expect(src).not.toContain("from '@/lib/growth'")
   })
 
-  it('HomeMicroStrip 保留轻量非阻断徽章直达向导小窗，且已领取后自动退场', () => {
-    const src = read(MICRO_STRIP)
+  it('HomeCapsuleRow 保留轻量非阻断徽章直达向导小窗，且已领取后自动退场', () => {
+    // U-437：向导徽章随已删 HomeMicroStrip 并入 HomeCapsuleRow（移动端快捷入口
+    // 下拉项「向导与设首页」，showGuideBadge 门控 + guidePending 退场逻辑同款）。
+    const src = read(CAPSULE_ROW)
     expect(src).toContain('HOMEPAGE_BANNER_DISMISSED_KEY')
     expect(src).toContain('向导与设首页')
   })

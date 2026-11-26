@@ -150,12 +150,11 @@ describe('P1 #10 触控目标：首页常驻控件', () => {
     expect(src).not.toContain('min-h-6')
   })
 
-  it('workspace-filter：工作区切换 chips 44px', () => {
-    const src = read('src/components/workspace-filter.tsx')
-    // 2026-11-21 收口：chips 视觉 h-8，触控热区由 ::after 扩到 44px
-    expect(src).toContain('flex h-8 items-center gap-1.5 px-2.5 rounded-full')
-    // chips 本身 h-8，触摸热区由外层按钮/::before 保证——这里只锁视觉收口事实
-    expect(src).toContain('flex h-8 items-center gap-1.5')
+  it('workspace-filter → home-capsule-row：工作区切换 chips 44px', () => {
+    // U-439：工作区切换 chips 的旧载体 workspace-filter.tsx 已删除，同一组胶囊
+    // 现住在 HomeCapsuleRow（桌面端 tablist）；触控热区 min-h-9（粗指针 min-h-11）。
+    const src = read('src/components/home-capsule-row.tsx')
+    expect(src).toContain('flex min-h-9 pointer-coarse:min-h-11 items-center gap-1.5 px-2.5 py-1 rounded-full')
   })
 
   it('quick-access-tray：筛选页签与折叠钮 44px', () => {
@@ -299,11 +298,6 @@ describe('P1 #10 触控目标：对话框与浮层', () => {
     const src = read('src/components/onboarding-card.tsx')
     expect(src).toContain('className="h-11 w-11 shrink-0 text-muted-foreground"')
     expect(count(src, 'min-h-11')).toBeGreaterThanOrEqual(4)
-  })
-
-  it('home-hero-deck：配置/折叠/恢复/取消/保存 44px', () => {
-    const src = read('src/components/home-hero-deck.tsx')
-    expect(count(src, 'min-h-11')).toBeGreaterThanOrEqual(5)
   })
 
   it('resurface-row：归档/删除 44px', () => {

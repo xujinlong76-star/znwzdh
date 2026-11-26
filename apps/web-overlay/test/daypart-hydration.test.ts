@@ -1,10 +1,10 @@
 /**
  * 时段提示的水合安全守卫。
  *
- * 真实缺陷：WorkspaceFilter 原来在渲染体里直接
+ * 真实缺陷：时段提示原来在渲染体里直接
  *     const hour = new Date().getHours()
  * 算「☀️ 早间专注 / ⚡ 敏捷高效 / 🌙 深度探索」。而首页由服务端渲染
- * （app/page.tsx 静态 import NavigationContent → WorkspaceFilter），
+ * （app/page.tsx 静态 import NavigationContent → 时段行），
  * 服务端时区（CI / 容器基本都是 UTC）与用户时区不同，同一瞬间两边的小时数
  * 可能差好几个钟头：首屏 HTML 写「🌙 深度探索」，客户端首帧算出「☀️ 早间专注」，
  * React 判定水合不匹配 → 丢掉服务端 HTML 重渲染 + 控制台报错 + 提示文字闪一下。
@@ -15,6 +15,10 @@
  *      服务端快照恒为 null，组件不再自己 new Date()，也不再往 effect 里塞 setState。
  *
  * 端到端那一层（服务端 HTML 里绝不能出现任何时段文案）在 e2e/daypart-hydration.spec.ts。
+ *
+ * U-439：时段行的旧载体 WorkspaceFilter 已删除，同一段时段推荐渲染现住在
+ * HomeCapsuleRow（工作区胶囊行，含时段建议按钮与「时段场景推荐已关闭」态），
+ * 本守卫的接线断言随之改指该文件；纯函数部分不动。
  */
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -25,7 +29,7 @@ import { DAYPART_PLACEHOLDER, daypartText, describeDaypart } from '../src/lib/da
 const HERE = dirname(fileURLToPath(import.meta.url))
 /** overlay 与 apps/web 两份布局下都指向包根 */
 const ROOT = resolve(HERE, '..')
-const COMPONENT = resolve(ROOT, 'src', 'components', 'workspace-filter.tsx')
+const COMPONENT = resolve(ROOT, 'src', 'components', 'home-capsule-row.tsx')
 
 describe('describeDaypart：时段边界与旧文案逐字一致', () => {
   it('06:00-11:59 → 早间专注', () => {

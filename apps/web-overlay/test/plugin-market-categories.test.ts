@@ -193,13 +193,16 @@ describe('接线：首页插件精选区（P2-12）', () => {
   const home = overlayFile('src/app/page.tsx')
   const spotlight = overlayFile('src/components/home-plugin-spotlight.tsx')
 
-  it('首页挂精选微胶囊与小窗：取 featured 后传给 NavigationContent -> HomeMicroStrip / PluginSpotlightDialog', () => {
-    const strip = overlayFile('src/components/home-micro-strip.tsx')
+  it('首页挂精选微胶囊与小窗：取 featured 后传给 NavigationContent -> HomeCapsuleRow / PluginSpotlightDialog', () => {
+    // U-437：插件精选胶囊的接收方由已删 HomeMicroStrip 改为 HomeCapsuleRow
+    // （移动端快捷入口下拉项「插件精选」+ PluginSpotlightDialog items={pluginItems}）；
+    // /marketplace 语义链接仍由小窗本体持有。
+    const row = overlayFile('src/components/home-capsule-row.tsx')
     const dialog = overlayFile('src/components/home-windows/plugin-spotlight-dialog.tsx')
     expect(home).toContain("hubGet<{ items: HubPluginItem[]; total: number }>('/api/plugins?featured=true&sort=featured&limit=6', 60)")
     expect(home).toContain('pluginItems={featuredRes ? featuredRes.items : null}')
-    expect(strip).toContain('href="/marketplace"')
-    expect(strip).toContain('MARKETPLACE_CATEGORIES_PATH')
+    expect(row).toContain('插件精选')
+    expect(row).toContain('items={pluginItems}')
     expect(dialog).toContain('href="/marketplace"')
   })
 

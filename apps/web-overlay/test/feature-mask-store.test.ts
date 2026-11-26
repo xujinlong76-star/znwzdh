@@ -39,11 +39,14 @@ describe('不可变基础配置 + 用户差异掩码层 + 时间轴回收站 (Fe
     // 7 = 首屏瘦身批退役 mod:hero-header 后 L1 由 8 减至 7
     // （workspace-bar / onboarding-card / hero-deck / speed-dial /
     // crdt-pill / footer-directory / footer）；守卫计数同步更新（U-264）。
-    expect(L1_MODULE_CATALOG.length).toBeGreaterThanOrEqual(7)
+    // U-440：HomeHeroDeck 删除后 mod:hero-deck 随之退役，L1 由 7 减至 6
+    // （workspace-bar / onboarding-card / speed-dial /
+    // crdt-pill / footer-directory / footer）。
+    expect(L1_MODULE_CATALOG.length).toBeGreaterThanOrEqual(6)
     expect(L3_MICRO_CATALOG.length).toBe(4)
     expect(L4_FEATURE_CATALOG.length).toBe(4)
     expect(L1_MODULE_CATALOG.some((m) => m.id === 'mod:speed-dial')).toBe(true)
-    expect(L1_MODULE_CATALOG.some((m) => m.id === 'mod:hero-deck')).toBe(true)
+    expect(L1_MODULE_CATALOG.some((m) => m.id === 'mod:hero-deck')).toBe(false)
     expect(L4_FEATURE_CATALOG.some((f) => f.id === 'feat:diy-fab')).toBe(true)
   })
 
@@ -103,10 +106,12 @@ describe('不可变基础配置 + 用户差异掩码层 + 时间轴回收站 (Fe
   })
 
   it('支持单步撤销 (undoLastFeatureRemove)、单项精确还原 (restoreFeatureToMask) 与全量重置 (restoreAllFeaturesToDefault)', () => {
+    // U-440：本用例原以 mod:hero-deck 为例；该 catalog 项已随 HomeHeroDeck 删除，
+    // 改以 mod:speed-dial 为例（同为 L1 模块，行为断言不变）。
     removeFeatureFromMask({
-      id: 'mod:hero-deck',
+      id: 'mod:speed-dial',
       level: 'L1_MODULE',
-      title: '极速启动展板',
+      title: '⚡ 高频极速直达坞 Top 9',
       deletedAt: 100,
     })
     removeFeatureFromMask({
@@ -120,12 +125,12 @@ describe('不可变基础配置 + 用户差异掩码层 + 时间轴回收站 (Fe
     const undone = undoLastFeatureRemove()
     expect(undone?.id).toBe('site:1024')
     expect(isSitePruned(getFeatureMaskSnapshot(), '1024')).toBe(false)
-    expect(isModulePruned(getFeatureMaskSnapshot(), 'mod:hero-deck')).toBe(true)
+    expect(isModulePruned(getFeatureMaskSnapshot(), 'mod:speed-dial')).toBe(true)
 
-    // 2. 单项还原 (mod:hero-deck)
-    const restored = restoreFeatureToMask('mod:hero-deck')
-    expect(restored?.title).toBe('极速启动展板')
-    expect(isModulePruned(getFeatureMaskSnapshot(), 'mod:hero-deck')).toBe(false)
+    // 2. 单项还原 (mod:speed-dial)
+    const restored = restoreFeatureToMask('mod:speed-dial')
+    expect(restored?.title).toBe('⚡ 高频极速直达坞 Top 9')
+    expect(isModulePruned(getFeatureMaskSnapshot(), 'mod:speed-dial')).toBe(false)
     expect(getFeatureMaskSnapshot().trashBin).toHaveLength(0)
 
     // 3. 全量重置

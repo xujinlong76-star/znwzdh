@@ -120,7 +120,6 @@ describe('横向胶囊条：统一走 HorizontalScrollFade', () => {
     for (const f of [
       'src/components/home-quick-dock.tsx',
       'src/components/category-quick-jump-bar.tsx',
-      'src/components/home-micro-strip.tsx',
       'src/components/category-site-filter-bar.tsx',
     ]) {
       const s = read(f)
@@ -147,8 +146,9 @@ describe('横向胶囊条：统一走 HorizontalScrollFade', () => {
     expect(s).not.toContain('overflow-x-auto')
   })
 
-  it('快捷专题条、分类筛选行不再裸 overflow-x-auto', () => {
-    expect(read('src/components/home-micro-strip.tsx')).not.toContain('overflow-x-auto')
+  it('分类筛选行不再裸 overflow-x-auto', () => {
+    // U-437：快捷专题条（已删 home-micro-strip.tsx）随文件一并消失，不再断言；
+    // 剩余的分类筛选行仍走统一组件、不得裸 overflow-x-auto。
     expect(read('src/components/category-site-filter-bar.tsx')).not.toContain('overflow-x-auto')
   })
 })

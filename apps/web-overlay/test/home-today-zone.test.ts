@@ -87,35 +87,6 @@ describe('今日区源码守卫（home-today-zone.tsx）', () => {
   })
 })
 
-describe('折叠区源码守卫（home-today-more.tsx）', () => {
-  const more = read('src/components/home-today-more.tsx')
-
-  it('客户端开关：默认收起，状态只记本机开关', () => {
-    expect(more).toContain("'use client'")
-    expect(more).toContain('HOME_TODAY_MORE_DEFAULT_OPEN = false')
-    expect(more).toContain("HOME_TODAY_MORE_STORAGE_KEY = 'navhub.home.todayMoreOpen.v1'")
-    expect(more).toContain('localStorage.getItem(HOME_TODAY_MORE_STORAGE_KEY)')
-    expect(more).toContain('localStorage.setItem(HOME_TODAY_MORE_STORAGE_KEY')
-  })
-
-  it('开关是带文字的真按钮，aria 完备；折叠用 hidden 切换，不卸载内容', () => {
-    expect(more).toContain('aria-expanded={open}')
-    expect(more).toContain('aria-controls="home-today-more"')
-    expect(more).toContain('id="home-today-more"')
-    expect(more).toContain('hidden={!open}')
-    expect(more).toContain('更多今日内容')
-    expect(more).toContain('min-h-11')
-  })
-
-  it('折叠区不渲染任何条带内容：只包 children，不 import 四条', () => {
-    expect(more).not.toContain('HomeBriefStrip')
-    expect(more).not.toContain('HomeExamStrip')
-    expect(more).not.toContain('HandoffCard')
-    expect(more).not.toContain('StreakBar')
-    expect(more).toContain('{children}')
-  })
-})
-
 describe('今日区行为：考试倒计时与短剧榜首（只读事实源）', () => {
   it('2026-11-17 最近一场是国考，距首考日 11 天，下一步是准考证打印', () => {
     const line = nearestExamCountdown(NOV_17_0800_CST)

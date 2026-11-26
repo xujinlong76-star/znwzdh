@@ -1,9 +1,10 @@
 /**
  * 首屏展板的水合骨架守卫。
  *
- * 真实缺陷（改动前）：`HomeHeroDeck` 以 `ssr: false` 懒加载且没有 loading 占位。
- * 展板默认展开（4 张 min-h-[160px] 卡片），首帧分类区贴在顶部，水合完成后
- * 整页向下跳约 200px——首屏点击会落到「刚被推下来」的另一张卡上。
+ * U-438：`HomeHeroDeck` 已删除（默认首页不再首屏铺开 5 张 528px 大卡片，
+ * 见 widget-box-dialog.tsx 注释）。本文件现守两件事：导航中心不得把展板
+ * 挂回来（`<HomeHeroDeck />` 零出现），以及取代它的 WidgetBoxDialog /
+ * PinnedCornerWidgets 仍为 ssr: false 按需懒加载、零首屏水合跳动。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";

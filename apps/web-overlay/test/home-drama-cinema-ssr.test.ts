@@ -177,15 +177,18 @@ describe('服务端读取：getFirstDramaPoster 真读到 public/drama-media.jso
 describe('接线守卫：SSR 开关与服务端传参真的在代码里', () => {
   it('首页极简胶囊与迷你剧场小窗保留 cinemaInitial 服务端直传，避免首帧闪空', () => {
     const navSrc = readSrc('src/components/navigation-content.tsx')
-    const stripSrc = readSrc('src/components/home-micro-strip.tsx')
+    // U-437：cinemaInitial 的接收方由已删 HomeMicroStrip 改为 HomeCapsuleRow
+    // （navigation-content 仍透传 cinemaInitial={cinemaInitial}，胶囊行再以
+    // initial={cinemaInitial} 交给 DramaMiniDialog）。
+    const rowSrc = readSrc('src/components/home-capsule-row.tsx')
     const dialogSrc = readSrc('src/components/home-windows/drama-mini-dialog.tsx')
     expect(navSrc).not.toBeNull()
-    expect(stripSrc).not.toBeNull()
+    expect(rowSrc).not.toBeNull()
     expect(dialogSrc).not.toBeNull()
     expect(navSrc).toContain('cinemaInitial?: CinemaInitialData')
     expect(navSrc).toContain('cinemaInitial={cinemaInitial}')
-    expect(stripSrc).toContain('cinemaInitial?: CinemaInitialData')
-    expect(stripSrc).toContain('initial={cinemaInitial}')
+    expect(rowSrc).toContain('cinemaInitial?: CinemaInitialData')
+    expect(rowSrc).toContain('initial={cinemaInitial}')
     expect(dialogSrc).toContain('<HomeDramaCinema initial={initial} />')
   })
 

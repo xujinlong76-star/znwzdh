@@ -112,12 +112,6 @@ describe("点击即操作的元素必须是真按钮", () => {
     expect(text).toContain("text-left");
   });
 
-  it("首页展板的折叠胶囊是 <button>，键盘也能展开", () => {
-    const text = overlaySource("src/components/home-hero-deck.tsx");
-    expect(text).toMatch(/<button\s+type="button"\s+onClick=\{toggleHeroDeckCollapsed\}/);
-    expect(/<div\s+onClick=\{toggleHeroDeckCollapsed\}/.test(text)).toBe(false);
-  });
-
   it("Base64 结果框是 <button>，键盘也能复制", () => {
     const text = overlaySource("src/components/modular/modules/quick-tools-widget.tsx");
     expect(text).toMatch(/<button\s+type="button"\s+onClick=\{\(\) => handleCopy\(b64Output\)\}/);

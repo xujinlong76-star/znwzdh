@@ -2,10 +2,11 @@
  * 首页 DIY：整页只有一份配置，而且「读不出来」不等于「没有配置」。
  *
  * 真实缺陷（`lib/modular/use-home-diy.ts` 原实现）：这个 hook 用 useState 存
- * config / history / isEditingLayout，而首页有 6 个组件各自调用它
- * （navigation-content / home-diy-toolbar / home-hero-deck / view-mode-toggle /
+ * config / history / isEditingLayout，而首页有 5 个组件各自调用它
+ * （navigation-content / home-diy-toolbar / view-mode-toggle /
  * category-in-situ-controls / keyboard-shortcuts-dialog）—— useState 是
  * **每个组件各存一份**，于是：
+ * （U-438：原第 6 个调用方 home-hero-deck 已删除。）
  *
  *   - view-mode-toggle 里 setViewMode('classic') 只改它自己那份，
  *     navigation-content 渲染用的 viewMode 不变 → 点「经典全景流」页面没反应；
@@ -513,7 +514,6 @@ describe('接线守则：DIY 状态只能住在共享存储里，且失败必须
     for (const rel of [
       'src/components/navigation-content.tsx',
       'src/components/home-diy-toolbar.tsx',
-      'src/components/home-hero-deck.tsx',
       'src/components/view-mode-toggle.tsx',
       'src/components/category-in-situ-controls.tsx',
       'src/components/keyboard-shortcuts-dialog.tsx',
@@ -680,10 +680,12 @@ describe('预设悬停预览：只改快照，不落盘、不进撤销栈', () =
   })
 
   it('悬停 3 个预设：撤销栈与磁盘都不动', () => {
+    // U-438：预览覆盖已不再含展板字段（heroDeckCollapsed / heroDeckWidgets
+    // 随 HomeHeroDeck 删除退出 DiyPreviewPatch），夹具同步去掉这两字段。
     const previews: DiyPreviewPatch[] = [
-      { cardDisplayMode: 'minimal', canvasBackground: 'grid', viewMode: 'classic', heroDeckCollapsed: true, heroDeckWidgets: ['quick-search'] },
-      { cardDisplayMode: 'rich', canvasBackground: 'aurora', viewMode: 'hybrid', heroDeckCollapsed: false, heroDeckWidgets: ['quick-search', 'favorites-dock'] },
-      { cardDisplayMode: 'compact', canvasBackground: 'clean', viewMode: 'workbench', heroDeckCollapsed: false, heroDeckWidgets: ['quick-search', 'clock-pomodoro', 'favorites-dock', 'quick-tools'] },
+      { cardDisplayMode: 'minimal', canvasBackground: 'grid', viewMode: 'classic' },
+      { cardDisplayMode: 'rich', canvasBackground: 'aurora', viewMode: 'hybrid' },
+      { cardDisplayMode: 'compact', canvasBackground: 'clean', viewMode: 'workbench' },
     ]
     for (const preview of previews) {
       setHomeDiyPreview(preview)
@@ -694,21 +696,20 @@ describe('预设悬停预览：只改快照，不落盘、不进撤销栈', () =
     expect(getHomeDiySnapshot().config.cardDisplayMode).toBe('standard')
   })
 
-  it('预览覆盖视图模式与展板：快照变、真实配置不动（W5：patch 扩到 viewMode / heroDeckCollapsed / heroDeckWidgets）', () => {
-    // zen-focus 悬停：classic + 折叠展板 + 只剩 quick-search，点下去之前真实配置还是 hybrid
+  it('预览覆盖视图模式：快照变、真实配置不动（U-438：patch 收回三项，展板字段退出预览）', () => {
+    // zen-focus 悬停：classic + standard + clean，点下去之前真实配置还是 hybrid
     setHomeDiyPreview({
       cardDisplayMode: 'standard',
       canvasBackground: 'clean',
       viewMode: 'classic',
-      heroDeckCollapsed: true,
-      heroDeckWidgets: ['quick-search'],
     })
     const snap = getHomeDiySnapshot().config
     expect(snap.viewMode).toBe('classic')
-    expect(snap.heroDeckCollapsed).toBe(true)
-    expect(snap.heroDeckWidgets).toEqual(['quick-search'])
     expect(snap.cardDisplayMode).toBe('standard')
     expect(snap.canvasBackground).toBe('clean')
+    // 展板字段不再进预览：快照里的仍是真实值，不是预览盖的
+    expect(snap.heroDeckCollapsed).toBe(false)
+    expect(snap.heroDeckWidgets).toEqual(['quick-search', 'clock-pomodoro', 'weather-clock', 'favorites-dock', 'quick-tools'])
     expect(getHomeDiySnapshot().history.past).toHaveLength(0)
     expect(browser.writes).not.toContain(STORAGE_KEY)
 
@@ -740,38 +741,23 @@ describe('预设悬停预览：只改快照，不落盘、不进撤销栈', () =
     expect(getHomeDiySnapshot().config.cardDisplayMode).toBe('rich')
   })
 
-  it('提交改到视图/展板预览字段时只清那一项（W5：previewAfterCommit 跟随 patch 扩字段）', () => {
+  it('提交改到视图预览字段时只清那一项（W5：previewAfterCommit 跟随 patch 字段；U-438：展板字段已退出预览）', () => {
     setHomeDiyPreview({
       viewMode: 'classic',
-      heroDeckCollapsed: true,
-      heroDeckWidgets: ['quick-search'],
       canvasBackground: 'aurora',
     })
-    // 拖拽改分类顺序：视图/展板预览原样保留
+    // 拖拽改分类顺序：视图/背景预览原样保留
     commitHomeDiyConfig((prev) => ({ ...prev, categoryOrder: ['cat-a', 'cat-b'] }))
     expect(getHomeDiySnapshot().config.viewMode).toBe('classic')
-    expect(getHomeDiySnapshot().config.heroDeckCollapsed).toBe(true)
-    expect(getHomeDiySnapshot().config.heroDeckWidgets).toEqual(['quick-search'])
     expect(getHomeDiySnapshot().config.canvasBackground).toBe('aurora')
-    // 真实提交改了 viewMode：只清 viewMode 一项，展板/背景预览继续盖着
+    // 真实提交改了 viewMode：只清 viewMode 一项，背景预览继续盖着
     commitHomeDiyConfig((prev) => ({ ...prev, viewMode: 'workbench' }))
     expect(getHomeDiySnapshot().config.viewMode).toBe('workbench')
-    expect(getHomeDiySnapshot().config.heroDeckCollapsed).toBe(true)
-    expect(getHomeDiySnapshot().config.heroDeckWidgets).toEqual(['quick-search'])
     expect(getHomeDiySnapshot().config.canvasBackground).toBe('aurora')
-    // 再改 heroDeckCollapsed 与 heroDeckWidgets：必须真改动（默认 false→true、
-    // 默认 4 个组件→2 个）才算碰到预览字段，两项都清，只剩背景预览
-    commitHomeDiyConfig((prev) => ({ ...prev, heroDeckCollapsed: true, heroDeckWidgets: ['quick-search', 'quick-tools'] }))
-    expect(getHomeDiySnapshot().config.heroDeckCollapsed).toBe(true)
-    expect(getHomeDiySnapshot().config.heroDeckWidgets).toEqual(['quick-search', 'quick-tools'])
-    expect(getHomeDiySnapshot().config.canvasBackground).toBe('aurora')
-    // 最后改背景：预览彻底清掉；展板两项仍是刚才提交的真实值，证明它们
-    // 不是预览盖着的（若是预览，清掉后会跳回默认值 false / 4 个组件）
+    // 最后改背景：预览彻底清掉
     commitHomeDiyConfig((prev) => ({ ...prev, canvasBackground: 'grid' }))
     expect(getHomeDiySnapshot().config.canvasBackground).toBe('grid')
     expect(getHomeDiySnapshot().config.viewMode).toBe('workbench')
-    expect(getHomeDiySnapshot().config.heroDeckCollapsed).toBe(true)
-    expect(getHomeDiySnapshot().config.heroDeckWidgets).toEqual(['quick-search', 'quick-tools'])
   })
 
   it('点击应用只产生 1 条历史记录（预览本身不占坑）', () => {
@@ -877,25 +863,30 @@ describe('工具栏细化修复：预设预览与 toast 诚实度', () => {
     expect(toolbar).toContain('onBlur={() => handlePresetHover(null)}')
   })
 
-  it('预览覆盖面已补全（W5）：DiyPreviewPatch 含视图模式与展板，悬停即预览', () => {
+  it('预览覆盖面已补全（W5）再收敛（U-438）：DiyPreviewPatch 含视图模式，悬停即预览', () => {
     // W3 钉住的缺口已补：setHomeDiyPreview 的 patch 类型扩成五项——
     // cardDisplayMode / canvasBackground / viewMode / heroDeckCollapsed /
     // heroDeckWidgets（密度仍走 data-density）。渲染层读的是快照 config
     //（真实配置 + 预览覆盖），扩类型即生效，无需改渲染。
+    // U-438：展板字段 heroDeckCollapsed / heroDeckWidgets 已随 HomeHeroDeck
+    // 的删除退出预览覆盖（唯一的渲染方没了），patch 收回三项；工具栏悬停
+    // 只推形态/背景/视图，菜单文案同步去掉「与首屏展板」。
     const patchStart = storage.indexOf('export type DiyPreviewPatch')
     const patch = storage.slice(patchStart, patchStart + 400)
-    expect(patch).toContain("'cardDisplayMode' | 'canvasBackground' | 'viewMode' | 'heroDeckCollapsed' | 'heroDeckWidgets'")
-    // 工具栏悬停时把预设的五项都推进预览（不是只推形态/背景）
+    expect(patch).toContain("'cardDisplayMode' | 'canvasBackground' | 'viewMode'")
+    expect(patch).not.toContain('heroDeckCollapsed')
+    expect(patch).not.toContain('heroDeckWidgets')
+    // 工具栏悬停时把预设的三项都推进预览（不是只推形态/背景）
     const hover = toolbar.slice(
       toolbar.indexOf('const handlePresetHover'),
       toolbar.indexOf('const handlePresetHover') + 800,
     )
     expect(hover).toContain('viewMode: preset.config.viewMode')
-    expect(hover).toContain('heroDeckCollapsed: preset.config.heroDeckCollapsed')
-    expect(hover).toContain('heroDeckWidgets: preset.config.heroDeckWidgets')
+    expect(hover).not.toContain('heroDeckCollapsed')
+    expect(hover).not.toContain('heroDeckWidgets')
     // 菜单文案不再说「视图与首屏展板点击才生效」：悬停已经能预览它们
     expect(toolbar).not.toContain('视图与首屏展板点击才生效')
-    expect(toolbar).toContain('悬停或聚焦即时预览：卡片形态、背景、密度、视图与首屏展板')
+    expect(toolbar).toContain('悬停或聚焦即时预览：卡片形态、背景、密度、视图')
   })
 
   it('「智能调优」toast 不再编数字与密度：按真实结果说', () => {

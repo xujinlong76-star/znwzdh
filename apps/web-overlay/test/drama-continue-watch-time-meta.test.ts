@@ -18,8 +18,10 @@
 import { describe, expect, it, vi, afterAll } from 'vitest'
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { DramaContent } from '../src/components/drama-content'
-import { HomeMicroStrip } from '../src/components/home-micro-strip'
 import {
   dramaKeyFor,
   type WatchEntry,
@@ -107,14 +109,6 @@ function renderDrama(): string {
   return renderToString(createElement(DramaContent, { sites: SITES, dramas: [] }))
 }
 
-function renderStrip(): string {
-  // 2026-11-22：短剧默认移出全局首屏，需显式进入短剧上下文才能渲染胶囊。
-  // 本文件测的是「继续追」时间文案，与曝光策略无关，故传 short-drama 上下文。
-  return renderToString(
-    createElement(HomeMicroStrip, { pluginItems: null, activeWorkspace: 'short-drama' }),
-  )
-}
-
 describe('/drama「继续追」行：相对时间 meta', () => {
   it('看到第 3 集、3 天前改进度：写「上次进度 3天前」', () => {
     setWatchlist([entry({ title: '追更剧' })])
@@ -154,35 +148,33 @@ describe('/drama「继续追」行：相对时间 meta', () => {
   })
 })
 
-describe('首页微胶囊「继续追」：相对时间 meta', () => {
-  it('在追且 3 天前改进度：胶囊写「继续追《剧名》 · 3天前」', () => {
-    setWatchlist([entry({ title: '追更剧' })])
-    const html = renderStrip()
-    expect(html).toContain('继续追《追更剧》')
-    expect(html).toContain('3天前')
+/**
+ * U-437：首页微胶囊行已删除，其「继续追」时间 meta 随合并行并入
+ * HomeCapsuleRow 的移动端快捷入口下拉项（与已删 home-micro-strip 同款口径：
+ * episode > 0 且 lastProgressAt 合法才写 `· {formatRelativeTime}`，否则不写、
+ * 绝不渲染“—”）。下拉菜单内容只在打开时才挂载，SSR 抓不到它，故这里只做
+ * 源码级接线守卫；同一口径的运行时行为仍由上方的 /drama「继续追」行覆盖。
+ */
+describe('首页胶囊行「继续追」：相对时间 meta 已并入 HomeCapsuleRow（U-437）', () => {
+  const row = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'components', 'home-capsule-row.tsx'),
+    'utf8',
+  )
+
+  it('时间 meta 只写真实改进度：episode > 0 且 lastProgressAt 有限正数才算', () => {
+    expect(row).toContain('latestWatch.episode > 0')
+    expect(row).toContain("typeof latestWatch.lastProgressAt === 'number'")
+    expect(row).toContain('Number.isFinite(latestWatch.lastProgressAt)')
+    expect(row).toContain('latestWatch.lastProgressAt > 0')
+    expect(row).toContain('formatRelativeTime(latestWatch.lastProgressAt)')
   })
 
-  it('还没开始看（episode = 0）：只写剧名，不写时间', () => {
-    setWatchlist([entry({ title: '未开看剧', episode: 0 })])
-    const html = renderStrip()
-    expect(html).toContain('继续追《未开看剧》')
-    expect(html).not.toContain('天前')
-    expect(html).not.toContain('分钟前')
+  it('胶囊文案仍是「继续追《剧名》 · ×天前」，无进度时只写剧名、不写“—”', () => {
+    expect(row).toContain("继续追《${latestWatch.title}》${latestWatchProgress ? ` · ${latestWatchProgress}` : ''}")
+    expect(row).toContain("latestWatch ? `继续追《${latestWatch.title}》")
   })
 
-  it('lastProgressAt 非法（NaN）：不写时间、不渲染「—」', () => {
-    setWatchlist([entry({ title: '脏数据剧', lastProgressAt: NaN })])
-    const html = renderStrip()
-    expect(html).toContain('继续追《脏数据剧》')
-    expect(html).not.toContain('天前')
-    expect(html).not.toContain('—')
-  })
-
-  it('空清单：胶囊退回「今日短剧热榜」，无时间 meta', () => {
-    setWatchlist([])
-    const html = renderStrip()
-    expect(html).toContain('今日短剧热榜')
-    expect(html).not.toContain('继续追《')
-    expect(html).not.toContain('天前')
+  it('空清单时退回「今日短剧热榜」，无时间 meta', () => {
+    expect(row).toContain("'今日短剧热榜'")
   })
 })

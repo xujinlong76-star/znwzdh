@@ -48,7 +48,12 @@ const EXPLICIT_PLACEHOLDER_PAGES = [
 describe('命令面板缺口 ①：placeholder 与 `/` 快捷键提示完整可达', () => {
   it('首页顶栏搜索框使用精简 placeholder，`/` 快捷键改由 SearchPalette 内独立 <kbd>/</kbd> 徽标提示（防中窄屏被 [AI] 劈断）', () => {
     const toolbar = read('src/components/navigation-toolbar.tsx')
-    expect(toolbar).toContain('placeholder="搜索站点、标签或拼音…"')
+    // 2026-11-27 0322：placeholder 改为按 categoryId 条件派生（聚焦抽屉内用
+    // 「在当前分类内搜索…」，未聚焦仍用「搜索站点、标签或拼音…」），不再是字面量
+    // 属性；断言改为两文案均存在 + 条件派生形式，意图不变（顶栏仍有搜索框、默认文案不变）。
+    expect(toolbar).toContain('搜索站点、标签或拼音…')
+    expect(toolbar).toContain('在当前分类内搜索…（无结果时自动放宽到全库）')
+    expect(toolbar).toMatch(/placeholder=\{\s*categoryId\s*\?/)
     const palette = read('src/components/search-palette.tsx')
     expect(palette).toContain('title="按 / 快速搜索"')
     expect(palette).toContain('xl:inline-flex pointer-coarse:hidden')
@@ -65,10 +70,14 @@ it('/hot 已移除全站搜索框（2026-11-21），改由 / 快捷键 + 文字�
 
   it.each(EXPLICIT_PLACEHOLDER_PAGES)('%s 的显式 placeholder 带后缀', (rel) => {
     const src = read(rel)
-    const m = src.match(/<SearchPalette[^>]*placeholder="([^"]*)"/)
+    // 2026-11-27 0322：分类页 placeholder 改为模板字面量（插值 ${name}），
+    // JSX 里写作 placeholder={`...`}（花括号 + 反引号）；匹配器同时接受
+    // "..." 与 {`...`} 两种形式；断言意图不变（带「按 /」与后缀）。
+    const m = src.match(/<SearchPalette[^>]*placeholder=(?:\{`([^`]*)`\}|"([^"]*)")/)
     expect(m, `${rel} 应有显式 placeholder`).not.toBeNull()
-    expect(m![1]).toContain('按 /')
-    expect(m![1]).toContain(SUFFIX)
+    const value = m![1] ?? m![2]!
+    expect(value).toContain('按 /')
+    expect(value).toContain(SUFFIX)
   })
 
   it('AI 模式 placeholder 不动：仍是问 AI 的那句，不加后缀', () => {
@@ -119,7 +128,10 @@ describe('命令面板缺口 ②（退役）：FloatingQuickNav 已移除，三�
   it('搜索可达：顶栏仍有搜索框，超级搜索改走 ⌘⇧K / / 呼出（⌘K 改为聚焦顶栏）', () => {
     const toolbar = read('src/components/navigation-toolbar.tsx')
     expect(toolbar).toContain('SearchPalette')
-    expect(toolbar).toContain('placeholder="搜索站点、标签或拼音…"')
+    // 2026-11-27 0322：同上，placeholder 已改为按 categoryId 条件派生，见本文件首个断言注释。
+    expect(toolbar).toContain('搜索站点、标签或拼音…')
+    expect(toolbar).toContain('在当前分类内搜索…（无结果时自动放宽到全库）')
+    expect(toolbar).toMatch(/placeholder=\{\s*categoryId\s*\?/)
     const palette = read('src/components/search-palette.tsx')
     expect(palette).toContain('title="按 / 快速搜索"')
     expect(palette).toContain('spotlightHotkeyHint')

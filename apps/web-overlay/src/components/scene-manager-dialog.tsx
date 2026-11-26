@@ -40,6 +40,7 @@ import {
   sceneSwitchSuccessText,
 } from '@/lib/modular/scene-apply'
 import { buildLiveSceneDeps, buildLiveSceneDepsAsync } from '@/lib/modular/scene-apply-live'
+import { ensureHomeCategoriesLoaded } from '@/lib/modular/home-category-loader'
 import {
   MAX_USER_SCENES,
   browserUserSceneStorage,
@@ -91,6 +92,8 @@ export function SceneManagerDialog({
     const deps = scene.theme.skinSlug
       ? await buildLiveSceneDepsAsync(base)
       : buildLiveSceneDeps(base)
+    // flight 分片：场景应用前先取齐全部分类（同 scene-switcher）。
+    await ensureHomeCategoriesLoaded()
     deps.siteIndex = getRegisteredSceneSiteIndex()
     return deps
   }, [theme, setTheme])

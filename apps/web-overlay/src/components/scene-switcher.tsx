@@ -32,6 +32,7 @@ import {
   type SceneSwitchResult,
 } from '@/lib/modular/scene-apply'
 import { buildLiveSceneDeps, buildLiveSceneDepsAsync } from '@/lib/modular/scene-apply-live'
+import { ensureHomeCategoriesLoaded } from '@/lib/modular/home-category-loader'
 import { SCENE_SWITCHED_EVENT } from '@/lib/route-prefetch'
 import {
   broadcastUserScenesChanged,
@@ -131,6 +132,10 @@ export async function performSceneSwitch(
         getMode: () => opts.theme ?? null,
         setMode: (mode) => opts.setTheme(mode),
       })
+  // flight 分片：场景应用前先取齐全部分类——置顶站点若在未下发的分类里，
+  // derivePinnedSites 会把它当成「已删除」剪掉。ensureHomeCategoriesLoaded
+  // 在非首页上下文直接 resolve，不阻塞。
+  await ensureHomeCategoriesLoaded()
   deps.siteIndex = getRegisteredSceneSiteIndex()
   const result = await applyScene(scene, doc, deps)
   if (flagStorage && shouldClearSwitchFlag(result)) clearSceneSwitchFlag(flagStorage)

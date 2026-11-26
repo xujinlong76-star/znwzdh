@@ -7,6 +7,7 @@ import { hubGet } from "@/lib/server/hub";
 import type { HubPluginItem } from "@/lib/navhub-api";
 import { Metadata } from "next/types";
 import { getProcessedData } from "@/lib/data-loader";
+import { buildHomeCategoryIndex, type HomeCategoryIndex } from "@/lib/modular/category-index";
 import { collectDramaSites, countCategorySites } from "@/lib/drama-sites";
 import { getFirstDramaPoster } from "@/lib/server/cinema-media";
 import type { CinemaInitialData } from "@/components/home-drama-cinema";
@@ -99,6 +100,8 @@ const DIRECTORY_CATEGORY_LINKS = 50;
  * 它要新写按分类分页 API 并重构工作区筛选/场景索引/全站搜索（均依赖整树在手），
  * 还会把「展开全部」从即时揭示降级为带延迟请求。若将来站数膨胀致 flight
  * 接近 500KB，再重提。证据见工作区 p0-1-flight-measurement-2026-11-21.md。
+ * 【2026-11-26 已过期并执行：站数涨到 4,824、flight 约 2.3MB，
+ * 分片已按本文件末尾的 2026-11-26 说明落地，见 perf/flight-shard-1126。】
  * 短类名约省 0.4MB 未压缩）在 br/gzip 后几乎为零——重复串本来就会被压缩掉，不值得
  * 为此重写卡片交互区。预算仍通过；只剩「减少首屏卡数」这个杠杆，而它会减少内链，
  * 非超预算不动。其余卡片点「展开全部」在客户端即时揭示（数据本来就在 props 里，
@@ -123,6 +126,16 @@ const DIRECTORY_CATEGORY_LINKS = 50;
  * 不藏。SSR 卡数 208 -> 约 312 张，HTML 约 +100KB（RSC 数据本已全量下发，
  * 只增卡片 markup），4MB 预算哨兵由 seo-audit-prod 在线上复核，不进 CI
  * test-web 的产物模式（`/` 为动态渲染，不在预渲染产物里）。
+ *
+ * 2026-11-26 flight 分片（perf/flight-shard-1126）：上述「暂不做」的裁决已过期——
+ * 导航从 392 站涨到 4,824 站，初始 flight 从 234KB 涨到约 2.3MB
+ *（dev 实测，见 verify-logs/perf-flight-shard-1126/SUMMARY.md）。
+ * 现首屏只下发前 HOME_INITIAL_SSR_CATEGORIES 个分类的全量数据 +
+ * 全部 13 个分类的轻量索引（id/标题/站点数/子分类结构，不含站点记录，
+ * 见 lib/modular/category-index.ts）；其余分类在滚动到视口时
+ * （LazyMountSection）或被工作区筛选/场景应用需要时，
+ * 经 GET /api/home/navigation?category=<id> 按需取数。
+ * 影院首屏数据（cinemaInitial）仍由服务端用全量树算好，不受分片影响。
  *
  * `NAVHUB_HOME_CARDS_PER_GROUP` 可覆盖；传 0 即恢复全量 SSR 的旧行为。
  */
@@ -354,17 +367,33 @@ export default async function HomePage({ params }: { params?: Promise<{ mode?: s
 
   const todayBadge = computeHomeTodayBadge();
 
+  // flight 分片（2026-11-26 perf/flight-shard-1126）：初始 flight 只带前
+  // initialCategoryLimit 个分类的全量数据 + 全部 13 个分类的轻量索引
+  //（id/标题/站点数/子分类结构，不含站点记录）；其余分类按需取数。
+  // initialCategoryLimit<=0 表示全量 SSR（不分片），与旧行为一致。
+  // 影院首屏数据（cinemaInitial）已在上面用全量树算好，不受分片影响。
+  const ssrCategoryLimit = homeInitialSsrCategories();
+  const fullItems = navigationData?.navigationItems ?? [];
+  const initialItems =
+    ssrCategoryLimit > 0 ? fullItems.slice(0, ssrCategoryLimit) : fullItems;
+  const initialNavigationData = {
+    navigationItems: initialItems,
+    replacementHistory: navigationData?.replacementHistory,
+  };
+  const categoryIndex: HomeCategoryIndex = buildHomeCategoryIndex(fullItems);
+
   return (
     <>
       {/* 插件精选区（M-01 要求「首页有可见区块」）2026-11-25 位置调整：从内容之前
           移到内容之后。实测它占首屏 桌面 174px / 移动 324px（38%），把第一张站卡挤到
           y=653；精选是「发现型」内容，排在找站结果之后更符合任务顺序。可见性不变。 */}
       <NavigationContent
-      navigationData={navigationData}
+      navigationData={initialNavigationData}
+      categoryIndex={categoryIndex}
       siteData={siteData}
       directoryLinks={directoryLinks}
       cardsPerGroup={homeCardsPerGroup()}
-      initialCategoryLimit={homeInitialSsrCategories()}
+      initialCategoryLimit={ssrCategoryLimit}
       initialCardDisplayMode={initialCardDisplayMode}
       cinemaInitial={cinemaInitial}
       pluginItems={featuredRes ? featuredRes.items : null}

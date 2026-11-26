@@ -47,6 +47,12 @@ export interface LazyMountSectionProps {
   /** 视口预距，默认提前 800px 挂载 */
   rootMargin?: string
   /**
+   * 分区即将挂载时调用（视口触发 / force / 手动展开）。
+   * 首页 flight 分片用它触发按需取数：分类数据到齐后调用方重渲染，
+   * 真实 section 随之挂载；取数中调用方在 children 里放加载态。
+   */
+  onVisible?: () => void
+  /**
    * 轻量占位（未挂载时渲染）。不传时使用内置的 LazySectionPlaceholder
    * （分类标题 + 计数 + 手动展开入口）。
    */
@@ -62,17 +68,23 @@ export function LazyMountSection({
   estimatedHeight,
   force = false,
   rootMargin = '800px',
+  onVisible,
   placeholder,
   children,
 }: LazyMountSectionProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [mounted, setMounted] = useState(false)
+  // onVisible 身份随调用方 state 变化而变，用 ref 承载，避免反复重建 observer。
+  const onVisibleRef = useRef(onVisible)
+  onVisibleRef.current = onVisible
+  const notifyVisible = () => onVisibleRef.current?.()
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     const handleTarget = (e: Event) => {
       const custom = e as CustomEvent<{ sectionId?: string }>
       if (custom.detail?.sectionId === sectionId) {
+        notifyVisible()
         setMounted(true)
       }
     }
@@ -82,6 +94,7 @@ export function LazyMountSection({
 
   useEffect(() => {
     if (force) {
+      notifyVisible()
       setMounted(true)
       return
     }
@@ -90,6 +103,7 @@ export function LazyMountSection({
     if (!el) return
     // 环境不支持时不做功能阉割：直接挂载
     if (typeof IntersectionObserver === 'undefined') {
+      notifyVisible()
       setMounted(true)
       return
     }
@@ -100,6 +114,7 @@ export function LazyMountSection({
           return
         }
         if (entries.some((entry) => entry.isIntersecting)) {
+          notifyVisible()
           setMounted(true)
           io.disconnect()
         }

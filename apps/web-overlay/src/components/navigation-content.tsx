@@ -169,6 +169,16 @@ import {
 import { filterNavigationByWorkspace } from '@/lib/modular/workspace-matching'
 import { countCategorySites, estimateTruncatedSectionHeight } from '@/lib/modular/category-counts'
 import {
+  categoryIndexToStub,
+  isCategoryIndexStub,
+  type HomeCategoryIndex,
+} from '@/lib/modular/category-index'
+import {
+  ensureHomeCategoriesLoaded,
+  registerHomeCategoryLoader,
+  unregisterHomeCategoryLoader,
+} from '@/lib/modular/home-category-loader'
+import {
   combineAndSortCategories,
   customCategoriesToNavigation,
 } from '@/lib/modular/category-combine'
@@ -204,7 +214,18 @@ interface DirectoryLink {
 }
 
 interface NavigationContentProps {
+  /**
+   * 首页初始导航数据：flight 分片后只含前 initialCategoryLimit 个分类
+   * 的全量数据（其余分类见 categoryIndex，按需取数）。
+   * initialCategoryLimit<=0 时服务端下发全量，与旧行为一致。
+   */
   navigationData: NavigationData
+  /**
+   * 全部分类的轻量索引（id/标题/站点数/子分类结构，不含站点记录）。
+   * 用于渲染未下发分类的占位块与侧栏、以及按需取数时的 id 清单。
+   * 缺省时（旧调用方）退回 navigationData 全量，无分片。
+   */
+  categoryIndex?: HomeCategoryIndex
   siteData: SiteConfig
   /** 服务端生成的达标分类入口（首页目录带）；中枢失败时为空数组 */
   directoryLinks?: DirectoryLink[]
@@ -272,6 +293,7 @@ function resolveSubDropTarget(
 
 export function NavigationContent({
   navigationData,
+  categoryIndex,
   siteData,
   directoryLinks = [],
   cardsPerGroup = 0,
@@ -508,10 +530,99 @@ export function NavigationContent({
     [homeControl, personalHidden],
   )
 
+  // ---- 首页 flight 分片（2026-11-26 perf/flight-shard-1126）----
+  //
+  // 服务端只把前 initialCategoryLimit 个分类的全量数据放进 flight，
+  // 其余分类只下发轻量索引（categoryIndex）。这里以「已加载分类」为
+  // 事实源：effectiveNavigationItems = 索引顺序 ×（已加载取全量，
+  // 未加载取索引占位）。占位只有 totalCount + 结构、无站点记录，
+  // countCategorySites / estimateTruncatedSectionHeight 在无 items 时
+  // 读 totalCount，所以占位块的数字与高度与真实分类一致。
+  // 未加载的分类在滚动到视口时（LazyMountSection onVisible）或被
+  // 工作区筛选 / 场景应用需要时，经 GET /api/home/navigation?category=
+  // 按需取数；取到后替换占位，后续派生（筛选/排序/场景索引）自动重算。
+  const [loadedItemsById, setLoadedItemsById] = useState<Map<string, NavigationItem>>(
+    () => new Map(navigationData.navigationItems.map((c) => [c.id, c] as const)),
+  )
+  const [loadingCategoryIds, setLoadingCategoryIds] = useState<ReadonlySet<string>>(new Set())
+  const [failedCategoryIds, setFailedCategoryIds] = useState<ReadonlySet<string>>(new Set())
+  // 并发去重：同一分类在途只发一次请求，后到的调用方共用同一个 promise。
+  const categoryInflightRef = useRef(new Map<string, Promise<NavigationItem | null>>())
+
+  const loadCategory = useCallback(
+    async (categoryId: string): Promise<NavigationItem | null> => {
+      const loaded = loadedItemsById.get(categoryId)
+      if (loaded) return loaded
+      const inflight = categoryInflightRef.current.get(categoryId)
+      if (inflight) return inflight
+      const promise = (async (): Promise<NavigationItem | null> => {
+        setLoadingCategoryIds((prev) => new Set(prev).add(categoryId))
+        try {
+          const res = await fetch(
+            `/api/home/navigation?category=${encodeURIComponent(categoryId)}`,
+          )
+          if (!res.ok) return null
+          const data = (await res.json()) as { category?: NavigationItem }
+          const category = data?.category
+          if (!category || category.id !== categoryId) return null
+          setLoadedItemsById((prev) => {
+            const next = new Map(prev)
+            next.set(categoryId, category)
+            return next
+          })
+          setFailedCategoryIds((prev) => {
+            if (!prev.has(categoryId)) return prev
+            const next = new Set(prev)
+            next.delete(categoryId)
+            return next
+          })
+          return category
+        } catch {
+          setFailedCategoryIds((prev) => new Set(prev).add(categoryId))
+          return null
+        } finally {
+          setLoadingCategoryIds((prev) => {
+            const next = new Set(prev)
+            next.delete(categoryId)
+            return next
+          })
+          categoryInflightRef.current.delete(categoryId)
+        }
+      })()
+      categoryInflightRef.current.set(categoryId, promise)
+      return promise
+    },
+    [loadedItemsById],
+  )
+
+  /** 把索引里尚未加载的分类一次取齐（工作区筛选 / 场景应用前调用）。 */
+  const loadAllCategories = useCallback(async (): Promise<void> => {
+    if (!categoryIndex || categoryIndex.length === 0) return
+    const missing = categoryIndex
+      .map((entry) => entry.id)
+      .filter((id) => !loadedItemsById.has(id))
+    if (missing.length === 0) return
+    await Promise.all(missing.map((id) => loadCategory(id)))
+  }, [categoryIndex, loadedItemsById, loadCategory])
+
+  const effectiveNavigationItems = useMemo(() => {
+    if (!categoryIndex || categoryIndex.length === 0) {
+      return navigationData.navigationItems
+    }
+    const items = categoryIndex.map(
+      (entry) => loadedItemsById.get(entry.id) ?? categoryIndexToStub(entry),
+    )
+    // 防御：初始数据里有、索引里没有的分类（不应发生）追加在末尾，不丢数据。
+    for (const item of navigationData.navigationItems) {
+      if (!categoryIndex.some((entry) => entry.id === item.id)) items.push(item)
+    }
+    return items
+  }, [categoryIndex, loadedItemsById, navigationData.navigationItems])
+
   // 1. 场景工作台动态过滤（纯函数见 lib/modular/workspace-matching.ts，判定有单测）
   const filteredNavigationItems = useMemo(
-    () => filterNavigationByWorkspace(navigationData.navigationItems, activeWorkspace),
-    [navigationData.navigationItems, activeWorkspace],
+    () => filterNavigationByWorkspace(effectiveNavigationItems, activeWorkspace),
+    [effectiveNavigationItems, activeWorkspace],
   )
 
   // 2. 自定义专属分类 → 导航形状 + 合并/重映射/隐藏/排序
@@ -707,18 +818,25 @@ export function NavigationContent({
   // 自判定"输入框"，一次按键会撤两步。handleUndoPrune 留给回收站按钮用，
   // 分发时全局 hook 直接调 undoLastFeatureRemove + 分类双写。
 
-  const handleWorkspaceChange = useCallback((nextWorkspace: WorkspaceId) => {
+  const handleWorkspaceChange = useCallback(async (nextWorkspace: WorkspaceId) => {
+    if (nextWorkspace !== 'all') {
+      // 工作区筛选要整树在手（按标题/描述/标签关键词匹配）：先把未下发的
+      // 分类一次取齐再切工作区。否则筛选在只有前 4 个分类时，会把其余分类
+      // 误判为「无匹配」而折叠/隐藏，等于功能丢失。取数失败时仍继续切换，
+      // 已加载的分类照常筛选，未加载的在滚动到时补取。
+      await loadAllCategories()
+    }
     setActiveWorkspace(nextWorkspace)
     if (nextWorkspace === 'all') {
       expandAllCategories()
     } else {
-      const matchedCats = filterNavigationByWorkspace(navigationData.navigationItems, nextWorkspace)
+      const matchedCats = filterNavigationByWorkspace(effectiveNavigationItems, nextWorkspace)
       const matchedCatIds = new Set(matchedCats.map((c) => c.id))
-      const allIds = navigationData.navigationItems.map((c) => c.id)
+      const allIds = effectiveNavigationItems.map((c) => c.id)
       const toCollapse = allIds.filter((id) => !matchedCatIds.has(id))
       setCollapsedCategoryIds(toCollapse)
     }
-  }, [expandAllCategories, setCollapsedCategoryIds, navigationData.navigationItems])
+  }, [expandAllCategories, setCollapsedCategoryIds, effectiveNavigationItems, loadAllCategories])
 
   /**
    * P0-2：工具栏 7 个打开/切换回调全部 useCallback 化——它们传给 memo 的
@@ -760,11 +878,15 @@ export function NavigationContent({
   // 我的场景接线：① 把全站站点→分类索引登记到场景注册表（置顶派生用，
   //    用未经过滤的原始分类建，置顶站点所在分类被隐藏/折叠也要能解析）；
   //    ② 监听场景切换派发的 workspace 事件，走上面同一条 handleWorkspaceChange。
+  // flight 分片：索引随已加载分类增长而重建；场景应用前（?scene= 直达
+  //    与场景切换器/管理器）须先取齐全部分类，见下方的 sceneParam effect
+  //    与 lib/modular/home-category-loader.ts 的注册，否则置顶站点
+  //    会被 derivePinnedSites 当成「已删除」剪掉。
   useEffect(() => {
     registerSceneSiteIndex(
-      buildSceneSiteIndex(navigationData.navigationItems, customCategories),
+      buildSceneSiteIndex(effectiveNavigationItems, customCategories),
     )
-  }, [navigationData.navigationItems, customCategories])
+  }, [effectiveNavigationItems, customCategories])
   useEffect(() => {
     const onSceneWorkspace = (event: Event) => {
       const filter = (event as CustomEvent<{ filter?: string }>).detail?.filter
@@ -775,6 +897,21 @@ export function NavigationContent({
     window.addEventListener(SCENE_WORKSPACE_CHANGE_EVENT, onSceneWorkspace)
     return () => window.removeEventListener(SCENE_WORKSPACE_CHANGE_EVENT, onSceneWorkspace)
   }, [handleWorkspaceChange])
+
+  // flight 分片：把「取齐全部分类」注册到全局，供场景应用路径
+  //（切换器/管理器）在读场景站点索引前先 await 补齐索引。
+  // 卸载时注销，避免旧闭包持有已卸载组件的 state setter。
+  useEffect(() => {
+    registerHomeCategoryLoader(loadAllCategories)
+    return () => unregisterHomeCategoryLoader(loadAllCategories)
+  }, [loadAllCategories])
+
+  // flight 分片：?scene= 直达某个场景时，场景应用要完整的站点→分类索引
+  //（置顶站点解析用），水合后立即把未下发的分类一次取齐。
+  useEffect(() => {
+    if (!sceneParam) return
+    loadAllCategories()
+  }, [sceneParam, loadAllCategories])
 
   /**
    * 首屏分类分批渲染（首页 HTML 预算哨兵与 CWV 首屏加速）。
@@ -793,6 +930,26 @@ export function NavigationContent({
     }
     return list.slice(0, initialCategoryLimit)
   }, [mounted, initialCategoryLimit, sortedCategories, isEditingLayout])
+
+  // flight 分片：首屏直挂区（前 EAGER_CATEGORY_COUNT 个）的分类若是占位
+  //（DIY 重排把未下发分类顶到前排），水合后立即取数，不等滚动。
+  // 正常顺序下前两名都在初始 flight 里，这条 effect 是空操作。
+  useEffect(() => {
+    if (!mounted) return
+    for (const cat of renderedCategories.slice(0, EAGER_CATEGORY_COUNT)) {
+      if (isCategoryIndexStub(cat)) void loadCategory(cat.id)
+    }
+  }, [mounted, renderedCategories, loadCategory])
+
+  // flight 分片：DIY「跨分类归类」（siteCategoryOverrides）要整树在手
+  // 才能正确移动站点——源分类与目标分类都须已加载，否则被移动的站点
+  // 会错误地留在源分类、或目标分类只剩移入的几条。有重映射时直接取齐
+  // 全部分类；无重映射的绝大多数用户不受影响。
+  useEffect(() => {
+    if (!mounted) return
+    if (!siteCategoryOverrides || Object.keys(siteCategoryOverrides).length === 0) return
+    loadAllCategories()
+  }, [mounted, siteCategoryOverrides, loadAllCategories])
 
   /**
    * 分类 id → 本页真正渲染出来的站点数（算式见 lib/modular/category-counts.ts）。
@@ -1462,7 +1619,12 @@ export function NavigationContent({
               <DiyGridDragBoundary kit={dragKit} enabled={isEditingLayout} onDragEnd={handleCategoryDragEnd}>
               <div className="grid grid-cols-12 gap-6 sm:gap-8 items-start">
                 {renderedCategories.map((category, index) => {
-                  const section = (
+                  // flight 分片：占位分类（无站点记录）不渲染真实分区——
+                  // 真实分区在取数完成后才挂载；取数中显示加载态，失败给重试入口。
+                  const isStub = isCategoryIndexStub(category)
+                  const isLoading = loadingCategoryIds.has(category.id)
+                  const loadFailed = failedCategoryIds.has(category.id)
+                  const section = !isStub ? (
                     <NavigationCategorySection
                       key={category.id}
                       category={category}
@@ -1482,7 +1644,41 @@ export function NavigationContent({
                       dialDigitById={mounted ? dialMap.digitById : undefined}
                       siteTitleById={siteTitleById}
                     />
+                  ) : null
+                  const loadingFallback = (
+                    <section
+                      id={category.id}
+                      className="group relative scroll-m-16 rounded-2xl border border-dashed border-border/60 bg-muted/20 p-4"
+                      style={{ minHeight: `${estimateTruncatedSectionHeight(category, cardsPerGroup)}px` }}
+                      aria-busy={!loadFailed}
+                      aria-label={loadFailed ? `${category.title}（加载失败）` : `${category.title}（正在加载）`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-1.5 h-5 rounded-full bg-primary/50" />
+                          <h2 className="text-base sm:text-xl font-bold tracking-tight text-foreground truncate">{category.title}</h2>
+                          <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground border border-border/40 shrink-0">
+                            {countCategorySites(category)} 站点
+                          </span>
+                        </div>
+                        {loadFailed ? (
+                          <button
+                            type="button"
+                            onClick={() => void loadCategory(category.id)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-border/70 bg-background/80 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary cursor-pointer shrink-0"
+                          >
+                            加载失败，点按重试
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+                            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/30 border-t-primary" aria-hidden="true" />
+                            正在加载该分类…
+                          </span>
+                        )}
+                      </div>
+                    </section>
                   )
+                  const content = section ?? loadingFallback
                   /**
                    * 前 EAGER_CATEGORY_COUNT 个分类立即挂载，其余交给视口触发。
                    *
@@ -1509,7 +1705,7 @@ export function NavigationContent({
                   // forceFull 展开全部卡片供点选。新建自定义分类仍须立即挂载
                   //（用户刚创建，要当场看到并编排）。
                   const mustMountAll = isFreshCustom
-                  if (mustMountAll || index < EAGER_CATEGORY_COUNT) return section
+                  if (mustMountAll || index < EAGER_CATEGORY_COUNT) return content
                   return (
                     <LazyMountSection
                       key={category.id}
@@ -1518,6 +1714,9 @@ export function NavigationContent({
                       count={countCategorySites(category)}
                       estimatedHeight={estimateTruncatedSectionHeight(category, cardsPerGroup)}
                       force={false}
+                      onVisible={() => {
+                        if (isStub) void loadCategory(category.id)
+                      }}
                       placeholder={
                         isEditingLayout ? (
                           <section
@@ -1555,7 +1754,7 @@ export function NavigationContent({
                         ) : undefined
                       }
                     >
-                      {section}
+                      {content}
                     </LazyMountSection>
                   )
                 })}

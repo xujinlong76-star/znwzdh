@@ -13,16 +13,42 @@
  */
 export interface CountableCategory {
   items?: unknown[] | null;
-  subCategories?: Array<{ items?: unknown[] | null }> | null;
+  subCategories?: Array<{ items?: unknown[] | null; totalCount?: number }> | null;
+  /**
+   * 显式站点总数（首页 flight 分片的索引占位用，见 lib/modular/category-index.ts）。
+   * 仅当分类没有任何已加载的条目时才采用：已加载的分类以 items 实测为准，
+   * 避免总数与实际条目脱节。数据管线不写该字段，真实分类上它恒为 undefined。
+   */
+  totalCount?: number;
 }
 
-/** 一个分类的可见站点数 = 直接挂在分类下的条目 + 各子分类的条目 */
+/**
+ * 一个分类的可见站点数 = 直接挂在分类下的条目 + 各子分类的条目。
+ *
+ * 索引占位（首页 flight 分片，见 lib/modular/category-index.ts）：
+ * 没有任何已加载条目时以 totalCount 为准——占位的直接条目数
+ * （总数 - 各子分类数）无法从 items 读出，必须用总数本身。
+ * 已加载的分类恒以 items 实测为准（数据管线不写 totalCount）。
+ */
 export function countCategorySites(category: CountableCategory | undefined): number {
   if (!category) return 0;
   const direct = category.items?.length ?? 0;
   let nested = 0;
-  for (const sub of category.subCategories ?? []) nested += sub.items?.length ?? 0;
-  return direct + nested;
+  for (const sub of category.subCategories ?? []) {
+    nested += sub.items?.length ?? 0;
+  }
+  // 没有任何已加载条目：索引占位，直接返回显式总数。
+  if (direct === 0 && nested === 0 && typeof category.totalCount === 'number') {
+    return category.totalCount;
+  }
+  // 混合态（不应出现，仅防御）：子分类只有 totalCount 时按它补齐。
+  let total = direct + nested;
+  for (const sub of category.subCategories ?? []) {
+    if (!Array.isArray(sub.items) && typeof sub.totalCount === 'number') {
+      total += sub.totalCount;
+    }
+  }
+  return total;
 }
 
 /**
@@ -41,9 +67,19 @@ export function estimateTruncatedSectionHeight(
   const cap = Number.isFinite(limit) && limit > 0 ? limit : Number.POSITIVE_INFINITY;
   const groups: number[] = [];
   const direct = category.items?.length ?? 0;
-  if (direct > 0) groups.push(direct);
+  if (direct > 0) {
+    groups.push(direct);
+  } else if (typeof category.totalCount === 'number' && category.totalCount > 0) {
+    // 索引占位：直接条目数 = 总数 - 各子分类数（总数含直接条目）。
+    const subTotal = (category.subCategories ?? []).reduce(
+      (acc, sub) => acc + (typeof sub.totalCount === 'number' ? sub.totalCount : (sub.items?.length ?? 0)),
+      0,
+    );
+    const directCount = category.totalCount - subTotal;
+    if (directCount > 0) groups.push(directCount);
+  }
   for (const sub of category.subCategories ?? []) {
-    const n = sub.items?.length ?? 0;
+    const n = sub.items?.length ?? (typeof sub.totalCount === 'number' ? sub.totalCount : 0);
     if (n > 0) groups.push(n);
   }
   if (groups.length === 0) return 140;

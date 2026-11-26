@@ -173,6 +173,8 @@ export interface HubSearchResult
   hits: HubSearchHit[]
   /** A3：零结果放宽时被丢弃的分面条件（中枢 SearchResult.relaxedFacets 透传），前端据此点名提示 */
   relaxedFacets?: Record<string, string[]>
+  /** A3：零结果放宽时被丢弃的显式分类条件（中枢 SearchResult.relaxedCategoryId 透传），前端据此点名提示；API 分支未合入前为 undefined，调用方须守卫 */
+  relaxedCategoryId?: string
   /** 客户端标记：true 表示请求失败走了降级 */
   degraded?: boolean
   /** 知识图谱对标方案与实体关联命中（如搜 "figma" 命中其开源平替 "Penpot"） */

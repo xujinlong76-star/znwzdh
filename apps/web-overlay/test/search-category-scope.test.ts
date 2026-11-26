@@ -257,3 +257,10 @@ describe('U-190：分面 Link 不再误挂 aria-pressed（链接不是开关）'
     expect(src).toContain('aria-current={active ? true : undefined}')
   })
 })
+
+describe('A3：HubSearchResult 带可选 relaxedCategoryId（浮层复用同一字段）', () => {
+  it('HubSearchResult 带可选 relaxedCategoryId，API 分支未合入前为 undefined', () => {
+    const api = overlaySource('src/lib/navhub-api.ts')
+    expect(api).toContain('relaxedCategoryId?: string')
+  })
+})

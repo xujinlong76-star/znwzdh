@@ -21,6 +21,7 @@ import {
   normalizeSearchQuery,
   normalizeSearchTag,
   overLimitSearchPage,
+  relaxedCategoryNotice,
   searchApiPath,
   searchHref,
   searchMaxPage,
@@ -397,4 +398,26 @@ describe('U-210：已选分面 chips 不依赖 /api/facets 分布', () => {
     expect(view).toContain('清空分面')
     expect(view).toContain('去掉分面「${chip.keyLabel}')
   })
+})
+
+describe('A3：分类放宽提示点名被丢的分类（relaxedCategoryNotice）', () => {
+  it('API 分支未合入前 relaxedCategoryId 为 undefined，返回 null 走通用文案', () => {
+    expect(relaxedCategoryNotice(undefined, '开发工具')).toBeNull()
+    expect(relaxedCategoryNotice(null, '开发工具')).toBeNull()
+    expect(relaxedCategoryNotice('', '开发工具')).toBeNull()
+  })
+
+  it('有值时点名分类展示名，文案说明已放宽为全站结果', () => {
+    expect(relaxedCategoryNotice('dev-tools', '开发工具')).toBe(
+      '分类「开发工具」下暂无匹配，已放宽分类条件显示全站结果；下面的站点可能来自其他分类。',
+    )
+  })
+
+  it('展示名缺失时退回不点名的通用句，不把原始 id/slug 漏到文案里', () => {
+    const notice = relaxedCategoryNotice('dev-tools', null)
+    expect(notice).toBe('该分类下暂无匹配，已放宽分类条件显示全站结果；下面的站点可能来自其他分类。')
+    expect(notice).not.toContain('dev-tools')
+    expect(relaxedCategoryNotice('dev-tools', '')).not.toContain('dev-tools')
+  })
+
 })

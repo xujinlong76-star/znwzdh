@@ -154,18 +154,18 @@ describe('底栏「短剧」Tab：待看角标', () => {
     expect(html).not.toContain('-right-2 -top-1.5')
   })
 
-  it('due=3：角标显示「3」，aria-label「短剧，今日待看 3 部」', () => {
+  it('due=3：角标显示「3」，aria-label「3 短剧，今日待看」', () => {
     setWatchlist(dueEntries(3))
     const html = renderNav()
     expect(html).toContain('>3</span>')
-    expect(html).toContain('aria-label="短剧，今日待看 3 部"')
+    expect(html).toContain('aria-label="3 短剧，今日待看"')
   })
 
-  it('due=12：角标 9+ 封顶，aria-label 仍报真实数 12 部', () => {
+  it('due=12：角标 9+ 封顶，aria-label 仍报真实数「12 短剧，今日待看」', () => {
     setWatchlist(dueEntries(12))
     const html = renderNav()
     expect(html).toContain('>9+</span>')
-    expect(html).toContain('aria-label="短剧，今日待看 12 部"')
+    expect(html).toContain('aria-label="12 短剧，今日待看"')
   })
 
   it('ready=false：清单未就绪时不渲染角标（未就绪不等于没有待看）', () => {
@@ -197,7 +197,7 @@ describe('底栏「短剧」Tab：待看角标', () => {
     ])
     const html = renderNav()
     expect(html).toContain('>1</span>')
-    expect(html).toContain('aria-label="短剧，今日待看 1 部"')
+    expect(html).toContain('aria-label="1 短剧，今日待看"')
   })
 })
 

@@ -8,6 +8,7 @@ import {
   SEARCH_QUERY_MAX_LENGTH,
   describeSelectedFacets,
   inferredConditionLabels,
+  relaxedCategoryNotice,
   relaxedPricingNotice,
   searchHref,
   searchMaxPage,
@@ -816,7 +817,9 @@ export function SearchResults({
     : tag
       ? `标签「${tag}」下的站点`
       : category
-        ? `分类「${categoryName}」下的站点`
+        ? filterRelaxed
+          ? '全站结果（已放宽分类条件）'
+          : `分类「${categoryName}」下的站点`
         : Object.keys(facets).length > 0
           ? `分面筛选下的站点`
           : ''
@@ -988,6 +991,7 @@ export function SearchResults({
               <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
               <span>
                 {relaxedPricingNotice(result?.relaxedFacets) ??
+                  relaxedCategoryNotice(result?.relaxedCategoryId, categoryNameProp) ??
                   (tag
                     ? `标签「${tag}」等筛选没有命中，已放宽为更宽的结果；下面的站点不保证符合该标签。`
                     : inferred.length > 0
@@ -1000,6 +1004,15 @@ export function SearchResults({
                   className="font-medium underline underline-offset-2 hover:no-underline"
                 >
                   去掉筛选
+                </Link>
+              ) : null}
+              {category && filterRelaxed ? (
+                <Link
+                  href={searchHref({ q, tag, facets })}
+                  aria-label={`去掉分类「${categoryName}」筛选`}
+                  className="font-medium underline underline-offset-2 hover:no-underline"
+                >
+                  去掉分类
                 </Link>
               ) : null}
             </div>

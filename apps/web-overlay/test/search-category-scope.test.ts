@@ -257,3 +257,27 @@ describe('U-190：分面 Link 不再误挂 aria-pressed（链接不是开关）'
     expect(src).toContain('aria-current={active ? true : undefined}')
   })
 })
+
+describe('A3：分类放宽态不再谎称「分类 X 下的站点」，横幅内可去掉分类', () => {
+  const src = overlaySource('src/app/search/search-results.tsx')
+
+  it('纯分类态 resultLabel：放宽时改写为全站口径，未放宽时仍点名分类', () => {
+    expect(src).toContain("'全站结果（已放宽分类条件）'")
+    expect(src).toContain('分类「${categoryName}」下的站点')
+    // 放宽分支挂在纯分类分支内、与有词分支「已放宽筛选」同口径
+    expect(src).toContain('“${q}” 的结果（已放宽筛选）')
+  })
+
+  it('横幅放宽时：category 有「去掉分类」链接，只去分类、保留 q/tag/facets', () => {
+    expect(src).toContain('去掉分类')
+    expect(src).toContain('href={searchHref({ q, tag, facets })}')
+    expect(src).toContain('aria-label={`去掉分类「${categoryName}」筛选`}')
+    // 只在 category 且放宽时出现，不与分类芯片的常驻「去掉筛选」混淆
+    expect(src).toContain('{category && filterRelaxed ? (')
+  })
+
+  it('HubSearchResult 带可选 relaxedCategoryId，API 分支未合入前为 undefined', () => {
+    const api = overlaySource('src/lib/navhub-api.ts')
+    expect(api).toContain('relaxedCategoryId?: string')
+  })
+})

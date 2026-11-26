@@ -258,6 +258,26 @@ export function relaxedPricingNotice(relaxedFacets?: Record<string, string[]>): 
   return `暂无已标注为「${labels.join('、')}」的站点，已放宽付费条件显示更宽的结果；下面的站点可能包含收费站，请留意各站的付费标注。`
 }
 
+/**
+ * A3：分类条件被放宽时的点名提示。
+ *
+ * 中枢在「带分类筛选却零命中」时会放宽分类重试并回 relaxedCategoryId 点名被
+ * 丢弃的分类。API 分支未合入前该字段为 undefined，此时返回 null，调用方走
+ * 原有通用文案，零行为变化。分类名只用调用方已解析的展示名
+ * （categoryName prop），不直接展示原始 id/slug；展示名缺失时退回不点名
+ * 的通用句，不把 slug 漏到文案里。
+ */
+export function relaxedCategoryNotice(
+  relaxedCategoryId?: string | null,
+  categoryName?: string | null,
+): string | null {
+  if (!relaxedCategoryId) return null
+  if (categoryName) {
+    return `分类「${categoryName}」下暂无匹配，已放宽分类条件显示全站结果；下面的站点可能来自其他分类。`
+  }
+  return '该分类下暂无匹配，已放宽分类条件显示全站结果；下面的站点可能来自其他分类。'
+}
+
 export function inferredConditionLabels(input: {
   inferredTag?: string
   inferredCategory?: string

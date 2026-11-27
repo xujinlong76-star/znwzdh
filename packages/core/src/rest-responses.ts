@@ -442,7 +442,7 @@ export const BriefTodayResponse = z.looseObject({
 
 /**
  * GET /api/drama/calendar：短剧开播日历（快照只读）。
- * status 如实区分 ok / stale（最近一次失败、下发上一日快照）/ empty（还没抓到过）；
+ * status 如实区分 ok / stale（最近一次失败、下发上次成功快照）/ empty（还没抓到过）；
  * days 只含未来 14 天，monthPending 只含“仅精确到月”的条目，expired 是
  * 预计日期已过、档期未兑现的条目（不静默删除）；全部日期都是平台方“预计”，
  * 以官方为准——前端必须在顶部写明这一点。

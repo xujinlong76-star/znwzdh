@@ -7,7 +7,7 @@
  * 改档与下榜留痕、过期由视图层按日下线。
  *
  * 失败口径（与 drama_update_check / hotlist_refresh 一致）：单源失败
- * 只记 last_error、保留上一日快照，不清空日历、不抛错、不中断整轮；
+ * 只记 last_error、保留上次成功快照，不清空日历、不抛错、不中断整轮；
  * 整轮结果记进事件流。本任务永不抛错——失败本身就是要记录的状态。
  */
 import type { AppContext } from "../../context.ts";
@@ -68,7 +68,7 @@ export async function handleDramaCalendarRefresh(
     const parsed = parseYuyueList(res.body, now);
     if (parsed.length < YUYUE_MIN_ENTRIES) {
       throw new Error(
-        `预约榜解析条目过少（${parsed.length} 条，正常约 95–100 条），疑似改版，保留上一日快照`,
+        `预约榜解析条目过少（${parsed.length} 条，正常约 95–100 条），疑似改版，保留上次成功快照`,
       );
     }
     const next = buildCalendarSnapshot(
@@ -89,7 +89,7 @@ export async function handleDramaCalendarRefresh(
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    // 失败保留上一日快照：只更新 lastError，不动 entries/fetchedAt。
+    // 失败保留上次成功快照：只更新 lastError，不动 entries/fetchedAt。
     if (prev) {
       await ctx.repo
         .setSystemState(DRAMA_CALENDAR_SNAPSHOT_KEY, { ...prev, lastError: reason })

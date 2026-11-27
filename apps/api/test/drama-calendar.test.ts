@@ -308,7 +308,7 @@ describe("handleDramaCalendarRefresh", () => {
     expect(JSON.parse(String(rows[0]?.meta)).ok).toBe(true);
   });
 
-  it("抓取失败保留上一日快照、只记 lastError", async () => {
+  it("抓取失败保留上次成功快照、只记 lastError", async () => {
     const before = await loadDramaCalendarSnapshot(ctx);
     expect(before).not.toBeNull();
     const summary = await handleDramaCalendarRefresh(ctx, {

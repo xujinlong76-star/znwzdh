@@ -291,7 +291,7 @@ export interface CalendarMonthGroup {
 }
 
 export interface DramaCalendarView {
-  /** ok = 最新快照成功；stale = 最近一次失败、下发上一日快照；empty = 从未抓到过。 */
+  /** ok = 最新快照成功；stale = 最近一次失败、下发上次成功快照；empty = 从未抓到过。 */
   status: "ok" | "stale" | "empty";
   fetchedAt: number | null;
   sourceDateModified: string | null;

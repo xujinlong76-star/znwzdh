@@ -11,7 +11,7 @@ import type { DramaCalendarResponse } from "@/lib/rest-contracts.generated";
  * 数据来自 GET /api/drama/calendar（drama_calendar_refresh 任务每日抓
  * 搜短剧预约榜存快照），与页内搜索共用 useDramaCalendar（同一页只拉一次）。
  * 客户端取数、失败不挂页：
- * - 抓取失败时后端下发上一日快照并标 stale，这里如实写“展示上一日快照”；
+ * - 抓取失败时后端下发上次成功快照并标 stale，这里如实写“展示上次成功快照”；
  * - 从未抓到过时 status empty，这里只留一行说明，不编日期。
  *
  * 诚实口径：
@@ -101,7 +101,7 @@ function CalendarBody({ data }: { data: DramaCalendarResponse }) {
       </p>
       {data.status === "stale" && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-          今日数据源未更新，展示上一日快照（数据日期 {dataDate}），日期可能已改档。
+          今日数据源未更新，展示上次成功快照（数据日期 {dataDate}），日期可能已改档。
         </p>
       )}
       {data.status === "empty" ? (

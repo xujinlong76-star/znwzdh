@@ -75,10 +75,10 @@ describe('U-237：已关注态——label 包复选框 + 行文本，外链在 l
     for (const label of labelChunks(html)) {
       expect(label).not.toContain('<a ')
     }
-    // 外链仍在同行 <li> 内、可点：国考 3 节点中 1 行带入口。
+    // 外链仍在同行 <li> 内、可点：国考 4 节点中 2 行带入口（准考证打印 + 广东考区模拟核验）。
     const chunks = liChunks(html)
     expect(chunks).toHaveLength(guokao.nodes.length)
-    expect(chunks.filter((c) => c.includes('<a '))).toHaveLength(1)
+    expect(chunks.filter((c) => c.includes('<a '))).toHaveLength(2)
     expect(html).toContain('去官网打印准考证')
   })
 

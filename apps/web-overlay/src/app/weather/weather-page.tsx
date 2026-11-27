@@ -143,7 +143,10 @@ export function WeatherPage() {
     try {
       const url = `/api/weather?city=${encodeURIComponent(cityId)}${fresh ? '&fresh=1' : ''}`
       const res = await fetch(url, { signal: controller.signal, cache: 'no-store' })
-      const data: unknown = await res.json().catch(() => null)
+      const data: unknown = await res.json().catch(() => {
+        /* 响应体不是合法 JSON 时当空对象处理：下文按 body.ok !== true 走错误态，不编造天气数据。 */
+        return null
+      })
       if (id !== reqId.current) return
       const body = (data ?? {}) as Record<string, unknown>
       if (!res.ok || body.ok !== true) {
@@ -155,7 +158,10 @@ export function WeatherPage() {
             const sres = await fetch(`/api/weather/search?q=${encodeURIComponent(stored.name)}`, {
               cache: 'no-store',
             })
-            const sdata: unknown = await sres.json().catch(() => null)
+            const sdata: unknown = await sres.json().catch(() => {
+              /* 搜索响应不是合法 JSON 时当空处理：list 为空、匹配不到就落到下面的错误态，不静默换城市。 */
+              return null
+            })
             const list = ((sdata as Record<string, unknown> | null)?.results ?? []) as SearchCandidate[]
             const match = list.find((c) => coordsClose(stored, c))
             if (match && match.id !== cityId) {
@@ -242,7 +248,6 @@ export function WeatherPage() {
       })()
     }
     return () => abortRef.current?.abort()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function persistPreference(next: WeatherCityPreference) {
@@ -254,7 +259,9 @@ export function WeatherPage() {
     }
     if (isLoggedIn()) {
       // 云端同步是尽力而为：失败时本机仍生效，下次选城市再同步
-      void saveSettingsPatchToCloud({ weatherCity: next }).catch(() => {})
+      void saveSettingsPatchToCloud({ weatherCity: next }).catch(() => {
+        /* 云端同步是尽力而为：失败时本机偏好仍生效，下次选城市再同步。 */
+      })
     }
   }
 
@@ -304,7 +311,10 @@ export function WeatherPage() {
           signal: controller.signal,
           cache: 'no-store',
         })
-        const data: unknown = await res.json().catch(() => null)
+        const data: unknown = await res.json().catch(() => {
+          /* 搜索响应不是合法 JSON 时当空对象处理：下文按 body.ok !== true 显示搜索错误，不谎报无结果。 */
+          return null
+        })
         const body = (data ?? {}) as Record<string, unknown>
         if (!res.ok || body.ok !== true) {
           setCandidates([])
@@ -345,7 +355,7 @@ export function WeatherPage() {
   const pollutants = payload?.aqiPollutants ?? null
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-6 space-y-5">
+    <main id="main-content" className="mx-auto w-full max-w-3xl px-4 py-6 space-y-5">
       <header className="space-y-1">
         <h1 className="text-2xl font-bold text-foreground">天气</h1>
         <p className="text-sm text-muted-foreground">实时天气、24 小时逐小时预报、7 日预报与空气质量。</p>

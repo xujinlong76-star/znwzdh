@@ -368,6 +368,7 @@ export function WeatherPage() {
                 setActiveIdx((i) => Math.min(candidates.length - 1, i + 1))
               } else if (e.key === 'ArrowUp' && candidates.length > 0) {
                 e.preventDefault()
+                setDropdownOpen(true)
                 setActiveIdx((i) => Math.max(0, i - 1))
               } else if (e.key === 'Enter') {
                 if (dropdownOpen && activeIdx >= 0 && candidates[activeIdx]) {

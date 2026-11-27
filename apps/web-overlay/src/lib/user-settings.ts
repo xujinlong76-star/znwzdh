@@ -421,10 +421,14 @@ export function verifySettingsConsistency(
     if (k === 'updatedAt') continue
     const expectedVal = normalizedExpected[k]
     const localVal = localWritten[k]
-    // 数组类字段（hiddenHomeModules）按值比较：引用比较永远不等，
-    // 会把每次保存都误报成「修复了 1 项偏差」
+    // 数组与普通对象字段按值比较：引用比较永远不等，
+    // 会把每次保存都误报成「修复了 1 项偏差」。
+    // weatherCity 是模型里唯一的普通对象型字段，normalizeUserSettings
+    // 每次都生成新对象，=== 恒为 false。
+    const isValueObject = (v: unknown): boolean =>
+      Array.isArray(v) || (typeof v === 'object' && v !== null)
     const same =
-      Array.isArray(expectedVal) || Array.isArray(localVal)
+      isValueObject(expectedVal) || isValueObject(localVal)
         ? JSON.stringify(expectedVal) === JSON.stringify(localVal)
         : expectedVal === localVal
     if (!same) {

@@ -44,6 +44,7 @@ import {
   normalizeWeatherCityPreference,
   observedAtLabel,
   readWeatherCityPreference,
+  uvLevel,
   windLabel,
   writeWeatherCityPreference,
   type WeatherCityPreference,
@@ -469,7 +470,7 @@ export function WeatherPage() {
             <div className="h-4 w-24 rounded bg-muted" />
             <div className="mt-3 flex gap-2">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="h-16 w-14 rounded-lg bg-muted shrink-0" />
+                <div key={i} className="h-36 w-20 rounded-lg bg-muted shrink-0" />
               ))}
             </div>
           </div>
@@ -584,7 +585,7 @@ export function WeatherPage() {
                   return (
                     <div
                       key={h.time}
-                      className="flex flex-col items-center gap-1 px-2 py-2 rounded-lg bg-muted/30 border border-border/30 text-xs shrink-0 w-14"
+                      className="flex flex-col items-center gap-1 px-1 py-2 rounded-lg bg-muted/30 border border-border/30 text-xs shrink-0 w-20 whitespace-nowrap"
                       title={`${h.time} · ${hc.label}`}
                     >
                       <span className="text-muted-foreground font-mono">{hourLabel(h.time)}</span>
@@ -592,6 +593,15 @@ export function WeatherPage() {
                       <span className="font-mono font-medium text-foreground">{tempOrDash(h.tempC, unit)}</span>
                       <span className="text-sky-600 dark:text-sky-400 font-mono">
                         {h.precipProb === null ? '—' : `${Math.round(h.precipProb)}%`}
+                      </span>
+                      {((h.precipProb ?? 0) > 0 || (h.precipMm ?? 0) > 0) && h.precipMm !== null ? (
+                        <span className="text-sky-600 dark:text-sky-400 font-mono">{`${h.precipMm} mm`}</span>
+                      ) : null}
+                      <span className="text-muted-foreground font-mono">
+                        {h.windSpeedKmh === null ? '—' : `风 ${Math.round(h.windSpeedKmh)} km/h`}
+                      </span>
+                      <span className="text-muted-foreground font-mono">
+                        {h.humidity === null ? '—' : `湿度 ${Math.round(h.humidity)}%`}
                       </span>
                     </div>
                   )
@@ -610,26 +620,35 @@ export function WeatherPage() {
                 {days.map((d, idx) => {
                   const dc = describeWeatherCode(d.code)
                   return (
-                    <li key={d.date || idx} className="flex items-center justify-between gap-2 py-2.5 text-sm">
-                      <span className="w-14 shrink-0 text-muted-foreground">
-                        {idx < 3 ? d.label : d.date ? d.date.slice(5) : d.label}
-                        {idx < 3 && (
-                          <span className="block text-[11px] font-mono">{d.date ? d.date.slice(5) : ''}</span>
-                        )}
-                      </span>
-                      <span className="flex items-center gap-1.5 min-w-0 flex-1">
-                        <WeatherGlyph kind={dc.kind} className="w-4 h-4 shrink-0" />
-                        <span className="text-foreground truncate">{dc.label}</span>
-                      </span>
-                      <span className="hidden sm:flex items-center gap-1 text-xs text-sky-600 dark:text-sky-400 shrink-0">
-                        <Droplets className="w-3 h-3" />
-                        {d.precipProbMax === null ? '—' : `${Math.round(d.precipProbMax)}%`}
-                        {d.precipSumMm !== null ? ` · ${d.precipSumMm} mm` : ''}
-                      </span>
-                      <span className="font-mono font-medium text-foreground shrink-0">
-                        {tempOrDash(d.highC, unit)}
-                        <span className="text-muted-foreground"> / {tempOrDash(d.lowC, unit)}</span>
-                      </span>
+                    <li key={d.date || idx} className="py-2.5 text-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="w-14 shrink-0 text-muted-foreground">
+                          {idx < 3 ? d.label : d.date ? d.date.slice(5) : d.label}
+                          {idx < 3 && (
+                            <span className="block text-[11px] font-mono">{d.date ? d.date.slice(5) : ''}</span>
+                          )}
+                        </span>
+                        <span className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <WeatherGlyph kind={dc.kind} className="w-4 h-4 shrink-0" />
+                          <span className="text-foreground truncate">{dc.label}</span>
+                        </span>
+                        <span className="hidden sm:flex items-center gap-1 text-xs text-sky-600 dark:text-sky-400 shrink-0">
+                          <Droplets className="w-3 h-3" />
+                          {d.precipProbMax === null ? '—' : `${Math.round(d.precipProbMax)}%`}
+                          {d.precipSumMm !== null ? ` · ${d.precipSumMm} mm` : ''}
+                        </span>
+                        <span className="font-mono font-medium text-foreground shrink-0">
+                          {tempOrDash(d.highC, unit)}
+                          <span className="text-muted-foreground"> / {tempOrDash(d.lowC, unit)}</span>
+                        </span>
+                      </div>
+                      {/* 日出/日落/紫外线：手机上也必须可见，不藏进 hidden sm:flex */}
+                      <p className="mt-1 pl-16 text-[11px] text-muted-foreground font-mono whitespace-nowrap">
+                        日出 {hourLabel(d.sunrise)} · 日落 {hourLabel(d.sunset)} ·{' '}
+                        {d.uvIndexMax === null
+                          ? 'UV —'
+                          : `UV ${Math.round(d.uvIndexMax)} ${uvLevel(d.uvIndexMax)?.label ?? ''}`}
+                      </p>
                     </li>
                   )
                 })}

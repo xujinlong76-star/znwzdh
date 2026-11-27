@@ -1329,3 +1329,49 @@ describe('U-222 12 月峰值周末七节点时刻门控（todayNodeDeadlineMs / 
     expect(examNodeStatus(junduiAdmit(), DEC_13_140000_CST)).toBe('active')
   })
 })
+
+/**
+ * 国考广东考区模拟核验（2026-11-27 用户裁决：只加国考广东这一条）：
+ * post_4985097，广东省人事考试局 2026-11-26 发布，2026-11-27
+ * browser.open 直读逐字：模拟核验 11-26 9:00 至 11-28 10:00，微信扫码
+ * 登录考生报到小程序；正式核验为考试当天开考前 90 分钟到考点扫码。
+ * 遴选/选调广东考区是另一篇 post_4985108（至 11-27 17:00，已截止），
+ * 不加，两篇不得混同。目标时刻：11-28 10:00 = Date.UTC(2026, 10, 28, 2, 0, 0)。
+ */
+describe('国考广东考区模拟核验 10:00 时刻门控（post_4985097）', () => {
+  const mockVerify = guokao.nodes.find((n) => n.label === '广东考区模拟核验')!
+
+  it('节点窗口 11-26→11-28，detail 写明 11 月 28 日 10:00 截止与小程序扫码', () => {
+    expect(mockVerify.startISO).toBe('2026-11-26')
+    expect(mockVerify.endISO).toBe('2026-11-28')
+    expect(mockVerify.detail).toContain('11 月 28 日 10:00')
+    expect(mockVerify.detail).toContain('考生报到小程序')
+    expect(mockVerify.url).toBe(
+      'https://rsks.gd.gov.cn/zwgk/gzdt/content/post_4985097.html',
+    )
+  })
+
+  it('PEAK 表目标时刻为 11-28 10:00', () => {
+    expect(
+      todayNodeDeadlineMs({ exam: guokao, node: mockVerify, kind: 'endsToday' }),
+    ).toBe(Date.UTC(2026, 10, 28, 2, 0, 0))
+  })
+
+  it('边界前 1 秒仍进行中：11-28 09:59:59 helper 为 null', () => {
+    expect(
+      examNodeDeadlineLabel(guokao, mockVerify, Date.UTC(2026, 10, 28, 1, 59, 59)),
+    ).toBeNull()
+  })
+
+  it('边界整点已截止：11-28 10:00:00 helper 返回「已截止」', () => {
+    expect(
+      examNodeDeadlineLabel(guokao, mockVerify, Date.UTC(2026, 10, 28, 2, 0, 0)),
+    ).toBe('已截止')
+  })
+
+  it('截止日深夜已截止：11-28 23:59:59 helper 返回「已截止」', () => {
+    expect(
+      examNodeDeadlineLabel(guokao, mockVerify, Date.UTC(2026, 10, 28, 15, 59, 59)),
+    ).toBe('已截止')
+  })
+})

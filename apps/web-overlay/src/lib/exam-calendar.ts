@@ -153,6 +153,16 @@ export const GUOKAO_ADMISSION_URL = 'http://gwy.cpta.com.cn'
 export const GUOKAO_PORTAL_URL = 'http://bm.scs.gov.cn/kl2027'
 
 /**
+ * 国考广东考区模拟核验官方入口：广东省人事考试局《中央机关及其直属
+ * 机构 2027 年度考试录用公务员笔试广东考区考生身份核验报到温馨提示》
+ * （2026-11-26 发布；2026-11-27 browser.open 直读核实）：
+ * 模拟核验 11-26 9:00 至 11-28 10:00，微信扫码登录考生报到小程序；
+ * 正式核验为考试当天开考前 90 分钟到考点扫码。
+ */
+export const GUOKAO_GUANGDONG_MOCK_VERIFY_URL =
+  'https://rsks.gd.gov.cn/zwgk/gzdt/content/post_4985097.html'
+
+/**
  * 京考报名与准考证打印官方入口：北京市人事考试通用平台
  * （北京市公务员局《北京市各级机关 2027 年度考试录用公务员公告》，
  * 首都之窗 2026-11-09 发布，2026-11-17 直访核实）。
@@ -241,6 +251,17 @@ export const EXAMS: ExamInfo[] = [
         endISO: '2026-11-29',
         url: GUOKAO_ADMISSION_URL,
         portalUrl: GUOKAO_PORTAL_URL,
+      },
+      {
+        // 广东考区模拟核验（2026-11-27 用户裁决：只加国考广东这一条；
+        // post_4985097，广东省人事考试局 2026-11-26 发布，browser.open
+        // 直读核实）：模拟核验 11-26 9:00 至 11-28 10:00；遴选/选调广东
+        // 考区是另一篇 post_4985108（至 11-27 17:00，已截止），不得混同。
+        label: '广东考区模拟核验',
+        detail: '11 月 26 日 9:00 至 11 月 28 日 10:00，微信扫码登录考生报到小程序模拟核验，提前熟悉报到流程；正式核验为考试当天开考前 90 分钟到考点扫码',
+        startISO: '2026-11-26',
+        endISO: '2026-11-28',
+        url: GUOKAO_GUANGDONG_MOCK_VERIFY_URL,
       },
       {
         label: '专业科目笔试',
@@ -1162,7 +1183,7 @@ export const EXAM_NODE_STATUS_LABEL: Record<ExamNodeStatus, string> = {
 /**
  * 11-18 峰值日时刻截止表（渲染层专用，考试峰值日包 W9，U-144 推广）。
  *
- * 覆盖 19 个已核实目标时刻（北京时间，表项为目标日期 + 距当日 0 点的分钟数；
+ * 覆盖 20 个已核实目标时刻（北京时间，表项为目标日期 + 距当日 0 点的分钟数；
  * 毫秒值按 shanghaiMidnightMs(目标日期) + 分钟数算，与 guokaoAdmissionPhase
  * 的 15:00 截止同款算法）：
  *  - 成考江西成绩查询 11-18 09:00、成考新疆成绩查询 11-18 12:00、成考广东
@@ -1193,6 +1214,9 @@ export const EXAM_NODE_STATUS_LABEL: Record<ExamNodeStatus, string> = {
  *  - 天津成考成绩复核结果查询 11-30 17:00（U-279，转载级）：多日窗口末日
  *    kind endsToday，过期显示「已截止」（与浙江志愿确认 11-29 17:00 同款）；
  *    11-25 09:00 是开通时刻、不入表。
+ *  - 国考广东考区模拟核验 11-28 10:00（post_4985097，广东省人事考试局
+ *    2026-11-26 发布，2026-11-27 browser.open 直读逐字；多日窗口末日，
+ *    kind endsToday，过期显示「已截止」）。
  *  - 山西成考成绩复核不入表（U-160）：复核窗口 11-19–20 只写「工作时间内」、
  *    无截止时刻，不得编造时刻；11 月 27 日前通知结果是结果通知日、不是节点
  *    截止时刻，同样不入表。节点 11-19→11-20：11-19 被海南直接节点抑制
@@ -1248,6 +1272,7 @@ const PEAK_DAY_DEADLINE_MINUTES: Readonly<Record<string, { date: string; minutes
   'shengkao:浙江准考证打印': { date: '2026-12-06', minutes: 17 * 60 },
   'shengkao:江苏准考证打印': { date: '2026-12-06', minutes: 15 * 60 },
   'jundui-wenzhi:准考证打印': { date: '2026-12-13', minutes: 14 * 60 },
+  'guokao:广东考区模拟核验': { date: '2026-11-28', minutes: 10 * 60 },
 }
 
 /** 表内节点的目标时刻（UTC 毫秒数）；表外或节点日期不覆盖目标日期的返回 undefined */

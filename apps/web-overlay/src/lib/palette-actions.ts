@@ -512,6 +512,61 @@ export function matchPaletteFavorites(
   ).slice(0, limit)
 }
 
+/* ------------------------------ 我的链接 ------------------------------ */
+
+/** 命令面板「我的链接」行的最小形态（CustomLink 的结构子集，不依赖 hooks 层） */
+export interface PaletteCustomLinkLike {
+  id: string
+  name: string
+  url: string
+}
+
+export interface PaletteCustomLinkItem extends PaletteCustomLinkLike {
+  /** 导航列表里的稳定 key（`custom-link-${id}`），渲染与键盘导航共用 */
+  key: string
+}
+
+export interface MatchPaletteCustomLinksOptions {
+  /** 每组上限（默认 5 条，与收藏夹同口径，面板里只是其中一组，不能挤掉站点） */
+  limit?: number
+}
+
+/**
+ * 自定义链接匹配（2026-11-27 命令面板 v2）：只在有查询词时召回
+ * （空查询的自定义链接在空面板「我的常用」区另有全量入口）。
+ * 匹配面是名称与网址；单字查询不匹配。拼音：中文名走
+ * `matchSuggestionTextWithPinyin` 第二通道（标题的 Latin 词仍走子串 + 容错）。
+ * 排序复用 §6 总分（name=名称、keywords=网址、subtitle=网址）；
+ * 自定义链接没有 MRU 记录，mruNorm 恒为 0——面板只读本地数据，
+ * 不写存储、不新增网络请求。
+ */
+export function matchPaletteCustomLinks(
+  query: string,
+  links: readonly PaletteCustomLinkLike[],
+  opts: MatchPaletteCustomLinksOptions = {},
+): PaletteCustomLinkItem[] {
+  const q = query.trim()
+  if (!q || q.length < 2) return []
+  const limit = opts.limit ?? 5
+  const matched: PaletteCustomLinkItem[] = []
+  for (const link of links) {
+    // 不安全 href 直接跳过：与收藏夹同款理由——这类行进了结果会占一个
+    // 键盘导航位，渲染行却因安全闸不出现，是死导航位；且不占 5 条名额。
+    if (!safeHref(link.url, '')) continue
+    const haystack = `${link.name} ${link.url}`
+    if (!matchSuggestionTextWithPinyin(q, haystack, getPinyinKeysForTitle(link.name))) continue
+    matched.push({ ...link, key: `custom-link-${link.id}` })
+  }
+  // 本地行内部按 §6 总分降序再取 limit（先排后切）。
+  return sortLocalRowsByScore(
+    q,
+    matched,
+    (l) => ({ name: l.name, keywords: l.url, subtitle: l.url }),
+    () => 0,
+    (l) => getPinyinKeysForTitle(l.name),
+  ).slice(0, limit)
+}
+
 /* ------------------------------ 快捷链接 ------------------------------ */
 
 /** ⌘K 面板里的快捷链接行：命令命中且代入成功时恰好一条 */
@@ -550,6 +605,7 @@ export type PaletteNavKind =
   | 'diy'
   | 'scene'
   | 'favorite'
+  | 'customLink'
   | 'action'
   | 'tool'
   | 'plugin'
@@ -569,6 +625,8 @@ export interface PaletteNavGroups {
   /** 我的场景行（可选：场景查询命中时才传，排在 DIY 之后、收藏之前） */
   sceneIds?: string[]
   favoriteIds: string[]
+  /** 我的链接行（可选：自定义链接查询命中时才传，排在收藏之后、操作之前） */
+  customLinkIds?: string[]
   actionIds: string[]
   toolIds: string[]
   pluginIds: string[]
@@ -606,7 +664,8 @@ export function altDigitFromKeyOrCode(key: string, code?: string): string | null
  * 键盘可导航项的唯一顺序来源（组件渲染顺序必须与这里一致，否则
  * ↑↓ 会跳到另一行）。快捷链接排在建议之后、DIY 之前：命令命中时
  * 它是回车的第一目标（优先级：quicklink > OMNI 硬编码引擎 > 导航首条），
- * 其余分组顺序一字不动。
+ * 其余分组顺序一字不动。我的链接排在收藏之后、操作之前（同属「我的数据」，
+ * 收藏是站库站点、链接是用户自建网址）。
  */
 export function buildPaletteNavItems(groups: PaletteNavGroups): PaletteNavEntry[] {
   const entries: PaletteNavEntry[] = []
@@ -615,6 +674,7 @@ export function buildPaletteNavItems(groups: PaletteNavGroups): PaletteNavEntry[
   for (const id of groups.diyIds) entries.push({ id, kind: 'diy' })
   for (const id of groups.sceneIds ?? []) entries.push({ id, kind: 'scene' })
   for (const id of groups.favoriteIds) entries.push({ id, kind: 'favorite' })
+  for (const id of groups.customLinkIds ?? []) entries.push({ id, kind: 'customLink' })
   for (const id of groups.actionIds) entries.push({ id, kind: 'action' })
   for (const id of groups.toolIds) entries.push({ id, kind: 'tool' })
   for (const id of groups.pluginIds) entries.push({ id, kind: 'plugin' })

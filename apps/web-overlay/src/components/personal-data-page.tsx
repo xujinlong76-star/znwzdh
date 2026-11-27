@@ -11,6 +11,7 @@ import { useRef, useState } from 'react'
 import { CloudOff, Download, HardDrive, ShieldCheck, Trash2, Undo2, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { usePersonalData, downloadTextFile } from '@/hooks/usePersonalData'
+import { PersonalBackupReminder } from '@/components/personal-backup-reminder'
 import { useToast } from '@/components/ui/use-toast'
 import { PERSONAL_FORMAT_VERSION } from '@/lib/personal-data'
 
@@ -113,6 +114,9 @@ export function PersonalDataPage() {
           <p role="alert" className="text-xs text-destructive">{personal.storageBlocked}</p>
         ) : null}
       </section>
+
+      {/* 备份提醒（2026-11-27 命令面板 v2）：超过 14 天未导出时的一行轻提醒，可关闭、不弹窗 */}
+      <PersonalBackupReminder onExport={handleExport} />
 
       <section className="rounded-xl border border-border/70 bg-card/60 p-4 space-y-3" aria-label="导出与导入">
         <h2 className="text-sm font-semibold flex items-center gap-2">

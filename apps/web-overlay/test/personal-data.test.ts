@@ -13,20 +13,26 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  BACKUP_REMINDER_AFTER_DAYS,
+  BACKUP_REMINDER_DISMISS_DAYS,
   MAX_CUSTOM_LINKS,
   MAX_PINNED_SITES,
   MAX_RECENT_PERSONAL,
+  MS_PER_DAY,
   PERSONAL_FORMAT,
   PERSONAL_FORMAT_VERSION,
   PERSONAL_STORAGE_KEY,
   RECENT_PAUSED_KEY,
   addCustomLink,
   addPin,
+  backupReminderStatus,
   buildPresetScenes,
   bumpCounter,
   clearAllPersonalData,
+  daysSinceLastExport,
   defaultPersonalData,
   exportPersonalData,
+  hasPersonalContent,
   isRecentRecordingPaused,
   letterBadgeFor,
   loadPersonalData,
@@ -402,5 +408,96 @@ describe('本地计数器（仅计数，无 URL/标题/时间戳明细）', () =
 
   it('最近上限常量为 8', () => {
     expect(MAX_RECENT_PERSONAL).toBe(8)
+  })
+})
+
+describe('备份提醒（2026-11-27 命令面板 v2：14 天未导出提醒）', () => {
+  const NOW = Date.parse('2026-11-27T20:00:00+08:00')
+  const withContent = (over: Partial<PersonalData> = {}): PersonalData => ({
+    ...defaultPersonalData(),
+    pinned: [SITE_A],
+    ...over,
+  })
+
+  it('默认两个时间戳都是 null；老 JSON 缺字段时补 null，不拒绝', () => {
+    expect(defaultPersonalData().lastExportAt).toBeNull()
+    expect(defaultPersonalData().backupReminderDismissedAt).toBeNull()
+    const parsed = parsePersonalData(JSON.stringify({ ...defaultPersonalData(), pinned: [SITE_A] }))
+    expect(parsed.corrupt).toBe(false)
+    expect(parsed.data.lastExportAt).toBeNull()
+    expect(parsed.data.backupReminderDismissedAt).toBeNull()
+    // 非法时间戳只按 null 计，不整文件拒绝
+    const dirty = parsePersonalData(
+      JSON.stringify({ ...defaultPersonalData(), pinned: [SITE_A], lastExportAt: '昨天', backupReminderDismissedAt: -5 }),
+    )
+    expect(dirty.corrupt).toBe(false)
+    expect(dirty.data.lastExportAt).toBeNull()
+    expect(dirty.data.backupReminderDismissedAt).toBeNull()
+  })
+
+  it('没内容时不提醒（哪怕从未导出过）', () => {
+    expect(hasPersonalContent(defaultPersonalData())).toBe(false)
+    expect(backupReminderStatus(defaultPersonalData(), NOW)).toEqual({
+      show: false,
+      neverExported: false,
+      daysOverdue: null,
+    })
+  })
+
+  it('有内容、从未导出过 → 提醒（neverExported）', () => {
+    expect(backupReminderStatus(withContent(), NOW)).toEqual({
+      show: true,
+      neverExported: true,
+      daysOverdue: null,
+    })
+  })
+
+  it('阈值 14 天：13 天不提醒，14 天整提醒并附天数，30 天附 30', () => {
+    expect(BACKUP_REMINDER_AFTER_DAYS).toBe(14)
+    expect(backupReminderStatus(withContent({ lastExportAt: NOW - 13 * MS_PER_DAY }), NOW).show).toBe(false)
+    expect(backupReminderStatus(withContent({ lastExportAt: NOW - 14 * MS_PER_DAY }), NOW)).toEqual({
+      show: true,
+      neverExported: false,
+      daysOverdue: 14,
+    })
+    expect(backupReminderStatus(withContent({ lastExportAt: NOW - 30 * MS_PER_DAY }), NOW).daysOverdue).toBe(30)
+  })
+
+  it('daysSinceLastExport：从未导出为 null；未来时间戳按 0 天计', () => {
+    expect(daysSinceLastExport(null, NOW)).toBeNull()
+    expect(daysSinceLastExport(NOW - 36 * 60 * 60 * 1000, NOW)).toBe(1)
+    expect(daysSinceLastExport(NOW + MS_PER_DAY, NOW)).toBe(0)
+  })
+
+  it('关闭后 7 天内不提醒；第 8 天若仍未导出会再次出现', () => {
+    expect(BACKUP_REMINDER_DISMISS_DAYS).toBe(7)
+    const dismissed = withContent({
+      lastExportAt: NOW - 30 * MS_PER_DAY,
+      backupReminderDismissedAt: NOW - 6 * MS_PER_DAY,
+    })
+    expect(backupReminderStatus(dismissed, NOW).show).toBe(false)
+    const expired = withContent({
+      lastExportAt: NOW - 30 * MS_PER_DAY,
+      backupReminderDismissedAt: NOW - 8 * MS_PER_DAY,
+    })
+    expect(backupReminderStatus(expired, NOW).show).toBe(true)
+  })
+
+  it('导入 replace/merge 都保留本地 lastExportAt 与关闭时间（不被备份文件清零）', () => {
+    const current = withContent({ lastExportAt: NOW - 20 * MS_PER_DAY, backupReminderDismissedAt: NOW - MS_PER_DAY })
+    const incoming: PersonalData = { ...defaultPersonalData(), pinned: [SITE_B] }
+    const replaced = mergePersonalImport(current, incoming, 'replace')
+    expect(replaced.pinned).toEqual([SITE_B])
+    expect(replaced.lastExportAt).toBe(NOW - 20 * MS_PER_DAY)
+    expect(replaced.backupReminderDismissedAt).toBe(NOW - MS_PER_DAY)
+    const merged = mergePersonalImport(current, incoming, 'merge')
+    expect(merged.lastExportAt).toBe(NOW - 20 * MS_PER_DAY)
+    expect(merged.backupReminderDismissedAt).toBe(NOW - MS_PER_DAY)
+  })
+
+  it('导出文件不含备份时间戳（设备本地状态，与计数器同口径）', () => {
+    const json = exportPersonalData(withContent({ lastExportAt: NOW }))
+    expect(json).not.toContain('lastExportAt')
+    expect(json).not.toContain('backupReminderDismissedAt')
   })
 })

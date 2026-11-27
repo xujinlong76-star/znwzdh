@@ -93,16 +93,20 @@ import {
   altDigitTargetIndex,
   buildPaletteNavItems,
   matchPaletteActions,
+  matchPaletteCustomLinks,
   matchPaletteFavorites,
   matchPaletteQuicklinks,
   matchPaletteTools,
   ZERO_RTT_TOOLS,
   type PaletteActionEntry,
   type PaletteActionId,
+  type PaletteCustomLinkItem,
   type PaletteFavoriteLike,
   type PaletteQuicklinkItem,
   type PaletteToolEntry,
 } from '@/lib/palette-actions'
+import { letterBadgeFor } from '@/lib/personal-data'
+import { PersonalBackupReminder } from '@/components/personal-backup-reminder'
 import { ensurePinyinLoaded, isLatinQuery } from '@/lib/palette-pinyin'
 import {
   matchQuicklinkCommand,
@@ -1044,6 +1048,18 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   }, [stageImportForConfirm, toast])
 
   /**
+   * 导出备份（2026-11-27 命令面板 v2）：快捷操作 personal-export 与备份提醒
+   * 里的「导出备份」按钮共用同一条执行（下载 + toast），不复制逻辑。
+   * 导出即记一次备份时间（usePersonalData.exportJson 内写 lastExportAt），
+   * 备份提醒的时钟从这次导出开始算。
+   */
+  const exportPersonalBackup = useCallback(() => {
+    const stamp = new Date().toISOString().slice(0, 10)
+    downloadTextFile(`znw-personal-data-v1-${stamp}.json`, personal.exportJson())
+    toast({ title: '已导出「我的常用」备份文件', description: '文件里只有收藏、分组与偏好，不含浏览历史与搜索词' })
+  }, [personal, toast])
+
+  /**
    * 万能栏快捷操作（P1 #8）：六个操作全部复用已有 handler，只做分发与提示，
    * 不复制执行逻辑。主题 / 长辈 / 密度点完即生效（面板收起 + toast 说清
    * 结果）；添加站点打开录入弹窗（面板收起，弹窗接管焦点）；
@@ -1052,9 +1068,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const handlePaletteAction = useCallback((action: PaletteActionEntry) => {
     setIsFocused(false)
     if (action.id === 'personal-export') {
-      const stamp = new Date().toISOString().slice(0, 10)
-      downloadTextFile(`znw-personal-data-v1-${stamp}.json`, personal.exportJson())
-      toast({ title: '已导出「我的常用」备份文件', description: '文件里只有收藏、分组与偏好，不含浏览历史与搜索词' })
+      exportPersonalBackup()
       return
     }
     if (action.id === 'personal-clear') {
@@ -1091,7 +1105,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     setAddSiteDesc('')
     setAddSiteTargetCatId(null)
     setAddSiteOpen(true)
-  }, [resolvedTheme, setTheme, elderOn, cycleDensity, toast, personal])
+  }, [resolvedTheme, setTheme, elderOn, cycleDensity, toast, personal, exportPersonalBackup])
 
   /**
    * 极速工具（P1 #8）：回车即把示例填回输入框，面板不关闭——已有的
@@ -1141,6 +1155,17 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     safeWindowOpen(item.url)
     setIsFocused(false)
   }, [favorites, identity, toast])
+
+  /** 自定义链接打开（2026-11-27 命令面板 v2）：与空面板「我的常用」区同款——
+   *  安全闸 + 本地点击计数，不记离线最近访问（自定义链接不是站库站点，
+   *  不进「常用与最近常去」）、不上报。行本身是 target=_blank 的 <a>，
+   *  浏览器原生打开；这里只做计数与收起面板。 */
+  const openCustomLink = useCallback((link: PaletteCustomLinkItem) => {
+    const href = safeHref(link.url, '')
+    if (!href) return
+    personal.recordClick()
+    setIsFocused(false)
+  }, [personal])
 
   /**
    * 添加自定义站点提交（P1 #8）：与 navigation-content 的
@@ -1283,6 +1308,16 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     [query, favorites.items, hits, quicklinkMatch, mruNormBySiteId, pinyinReady],
   )
   /**
+   * 我的链接（2026-11-27 命令面板 v2）：自定义链接终于能被搜到。
+   * 空查询不走匹配（空面板「我的常用」区已全量展示）；只在打字时召回，
+   * 与收藏夹同款单字不匹配、默认上限 5 条。自定义链接没有 MRU 记录，
+   * 排序走 §6 总分（见 matchPaletteCustomLinks）。
+   */
+  const matchedPaletteCustomLinks = useMemo(
+    () => matchPaletteCustomLinks(query, personal.data.customLinks),
+    [query, personal.data.customLinks, pinyinReady],
+  )
+  /**
    * 空查询「最近访问」分区顺序（04 §3.3，C2 前半）：count≥3 的 boosted
    * 段按 mruScore 置顶在前，count<3 的 rest 段按时间倒序排在后段；两段
    * 并起来就是原快照，不删除、不隐藏任何记录。
@@ -1384,19 +1419,20 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const relatedStartIndex = rankedHits.exact.length + rankedHits.keyword.length
 
   const navItems = useMemo(() => {
-    if (!showResults) return [] as Array<{ id: string; kind: 'plugin' | 'site' | 'diy' | 'suggestion' | 'favorite' | 'action' | 'tool' | 'quicklink' }>
+    if (!showResults) return [] as Array<{ id: string; kind: 'plugin' | 'site' | 'diy' | 'suggestion' | 'favorite' | 'customLink' | 'action' | 'tool' | 'quicklink' }>
     return buildPaletteNavItems({
       suggestionIds: suggestionGroups.flatMap((g) => g.items.map((s) => `suggestion-${s.key}`)),
       quicklinkIds: matchedPaletteQuicklinks.map((q) => q.key),
       diyIds: matchedDiyActions.map((d) => `diy-${d.key}`),
       sceneIds: matchedSceneActions.map((s) => `scene-${s.key}`),
       favoriteIds: matchedPaletteFavorites.map((f) => `favorite-${f.siteId}`),
+      customLinkIds: matchedPaletteCustomLinks.map((l) => l.key),
       actionIds: matchedPaletteActions.map((a) => `action-${a.id}`),
       toolIds: matchedPaletteTools.map((t) => `tool-${t.id}`),
       pluginIds: pluginItems.map((p) => `plugin-${p.id}`),
       siteIds: displayHits.map((h) => `site-${h.siteId}`),
     })
-  }, [showResults, suggestionGroups, matchedPaletteQuicklinks, matchedDiyActions, matchedSceneActions, matchedPaletteFavorites, matchedPaletteActions, matchedPaletteTools, pluginItems, displayHits])
+  }, [showResults, suggestionGroups, matchedPaletteQuicklinks, matchedDiyActions, matchedSceneActions, matchedPaletteFavorites, matchedPaletteCustomLinks, matchedPaletteActions, matchedPaletteTools, pluginItems, displayHits])
 
   const navIndexById = useMemo(() => {
     const map = new Map<string, number>()
@@ -1707,8 +1743,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
             ? degraded && displayHits.length === 0
               ? // 读屏同样不能把「没问成功」说成「没有找到」
                 '检索服务暂时不可用，本次没有取回站点结果'
-              : displayHits.length > 0 || pluginItems.length > 0 || matchedPaletteFavorites.length > 0 || matchedPaletteActions.length > 0 || matchedPaletteTools.length > 0
-                ? `找到 ${displayHits.length + pluginItems.length + matchedPaletteFavorites.length + matchedPaletteActions.length + matchedPaletteTools.length} 条结果`
+              : displayHits.length > 0 || pluginItems.length > 0 || matchedPaletteFavorites.length > 0 || matchedPaletteCustomLinks.length > 0 || matchedPaletteActions.length > 0 || matchedPaletteTools.length > 0
+                ? `找到 ${displayHits.length + pluginItems.length + matchedPaletteFavorites.length + matchedPaletteCustomLinks.length + matchedPaletteActions.length + matchedPaletteTools.length} 条结果`
                 : '没有找到匹配结果'
             : ''}
       </p>
@@ -1876,6 +1912,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   管理与隐私 →
                 </Link>
               </div>
+              {/* 备份提醒（2026-11-27 命令面板 v2）：超过 14 天未导出时的一行轻提醒，可关闭、不弹窗 */}
+              <PersonalBackupReminder onExport={exportPersonalBackup} />
               {personal.data.scenes.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mb-2 px-1">
                   <button
@@ -2482,6 +2520,57 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             </span>
                           </span>
                           <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                        </a>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {/* 我的链接（2026-11-27 命令面板 v2）：自定义链接可搜直达；与收藏夹同款安全闸 + 键盘导航 */}
+              {matchedPaletteCustomLinks.length > 0 && (
+                <div className="border-b border-border/60">
+                  <div className="px-3.5 py-2 flex items-center gap-1.5 bg-amber-500/5">
+                    <Link2 className="h-3.5 w-3.5 text-amber-500" />
+                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">我的链接</span>
+                  </div>
+                  <div className="p-1.5 space-y-0.5">
+                    {matchedPaletteCustomLinks.map((link) => {
+                      const idx = navIndexById.get(link.key) ?? -1
+                      // 回落 '' 而不是默认 '#'：与收藏夹同款纵深防御——
+                      // 源头 matchPaletteCustomLinks 已先过滤不安全 href。
+                      const href = safeHref(link.url, '')
+                      if (!href) return null
+                      return (
+                        <a
+                          key={link.id}
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          role="option"
+                          id={`navhub-search-opt-${idx}`}
+                          data-nav-index={idx}
+                          data-nav-item="custom-link"
+                          aria-selected={idx === activeIndex}
+                          onClick={() => openCustomLink(link)}
+                          className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors cursor-pointer ${
+                            idx === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                          }`}
+                        >
+                          <NavDigitBadge index={idx} />
+                          <span className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/15 flex items-center justify-center shrink-0">
+                            <span className="text-sm font-bold text-amber-600 dark:text-amber-400">
+                              {letterBadgeFor(link.name)}
+                            </span>
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium truncate">
+                              <Highlighted text={link.name} query={query} />
+                            </span>
+                            <span className="block text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                              {link.url}
+                            </span>
+                          </span>
+                          <Link2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         </a>
                       )
                     })}
@@ -3121,7 +3210,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 })
               )}
               {/* 键盘提示：能力存在但没人知道，等于不存在（桌面端才显示） */}
-              {(displayHits.length > 0 || pluginItems.length > 0 || matchedPaletteFavorites.length > 0 || matchedPaletteActions.length > 0 || matchedPaletteTools.length > 0) && (
+              {(displayHits.length > 0 || pluginItems.length > 0 || matchedPaletteFavorites.length > 0 || matchedPaletteCustomLinks.length > 0 || matchedPaletteActions.length > 0 || matchedPaletteTools.length > 0) && (
                 <div className="hidden sm:flex sm:pointer-coarse:hidden items-center gap-3 border-t border-border/60 bg-muted/20 px-3 py-1.5 text-[10px] text-muted-foreground">
                   <PaletteFooterHint />
                 </div>

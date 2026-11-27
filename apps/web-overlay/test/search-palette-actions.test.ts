@@ -15,10 +15,12 @@ import {
   buildPaletteActions,
   buildPaletteNavItems,
   matchPaletteActions,
+  matchPaletteCustomLinks,
   matchPaletteFavorites,
   matchPaletteQuicklinks,
   matchPaletteTools,
   toolSampleParses,
+  type PaletteCustomLinkLike,
   type PaletteFavoriteLike,
 } from '@/lib/palette-actions'
 import { quicklinkFromFavorite, type QuicklinkEntry } from '@/lib/quicklinks'
@@ -222,6 +224,68 @@ describe('matchPaletteFavorites', () => {
   })
 })
 
+describe('matchPaletteCustomLinks', () => {
+  const CUSTOM_LINKS: PaletteCustomLinkLike[] = [
+    { id: 'cl-1', name: '我的博客', url: 'https://blog.example.com' },
+    { id: 'cl-2', name: 'GitHub 收藏', url: 'https://github.com/collections' },
+    { id: 'cl-3', name: '公司内网', url: 'https://intra.example.corp/home' },
+    { id: 'cl-4', name: '周报', url: 'https://docs.example.com/weekly' },
+    { id: 'cl-5', name: '日报', url: 'https://docs.example.com/daily' },
+    { id: 'cl-6', name: '月报', url: 'https://docs.example.com/monthly' },
+    { id: 'cl-7', name: '年报', url: 'https://docs.example.com/yearly' },
+    { id: 'cl-8', name: '季报', url: 'https://docs.example.com/quarterly' },
+  ]
+
+  it('空查询与单字查询不匹配（空面板「我的常用」区另有全量入口）', () => {
+    expect(matchPaletteCustomLinks('', CUSTOM_LINKS)).toEqual([])
+    expect(matchPaletteCustomLinks('博', CUSTOM_LINKS)).toEqual([])
+  })
+
+  it('名称 / 网址都能命中，大小写不敏感', () => {
+    expect(matchPaletteCustomLinks('博客', CUSTOM_LINKS).map((l) => l.id)).toEqual(['cl-1'])
+    expect(matchPaletteCustomLinks('github', CUSTOM_LINKS).map((l) => l.id)).toEqual(['cl-2'])
+    expect(matchPaletteCustomLinks('GITHUB', CUSTOM_LINKS).map((l) => l.id)).toEqual(['cl-2'])
+    expect(matchPaletteCustomLinks('blog.example.com', CUSTOM_LINKS).map((l) => l.id)).toEqual(['cl-1'])
+  })
+
+  it('默认每组至多 5 条（先按 §6 总分排、再切，不挤掉站点）', () => {
+    const all = matchPaletteCustomLinks('example.com', CUSTOM_LINKS)
+    expect(all).toHaveLength(5)
+    expect(all.map((l) => l.key)).toEqual([
+      'custom-link-cl-1',
+      'custom-link-cl-4',
+      'custom-link-cl-5',
+      'custom-link-cl-6',
+      'custom-link-cl-7',
+    ])
+  })
+
+  it('无关查询不命中', () => {
+    expect(matchPaletteCustomLinks('天气预报', CUSTOM_LINKS)).toEqual([])
+  })
+
+  it('不安全 href 的链接不出现：不占导航位、不占 5 条名额', () => {
+    const dirty: PaletteCustomLinkLike[] = [
+      { id: 'js', name: 'GitHub 镜像', url: 'javascript:alert(1)' },
+      { id: 'data', name: 'GitHub 存档', url: 'data:text/html,<h1>x</h1>' },
+      { id: 'phish', name: 'GitHub 登录', url: 'https://github.com@evil.example/' },
+      { id: 'ctrl', name: 'GitHub 笔记', url: 'https://github.com/\t/evil' },
+      ...CUSTOM_LINKS,
+    ]
+    // 四条脏数据标题都含 GitHub 却一条都不出现；且没吃掉 5 条名额，
+    // 'https' 仍能取满 5 条真链接。
+    expect(matchPaletteCustomLinks('github', dirty).map((l) => l.id)).toEqual(['cl-2'])
+    expect(matchPaletteCustomLinks('https', dirty)).toHaveLength(5)
+    expect(matchPaletteCustomLinks('https', dirty).map((l) => l.id)).toEqual([
+      'cl-1',
+      'cl-2',
+      'cl-3',
+      'cl-4',
+      'cl-5',
+    ])
+  })
+})
+
 describe('matchPaletteQuicklinks', () => {
   const GH_ENTRY: QuicklinkEntry = {
     siteId: 'gh',
@@ -281,11 +345,12 @@ describe('matchPaletteQuicklinks', () => {
 })
 
 describe('buildPaletteNavItems', () => {
-  it('键盘顺序：建议 → DIY → 收藏 → 操作 → 工具 → 插件 → 站点', () => {
+  it('键盘顺序：建议 → DIY → 收藏 → 我的链接 → 操作 → 工具 → 插件 → 站点', () => {
     const items = buildPaletteNavItems({
       suggestionIds: ['suggestion-history:react'],
       diyIds: ['diy-edit'],
       favoriteIds: ['favorite-gh'],
+      customLinkIds: ['custom-link-cl-1'],
       actionIds: ['action-theme'],
       toolIds: ['tool-json'],
       pluginIds: ['plugin-1'],
@@ -295,6 +360,7 @@ describe('buildPaletteNavItems', () => {
       'suggestion',
       'diy',
       'favorite',
+      'customLink',
       'action',
       'tool',
       'plugin',
@@ -304,6 +370,7 @@ describe('buildPaletteNavItems', () => {
       'suggestion-history:react',
       'diy-edit',
       'favorite-gh',
+      'custom-link-cl-1',
       'action-theme',
       'tool-json',
       'plugin-1',
@@ -317,6 +384,7 @@ describe('buildPaletteNavItems', () => {
       quicklinkIds: ['quicklink-gh'],
       diyIds: ['diy-edit'],
       favoriteIds: ['favorite-gh'],
+      customLinkIds: ['custom-link-cl-1'],
       actionIds: ['action-theme'],
       toolIds: ['tool-json'],
       pluginIds: ['plugin-1'],
@@ -327,6 +395,7 @@ describe('buildPaletteNavItems', () => {
       'quicklink',
       'diy',
       'favorite',
+      'customLink',
       'action',
       'tool',
       'plugin',

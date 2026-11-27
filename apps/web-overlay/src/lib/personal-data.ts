@@ -82,6 +82,11 @@ export interface PersonalData {
   activeSceneId: string | null
   prefs: PersonalPrefs
   counters: PersonalCounters
+  /** 上次导出备份的时间戳（ms，Date.now()）；从未导出过为 null。
+   *  设备本地状态，与计数器同口径：导出文件本身不含它，导入不覆盖它。 */
+  lastExportAt: number | null
+  /** 备份提醒被关闭的时间戳（ms）；关闭后 7 天内不再提醒。 */
+  backupReminderDismissedAt: number | null
 }
 
 /** 注入式存储：localStorage 的最小子集，便于测试与降级（内存实现）。 */
@@ -100,6 +105,8 @@ export function defaultPersonalData(): PersonalData {
     activeSceneId: null,
     prefs: { recordRecent: true },
     counters: { pin: 0, personalClick: 0, exportCount: 0, importCount: 0, clearCount: 0 },
+    lastExportAt: null,
+    backupReminderDismissedAt: null,
   }
 }
 
@@ -228,12 +235,21 @@ export function validatePersonalData(value: unknown): { ok: boolean; errors: str
     importCount: counterValue(countersRaw.importCount),
     clearCount: counterValue(countersRaw.clearCount),
   }
+  // 备份时间戳：老数据没有这两个字段（缺失即 null，从未导出/从未关闭）；
+  // 非法值只按 null 计，不整文件拒绝（与计数器的容错口径一致）。
+  const lastExportAt = cleanTimestamp(value.lastExportAt)
+  const backupReminderDismissedAt = cleanTimestamp(value.backupReminderDismissedAt)
   if (errors.length > 0) return { ok: false, errors }
-  return { ok: true, errors: [], data: { version: 1, pinned, customLinks, scenes, activeSceneId, prefs, counters } }
+  return { ok: true, errors: [], data: { version: 1, pinned, customLinks, scenes, activeSceneId, prefs, counters, lastExportAt, backupReminderDismissedAt } }
 }
 
 function counterValue(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0
+}
+
+/** 时间戳清洗：合法的非负有限数才保留，否则 null（不抛错、不拒绝整文件）。 */
+function cleanTimestamp(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : null
 }
 
 /**
@@ -495,7 +511,9 @@ export function parsePersonalImport(raw: string): { ok: true; data: PersonalData
  */
 export function mergePersonalImport(current: PersonalData, imported: PersonalData, mode: 'replace' | 'merge'): PersonalData {
   if (mode === 'replace') {
-    return { ...imported, counters: current.counters }
+    // 备份时间戳是设备本地状态（与计数器同口径）：导入的备份文件里没有它，
+    // 整替时保留本地的，不被「没导过备份的文件」清零。
+    return { ...imported, counters: current.counters, lastExportAt: current.lastExportAt, backupReminderDismissedAt: current.backupReminderDismissedAt }
   }
   const pinned = [...current.pinned]
   for (const p of imported.pinned) {
@@ -610,4 +628,52 @@ export function setRecentRecordingPaused(storage: PersonalStorage, paused: boole
  */
 export function bumpCounter(data: PersonalData, key: keyof PersonalCounters): PersonalData {
   return { ...data, counters: { ...data.counters, [key]: data.counters[key] + 1 } }
+}
+
+/* ------------------------------ 备份提醒 ------------------------------ */
+
+/** 超过这么多天没导出备份，就在命令面板与数据页给一条轻提醒（2026-11-27 命令面板 v2）。 */
+export const BACKUP_REMINDER_AFTER_DAYS = 14
+/** 关闭提醒后这么多天内不再出现（不是永久关闭：没备份的风险还在）。 */
+export const BACKUP_REMINDER_DISMISS_DAYS = 7
+export const MS_PER_DAY = 86_400_000
+
+/** 有可备份的内容（置顶/自定义链接/场景任一非空）才提醒；空数据用户不需要备份提醒。 */
+export function hasPersonalContent(data: PersonalData): boolean {
+  return data.pinned.length > 0 || data.customLinks.length > 0 || data.scenes.length > 0
+}
+
+/** 距上次导出多少天（整天数）；从未导出过为 null；未来时间戳（时钟回拨）按 0 天计。 */
+export function daysSinceLastExport(lastExportAt: number | null, now: number = Date.now()): number | null {
+  if (lastExportAt === null) return null
+  return Math.max(0, Math.floor((now - lastExportAt) / MS_PER_DAY))
+}
+
+export interface BackupReminderStatus {
+  show: boolean
+  /** 从未导出过（与 daysOverdue 互斥：从未导出时 daysOverdue 为 null）。 */
+  neverExported: boolean
+  /** 超过阈值的天数（从未导出时为 null）。 */
+  daysOverdue: number | null
+}
+
+/**
+ * 备份提醒判定（纯函数，可单测）：
+ * - 没内容 → 不提醒；
+ * - 从未导出过 → 提醒（文案走「尚未导出过备份」）；
+ * - 上次导出距今 ≥14 天 → 提醒，附天数；
+ * - 关闭后 7 天内 → 不提醒（7 天后若仍未导出会再次出现）。
+ */
+export function backupReminderStatus(data: PersonalData, now: number = Date.now()): BackupReminderStatus {
+  if (!hasPersonalContent(data)) return { show: false, neverExported: false, daysOverdue: null }
+  if (
+    data.backupReminderDismissedAt !== null &&
+    now - data.backupReminderDismissedAt < BACKUP_REMINDER_DISMISS_DAYS * MS_PER_DAY
+  ) {
+    return { show: false, neverExported: false, daysOverdue: null }
+  }
+  const days = daysSinceLastExport(data.lastExportAt, now)
+  if (days === null) return { show: true, neverExported: true, daysOverdue: null }
+  if (days < BACKUP_REMINDER_AFTER_DAYS) return { show: false, neverExported: false, daysOverdue: null }
+  return { show: true, neverExported: false, daysOverdue: days }
 }

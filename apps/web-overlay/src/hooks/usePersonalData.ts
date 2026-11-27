@@ -153,6 +153,8 @@ export interface UsePersonalData {
   setRecordRecent: (on: boolean) => void
   recordRecent: boolean
   exportJson: () => string
+  /** 关闭备份提醒：7 天内不再出现（见 lib/personal-data.ts 的阈值口径）。 */
+  dismissBackupReminder: () => void
   importJson: (raw: string, mode: 'replace' | 'merge') => { ok: boolean; error?: string }
   undoImport: () => boolean
   clearAll: () => void
@@ -321,8 +323,14 @@ export function usePersonalData(): UsePersonalData {
 
   const exportJson = useCallback((): string => {
     const json = exportPersonalData(readSnapshot())
-    update((d) => d, 'exportCount')
+    // 导出即记一次备份时间（与 exportCount 同批落盘）：备份提醒的时钟
+    // 从这次导出开始算；导出文件本身不含该时间戳（设备本地状态）。
+    update((d) => ({ ...d, lastExportAt: Date.now() }), 'exportCount')
     return json
+  }, [update])
+
+  const dismissBackupReminder = useCallback(() => {
+    update((d) => ({ ...d, backupReminderDismissedAt: Date.now() }))
   }, [update])
 
   const importJson = useCallback(
@@ -378,6 +386,7 @@ export function usePersonalData(): UsePersonalData {
     setRecordRecent,
     recordRecent: data.prefs.recordRecent,
     exportJson,
+    dismissBackupReminder,
     importJson,
     undoImport,
     clearAll,

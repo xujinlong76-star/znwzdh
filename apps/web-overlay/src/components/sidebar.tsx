@@ -522,8 +522,8 @@ export const Sidebar = memo(function Sidebar({
             保留 AI-Native Hub；全称挂 title + aria-label，悬停即可看到。 */}
         <Link
           href="/"
-          title={siteInfo.basic.title}
-          aria-label={siteInfo.basic.title}
+          title={`${siteInfo.basic.title} AI-Native Hub`}
+          aria-label={`${siteInfo.basic.title} AI-Native Hub`}
           onClick={(e) => {
             if (focusedCategoryId && onSelectCategory) {
               e.preventDefault()

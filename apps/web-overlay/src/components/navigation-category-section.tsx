@@ -1168,7 +1168,7 @@ export const NavigationCategorySection = memo(function NavigationCategorySection
                                       type="button"
                                       onClick={() => setIsFilterOpen(true)}
                                       className="inline-flex h-7 items-center justify-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
-                                      aria-label={`在「${category.title}」内快速筛选`}
+                                      aria-label={`类目筛选：在「${category.title}」内快速筛选`}
                                     >
                                       <Search className="w-3.5 h-3.5" />
                                       <span className="hidden text-[11px] xl:inline">类目筛选</span>

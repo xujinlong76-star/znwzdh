@@ -1445,8 +1445,8 @@ async function cleanTaxonomyAndDuplicatesInTransaction(
       const existing = await read("SELECT id FROM categories WHERE id = ? OR slug = ?", [cat.id, cat.slug]);
       if (existing.length === 0) {
         await write(
-          "INSERT INTO categories (id, anchor, parent_id, title, slug, description, sort, enabled, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'registry', ?, ?)",
-          [cat.id, cat.anchor, cat.parentId, cat.title, cat.slug, cat.description, cat.sort, now, now]
+          "INSERT INTO categories (id, anchor, parent_id, title, slug, description, sort, enabled, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'registry', ?, ?)",
+          [cat.id, cat.anchor, cat.parentId, cat.title, cat.slug, cat.description, cat.sort, 1, now, now]
         );
         if (!dryRun) categoriesCreated++;
       }

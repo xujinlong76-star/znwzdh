@@ -170,7 +170,11 @@ export async function hotSites(repo: Repository, limit = 20): Promise<Site[]> {
       // （broken）与待审（pending）都不上榜，与 rank/copilot 只推 active 一致；
       // 后台仪表盘复用同一查询，看到的就该是用户看到的同一张榜。
       " WHERE s.enabled = " + repo.enabledLiteral + " AND s.status = 'active' AND s.deleted_at IS NULL" +
-      " GROUP BY s.id ORDER BY s.trend_score DESC, s.visit_count DESC, s.sort ASC LIMIT ?",
+      // 不写 GROUP BY s.id：s.id 是主键、本查询无 JOIN，分组是空操作，却会逼
+      // SQLite 先把全部过滤行物化进 TEMP B-TREE 再排序（实测 ~70ms → ~15ms，
+      // 5096 站库）。真正需要「每站一行」的去重在 sites.ts:1720 / collections.ts:215
+      // 那类带 JOIN 的查询里，那里才有 JOIN 行数膨胀。
+      " ORDER BY s.trend_score DESC, s.visit_count DESC, s.sort ASC, s.id ASC LIMIT ?",
     [limit],
   );
   return rows.map(rowToSite);
@@ -180,7 +184,7 @@ export async function newestSites(repo: Repository, limit = 20): Promise<Site[]>
   const rows = await repo.raw(
     repo.selectSitesSql() +
       " WHERE s.enabled = " + repo.enabledLiteral + " AND s.status = 'active' AND s.deleted_at IS NULL" +
-      " GROUP BY s.id ORDER BY s.created_at DESC LIMIT ?",
+      " ORDER BY s.created_at DESC, s.id ASC LIMIT ?",
     [limit],
   );
   return rows.map(rowToSite);

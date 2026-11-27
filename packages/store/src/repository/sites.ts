@@ -1049,7 +1049,8 @@ export async function purgeSite(repo: Repository, id: string): Promise<boolean> 
 
 export async function listDeletedSites(repo: Repository, limit = 100): Promise<Site[]> {
   const rows = await repo.raw(
-    repo.selectSitesSql() + " WHERE s.deleted_at IS NOT NULL GROUP BY s.id ORDER BY s.deleted_at DESC LIMIT ?",
+    // 同 analytics.ts 的说明：s.id 为主键、无 JOIN，GROUP BY 是空操作但触发 TEMP B-TREE 物化。
+    repo.selectSitesSql() + " WHERE s.deleted_at IS NOT NULL ORDER BY s.deleted_at DESC, s.id ASC LIMIT ?",
     [limit],
   );
   return rows.map(rowToSite);

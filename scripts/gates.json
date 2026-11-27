@@ -34,6 +34,15 @@
    "why": "显式 any 按文件基线只减不增（存量约 280 处不清）；新文件出现 any 或既有文件回增必须拦下，否则类型债会继续膨胀"
   },
   {
+   "name": "no-raw-palette",
+   "when": "staged",
+   "script": "scripts/check-no-raw-palette.mjs",
+   "args": "--staged",
+   "blocks": true,
+   "test": "scripts/check-no-raw-palette.test.ts",
+   "why": "组件层 raw palette 类（bg-emerald-500/text-blue-700 等彩色调色板）按文件基线只减不增（存量约 5500 处不清）；色彩必须走 globals.css 语义 Token——raw 色未经 AA 实测、高对比模式归一也覆盖不到（2026-11-25 UI 评审 P2-6）"
+  },
+  {
    "name": "extensions",
    "when": "staged",
    "script": "scripts/check-extensions.mjs",

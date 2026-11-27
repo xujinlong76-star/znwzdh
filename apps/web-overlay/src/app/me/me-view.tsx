@@ -112,6 +112,11 @@ function SettingsSummary({
   onPatch?: (patch: UserSettingsPatch) => void
   busy?: boolean
 }) {
+  // U-476：可见引擎名须进入 accessible name（WCAG 2.5.3），否则 axe 报
+  // label-content-name-mismatch；同一 label 既渲染可见文案、也拼进 aria-label。
+  const currentSearchEngineLabel =
+    SEARCH_ENGINE_OPTIONS.find((opt) => opt.value === settings.defaultSearchEngine)?.label ??
+    '站内聚合搜索 (山羊胡)'
   return (
     <section className="flex h-full flex-col rounded-2xl border border-border/70 bg-card/75 p-4 shadow-xs sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -143,14 +148,11 @@ function SettingsSummary({
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger
-              aria-label="默认搜索引擎"
+              aria-label={`默认搜索引擎：${currentSearchEngineLabel}`}
               disabled={busy || !onPatch}
               className="flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-border/70 bg-background/90 px-2.5 text-xs font-medium text-foreground transition-colors focus:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
             >
-              <span className="truncate">
-                {SEARCH_ENGINE_OPTIONS.find((opt) => opt.value === settings.defaultSearchEngine)
-                  ?.label ?? '站内聚合搜索 (山羊胡)'}
-              </span>
+              <span className="truncate">{currentSearchEngineLabel}</span>
               <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">

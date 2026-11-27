@@ -11,7 +11,6 @@ import {
   buildRankingsSnapshot,
   extractRankingsDateModified,
   parseRankingList,
-  RANKINGS_MIN_ENTRIES,
   type DramaRankingsSnapshot,
   type RankingEntry,
 } from "../src/drama/ranking-lists.ts";
@@ -285,10 +284,11 @@ describe("buildRankingsSnapshot", () => {
       {},
       {},
     );
+    // U-458：热播榜阈值现为 5，4 条才算过少；恰好 5 条的边界见新增测试。
     const next = buildRankingsSnapshot(
       prev,
       {
-        rebo: { entries: manyEntries(5, "rebo"), droppedTitles: 0 },
+        rebo: { entries: manyEntries(4, "rebo"), droppedTitles: 0 },
         reso: { entries: manyEntries(34, "reso"), droppedTitles: 0 },
         shoucang: { entries: manyEntries(99, "shoucang"), droppedTitles: 0 },
       },
@@ -327,16 +327,79 @@ describe("buildRankingsSnapshot", () => {
     expect(next.lists.shoucang.lastError).toMatch(/未抓到/);
   });
 
-  it(`阈值边界：恰好 ${RANKINGS_MIN_ENTRIES} 条算成功`, () => {
-    const next = buildRankingsSnapshot(
+  it("阈值边界：热播榜恰好 5 条算成功、4 条判疑似改版（U-458：按榜分开）", () => {
+    const ok = buildRankingsSnapshot(
       null,
-      { rebo: { entries: manyEntries(20, "rebo"), droppedTitles: 0 } },
+      { rebo: { entries: manyEntries(5, "rebo"), droppedTitles: 0 } },
       1000,
       {},
       {},
     );
-    expect(next.lists.rebo.lastError).toBeNull();
-    expect(next.lists.rebo.entries).toHaveLength(20);
+    expect(ok.lists.rebo.lastError).toBeNull();
+    expect(ok.lists.rebo.entries).toHaveLength(5);
+    const short = buildRankingsSnapshot(
+      null,
+      { rebo: { entries: manyEntries(4, "rebo"), droppedTitles: 0 } },
+      1000,
+      {},
+      {},
+    );
+    expect(short.lists.rebo.lastError).toMatch(/解析条目过少/);
+    expect(short.lists.rebo.entries).toHaveLength(0);
+  });
+
+  it("阈值边界：热搜榜恰好 10 条算成功、9 条判疑似改版（U-458：按榜分开）", () => {
+    const ok = buildRankingsSnapshot(
+      null,
+      { reso: { entries: manyEntries(10, "reso"), droppedTitles: 0 } },
+      1000,
+      {},
+      {},
+    );
+    expect(ok.lists.reso.lastError).toBeNull();
+    expect(ok.lists.reso.entries).toHaveLength(10);
+    const short = buildRankingsSnapshot(
+      null,
+      { reso: { entries: manyEntries(9, "reso"), droppedTitles: 0 } },
+      1000,
+      {},
+      {},
+    );
+    expect(short.lists.reso.lastError).toMatch(/解析条目过少/);
+    expect(short.lists.reso.entries).toHaveLength(0);
+  });
+
+  it("阈值边界：收藏榜恰好 20 条算成功、19 条判疑似改版（U-458：按榜分开）", () => {
+    const ok = buildRankingsSnapshot(
+      null,
+      { shoucang: { entries: manyEntries(20, "shoucang"), droppedTitles: 0 } },
+      1000,
+      {},
+      {},
+    );
+    expect(ok.lists.shoucang.lastError).toBeNull();
+    expect(ok.lists.shoucang.entries).toHaveLength(20);
+    const short = buildRankingsSnapshot(
+      null,
+      { shoucang: { entries: manyEntries(19, "shoucang"), droppedTitles: 0 } },
+      1000,
+      {},
+      {},
+    );
+    expect(short.lists.shoucang.lastError).toMatch(/解析条目过少/);
+    expect(short.lists.shoucang.entries).toHaveLength(0);
+  });
+
+  it("失败文案写“保留上次成功快照”，不再写“上一日”（U-458）", () => {
+    const next = buildRankingsSnapshot(
+      null,
+      { rebo: { entries: manyEntries(4, "rebo"), droppedTitles: 0 } },
+      1000,
+      {},
+      {},
+    );
+    expect(next.lists.rebo.lastError).toMatch(/保留上次成功快照/);
+    expect(next.lists.rebo.lastError).not.toMatch(/上一日/);
   });
 });
 
@@ -394,8 +457,82 @@ describe("buildDramaRankingsView", () => {
   });
 });
 
+/**
+ * U-458：热播榜 7 条现状。
+ *
+ * 固件是 2026-11-27 12:18 CST 从搜短剧热播榜页逐字节抽出的 7 张卡
+ * （./fixtures/drama-rebo-2026-11-27.html；整页 84,605 字节）。
+ * 当日实测：整页只有 7 张卡（2026-11-17 探针时为 25 张），anchor class
+ * 与左下热度 / 右下集数 / mt-2 meta / mt-1 题材行均未变——旧解析器
+ * 逐字段仍能解析，唯一失效的是“>= 20 条”的全局阈值。
+ * 证伪：以下两条在基底（全局阈值 20）上全部失败，修后才通过。
+ */
+describe("U-458 rebo 7 条现状", () => {
+  const fixture = readFileSync(
+    new URL("./fixtures/drama-rebo-2026-11-27.html", import.meta.url),
+    "utf-8",
+  );
+
+  it("旧解析器逐字段解析出 7 条真数据（上游未改结构）", () => {
+    const { entries, droppedTitles } = parseRankingList(fixture, "rebo");
+    expect(droppedTitles).toBe(0);
+    expect(entries).toHaveLength(7);
+    expect(entries[0]).toMatchObject({
+      rank: 1,
+      title: "情有独钟",
+      detailUrl: "https://www.soduanju.com/duanju/qingyouduzhong.html",
+      metric: 4832,
+      metricLabel: "热度",
+      rating: null,
+      favorites: 91.9,
+      likes: 166.8,
+      totalEpisodes: 82,
+      genre: "爱情",
+      actors: ["张楸梓", "金佳遇"],
+    });
+    expect(entries[3]).toMatchObject({
+      rank: 4,
+      title: "王妈在顾家当保姆后全家只会搞笑了",
+      metric: 4634,
+      rating: 9.1,
+      favorites: 362.5,
+      likes: 952.2,
+      totalEpisodes: 86,
+      genre: "喜剧",
+    });
+    expect(entries[6]).toMatchObject({
+      rank: 7,
+      title: "高考出分后女儿劝我离婚",
+      metric: 4576,
+      totalEpisodes: 81,
+      genre: "成长",
+    });
+    expect(extractRankingsDateModified(fixture)).toBe("2026-11-27T12:17:41+08:00");
+  });
+
+  it("7 条热播榜被快照接受（基底上 7 < 20 判疑似改版）", () => {
+    const now = Date.parse("2026-11-27T18:00:00+08:00");
+    const next = buildRankingsSnapshot(
+      null,
+      {
+        rebo: parseRankingList(fixture, "rebo"),
+        reso: { entries: manyEntries(34, "reso"), droppedTitles: 0 },
+        shoucang: { entries: manyEntries(99, "shoucang"), droppedTitles: 0 },
+      },
+      now,
+      { rebo: "2026-11-27T12:17:41+08:00" },
+      {},
+    );
+    expect(next.lists.rebo.lastError).toBeNull();
+    expect(next.lists.rebo.entries).toHaveLength(7);
+    expect(next.lists.rebo.lastOkAt).toBe(now);
+    expect(next.lists.rebo.fetchedAt).toBe(now);
+    expect(next.lists.rebo.sourceDateModified).toBe("2026-11-27T12:17:41+08:00");
+  });
+});
+
 import { afterAll, beforeAll } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../src/config.ts";
@@ -518,5 +655,30 @@ describe("handleDramaRankingsRefresh", () => {
     const after = await loadDramaRankingsSnapshot(ctx);
     expect(after?.lists.rebo.entries).toEqual(before?.lists.rebo.entries);
     expect(after?.lists.rebo.lastError).toContain("解析条目过少");
+  });
+
+  it("U-458：真实 7 条热播榜页刷新成功、快照 fetchedAt 为当前（基底上 ok=false）", async () => {
+    // 响应体是当日实测抓回的字节（./fixtures/drama-rebo-2026-11-27.html），
+    // 走真实 handleDramaRankingsRefresh 全路径；唯一区别是 body 未经实时网络。
+    const fixture = readFileSync(
+      new URL("./fixtures/drama-rebo-2026-11-27.html", import.meta.url),
+      "utf-8",
+    );
+    const now = Date.parse("2026-11-27T18:00:00+08:00");
+    const summary = await handleDramaRankingsRefresh(ctx, {
+      fetchImpl: fakeFetch({
+        rebo: { status: 200, body: fixture },
+        reso: { status: 200, body: listHtml("reso", 34) },
+        shoucang: { status: 200, body: listHtml("shoucang", 99) },
+      }),
+      now: () => now,
+    });
+    expect(summary.ok).toBe(true);
+    expect(summary.lists.rebo.entries).toBe(7);
+    const snap = await loadDramaRankingsSnapshot(ctx);
+    expect(snap?.lists.rebo.fetchedAt).toBe(now);
+    expect(snap?.lists.rebo.entries).toHaveLength(7);
+    expect(snap?.lists.rebo.lastError).toBeNull();
+    expect(snap?.lists.rebo.entries[0]?.title).toBe("情有独钟");
   });
 });

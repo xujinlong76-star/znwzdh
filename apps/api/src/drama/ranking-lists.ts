@@ -20,10 +20,12 @@
  * 诚实口径（与开播日历同一套规则）：
  *   - 数字缺失留 null：评分、收藏、分享、点赞各自可能没有，不拿别的数凑；
  *   - 标题长度 < 2 的疑似截断行丢弃并计数（12 月名单“不”字单字标题就是这类脏数据）；
- *   - 单榜解析条目过少（< 20）视为疑似改版，不覆盖该榜快照，只记 lastError；
- *   - 失败下发上一日快照并标 stale；从未抓到过时 status empty，不编榜单。
+ *   - 单榜解析条目过少（低于各榜阈值，见 RANKINGS_MIN_ENTRIES）视为疑似改版，
+ *     不覆盖该榜快照，只记 lastError；
+ *   - 失败下发上次成功快照并标 stale；从未抓到过时 status empty，不编榜单。
  *
- * 注意：三榜 SSR 条数并不都是 99——实测热播榜 25 条、热搜榜 34 条、收藏榜 99 条。
+ * 注意：三榜 SSR 条数并不都是 99——2026-11-17 实测热播榜 25 条、热搜榜 34 条、
+ * 收藏榜 99 条；2026-11-27 复测热播榜只剩 7 条、热搜榜 31 条、收藏榜 98 条。
  * 展示上限 30 条/榜是本文件的 DISPLAY_LIMIT，与“每榜 99 条”的旧说法无关。
  */
 import { normalizeDramaTitle } from "./featured.ts";
@@ -69,8 +71,31 @@ export const RANKINGS_INDEX_URL = "https://www.soduanju.com/paihang/index.html";
 export const RANKINGS_SOURCE_NAME = "搜短剧";
 /** 快照在 system_states 里的键。 */
 export const DRAMA_RANKINGS_SNAPSHOT_KEY = "drama:rankings:snapshot";
-/** 单榜解析条目过少的疑似改版阈值（实测热播 25 / 热搜 34 / 收藏 99）。 */
-export const RANKINGS_MIN_ENTRIES = 20;
+/**
+ * 单榜解析条目过少的疑似改版阈值（按榜分开）。
+ *
+ * 2026-11-17 探针：热播 25 / 热搜 34 / 收藏 99，当时全局 20 够用。
+ * 2026-11-27 U-458 复核：搜短剧把热播榜页缩到只剩 7 张卡（12:18 与 12:45
+ * 两次实测、7 张卡逐字节相同，anchor class 与各字段结构均未变，旧解析器
+ * 逐字段仍能解析，见 apps/api/test/fixtures/drama-rebo-2026-11-27.html），
+ * 旧阈值 20 把 7 条真榜单判成“疑似改版”，连续 9 天不覆盖快照致榜单 stale。
+ * 同日实测热搜 31 条、收藏 98 条（与 11-17 探针基本一致）。
+ * 新阈值按各榜当前实测条数留余量：热播 5（实测 7）、热搜 10（实测 31）、
+ * 收藏 20（实测 98，沿用旧值）。阈值仍是改版探测器：低于阈值仍判疑似改版、
+ * 保留上次成功快照。
+ */
+export const RANKINGS_MIN_ENTRIES: Record<RankingListKind, number> = {
+  rebo: 5,
+  reso: 10,
+  shoucang: 20,
+};
+
+/** 各榜正常条数（只用于 lastError 文案；均为 2026-11-27 实测）。 */
+const RANKINGS_EXPECTED_ENTRIES: Record<RankingListKind, string> = {
+  rebo: "约 7",
+  reso: "约 31",
+  shoucang: "约 98",
+};
 /** 每榜展示上限。 */
 export const RANKINGS_DISPLAY_LIMIT = 30;
 
@@ -258,8 +283,8 @@ export function extractRankingsDateModified(html: string): string | null {
 /**
  * 用新一轮解析结果生成快照：单榜失败不拖垮整份快照。
  *
- * - 某榜解析条目 >= 20 → 替换该榜 entries，lastError 清空；
- * - 某榜解析条目 < 20 → 疑似改版，保留上一轮 entries，只记 lastError；
+ * - 某榜解析条目 >= 本榜阈值 → 替换该榜 entries，lastError 清空；
+ * - 某榜解析条目 < 本榜阈值 → 疑似改版，保留上一轮 entries，只记 lastError；
  * - 某榜抓取失败（parsed 为 null）→ 同上，保留上一轮 entries，只记 lastError；
  * - 从未有过快照的榜 → 建一条空快照（entries []，lastError 为失败原因）。
  */
@@ -281,7 +306,7 @@ export function buildRankingsSnapshot(
     const prevList = prev?.lists[kind];
     const next = parsed[kind];
     const error = errors[kind];
-    if (next && next.entries.length >= RANKINGS_MIN_ENTRIES) {
+    if (next && next.entries.length >= RANKINGS_MIN_ENTRIES[kind]) {
       lists[kind] = {
         kind,
         label: config.label,
@@ -298,8 +323,8 @@ export function buildRankingsSnapshot(
       const reason =
         error ??
         (next
-          ? `${config.label}解析条目过少（${next.entries.length} 条，正常 ${kind === "rebo" ? "约 25" : kind === "reso" ? "约 34" : "约 99"} 条），疑似改版，保留上一日快照`
-          : `${config.label}未抓到，保留上一日快照`);
+          ? `${config.label}解析条目过少（${next.entries.length} 条，正常 ${RANKINGS_EXPECTED_ENTRIES[kind]} 条），疑似改版，保留上次成功快照`
+          : `${config.label}未抓到，保留上次成功快照`);
       lists[kind] = {
         kind,
         label: config.label,
@@ -326,7 +351,7 @@ export interface RankingListView {
   metricLabel: string;
   sourceUrl: string;
   sourceName: string;
-  /** ok = 最新快照成功；stale = 最近一次失败、下发上一日快照；empty = 从未抓到过。 */
+  /** ok = 最新快照成功；stale = 最近一次失败、下发上次成功快照；empty = 从未抓到过。 */
   status: "ok" | "stale" | "empty";
   fetchedAt: number | null;
   sourceDateModified: string | null;

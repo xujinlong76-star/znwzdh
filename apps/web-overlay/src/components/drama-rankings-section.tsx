@@ -15,7 +15,9 @@ export type RankingEntry = DramaRankingsResponse["lists"][number]["entries"][num
  *
  * 数据来自 GET /api/drama/rankings（drama_rankings_refresh 任务每日抓
  * 搜短剧热播 / 热搜 / 收藏榜存快照）。客户端取数、失败不挂页：
- * - 抓取失败时后端下发上一日快照并标 stale，这里如实写“展示上一日快照”；
+ * - 抓取失败时后端下发上次成功快照并标 stale，这里按该榜自己的 fetchedAt
+ *   写真实年龄：仅 1 天前写“上一日快照”，更旧的写“N 天前快照”，绝不把
+ *   旧榜说成昨天（U-458：热播榜 11-18 的快照曾被标成“上一日”）。
  * - 从未抓到过时 status empty，这里只留一行说明，不编榜单。
  *
  * 诚实口径：
@@ -41,6 +43,23 @@ function formatDataDate(fetchedAt: number | null): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(fetchedAt));
+}
+
+/**
+ * 快照年龄文案（U-458）：只在确实是 1 天前时写“上一日”，更旧的写真实天数。
+ * 拿单榜自己的 fetchedAt（上次成功抓取时间）算，不拿顶层 fetchedAt
+ * （最近一次刷新尝试的时间——失败刷新也会更新它，不能代表数据日期）。
+ * 天数按 24 小时向下取整；同一天内或取不到时间时写“上次成功快照”。
+ */
+export function staleSnapshotLabel(
+  listFetchedAt: number | null,
+  nowMs: number = Date.now(),
+): string {
+  if (!listFetchedAt) return "上次成功快照";
+  const days = Math.floor((nowMs - listFetchedAt) / (24 * 60 * 60 * 1000));
+  if (days <= 0) return "上次成功快照";
+  if (days === 1) return "上一日快照";
+  return `${days} 天前快照`;
 }
 
 /** 一行的副数字：只拼榜单 meta 行里有的，缺失的跳过、不凑数。 */
@@ -152,7 +171,10 @@ function RankingsBody({
   watchingTitles: ReadonlySet<string>;
 }) {
   const list = data.lists.find((l) => l.kind === tab);
-  const dataDate = formatDataDate(data.fetchedAt);
+  // U-458：数据日期拿当前 Tab 单榜自己的 fetchedAt（上次成功抓取），
+  // 不拿顶层 fetchedAt（最近一次刷新尝试——失败刷新也会更新它，
+  // 11-26 的失败刷新曾让 11-18 的热播榜数据被标成“数据日期 11月26日”）。
+  const dataDate = formatDataDate(list?.fetchedAt ?? null);
   return (
     <div>
       <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
@@ -160,7 +182,7 @@ function RankingsBody({
       </p>
       {data.status === "stale" && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-          今日榜单未更新，展示上一日快照（数据日期 {dataDate}），排名可能已变。
+          部分榜单今日未更新，展示上次成功快照，排名可能已变。各榜真实数据日期见下方。
         </p>
       )}
       {data.status === "empty" ? (
@@ -196,7 +218,8 @@ function RankingsBody({
             <>
               {list.status === "stale" && (
                 <p className="mt-3 text-sm text-amber-800 dark:text-amber-200">
-                  {list.label}今日未更新，展示上一日快照。
+                  {list.label}今日未更新，展示{staleSnapshotLabel(list.fetchedAt)}
+                  （数据日期 {formatDataDate(list.fetchedAt)}）。
                 </p>
               )}
               <ol className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">

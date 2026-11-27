@@ -4,10 +4,10 @@
  * 职责：每天跑一轮（DEFAULT_CRON_SCHEDULES intervalMs 86_400_000，
  * 与 drama_calendar_refresh 同频），用 hotlist 同款 guardedFetch 取搜短剧
  * 热播榜 / 热搜榜 / 收藏榜，解析后存快照进 system_states；三榜相互独立——
- * 单榜失败只记该榜 lastError、保留上一日快照，不拖垮其余两榜、不中断整轮。
+ * 单榜失败只记该榜 lastError、保留上次成功快照，不拖垮其余两榜、不中断整轮。
  *
  * 失败口径（与 drama_calendar_refresh 一致）：单源失败只记 last_error、
- * 保留上一日快照，不清空榜单、不抛错、不中断整轮；整轮结果记进事件流。
+ * 保留上次成功快照，不清空榜单、不抛错、不中断整轮；整轮结果记进事件流。
  * 本任务永不抛错——失败本身就是要记录的状态。
  */
 import type { AppContext } from "../../context.ts";
@@ -78,9 +78,9 @@ export async function handleDramaRankingsRefresh(
       });
       if (res.status !== 200) throw new Error(`${config.label}返回 HTTP ${res.status}`);
       const result = parseRankingList(res.body, config.kind);
-      if (result.entries.length < RANKINGS_MIN_ENTRIES) {
+      if (result.entries.length < RANKINGS_MIN_ENTRIES[config.kind]) {
         throw new Error(
-          `${config.label}解析条目过少（${result.entries.length} 条），疑似改版，保留上一日快照`,
+          `${config.label}解析条目过少（${result.entries.length} 条），疑似改版，保留上次成功快照`,
         );
       }
       parsed[config.kind] = result;

@@ -9,7 +9,10 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
-import { DramaRankingsSection } from "../src/components/drama-rankings-section";
+import {
+  DramaRankingsSection,
+  staleSnapshotLabel,
+} from "../src/components/drama-rankings-section";
 import type { DramaRankingsResponse } from "../src/lib/rest-contracts.generated";
 import type { WatchEntry } from "../src/lib/watchlist";
 import { dramaKeyFor } from "../src/lib/watchlist";
@@ -54,18 +57,23 @@ afterAll(() => {
   vi.resetModules();
 });
 
-function rankingData(status: "ok" | "stale"): DramaRankingsResponse {
+function rankingData(
+  status: "ok" | "stale",
+  overrides: { topFetchedAt?: number; reboFetchedAt?: number } = {},
+): DramaRankingsResponse {
+  const topFetchedAt = overrides.topFetchedAt ?? Date.parse("2026-11-17T08:00:00+08:00");
+  const reboFetchedAt = overrides.reboFetchedAt ?? Date.parse("2026-11-17T08:00:00+08:00");
   return {
     ok: true,
     status,
-    fetchedAt: Date.parse("2026-11-17T08:00:00+08:00"),
+    fetchedAt: topFetchedAt,
     lists: [
       {
         kind: "rebo",
         label: "热播榜",
         sourceUrl: "https://www.soduanju.com/paihang/rebo.html",
         sourceName: "搜短剧热播榜",
-        fetchedAt: Date.parse("2026-11-17T08:00:00+08:00"),
+        fetchedAt: reboFetchedAt,
         sourceDateModified: "2026-11-17T08:00:00+08:00",
         status: status === "stale" ? "stale" : "ok",
         lastError: status === "stale" ? "热播榜返回 HTTP 500" : null,
@@ -176,12 +184,35 @@ describe("DramaRankingsSection", () => {
     expect(html).toContain("在追");
   });
 
-  it("stale 时如实写展示上一日快照", () => {
+  it("stale 时按单榜真实年龄写快照文案，不把旧榜说成上一日（U-458）", () => {
+    // 旧断言“今日榜单未更新，展示上一日快照”本身就是 U-458 的谎言：
+    // 固件热播榜 fetchedAt 为 2026-11-17，渲染时真实年龄早已 > 1 天，
+    // 再写“上一日”即把旧榜冒充成昨天。改写为真实年龄断言。
     rankingsState.kind = "ready";
     rankingsState.data = rankingData("stale");
     watchlistState.entries = [];
     const html = render();
-    expect(html).toContain("今日榜单未更新，展示上一日快照");
+    expect(html).toContain("展示上次成功快照");
+    expect(html).toContain("天前快照");
+    expect(html).not.toContain("上一日快照");
+  });
+
+  it("stale 横幅用单榜自己的 fetchedAt 算数据日期（U-458 真实案例）", () => {
+    // 真实案例（R5-A-01）：顶层 fetchedAt 为 2026-11-26（失败刷新时间），
+    // 热播榜自己的 fetchedAt 为 2026-11-18（真实数据日期）。横幅与副标题
+    // 必须写 2026/11/18，不得写顶层的 11-26、不得写“上一日”。
+    rankingsState.kind = "ready";
+    rankingsState.data = rankingData("stale", {
+      topFetchedAt: Date.parse("2026-11-26T12:06:00+08:00"),
+      reboFetchedAt: Date.parse("2026-11-18T20:04:29+08:00"),
+    });
+    watchlistState.entries = [];
+    // renderToString 在 JSX 文本与表达式之间插 <!-- -->，先去掉再断言。
+    const html = render().replace(/<!-- -->/g, "");
+    expect(html).toContain("数据日期 2026/11/18");
+    expect(html).not.toContain("2026/11/26");
+    expect(html).not.toContain("上一日快照");
+    expect(html).toContain("天前快照");
   });
 
   it("empty 时只留一行说明，不编榜单", () => {
@@ -208,5 +239,30 @@ describe("DramaRankingsSection", () => {
     watchlistState.entries = [];
     const html = render();
     expect(html).toContain("真榜单这次没加载出来");
+  });
+
+  describe("staleSnapshotLabel（U-458）", () => {
+    const NOW = Date.parse("2026-11-27T12:00:00+08:00");
+    it("1 天前写上一日", () => {
+      expect(staleSnapshotLabel(Date.parse("2026-11-26T12:00:00+08:00"), NOW)).toBe(
+        "上一日快照",
+      );
+    });
+    it("8 天前写真实天数（R5 真实案例：11-18 的榜在 11-27 看是 8 天前）", () => {
+      expect(staleSnapshotLabel(Date.parse("2026-11-18T20:04:29+08:00"), NOW)).toBe(
+        "8 天前快照",
+      );
+    });
+    it("同一天内写上次成功快照", () => {
+      expect(staleSnapshotLabel(Date.parse("2026-11-27T08:00:00+08:00"), NOW)).toBe(
+        "上次成功快照",
+      );
+    });
+    it("取不到时间与未来时间都写上次成功快照，不编天数", () => {
+      expect(staleSnapshotLabel(null, NOW)).toBe("上次成功快照");
+      expect(staleSnapshotLabel(Date.parse("2026-11-28T12:00:00+08:00"), NOW)).toBe(
+        "上次成功快照",
+      );
+    });
   });
 });

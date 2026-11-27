@@ -171,3 +171,75 @@ describe("可推荐热榜 suggestableTopQueries", () => {
     expect((await repo.suggestableTopQueries(30, 5)).map((b) => b.query)).toEqual(["达标词甲", "达标词乙"]);
   });
 });
+
+describe("U-464 探针污染守卫（R5-A-07：`zzzz不存在的站` 曾上公开热词）", () => {
+  it("形状闸：探针模式逐条拒绝，真实查询与真实求助保留", () => {
+    const probes = [
+      "zzzz不存在的站", // R5 线上实测上榜的原词：zz 前缀 + 含汉字，旧闸全绕过
+      "zzzzqqqxxyy12345",
+      "zz测试",
+      "aaa测试",
+      "qqq不存在",
+      "xxx网站",
+      "不存在的站",
+      "test",
+      "TEST",
+      "测试",
+      "探针",
+    ];
+    for (const p of probes) expect(suggestQueryRejection(p), `探针漏网：${p}`).not.toBeNull();
+    for (const keep of ["12306", "天气预报", "react", "3.14", "知乎", "github", "量子加密工具"]) {
+      expect(suggestQueryRejection(keep), `真实查询误杀：${keep}`).toBeNull();
+    }
+    // 窄口径对照：「网站不存在怎么办」是真实求助，含「不存在」但不含完整短语
+    // 「不存在的站」，不该被短语规则误杀；「心理测试」含「测试」但不是整词。
+    expect(suggestQueryRejection("网站不存在怎么办")).toBeNull();
+    expect(suggestQueryRejection("心理测试")).toBeNull();
+  });
+
+  it("探针两次会话也上不了榜：2 身份 / 2 行的 zzzz 词被形状闸拦住（无零结果行也不行）", async () => {
+    const repo = await freshRepo();
+    // 语义检索可能给探针命中、根本不写 zero_result 行——R5 线上就是这么漏网的，
+    // 所以这里故意不写 zero_result 行：形状闸必须独自拦住它。
+    await seed(repo, "zzzz不存在的站", "probe-a");
+    await seed(repo, "zzzz不存在的站", "probe-b");
+    await seed(repo, "真实需求词", "person-a");
+    await seed(repo, "真实需求词", "person-b");
+    const board = await repo.suggestableTopQueries(30, 10);
+    expect(board.map((b) => b.query)).toEqual(["真实需求词"]);
+  });
+
+  it("零结果率 100% 的词不进榜：形状正常、2 身份 / 2 行，但每次搜都没结果", async () => {
+    const repo = await freshRepo();
+    await seed(repo, "量子土豆种植指南", "person-a");
+    await seed(repo, "量子土豆种植指南", "person-b");
+    await repo.recordEvent("zero_result", { query: "量子土豆种植指南", identity: "person-a" });
+    await repo.recordEvent("zero_result", { query: "量子土豆种植指南", identity: "person-b" });
+    await seed(repo, "真实需求词", "person-a");
+    await seed(repo, "真实需求词", "person-b");
+    const board = await repo.suggestableTopQueries(30, 10);
+    expect(board.map((b) => b.query)).toEqual(["真实需求词"]);
+  });
+
+  it("对照：有一次搜到结果的词仍进榜（零结果率 <100% 不拦）", async () => {
+    const repo = await freshRepo();
+    await seed(repo, "半命中词", "person-a", 2);
+    await seed(repo, "半命中词", "person-b");
+    await repo.recordEvent("zero_result", { query: "半命中词", identity: "person-a" });
+    const board = await repo.suggestableTopQueries(30, 10);
+    expect(board.map((b) => b.query)).toEqual(["半命中词"]);
+    expect(board[0]).toMatchObject({ count: 3, identities: 2 });
+  });
+
+  it("零结果口径不污染运维榜：topQueries 与 zeroResultQueries 仍看到原行", async () => {
+    const repo = await freshRepo();
+    await seed(repo, "量子土豆种植指南", "person-a");
+    await seed(repo, "量子土豆种植指南", "person-b");
+    await repo.recordEvent("zero_result", { query: "量子土豆种植指南", identity: "person-a" });
+    await repo.recordEvent("zero_result", { query: "量子土豆种植指南", identity: "person-b" });
+    expect(await repo.topQueries(30, 10)).toEqual([{ query: "量子土豆种植指南", count: 2 }]);
+    expect(await repo.zeroResultQueries(30, 10)).toEqual([
+      { query: "量子土豆种植指南", count: 2, lastAt: expect.any(Number) },
+    ]);
+  });
+});

@@ -36,6 +36,17 @@ export const SUGGEST_MIN_EVENTS = 2;
  * 每条都有本机库里的真实命中做依据（`{"name":"navhub"}` 21 行、`_` 2 行、`%` 2 行、
  * `zzzzzz` 2 行、`semver: ^1.2.0 vs 1.4.0`、`#3b82f6`、`2^10 * 8`、`418`）。
  * 反过来**不能**误杀长数字站码（`12306`），所以纯数字只在 ≤3 位时淘汰。
+ *
+ * U-464 追加（R5-A-07：`zzzz不存在的站` 2026-11-26 实测上了公开热词）：
+ * 旧闸只认「全串同一字符」，`zzzz不存在的站` 不是全同字符、含汉字，全部绕过——
+ * 两个匿名会话各搜一次就达标（2 身份 / 2 行）。追加的四条只拦建议位，不拦搜索本身：
+ *  - `zz` 开头：探针填充前缀（`zzzz…`、`zzzzqqqxxyy12345`）；正常查询极少以 zz 开头，
+ *    且万一误伤也只是不上建议 chips，搜索结果不受影响；
+ *  - 同一字母 3 连开头（`aaa…` / `qqq…`）：同类填充的通用形；
+ *  - 含「不存在的站」：探针措辞（字面意思就是「不存在的站」）；只拦这个完整短语，
+ *    「网站不存在怎么办」这类真实求助不含它，不误杀；
+ *  - 含 `xxx`：占位符探针；整词 `test` / `测试` / `探针`（见 suggestQueryRejection）
+ *    是同一类标记的整词形。
  */
 const SUGGEST_SHAPE_REJECTS: Array<{ re: RegExp; why: string }> = [
   // 只收「符号与空白」：`- 元数据` 这类以连接符开头的正常中文查询里含汉字，不该被误杀
@@ -45,6 +56,14 @@ const SUGGEST_SHAPE_REJECTS: Array<{ re: RegExp; why: string }> = [
   { re: /:\/\/|(?:^|\s)www\./i, why: "这是 URL 不是搜索意图" },
   { re: /^[@#]/, why: "@ / # 开头：提及、标签或色值写法" },
   { re: /^(.)\1*$/u, why: "同一字符重复（zzzzzz / ___）" },
+  // U-464：探针填充前缀。`zz` 开头（zzzz…）与同一字母 3 连开头（aaa… / qqq…）——
+  // 旧「全串同一字符」拦不住 `zzzz不存在的站`（后半截是汉字），这两条补上前缀形。
+  { re: /^z{2,}/i, why: "zz 开头：探针填充前缀（zzzz…）" },
+  { re: /^([a-z])\1{2,}/i, why: "同一字母 3 连开头（aaa / qqq… 探针填充）" },
+  // U-464：探针措辞与占位符。只拦完整短语「不存在的站」，不拦泛化的「不存在」
+  // （「网站不存在怎么办」是真实求助）；`xxx` 是测试输入里的常见占位符。
+  { re: /不存在的站/, why: "「不存在的站」：探针措辞，不是真实搜索意图" },
+  { re: /xxx/i, why: "xxx 占位符：探针/测试输入" },
   // 必须**同时**含数字和运算符才算算式：`12306`、`3.14` 是正常人搜的号码与版本号，
   // `2^10 * 8`、`1 + 1` 才是探针痕迹。纯数字另交给前面「≤3 位」那条（418 是 chip 痕迹）。
   { re: /^(?=[\d\s+\-*/%^().,]*\d)(?=[\d\s+\-*/%^().,]*[+\-*/%^])[\d\s+\-*/%^().,]+$/, why: "数字与算式" },
@@ -66,6 +85,10 @@ export function suggestQueryRejection(query: string): string | null {
   if (q.length < 2) return "少于 2 个字符（单字命中过宽，等于把首页塞进建议位）";
   if (q.length > SUGGEST_QUERY_MAX_LENGTH) return `超过 ${SUGGEST_QUERY_MAX_LENGTH} 个字符`;
   if (/^\d+$/.test(q) && q.length <= 3) return "≤3 位纯数字（示例 chip 与探针痕迹）";
+  // U-464：整词测试标记（test / 测试 / 探针）——只拦整词，不拦子串：
+  // 「心理测试」「性格测试」是真实查询，含「测试」但不是整词，不该误杀。
+  const lower = q.toLowerCase();
+  if (lower === "test" || lower === "测试" || lower === "探针") return "整词测试标记（test / 测试 / 探针）：探针输入";
   for (const { re, why } of SUGGEST_SHAPE_REJECTS) if (re.test(q)) return why;
   return null;
 }
@@ -126,10 +149,36 @@ export async function suggestableTopQueries(
       winnerRows.set(key, entry.count);
     }
   }
+  /**
+   * U-464：零结果率 100% 的词不进建议位——一个词被搜过 N 次、N 次都没结果，
+   * 说明它指向站库里没有的东西，当建议贴回面板只会把人领进空页。
+   * 按归一小写键汇总：search 与 zero_result 两行是同一个 q 写下的，大小写/
+   * 空白变体要并到同一口径，否则 `Foo` 的零结果行拦不住 `foo` 的搜索行。
+   * 只拦建议位：运维榜 topQueries 与 zeroResultQueries 一行不动，
+   * 「有人在找但站库没有」的需求信号仍留在零结果榜里等收录补齐。
+   * 为什么不只靠路由层 `zeroResultQueries(180, 30)` 的 top-30 零结果集：
+   * 那个集合按次数截断在前 30，零结果词一多、2 次的探针就掉出集合、原样上榜；
+   * 这里是逐词比对，没有截断洞。另外 R5 线上实测里探针能上榜，还有一种可能
+   * 是语义检索给了它命中、根本没写 zero_result 行——那条路形状闸（zz 前缀）
+   * 负责拦，两道闸互为备份。
+   */
+  const zeroByKey = new Map<string, number>();
+  const zeroRows = await repo.raw(
+    "SELECT query, COUNT(*) AS cnt FROM events " +
+      "WHERE kind = 'zero_result' AND created_at >= ? AND created_at < ? " +
+      "GROUP BY query",
+    [since, upper],
+  );
+  for (const r of zeroRows) {
+    const key = normalizeSuggestQuery(String(r.query ?? "")).toLowerCase();
+    if (!key) continue;
+    zeroByKey.set(key, (zeroByKey.get(key) ?? 0) + Number(r.cnt ?? 0));
+  }
   const kept: Array<{ query: string; count: number; identities: number }> = [];
-  for (const item of merged.values()) {
+  for (const [key, item] of merged.entries()) {
     if (suggestQueryRejection(item.query)) continue;
     if (item.identities < SUGGEST_MIN_IDENTITIES || item.count < SUGGEST_MIN_EVENTS) continue;
+    if ((zeroByKey.get(key) ?? 0) >= item.count) continue;
     kept.push({ query: item.query, count: item.count, identities: item.identities });
   }
   kept.sort((a, b) => b.identities - a.identities || b.count - a.count || a.query.localeCompare(b.query));

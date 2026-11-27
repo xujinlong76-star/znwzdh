@@ -1,0 +1,27 @@
+# 山羊胡网
+
+> 山羊胡网（https://www.shanyanghu.com）是一个网址导航站：收录并分类常用网站，支持搜索、热榜、收藏与个性化推荐，帮助用户快速找到想用的网站。
+
+## 主要栏目
+
+- [首页](https://www.shanyanghu.com/)
+- [插件市场](https://www.shanyanghu.com/marketplace)
+- [热门](https://www.shanyanghu.com/hot)
+- [每日简报](https://www.shanyanghu.com/brief)
+- [短剧](https://www.shanyanghu.com/drama)
+- [标签](https://www.shanyanghu.com/tags)
+- [合集](https://www.shanyanghu.com/collections)
+- [分类](https://www.shanyanghu.com/category)
+- [图谱](https://www.shanyanghu.com/graph)
+- [算法](https://www.shanyanghu.com/algorithms)
+- [全部站点](https://www.shanyanghu.com/sites)
+- [视频](https://www.shanyanghu.com/videos)
+- [场景](https://www.shanyanghu.com/scenes)
+- [考试](https://www.shanyanghu.com/exam)
+- [国考准考证打印前清单](https://www.shanyanghu.com/exam/guokao-checklist)
+
+## 说明
+
+- 完整站点清单见 sitemap：https://www.shanyanghu.com/sitemap.xml（视频分 sitemap：https://www.shanyanghu.com/videos/sitemap.xml）
+- 搜索页（/search）为 noindex，不建议抓取；后台（/admin）与接口（/api/）不对外开放
+- 本文件与 sitemap 的静态页清单保持一致（见 apps/web-overlay/src/lib/seo/sitemap-entries.ts 的 STATIC_PATHS）

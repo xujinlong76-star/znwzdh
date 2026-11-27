@@ -215,8 +215,10 @@ const nextConfig = {
         .filter(Boolean),
     },
     optimizePackageImports: ["lucide-react", "date-fns", "lodash"],
-    // 关闭 Windows 本地开发时 Turbopack 的持久化磁盘缓存，规避 RocksDB .sst 文件被并发删除导致的 Rust panic 中断
-    turbopackFileSystemCacheForDev: false,
+    // Turbopack 持久化磁盘缓存：该开关曾以“Windows 上 RocksDB .sst 并发删除致 Rust panic”为由关闭，
+    // 但该归因未经证实——实测持久化后端为 Turbopack 自研 turbo-persistence（非 RocksDB），公开渠道亦无相关 panic 病例。
+    // 保守起见 Windows 仍保持关闭，Linux/macOS 开启（关缓存同时关掉了 turbopackMemoryEviction / turbopackGc 的内存手段）。
+    turbopackFileSystemCacheForDev: process.platform !== "win32",
   },
 };
 

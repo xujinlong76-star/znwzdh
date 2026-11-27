@@ -78,6 +78,8 @@ const settingsPatchSchema = z
       .array(z.enum(["aiFinder", "dramaCinema", "onboarding", "heroDeck", "xiaomaomao"]))
       .max(5)
       .optional(),
+    // 账号级温度单位偏好：/weather 页与天气挂件同源（缺省 °C）
+    tempUnit: z.enum(["celsius", "fahrenheit"]).optional(),
     // 账号级天气城市偏好：null = 显式清除（回默认上海）；坐标只用于搜索 id 过期后重搜匹配
     weatherCity: z
       .object({

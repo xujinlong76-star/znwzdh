@@ -12,6 +12,11 @@
  * 刷新后仍是上次的城市（B-4）。搜索 id 24 小时过期后，用存下的城市名重新
  * 搜索一次、按坐标匹配到同一城市再取新 id，不静默换城市。
  *
+ * 温度单位偏好：与城市同一套偏好模型（本机 localStorage 快照 + 账号
+ * PATCH /api/me/settings 的 tempUnit 字段），是天气挂件共用的单一来源：
+ * 页面切换写偏好，挂件下次打开即读新值；刷新后保持上次的单位，缺省 °C。
+ * 初始优先级：账号偏好（登录时云端取一次）> 本机快照 > 默认 °C。
+ *
  * 数据全部来自服务端 /api/weather 与 /api/weather/search；上游挂了就明示，
  * 绝不编数。首屏不阻塞：页面骨架先出，天气数据随后到（C-5）。
  */
@@ -41,6 +46,7 @@ import {
   describeWeatherCode,
   formatTemp,
   hourLabel,
+  normalizeUnit,
   normalizeWeatherCityPreference,
   observedAtLabel,
   readWeatherCityPreference,
@@ -119,7 +125,9 @@ export function WeatherPage() {
   const [pref, setPref] = useState<WeatherCityPreference>(DEFAULT_PREFERENCE)
   const [state, setState] = useState<PageState>({ kind: 'loading' })
   const [refreshing, setRefreshing] = useState(false)
-  const [unit, setUnit] = useState<WeatherUnit>('celsius')
+  // 温度单位不是内存态：初始值读账号偏好本机快照（缺省 °C），切换后写回
+  // 本机 + 账号同步，刷新后保持（P1-5）。
+  const [unit, setUnit] = useState<WeatherUnit>(() => readLocalUserSettings().tempUnit)
   const [query, setQuery] = useState('')
   const [candidates, setCandidates] = useState<SearchCandidate[]>([])
   const [searching, setSearching] = useState(false)
@@ -127,6 +135,9 @@ export function WeatherPage() {
   const [searchError, setSearchError] = useState<string | null>(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [activeIdx, setActiveIdx] = useState(-1)
+  // 用户在本页亲手切过单位后，挂载时那次云端取数不再回写：取数是进页面时
+  // 发出的，云端值可能比用户刚切的新值旧，回写会把新选择吞掉。
+  const unitTouchedRef = useRef(false)
   const reqId = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -250,6 +261,51 @@ export function WeatherPage() {
     }
     return () => abortRef.current?.abort()
   }, [])
+
+  // 温度单位：账号偏好 > 本机 > 默认 °C。登录时向云端取一次账号单位并写回
+  // 本机快照（失败就静默用本机值）；未登录只用本机快照。
+  useEffect(() => {
+    if (!isLoggedIn()) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch('/api/me/settings', { cache: 'no-store' })
+        if (!res.ok || cancelled) return
+        const data = (await res.json()) as { settings?: { tempUnit?: unknown } }
+        const cloudUnit = normalizeUnit(data.settings?.tempUnit)
+        if (cancelled || unitTouchedRef.current) return
+        if (cloudUnit !== readLocalUserSettings().tempUnit) {
+          try {
+            writeLocalUserSettings({ tempUnit: cloudUnit })
+          } catch {
+            // 本机写失败不阻断：本次显示仍用云端单位
+          }
+          setUnit(cloudUnit)
+        }
+      } catch {
+        // 云端取不到不阻断：本机单位照常用
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  function persistUnit(next: WeatherUnit) {
+    unitTouchedRef.current = true
+    setUnit(next)
+    try {
+      writeLocalUserSettings({ tempUnit: next })
+    } catch {
+      // 本机账号偏好写失败不阻断：本次显示仍用新单位，下次打开回落到旧偏好
+    }
+    if (isLoggedIn()) {
+      // 云端同步是尽力而为：失败时本机仍生效，下次切换再同步
+      void saveSettingsPatchToCloud({ tempUnit: next }).catch(() => {
+        /* 云端同步是尽力而为：失败时本机偏好仍生效，下次切换再同步。 */
+      })
+    }
+  }
 
   function persistPreference(next: WeatherCityPreference) {
     writeWeatherCityPreference(next)
@@ -521,7 +577,7 @@ export function WeatherPage() {
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button
-                  onClick={() => setUnit(unit === 'celsius' ? 'fahrenheit' : 'celsius')}
+                  onClick={() => persistUnit(unit === 'celsius' ? 'fahrenheit' : 'celsius')}
                   className="text-xs font-mono px-2 py-1 rounded-full bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40 transition-colors"
                 >
                   {unit === 'celsius' ? '切换至 °F' : '切换至 °C'}

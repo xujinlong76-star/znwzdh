@@ -7,8 +7,11 @@
  * 注册表标题却叫「实时天气」。用户据此决定穿什么出门，假数据比没数据更糟。
  * 现在数据走服务端 /api/weather 代取 Open-Meteo，取不到就明确失败并说明原因。
  *
- * widget 只能读 config、不能自己落盘：卡上的单位切换是本卡临时状态，因此带「临时」标记，
- * 永久设置要走卡片齿轮里的「温度单位」。
+ * 温度单位与 /weather 页同源：偏好 tempUnit（本机快照 + 账号同步）是唯一来源，
+ * 挂件挂载时读它；卡片齿轮里的「温度单位」（config.unit）是旧入口，挂载时采纳
+ * 一次写回偏好（采纳水位见 CONFIG_UNIT_ADOPTED_KEY），不再另存一份单位值。
+ * 卡上的单位切换仍是本卡临时状态（unitOverride），因此带「临时」标记；
+ * 要长期生效，到 /weather 页切换，或点卡片齿轮里的「温度单位」。
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
@@ -26,6 +29,9 @@ import {
   Wind,
 } from 'lucide-react'
 
+import { isLoggedIn } from '@/lib/identity'
+import { saveSettingsPatchToCloud } from '@/lib/me-settings-save'
+import { readLocalUserSettings, writeLocalUserSettings } from '@/lib/user-settings'
 import {
   WEATHER_CITIES,
   ageLabel,
@@ -81,12 +87,37 @@ function tempOrDash(value: number | null | undefined, unit: WeatherUnit): string
   return formatTemp(typeof value === 'number' ? value : null, unit)
 }
 
+/**
+ * 齿轮采纳水位：记下上次已采纳进共享偏好的 config.unit 值。
+ * 齿轮只在用户显式改过单位时才写 config.unit（配置弹窗不物化默认值），
+ * 但采纳过一次后它就成了旧值：页面切过单位后，挂件再挂载不能拿它把偏好
+ * 顶回去 —— 只有与水位不同的新值（即用户刚在齿轮里改过）才再采纳一次。
+ */
+const CONFIG_UNIT_ADOPTED_KEY = 'navhub_weather_unit_config_adopted_v1'
+
 export function WeatherWidget({ config }: WeatherWidgetProps) {
   const resolved = resolveCityKey(config?.city)
   const city = WEATHER_CITIES[resolved.key]!
-  const configuredUnit = normalizeUnit(config?.unit)
+  // 单一来源：温度单位偏好 tempUnit（本机快照 + 账号同步），与 /weather 页同源。
+  // 页面切换后写偏好，挂件下次打开即读新值；刷新后保持，缺省 °C。
+  const [prefUnit, setPrefUnit] = useState<WeatherUnit>(() => readLocalUserSettings().tempUnit)
   const [unitOverride, setUnitOverride] = useState<WeatherUnit | null>(null)
-  const unit = unitOverride ?? configuredUnit
+  const unit = unitOverride ?? prefUnit
+
+  function persistTempUnit(next: WeatherUnit) {
+    setPrefUnit(next)
+    try {
+      writeLocalUserSettings({ tempUnit: next })
+    } catch {
+      // 本机写失败不阻断显示：本次仍用新单位
+    }
+    if (isLoggedIn()) {
+      // 云端同步尽力而为：失败时本机仍生效，下次改单位再同步
+      void saveSettingsPatchToCloud({ tempUnit: next }).catch(() => {
+        /* 云端同步是尽力而为：失败时本机偏好仍生效。 */
+      })
+    }
+  }
 
   const [state, setState] = useState<State>({ kind: 'loading' })
   const [refreshing, setRefreshing] = useState(false)
@@ -136,6 +167,42 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
     return () => abortRef.current?.abort()
   }, [resolved.key, load])
 
+  // 齿轮 → 偏好：config.unit 与水位不同时，说明用户刚在齿轮里改过单位，
+  // 采纳一次写回共享偏好，/weather 页下次打开即同步；与水位相同时是旧值，
+  // 不采纳（页面切过的单位不会被顶回去）。
+  useEffect(() => {
+    const raw = config?.unit
+    if (raw !== 'celsius' && raw !== 'fahrenheit') return
+    let adopted: string | null = null
+    try {
+      adopted = window.localStorage.getItem(CONFIG_UNIT_ADOPTED_KEY)
+    } catch {
+      // 读不到水位就当没采纳过：最坏多采纳一次，与偏好同值时无副作用
+    }
+    if (adopted === raw) return
+    try {
+      window.localStorage.setItem(CONFIG_UNIT_ADOPTED_KEY, raw)
+    } catch {
+      // 水位写失败不阻断：下次挂载可能重复采纳，同值时无副作用
+    }
+    if (readLocalUserSettings().tempUnit !== raw) {
+      persistTempUnit(raw)
+    }
+    // 只在挂载时跑一次：后续变化由水位键去重
+  }, [])
+
+  // 同设备另一处改了偏好（/weather 页切换、另一张卡采纳）时即时跟随，
+  // 不用等下次挂载。writeLocalUserSettings 会发 navhub_settings_changed。
+  useEffect(() => {
+    const onSettings = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { tempUnit?: unknown } | undefined
+      if (detail?.tempUnit === undefined) return
+      setPrefUnit(normalizeUnit(detail.tempUnit))
+    }
+    window.addEventListener('navhub_settings_changed', onSettings)
+    return () => window.removeEventListener('navhub_settings_changed', onSettings)
+  }, [])
+
   const payload = state.kind === 'ready' ? state.payload : null
   const current = payload?.current ?? null
   const days = payload?.days ?? []
@@ -177,7 +244,7 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
           <button
             onClick={() => setUnitOverride(unit === 'celsius' ? 'fahrenheit' : 'celsius')}
             className="text-xs font-mono px-2 py-0.5 rounded-full bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40 transition-colors"
-            title="仅本卡临时切换显示单位；永久设置请点卡片齿轮里的「温度单位」"
+            title="仅本卡临时切换显示单位；永久设置请到天气页切换，或点卡片齿轮里的「温度单位」"
           >
             {unit === 'celsius' ? '切换至 °F' : '切换至 °C'}
           </button>

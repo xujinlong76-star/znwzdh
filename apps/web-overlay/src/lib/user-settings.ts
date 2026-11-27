@@ -12,8 +12,10 @@ import { FAVORITES_STORAGE_KEY, corruptKeyFor, parseFavorites } from './favorite
 import { ANON_ID_STORAGE_KEY } from './identity-keys'
 import { isAnonIdentity } from './hub-identity-guard'
 import {
+  normalizeUnit,
   normalizeWeatherCityPreference,
   type WeatherCityPreference,
+  type WeatherUnit,
 } from './modular/weather'
 
 export type SearchEngineId = 'internal' | 'google' | 'baidu' | 'bing' | 'sogou' | 'duckduckgo' | 'github' | 'perplexity'
@@ -44,6 +46,13 @@ export interface UserSettingsModel {
   hiddenHomeModules: string[]
   /** 账号级天气城市偏好（跨设备；null = 未设置过，默认上海） */
   weatherCity: WeatherCityPreference | null
+  /**
+   * 账号级温度单位偏好（跨设备；缺省 °C）。
+   * /weather 页与天气挂件共用这一个来源（single source of truth）：页面切换
+   * 写这里，挂件挂载时读这里；挂件齿轮的 config.unit 只作旧入口采纳（见
+   * weather-widget.tsx 的采纳水位），不再另存一份单位值。
+   */
+  tempUnit: WeatherUnit
   /** 0 表示从未保存过；云端返回的 Overview.settings 契约要求该字段必填 */
   updatedAt: number
 }
@@ -143,6 +152,7 @@ export const DEFAULT_USER_SETTINGS: UserSettingsModel = {
   themePreference: null,
   hiddenHomeModules: [],
   weatherCity: null,
+  tempUnit: 'celsius',
   updatedAt: 0,
 }
 
@@ -272,6 +282,7 @@ export function normalizeUserSettings(raw?: unknown): UserSettingsModel {
       ? [...new Set(s.hiddenHomeModules.filter((v): v is string => typeof v === 'string' && v.length <= 32))].slice(0, 8)
       : [],
     weatherCity: normalizeWeatherCityPreference(s.weatherCity),
+    tempUnit: normalizeUnit(s.tempUnit),
     updatedAt:
       typeof s.updatedAt === 'number' && Number.isFinite(s.updatedAt)
         ? s.updatedAt

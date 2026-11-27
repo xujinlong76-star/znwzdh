@@ -26,6 +26,8 @@ export type HistoryRetentionDays = 30 | 90 | 180 | 365;
 /** 主题偏好：null = 未设置（跟随全站默认/系统），与 next-themes 的用户选择互通 */
 export type ThemePreference = "light" | "dark" | "system" | null;
 
+export type TemperatureUnit = "celsius" | "fahrenheit";
+
 /** 天气城市偏好：/weather 选定的城市（id 为内置 key 或搜索不透明 id；坐标只用于过期后重搜匹配） */
 export interface WeatherCityPreference {
   id: string;
@@ -54,6 +56,8 @@ export interface ExtendedUserPreferences {
   hiddenHomeModules: string[];
   /** 账号级天气城市偏好（跨设备）：null = 未设置过（默认上海） */
   weatherCity: WeatherCityPreference | null;
+  /** 账号级温度单位偏好（跨设备；缺省 °C，与 /weather 页和天气挂件同源） */
+  tempUnit: TemperatureUnit;
 }
 
 export interface UserSettingsRecord extends ExtendedUserPreferences {
@@ -79,6 +83,7 @@ export const DEFAULT_EXTENDED_PREFERENCES: ExtendedUserPreferences = {
   themePreference: null,
   hiddenHomeModules: [],
   weatherCity: null,
+  tempUnit: "celsius",
 };
 
 const VALID_ENGINES = new Set<SearchEngineId>(["internal", "google", "baidu", "bing", "sogou", "duckduckgo", "github", "perplexity"]);
@@ -147,6 +152,7 @@ export function parseExtendedPreferences(raw: unknown): ExtendedUserPreferences 
       ? [...new Set(parsed.hiddenHomeModules.filter((v): v is string => typeof v === "string" && v.length <= 32))].slice(0, 8)
       : [],
     weatherCity: parseWeatherCityPreference(parsed.weatherCity),
+    tempUnit: parsed.tempUnit === "fahrenheit" ? "fahrenheit" : "celsius",
   };
 }
 
@@ -254,6 +260,7 @@ export async function updateUserSettings(
     hiddenHomeModules: patch.hiddenHomeModules ?? current.hiddenHomeModules,
     // weatherCity 同理允许显式写 null（清除后回默认上海）
     weatherCity: patch.weatherCity !== undefined ? patch.weatherCity : current.weatherCity,
+    tempUnit: patch.tempUnit ?? current.tempUnit,
   });
 
   const next: UserSettingsRecord = {

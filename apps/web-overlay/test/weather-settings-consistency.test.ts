@@ -64,3 +64,58 @@ describe('/weather 搜索框：ArrowUp 与 ArrowDown 对称打开下拉', () => 
     expect(block.indexOf('setDropdownOpen(true)')).toBeLessThan(block.indexOf('setActiveIdx'))
   })
 })
+describe('温度单位偏好 tempUnit：与 weatherCity 同款一致性（P1-5）', () => {
+  it('缺省为 °C：未传、脏值都归 celsius，fahrenheit / F 保留', () => {
+    expect(normalizeUserSettings({}).tempUnit).toBe('celsius')
+    expect(normalizeUserSettings().tempUnit).toBe('celsius')
+    expect(normalizeUserSettings({ tempUnit: 'kelvin' }).tempUnit).toBe('celsius')
+    expect(normalizeUserSettings({ tempUnit: 'fahrenheit' }).tempUnit).toBe('fahrenheit')
+    expect(normalizeUserSettings({ tempUnit: 'F' }).tempUnit).toBe('fahrenheit')
+  })
+
+  it('同值 tempUnit 不误报', () => {
+    const localWritten = normalizeUserSettings({ tempUnit: 'fahrenheit' })
+    const { verified, mismatchedKeys } = verifySettingsConsistency(
+      { tempUnit: 'fahrenheit' },
+      { tempUnit: 'fahrenheit' },
+      localWritten,
+    )
+    expect(verified).toBe(true)
+    expect(mismatchedKeys).toEqual([])
+  })
+
+  it('tempUnit 真变了仍要报出偏差（不是一律放过）', () => {
+    const localWritten = normalizeUserSettings({ tempUnit: 'celsius' })
+    const { verified, mismatchedKeys } = verifySettingsConsistency(
+      { tempUnit: 'fahrenheit' },
+      { tempUnit: 'fahrenheit' },
+      localWritten,
+    )
+    expect(verified).toBe(false)
+    expect(mismatchedKeys).toContain('tempUnit')
+  })
+})
+
+describe('/weather 页与挂件单位同源：偏好 tempUnit 是唯一来源（P1-5）', () => {
+  it('/weather 页初始读偏好、切换写回本机 + 账号同步', () => {
+    const src = readFileSync(join(ROOT, 'src/app/weather/weather-page.tsx'), 'utf8')
+    expect(src).toContain('readLocalUserSettings().tempUnit')
+    expect(src).toContain('writeLocalUserSettings({ tempUnit')
+    expect(src).toContain('saveSettingsPatchToCloud({ tempUnit')
+    // 不再是纯内存态：useState 初始值必须来自偏好
+    expect(src).toContain('useState<WeatherUnit>(() => readLocalUserSettings().tempUnit)')
+    expect(src).not.toContain("useState<WeatherUnit>('celsius')")
+  })
+
+  it('挂件读偏好 tempUnit，齿轮 config.unit 只作采纳、不另存一份值', () => {
+    const src = readFileSync(join(ROOT, 'src/components/modular/modules/weather-widget.tsx'), 'utf8')
+    expect(src).toContain('readLocalUserSettings().tempUnit')
+    expect(src).toContain('navhub_settings_changed')
+    expect(src).toContain('CONFIG_UNIT_ADOPTED_KEY')
+    // 临时切换标记与 unitOverride 仍在（widget-honesty 守卫同款要求）
+    expect(src).toContain('临时')
+    expect(src).toContain('unitOverride')
+    // 不再以 config.unit 为显示基准
+    expect(src).not.toContain('normalizeUnit(config?.unit)')
+  })
+})

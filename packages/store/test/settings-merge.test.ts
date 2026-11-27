@@ -70,6 +70,17 @@ describe("updateUserSettings：partial patch 逐字段合并", () => {
     expect(cleared.weatherCity).toBeNull();
   });
 
+  it("温度单位偏好随 patch 落库、改别的字段不丢、脏值归 celsius", async () => {
+    const after = await repo.updateUserSettings(user, { tempUnit: "fahrenheit" });
+    expect(after.tempUnit).toBe("fahrenheit");
+    // 改别的字段不丢温度单位
+    const again = await repo.updateUserSettings(user, { cardDensity: "comfortable" });
+    expect(again.tempUnit).toBe("fahrenheit");
+    // 脏值归 celsius（缺省 °C），不抛错、不写坏值
+    const bad = await repo.updateUserSettings(user, { tempUnit: "kelvin" as never });
+    expect(bad.tempUnit).toBe("celsius");
+  });
+
   it("天气城市偏好坏结构归 null，不抛错、不写坏值", async () => {
     const bad = await repo.updateUserSettings(user, {
       weatherCity: { id: "geo-x", name: "南京", latitude: 999, longitude: 0 } as never,

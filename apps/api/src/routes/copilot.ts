@@ -171,6 +171,16 @@ export async function retrieveCopilotCandidates(
       q: query,
       limit: COPILOT_RETRIEVAL_LIMIT * CANDIDATE_OVERFETCH,
       statuses: ["active"],
+      // 策展场景（lexicalOnly）只保留词法通道命中，语义命中随后即被滤掉——
+      // 此前每次检索仍先跑一次 ONNX embedding 推理（冷启动首推 1.5~3s），
+      // 再把算出的语义候选丢弃。/api/scenes 一次展开要跑 140 次检索，
+      // 这笔纯浪费在冷启动 + 高负载下就是 14.85s 级慢调用的主因。
+      // lexicalOnly 时直接关掉语义通道：通过词法过滤的候选集合不变
+      // （语义命中本来就进不了 hits），只省掉推理与模型预热；但 RRF
+      // 融合去掉语义通道的排序贡献后，同一候选集的相对顺序会变，进而
+      // 影响每步取前 4 的选择与顺序——实测 24 个场景中 17 个详情有重排 /
+      // 换站，均为词法命中之间的重排，不引入无词法佐证的站点。
+      ...(opts.lexicalOnly ? { disableSemantic: true } : {}),
     });
     // 策展场景（lexicalOnly）：只保留有词法通道（exact/fts/pinyin）佐证的命中。
     // 为什么不在检索引擎里一刀切：通用搜索是召回导向，弱语义近邻作为低权重

@@ -83,8 +83,20 @@ export interface SearchEngineOptions {
    * 乱码查询会拿到一批「最像的噪声」并伪装成结果。宁可给出诚实的零结果，
    * 让 didYouMean 接手纠错，也不假装配对。
    *
-   * 默认 0.55；0 表示关闭；基础闸门为 0（显式关闭相似度过滤）时不生效，
+   * 默认 0.70（U-459 实测调参，2026-11-27）：0.55 不够——全量 4824 站语料 +
+   * 真实 bge-small-zh-v1.5 向量上，乱码查询的最近邻余弦实测 0.49~0.655，
+   * 其中 7/19 条乱码越过 0.55 漏网（如 zzzzqqqxxyy12345→Zoho CRM 0.556、
+   * asdkfjalskdfj→JabRef 0.563、abcabcabcabcab→ABCmouse 0.655，均在
+   * /api/search 实测复现）；而真实概念查询的最近邻在 0.667~0.727，且 34/34
+   * 条真实探针查询都带有词法命中（严格闸门根本不启用）。0.70 在最强的
+   * 乱码近邻（0.655）之上留 0.045 裕量，也给语料继续变密留出空间——
+   * 392 站时乱码最高 0.549，4824 站时已到 0.655，语料越密噪声近邻越高。
+   * 0 表示关闭；基础闸门为 0（显式关闭相似度过滤）时不生效，
    * 严格闸门比基础闸门更松时也不生效（基础闸门已经更严）。
+   *
+   * 注意：RRF 分数无法替代这一刀——fuse 只看排名（w/(60+rank)），
+   * 纯语义第 1 名的 RRF 分数与查询是否乱码无关（实测乱码与真实查询
+   * 均为 0.0189），RRF 下限要么两边一起拦、要么两边一起放，故不设。
    */
   semanticOnlyMinSimilarity?: number;
 }
@@ -237,10 +249,10 @@ export class SearchEngine {
     this.earlyExitExactHits = opts.earlyExitExactHits ?? 5;
     const gate = opts.semanticMinSimilarity ?? 0;
     this.semanticMinSimilarity = Number.isFinite(gate) ? Math.min(1, Math.max(0, gate)) : 0;
-    const strictGate = opts.semanticOnlyMinSimilarity ?? 0.55;
+    const strictGate = opts.semanticOnlyMinSimilarity ?? 0.7;
     this.semanticOnlyMinSimilarity = Number.isFinite(strictGate)
       ? Math.min(1, Math.max(0, strictGate))
-      : 0.55;
+      : 0.7;
     this.linucbModel = createLinUCBModel(0.15);
   }
 

@@ -15,6 +15,7 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyRequest } from "fastify";
+import type { IdentitySignatureVerdict } from "./identity-signature.ts";
 
 export type ApiScope = "read" | "favorites" | "write" | "admin";
 
@@ -112,6 +113,11 @@ declare module "fastify" {
   interface FastifyRequest {
     /** 鉴权结果；buildAuthHook 挂载，未启用鉴权时为匿名身份 */
     auth: AuthIdentity;
+    /** 身份签名校验结论；server.ts 的 preValidation 钩子挂载（5cea6538 起赋值）。
+        声明曾只存在于未验收快照 1b363e65（v3/purpose 形态，随 revert 已移除）——
+        此处按 revert 后树内的实际类型 IdentitySignatureVerdict 重新声明，
+        否则 api tsc 报 TS2339。 */
+    identitySignature?: IdentitySignatureVerdict;
   }
 }
 

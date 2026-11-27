@@ -215,7 +215,7 @@ async function loadWholeDoc(): Promise<NavigationCatalogLoad> {
 }
 
 function fallback(reason: string): Promise<NavigationCatalogLoad> {
-  console.info("[navigation-read] 回落整包读：" + reason);
+  console.warn("[navigation-read] 回落整包读：" + reason);
   return loadWholeDoc().then((load) => ({ ...load, degraded: true }));
 }
 
@@ -235,12 +235,20 @@ export async function loadNavigationCatalog(): Promise<NavigationCatalogLoad> {
   );
   const badAt = categories.findIndex((c) => c === null);
   if (badAt >= 0) {
-    return fallback("分片校验未过（分类 " + index.categories[badAt].id + "：缺失/版本或条数不一致）");
+    return fallback(
+      "分片校验未过（分类 " +
+        index.categories[badAt].id +
+        "：缺失/版本或条数不一致；快照版本 " +
+        index.sourceVersion +
+        "）",
+    );
   }
   const assembled = categories as NavigationItem[];
   const total = assembled.reduce((acc, c) => acc + countCategoryItems(c), 0);
   if (total !== index.totalItems) {
-    return fallback("分片总条数 " + total + " 与索引登记 " + index.totalItems + " 不一致");
+    return fallback(
+      "分片总条数 " + total + " 与索引登记 " + index.totalItems + " 不一致（快照版本 " + index.sourceVersion + "）",
+    );
   }
   return {
     data: {

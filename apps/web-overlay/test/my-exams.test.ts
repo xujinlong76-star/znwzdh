@@ -265,11 +265,11 @@ describe('checkedCount / nextUncheckedNode', () => {
       followed: ['guokao'],
       checked: { guokao: ['准考证打印'] },
     }
-    // 准考证打印 11-23 已勾，下一个是 11-28 专业科目笔试（不是 11-29 公共科目）
-    expect(nextUncheckedNode(state, guokao)?.label).toBe('专业科目笔试')
+    // 准考证打印 11-23 已勾，下一个是 11-26 广东考区模拟核验（不是 11-28 专业科目笔试）
+    expect(nextUncheckedNode(state, guokao)?.label).toBe('广东考区模拟核验')
     const allDone: MyExamsState = {
       followed: ['guokao'],
-      checked: { guokao: ['准考证打印', '专业科目笔试', '公共科目笔试'] },
+      checked: { guokao: ['准考证打印', '广东考区模拟核验', '专业科目笔试', '公共科目笔试'] },
     }
     expect(nextUncheckedNode(allDone, guokao)).toBeUndefined()
   })
@@ -368,13 +368,13 @@ describe('nextTodoNode（下一步待办：未勾选且未结束）', () => {
       followed: ['guokao'],
       checked: { guokao: ['准考证打印'] },
     }
-    expect(nextTodoNode(state, guokao, NOV_13_0800_CST)?.label).toBe('专业科目笔试')
+    expect(nextTodoNode(state, guokao, NOV_13_0800_CST)?.label).toBe('广东考区模拟核验')
   })
 
   it('全部未结束节点都勾完返回 undefined（不编假下一步）', () => {
     const state: MyExamsState = {
       followed: ['guokao'],
-      checked: { guokao: ['准考证打印', '专业科目笔试', '公共科目笔试'] },
+      checked: { guokao: ['准考证打印', '广东考区模拟核验', '专业科目笔试', '公共科目笔试'] },
     }
     expect(nextTodoNode(state, guokao, NOV_13_0800_CST)).toBeUndefined()
   })

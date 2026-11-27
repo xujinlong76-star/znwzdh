@@ -355,20 +355,26 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       const user = await ctx.repo.findUserByEmail(email);
       // 防枚举：无论是否存在都返回同一成功文案
       if (user) {
-        const token = generateToken(32);
-        await ctx.repo.createAuthToken({
-          userId: user.id,
-          purpose: "password_reset",
-          tokenHash: hashToken(token),
-          expiresAt: Date.now() + RESET_TTL_MS,
-        });
-        await sendResetMail(ctx, ctx.mail, email, buildResetUrl(ctx, token));
-        await ctx.repo.audit({
-          actor: user.id,
-          actorKind: "user",
-          action: "account.password_reset_requested",
-          target: email,
-        });
+        // 持久化冷却：活跃重置令牌（1h）期间不重复签发/发送，防止轮换 IP
+        // 对同一邮箱反复触发邮件轰炸。hasActiveAuthToken 查询数据库而非进程内 Map，
+        // 因此多实例部署也共享这道冷却闸；令牌消费或过期后可再次申请。
+        const hasActiveReset = await ctx.repo.hasActiveAuthToken(user.id, "password_reset");
+        if (!hasActiveReset) {
+          const token = generateToken(32);
+          await ctx.repo.createAuthToken({
+            userId: user.id,
+            purpose: "password_reset",
+            tokenHash: hashToken(token),
+            expiresAt: Date.now() + RESET_TTL_MS,
+          });
+          await sendResetMail(ctx, ctx.mail, email, buildResetUrl(ctx, token));
+          await ctx.repo.audit({
+            actor: user.id,
+            actorKind: "user",
+            action: "account.password_reset_requested",
+            target: email,
+          });
+        }
       }
       // 未配 SMTP 时不谎报“已发送”：重置链接已生成并记入日志投递（脱敏），但未投递到用户邮箱。
   return {

@@ -17,10 +17,10 @@ import { fileURLToPath } from "node:url";
  *
  * `w-auto` 与 `min-w-6` 两半缺一不可（2026-11-27 B8 线实测，headless Chromium
  * 真实布局，复现页 /tmp/b8——测量脚本见 SUMMARY）：
- *   - 只降 min-w-11 → min-w-6：按钮仍被 shadcn Button 的 `size-9`
+ *   - 只降 min-w-11 → min-w-6：按钮仍被 shadcn Button 的 `h-9 w-9`
  *     （`size="icon"` 自带，twMerge 不会因 h-11 而去掉它，实测保留）
  *     钉在 width:36px，行宽 226px，1024 下复制按钮仍被裁到 13/36px；
- *   - 加上 `w-auto`：Tailwind v4 产物里 `.w-auto` 排在 `.size-9` 之后，
+ *   - 加上 `w-auto`：Tailwind v4 产物里 `.w-auto` 排在 `.h-9 w-9` 之后，
  *     同优先级后来居上，width:auto 生效，按钮才能缩到 31.2px（1024）
  *     / 39.2px（1440）/ 28.8px（768 六钮最坏情况），全部 ≥24px 且完整可见。
  * 本文件把这两半都锁死：缺任何一半都会变红。
@@ -88,11 +88,11 @@ describe("U-466 卡片底部操作栏不再溢出（R5-B-01）", () => {
     }
   });
 
-  it("每个 flex-1 按钮都有 min-w-6 w-auto（下限 24px，且 neutral 掉 size-9 的 36px 宽）", () => {
+  it("每个 flex-1 按钮都有 min-w-6 w-auto（下限 24px，且 neutral 掉 h-9 w-9 的 36px 宽）", () => {
     for (const [i, bar] of bars.entries()) {
       const fixed = bar.split("min-w-6 w-auto flex-1").length - 1;
       expect(fixed, `第 ${i + 1} 处操作栏应有 7 处 min-w-6 w-auto flex-1`).toBe(7);
-      // 只有 min-w-6、没有 w-auto 会被 size-9 钉在 36px（行宽 226px，1024 仍溢出）
+      // 只有 min-w-6、没有 w-auto 会被 h-9 w-9 钉在 36px（行宽 226px，1024 仍溢出）
       expect(bar, `第 ${i + 1} 处操作栏缺 w-auto`).not.toContain("min-w-6 flex-1");
     }
   });

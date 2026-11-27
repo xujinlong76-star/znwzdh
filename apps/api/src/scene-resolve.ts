@@ -237,25 +237,51 @@ export async function resolveSceneDetail(
 }
 
 /** 列表口径：全部场景包的摘要（索引页与首页场景区用），与详情同一展开逻辑 */
+const SCENE_RESOLVE_CONCURRENCY = 4;
+/** 场景摘要短 TTL 缓存：与 HTTP cache maxAge=60 同口径，取 30s（半衰期）自愈 */
+const SCENE_SUMMARY_TTL_MS = 30_000;
+const sceneSummaryCache = new WeakMap<AppContext, { at: number; result: Awaited<ReturnType<typeof resolveUncached>> }>();
+
+async function resolveUncached(ctx: AppContext): Promise<{ scenes: SceneSummaryView[]; retrievalFailed: boolean }> {
+  // 24 个场景彼此独立：跨步骤去重集合 usedAcrossSteps 是 resolveSceneGroups
+  // 内部的局部状态，不同场景之间不共享，因此并行展开不改变任何场景的去重口径。
+  // 此前逐个 await 串行展开，实测 24 场景约 2.6–4.1s（每个 ~110ms × 24）。
+  // 这里用有限并发worker池，按 SCENE_PACKS 原下标写回结果，输出顺序与串行逐字一致。
+  const results = new Array<SceneSummaryView>(SCENE_PACKS.length);
+  let retrievalFailed = false;
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const i = next++;
+      if (i >= SCENE_PACKS.length) return;
+      const scene = SCENE_PACKS[i]!;
+      const { groups, retrievalFailed: failed } = await resolveSceneGroups(ctx, scene);
+      if (failed) retrievalFailed = true;
+      results[i] = {
+        id: scene.id,
+        title: scene.title,
+        description: scene.description,
+        intro: scene.intro,
+        stepCount: scene.steps.length,
+        resolvedStepCount: groups.length,
+        siteCount: groups.reduce((n, g) => n + g.sites.length, 0),
+        stepLabels: scene.steps.map((s) => s.label),
+        updatedAt: maxUpdatedAt(groups),
+      };
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(SCENE_RESOLVE_CONCURRENCY, SCENE_PACKS.length) }, () => worker()),
+  );
+  return { scenes: results, retrievalFailed };
+}
+
 export async function resolveSceneSummaries(
   ctx: AppContext,
 ): Promise<{ scenes: SceneSummaryView[]; retrievalFailed: boolean }> {
-  const scenes: SceneSummaryView[] = [];
-  let retrievalFailed = false;
-  for (const scene of SCENE_PACKS) {
-    const { groups, retrievalFailed: failed } = await resolveSceneGroups(ctx, scene);
-    if (failed) retrievalFailed = true;
-    scenes.push({
-      id: scene.id,
-      title: scene.title,
-      description: scene.description,
-      intro: scene.intro,
-      stepCount: scene.steps.length,
-      resolvedStepCount: groups.length,
-      siteCount: groups.reduce((n, g) => n + g.sites.length, 0),
-      stepLabels: scene.steps.map((s) => s.label),
-      updatedAt: maxUpdatedAt(groups),
-    });
-  }
-  return { scenes, retrievalFailed };
+  const cached = sceneSummaryCache.get(ctx);
+  if (cached && Date.now() - cached.at < SCENE_SUMMARY_TTL_MS) return cached.result;
+  const result = await resolveUncached(ctx);
+  sceneSummaryCache.set(ctx, { at: Date.now(), result });
+  return result;
 }

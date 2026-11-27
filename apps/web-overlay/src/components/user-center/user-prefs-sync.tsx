@@ -26,11 +26,19 @@ export function UserPrefsSync({ defaultTheme = 'system' }: { defaultTheme?: 'lig
    * 上一次见过的账号级主题偏好。M-04：只在「有值 → 未设置」的跃迁时才复位
    * 本机主题——偏好一直是 null（从未设过）时不碰：工具栏的手动切换只影响
    * 本机，必须在不相关的设置改动后继续保留。
+   * U-456：挂载时就用本机偏好预填（见下方 effect 开头）。不预填时，
+   * reload 后的新会话里 prev 是 undefined，dark→未设置的第一跳事件
+   * 看不到跃迁，复位不触发（key 仍 dark、页面仍 dark）。
    */
   const prevPreferenceRef = useRef<ThemePreference | undefined>(undefined)
 
   useEffect(() => {
     let cancelled = false
+
+    // U-456：挂载时用本机偏好预填 prev，使跨会话的跃迁也能被下一跳
+    // 事件识别。只预填、不复位：偏好为 null 时预填值是 null（falsy），
+    // 之后的不相关设置改动仍走「不碰本机主题」分支，工具栏手动切换保留。
+    prevPreferenceRef.current = readLocalUserSettings().themePreference
 
     const applyFromLocal = () => {
       const s = readLocalUserSettings()

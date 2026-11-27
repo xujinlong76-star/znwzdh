@@ -53,6 +53,16 @@ describe("M-04 选回「未设置」回到跟随全站默认", () => {
     expect(sync).toContain("M-04");
   });
 
+  it("U-456：挂载时用本机偏好预填 prev，跨会话的 dark→未设置跃迁也能复位", () => {
+    const sync = read("src/components/user-center/user-prefs-sync.tsx");
+    // 不预填时 reload 后的新会话里 prev 是 undefined，dark→未设置的第一跳
+    // 事件看不到跃迁，复位不触发（key 仍 dark、页面仍 dark）。预填必须在
+    // effect 里、且只读本机偏好（不复位）：偏好为 null 时预填值是 null，
+    // 工具栏手动切换仍不受影响。
+    expect(sync).toContain("prevPreferenceRef.current = readLocalUserSettings().themePreference");
+    expect(sync).toContain("U-456");
+  });
+
   it("根布局把服务端算好的全站默认传给同步组件", () => {
     const layout = read("src/app/layout.tsx");
     expect(layout).toContain("resolveDefaultTheme(settings)");

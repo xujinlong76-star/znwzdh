@@ -18,6 +18,16 @@
  *     （两处 items 页 import）、toggle.tsx（toggle-group.tsx:8 import toggleVariants）；
  *     stale ≠ 可删：三文件本身保留，只移出基线。13 个 video-* lib 留在基线内
  *     （唯一 src 引用者随快照复活文件清理删除后重新变回候选，仍在基线内，不红）。
+ *     2026-11-28 基线清理（U-473）：移出 7 项已获真实引用的条目（BASELINE 43→36）——
+ *     home-plugin-spotlight.tsx（app/page.tsx:3 import、:373 JSX 渲染，495c76a1 恢复接线）、
+ *     favorites-quickstart.tsx（app/favorites/page.tsx:95-98 import 两导出、:2459/:3064 渲染）、
+ *     useFavoritesSyncBridge.ts（favorites/page.tsx:60 import、:621 调用）、
+ *     conflict-drawer.tsx（:59 import、:3089 渲染）、favorite-sync-dot.tsx（:57 import、
+ *     :2550 favoriteSyncRing 调用、:2555 渲染）、favorites-sync-badge.tsx（:56 import、
+ *     :1393 渲染）、favorites-sync-adapter.ts（:62 import createFavoritesPush、:599 调用）；
+ *     六项 favorites 接线由 fad1140a「三方合并找回 favorites 页双线功能」恢复。
+ *     核实方法：全仓 grep 引用 + check-dead-modules --json 的 stale 列表 + 引用方均为
+ *     框架入口 page（非死模块）且 import 均有真实 JSX/调用使用；文件本身保留，只移出基线。
  *
  * 用法：node scripts/check-dead-modules.mjs [--json] [--update]
  * 退出码：0 通过；1 出现新增 0 引用候选；2 形状错误（目录缺失 / 参数非法）。
@@ -71,7 +81,6 @@ let BASELINE = [
   "apps/web-overlay/src/components/home-frequent-visits.tsx",
   "apps/web-overlay/src/components/home-hero-deck.tsx",
   "apps/web-overlay/src/components/home-micro-strip.tsx",
-  "apps/web-overlay/src/components/home-plugin-spotlight.tsx",
   "apps/web-overlay/src/components/home-recent-visits.tsx",
   "apps/web-overlay/src/components/home-today-more.tsx",
   "apps/web-overlay/src/components/speed-dial-dock.tsx",
@@ -80,18 +89,13 @@ let BASELINE = [
   // 若决定彻底移除旧胶囊行，这两项应一并删除（连同 drama-continue-watch-time-meta 测试）。
   "apps/web-overlay/src/lib/home-announcement.ts",
   // --- 2026-11-24 仓库合并（2aa451fe）后的登记（远程 favorites 架构接管渲染位置）---
-  // 前四项是「已备好、刻意未接线」的组件：守卫测试按源码路径 import/读取，
+  // 剩余两项是「已备好、刻意未接线」的组件：守卫测试按源码路径 import/读取，
   // 且负空间断言明确锁住「导航/简报不得引用它们」的未接线状态（删了测试先红）。
-  // 后四项是合并孤儿：Local-First 同步 UI（六态徽标/同步点/冲突抽屉/适配器）
-  // 因远程 favorites 页改用 FavoritesSyncStatus 状态条而失去接线，详见 BASELINE_NOTES。
+  // 同批登记的另六项（favorites-quickstart、useFavoritesSyncBridge、conflict-drawer、
+  // favorite-sync-dot、favorites-sync-badge、favorites-sync-adapter）已于 2026-11-28
+  // 由 fad1140a 恢复 favorites 页接线，U-473 核实后移出 BASELINE（见文件头注释）。
   "apps/web-overlay/src/components/guangdong-zikao-signup-card.tsx",
   "apps/web-overlay/src/components/guokao-checklist-return-card.tsx",
-  "apps/web-overlay/src/components/user-center/favorites-quickstart.tsx",
-  "apps/web-overlay/src/hooks/useFavoritesSyncBridge.ts",
-  "apps/web-overlay/src/components/favorites/conflict-drawer.tsx",
-  "apps/web-overlay/src/components/favorites/favorite-sync-dot.tsx",
-  "apps/web-overlay/src/components/favorites/favorites-sync-badge.tsx",
-  "apps/web-overlay/src/lib/favorites-sync-adapter.ts",
   // --- 2026-11-26 回归登记（理由见 BASELINE_NOTES）---
   "apps/web-overlay/src/app/admin/navigation/components/AddCategoryForm.tsx",
   "apps/web-overlay/src/app/admin/navigation/components/AddItemForm.tsx",
@@ -183,18 +187,6 @@ let BASELINE_NOTES = {
     "keep（C 守卫测试 + 刻意未接线）：test/guangdong-zikao-signup-card.test.ts 直接 import 并读源码断言；负空间断言（:447/:450）明确锁住「导航/简报不得引用」的未接线状态，是作者备好待上线的报名卡，删了测试先红",
   "apps/web-overlay/src/components/guokao-checklist-return-card.tsx":
     "keep（C 守卫测试 + 刻意未接线）：test/guokao-checklist-return-card.test.ts 直接 import；负空间断言（:268/:272）锁住 brief/layout 不得引用的未接线状态，国考清单回流卡待作者接线",
-  "apps/web-overlay/src/components/user-center/favorites-quickstart.tsx":
-    "keep（C 守卫测试）：test/favorites-filter.test.ts 与 test/favorites-onboarding.test.ts 按源码路径读取断言（overlaySource）；用户中心收藏引导卡，删了测试先红",
-  "apps/web-overlay/src/hooks/useFavoritesSyncBridge.ts":
-    "keep（C 守卫测试）：test/favorites-sync-bridge.test.ts 直接 import diffFavoritesToMutations 并断言增量计算行为；模块是 Local-First 同步桥，页面接线待适配（见下组）",
-  "apps/web-overlay/src/components/favorites/conflict-drawer.tsx":
-    "keep（E 产品欠账·合并孤儿）：合并 2aa451fe 采纳远程 favorites 架构（FavoritesSyncStatus 状态条）后失去接线（补回尝试因 SyncEngineSnapshot 类型不兼容撤销）。这是同步数据冲突（SyncConflictItem）的逐条解决抽屉——当前远程页只有同步状态条、没有冲突 UI；待把 FavoritesSyncStatus 适配到 SyncEngineSnapshot 后接回或与作者一并裁撤（2026-11-24 复核）",
-  "apps/web-overlay/src/components/favorites/favorite-sync-dot.tsx":
-    "keep（E 产品欠账·合并孤儿）：同 conflict-drawer——卡片同步微点（favoriteSyncRing）随合并失去 favorites 页接线；引擎侧 conflictItemIds/dirtyItemIds 仍在产出，UI 无兜底（2026-11-24 复核）",
-  "apps/web-overlay/src/components/favorites/favorites-sync-badge.tsx":
-    "keep（E 产品欠账·合并孤儿）：Local-First 同步六态徽标（SyncBadgeState），合并后远程页改用 FavoritesSyncStatus 状态条而未接线；待类型适配后接回或裁撤（2026-11-24 复核）",
-  "apps/web-overlay/src/lib/favorites-sync-adapter.ts":
-    "keep（E 产品欠账·合并孤儿）：SyncEngineSnapshot ↔ 页面同步状态的适配层，正是补回上述三项所需的桥；合并后无消费方，随上组一并处置（2026-11-24 复核）",
   // --- 2026-11-26 回归登记：eafc9c27 懒加载拆分 + 引用方清理后重新变 0 引用 ---
   // 这三文件在 2026-11-16 曾因「已获真实引用」移出 BASELINE（见文件头注释），
   // 但后续提交删掉了那些引用方，于是又变回候选。三者都不是可随手删的死代码：

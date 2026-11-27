@@ -23,8 +23,8 @@ function overlaySource(rel: string): string {
 describe('Quicklinks 接线：三处缺一不可', () => {
   it('search-palette：回车时 quicklink 检查排在 parseOmniCommand 之前', () => {
     const src = overlaySource('src/components/search-palette.tsx')
-    const quicklinkAt = src.indexOf("if (quicklinkMatch.kind === 'hit') {")
-    const omniAt = src.indexOf('const omni = parseOmniCommand(query)', quicklinkAt)
+    const quicklinkAt = src.indexOf("if (liveQuicklink.kind === 'hit') {")
+    const omniAt = src.indexOf('const omni = parseOmniCommand(liveQ)', quicklinkAt)
     expect(quicklinkAt).toBeGreaterThan(-1)
     expect(omniAt).toBeGreaterThan(quicklinkAt)
     expect(src).toContain('quicklinkIds: matchedPaletteQuicklinks.map((q) => q.key)')

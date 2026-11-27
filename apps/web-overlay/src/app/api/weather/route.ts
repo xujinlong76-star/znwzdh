@@ -115,6 +115,11 @@ function arr(raw: unknown): unknown[] {
   return Array.isArray(raw) ? raw : []
 }
 
+/** ISO 时刻字符串字段：非空字符串才收，脏值/缺失归 null */
+function strOrNull(raw: unknown): string | null {
+  return typeof raw === 'string' && raw.trim() !== '' ? raw : null
+}
+
 function reasonFromError(err: unknown): string {
   if (err instanceof SsrfBlockedError) return 'blocked'
   const name = err instanceof Error ? err.name : ''
@@ -190,6 +195,8 @@ function sliceNext24Hours(
   const codes = arr(hourly.weather_code)
   const probs = arr(hourly.precipitation_probability)
   const precips = arr(hourly.precipitation)
+  const windSpeeds = arr(hourly.wind_speed_10m)
+  const humidities = arr(hourly.relative_humidity_2m)
   let start = 0
   if (anchorTime) {
     // 锚到整点（含当前小时）：20:15 的观测，20:00 那格就是「这一小时」
@@ -207,6 +214,8 @@ function sliceNext24Hours(
       code: numOrNull(codes[i]),
       precipProb: numOrNull(probs[i]),
       precipMm: numOrNull(precips[i]),
+      windSpeedKmh: numOrNull(windSpeeds[i]),
+      humidity: numOrNull(humidities[i]),
     })
   }
   return out
@@ -278,6 +287,9 @@ export async function GET(request: Request) {
   const lows = arr(daily.temperature_2m_min)
   const precipProbs = arr(daily.precipitation_probability_max)
   const precipSums = arr(daily.precipitation_sum)
+  const sunrises = arr(daily.sunrise)
+  const sunsets = arr(daily.sunset)
+  const uvMax = arr(daily.uv_index_max)
 
   const observedAt = typeof currentRaw.time === 'string' ? currentRaw.time : null
   const payload: WeatherPayload = {
@@ -302,6 +314,9 @@ export async function GET(request: Request) {
       lowC: numOrNull(lows[i]),
       precipProbMax: numOrNull(precipProbs[i]),
       precipSumMm: numOrNull(precipSums[i]),
+      sunrise: strOrNull(sunrises[i]),
+      sunset: strOrNull(sunsets[i]),
+      uvIndexMax: numOrNull(uvMax[i]),
     })),
     hourly: wantHourly ? sliceNext24Hours(hourlyRaw, observedAt) : [],
     aqi: null,

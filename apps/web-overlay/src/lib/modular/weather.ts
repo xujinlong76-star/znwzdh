@@ -99,6 +99,16 @@ export function formatTemp(celsius: number | null, unit: WeatherUnit): string {
   return `${Math.round(v)}${unit === 'fahrenheit' ? '°F' : '°C'}`
 }
 
+/** 紫外线指数分档（WHO 口径）：0–2 低 / 3–5 中等 / 6–7 高 / 8–10 很高 / 11+ 极高；未知就说未知 */
+export function uvLevel(uv: number | null | undefined): { label: string } | null {
+  if (uv === null || uv === undefined || !Number.isFinite(uv)) return null
+  if (uv < 3) return { label: '低' }
+  if (uv < 6) return { label: '中等' }
+  if (uv < 8) return { label: '高' }
+  if (uv < 11) return { label: '很高' }
+  return { label: '极高' }
+}
+
 /** US AQI 分档（与 EPA 口径一致）；未知就说未知 */
 export function aqiLevel(aqi: number | null): { label: string; tone: 'good' | 'moderate' | 'poor' } | null {
   if (aqi === null || !Number.isFinite(aqi)) return null
@@ -134,6 +144,12 @@ export interface WeatherDay {
   precipProbMax: number | null
   /** 当日降水量合计（mm），上游 daily.precipitation_sum */
   precipSumMm: number | null
+  /** 日出时刻（城市本地 ISO，形如 2026-10-23T05:58），上游 daily.sunrise；缺失为 null */
+  sunrise: string | null
+  /** 日落时刻（城市本地 ISO），上游 daily.sunset；缺失为 null */
+  sunset: string | null
+  /** 当日紫外线指数最大值，上游 daily.uv_index_max；缺失为 null */
+  uvIndexMax: number | null
 }
 
 /** 逐小时预报一格：全部来自上游 hourly，缺失为 null、不补数 */
@@ -146,6 +162,10 @@ export interface WeatherHour {
   precipProb: number | null
   /** 该小时降水量（mm） */
   precipMm: number | null
+  /** 该小时风速（km/h），上游 hourly.wind_speed_10m；缺失为 null */
+  windSpeedKmh: number | null
+  /** 该小时相对湿度（%），上游 hourly.relative_humidity_2m；缺失为 null */
+  humidity: number | null
 }
 
 /** 空气质量污染物分项：全部来自 air-quality 上游 current，缺失为 null */
@@ -175,8 +195,8 @@ export function forecastUrlPath(city: WeatherCity, days: number): string {
     latitude: String(city.latitude),
     longitude: String(city.longitude),
     current: 'temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,precipitation',
-    hourly: 'temperature_2m,weather_code,precipitation_probability,precipitation',
-    daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum',
+    hourly: 'temperature_2m,weather_code,precipitation_probability,precipitation,wind_speed_10m,relative_humidity_2m',
+    daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,sunrise,sunset,uv_index_max',
     timezone: city.timezone,
     forecast_days: String(days),
   })

@@ -1414,7 +1414,7 @@ export default function FavoritesPage() {
                       aria-label="展开加密技术说明"
                       title="密码不上云、不可逆、防篡改"
                       onClick={() => setShowCryptoHint((v) => !v)}
-                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border/60 text-[9px] font-semibold text-muted-foreground hover:text-foreground"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border/60 text-xs font-semibold text-muted-foreground hover:text-foreground"
                     >
                       ?
                     </button>

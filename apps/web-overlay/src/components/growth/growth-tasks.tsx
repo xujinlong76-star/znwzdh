@@ -57,7 +57,7 @@ function WeeklyHelpTip({ label, content }: { label: string; content: ReactNode }
         <button
           type="button"
           aria-label={label}
-          className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-border/80 bg-background/80 text-[10px] font-semibold leading-none text-muted-foreground transition-colors hover:border-amber-500/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border/80 bg-background/80 text-xs font-semibold leading-none text-muted-foreground transition-colors hover:border-amber-500/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           ?
         </button>
@@ -423,9 +423,9 @@ export function GrowthTasks({
                   <button
                     type="button"
                     aria-label="宝箱规则说明"
-                    className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="inline-flex min-h-6 items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-border-strong text-[10px] font-semibold leading-none">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border-strong text-xs font-semibold leading-none">
                       ?
                     </span>
                     规则说明

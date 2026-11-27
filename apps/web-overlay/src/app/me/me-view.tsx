@@ -253,7 +253,7 @@ function SettingsSummary({
                   <button
                     type="button"
                     aria-label="什么是智能极速预加载"
-                    className="flex h-4 w-4 items-center justify-center rounded-full border border-border/70 bg-muted/50 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                    className="flex h-6 w-6 items-center justify-center rounded-full border border-border/70 bg-muted/50 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
                   >
                     ?
                   </button>

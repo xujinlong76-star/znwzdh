@@ -351,3 +351,58 @@ describe('P1 #10 跟进：wayback-resolver 的 isPotentialBrokenHttpCode 不删'
     expect(coreTest).toContain('isPotentialBrokenHttpCode')
   })
 })
+
+describe('U-467（R5-B-02）帮助按钮 ≥24px：WCAG 2.2 AA 最小目标', () => {
+  /**
+   * 2026-11-27 R5-B 实测：/me「什么是智能极速预加载」与 /favorites
+   * 「展开加密技术说明」两个 "?" 按钮视觉与有效点击区均为 16×16，
+   * 低于 WCAG 2.2 AA 的 24×24 下限，且无扩区、无等价目标。
+   * 修复：按钮本体长到 h-6 w-6（24px），"?" 字号跟到 text-xs；
+   * 同型 siblings 一并修（见下）。44px 不取：这些 "?" 嵌在
+   * text-xs 行内说明文字旁，44px 会撑破行高；24px 是 AA 下限。
+   * 断言取按钮 aria-label 后 600 字符内的第一个 className，
+   * 避免整文件 'h-4 w-4' 误伤（文件内图标仍合法使用 16px）。
+   */
+  function buttonClass(src: string, ariaLabel: string): string {
+    const i = src.indexOf(`aria-label="${ariaLabel}"`)
+    expect(i, `找不到 aria-label="${ariaLabel}"`).toBeGreaterThanOrEqual(0)
+    const m = /className="([^"]*)"/.exec(src.slice(i, i + 600))
+    if (!m) throw new Error(`aria-label="${ariaLabel}" 后 600 字符内无 className`)
+    return m[1]
+  }
+
+  it('/me「什么是智能极速预加载」? 钮 24×24', () => {
+    const cls = buttonClass(read('src/app/me/me-view.tsx'), '什么是智能极速预加载')
+    expect(cls).toContain('h-6 w-6')
+    expect(cls).not.toContain('h-4 w-4')
+  })
+
+  it('/favorites「展开加密技术说明」? 钮 24×24', () => {
+    const cls = buttonClass(read('src/app/favorites/page.tsx'), '展开加密技术说明')
+    expect(cls).toContain('h-6 w-6')
+    expect(cls).not.toContain('h-4 w-4')
+  })
+
+  it('成长区两个 WeeklyHelpTip 同型 ? 钮 24×24', () => {
+    for (const f of ['src/components/growth/growth-tasks.tsx', 'src/components/user-center/growth-panel.tsx']) {
+      const src = read(f)
+      expect(src, f).toContain('h-6 w-6 shrink-0')
+      // 这两个文件的 ? 钮是 aria-label={label} 动态标签，取不到固定串；
+      // 改用类名断言：文件内不得再有 16px ? 钮本体（图标 16px 不受此限）
+      expect(src, f).not.toContain('inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border')
+    }
+  })
+
+  it('首页副标题提示关闭 × 钮 24×24（同型 16px 按钮）', () => {
+    const cls = buttonClass(read('src/components/home-subtitle-hint.tsx'), '关闭副标题提示')
+    expect(cls).toContain('h-6 w-6')
+    expect(cls).not.toContain('h-4 w-4')
+  })
+
+  it('成长区「宝箱规则说明」按钮高 ≥24px（min-h-6），"?" 圆点 24×24', () => {
+    const src = read('src/components/growth/growth-tasks.tsx')
+    const cls = buttonClass(src, '宝箱规则说明')
+    expect(cls).toContain('min-h-6')
+    expect(src).toContain('flex h-6 w-6 items-center justify-center rounded-full border border-border-strong')
+  })
+})

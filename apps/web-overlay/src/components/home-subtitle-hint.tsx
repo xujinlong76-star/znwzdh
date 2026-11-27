@@ -97,7 +97,8 @@ export function HomeSubtitleHint({ tagline }: { tagline?: string }) {
   const collapsed = autoHidden && !searchFocused
 
   // 提示条轻量化 + 6 秒自动收起（2026-11-21）：
-  // 本地：带边框卡片 → 无边框无底色纯文本行（约 20px，关闭钮悬停显形）；
+  // 本地：带边框卡片 → 无边框无底色纯文本行（约 24px，关闭钮悬停显形，关闭钮
+  // 按 WCAG 2.2 AA 为 24×24 触控目标）；
   // main：6 秒后自动收起（max-h/opacity/margin 平滑过渡 500ms 到 0 高），
   // 稳态首访与回访同高，引导价值保留在前 6 秒与搜索聚焦时。
   return (
@@ -120,7 +121,7 @@ export function HomeSubtitleHint({ tagline }: { tagline?: string }) {
           onClick={dismiss}
           aria-label="关闭副标题提示"
           tabIndex={collapsed ? -1 : undefined}
-          className="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 group-hover/hint:opacity-100"
+          className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 group-hover/hint:opacity-100"
         >
           <X className="h-3 w-3" />
         </button>

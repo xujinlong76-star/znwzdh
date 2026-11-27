@@ -157,7 +157,11 @@ export const NavigationToolbar = memo(function NavigationToolbar({
   const { resolvedTheme, setTheme } = useTheme()
   return (
     <header className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 shadow-2xs">
-      <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-3 gap-y-1 md:h-14 lg:flex-nowrap">
+      {/* U-468（R5-B-03）：md 断点下工具栏换行时顶栏必须随内容增高、而非溢出覆盖主内容。
+          768px 时搜索组（min-w 260）+ 右侧按钮组（约 320px）超过内容宽，按钮组换到第二行；
+          原 md:h-14 把顶栏钉死在 56px，第二行按钮画到主内容区、盖住副标题与胶囊行（实测重叠 1780px²）。
+          改为 md:min-h-14：单行时仍为 56px（其余断点与稳态布局不变），换行时顶栏增高、把主内容顶下去。 */}
+      <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-3 gap-y-1 md:min-h-14 lg:flex-nowrap">
         <div className="flex flex-1 min-w-[260px] max-w-[880px] items-center gap-1.5 transition-all duration-300 ease-out">
           <div className="flex-1 min-w-0">
             {/* 山羊胡三合一融合检索引擎（全站检索 × AI 找站 × 找相似） */}

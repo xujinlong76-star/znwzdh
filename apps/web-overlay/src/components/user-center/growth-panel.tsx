@@ -102,7 +102,7 @@ function MetricHelpTip({
         <button
           type="button"
           aria-label={label}
-          className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-border/80 bg-background/80 text-[10px] font-semibold leading-none text-muted-foreground transition-colors hover:border-amber-500/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border/80 bg-background/80 text-xs font-semibold leading-none text-muted-foreground transition-colors hover:border-amber-500/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           ?
         </button>

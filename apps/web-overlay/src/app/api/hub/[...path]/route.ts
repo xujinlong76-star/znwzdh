@@ -182,7 +182,10 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
         sessionError = '会话无法校验，请重新登录'
       } else {
         const issuedAt = (session as { sessionIssuedAt?: number } | null)?.sessionIssuedAt
-        const revoked = await hubSessionRevoked(sessionSid, sessionIdentity, issuedAt).catch(() => null)
+        const revoked = await hubSessionRevoked(sessionSid, sessionIdentity, issuedAt).catch(() => {
+          /* 核对失败按不可校验处理：revoked 为 null 时下文按吊销处理，public 路由降级为匿名、其余路由 401，不放行会话身份。 */
+          return null
+        })
         if (revoked !== false) {
           sessionIdentity = null
           sessionError = '会话已被吊销或暂时无法校验，请重新登录'

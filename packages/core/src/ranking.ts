@@ -1,3 +1,5 @@
+import type { SearchHit } from "./types.ts";
+
 /**
  * 排序公式（纯函数）。
  *
@@ -78,4 +80,103 @@ export function ageInDays(createdAt: number, now: number = Date.now()): number {
   if (!Number.isFinite(created)) return 0;
   const days = (now - created) / 86_400_000;
   return Number.isFinite(days) ? Math.max(0, days) : 0;
+}
+
+
+/* ------------------------------------------------------------------ *
+ * 统一搜索排序器（第一阶段：Shadow only）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 版本化搜索特征。未提供的特征按中性值处理；policyEligible 是硬门禁，
+ * 必须在召回/过滤阶段执行，绝不能被软排序分数覆盖。
+ */
+export interface SearchRankingFeatures {
+  qualityScore?: number;
+  freshnessDays?: number;
+  localeMatch?: boolean;
+  preferenceScore?: number;
+  policyEligible?: boolean;
+}
+
+export interface SearchRankingShadowDiagnostics {
+  rankerVersion: "search-shadow-v1";
+  featureVersion: "search-features-v1";
+  mode: "shadow";
+  topK: number;
+  compared: number;
+  overlap: number;
+  changed: number;
+  overlapRate: number;
+}
+
+const SEARCH_RANKER_MAX_ADJUSTMENT = 0.08;
+const clampFinite = (value: number, min: number, max: number): number =>
+  Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : 0;
+
+/**
+ * 对现有 RRF 结果运行有界影子重排，不修改线上顺序。
+ *
+ * 第一阶段只使用已经存在的通道证据；质量、新鲜度、语言和偏好特征
+ * 只有在调用方提供可信元数据时才参与，缺失值严格中性。
+ */
+export function evaluateSearchRankingShadow(
+  hits: SearchHit[],
+  topK = 10,
+  featuresBySite: ReadonlyMap<string, SearchRankingFeatures> = new Map(),
+): SearchRankingShadowDiagnostics {
+  const safeTopK = Math.max(1, Math.min(100, Math.floor(Number.isFinite(topK) ? topK : 10)));
+  const baseline = hits.slice(0, safeTopK).map((hit) => hit.siteId);
+  const baselineSet = new Set(baseline);
+  const scored = hits.map((hit, index) => {
+    const channels = Object.keys(hit.contributions ?? {});
+    const lexicalCount = channels.filter((channel) =>
+      channel === "exact" || channel === "fts" || channel === "pinyin"
+    ).length;
+    const hasSemantic = channels.includes("semantic");
+    const hasPersonal = channels.includes("personal");
+    let adjustment = 0;
+
+    if (lexicalCount > 0) adjustment += 0.025 + Math.min(0.02, Math.max(0, lexicalCount - 1) * 0.01);
+    else if (hasSemantic) adjustment -= 0.06;
+    if (hasPersonal && lexicalCount === 0 && !hasSemantic) adjustment -= 0.02;
+
+    const features = featuresBySite.get(hit.siteId);
+    if (features?.qualityScore !== undefined) {
+      adjustment += clampFinite((clampFinite(features.qualityScore, 0, 100) - 50) / 50, -1, 1) * 0.02;
+    }
+    if (features?.freshnessDays !== undefined) {
+      const age = clampFinite(features.freshnessDays, 0, 365);
+      adjustment += (1 - age / 365) * 0.01;
+    }
+    if (features?.localeMatch === true) adjustment += 0.01;
+    if (features?.preferenceScore !== undefined) {
+      adjustment += clampFinite(features.preferenceScore, 0, 1) * 0.01;
+    }
+
+    adjustment = clampFinite(adjustment, -SEARCH_RANKER_MAX_ADJUSTMENT, SEARCH_RANKER_MAX_ADJUSTMENT);
+    const baseScore = Number.isFinite(hit.score) ? hit.score : 0;
+    return { siteId: hit.siteId, index, shadowScore: baseScore * (1 + adjustment) };
+  });
+
+  scored.sort((a, b) => b.shadowScore - a.shadowScore || a.index - b.index);
+  const shadowTop = scored.slice(0, safeTopK).map((item) => item.siteId);
+  const overlap = shadowTop.filter((siteId) => baselineSet.has(siteId)).length;
+  const compared = Math.min(baseline.length, shadowTop.length);
+  // changed 表示 top-K 内位置发生变化的条数；overlap 单独表示成员集合重合。
+  const changed = baseline.reduce(
+    (count, siteId, index) => count + (shadowTop[index] === siteId ? 0 : 1),
+    0,
+  );
+
+  return {
+    rankerVersion: "search-shadow-v1",
+    featureVersion: "search-features-v1",
+    mode: "shadow",
+    topK: safeTopK,
+    compared,
+    overlap,
+    changed,
+    overlapRate: compared === 0 ? 1 : Number((overlap / compared).toFixed(4)),
+  };
 }

@@ -17,6 +17,38 @@ export interface SearchEvalCase {
   relevance: Record<string, number>;
 }
 
+/**
+ * 校验人工金标评测样本。相关性等级严格限定为整数 0–3，避免越界值
+ * 在指数型 DCG 中放大分数，造成评测结果虚高。
+ */
+export function validateSearchEvalCase(value: unknown, index = 0): SearchEvalCase {
+  const prefix = "第 " + index + " 条样本";
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(prefix + "不是对象");
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.query !== "string" || record.query.trim() === "") {
+    throw new Error(prefix + "缺少 query");
+  }
+  if (!Array.isArray(record.hits) || record.hits.some((hit) => typeof hit !== "string" || hit.trim() === "")) {
+    throw new Error(prefix + "的 hits 必须是非空字符串组成的数组");
+  }
+  if (!record.relevance || typeof record.relevance !== "object" || Array.isArray(record.relevance)) {
+    throw new Error(prefix + "缺少 relevance 对象");
+  }
+  for (const [siteId, grade] of Object.entries(record.relevance)) {
+    if (!siteId.trim()) throw new Error(prefix + "包含空 siteId");
+    if (typeof grade !== "number" || !Number.isInteger(grade) || grade < 0 || grade > 3) {
+      throw new Error(prefix + " relevance['" + siteId + "'] 必须是 0–3 的整数");
+    }
+  }
+  return {
+    query: record.query,
+    hits: record.hits as string[],
+    relevance: record.relevance as Record<string, number>,
+  };
+}
+
 export interface SearchEvalMetrics {
   queries: number;
   ndcgAtK: number;
@@ -117,5 +149,76 @@ export function evaluateSearch(cases: SearchEvalCase[], k = 10): SearchEvalMetri
     ndcgAtK: ndcg / cases.length,
     mrrAtK: mrr / cases.length,
     recallAtK: recall / cases.length,
+  };
+}
+
+
+export interface SearchEvalQueryDiagnostics {
+  /** 1-based row index; never includes raw query text. */
+  queryIndex: number;
+  zeroResult: boolean;
+  hasPositiveJudgment: boolean;
+  relevantCandidates: number;
+  relevantRetrievedAtK: number;
+}
+
+export interface SearchEvalDiagnostics {
+  metrics: SearchEvalMetrics;
+  zeroResultQueries: number;
+  queriesWithoutPositiveJudgments: number;
+  relevantCandidates: number;
+  relevantRetrievedAtK: number;
+  /** Micro coverage over all human-labelled relevant candidates. */
+  relevantCandidateCoverage: number;
+  cases: SearchEvalQueryDiagnostics[];
+}
+
+/**
+ * Privacy-safe diagnostics for evaluation reports.
+ * It deliberately reports row indices and counts, never query text or user identifiers.
+ * Existing macro metrics remain unchanged for backwards compatibility.
+ */
+export function evaluateSearchDiagnostics(cases: SearchEvalCase[], k = 10): SearchEvalDiagnostics {
+  const metrics = evaluateSearch(cases, k);
+  const limit = normalizeK(k);
+  let zeroResultQueries = 0;
+  let queriesWithoutPositiveJudgments = 0;
+  let relevantCandidates = 0;
+  let relevantRetrievedAtK = 0;
+  const details = cases.map((testCase, index) => {
+    const relevant = Object.entries(testCase.relevance)
+      .filter(([, grade]) => typeof grade === "number" && Number.isFinite(grade) && grade > 0)
+      .map(([siteId]) => siteId);
+    const relevantSet = new Set(relevant);
+    const uniqueHits: string[] = [];
+    const seen = new Set<string>();
+    for (const siteId of testCase.hits) {
+      if (seen.has(siteId)) continue;
+      seen.add(siteId);
+      uniqueHits.push(siteId);
+    }
+    const retrieved = uniqueHits.slice(0, limit).filter(siteId => relevantSet.has(siteId)).length;
+    const zeroResult = uniqueHits.length === 0;
+    const hasPositiveJudgment = relevant.length > 0;
+    if (zeroResult) zeroResultQueries++;
+    if (!hasPositiveJudgment) queriesWithoutPositiveJudgments++;
+    relevantCandidates += relevant.length;
+    relevantRetrievedAtK += retrieved;
+    return {
+      queryIndex: index + 1,
+      zeroResult,
+      hasPositiveJudgment,
+      relevantCandidates: relevant.length,
+      relevantRetrievedAtK: retrieved,
+    };
+  });
+  return {
+    metrics,
+    zeroResultQueries,
+    queriesWithoutPositiveJudgments,
+    relevantCandidates,
+    relevantRetrievedAtK,
+    relevantCandidateCoverage: relevantCandidates > 0 ? relevantRetrievedAtK / relevantCandidates : 0,
+    cases: details,
   };
 }

@@ -426,6 +426,17 @@ export interface SearchResult {
   };
   /** 触发同义词/标签别名/SKOS 扩展词 */
   queryExpansion?: string[];
+  /** 统一排序器 Shadow 对照指标；不改变 hits 的线上顺序。 */
+  rankingDiagnostics?: {
+    rankerVersion: "search-shadow-v1";
+    featureVersion: "search-features-v1";
+    mode: "shadow";
+    topK: number;
+    compared: number;
+    overlap: number;
+    changed: number;
+    overlapRate: number;
+  };
 }
 
 /* ------------------------------------------------------------------ *

@@ -243,7 +243,10 @@ export const BUILTIN_MIGRATIONS: RegisteredMigration[] = [
     version: "20261107_clean_taxonomy_and_duplicates",
     name: "类目重构、错位纠偏与存量重复站点数据清洗",
     up: async (db: Db) => {
-      await cleanTaxonomyAndDuplicates(db);
+      // a0b00ba2 把 cleanTaxonomyAndDuplicates 的默认改成 dry-run 后，不传参会空跑：
+      // 首次执行也落不了 3 个 reg-* 叶（db-rehearse 的 countsAfter.categories 只剩 1）。
+      // 首次执行必须真写；已记账的部署不会重跑本版本，v2 干跑报告另有 dry-run 入口。
+      await cleanTaxonomyAndDuplicates(db, { dryRun: false });
     },
     checksum: "v1_clean_taxonomy_and_duplicates",
   },

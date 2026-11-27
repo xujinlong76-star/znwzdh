@@ -268,7 +268,7 @@ export function HomeCapsuleRow({
                   onClick={() => onWorkspaceChange(ws.id)}
                   title={ws.desc}
                   className={cn(
-                    'flex min-h-9 items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all shrink-0 whitespace-nowrap cursor-pointer',
+                    'flex min-h-9 pointer-coarse:min-h-11 items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all shrink-0 whitespace-nowrap cursor-pointer',
                     isActive
                       ? 'bg-primary text-primary-foreground shadow-xs font-semibold'
                       : 'bg-muted/40 hover:bg-muted/80 text-muted-foreground hover:text-foreground border border-border/50 hover:border-border',

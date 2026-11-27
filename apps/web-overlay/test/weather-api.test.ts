@@ -58,6 +58,8 @@ const FORECAST_OK = {
     weather_code: HOURLY_TIMES.map((_, i) => (i % 5 === 0 ? 61 : 0)),
     precipitation_probability: HOURLY_TIMES.map((_, i) => (i % 4) * 10),
     precipitation: HOURLY_TIMES.map((_, i) => (i % 6 === 0 ? 0.2 : 0)),
+    wind_speed_10m: HOURLY_TIMES.map((_, i) => 5 + (i % 7)),
+    relative_humidity_2m: HOURLY_TIMES.map((_, i) => 40 + (i % 30)),
   },
   daily: {
     time: ["2026-10-23", "2026-10-24", "2026-10-25", "2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29"],
@@ -66,6 +68,9 @@ const FORECAST_OK = {
     temperature_2m_min: [12.4, 13.1, 14.8, 11.0, 12.2, 15.1, 16.0],
     precipitation_probability_max: [70, 10, 0, 80, 20, 5, 0],
     precipitation_sum: [2.4, 0, 0, 5.1, 0.3, 0, 0],
+    sunrise: ["2026-10-23T05:58", "2026-10-24T05:59", "2026-10-25T06:00", "2026-10-26T06:01", "2026-10-27T06:02", "2026-10-28T06:03", "2026-10-29T06:04"],
+    sunset: ["2026-10-23T17:42", "2026-10-24T17:41", "2026-10-25T17:40", "2026-10-26T17:39", "2026-10-27T17:38", "2026-10-28T17:37", "2026-10-29T17:36"],
+    uv_index_max: [5.2, 6.8, 3.1, 2.0, 8.4, 11.5, 0.5],
   },
 };
 
@@ -143,6 +148,15 @@ describe("/api/weather：城市表就是唯一的出网面", () => {
     expect(body.days[2]).toMatchObject({ code: 0, highC: 22.1, lowC: 14.8 });
     expect(body.days[0]).toMatchObject({ precipProbMax: 70, precipSumMm: 2.4 });
     expect(body.days[3]).toMatchObject({ precipProbMax: 80, precipSumMm: 5.1 });
+    expect(body.days[0]).toMatchObject({ sunrise: "2026-10-23T05:58", sunset: "2026-10-23T17:42", uvIndexMax: 5.2 });
+    expect(body.days[4]).toMatchObject({ sunrise: "2026-10-27T06:02", sunset: "2026-10-27T17:38", uvIndexMax: 8.4 });
+    expect(body.days[5]).toMatchObject({ uvIndexMax: 11.5 });
+    const forecastUrl = calls.find((c) => c.url.includes("/v1/forecast"))!.url;
+    expect(forecastUrl).toContain("sunrise");
+    expect(forecastUrl).toContain("sunset");
+    expect(forecastUrl).toContain("uv_index_max");
+    expect(forecastUrl).toContain("wind_speed_10m");
+    expect(forecastUrl).toContain("relative_humidity_2m");
     expect(body.current.precipMm).toBe(0.4);
     expect(body.aqi).toBe(42);
     expect(body.aqiNote).toBeNull();
@@ -156,7 +170,8 @@ describe("/api/weather：城市表就是唯一的出网面", () => {
     stubUpstream((url) => (url.includes("air-quality") ? jsonResponse(AIR_OK) : jsonResponse(FORECAST_OK)));
     const { body } = await getWeather("?city=shanghai");
     expect(body.hourly).toHaveLength(24);
-    expect(body.hourly[0]).toMatchObject({ time: "2026-10-23T20:00", tempC: 12, code: 61, precipProb: 0, precipMm: 0 });
+    expect(body.hourly[0]).toMatchObject({ time: "2026-10-23T20:00", tempC: 12, code: 61, precipProb: 0, precipMm: 0, windSpeedKmh: 11, humidity: 60 });
+    expect(body.hourly[4]).toMatchObject({ time: "2026-10-24T00:00", windSpeedKmh: 8, humidity: 64 });
     expect(body.hourly[4]).toMatchObject({ time: "2026-10-24T00:00", tempC: 16, code: 0 });
     expect(body.hourly[23]).toMatchObject({ time: "2026-10-24T19:00" });
     expect(body.hourly.every((h: any) => typeof h.tempC === "number")).toBe(true);
@@ -190,6 +205,49 @@ describe("/api/weather：城市表就是唯一的出网面", () => {
     // 字符串 "63" 是上游真的给了数字文本，可以收；"cold" 不是温度，只能是 null
     expect(body.aqi).toBeNull();
     expect(body.aqiNote).toContain("空气指数");
+  });
+
+  it("新字段缺失 / 给脏值时留 null，不编一个日出或风速", async () => {
+    stubUpstream((url) =>
+      url.includes("air-quality")
+        ? jsonResponse({ current: {} })
+        : jsonResponse({
+            current: { temperature_2m: 18 },
+            hourly: {
+              time: ["2026-10-23T20:00"],
+              temperature_2m: [12],
+              wind_speed_10m: ["fast"],
+              relative_humidity_2m: ["63"],
+            },
+            daily: {
+              time: ["2026-10-23"],
+              weather_code: [0],
+              temperature_2m_max: [19],
+              temperature_2m_min: [12],
+              sunrise: [123],
+              sunset: [null],
+              uv_index_max: ["high"],
+            },
+          }),
+    );
+    const { body } = await getWeather("?city=chengdu");
+    expect(body.days[0]).toMatchObject({ sunrise: null, sunset: null, uvIndexMax: null });
+    expect(body.hourly[0]).toMatchObject({ windSpeedKmh: null, humidity: 63 });
+  });
+
+  it("新字段整段缺失时也留 null（上游没给数组）", async () => {
+    stubUpstream((url) =>
+      url.includes("air-quality")
+        ? jsonResponse({ current: {} })
+        : jsonResponse({
+            current: { temperature_2m: 18 },
+            hourly: { time: ["2026-10-23T20:00"], temperature_2m: [12] },
+            daily: { time: ["2026-10-23"], weather_code: [0], temperature_2m_max: [19], temperature_2m_min: [12] },
+          }),
+    );
+    const { body } = await getWeather("?city=chengdu");
+    expect(body.days[0]).toMatchObject({ sunrise: null, sunset: null, uvIndexMax: null });
+    expect(body.hourly[0]).toMatchObject({ windSpeedKmh: null, humidity: null });
   });
 
   it("空气指数上游挂了不拖累气温：仍然 200，但 aqi 为 null 并说明原因", async () => {
@@ -332,6 +390,22 @@ describe("/api/weather：城市表就是唯一的出网面", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("紫外线分档按 WHO 口径：0–2 低 / 3–5 中等 / 6–7 高 / 8–10 很高 / 11+ 极高", async () => {
+    const { uvLevel } = await import("../src/lib/modular/weather");
+    expect(uvLevel(null)).toBeNull();
+    expect(uvLevel(undefined)).toBeNull();
+    expect(uvLevel(0)?.label).toBe("低");
+    expect(uvLevel(2.9)?.label).toBe("低");
+    expect(uvLevel(3)?.label).toBe("中等");
+    expect(uvLevel(5.9)?.label).toBe("中等");
+    expect(uvLevel(6)?.label).toBe("高");
+    expect(uvLevel(7.9)?.label).toBe("高");
+    expect(uvLevel(8)?.label).toBe("很高");
+    expect(uvLevel(10.9)?.label).toBe("很高");
+    expect(uvLevel(11)?.label).toBe("极高");
+    expect(uvLevel(13)?.label).toBe("极高");
   });
 });
 

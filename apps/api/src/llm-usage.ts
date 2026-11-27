@@ -22,6 +22,7 @@ import {
 import type { AppContext } from "./context.ts";
 import { llmProviderReady, type ResolvedLlm } from "./llm-config.ts";
 import { resolveLlmPrice } from "./llm-prices.ts";
+import { reserveLlmQuota, settleLlmQuota } from "./llm-quota.ts";
 
 export interface CallLlmOptions {
   scenario: "copilot" | "ai_chat" | "canvas" | "health_audit" | "config_test" | "enrich" | "ask_collection" | string;
@@ -229,6 +230,17 @@ export async function callLlm(
     const effectiveProvider: LlmProvider = opts.timeoutMs
       ? { ...provider, timeoutMs: Math.max(provider.timeoutMs ?? 20_000, opts.timeoutMs) }
       : provider;
+    // 备用模型通常使用系统配置的密钥。主模型为 BYOK 时，初始预留只覆盖
+    // 用户自己的额度；因此每次真正切换到系统备用模型前，必须单独原子预留系统档。
+    let fallbackHold: Parameters<typeof settleLlmQuota>[1] = undefined;
+    if (source === "fallback" && resolved.source === "user") {
+      const reservation = await reserveLlmQuota(ctx, opts.identity, { source: "fallback" });
+      if (!reservation.ok) {
+        lastError = new LlmError("rate_limit", "系统备用模型额度已用完，已停止备用模型调用");
+        break;
+      }
+      fallbackHold = reservation.hold;
+    }
     const startedAt = Date.now();
     try {
       const res = await chatCompletion(effectiveProvider, chatOpts);
@@ -293,6 +305,8 @@ export async function callLlm(
       budget.recordRetry();
       // 这里只记「决定再打一家」；实际等待在下一轮开头做，见上面的 planLlmRetryWait
       failures += 1;
+    } finally {
+      if (fallbackHold) await settleLlmQuota(ctx, fallbackHold);
     }
   }
 
@@ -364,6 +378,17 @@ export async function* callLlmStream(
     const effectiveProvider: LlmProvider = opts.timeoutMs
       ? { ...provider, timeoutMs: Math.max(provider.timeoutMs ?? 20_000, opts.timeoutMs) }
       : provider;
+    // 流式备用模型同样必须先预留系统预算；客户端断开、上游失败或正常结束
+    // 都在 finally 释放在途预留，实际成本仍以 llm_usage 结算。
+    let fallbackHold: Parameters<typeof settleLlmQuota>[1] = null;
+    if (source === "fallback" && resolved.source === "user") {
+      const reservation = await reserveLlmQuota(ctx, opts.identity, { source: "fallback" });
+      if (!reservation.ok) {
+        lastError = new LlmError("rate_limit", "系统备用模型额度已用完，已停止备用模型调用");
+        break;
+      }
+      fallbackHold = reservation.hold;
+    }
     const startedAt = Date.now();
     let emitted = false;
     try {
@@ -414,6 +439,8 @@ export async function* callLlmStream(
       if (!budget.canRetry()) throw err;
       budget.recordRetry();
       failures += 1;
+    } finally {
+      if (fallbackHold) await settleLlmQuota(ctx, fallbackHold);
     }
   }
 

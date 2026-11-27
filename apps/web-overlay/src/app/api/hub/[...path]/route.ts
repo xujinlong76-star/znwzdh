@@ -103,7 +103,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
 
   // 会话信任委托：客户端未显式携带 Authorization 时，检查是否存在已通过 NextAuth 登录的合法管理员。
   // 若身份校验通过，自动注入服务端管理凭据转发至中枢，避免管理后台因无本地 Token 而遭遇鉴权死锁。
-  if (!headers['authorization']) {
+  if (!headers['authorization'] && policy.access !== 'public') {
     try {
       const adminCheck = await verifyAdminSession()
       if (adminCheck.ok) {
@@ -169,26 +169,36 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   const claimed = identityFromRequest(url, hasValidBody ? rawBody : undefined, request.headers)
 
   let sessionIdentity: string | null = null
+  let sessionError: string | null = null
   try {
     const session = await auth()
     const user = session?.user as { id?: string; provider?: string } | undefined
     sessionIdentity = canonicalUserId(user) ?? null
-    // 吊销检查（P0-2）：被踢出/改密的会话经 /api/hub/* 须 401；核对不可用时 fail-open。
-    const sessionSid = (session as { sessionSid?: string } | null)?.sessionSid
-    if (typeof sessionSid === 'string' && sessionSid && sessionIdentity) {
-      const issuedAt = (session as { sessionIssuedAt?: number } | null)?.sessionIssuedAt
-      const revoked = await hubSessionRevoked(sessionSid, sessionIdentity, issuedAt).catch(() => { /* 核对失败按不可用处理，fail-open */ return null })
-      if (revoked === true) {
-        return NextResponse.json(
-          { error: '会话已被吊销，请重新登录' },
-          { status: 401, headers: { 'cache-control': 'no-store' } },
-        )
+    // public 路由只承载公开数据，失效会话降级为匿名，避免图标、合集等被连带打成 401。
+    if (user) {
+      const sessionSid = (session as { sessionSid?: string } | null)?.sessionSid
+      if (!sessionSid || !sessionIdentity) {
+        sessionIdentity = null
+        sessionError = '会话无法校验，请重新登录'
+      } else {
+        const issuedAt = (session as { sessionIssuedAt?: number } | null)?.sessionIssuedAt
+        const revoked = await hubSessionRevoked(sessionSid, sessionIdentity, issuedAt).catch(() => null)
+        if (revoked !== false) {
+          sessionIdentity = null
+          sessionError = '会话已被吊销或暂时无法校验，请重新登录'
+        }
       }
-      if (revoked === null) console.warn('[hub-session] sessions/check unavailable, fail-open')
     }
   } catch {
-    // 会话读取失败按匿名处理：宁可按匿名域降级，也不放行会话覆盖
     sessionIdentity = null
+    sessionError = '会话无法校验，请重新登录'
+  }
+
+  if (sessionError && policy.access !== 'public') {
+    return NextResponse.json(
+      { error: sessionError },
+      { status: 401, headers: { 'cache-control': 'no-store' } },
+    )
   }
 
   const verdict = resolveHubIdentity({ sessionIdentity, claimedIdentity: claimed })

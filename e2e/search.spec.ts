@@ -58,20 +58,25 @@ test.describe('冷启动搜索快捷键：首访第一次 ⌘K 不应静默失�
   test('冷启动直接按 ⌘/Ctrl+K，懒挂载的顶栏搜索框应出现并获得焦点', async ({ page }) => {
     // 刚 goto 完不做任何点击：测的是首访第一次按键，不点搜索框。
     await page.goto('/');
-    // 等水合完成：网格列数已写入 data-grid-cols = 客户端 effects 已跑，
+    // 等水合完成：网格元素已挂上 React 纤维 = 客户端 effects 已跑，
     // 全局网守的 keydown 监听已挂上。注意：这里不能等「搜索占位 button」——
     // 顶栏的 ssr:false loading 占位是 div 不是 button，全仓没有 name 匹配
     // /搜索站点、标签或拼音/ 的 button（2026-11-26 实测：旧等待在此超时，
-    // 用例在按键前就死了，网守兜底路径根本没被测到）。
+    // 用例在按键前就死了，网守兜底路径根本没被测到）。9436f2e4 的纤维等待
+    // 曾指向 button[aria-label^="搜索站点、标签或拼音"]，该元素不存在；
+    // 改为指向真实存在的 [data-grid-cols] 网格元素（React 渲染、常驻 DOM，
+    // 其属性由客户端 effect 写入，纤维存在即水合已完成）。
     // 也不等 [data-search-input]：面板 chunk 可能还在加载，input 未必已挂载——
     // 测的正是这条兜底路径（chunk 已加载时走网守直接聚焦，未加载时走
     // focusSearchInputWhenReady 等 input 出现再聚焦；两种时序都应以输入框获焦告终）。
     await page.waitForFunction(
-      () => document.querySelectorAll('[data-grid-cols]').length > 0,
+      () => {
+        const grid = document.querySelector('[data-grid-cols]');
+        return !!grid && Object.keys(grid).some((key) => key.startsWith('__reactFiber$'));
+      },
       undefined,
       { timeout: 15_000 },
     );
-    await page.waitForTimeout(800);
     await page.keyboard.press('ControlOrMeta+k');
     const input = page.locator('[data-search-input]');
     await expect(input).toBeVisible({ timeout: 10_000 });

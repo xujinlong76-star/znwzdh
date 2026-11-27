@@ -116,6 +116,8 @@ export interface WeatherCurrent {
   code: number | null
   windSpeedKmh: number | null
   windDirectionDeg: number | null
+  /** 当日目前为止的降水量（mm），上游 current.precipitation；缺失为 null */
+  precipMm: number | null
   /** 城市本地时区的观测时间，形如 2026-10-23T20:15 */
   observedAt: string | null
 }
@@ -128,6 +130,32 @@ export interface WeatherDay {
   code: number | null
   highC: number | null
   lowC: number | null
+  /** 当日降水概率最大值（%），上游 daily.precipitation_probability_max */
+  precipProbMax: number | null
+  /** 当日降水量合计（mm），上游 daily.precipitation_sum */
+  precipSumMm: number | null
+}
+
+/** 逐小时预报一格：全部来自上游 hourly，缺失为 null、不补数 */
+export interface WeatherHour {
+  /** 城市本地时间，形如 2026-10-23T20:00 */
+  time: string
+  tempC: number | null
+  code: number | null
+  /** 该小时降水概率（%） */
+  precipProb: number | null
+  /** 该小时降水量（mm） */
+  precipMm: number | null
+}
+
+/** 空气质量污染物分项：全部来自 air-quality 上游 current，缺失为 null */
+export interface AqiPollutants {
+  pm25: number | null
+  pm10: number | null
+  o3: number | null
+  no2: number | null
+  so2: number | null
+  co: number | null
 }
 
 /**
@@ -146,8 +174,9 @@ export function forecastUrlPath(city: WeatherCity, days: number): string {
   const p = new URLSearchParams({
     latitude: String(city.latitude),
     longitude: String(city.longitude),
-    current: 'temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m',
-    daily: 'weather_code,temperature_2m_max,temperature_2m_min',
+    current: 'temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,precipitation',
+    hourly: 'temperature_2m,weather_code,precipitation_probability,precipitation',
+    daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum',
     timezone: city.timezone,
     forecast_days: String(days),
   })
@@ -158,7 +187,7 @@ export function airQualityUrlPath(city: WeatherCity): string {
   const p = new URLSearchParams({
     latitude: String(city.latitude),
     longitude: String(city.longitude),
-    current: 'us_aqi',
+    current: 'us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide',
     timezone: city.timezone,
   })
   return `/v1/air-quality?${p.toString()}`
@@ -166,17 +195,26 @@ export function airQualityUrlPath(city: WeatherCity): string {
 
 export interface WeatherPayload {
   cityKey: string
+  /** 展示用城市名/地区：内置城市取表，搜索城市取 geocoding 候选原文 */
+  cityName: string
+  cityRegion: string
   current: WeatherCurrent
   days: WeatherDay[]
+  /** 未来 24 小时逐小时（从观测时刻起取 24 格，不足时有几格给几格） */
+  hourly: WeatherHour[]
   /** 空气指数来自另一个上游，取不到时为 null + aqiNote 说明原因 */
   aqi: number | null
   aqiNote: string | null
+  /** 污染物分项与 AQI 同源；上游失败时为 null（与 aqiNote 同理） */
+  aqiPollutants: AqiPollutants | null
   source: 'open-meteo'
   /** 服务端成功取数的时刻（ms），用于「几分钟前」 */
   fetchedAt: number
   /** true = 本次上游失败，展示的是缓存里的历史观测 */
   stale: boolean
   staleAt: number | null
+  /** 备源和风天气是否已配置（只读服务端 env 判断，key 永不外泄）；未配置时页面明示 */
+  qweatherConfigured: boolean
 }
 
 /** 「刚刚 / N 分钟前 / N 小时前 / M月D日」；给陈旧数据留可读的年龄 */
@@ -197,4 +235,143 @@ export function observedAtLabel(observedAt: string | null): string {
   const m = /^\d{4}-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(observedAt ?? '')
   if (!m) return '观测时间未知'
   return `${m[1]}-${m[2]} ${m[3]}:${m[4]}`
+}
+
+/** 逐小时格的时间只到小时：展示 `2026-10-23T20:00` → `20:00` */
+export function hourLabel(time: string | null | undefined): string {
+  const m = /^\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2})/.exec(time ?? '')
+  if (!m) return '—'
+  return `${m[1]}:${m[2]}`
+}
+
+/* ------------------------------------------------------------------ */
+/* 搜索城市：服务端短期映射（不透明 id → 城市）                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 为什么是「服务端映射 + 不透明 id」，而不是让前端传经纬度：
+ * /api/weather 若接受前端自传经纬度，就成了可被任意打的免费 Open-Meteo 代理。
+ * 搜索接口在服务端把 geocoding 候选注册进这张短期映射，前端回传的只是
+ * 一个猜不出来的 id；坐标始终由服务端在 search 时决定。id 24 小时过期，
+ * 过期后 /weather 页用存下的城市名重新搜索一次即可拿到新 id。
+ *
+ * 注意：这张表只活在单个服务端进程内存里（与天气缓存同理）；多实例部署下
+ * 搜索与天气请求若落到不同实例，id 会查不到、前端按 unknown_city 重新搜索。
+ */
+export const SEARCHED_CITY_TTL_MS = 24 * 60 * 60_000
+const SEARCHED_CITY_MAX = 200
+
+interface SearchedCityEntry {
+  city: WeatherCity
+  expiresAt: number
+}
+
+const searchedCities = new Map<string, SearchedCityEntry>()
+
+export function registerSearchedCity(id: string, city: WeatherCity): void {
+  const now = Date.now()
+  if (searchedCities.size >= SEARCHED_CITY_MAX) {
+    for (const [k, v] of searchedCities) {
+      if (v.expiresAt <= now) searchedCities.delete(k)
+    }
+    if (searchedCities.size >= SEARCHED_CITY_MAX) {
+      const oldest = searchedCities.keys().next().value
+      if (oldest !== undefined) searchedCities.delete(oldest)
+    }
+  }
+  searchedCities.set(id, { city, expiresAt: now + SEARCHED_CITY_TTL_MS })
+}
+
+export function lookupSearchedCity(id: string): WeatherCity | undefined {
+  const entry = searchedCities.get(id)
+  if (!entry) return undefined
+  if (Date.now() > entry.expiresAt) {
+    searchedCities.delete(id)
+    return undefined
+  }
+  return entry.city
+}
+
+/** 内置 8 城的拼音（搜索时中文名之外的第二匹配面；旧金山另有常用译名） */
+export const WEATHER_CITY_PINYIN: Record<string, string[]> = {
+  beijing: ['beijing'],
+  shanghai: ['shanghai'],
+  guangzhou: ['guangzhou'],
+  shenzhen: ['shenzhen'],
+  hangzhou: ['hangzhou'],
+  chengdu: ['chengdu'],
+  tokyo: ['dongjing', 'tokyo'],
+  sf: ['jiujinshan', 'sanfrancisco', 'san francisco'],
+}
+
+/* ------------------------------------------------------------------ */
+/* 天气城市偏好：用户在 /weather 选定的城市                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 偏好存的是「城市描述」（id + 名 + 坐标），而不是只有 id：
+ * 搜索 id 24 小时过期后，页面能用名 + 坐标重新搜索、匹配到同一城市再取新 id，
+ * 刷新后仍是上次的城市。坐标只用来在重新搜索时匹配候选，绝不直接发给 /api/weather。
+ *
+ * 登录用户另有一份云端副本：见 lib/user-settings.ts 的 weatherCity 字段，
+ * 经 PATCH /api/me/settings 同步（服务端见 apps/api/src/routes/me.ts 与
+ * packages/store/src/repository/settings.ts）；未登录只写本机这一份。
+ */
+export interface WeatherCityPreference {
+  /** /api/weather 的 city 参数：内置 key，或搜索注册的不透明 id */
+  id: string
+  name: string
+  region: string
+  country: string
+  timezone: string
+  latitude: number
+  longitude: number
+}
+
+export const WEATHER_CITY_STORAGE_KEY = 'navhub_weather_city_v1'
+
+export function normalizeWeatherCityPreference(raw: unknown): WeatherCityPreference | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const r = raw as Record<string, unknown>
+  const id = typeof r.id === 'string' ? r.id.trim() : ''
+  const name = typeof r.name === 'string' ? r.name.trim() : ''
+  const timezone = typeof r.timezone === 'string' ? r.timezone.trim() : ''
+  const latitude = typeof r.latitude === 'number' ? r.latitude : Number.NaN
+  const longitude = typeof r.longitude === 'number' ? r.longitude : Number.NaN
+  if (!id || !name || !timezone) return null
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null
+  return {
+    id,
+    name,
+    region: typeof r.region === 'string' ? r.region : '',
+    country: typeof r.country === 'string' ? r.country : '',
+    timezone,
+    latitude,
+    longitude,
+  }
+}
+
+type WeatherCityStore = Pick<Storage, 'getItem' | 'setItem'>
+
+export function readWeatherCityPreference(store?: WeatherCityStore): WeatherCityPreference | null {
+  try {
+    const kv = store ?? (typeof window !== 'undefined' ? window.localStorage : null)
+    if (!kv) return null
+    const raw = kv.getItem(WEATHER_CITY_STORAGE_KEY)
+    return raw ? normalizeWeatherCityPreference(JSON.parse(raw)) : null
+  } catch {
+    return null
+  }
+}
+
+export function writeWeatherCityPreference(pref: WeatherCityPreference, store?: WeatherCityStore): boolean {
+  try {
+    const kv = store ?? (typeof window !== 'undefined' ? window.localStorage : null)
+    if (!kv) return false
+    kv.setItem(WEATHER_CITY_STORAGE_KEY, JSON.stringify(pref))
+    return true
+  } catch {
+    return false
+  }
 }

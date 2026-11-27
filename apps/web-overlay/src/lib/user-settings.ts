@@ -11,6 +11,10 @@
 import { FAVORITES_STORAGE_KEY, corruptKeyFor, parseFavorites } from './favorites-storage'
 import { ANON_ID_STORAGE_KEY } from './identity-keys'
 import { isAnonIdentity } from './hub-identity-guard'
+import {
+  normalizeWeatherCityPreference,
+  type WeatherCityPreference,
+} from './modular/weather'
 
 export type SearchEngineId = 'internal' | 'google' | 'baidu' | 'bing' | 'sogou' | 'duckduckgo' | 'github' | 'perplexity'
 export type CardDensityMode = 'comfortable' | 'compact' | 'minimal'
@@ -38,6 +42,8 @@ export interface UserSettingsModel {
   themePreference: ThemePreference
   /** 账号级首页隐藏模块键名（与全站 features 同名；个人优先于全站默认） */
   hiddenHomeModules: string[]
+  /** 账号级天气城市偏好（跨设备；null = 未设置过，默认上海） */
+  weatherCity: WeatherCityPreference | null
   /** 0 表示从未保存过；云端返回的 Overview.settings 契约要求该字段必填 */
   updatedAt: number
 }
@@ -136,6 +142,7 @@ export const DEFAULT_USER_SETTINGS: UserSettingsModel = {
   historyRetentionDays: 180,
   themePreference: null,
   hiddenHomeModules: [],
+  weatherCity: null,
   updatedAt: 0,
 }
 
@@ -264,6 +271,7 @@ export function normalizeUserSettings(raw?: unknown): UserSettingsModel {
     hiddenHomeModules: Array.isArray(s.hiddenHomeModules)
       ? [...new Set(s.hiddenHomeModules.filter((v): v is string => typeof v === 'string' && v.length <= 32))].slice(0, 8)
       : [],
+    weatherCity: normalizeWeatherCityPreference(s.weatherCity),
     updatedAt:
       typeof s.updatedAt === 'number' && Number.isFinite(s.updatedAt)
         ? s.updatedAt

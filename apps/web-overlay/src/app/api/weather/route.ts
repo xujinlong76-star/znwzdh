@@ -9,7 +9,11 @@ import {
   airQualityUrlPath,
   dayLabel,
   forecastUrlPath,
+  lookupSearchedCity,
   resolveCityKey,
+  type AqiPollutants,
+  type WeatherCity,
+  type WeatherHour,
   type WeatherPayload,
 } from '@/lib/modular/weather'
 
@@ -19,15 +23,21 @@ import {
  * 为什么必须有这一层：小卡以前渲染的是文件里写死的一张静态表，卡片标题却叫
  * 「实时天气」——用户看到的是 2026 年某个假想的上海 24°C。现在数据真的来自上游。
  *
- * 与 /api/rss 的关键区别：这里不接受任意 URL，只接受 WEATHER_CITIES 里的 key，
- * 坐标由服务端表决定，所以不存在「拿本服务当免费代理」的开放面；SSRF 防护仍然复用，
- * 只为挡住 DNS 把官方域名指进内网这类异常。
+ * 与 /api/rss 的关键区别：这里不接受任意 URL，只接受 WEATHER_CITIES 里的 key
+ * 或 /api/weather/search 注册过的不透明 id，坐标由服务端决定，所以不存在
+ * 「拿本服务当免费代理」的开放面；SSRF 防护仍然复用，只为挡住 DNS 把官方域名
+ * 指进内网这类异常。前端绝不自传经纬度。
  *
  * 诚实边界：
  *  - 上游没给某个字段 → 该字段留 null，展示层渲染「—」；
  *  - 空气指数是另一个上游（air-quality-api），失败时只把 AQI 置 null 并说明原因，
  *    不拖累气温/预报；
- *  - 本次取数失败但有历史成功结果 → 带 `stale:true` + `staleAt` 返回，卡片明说是旧观测。
+ *  - 本次取数失败但有历史成功结果 → 带 `stale:true` + `staleAt` 返回，卡片明说是旧观测；
+ *  - stale 窗口 2 小时：天气是快变量，6 小时前的观测在转折天气时可能误导。
+ *
+ * 备源和风天气（QWeather）：只读服务端环境变量 QWEATHER_API_HOST / QWEATHER_API_KEY
+ * 判断「是否已配置」，key 永不外泄、未配置时不触发任何和风调用；P0 只用 Open-Meteo，
+ * 响应里 qweatherConfigured 供 /weather 页明示「未配置」。
  */
 
 // nodejs：SSRF 防护需要 node:dns 做解析后 IP 校验，edge runtime 不具备该能力
@@ -36,13 +46,14 @@ export const dynamic = 'force-dynamic'
 
 const WEATHER_ORIGIN = 'https://api.open-meteo.com'
 const AIR_ORIGIN = 'https://air-quality-api.open-meteo.com'
-const FORECAST_DAYS = 3
+const DEFAULT_FORECAST_DAYS = 7
+const MAX_FORECAST_DAYS = 16
 
 const FETCH_TIMEOUT_MS = 8_000
 const MAX_BYTES = 128 * 1024
 const TTL_MS = 10 * 60_000
-const STALE_MAX_MS = 6 * 60 * 60_000
-const MAX_ENTRIES = 40
+const STALE_MAX_MS = 2 * 60 * 60_000
+const MAX_ENTRIES = 200
 
 const RATE_WINDOW_MS = 60_000
 const RATE_MAX = 60
@@ -164,23 +175,83 @@ function staleResponse(hit?: CacheEntry): NextResponse | null {
   return NextResponse.json({ ok: true, ...stale }, { headers: { 'Cache-Control': 'no-store' } })
 }
 
+/**
+ * 逐小时取「从观测小时起的未来 24 格」：上游 hourly 从城市本地当日 00:00 排起，
+ * 直接取前 24 格会把已经过去的半夜也算进来。按 current.time 的整点做锚点
+ * （ISO 本地时间字符串可直接比较），锚点无效时回落到前 24 格；
+ * 预报窗口末尾不足 24 格时有几格给几格，不补数。
+ */
+function sliceNext24Hours(
+  hourly: Record<string, unknown>,
+  anchorTime: string | null,
+): WeatherHour[] {
+  const times = arr(hourly.time)
+  const temps = arr(hourly.temperature_2m)
+  const codes = arr(hourly.weather_code)
+  const probs = arr(hourly.precipitation_probability)
+  const precips = arr(hourly.precipitation)
+  let start = 0
+  if (anchorTime) {
+    // 锚到整点（含当前小时）：20:15 的观测，20:00 那格就是「这一小时」
+    const anchorHour = `${anchorTime.slice(0, 13)}:00`
+    const idx = times.findIndex((t) => typeof t === 'string' && t >= anchorHour)
+    if (idx >= 0) start = idx
+  }
+  const out: WeatherHour[] = []
+  for (let i = start; i < times.length && out.length < 24; i += 1) {
+    const t = times[i]
+    if (typeof t !== 'string' || t === '') continue
+    out.push({
+      time: t,
+      tempC: numOrNull(temps[i]),
+      code: numOrNull(codes[i]),
+      precipProb: numOrNull(probs[i]),
+      precipMm: numOrNull(precips[i]),
+    })
+  }
+  return out
+}
+
+/** 缓存键必须区分城市与请求字段组合：同一城市 days/hourly 不同是两份数据 */
+function cacheKeyFor(city: WeatherCity, searched: boolean, days: number, wantHourly: boolean): string {
+  const cityPart = searched ? `geo:${city.latitude},${city.longitude}` : city.key
+  return `${cityPart}|d${days}|h${wantHourly ? 1 : 0}`
+}
+
+function qweatherConfigured(): boolean {
+  return Boolean(process.env.QWEATHER_API_HOST?.trim() && process.env.QWEATHER_API_KEY?.trim())
+}
+
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams
+  // 城市解析：先认内置 8 城 key，再认搜索注册的不透明 id；都不认才报 unknown。
+  // 内置走 WEATHER_CITIES[resolved.key]（坐标只来自服务端表），搜索走服务端短期映射；
+  // 前端自传的经纬度在这里没有任何入口。
   const resolved = resolveCityKey(sp.get('city'))
-  if (resolved.unknown) {
+  const searchedCity = resolved.unknown && resolved.requested ? lookupSearchedCity(resolved.requested) : undefined
+  const city = !resolved.unknown ? WEATHER_CITIES[resolved.key]! : searchedCity
+  if (!city) {
     return fail(
       'unknown_city',
-      `城市标识「${resolved.requested}」不在内置城市表中，可用值：${Object.keys(WEATHER_CITIES).join(' / ')}`,
+      `城市标识「${resolved.requested}」不在内置城市表中，也不是本次搜索到的城市（搜索结果 24 小时有效）；可用值：${Object.keys(WEATHER_CITIES).join(' / ')}，或去 /weather 搜索城市。`,
       400,
     )
   }
-  const city = WEATHER_CITIES[resolved.key]!
-  const key = city.key
+  const searched = searchedCity !== undefined
+
+  const daysParam = sp.get('days')
+  // 注意 Number(null) 是 0 不是 NaN：没传 days 时必须回默认 7 天，不能掉成 1 天
+  const daysRaw = daysParam === null ? Number.NaN : Number(daysParam)
+  const days = Number.isFinite(daysRaw)
+    ? Math.min(MAX_FORECAST_DAYS, Math.max(1, Math.floor(daysRaw)))
+    : DEFAULT_FORECAST_DAYS
+  const wantHourly = sp.get('hourly') !== '0'
 
   if (rateLimited(clientKey(request))) {
     return fail('rate_limited', '天气刷新过于频繁，请稍后再试', 429)
   }
 
+  const key = cacheKeyFor(city, searched, days, wantHourly)
   const hit = cache.get(key)
   // fresh=1 只跳过「命中即返回」，仍然写缓存：手动刷新要真取一次，但限流照旧拦着。
   const wantFresh = sp.get('fresh') === '1'
@@ -191,7 +262,7 @@ export async function GET(request: Request) {
     )
   }
 
-  const weatherResult = await fetchJson(`${WEATHER_ORIGIN}${forecastUrlPath(city, FORECAST_DAYS)}`)
+  const weatherResult = await fetchJson(`${WEATHER_ORIGIN}${forecastUrlPath(city, days)}`)
   if (!weatherResult.ok) {
     // 旧观测仍比「查不到」有用，但必须挂着 stale 说明，不能冒充实时
     return staleResponse(hit) ?? fail(weatherResult.reason, weatherResult.message, 502)
@@ -200,14 +271,19 @@ export async function GET(request: Request) {
   const data = weatherResult.data
   const currentRaw = (data.current && typeof data.current === 'object' ? data.current : {}) as Record<string, unknown>
   const daily = (data.daily && typeof data.daily === 'object' ? data.daily : {}) as Record<string, unknown>
+  const hourlyRaw = (data.hourly && typeof data.hourly === 'object' ? data.hourly : {}) as Record<string, unknown>
   const times = arr(daily.time)
   const codes = arr(daily.weather_code)
   const highs = arr(daily.temperature_2m_max)
   const lows = arr(daily.temperature_2m_min)
+  const precipProbs = arr(daily.precipitation_probability_max)
+  const precipSums = arr(daily.precipitation_sum)
 
   const observedAt = typeof currentRaw.time === 'string' ? currentRaw.time : null
   const payload: WeatherPayload = {
-    cityKey: city.key,
+    cityKey: searched ? resolved.requested : city.key,
+    cityName: city.name,
+    cityRegion: city.region,
     current: {
       tempC: numOrNull(currentRaw.temperature_2m),
       feelsLikeC: numOrNull(currentRaw.apparent_temperature),
@@ -215,21 +291,27 @@ export async function GET(request: Request) {
       code: numOrNull(currentRaw.weather_code),
       windSpeedKmh: numOrNull(currentRaw.wind_speed_10m),
       windDirectionDeg: numOrNull(currentRaw.wind_direction_10m),
+      precipMm: numOrNull(currentRaw.precipitation),
       observedAt,
     },
-    days: times.map((t, i) => ({
+    days: times.slice(0, days).map((t, i) => ({
       date: typeof t === 'string' ? t : '',
       label: dayLabel(typeof t === 'string' ? t : '', i),
       code: numOrNull(codes[i]),
       highC: numOrNull(highs[i]),
       lowC: numOrNull(lows[i]),
+      precipProbMax: numOrNull(precipProbs[i]),
+      precipSumMm: numOrNull(precipSums[i]),
     })),
+    hourly: wantHourly ? sliceNext24Hours(hourlyRaw, observedAt) : [],
     aqi: null,
     aqiNote: null,
+    aqiPollutants: null,
     source: 'open-meteo',
     fetchedAt: Date.now(),
     stale: false,
     staleAt: null,
+    qweatherConfigured: qweatherConfigured(),
   }
 
   // 空气指数单独取：它挂了只让 AQI 变未知，不该把整张天气卡判死
@@ -239,6 +321,15 @@ export async function GET(request: Request) {
     const aqi = numOrNull(airCurrent.us_aqi)
     if (aqi === null) payload.aqiNote = '空气指数上游未返回该字段'
     else payload.aqi = aqi
+    const pollutants: AqiPollutants = {
+      pm25: numOrNull(airCurrent.pm2_5),
+      pm10: numOrNull(airCurrent.pm10),
+      o3: numOrNull(airCurrent.ozone),
+      no2: numOrNull(airCurrent.nitrogen_dioxide),
+      so2: numOrNull(airCurrent.sulphur_dioxide),
+      co: numOrNull(airCurrent.carbon_monoxide),
+    }
+    payload.aqiPollutants = pollutants
   } else {
     payload.aqiNote = `空气指数未取到（${air.message}）`
   }

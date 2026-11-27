@@ -35,6 +35,12 @@ function stubUpstream(handler: (url: string) => Response | Error): void {
   }) as typeof globalThis.fetch;
 }
 
+const HOURLY_TIMES = Array.from({ length: 48 }, (_, i) => {
+  const day = i < 24 ? '2026-10-23' : '2026-10-24'
+  const hour = String(i % 24).padStart(2, '0')
+  return `${day}T${hour}:00`
+})
+
 const FORECAST_OK = {
   current: {
     time: "2026-10-23T20:15",
@@ -44,16 +50,28 @@ const FORECAST_OK = {
     weather_code: 81,
     wind_speed_10m: 11.2,
     wind_direction_10m: 315,
+    precipitation: 0.4,
+  },
+  hourly: {
+    time: HOURLY_TIMES,
+    temperature_2m: HOURLY_TIMES.map((_, i) => 10 + (i % 9)),
+    weather_code: HOURLY_TIMES.map((_, i) => (i % 5 === 0 ? 61 : 0)),
+    precipitation_probability: HOURLY_TIMES.map((_, i) => (i % 4) * 10),
+    precipitation: HOURLY_TIMES.map((_, i) => (i % 6 === 0 ? 0.2 : 0)),
   },
   daily: {
-    time: ["2026-10-23", "2026-10-24", "2026-10-25"],
-    weather_code: [80, 1, 0],
-    temperature_2m_max: [19.2, 21.5, 22.1],
-    temperature_2m_min: [12.4, 13.1, 14.8],
+    time: ["2026-10-23", "2026-10-24", "2026-10-25", "2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29"],
+    weather_code: [80, 1, 0, 61, 3, 2, 0],
+    temperature_2m_max: [19.2, 21.5, 22.1, 18.0, 20.3, 23.4, 24.0],
+    temperature_2m_min: [12.4, 13.1, 14.8, 11.0, 12.2, 15.1, 16.0],
+    precipitation_probability_max: [70, 10, 0, 80, 20, 5, 0],
+    precipitation_sum: [2.4, 0, 0, 5.1, 0.3, 0, 0],
   },
 };
 
-const AIR_OK = { current: { us_aqi: 42 } };
+const AIR_OK = {
+  current: { us_aqi: 42, pm2_5: 12.5, pm10: 24, ozone: 80, nitrogen_dioxide: 15, sulphur_dioxide: 5, carbon_monoxide: 300 },
+};
 
 async function getWeather(query: string, headers?: Record<string, string>) {
   const route = await import("../src/app/api/weather/route");
@@ -65,6 +83,9 @@ async function getWeather(query: string, headers?: Record<string, string>) {
 beforeEach(() => {
   calls.length = 0;
   originalFetch = globalThis.fetch;
+  // qweatherConfigured 的断言必须与环境无关：测试里 key 一律视为未配
+  delete process.env.QWEATHER_API_HOST;
+  delete process.env.QWEATHER_API_KEY;
 });
 
 afterEach(() => {
@@ -101,7 +122,7 @@ describe("/api/weather：城市表就是唯一的出网面", () => {
     expect(new URL(forecast.url).host).toBe("api.open-meteo.com");
     expect(forecast.url).toContain("latitude=35.6895");
     expect(forecast.url).toContain("longitude=139.6917");
-    expect(forecast.url).toContain("forecast_days=3");
+    expect(forecast.url).toContain("forecast_days=7");
     expect(forecast.url).toContain("timezone=Asia");
     expect(calls.every((c) => /open-meteo\.com/.test(c.url))).toBe(true);
   });
@@ -118,12 +139,36 @@ describe("/api/weather：城市表就是唯一的出网面", () => {
       windDirectionDeg: 315,
       observedAt: "2026-10-23T20:15",
     });
-    expect(body.days.map((d: any) => d.label)).toEqual(["今天", "明天", "后天"]);
+    expect(body.days.map((d: any) => d.label)).toEqual(["今天", "明天", "后天", "2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29"]);
     expect(body.days[2]).toMatchObject({ code: 0, highC: 22.1, lowC: 14.8 });
+    expect(body.days[0]).toMatchObject({ precipProbMax: 70, precipSumMm: 2.4 });
+    expect(body.days[3]).toMatchObject({ precipProbMax: 80, precipSumMm: 5.1 });
+    expect(body.current.precipMm).toBe(0.4);
     expect(body.aqi).toBe(42);
     expect(body.aqiNote).toBeNull();
+    expect(body.aqiPollutants).toMatchObject({ pm25: 12.5, pm10: 24, o3: 80, no2: 15, so2: 5, co: 300 });
     expect(body.stale).toBe(false);
     expect(body.source).toBe("open-meteo");
+    expect(body.qweatherConfigured).toBe(false);
+  });
+
+  it("逐小时从观测小时起取 24 格（不含已过去的半夜），降水概率与降水量随格返回", async () => {
+    stubUpstream((url) => (url.includes("air-quality") ? jsonResponse(AIR_OK) : jsonResponse(FORECAST_OK)));
+    const { body } = await getWeather("?city=shanghai");
+    expect(body.hourly).toHaveLength(24);
+    expect(body.hourly[0]).toMatchObject({ time: "2026-10-23T20:00", tempC: 12, code: 61, precipProb: 0, precipMm: 0 });
+    expect(body.hourly[4]).toMatchObject({ time: "2026-10-24T00:00", tempC: 16, code: 0 });
+    expect(body.hourly[23]).toMatchObject({ time: "2026-10-24T19:00" });
+    expect(body.hourly.every((h: any) => typeof h.tempC === "number")).toBe(true);
+  });
+
+  it("days 参数可指定天数，hourly=0 不返回逐小时", async () => {
+    stubUpstream((url) => (url.includes("air-quality") ? jsonResponse(AIR_OK) : jsonResponse(FORECAST_OK)));
+    const three = await getWeather("?city=beijing&days=3");
+    expect(three.body.days).toHaveLength(3);
+    const noHourly = await getWeather("?city=beijing&hourly=0");
+    expect(noHourly.body.hourly).toEqual([]);
+    expect(noHourly.body.days).toHaveLength(7);
   });
 
   it("上游少字段 / 给脏值时留 null，不换算成 0", async () => {
@@ -226,6 +271,67 @@ describe("/api/weather：城市表就是唯一的出网面", () => {
     expect(limited).not.toBeNull();
     expect(limited!.ok).toBe(false);
     expect(limited!.message).toContain("过于频繁");
+  });
+
+  it("缓存键区分 days：days=3 与 days=5 各取一次上游，同键才命中", async () => {
+    stubUpstream((url) => (url.includes("air-quality") ? jsonResponse(AIR_OK) : jsonResponse(FORECAST_OK)));
+    await getWeather("?city=tokyo&days=3");
+    const before = calls.length;
+    await getWeather("?city=tokyo&days=5");
+    expect(calls.length).toBe(before + 2);
+    const again = await getWeather("?city=tokyo&days=5");
+    expect(again.body.cached).toBe(true);
+    expect(calls.length).toBe(before + 2);
+  });
+
+  it("搜索注册的不透明 id 可取天气，未注册的 id 直接拒绝且不打上游", async () => {
+    const { registerSearchedCity } = await import("../src/lib/modular/weather");
+    registerSearchedCity("geo-test-nanjing", {
+      key: "geo:32.0603,118.7969",
+      name: "南京",
+      region: "江苏",
+      latitude: 32.0603,
+      longitude: 118.7969,
+      timezone: "Asia/Shanghai",
+    });
+    stubUpstream((url) => (url.includes("air-quality") ? jsonResponse(AIR_OK) : jsonResponse(FORECAST_OK)));
+    const { status, body } = await getWeather("?city=geo-test-nanjing");
+    expect(status).toBe(200);
+    expect(body.cityName).toBe("南京");
+    expect(body.cityKey).toBe("geo-test-nanjing");
+    const forecast = calls.find((c) => c.url.includes("/v1/forecast"))!;
+    expect(forecast.url).toContain("latitude=32.0603");
+    expect(forecast.url).toContain("longitude=118.7969");
+    calls.length = 0;
+    const bad = await getWeather("?city=geo-no-such-id");
+    expect(bad.status).toBe(400);
+    expect(bad.body.reason).toBe("unknown_city");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("stale 窗口 2 小时：1 小时内旧观测可回退，超 2 小时改 502 明示", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-27T12:00:00Z"));
+      stubUpstream((url) => (url.includes("air-quality") ? jsonResponse(AIR_OK) : jsonResponse(FORECAST_OK)));
+      const first = await getWeather("?city=shanghai&days=5");
+      expect(first.body.ok).toBe(true);
+      const fetchedAt = first.body.fetchedAt as number;
+
+      vi.setSystemTime(new Date("2026-11-27T13:00:00Z"));
+      stubUpstream(() => new Response("upstream down", { status: 500 }));
+      const within = await getWeather("?city=shanghai&days=5&fresh=1");
+      expect(within.status).toBe(200);
+      expect(within.body.stale).toBe(true);
+      expect(within.body.staleAt).toBe(fetchedAt);
+
+      vi.setSystemTime(new Date("2026-11-27T15:00:00Z"));
+      const expired = await getWeather("?city=shanghai&days=5&fresh=1");
+      expect(expired.status).toBe(502);
+      expect(expired.body.ok).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -32,6 +32,7 @@ import {
   aqiLevel,
   describeWeatherCode,
   formatTemp,
+  hourLabel,
   normalizeUnit,
   observedAtLabel,
   resolveCityKey,
@@ -149,7 +150,13 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
       <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground min-w-0">
           <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-          <span className="truncate">{city.name}</span>
+          <a
+            href={`/weather?city=${encodeURIComponent(resolved.key)}`}
+            className="truncate hover:underline"
+            title="打开天气详情页"
+          >
+            {city.name}
+          </a>
           <span className="text-xs text-muted-foreground font-normal shrink-0">({city.region})</span>
           {payload?.stale && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-normal shrink-0">
@@ -267,9 +274,33 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
             </div>
           </div>
 
-          {/* 近三日趋势胶囊（含今天） */}
-          <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-border/40">
-            {days.slice(0, 3).map((d, idx) => {
+          {/* 未来 6 小时迷你条：点进 /weather 看完整 24 小时 */}
+          {payload?.hourly && payload.hourly.length > 0 && (
+            <div className="flex gap-1.5 pt-1 border-t border-border/40 overflow-x-auto">
+              {payload.hourly.slice(0, 6).map((h) => {
+                const hc = describeWeatherCode(h.code)
+                return (
+                  <a
+                    key={h.time}
+                    href={`/weather?city=${encodeURIComponent(resolved.key)}`}
+                    className="flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg bg-muted/30 border border-border/30 text-[10px] shrink-0"
+                    title={`${h.time} · ${hc.label}`}
+                  >
+                    <span className="text-muted-foreground font-mono">{hourLabel(h.time)}</span>
+                    <WeatherGlyph kind={hc.kind} className="w-3 h-3" />
+                    <span className="font-mono font-medium text-foreground">{tempOrDash(h.tempC, unit)}</span>
+                    <span className="text-sky-600 dark:text-sky-400 font-mono">
+                      {h.precipProb === null ? '—' : `${Math.round(h.precipProb)}%`}
+                    </span>
+                  </a>
+                )
+              })}
+            </div>
+          )}
+
+          {/* 近四日趋势胶囊（含今天）；完整 7 日在 /weather */}
+          <div className="grid grid-cols-4 gap-1.5 pt-1 border-t border-border/40">
+            {days.slice(0, 4).map((d, idx) => {
               const dc = describeWeatherCode(d.code)
               return (
                 <div
@@ -277,7 +308,7 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
                   className="flex items-center justify-between px-2 py-1 rounded-lg bg-muted/30 border border-border/30 text-xs"
                   title={`${d.date || '日期未知'} · ${dc.label}`}
                 >
-                  <span className="text-muted-foreground">{d.label}</span>
+                  <span className="text-muted-foreground">{idx < 3 ? d.label : d.date ? d.date.slice(5) : d.label}</span>
                   <div className="flex items-center gap-1 font-mono font-medium">
                     <WeatherGlyph kind={dc.kind} className="w-2.5 h-2.5" />
                     <span>{tempOrDash(d.highC, unit)}</span>
@@ -287,8 +318,16 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
               )
             })}
             {days.length === 0 && (
-              <div className="col-span-3 text-xs text-muted-foreground text-center py-1">上游未返回预报数据</div>
+              <div className="col-span-4 text-xs text-muted-foreground text-center py-1">上游未返回预报数据</div>
             )}
+          </div>
+          <div className="text-right -mt-1">
+            <a
+              href={`/weather?city=${encodeURIComponent(resolved.key)}`}
+              className="text-[11px] text-primary hover:underline"
+            >
+              查看 7 日预报 →
+            </a>
           </div>
         </>
       )}

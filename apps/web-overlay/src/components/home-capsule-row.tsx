@@ -13,9 +13,8 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ArrowRight, ChevronDown, Clapperboard, Compass, Puzzle, Sparkles } from 'lucide-react'
+import { ArrowRight, ChevronDown, Clapperboard, Compass, Puzzle, Sparkles, Zap } from 'lucide-react'
 import { useWatchlist } from '@/hooks/useWatchlist'
-import { HorizontalScrollFade } from '@/components/horizontal-scroll-fade'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,6 +66,11 @@ export interface HomeCapsuleRowProps {
   activeWorkspace?: string
   initialSceneParam?: string | null
   onWorkspaceChange: (id: WorkspaceId) => void
+  /**
+   * P0-2 / Step 2：移动端顶行的「快捷坞」入口（<md 时坞整行隐藏，
+   * 由该回调打开同一个全部站点弹窗，首屏省一整行）。不传则不渲染该入口。
+   */
+  onOpenQuickDock?: () => void
 }
 
 export function HomeCapsuleRow({
@@ -79,6 +83,7 @@ export function HomeCapsuleRow({
   activeWorkspace,
   initialSceneParam = null,
   onWorkspaceChange,
+  onOpenQuickDock,
 }: HomeCapsuleRowProps) {
   const { ready: watchlistReady, entries: watchlistEntries } = useWatchlist()
   const [dramaOpen, setDramaOpen] = useState(false)
@@ -149,12 +154,13 @@ export function HomeCapsuleRow({
         <p role="heading" aria-level={1} className="truncate text-lg font-bold tracking-tight text-foreground">
           山羊胡导航
         </p>
+        <div className="flex items-center gap-1.5">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-2xs transition-opacity hover:opacity-95 cursor-pointer"
-              aria-label={`${currentWorkspace.label}：切换工作区与快捷功能`}
+              className="inline-flex h-8 pointer-coarse:h-11 shrink-0 items-center gap-1.5 rounded-full bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-2xs transition-opacity hover:opacity-95 cursor-pointer"
+              aria-label="切换工作区与快捷功能"
             >
               <ActiveWsIcon className="h-3.5 w-3.5 shrink-0" />
               <span>{currentWorkspace.label}</span>
@@ -214,22 +220,35 @@ export function HomeCapsuleRow({
             ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
+        {/* P0-2 / Step 2：<md 坞整行隐藏后，顶行保留「快捷坞」入口——与桌面同语法
+            （L2 虚线边界＝可点开的模式），点开即全部快捷站点弹窗（受控，统一在
+            navigation-content 管开关；与带尾「展开全部」是同一个弹窗）。 */}
+        {onOpenQuickDock ? (
+          <button
+            type="button"
+            onClick={onOpenQuickDock}
+            aria-label="快捷坞：极速置顶、常用与全部快捷站点"
+            className="inline-flex h-8 pointer-coarse:h-11 shrink-0 items-center gap-1 rounded-full border border-dashed border-border-strong px-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted/60 cursor-pointer"
+          >
+            <Zap className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+            <span>快捷坞</span>
+          </button>
+        ) : null}
+        </div>
       </div>
 
-      {/* 桌面端（md+）：纯粹的 5 大工作区角色切换 + 宽屏时段推荐（无重复运营胶囊，xl 起与高频直达坞并排单行） */}
-      <div className="hidden md:flex min-w-0 items-center gap-2">
-        <HorizontalScrollFade
-          className="min-w-0 flex-1"
-          scrollClassName="flex items-center gap-1.5 py-0.5 text-xs"
-          ariaLabel="工作区视图切换"
-          showArrows
+      {/* 桌面端（md+）：纯粹的 5 大工作区角色切换 + 宽屏时段推荐（无重复运营胶囊，xl 起与高频直达坞并排单行）。
+          P0-2 / 滚动器合并（2026-11-25）：工作区胶囊**不再自建横向滚动区**——5 个胶囊在 md+
+          任何宽度都放得下（≈430px vs md 768px 起），让整个首屏横带只保留「坞内站点条」
+          这一个水平滚动区，相邻双滚动器的手势归属冲突就此消除。若未来工作区增至 7 个以上，
+          pill-band-guards 的预算闸会先拦下来做设计复审，而不是悄悄把这里变回滚动区。 */}
+      <div className="hidden md:flex min-w-0 items-center gap-1.5 py-0.5 text-xs">
+        <div
+          role="tablist"
+          aria-label="工作区视图切换"
+          onKeyDown={handleTabKeyDown}
+          className="flex items-center gap-1.5 shrink-0"
         >
-          <div
-            role="tablist"
-            aria-label="工作区视图切换"
-            onKeyDown={handleTabKeyDown}
-            className="flex items-center gap-1.5 shrink-0"
-          >
             {WORKSPACES.map((ws) => {
               const Icon = ws.icon
               const isActive = activeWorkspace === ws.id
@@ -243,7 +262,7 @@ export function HomeCapsuleRow({
                   onClick={() => onWorkspaceChange(ws.id)}
                   title={ws.desc}
                   className={cn(
-                    'flex min-h-9 items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all shrink-0 whitespace-nowrap cursor-pointer',
+                    'flex min-h-9 pointer-coarse:min-h-11 items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all shrink-0 whitespace-nowrap cursor-pointer',
                     isActive
                       ? 'bg-primary text-primary-foreground shadow-xs font-semibold'
                       : 'bg-muted/40 hover:bg-muted/80 text-muted-foreground hover:text-foreground border border-border/50 hover:border-border',
@@ -263,7 +282,7 @@ export function HomeCapsuleRow({
                 <button
                   type="button"
                   onClick={() => onWorkspaceChange(suggestedWorkspace.id)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors shrink-0 whitespace-nowrap cursor-pointer"
+                  className="flex min-h-9 pointer-coarse:min-h-11 items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors shrink-0 whitespace-nowrap cursor-pointer"
                   title={`切换到「${suggestedWorkspace.label}」`}
                 >
                   <Sparkles className="w-3.5 h-3.5" aria-hidden />
@@ -287,7 +306,6 @@ export function HomeCapsuleRow({
               </div>
             )}
           </div>
-        </HorizontalScrollFade>
       </div>
 
       {dramaOpen ? (

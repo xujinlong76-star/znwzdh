@@ -592,23 +592,27 @@ export function useHomeDIY(initialCardDisplayMode?: CanonicalCardDisplayMode) {
    */
   const addSiteToCustomCategory = useCallback(
     (categoryId: string, site: CustomCategoryItem): 'added' | 'duplicate' | 'failed' => {
-      let outcome: 'added' | 'duplicate' = 'added'
+      const outcome = { value: 'added' as 'added' | 'duplicate' | 'missing' }
       const result = persistConfig((prev) => {
-        const nextCats = prev.customCategories.map((cat) => {
-          if (cat.id !== categoryId) return cat
-          if (cat.items.some((i) => i.id === site.id || i.href === site.href)) {
-            outcome = 'duplicate'
-            return cat
-          }
-          return {
-            ...cat,
-            items: [site, ...cat.items],
-          }
-        })
-        return { ...prev, customCategories: nextCats, updatedAt: Date.now() }
+        const target = prev.customCategories.find((cat) => cat.id === categoryId)
+        if (!target) {
+          outcome.value = 'missing'
+          return prev
+        }
+        if (target.items.some((i) => i.id === site.id || i.href === site.href)) {
+          outcome.value = 'duplicate'
+          return prev
+        }
+        return {
+          ...prev,
+          customCategories: prev.customCategories.map((cat) =>
+            cat.id === categoryId ? { ...cat, items: [site, ...cat.items] } : cat,
+          ),
+          updatedAt: Date.now(),
+        }
       })
-      if (!result.ok) return 'failed'
-      return outcome
+      if (!result.ok || outcome.value === 'missing') return 'failed'
+      return outcome.value
     },
     [persistConfig],
   )

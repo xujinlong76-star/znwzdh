@@ -34,22 +34,28 @@ vi.mock("@/components/ui/use-toast", () => ({
   toast: () => {},
 }));
 
-vi.mock("@/lib/modular/feature-mask-store", () => ({
-  useFeatureMask: () => ({
-    effectiveCardElements: {
-      showDescription: true,
-      showTags: true,
-      showPinnedBadge: true,
-      showQuickLookBadge: false,
-    },
-    isFeatureHidden: () => false,
-    removeFeature: () => {},
-  }),
-}));
+vi.mock("@/lib/modular/feature-mask-store", () => {
+  const effectiveCardElements = {
+    showDescription: true,
+    showTags: true,
+    showPinnedBadge: true,
+    showQuickLookBadge: false,
+  };
+  return {
+    useFeatureMask: () => ({
+      effectiveCardElements,
+      isFeatureHidden: () => false,
+      removeFeature: () => {},
+    }),
+    useCardFeatureMask: () => ({ effectiveCardElements, tooltipsHidden: false }),
+  };
+});
 
-vi.mock("@/components/diy/diy-drag-context", () => ({
+vi.mock("@/components/diy/diy-drag-context", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/diy/diy-drag-context")>()),
   useDiyDragHandleRef: () => null,
   useDiyDragActive: () => false,
+  useIsDiyMergeTarget: () => false,
 }));
 
 vi.mock("@/lib/user-preferences", () => ({

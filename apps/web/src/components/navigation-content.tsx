@@ -400,6 +400,7 @@ export function NavigationContent({
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>('all')
   const [isToolsOpen, setIsToolsOpen] = useState(false)
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false)
+  const [quickDockOpen, setQuickDockOpen] = useState(false)
   /**
    * 速览弹窗的上下文：除了站点本身，还要记住它来自哪个分类——
    * 弹窗里的「置顶」需要 categoryId 才能落到正确的分类。
@@ -1421,6 +1422,7 @@ export function NavigationContent({
                   activeWorkspace={activeWorkspace}
                   onWorkspaceChange={handleWorkspaceChange}
                   initialSceneParam={sceneParam}
+                  onOpenQuickDock={() => setQuickDockOpen(true)}
                   onOpenGuideTab={() => {
                     setAppearanceTab('guide')
                     setAppearanceOpen(true)
@@ -1429,13 +1431,18 @@ export function NavigationContent({
               </div>
               {/* 三合一单行高频直达坞（A4：合并 SpeedDialDock / 常用 / 最近访问） */}
               {!isModuleHidden('mod:speed-dial') && (
-                <div data-feature-id="mod:speed-dial" className="relative min-w-0 min-[1400px]:flex-1">
-                  <HomeQuickDock
-                    dialDigitById={mounted ? dialMap.digitById : undefined}
-                    // P2-14：速拨顺序由父级 dialSites 一次算好透传，坞不再自己重算。
-                    speedSites={dialSites}
-                  />
-                </div>
+                <>
+                  <span aria-hidden className="hidden min-[1400px]:block h-5 w-px shrink-0 bg-border" />
+                  <div data-feature-id="mod:speed-dial" className="relative min-w-0 min-[1400px]:flex-1">
+                    <HomeQuickDock
+                      dialDigitById={mounted ? dialMap.digitById : undefined}
+                      // P2-14：速拨顺序由父级 dialSites 一次算好透传，坞不再自己重算。
+                      speedSites={dialSites}
+                      allDialogOpen={quickDockOpen}
+                      onAllDialogOpenChange={setQuickDockOpen}
+                    />
+                  </div>
+                </>
               )}
             </div>
           ) : null}

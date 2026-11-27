@@ -353,9 +353,53 @@ describe('接线守卫：replaceAll 不经过撤销路径；hook 回调推栈', 
 })
 
 describe('回收站键本身：useFavorites 初始化时剪枝', () => {
-  it('启动剪枝只剪本地视图（pruneExpiredTrash 在 init effect 里）', () => {
+  it('初始化接入本地回收站视图；过期剪枝不写存储、不压撤销历史', () => {
     const hookSrc = overlaySource('src/hooks/useFavorites.ts')
-    expect(hookSrc).toContain('pruneExpiredTrash(trash)')
-    expect(hookSrc).toContain('回收站启动剪枝一次')
+    const hookStart = hookSrc.indexOf('export function useFavorites')
+    const effectStart = hookSrc.indexOf('useEffect(() => {', hookStart)
+    const effectEnd = hookSrc.indexOf('}, [])', effectStart)
+    expect(effectStart).toBeGreaterThan(hookStart)
+    expect(effectEnd).toBeGreaterThan(effectStart)
+    const initBody = hookSrc.slice(effectStart, effectEnd)
+    expect(initBody).not.toContain('writeTrash')
+    expect(initBody).not.toContain('pruneExpiredTrash')
+
+    const viewBody = hookSrc.slice(
+      hookSrc.indexOf('const trashItems = useMemo'),
+      hookSrc.indexOf('const trashCount'),
+    )
+    expect(viewBody).toContain('pruneExpiredTrash(readTrash()).items')
+    expect(viewBody).not.toContain('writeTrash')
+  })
+
+  it('启动后回收站只显示未过期项，原存储与撤销栈均不变', async () => {
+    const now = Date.now()
+    const expired = {
+      siteId: 'expired', title: '过期', href: 'https://example.com/expired', createdAt: 1,
+      deletedAt: now - 31 * 24 * 60 * 60 * 1000, batchId: 'old', source: 'single',
+    }
+    const alive = { ...expired, siteId: 'alive', title: '保留', deletedAt: now, batchId: 'new' }
+    const raw = JSON.stringify({ items: [expired, alive], folders: [] })
+    store = installStorage({ 'navhub.favorites.trash.v1': raw })
+    const setItem = vi.fn(window.localStorage.setItem)
+    window.localStorage.setItem = setItem
+
+    vi.resetModules()
+    const { useFavorites } = await import('@/hooks/useFavorites')
+    const { peekGlobalUndo } = await import('@/lib/undo-stack')
+
+    let visibleIds: string[] = []
+    function TrashProbe() {
+      visibleIds = useFavorites().trashItems.map((item) => item.siteId)
+      return null
+    }
+    const { createElement } = await import('react')
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    renderToStaticMarkup(createElement(TrashProbe))
+
+    expect(visibleIds).toEqual(['alive'])
+    expect(store['navhub.favorites.trash.v1']).toBe(raw)
+    expect(setItem).not.toHaveBeenCalled()
+    expect(peekGlobalUndo()).toBeNull()
   })
 })

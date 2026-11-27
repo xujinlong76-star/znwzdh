@@ -660,6 +660,17 @@ describe('收录站点：写盘失败不能报成功', () => {
     expect(src).toContain('return result')
   })
 
+  it('目标分类不存在时返回 failed，且不写入空历史', () => {
+    const src = read('src/lib/modular/use-home-diy.ts')
+    const start = src.indexOf('const addSiteToCustomCategory')
+    const end = src.indexOf('// 20.', start)
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    const body = src.slice(start, end)
+    expect(body).toMatch(/if \(!target\) \{[\s\S]*?outcome\.value = 'missing'[\s\S]*?return prev/)
+    expect(body).toContain("if (!result.ok || outcome.value === 'missing') return 'failed'")
+  })
+
   it('单条收录与批量收录都按真实结果提示', () => {
     const src = read('src/components/navigation-content.tsx')
     expect(src).toContain("if (outcome === 'failed')")

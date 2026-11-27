@@ -7,10 +7,10 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
-  createVideoTask,
-  generateImage,
+  createVideoTask as createVideoTaskImpl,
+  generateImage as generateImageImpl,
   LlmError,
-  pollVideoTask,
+  pollVideoTask as pollVideoTaskImpl,
 } from "../src/llm.ts";
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -43,10 +43,22 @@ function sequencedFetch(responses: Array<Response | Error>) {
 }
 
 /** 媒体调用的显式端点/模型：2026-11-18 起不再有任何内置厂商默认，调用方必须显式传 */
-const MEDIA_BASE = "https://api.example.com/v1";
+const MEDIA_BASE = "http://127.0.0.1:9/v1";
 const IMG_MODEL = "img-model";
 const VID_MODEL = "vid-model";
-const POLL_BASE = "https://media.example.com/poll";
+const POLL_BASE = "http://127.0.0.1:9/poll";
+
+function generateImage(options: Parameters<typeof generateImageImpl>[0]) {
+  return generateImageImpl({ ...options, allowPrivateNetwork: true });
+}
+
+function createVideoTask(options: Parameters<typeof createVideoTaskImpl>[0]) {
+  return createVideoTaskImpl({ ...options, allowPrivateNetwork: true });
+}
+
+function pollVideoTask(options: Parameters<typeof pollVideoTaskImpl>[0]) {
+  return pollVideoTaskImpl({ ...options, allowPrivateNetwork: true });
+}
 
 describe("generateImage", () => {
   it("未配置密钥时报 config 错，不发起请求", async () => {
@@ -84,7 +96,7 @@ describe("generateImage", () => {
     const res = await generateImage({
       prompt: "a cat",
       apiKey: "k1",
-      baseUrl: "https://api.example.com/v1/",
+      baseUrl: "http://127.0.0.1:9/v1/",
       model: "img-model",
       size: "512x512",
       n: 2,
@@ -97,7 +109,7 @@ describe("generateImage", () => {
       taskId: "task-1",
     });
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toBe("https://api.example.com/v1/images/generations");
+    expect(calls[0]!.url).toBe("http://127.0.0.1:9/v1/images/generations");
     expect(calls[0]!.init?.method).toBe("POST");
     expect((calls[0]!.init?.headers as Record<string, string>)["Authorization"]).toBe("Bearer k1");
     expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({
@@ -115,14 +127,14 @@ describe("generateImage", () => {
     const res = await generateImage({
       prompt: "x",
       apiKey: "k1",
-      baseUrl: "https://api.example.com/v1/images/generations",
+      baseUrl: "http://127.0.0.1:9/v1/images/generations",
       model: IMG_MODEL,
       fetchImpl,
     });
     expect(res.model).toBe(IMG_MODEL);
     expect(res.revisedPrompt).toBeUndefined();
     expect(res.taskId).toBeUndefined();
-    expect(calls[0]!.url).toBe("https://api.example.com/v1/images/generations");
+    expect(calls[0]!.url).toBe("http://127.0.0.1:9/v1/images/generations");
     expect(JSON.parse(String(calls[0]!.init?.body))).toMatchObject({
       size: "1024x1024",
       n: 1,
@@ -233,7 +245,7 @@ describe("createVideoTask", () => {
     const res = await createVideoTask({
       prompt: "cat video",
       apiKey: "k1",
-      baseUrl: "https://api.example.com/v1/",
+      baseUrl: "http://127.0.0.1:9/v1/",
       model: "vid-model",
       seconds: "10",
       mode: "keyframe",
@@ -242,7 +254,7 @@ describe("createVideoTask", () => {
       fetchImpl,
     });
     expect(res).toEqual({ ok: true, taskId: "t-1", status: "completed", url: "https://vid.example.com/1.mp4", model: "vid-model" });
-    expect(calls[0]!.url).toBe("https://api.example.com/v1/videos");
+    expect(calls[0]!.url).toBe("http://127.0.0.1:9/v1/videos");
     expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({
       model: "vid-model",
       prompt: "cat video",
@@ -352,8 +364,8 @@ describe("createVideoTask", () => {
 
   it("baseUrl 已是 /videos 时不重复拼接", async () => {
     const { fetchImpl, calls } = sequencedFetch([jsonResponse(200, { task_id: "t" })]);
-    await createVideoTask({ prompt: "x", apiKey: "k1", baseUrl: "https://api.example.com/v1/videos", model: VID_MODEL, fetchImpl });
-    expect(calls[0]!.url).toBe("https://api.example.com/v1/videos");
+    await createVideoTask({ prompt: "x", apiKey: "k1", baseUrl: "http://127.0.0.1:9/v1/videos", model: VID_MODEL, fetchImpl });
+    expect(calls[0]!.url).toBe("http://127.0.0.1:9/v1/videos");
   });
 });
 

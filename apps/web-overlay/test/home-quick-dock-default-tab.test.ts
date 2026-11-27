@@ -84,7 +84,7 @@ describe('最近 tab meta：合法时间给相对时间，非法值留空（不�
 })
 
 describe('SSR 半：首帧仍默认「极速置顶」，空站表仍为空串', () => {
-  it('有站表 → 首帧只有「极速置顶」被选中', () => {
+  it('有站表 → 首帧触发器＝「极速置顶」，菜单未展开', () => {
     const html = renderToString(
       createElement(HomeQuickDock, {
         // P2-14（main 线）：速拨顺序由父级算好经 speedSites 透传；测试按新契约传参。
@@ -93,9 +93,12 @@ describe('SSR 半：首帧仍默认「极速置顶」，空站表仍为空串', 
       }),
     )
     expect(html).toContain('id="quick-access-tray"')
-    expect(html).toContain('极速置顶')
-    expect(html.match(/aria-selected="true"/g)?.length).toBe(1)
-    expect(html.indexOf('aria-selected="true"')).toBeLessThan(html.indexOf('极速置顶'))
+    // 2026-11-25 P0-2 / A′：三页签折叠为单个模式触发器（DropdownMenu）。
+    expect(html).toContain('aria-haspopup="menu"')
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).toContain('快捷坞模式：极速置顶，点击切换')
+    // 关闭态不渲染菜单内容：模式项不进首帧 DOM
+    expect(html).not.toContain('role="menuitemradio"')
     for (const s of ['site-a', 'site-b', 'site-c']) expect(html).toContain(`${s}站`)
   })
 
@@ -117,15 +120,16 @@ describe('接线守卫：默认 tab 只做一次、手动选择不被覆盖、�
     expect(DOCK_SRC).toContain('setRecentLoaded(true)')
   })
 
-  it('手动切 tab 记下来：三个按钮都走 chooseTab，不再直接 setActiveTab', () => {
-    expect(DOCK_SRC).toContain("onClick={() => chooseTab('speed')}")
-    expect(DOCK_SRC).toContain("onClick={() => chooseTab('frequent')}")
-    expect(DOCK_SRC).toContain("onClick={() => chooseTab('recent')}")
+  it('手动切模式记下来：单选组走 chooseTab，不再直接 setActiveTab', () => {
+    // A′：三个页签折叠为一个 RadioGroup（role=menuitemradio），切换统一走 chooseTab。
+    expect(DOCK_SRC).toContain('onValueChange={(v) => chooseTab(v as DockTab)}')
     expect(DOCK_SRC).toContain('userChoseTabRef.current = true')
     expect(DOCK_SRC).toContain('if (userChoseTabRef.current) return')
     // setActiveTab( 只剩两处：chooseTab 内 + 默认 tab effect 内，不再有直接写死 tab 的调用
     expect(DOCK_SRC.match(/setActiveTab\(/g)?.length).toBe(2)
     expect(DOCK_SRC).not.toContain("setActiveTab('speed')")
+    // 旧的三按钮写法不得回潮
+    expect(DOCK_SRC).not.toContain('role="tablist"')
   })
 
   it('最近分支 meta 走 recentVisitMeta；数字角标只在极速置顶分支', () => {
@@ -134,10 +138,10 @@ describe('接线守卫：默认 tab 只做一次、手动选择不被覆盖、�
     expect(DOCK_SRC.match(/digit: undefined as number \| string \| undefined/g)?.length).toBe(2)
   })
 
-  it('三 tab 顺序固定：极速置顶 / 常用 / 最近', () => {
-    const speedAt = DOCK_SRC.indexOf("aria-selected={activeTab === 'speed'}")
-    const frequentAt = DOCK_SRC.indexOf("aria-selected={activeTab === 'frequent'}")
-    const recentAt = DOCK_SRC.indexOf("aria-selected={activeTab === 'recent'}")
+  it('三模式顺序固定：极速置顶 / 常用 / 最近', () => {
+    const speedAt = DOCK_SRC.indexOf('value="speed"')
+    const frequentAt = DOCK_SRC.indexOf('value="frequent"')
+    const recentAt = DOCK_SRC.indexOf('value="recent"')
     expect(speedAt).toBeGreaterThan(0)
     expect(speedAt).toBeLessThan(frequentAt)
     expect(frequentAt).toBeLessThan(recentAt)

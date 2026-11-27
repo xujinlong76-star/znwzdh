@@ -882,7 +882,8 @@ export function useFavorites(): FavoritesApi {
   const [ready, setReady] = useState(() => favoritesInitialized)
   /** 回收站版本号：navhub_trash_updated / storage 事件来时刷新 trashItems */
   const [trashVersion, setTrashVersion] = useState(0)
-  const trashItems = useMemo(() => readTrash().items, [trashVersion])
+  // 过期剪枝只作用于本地视图：启动或刷新时绝不能改写回收站存储键。
+  const trashItems = useMemo(() => pruneExpiredTrash(readTrash()).items, [trashVersion])
   const trashCount = trashItems.length
 
   useEffect(() => {
@@ -899,13 +900,6 @@ export function useFavorites(): FavoritesApi {
         settledExpiredCount: settled.expiredCount,
         triageSettleError: settled.error,
       })
-      // 回收站启动剪枝一次（写回即删，不弹确认；只剪本地视图，
-      // 云端墓碑的物理清理 v1 不做，D6）。
-      const trash = readTrash()
-      const pruned = pruneExpiredTrash(trash)
-      if (pruned.items.length !== trash.items.length || pruned.folders.length !== trash.folders.length) {
-        writeTrash(pruned)
-      }
     }
     setReady(true)
     const refresh = () => applyLocalFavorites(loadLocal())

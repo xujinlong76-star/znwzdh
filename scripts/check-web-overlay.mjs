@@ -16,9 +16,9 @@
 
  * ⚠️ apps/web 现已改为 GENERATED 产物（不再手维护）：
  *   它的 overlay 对应文件由 `node scripts/generate-web-mirror.mjs`（pnpm mirror:web）
- *   从唯一事实源 apps/web-overlay 合并式生成。CI / pre-commit 的 check:overlay 已改为
- *   「先跑生成器、再跑本校验」，所以漂移会被自动修复（闸门自愈），而不是卡在人工同步上。
- *   若本脚本仍报漂移，先跑 `pnpm mirror:web` 再复测；不要手改 apps/web 里的覆盖层文件。
+ *   从唯一事实源 apps/web-overlay 合并式生成。CI / pre-commit 的 check:overlay 是纯校验，
+ *   不会自动修复漂移；显式跑 `pnpm mirror:web` 或 `check:overlay --fix` 后必须重新校验。
+ *   不要手改 apps/web 里的覆盖层文件。
  *   语义与排除规则见 scripts/generate-web-mirror.mjs 头部，isExcluded 口径与本脚本一致。
 
  * 用法：
@@ -53,6 +53,7 @@ import {
   findOwnedOrphans,
   findUnbaselinedMirrorFiles,
   isExcluded,
+  sameContent,
   walkTree,
 } from "./lib/overlay-drift.mjs";
 
@@ -87,6 +88,44 @@ function collectStagedRels() {
 const stagedRels = STAGED ? collectStagedRels() : null;
 const inScope = (rel) => !STAGED || stagedRels === null || stagedRels.has(rel);
 
+function readIndexBlob(path) {
+  try {
+    return execFileSync("git", ["cat-file", "blob", `:${path}`], {
+      cwd: ROOT,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return null;
+  }
+}
+
+function hasHeadBlob(path) {
+  try {
+    execFileSync("git", ["cat-file", "-e", `HEAD:${path}`], { cwd: ROOT, stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function diffStagedIndex() {
+  const drifted = [];
+  const missing = [];
+  for (const rel of stagedRels) {
+    const overlayPath = `apps/web-overlay/${rel}`;
+    const webPath = `apps/web/${rel}`;
+    const overlayBlob = readIndexBlob(overlayPath);
+    if (!overlayBlob) continue;
+    const webBlob = readIndexBlob(webPath);
+    if (!webBlob) {
+      if (hasHeadBlob(webPath)) missing.push(rel);
+      continue;
+    }
+    if (!sameContent(overlayBlob, webBlob)) drifted.push({ rel, kind: "暂存区内容不一致" });
+  }
+  return { drifted, missing };
+}
+
 function diffHint(rel) {
   return (
     `  diff 定位：diff "apps/web-overlay/${rel}" "apps/web/${rel}"\n` +
@@ -107,16 +146,23 @@ const { overlayFiles, missing, drifted, reverseCandidates } = diffOverlay({
   targetDir: TARGET,
 });
 
-// 全仓库判定结果先算全，--staged 时只对本次提交涉及的文件判失败
-const scopedDrifted = drifted.filter((d) => inScope(d.rel));
-const scopedMissing = missing.filter((rel) => inScope(rel));
-const outOfScope = STAGED ? drifted.length - scopedDrifted.length + (missing.length - scopedMissing.length) : 0;
+// 全仓库判定结果先算全；--staged 成功时只比较索引，避免并发工作树修改误报。
+const stagedDiff = STAGED && stagedRels ? diffStagedIndex() : null;
+const scopedDrifted = stagedDiff
+  ? stagedDiff.drifted
+  : drifted.filter((d) => inScope(d.rel));
+const scopedMissing = stagedDiff
+  ? stagedDiff.missing
+  : missing.filter((rel) => inScope(rel));
+const outOfScope = STAGED
+  ? drifted.filter((d) => !inScope(d.rel)).length + missing.filter((rel) => !inScope(rel)).length
+  : 0;
 
-// 按 overlay 的文件遍历顺序逐条报（非 --staged 时与重构前输出完全一致）
+// 暂存模式按实际失败项输出，避免并发工作树删文件后漏报。
 const missingSet = new Set(scopedMissing);
 const driftByRel = new Map(scopedDrifted.map((d) => [d.rel, d.kind]));
 const relsToReport = STAGED
-  ? overlayFiles.filter((rel) => missingSet.has(rel) || driftByRel.has(rel))
+  ? [...new Set([...scopedMissing, ...scopedDrifted.map((d) => d.rel)])]
   : overlayFiles;
 for (const rel of relsToReport) {
   if (missingSet.has(rel)) {

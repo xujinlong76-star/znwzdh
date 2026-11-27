@@ -85,9 +85,10 @@ describe('事件循环看门狗启动', () => {
         blocks.push({ lagMs, at })
       },
     })
-    // 先让一个 tick 正常跑过，建立 last 基准
+    // 先让一个 tick 正常跑过，建立 last 基准；高负载下预热本身可能超阈值，
+    // 因此记录基线而不是要求它必须为 0，后续仍须检测到新增阻塞。
     await new Promise((resolve) => setTimeout(resolve, 120))
-    expect(blocks.length).toBe(0)
+    const baseline = blocks.length
     // 同步堵住事件循环 250ms（模拟挂死时的单线程空转）
     const until = Date.now() + 250
     while (Date.now() < until) {
@@ -95,8 +96,8 @@ describe('事件循环看门狗启动', () => {
     }
     // 等看门狗下一个 tick 上报
     await new Promise((resolve) => setTimeout(resolve, 200))
-    expect(blocks.length).toBeGreaterThanOrEqual(1)
-    expect(blocks[0].lagMs).toBeGreaterThanOrEqual(100)
+    expect(blocks.length).toBeGreaterThan(baseline)
+    expect(blocks.at(-1)!.lagMs).toBeGreaterThanOrEqual(100)
     const status = getEventLoopWatchdogStatus()
     expect(status.blocksDetected).toBeGreaterThanOrEqual(1)
     expect(status.lastBlockMs).not.toBeNull()

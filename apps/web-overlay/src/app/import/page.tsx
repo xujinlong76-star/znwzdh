@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { BookmarkImporter } from '@/components/bookmark-importer'
 import { Footer } from '@/components/footer'
-import { getFileContentWithStatus } from '@/lib/github'
+import { loadNavigationCatalog } from '@/lib/navigation-catalog-read'
 import { loadCategories } from '@/lib/server/categories'
 import {
   buildPublicIndex,
@@ -25,15 +25,16 @@ export const metadata: Metadata = {
  */
 export const revalidate = 60
 
-const NAVIGATION_PATH = 'src/navsphere/content/navigation.json'
-
 export default async function ImportPage() {
   const [navResult, categoryResult] = await Promise.all([
     // 两者任一失败都只降级为「无数据」：导入页的本职是本地解析书签文件，
     // 站点/分类数据缺失只会让「归类建议」少一档，不该整页 500。
     // 两者任一失败都只降级为「无数据」：导入页的本职是本地解析书签文件，
     // 站点/分类数据缺失只会让「归类建议」少一档，不该整页 500。
-    getFileContentWithStatus(NAVIGATION_PATH).catch(() => {
+    // U-463：归类建议只需要 href/分类（渲染字段），整包 navigation.json
+    // （3.16MB）进不了 Data Cache，每次访问重拉；改读分片拼装，
+    // 分片不可用时自动回落整包读。
+    loadNavigationCatalog().catch(() => {
       /* 取数失败按无导航数据处理，见上 */
       return null
     }),

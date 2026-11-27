@@ -1,7 +1,7 @@
 import { Metadata } from 'next/types'
 import { Container } from '@/components/ui/container'
 import { SubmissionForm } from '@/components/submission-form'
-import { getFileContent } from '@/lib/github'
+import { loadNavigationCatalog } from '@/lib/navigation-catalog-read'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import type { NavigationData } from '@/types/navigation'
@@ -15,15 +15,16 @@ import { parseSubmitPrefill } from '@/lib/submit-prefill'
  *     因此投稿表单里的类目下拉反映的是数据库中的真实类目。
  *  2. 页面标题只写页面名，站点名由根 layout 的 title.template 统一追加（单一来源）。
  */
-const NAVIGATION_PATH = 'src/navsphere/content/navigation.json'
-
 export const dynamic = 'force-dynamic'
 
 async function getData() {
     // 注意：这里只需要导航数据。站点名由根 layout 的 title.template 统一追加，
     // 所以子页面标题里**不要**再拼站点名，否则会出现"X - NavHub 导航 - NavHub 导航"。
-    const navigationData = await getFileContent<NavigationData>(NAVIGATION_PATH)
-    return { navigationData }
+    // U-463：投稿表单只需要分类 id/title/description（渲染字段），
+    // 整包 navigation.json（3.16MB）进不了 Data Cache，每次访问重拉；
+    // 改读分片拼装，分片不可用时自动回落整包读。
+    const load = await loadNavigationCatalog()
+    return { navigationData: load.data as NavigationData }
 }
 
 export async function generateMetadata(): Promise<Metadata> {

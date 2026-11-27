@@ -10,12 +10,11 @@ import type { Metadata } from "next";
 import { DramaContentLazy } from "./drama-content-lazy";
 import { collectDramaSites, type DramaSite } from "@/lib/drama-sites";
 import { loadDramaFeatured, type DramaFeatured } from "@/lib/drama-featured";
-import { getFileContent } from "@/lib/github";
+import { loadNavigationCatalog } from "@/lib/navigation-catalog-read";
 import baselineNavigation from "@/navsphere/content/navigation.json";
 
 export const revalidate = 60;
 
-const NAVIGATION_PATH = "src/navsphere/content/navigation.json";
 
 export interface DramaPageData {
   sites: DramaSite[];
@@ -25,11 +24,11 @@ export interface DramaPageData {
 const getDramaData = cache(async (): Promise<DramaPageData> => {
   let navigationItems: unknown = baselineNavigation.navigationItems;
   try {
-    const navRaw = (await getFileContent(NAVIGATION_PATH)) as unknown as {
-      navigationItems?: unknown;
-    };
-    if (Array.isArray(navRaw?.navigationItems)) {
-      navigationItems = navRaw.navigationItems;
+    // U-463：整包 navigation.json（3.16MB）进不了 Data Cache，每次渲染重拉；
+    // 改读分片拼装（渲染字段等值），分片不可用时自动回落整包读。
+    const load = await loadNavigationCatalog();
+    if (Array.isArray(load.data?.navigationItems)) {
+      navigationItems = load.data.navigationItems;
     }
   } catch {
     // Hub 读不到时回退到构建期基线（与 /videos 的口径一致），页面不挂。

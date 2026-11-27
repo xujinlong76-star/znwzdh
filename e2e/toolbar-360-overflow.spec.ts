@@ -190,9 +190,10 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     // 故此处不用 exact 全串匹配，改子串匹配。不断言行内按钮（产品侧不把入口
     // 搬回行内，与首屏批目标一致）。只改测试。
     // Rebase（2026-11-27，基底 7933bde5）：main 侧把定位改为尾锚正则
-    // /切换工作区与快捷功能$/（仍 exact:true 时全串须匹配，工作区名前缀在则失效），
-    // 故合并不取 exact，保留 main 的尾锚正则——比纯子串更严，且与新 name 的
-    // 「<工作区名>：切换工作区与快捷功能」形态一致。
+    // /切换工作区与快捷功能$/，分支侧因名字以随状态变的工作区名开头而去掉了
+    // exact——合并保留 main 的尾锚正则，不取 exact。Playwright 1.65.1 实测：
+    // 正则+exact 与正则无 exact 在此名字上都命中 1 个（exact 只约束字符串
+    // 全串比对，正则本就是 match() 后缀搜索）；正则后缀匹配比纯子串更严。
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const moreMenu = page.getByRole('button', { name: /切换工作区与快捷功能$/ });

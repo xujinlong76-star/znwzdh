@@ -230,7 +230,7 @@ describe("/api/weather：城市表就是唯一的出网面", () => {
             },
           }),
     );
-    const { body } = await getWeather("?city=chengdu");
+    const { body } = await getWeather("?city=chengdu&fresh=1");
     expect(body.days[0]).toMatchObject({ sunrise: null, sunset: null, uvIndexMax: null });
     expect(body.hourly[0]).toMatchObject({ windSpeedKmh: null, humidity: 63 });
   });
@@ -245,7 +245,7 @@ describe("/api/weather：城市表就是唯一的出网面", () => {
             daily: { time: ["2026-10-23"], weather_code: [0], temperature_2m_max: [19], temperature_2m_min: [12] },
           }),
     );
-    const { body } = await getWeather("?city=chengdu");
+    const { body } = await getWeather("?city=chengdu&fresh=1");
     expect(body.days[0]).toMatchObject({ sunrise: null, sunset: null, uvIndexMax: null });
     expect(body.hourly[0]).toMatchObject({ windSpeedKmh: null, humidity: null });
   });

@@ -112,8 +112,11 @@ jobs:
             ROUND=$((ROUND + 1))
 
             # -f：4xx/5xx 直接失败（否则 CDN 的错误页会被当成成功）
+            # -L：跟随重定向。NAVHUB_SITE_URL 为 http 时，站点 nginx 会 301 到 https；
+            #    curl 默认不跟随，同类调用 video-harvest #66–#69 均因此以 HTTP 301 失败。
+            #    本调用用 -X POST 且无 body，重定向后仍保持 POST（本地重定向实测验证）。
             # 单轮最坏约 5 分钟，--max-time 给 10 分钟
-            code=$(curl -sS -o /tmp/sweep.json -w '%{http_code}' \
+            code=$(curl -sSL -o /tmp/sweep.json -w '%{http_code}' \
               -X POST "$URL" \
               -H "Authorization: Bearer $CRON" \
               -H 'Content-Type: application/json' \

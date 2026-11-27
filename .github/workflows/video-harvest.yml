@@ -73,7 +73,10 @@ jobs:
           if [ -n "$QUERY" ]; then URL="$URL?$QUERY"; fi
 
           # -f：4xx/5xx 直接失败（否则 CDN 的错误页会被当成成功）
-          code=$(curl -sS -o /tmp/harvest.json -w '%{http_code}' \
+          # -L：跟随重定向。NAVHUB_SITE_URL 为 http 时，站点 nginx 会 301 到 https；
+          #    curl 默认不跟随，#66–#69 均因此以 HTTP 301 失败。本调用用 -X POST 且无
+          #    body，重定向后仍保持 POST（本地重定向实测验证）。
+          code=$(curl -sSL -o /tmp/harvest.json -w '%{http_code}' \
             -X POST "$URL" \
             -H "Authorization: Bearer $CRON" \
             -H 'Content-Type: application/json' \

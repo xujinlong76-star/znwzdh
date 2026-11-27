@@ -1025,7 +1025,7 @@ export const NavigationCard = memo(function NavigationCard({
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "h-11 min-w-11 flex-1 rounded-lg transition-colors",
+                    "h-11 min-w-6 w-auto flex-1 rounded-lg transition-colors",
                     isEditingLayout
                       ? "text-destructive-text hover:text-destructive-text hover:bg-destructive/15"
                       : "hidden sm:inline-flex text-muted-foreground hover:text-destructive-text hover:bg-destructive/15"
@@ -1043,7 +1043,7 @@ export const NavigationCard = memo(function NavigationCard({
                     variant="ghost"
                     size="icon"
                     className={cn(
-                      "h-11 min-w-11 flex-1 rounded-lg transition-colors",
+                      "h-11 min-w-6 w-auto flex-1 rounded-lg transition-colors",
                       isSpeedDialPinned ? "text-pinned bg-pinned/15" : "text-muted-foreground hover:text-pinned"
                     )}
                     title={isSpeedDialPinned ? "从首屏速览坞取消固定" : "📌 钉入首屏速览坞"}
@@ -1060,7 +1060,7 @@ export const NavigationCard = memo(function NavigationCard({
                     variant="ghost"
                     size="icon"
                     className={cn(
-                      "h-11 min-w-11 flex-1 rounded-lg transition-colors",
+                      "h-11 min-w-6 w-auto flex-1 rounded-lg transition-colors",
                       isPinnedInCategory ? "text-pinned bg-pinned/10" : "text-muted-foreground hover:text-pinned"
                     )}
                     title={isPinnedInCategory ? "取消分类内置顶" : "置顶在当前分类首位"}
@@ -1070,13 +1070,13 @@ export const NavigationCard = memo(function NavigationCard({
                     <ArrowUpToLine className={cn("w-4 h-4", isPinnedInCategory && "fill-pinned")} />
                   </Button>
                 )}
-                {detailAction('h-11 min-w-11 flex-1 rounded-lg')}
+                {detailAction('h-11 min-w-6 w-auto flex-1 rounded-lg')}
                 <Button
                   tabIndex={-1}
                   data-card-action=""
                   variant="ghost"
                   size="icon"
-                  className="h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent"
+                  className="h-11 min-w-6 w-auto flex-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent"
                   title="速览与行动"
                   aria-label={`速览与行动：${item.title}`}
                   onClick={(e) => {
@@ -1092,7 +1092,7 @@ export const NavigationCard = memo(function NavigationCard({
                   data-card-action=""
                   variant="ghost"
                   size="icon"
-                  className="hidden sm:inline-flex h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors"
+                  className="hidden sm:inline-flex h-11 min-w-6 w-auto flex-1 rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors"
                   title="📌 固定到工作台"
                   aria-label={`固定到工作台：${item.title}`}
                   onClick={handleWorkbenchPin}
@@ -1104,7 +1104,7 @@ export const NavigationCard = memo(function NavigationCard({
                   data-card-action=""
                   variant="ghost"
                   size="icon"
-                  className="hidden sm:inline-flex h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  className="hidden sm:inline-flex h-11 min-w-6 w-auto flex-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                   title="复制网址链接"
                   aria-label={`复制链接：${item.title}`}
                   onClick={handleCopyLink}
@@ -1353,7 +1353,7 @@ export const NavigationCard = memo(function NavigationCard({
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "h-11 min-w-11 flex-1 rounded-lg transition-colors",
+                  "h-11 min-w-6 w-auto flex-1 rounded-lg transition-colors",
                   isEditingLayout
                     ? "text-destructive-text hover:text-destructive-text hover:bg-destructive/15"
                     : "hidden sm:inline-flex text-muted-foreground hover:text-destructive-text hover:bg-destructive/15"
@@ -1371,7 +1371,7 @@ export const NavigationCard = memo(function NavigationCard({
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "h-11 min-w-11 flex-1 rounded-lg transition-colors",
+                    "h-11 min-w-6 w-auto flex-1 rounded-lg transition-colors",
                     isSpeedDialPinned ? "text-pinned bg-pinned/15" : "text-muted-foreground hover:text-pinned"
                   )}
                   title={isSpeedDialPinned ? "从首屏速览坞取消固定" : "📌 钉入首屏速览坞"}
@@ -1388,7 +1388,7 @@ export const NavigationCard = memo(function NavigationCard({
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "h-11 min-w-11 flex-1 rounded-lg transition-colors",
+                    "h-11 min-w-6 w-auto flex-1 rounded-lg transition-colors",
                     isPinnedInCategory ? "text-pinned bg-pinned/10" : "text-muted-foreground hover:text-pinned"
                   )}
                   title={isPinnedInCategory ? "取消分类内置顶" : "置顶在当前分类首位"}
@@ -1398,13 +1398,13 @@ export const NavigationCard = memo(function NavigationCard({
                   <ArrowUpToLine className={cn("w-4 h-4", isPinnedInCategory && "fill-pinned")} />
                 </Button>
               )}
-              {detailAction('h-11 min-w-11 flex-1 rounded-lg')}
+              {detailAction('h-11 min-w-6 w-auto flex-1 rounded-lg')}
               <Button
                   tabIndex={-1}
                   data-card-action=""
                 variant="ghost"
                 size="icon"
-                className="h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent"
+                className="h-11 min-w-6 w-auto flex-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent"
                 title="按空格键或点击速览详情与行动"
                 aria-label={`速览与行动：${item.title}`}
                 onClick={(e) => {
@@ -1420,7 +1420,7 @@ export const NavigationCard = memo(function NavigationCard({
                   data-card-action=""
                 variant="ghost"
                 size="icon"
-                className="hidden sm:inline-flex h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors"
+                className="hidden sm:inline-flex h-11 min-w-6 w-auto flex-1 rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors"
                 title="📌 固定到模块化工作台快捷启动坞"
                 aria-label={`固定到工作台：${item.title}`}
                 onClick={handleWorkbenchPin}
@@ -1432,7 +1432,7 @@ export const NavigationCard = memo(function NavigationCard({
                 data-card-action=""
                 variant="ghost"
                 size="icon"
-                className="hidden sm:inline-flex h-11 min-w-11 flex-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                className="hidden sm:inline-flex h-11 min-w-6 w-auto flex-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                 title="复制网址链接"
                 aria-label={`复制链接：${item.title}`}
                 onClick={handleCopyLink}

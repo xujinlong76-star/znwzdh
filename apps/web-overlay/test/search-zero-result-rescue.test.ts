@@ -65,8 +65,7 @@ describe("分组建议下拉：SearchPalette 接上了建议层", () => {
 
   it("防抖仍在 NN/g 区间：搜索请求 200ms 防抖，没有为建议另起计时器", () => {
     expect(src).toContain("防抖 200ms");
-    expect(src).toContain("const delay = skipDebounceRef.current ? 0 : 200");
-    expect(src).toContain("}, delay)");
+    expect(src).toContain("}, 200)");
   });
 });
 

@@ -33,11 +33,7 @@ describe("首页卡片：视口外延迟渲染", () => {
 
   it("三类卡片变体（紧凑 / 富卡片 / 标准）都挂了延迟渲染类", () => {
     const src = overlaySource("src/components/navigation-card.tsx");
-    // S2–S4 迁移（2026-11-26）：三档壳全部收进 SiteCard——card 面（standard/rich）
-    // 与 SHELL.compact 自带 nav-card-deferred，navigation-card 字面量归零。
-    const cardHits = (src.match(/nav-card-deferred/g) ?? []).length;
-    const siteCardHits = (overlaySource("src/components/site-card.tsx").match(/nav-card-deferred/g) ?? []).length;
-    expect(cardHits).toBe(0);
-    expect(siteCardHits, "site-card 承担三档延迟渲染类（card 面 + SHELL.compact）").toBeGreaterThanOrEqual(2);
+    const hits = src.match(/nav-card-deferred/g) ?? [];
+    expect(hits.length).toBe(3);
   });
 });

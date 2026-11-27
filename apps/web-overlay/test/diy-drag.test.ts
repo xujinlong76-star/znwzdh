@@ -175,11 +175,11 @@ describe('resolveCategoryDropIndex（分类拖拽落点换算，W2-7）', () => 
   })
 })
 
-describe('卡片拖拽说明与播报（Phase 1 自由拖拽升级）', () => {
-  it('键盘说明覆盖自由拖拽、跨分类收录或重归类与更多操作菜单', () => {
+describe('卡片拖拽不承诺位置（W2-7）', () => {
+  it('键盘说明不再说「菜单完成同样的操作」：拖拽是收录/重归类，位置只归菜单', () => {
     expect(KEYBOARD_DRAG_INSTRUCTIONS).not.toContain('完成同样的操作')
     expect(KEYBOARD_DRAG_INSTRUCTIONS).toContain('收录或重归类')
-    expect(KEYBOARD_DRAG_INSTRUCTIONS).toContain('平滑重排')
+    expect(KEYBOARD_DRAG_INSTRUCTIONS).toContain('不改变它在分类内的位置')
     expect(KEYBOARD_DRAG_INSTRUCTIONS).toContain('更多操作菜单')
   })
 

@@ -6,8 +6,7 @@ import { itemListLd } from '@/lib/seo/json-ld'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { JsonLd } from '@/components/json-ld'
 import type { HubSite } from '@/lib/navhub-api'
-import { PageShell, PageHeader } from '@/components/page-shell'
-import { PromoBanner } from '@/components/promo-banner'
+import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { AlertTriangle, Globe, MonitorPlay, ArrowRight } from 'lucide-react'
 import { SitesDirectoryFilterableGrid } from '@/components/sites-directory-filterable-grid'
@@ -109,36 +108,52 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
 
   return (
     <>
-      <PageShell as="main" id="main-content" width="doc">
-        {/* 面包屑（可见 DOM 与 BreadcrumbList JSON-LD 同源，页 ≥2 只出可见部分） */}
-        <Breadcrumbs
-          jsonLd={indexable}
-          items={[
-            { label: '首页', path: '/' },
-            { label: '全部站点目录', path: '/sites' },
-          ]}
-        />
-        <PageHeader
-          title="全部站点目录"
-          description={
-            failed
-              ? // 「没取回」和「库里没东西」是两件事：写成一个，用户就以为站点被删了。
-                // 这里不报「共收录 N 个」，也不假装是取数上限截断。
-                `目录数据这次没能从山羊胡中枢取回${
-                  all.length > 0 ? `，只列出已经取回的 ${all.length} 个站点` : ''
-                }。这不代表站点被删除或下架——稍后重新加载本页即可，也可以先按分类或标签浏览。`
-              : truncated
-                ? // 取数没取完时不能写「共收录 N 个」：那个 N 是已取到的条数，不是总数。
-                  // 如实说「已列出前 N 个」，并给出分类页这条不依赖整表的路径。
-                  `本站已列出前 ${all.length} 个站点（收录总数超出本次取数上限），当前第 ${current} / ${totalPages} 页，每页 ${SITES_PAGE_SIZE} 个；也可以按分类浏览完整目录。`
-                : `本站共收录 ${all.length} 个站点，当前第 ${current} / ${totalPages} 页，每页 ${SITES_PAGE_SIZE} 个。`
-          }
-          links={[
-            { href: '/category', label: '按分类浏览' },
-            { href: '/tags', label: '按标签浏览全部站点' },
-            { href: '/collections', label: '精选专题合集' },
-          ]}
-        />
+      <Container as="main" id="main-content">
+        <div className="py-6 sm:py-10 max-w-5xl mx-auto space-y-6">
+          {/* 面包屑（可见 DOM 与 BreadcrumbList JSON-LD 同源，页 ≥2 只出可见部分） */}
+          <Breadcrumbs
+            jsonLd={indexable}
+            items={[
+              { label: '首页', path: '/' },
+              { label: '全部站点目录', path: '/sites' },
+            ]}
+          />
+          <header className="space-y-2">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+              全部站点目录
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {failed
+                ? // 「没取回」和「库里没东西」是两件事：写成一个，用户就以为站点被删了。
+                  // 这里不报「共收录 N 个」，也不假装是取数上限截断。
+                  `目录数据这次没能从山羊胡中枢取回${
+                    all.length > 0 ? `，只列出已经取回的 ${all.length} 个站点` : ''
+                  }。这不代表站点被删除或下架——稍后重新加载本页即可，也可以先按分类或标签浏览。`
+                : truncated
+                  ? // 取数没取完时不能写「共收录 N 个」：那个 N 是已取到的条数，不是总数。
+                    // 如实说「已列出前 N 个」，并给出分类页这条不依赖整表的路径。
+                    `本站已列出前 ${all.length} 个站点（收录总数超出本次取数上限），当前第 ${current} / ${totalPages} 页，每页 ${SITES_PAGE_SIZE} 个；也可以按分类浏览完整目录。`
+                  : `本站共收录 ${all.length} 个站点，当前第 ${current} / ${totalPages} 页，每页 ${SITES_PAGE_SIZE} 个。`}
+            </p>
+            {/* 枢纽互链：目录页同时是「按主题逛」的入口，与页脚入口互补不重复 */}
+            <nav aria-label="站内目录" className="flex flex-wrap items-center gap-3 text-xs pt-1">
+              <Link href="/category" className="text-primary hover:underline">
+                按分类浏览
+              </Link>
+              <span className="text-border" aria-hidden>
+                ·
+              </span>
+              <Link href="/tags" className="text-primary hover:underline">
+                按标签浏览全部站点
+              </Link>
+              <span className="text-border" aria-hidden>
+                ·
+              </span>
+              <Link href="/collections" className="text-primary hover:underline">
+                精选专题合集
+              </Link>
+            </nav>
+          </header>
 
           {origin && indexable ? (
             <JsonLd
@@ -149,20 +164,27 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
             />
           ) : null}
 
-          {/* 跨生态：精选技术视频推荐（PromoBanner 原语：可关闭，7 天内不再显示） */}
-          <PromoBanner
-            storageKey="navhub.promo.video-hub.v1"
-            icon={<MonitorPlay className="w-4 h-4" />}
-            title="除了工具网站，还想看技术视频教程？"
-            description="本站视频库收录高质量技术视频与实操课程，覆盖前端、后端、AI 等全栈技能"
-            actionHref="/videos"
-            actionLabel={
-              <>
-                <span>探索精选视频库</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </>
-            }
-          />
+          {/* 跨生态：精选技术视频推荐 */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-primary/20 bg-primary/5 text-xs text-foreground">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+                <MonitorPlay className="w-4 h-4" />
+              </span>
+              <div className="min-w-0">
+                <span className="font-semibold text-foreground block text-sm">除了工具网站，还想看技术视频教程？</span>
+                <span className="text-muted-foreground text-xs block truncate">
+                  本站视频库收录高质量技术视频与实操课程，覆盖前端、后端、AI 等全栈技能
+                </span>
+              </div>
+            </div>
+            <Link
+              href="/videos"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors shrink-0 text-xs shadow-2xs"
+            >
+              <span>探索精选视频库</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
 
           <SitesDirectoryFilterableGrid
             initialSites={items}
@@ -252,7 +274,8 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
               暂无可展示的站点。
             </p>
           ) : null}
-      </PageShell>
+        </div>
+      </Container>
       <Footer />
     </>
   )

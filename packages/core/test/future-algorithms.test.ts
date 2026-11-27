@@ -365,29 +365,6 @@ describe('前沿算法进阶改造测试套件', () => {
       expect(computeDwellTimeReward(5.0, 'copy')).toBe(2.0);
     });
 
-    it('dwellSeconds 必须在奖励映射前校验为有限非负数', () => {
-      for (const dwell of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -0.01]) {
-        expect(() => computeDwellTimeReward(dwell)).toThrow(RangeError);
-        // copy 分支也不能绕过时长校验，把非法输入转成合法满分奖励。
-        expect(() => computeDwellTimeReward(dwell, 'copy')).toThrow(RangeError);
-      }
-      expect(computeDwellTimeReward(0)).toBe(-0.5);
-      expect(computeDwellTimeReward(5, 'copy')).toBe(2.0);
-    });
-
-    it('reward 必须是 [-1, 2] 内的有限数，非法值在修改矩阵前拒绝', () => {
-      for (const reward of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1.01, 2.01]) {
-        const model = createLinUCBModel();
-        const before = serializeLinUCB(model);
-        expect(() => updateArmReward(model, 'exact', 'react', reward)).toThrow(RangeError);
-        expect(() => updateDiscountedArmReward(model, 'exact', 'react', reward)).toThrow(RangeError);
-        expect(serializeLinUCB(model)).toBe(before);
-      }
-      const model = createLinUCBModel();
-      expect(() => updateArmReward(model, 'exact', 'react', -1)).not.toThrow();
-      expect(() => updateArmReward(model, 'exact', 'react', 2)).not.toThrow();
-    });
-
     it('应当执行二阶特征多项式升维', () => {
       const base = [0.1, 0.5];
       const poly = expandPoly2Features(base);

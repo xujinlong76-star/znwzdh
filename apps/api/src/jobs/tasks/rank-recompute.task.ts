@@ -27,7 +27,7 @@ function toEpochMs(raw: unknown, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-export async function handleRecomputeRank(ctx: AppContext, run?: { shouldStop(): boolean }): Promise<void> {
+export async function handleRecomputeRank(ctx: AppContext): Promise<void> {
   const now = Date.now();
   const since7d = now - 7 * 86_400_000;
   const [clicks, favorites, rankRows] = await Promise.all([
@@ -49,9 +49,7 @@ export async function handleRecomputeRank(ctx: AppContext, run?: { shouldStop():
       ),
     };
   });
-  if (run?.shouldStop()) return;
   await ctx.repo.setTrendScores(scores);
-  if (run?.shouldStop()) return;
   await ctx.repo.recordEvent("recompute_rank", { meta: { sites: scores.length } }).catch((err) => {
     // 审计/遥测类写库是尽力而为：失败不阻断主操作，但必须留一条失败日志。
     // 时间戳口径 = 上次审计写库成功时刻，重算成功不等于时间戳更新：

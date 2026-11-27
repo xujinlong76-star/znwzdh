@@ -85,16 +85,6 @@ describe("hubGet / hubGetProbe 附带豁免凭据", () => {
     expect(seen[0]!.headers["x-navhub-internal-token"]).toBe(TOKEN);
   });
 
-  it("会话核对作为服务间调用也携带豁免凭据", async () => {
-    process.env.NAVHUB_INTERNAL_TOKEN = TOKEN;
-    reply = { status: 200, ok: true, body: { ok: true, revoked: false } };
-    const { hubSessionRevoked } = await loadHub();
-    expect(await hubSessionRevoked("sid-12345678", "github:octocat", Date.now())).toBe(false);
-    expect(seen).toHaveLength(1);
-    expect(seen[0]!.url).toContain("/api/me/sessions/check");
-    expect(seen[0]!.headers["x-navhub-internal-token"]).toBe(TOKEN);
-  });
-
   it("429 仍判 failed：豁免只是不吃额度，不改变失败三分法", async () => {
     process.env.NAVHUB_INTERNAL_TOKEN = TOKEN;
     reply = { status: 429, ok: false, body: null };

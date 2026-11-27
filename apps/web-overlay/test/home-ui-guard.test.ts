@@ -96,32 +96,19 @@ describe('侧栏：空间所有者徽章不被裁切', () => {
 
 describe('站点卡片：单外链 + 整卡热区', () => {
   const src = overlaySource('src/components/navigation-card.tsx')
-  // S2 迁移（2026-11-26）：标准档覆盖层锚点由 SiteCard 渲染，sr-only 文本随组件走
-  const siteCardSrc = overlaySource('src/components/site-card.tsx')
 
   it('整卡热区是一个带无障碍名称的外链，不产生 a:empty', () => {
-    // S2–S4 迁移（2026-11-26）：三档覆盖层锚点全部由 SiteCard 渲染，
-    // 「absolute inset-0 z-0」基类收进原语；navigation-card 只传 overlayProps 差异。
-    expect(siteCardSrc).toContain('absolute inset-0 z-0')
-    // 多选态 label 带「按空格切换选中」（580b963 键盘批量整理有意加的读屏提示）；
-    // 三档均经 overlayProps 传（对象字面量形态）。
-    expect(src).toContain("'aria-label': selectable ? `选择站点：${item.title}，按空格切换选中` : `访问 ${item.title}`")
-    // 空锚点会被 a:empty 守卫抓住：外链里必须有 sr-only 文本（SiteCard 统一渲染）
-    expect(siteCardSrc).toContain('<span className="sr-only">')
-    // 三档必须显式传 overlayLabel（与 aria-label 同一表达式），不能落到默认文案
-    expect((src.match(/overlayLabel=\{selectable \? `选择站点：/g) ?? []).length).toBe(3)
+    expect(src).toContain('absolute inset-0 z-0')
+    // 多选态 label 带「按空格切换选中」（580b963 键盘批量整理有意加的读屏提示）
+    expect(src).toContain('aria-label={selectable ? `选择站点：${item.title}，按空格切换选中` : `访问 ${item.title}`}')
+    // 空锚点会被 a:empty 守卫抓住：外链里必须有 sr-only 文本
+    expect(src).toContain('<span className="sr-only">{`访问 ${item.title}`}</span>')
   })
 
   it('标题是单行截断、简介固定两行，保证相邻卡片等高', () => {
-    // S2–S4 迁移（2026-11-26）：截断/两行类收进 SiteCard 配方（TITLE_INNER_LINK 的
-    // truncate + DESC.grid 的 line-clamp-2 leading-relaxed）；navigation-card 经
-    // titleLinkProps 传单行截断（standard/rich line-clamp-1、compact truncate 圆角行内）+
-    // rootProps h-full（网格同行等高）。
-    expect((src.match(/line-clamp-1/g) ?? []).length).toBe(2)
-    expect(src).toContain("truncate rounded-sm text-sm sm:text-base font-semibold")
-    expect(src, "三档 rootProps 都带 h-full（网格同行等高）").toContain('h-full overflow-hidden group/card')
-    expect(siteCardSrc).toContain('line-clamp-2 leading-relaxed')
-    expect(siteCardSrc).toContain('truncate')
+    expect(src).toContain('line-clamp-1 truncate')
+    expect(src).toContain('line-clamp-2 leading-relaxed')
+    expect(src).toContain('min-h-[2.5rem]')
   })
 })
 

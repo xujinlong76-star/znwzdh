@@ -275,14 +275,14 @@ describe("撤防账：接线（对真实 ci.yml 的作业片段派生夹具）",
     "coverage",
   ];
 
-  it("仓库现状：九个接入作业的接线与覆盖面全部通过", () => {
+  it("仓库现状：八个接入作业的接线与覆盖面全部通过", () => {
     for (const job of WIRED) {
       expect(lib.defusedWiringProblems(jobBlock(job), entryOf(job)), job).toEqual([]);
       expect(lib.defusedCoverageProblems(jobBlock(job), entryOf(job)), job).toEqual([]);
     }
   });
 
-  it("登记表覆盖的正好是这九个阻塞作业 ⇒ 增删作业必须在这里改口", () => {
+  it("登记表覆盖的正好是这八个阻塞作业 ⇒ 增删作业必须在这里改口", () => {
     // 覆盖面判据是「按作业」跑的：作业不在 DEFUSED_GATES 里，它里面的门禁 skipped 就无人记账。
     // 把范围钉成一条断言，避免「新作业接了读数步骤但没登记」被反向检查之外的空隙漏掉。
     expect(lib.DEFUSED_GATES.map((e) => e.job).sort()).toEqual([...WIRED].sort());
@@ -563,7 +563,7 @@ describe("撤防账：CLI（ci-defused-gates.mjs）", () => {
       NAVHUB_STEP_CONCLUSIONS: JSON.stringify(conclusionsOf(entryOf("test-web"))),
     });
     expect(res.status, res.out).toBe(0);
-    expect(res.out).toContain("7 道门禁全部跑过");
+    expect(res.out).toContain("6 道门禁全部跑过");
     expect(res.out).not.toContain("::warning");
   });
 
@@ -580,7 +580,7 @@ describe("撤防账：CLI（ci-defused-gates.mjs）", () => {
     );
     expect(res.status, res.out).toBe(0);
     expect(res.out).toContain("::notice title=CI 门禁撤防::");
-    expect(res.out).toContain("7 道门禁全部跑过");
+    expect(res.out).toContain("6 道门禁全部跑过");
     const summary = readFileSync(summaryPath, "utf8").replace(/\r\n/g, "\n");
     expect(summary).toContain("撤防账 · test-web");
     expect(summary).toContain("`web-isr`"); // 跑过的门禁 id 逐个列出来，才算「判过」的证据
@@ -732,7 +732,7 @@ describe("撤防账：backend-lint 硬化后（YAML 与登记表必须同口径�
     expect(lib.defusedCoverageProblems(block, entry)).toEqual([]);
   });
 
-  it("现状：9 个登记作业 / 34 道门禁里一个软门禁都没有（YAML 与登记表两侧都数得到）", () => {
+  it("现状：8 个登记作业 / 26 道门禁里一个软门禁都没有（YAML 与登记表两侧都数得到）", () => {
     // 两侧各数一次而不是只数一侧：只数登记表会漏「YAML 悄悄加回 flag」，只数 YAML 会漏
     // 「登记表凭空标 soft」。今天两个都是 0 —— 这正是硬化要钉住的形状。
     for (const entry of lib.DEFUSED_GATES) {
@@ -866,13 +866,13 @@ describe("撤防账：从日志读回（parseDefusedTrace / renderDefusedTable�
       .join("\n");
   }
 
-  it("绿色一轮的日志 ⇒ 读出 7 道全跑过、0 道撤防、准备步骤 2 个在册", () => {
+  it("绿色一轮的日志 ⇒ 读出 6 道全跑过、0 道撤防、准备步骤 2 个在册", () => {
     const t = lib.parseDefusedTrace(asRawLog(cliText("test-web")));
     expect(t.found).toBe(true);
     expect(t.job).toBe("test-web");
-    expect(t.gateTotal).toBe(7);
+    expect(t.gateTotal).toBe(6);
     expect(t.defused).toBe(0);
-    expect(t.ran).toBe(7);
+    expect(t.ran).toBe(6);
     expect(t.envTotal).toBe(2);
     expect(t.green).toBe(true);
     expect(t.ids).toEqual([]);
@@ -888,10 +888,10 @@ describe("撤防账：从日志读回（parseDefusedTrace / renderDefusedTable�
     );
     const t = lib.parseDefusedTrace(log);
     expect(t.found).toBe(true);
-    expect(t.gateTotal).toBe(7);
+    expect(t.gateTotal).toBe(6);
     expect(t.defused).toBe(4);
-    // 7 道减 4 道没跑成 = web-typecheck（判红）+ 两道棘轮（跑过）
-    expect(t.ran).toBe(3);
+    // 6 道减 4 道没跑成 = web-typecheck（判红）+ web-no-explicit-any（跑过）
+    expect(t.ran).toBe(2);
     expect(t.ids).toEqual(["web-lint", "web-build", "web-budget", "web-isr"]);
     expect(t.blocker).toBe("web-typecheck");
     expect(t.blockerKind).toBe("判红");
@@ -1080,11 +1080,11 @@ describe("撤防账：从日志读回（parseDefusedTrace / renderDefusedTable�
       .map((l) => l.replace("::notice title=CI 门禁撤防::", "##[notice]"))
       .join("\n");
     // 这条夹具是「CLI 原文 → runner 改写」的等价变换，措辞仍跟着写侧走
-    expect(rendered).toMatch(/^##\[notice\]test-web 7 道门禁全部跑过（在册准备步骤 2 个）$/);
+    expect(rendered).toMatch(/^##\[notice\]test-web 6 道门禁全部跑过（在册准备步骤 2 个）$/);
     const t = lib.parseDefusedTrace(`${rendered}\n2026-10-30T05:47:20.2345147Z Post job cleanup.`);
     expect(t.found).toBe(true);
     expect(t.green).toBe(true);
-    expect(t.gateTotal).toBe(7);
+    expect(t.gateTotal).toBe(6);
     expect(t.envTotal).toBe(2);
   });
 
@@ -1313,7 +1313,7 @@ describe("撤防账：可信度声明（哪些作业的绿不含前端类型判�
  * 判据不另立名单，直接从 ci.yml 现推：有登记表那步 `id: defused-gates` 的作业才该有账。
  */
 describe("接线期望（defusedWiring）：谁本该有账", () => {
-  it("登记表里 9 个作业在真实 ci.yml 里都带读数步骤 ⇒ 它们读不到账才是发现", () => {
+  it("登记表里 8 个作业在真实 ci.yml 里都带读数步骤 ⇒ 它们读不到账才是发现", () => {
     const wiring = lib.defusedWiring(realCi);
     for (const entry of lib.DEFUSED_GATES) {
       const w = wiring.find((x) => x.key === entry.job);

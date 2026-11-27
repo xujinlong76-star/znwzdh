@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRef, type ReactNode, type RefObject } from 'react'
-import { EyeOff, GripVertical, Info } from 'lucide-react'
+import { GripVertical, Info } from 'lucide-react'
 import type { NavigationSubItem } from '@/types/navigation'
 import { resolveSiteThumbnail, type SiteThumbnail } from '@/lib/site-thumbnails'
 import {
@@ -95,7 +95,6 @@ export interface SiteItemController {
   handleMenuMove: (direction: CardMoveDirection) => void
   onPeek?: (item: NavigationSubItem) => void
   renderDragControls: (sizeClass: string) => ReactNode
-  renderEditCapsule: () => ReactNode
   detailAction: (sizeClass: string) => ReactNode
 }
 
@@ -204,11 +203,6 @@ export function useSiteItemController({
   }
 
   const handleLinkClick = (e: React.MouseEvent) => {
-    if (isEditingLayout) {
-      e.preventDefault()
-      e.stopPropagation()
-      return
-    }
     if (!selectable) {
       recordOfflineVisit({ id: item.id, title: item.title, href: item.href, icon: item.icon })
       reportClick(item.id, getIdentity())
@@ -220,11 +214,6 @@ export function useSiteItemController({
   }
 
   const handleDetailClick = (e: React.MouseEvent) => {
-    if (isEditingLayout) {
-      e.preventDefault()
-      e.stopPropagation()
-      return
-    }
     if (!selectable) return
     e.preventDefault()
     e.stopPropagation()
@@ -232,11 +221,6 @@ export function useSiteItemController({
   }
 
   const handleTagClick = (e: React.MouseEvent) => {
-    if (isEditingLayout) {
-      e.preventDefault()
-      e.stopPropagation()
-      return
-    }
     if (!selectable) return
     e.preventDefault()
     e.stopPropagation()
@@ -369,68 +353,42 @@ export function useSiteItemController({
     }
   }
 
-  // Phase 1 卡片编辑态净化：不再在卡片内部常驻挤占标题的拖拽手柄/更多图标，
-  // 改为整卡直接可拖 + 悬停/聚焦时右上角浮现轻量迷你胶囊条（见 SiteItemShell）。
-  const renderDragControls = (sizeClass: string) =>
-    isEditingLayout ? null : (
-      <>
-        {showDragHandle && dragHandleRef && (
-          <button
-            type="button"
-            tabIndex={-1}
-            data-card-action=""
-            data-diy-drag-handle=""
-            ref={dragHandleRef}
-            style={{ touchAction: 'none' }}
-            className={cn(
-              sizeClass,
-              'inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent cursor-grab active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
-            )}
-            title="拖动排序（按住拖动；键盘：聚焦后按空格开始，方向键移动，回车放下，Esc 取消）"
-            aria-label={`拖动排序：${item.title}`}
-            aria-describedby={DIY_DRAG_INSTRUCTIONS_ID}
-          >
-            <GripVertical className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </>
-    )
-
-  const renderEditCapsule = () =>
-    isEditingLayout ? (
-      <div
-        data-diy-card-capsule="true"
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
-        className="pointer-events-none absolute -top-2.5 right-1.5 z-30 flex items-center gap-0.5 rounded-full border border-border/80 bg-popover/95 px-1 py-0.5 shadow-md backdrop-blur-md opacity-0 transition-opacity duration-150 group-hover/card:pointer-events-auto group-hover/card:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
-      >
-        {onMoveCard && (
-          <DiyCardMenu
-            title={item.title}
-            index={cardIndex}
-            total={cardTotal}
-            onMove={handleMenuMove}
-            onCopy={() => void handleCopyLink()}
-            onDelete={() => handlePruneSite()}
-            sizeClass="h-6 w-6 rounded-full"
-            siteId={item.id}
-            siteTitleById={siteTitleById}
-          />
-        )}
+  const renderDragControls = (sizeClass: string) => (
+    <>
+      {showDragHandle && dragHandleRef && (
         <button
           type="button"
           tabIndex={-1}
           data-card-action=""
-          data-testid="card-action-hide"
-          onClick={handlePruneSite}
-          title="隐藏至回收站（可 Ctrl+Z 撤销或随时还原）"
-          aria-label={`隐藏站点：${item.title}`}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-full text-destructive-text transition-colors hover:bg-destructive/15 cursor-pointer"
+          data-diy-drag-handle=""
+          ref={dragHandleRef}
+          style={{ touchAction: 'none' }}
+          className={cn(
+            sizeClass,
+            'inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent cursor-grab active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60',
+          )}
+          title="拖动排序（按住拖动；键盘：聚焦后按空格开始，方向键移动，回车放下，Esc 取消）"
+          aria-label={`拖动排序：${item.title}`}
+          aria-describedby={DIY_DRAG_INSTRUCTIONS_ID}
         >
-          <EyeOff className="h-3.5 w-3.5" />
+          <GripVertical className="h-3.5 w-3.5" />
         </button>
-      </div>
-    ) : null
+      )}
+      {isEditingLayout && onMoveCard && (
+        <DiyCardMenu
+          title={item.title}
+          index={cardIndex}
+          total={cardTotal}
+          onMove={handleMenuMove}
+          onCopy={() => void handleCopyLink()}
+          onDelete={() => handlePruneSite()}
+          sizeClass={sizeClass}
+          siteId={item.id}
+          siteTitleById={siteTitleById}
+        />
+      )}
+    </>
+  )
 
   const detailAction = (sizeClass: string) =>
     hasSiteDetail ? (
@@ -493,7 +451,6 @@ export function useSiteItemController({
     handleMenuMove,
     onPeek,
     renderDragControls,
-    renderEditCapsule,
     detailAction,
   }
 }
@@ -537,34 +494,25 @@ export function SiteItemShell({
     selectable,
     selected,
     selectionClass,
-    isEditingLayout,
     dialKeyshortcuts,
     keyboardHintId,
     tooltipsHidden,
     handleLinkClick,
     handleKeyDown,
     handleActionsKeyDown,
-    renderEditCapsule,
   } = controller
 
   const diyHandleStyle: ViewModeDiyHandleStyle = VIEW_MODE_REGISTRY[mode].diyCompatible.handleStyle
 
   const surface = (
     <div
-      data-testid="site-card"
-      data-site-id={item.id}
       data-navhub-site-id={item.id}
       data-navhub-selected={selected ? 'true' : undefined}
       data-card-variant={mode}
       data-diy-handle-style={diyHandleStyle}
-      className={cn(
-        className,
-        selectionClass,
-        isEditingLayout && 'border-dashed border-primary/35 select-none',
-      )}
+      className={cn(className, selectionClass)}
       onKeyDown={handleActionsKeyDown}
     >
-      {renderEditCapsule()}
       <a
         href={safeHref(item.href)}
         target={linkTarget}

@@ -22,7 +22,7 @@
 
 ### 1.1 核心愿景
 山羊胡是一款专为开发者和技术团队打造的 **AI 原生网址导航系统与知识工作台 (Developer Knowledge OS)**。
-不同于传统的静态目录或泛用的空白仪表盘，山羊胡将**海量技术导航沉淀**、**四路异构召回与个性化重排**、**端侧 0-RTT 语法推测解析**与**模块化 Bento-Flow 工作台**深度融为一体。
+不同于传统的静态目录或泛用的空白仪表盘，山羊胡将**海量技术导航沉淀**、**五路异构智能检索**、**端侧 0-RTT 语法推测解析**与**模块化 Bento-Flow 工作台**深度融为一体。
 
 ### 1.2 拓扑分层图
 ```
@@ -80,7 +80,7 @@
 ## 3. 前端与 Bento-Flow 工作台 (`apps/web-overlay` & `apps/web`)
 
 ### 3.1 覆盖层镜像机制
-`apps/web` 是生成产物，不再手工维护：事实源是 `apps/web-overlay`。`pnpm vendor:web` 从固定上游重建底座并应用 overlay，`pnpm mirror:web` 只在已有底座上合并刷新 overlay；Docker 两个 Web Dockerfile 也调用同一个 `vendor-web.mjs`，不再各自下载或覆写。CI / pre-commit 的 `check:overlay` 与聚合 `check:generated` 都是**纯校验，不自修**；发现漂移应在 `apps/web-overlay/` 修复，再显式生成并复查。`apps/web` 里的覆盖层文件**不要手改**。校验口径与排除规则由 `scripts/lib/overlay-drift.mjs` 的 `isExcluded` 统一提供，镜像必须保持 byte-identical。
+`apps/web` 现已改为 **自动生成** 产物，不再手工维护：它由唯一事实源 `apps/web-overlay` 通过 `node scripts/generate-web-mirror.mjs`（根命令 `pnpm mirror:web`）合并式生成。CI / pre-commit 的 `check:overlay` 已改为「先生成再校验」，因此覆盖层漂移会被自动修复（闸门自愈），无需人工同步。`apps/web` 里的覆盖层文件**不要手改**——改动应在 `apps/web-overlay/` 完成，再跑 `pnpm mirror:web` 重新生成。校验口径与排除规则由 `scripts/lib/overlay-drift.mjs` 的 `isExcluded` 统一提供，镜像必须保持 byte-identical。
 
 ### 3.2 Bento-Flow 核心能力
 1. **跨分类卡片自由拖拽重组**：在排版模式下，站点卡片携带 `siteId` 与源分类 ID，可直接拖入任意目标分类标题，底层通过 `siteCategoryOverrides` 字典完成响应式分类迁移。
@@ -168,8 +168,8 @@
 
 ### 9.x 前端镜像生成的 CI 约定
 
-- `apps/web` 是 GENERATED 产物：CI 与 pre-commit 只做校验，不在门禁内重写被校验对象；需要刷新时显式跑 `pnpm mirror:web`，需要拉新底座时跑 `pnpm vendor:web`。
-- `check:overlay` / `check:generated` 发现漂移会直接失败，不会自动修复；修复后必须重新运行校验。
+- `apps/web` 是 GENERATED 产物：CI 与 pre-commit 应**重新生成**（`pnpm mirror:web`）而非手改；`check:overlay` 已内置「先生成再校验」的自愈逻辑。
+- 若 `check-web-overlay` 仍报漂移，先 `pnpm mirror:web` 复测；漂移会自动修复。
 - 排除规则（`.next` / `node_modules` / `UPSTREAM.md` / `upstream-baseline.json` 等）由 `scripts/lib/overlay-drift.mjs` 单一提供，镜像须 byte-identical。
 
 ## 9. 生产环境部署与故障排查

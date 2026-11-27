@@ -82,7 +82,7 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
     try {
       const sqliteVec: any = await import("sqlite-vec");
       sqliteVec.load(db.sqlite as never);
-      const store = new SqliteVecStore({ db: db.sqlite as never, gateDb: db, dim: config.embedding.dim });
+      const store = new SqliteVecStore({ db: db.sqlite as never, dim: config.embedding.dim });
       store.init();
       // 进程重启后重建 key -> siteId 映射，并在 vec0 表与持久层不一致时用向量重灌。
       // 只取当前模型/维度：换模型后旧向量不能混进 KNN，否则计数也会永久对不上。
@@ -94,7 +94,7 @@ const vectorFilter = { model: config.embedding.model, dim: config.embedding.dim 
       }
       vectors = store;
       // 插件向量：同一数据库、独立 vec0 表；持久层 plugin_embeddings 为唯一事实源
-      const pluginStore = new SqliteVecStore({ db: db.sqlite as never, gateDb: db, dim: config.embedding.dim, table: "plugins_vec" });
+      const pluginStore = new SqliteVecStore({ db: db.sqlite as never, dim: config.embedding.dim, table: "plugins_vec" });
       pluginStore.init();
       if (pluginStore.rehydrateIndex(await repo.savedPluginEmbeddingIndex(vectorFilter))) {
         pluginStore.rebuildVectors(await repo.savedPluginEmbeddings(vectorFilter));

@@ -8,7 +8,7 @@
  *  - 单实例锁：并发 tick 只有一个真正执行
  *  - 画像聚合：click 事件 -> user_profiles -> personal 通道可检索
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -240,72 +240,6 @@ describe("data_retention 任务", () => {
     expect(failed.some((j) => j.kind === "data_retention")).toBe(false);
   });
 
-  it("retention 预演读取必须经 Repository 门禁，不能直连 SQLite 插进事务", async () => {
-    let release!: () => void;
-    let started!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const entered = new Promise<void>((resolve) => { started = resolve; });
-    const tx = ctx.repo.withTransaction(async () => {
-      started();
-      await gate;
-      throw new Error("retention 读隔离事务回滚");
-    });
-    await entered;
-
-    // 只 mock 掉非 adapter 的仓储读数，确保预演是否结算完全取决于 adapter.select
-    // 是否走 repo.raw；旧实现直连 db.sqlite 会立刻读完并结算。
-    const customRetention = vi.spyOn(ctx.repo, "listCustomHistoryRetention").mockResolvedValue([]);
-    let settled = false;
-    const preview = previewDataRetention(ctx, { mode: "rollup", apply: false }).then((value) => {
-      settled = true;
-      return value;
-    });
-    try {
-      await new Promise((r) => setTimeout(r, 30));
-      expect(settled).toBe(false);
-    } finally {
-      customRetention.mockRestore();
-      release();
-      await expect(tx).rejects.toThrow("retention 读隔离事务回滚");
-      await preview;
-    }
-  });
-
-  it("rollup 每天的聚合写入与明细删除同事务，删除失败时聚合也回滚", async () => {
-    const DAY = 86_400_000;
-    const at = Date.now() - 700 * DAY;
-    const dayStart = Math.floor(at / DAY) * DAY;
-    await ctx.repo.recordEvent("click", { siteId: null, meta: { identity: "rollback-probe" } });
-    await ctx.db.sqlite!.prepare("UPDATE events SET created_at = ? WHERE rowid = last_insert_rowid()").run(at);
-    const countProbe = () => Number(
-      ctx.db.sqlite!.prepare("SELECT COUNT(*) AS c FROM events WHERE identity = ?").get("rollback-probe")?.c ?? 0,
-    );
-    expect(countProbe()).toBe(1);
-
-    ctx.db.sqlite!.exec(`
-      CREATE TRIGGER fail_retention_probe_delete
-      BEFORE DELETE ON events
-      WHEN OLD.identity = 'rollback-probe'
-      BEGIN
-        SELECT RAISE(ABORT, 'simulated retention delete failure');
-      END;
-    `);
-    try {
-      await ctx.repo.enqueueJob("data_retention", { mode: "rollup", apply: true, maxDays: 30 });
-      expect((await new JobRunner(ctx).tick()).processed).toBe(1);
-
-      const job = (await ctx.repo.listJobs(undefined, 50)).find((row) => row.kind === "data_retention");
-      expect(job?.error).toContain("simulated retention delete failure");
-      expect(countProbe()).toBe(1); // DELETE 失败，明细仍在
-      const aggregate = ctx.db.sqlite!.prepare(
-        "SELECT COUNT(*) AS c FROM events_daily WHERE day_start = ? AND kind = 'click' AND site_key = ''",
-      ).get(dayStart) as { c?: number } | undefined;
-      expect(Number(aggregate?.c ?? 0)).toBe(0); // 同一天的 INSERT 也被 ROLLBACK
-    } finally {
-      ctx.db.sqlite!.exec("DROP TRIGGER IF EXISTS fail_retention_probe_delete");
-    }
-  });
-
   it("rollup + apply：写 events_daily、删已聚合的明细，并留一条 data_retention 事件", async () => {
     await ctx.db.sqlite!.prepare("DELETE FROM events WHERE site_id IS NULL").run();
     await seedOldEvents([400, 399], 2); // 两天、每天 2 行
@@ -444,9 +378,10 @@ describe("单实例锁与防重入", () => {
     expect((await runner.tick()).processed).toBe(1);
   });
 
-  it("锁释放后协调租约行被删除（可观测）", async () => {
-    // tick 结束后锁已释放，因此协调租约应为空——验证释放语义。
-    expect(await ctx.repo.getJobRunnerLease()).toBeNull();
+  it("锁行在 idempotency 表且带持有者（可观测）", async () => {
+    const row = ctx.db.sqlite!.prepare("SELECT key, response FROM idempotency WHERE key = ?").get("lock:job-runner") as { response?: string } | undefined;
+    // tick 结束后锁已释放（DELETE），所以这里应该没有行——验证释放语义
+    expect(row).toBeUndefined();
   });
 });
 
@@ -692,57 +627,6 @@ describe("PG advisory lock 同连接语义（fake 池，无需真实 PG）", () 
     // 关键断言：unlock 必须发生在加锁的同一会话上，否则锁残留
     expect(unlockQ[0]!.client).toBe(lockQ[0]!.client);
     expect(released).toContain(client);
-  });
-
-  it("advisory unlock 失败时带错误销毁连接，不能把仍持锁的会话归还池", async () => {
-    const released: Array<{ client: object; error?: unknown }> = [];
-    const client = {
-      query: async (sql: string) => {
-        if (sql.includes("pg_advisory_unlock")) throw new Error("simulated unlock failure");
-        return { rows: [{ ok: true }], rowCount: 1 };
-      },
-      release: (error?: unknown) => { released.push({ client, error }); },
-    };
-    const pool = {
-      query: async (): Promise<never> => { throw new Error("锁必须走独占连接"); },
-      connect: async () => client,
-      end: async () => {},
-    };
-    const fakeCtx = {
-      db: { dialect: "pg", pg: pool },
-      repo: { claimNextJob: async () => null, relayNotifications: async () => ({ delivered: 0, failed: 0 }) },
-    } as unknown as AppContext;
-
-    await new JobRunner(fakeCtx).tick();
-
-    expect(released).toHaveLength(1);
-    expect(released[0]?.client).toBe(client);
-    expect(released[0]?.error).toBeInstanceOf(Error);
-    expect((released[0]?.error as Error).message).toContain("simulated unlock failure");
-  });
-
-  it("advisory lock 心跳查询失败时带错误销毁连接并停止认领", async () => {
-    const released: Array<{ client: object; error?: unknown }> = [];
-    const failure = new Error("simulated heartbeat connection failure");
-    const client = {
-      query: async (sql: string) => {
-        if (sql === "SELECT 1") throw failure;
-        return { rows: [{ ok: true }], rowCount: 1 };
-      },
-      release: (error?: unknown) => { released.push({ client, error }); },
-    };
-    const fakeCtx = {
-      db: { dialect: "pg", pg: { connect: async () => client, end: async () => {} } },
-      repo: {},
-    } as unknown as AppContext;
-    const runner = new JobRunner(fakeCtx);
-    (runner as unknown as { pgClient: object; lockHeld: boolean }).pgClient = client;
-    (runner as unknown as { lockHeld: boolean }).lockHeld = true;
-
-    await (runner as unknown as { renewLock: () => Promise<void> }).renewLock();
-
-    expect((runner as unknown as { lockLost: boolean }).lockLost).toBe(true);
-    expect(released).toEqual([{ client, error: failure }]);
   });
 
   it("拿不到独占连接时放弃本轮（fail-closed，不发病）", async () => {

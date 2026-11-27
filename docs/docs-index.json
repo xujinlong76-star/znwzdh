@@ -9,7 +9,7 @@
     "docsMdUntrackedAdr": 4,
     "deliverablesTopLevelDirs": 15,
     "deliverablesMdReports": 20,
-    "scriptsCheckMjs": 49
+    "scriptsCheckMjs": 46
   },
   "notes": [
     "任务书给的 docs/ 87 份 = git 已跟踪口径（GIT_TRACKED_DOCS 常量，2026-11-06 git ls-files 实测）；本索引以磁盘全量为登记口径，逐份标注 tracked，不伪造 87。",
@@ -831,7 +831,7 @@
       },
       {
         "file": "check-root-hygiene.mjs",
-        "purpose": "根目录卫生门禁：检查已跟踪及未跟踪且未被忽略的根目录条目，命中 diag-/measure-/verify-/shot-/probe- 一次性脚本、*-notes.md 过程笔记或 *-evidence/ 验证据目录即报错；--strict 用于 CI，防止临时产物再堆回仓库根目录"
+        "purpose": "根目录卫生门禁：检查被 git 跟踪的根目录条目，命中 diag-/measure-/verify-/shot-/probe- 一次性脚本、*-notes.md 过程笔记或 *-evidence/ 验证据目录即报错；--strict 用于 CI，防止临时产物再堆回仓库根目录"
       },
       {
         "file": "check-frontend-typecheck.mjs",
@@ -876,18 +876,6 @@
       {
         "file": "check-a11y-token-changed.mjs",
         "purpose": "冷区 a11y token 变更门禁：pre-push 只扫改动 overlay 文件，防新引入冷区 a11y token 违例"
-      },
-      {
-        "file": "check-hub-id.mjs",
-        "purpose": "hubId 映射门禁：hubId 与导航 id 不一致或重复即失败，缺失仅告警；可传 --hub-list 交叉校验中枢 id 与归一化 URL"
-      },
-      {
-        "file": "check-no-raw-palette.mjs",
-        "purpose": "raw palette 棘轮守卫：按文件基线限制 overlay 源码中的 Tailwind 彩色调色板类只减不增，防绕过语义 Token 与高对比模式"
-      },
-      {
-        "file": "check-root-hygiene.test.mjs",
-        "purpose": "根目录卫生门禁单测：锁定未跟踪探针文件纳入扫描、目录折叠与永久 scripts 探针放行规则"
       }
     ]
   }

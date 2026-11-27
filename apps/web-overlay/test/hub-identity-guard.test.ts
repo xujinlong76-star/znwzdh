@@ -100,12 +100,11 @@ describe('源码守卫：代理与 BFF 真的用了裁决器', () => {
     expect(src).toContain('set-cookie')
   })
 
-  it('/api/me BFF：合并前必须校验匿名绑定 cookie，缺失或不一致即 401', () => {
+  it('/api/me BFF：合并前校验匿名绑定 cookie，不一致即 401', () => {
     const src = readFileSync(resolve(ROOT, 'src/app/api/me/[[...path]]/route.ts'), 'utf8')
     expect(src).toContain('parseAnonCookie(')
-    expect(src).toContain('缺少匿名身份绑定')
     expect(src).toContain('匿名身份与当前浏览器不一致')
-    expect(src).not.toContain('pendingAnonCookie')
+    expect(src).toContain('pendingAnonCookie')
     expect(src).toContain('ANON_COOKIE')
   })
 })

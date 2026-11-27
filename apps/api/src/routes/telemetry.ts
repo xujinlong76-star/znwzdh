@@ -156,17 +156,9 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
         // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
       });
     }
-    // 在线强化学习闭环：全局模型只接受真实令牌 owner 或域分离的 v3 登录签名。
-    // 旧 v1/v2 签名不区分 user/anon，匿名签名可被改头迁移，因此不能给全局模型背书。
-    const signature = req.identitySignature;
-    const hasBackedUserIdentity = Boolean(
-      req.auth.ownerIdentity || (signature?.mode === "v3" && signature.purpose === "user"),
-    );
-    if (
-      !replayed && recordedIdentity && hasBackedUserIdentity && body.data.query && body.data.channel &&
-      (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "dismiss")
-    ) {
-      const targetChannel: RetrievalChannel = body.data.channel;
+    // 在线强化学习闭环：若带有搜索词，实时反馈更新 Discounted-LinUCB 通道权重
+    if (!replayed && body.data.query && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "dismiss")) {
+      const targetChannel: RetrievalChannel = body.data.channel ?? "exact";
       const explicitReward =
         body.data.kind === "favorite" ? 2.0 : body.data.kind === "dismiss" ? -0.5 : undefined;
       ctx.search.recordFeedback(targetChannel, body.data.query, {

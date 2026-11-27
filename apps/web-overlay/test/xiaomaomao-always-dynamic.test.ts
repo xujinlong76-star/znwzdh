@@ -1,7 +1,7 @@
 /**
  * 小猫猫挂件「一直动态 + 低开销 + 首页防撞」优化守卫：
  *  1. 默认关闭全时动态（alwaysDynamic 默认 false；U-260：默认 true 时 dockBlocked() 恒真，60 秒闲置贴边永不触发，使 BLOCK 回归 E2E half-screen-dock.spec.ts:178 在全新 profile 上恒失败；全时动态仍可由用户在外观小窗手动开启，开启后贴边抑制逻辑不变）；
- *  2. 懒加载聊天头像；收起入口使用内联 SVG 箭头，不下载 3.7MB WebP 动图。
+ *  2. 懒加载聊天头像与收起圆标（默认展示态下不抢先下载 3.7MB WebP 动图，避免与主视频争抢带宽）；
  *  3. 视频态下保持光标靠近探头跟随（stageEl.style.translate/rotate），并在后台/收起/贴边态零计算跳过；
  *  4. 弹窗观察器过滤掉非弹窗的 data-state 抖动并用 RAF 合并扫描，同时为微按钮扩展 44×44 触控热区；
  *  5. 角落固定微件与小猫猫互不遮挡，外观向导小窗提供全时动态 / 满屏陪玩 / 收起直控入口。
@@ -23,14 +23,6 @@ const PINNED_WIDGETS = readFileSync(
   'utf8',
 )
 
-function skeleton(): string {
-  const start = WIDGET.indexOf('root.innerHTML =')
-  const end = WIDGET.indexOf('document.body.appendChild(root)', start)
-  expect(start).toBeGreaterThan(-1)
-  expect(end).toBeGreaterThan(start)
-  return WIDGET.slice(start, end)
-}
-
 describe('小猫猫挂件一直动态与性能/布局优化守卫', () => {
   it('默认关闭 alwaysDynamic 全时动态：60 秒闲置贴边仍可生效（U-260）', () => {
     expect(WIDGET).toContain('alwaysDynamic: false')
@@ -42,17 +34,13 @@ describe('小猫猫挂件一直动态与性能/布局优化守卫', () => {
     expect(dockBody).toContain('!!store.alwaysDynamic')
   })
 
-  it('默认展示态延迟加载 3.7MB 聊天头像，收起箭头不加载图片', () => {
+  it('默认展示态延迟加载 3.7MB 小图标动图，不抢首屏视频带宽', () => {
     expect(WIDGET).toContain('function ensureHeadIcon()')
+    expect(WIDGET).toContain('function ensureTabIcon()')
     const openAt = WIDGET.indexOf('function openPanel()')
     expect(WIDGET.slice(openAt, openAt + 120)).toContain('ensureHeadIcon();')
-    const sk = skeleton()
-    const tabAt = sk.indexOf('<button class="xm-tab"')
-    expect(tabAt).toBeGreaterThan(-1)
-    const tab = sk.slice(tabAt, sk.indexOf('</button>', tabAt) + '</button>'.length)
-    expect(tab).toContain('<svg viewBox="0 0 24 24"')
-    expect(tab).not.toContain('<img')
-    expect(tab).not.toContain('xm-tab-badge')
+    const collapseAt = WIDGET.indexOf('function collapseCat()')
+    expect(WIDGET.slice(collapseAt, collapseAt + 120)).toContain('ensureTabIcon();')
   })
 
   it('视频态支持光标靠近探头跟随，且在隐藏/收起/贴边态提前返回省电', () => {
@@ -107,29 +95,19 @@ describe('小猫猫挂件一直动态与性能/布局优化守卫', () => {
     expect(darkStage).toContain('background:transparent')
     expect(darkStage).toContain('box-shadow:none')
 
-    const darkMediaAt = WIDGET.indexOf('html.dark #xiaomaomao .xm-video,')
-    const darkMedia = WIDGET.slice(darkMediaAt, WIDGET.indexOf('}', darkMediaAt) + 1)
-    expect(darkMedia).toContain('html.dark #xiaomaomao .xm-video')
-    expect(darkMedia).toContain('html.dark #xiaomaomao .xm-fallback')
-    expect(darkMedia).toContain('filter:brightness(.93) contrast(1.06)')
+    expect(WIDGET).toContain('html.dark #xiaomaomao .xm-video,html.dark #xiaomaomao .xm-fallback,html.dark #xiaomaomao .xm-tab img{filter:brightness(.93) contrast(1.06)}')
 
     const tab = WIDGET.slice(WIDGET.indexOf('#xiaomaomao .xm-tab{'), WIDGET.indexOf('}', WIDGET.indexOf('#xiaomaomao .xm-tab{')) + 1)
-    expect(tab).toContain('width:24px')
-    expect(tab).toContain('height:48px')
-    expect(tab).toContain('background:transparent')
-    expect(tab).toContain('border:none')
+    expect(tab).toContain('width:48px')
+    expect(tab).toContain('background:var(--xm-win-bg)')
+    expect(tab).toContain('border:1px solid var(--xm-win-border)')
     expect(tab).toContain('box-shadow:none')
-    expect(tab).toContain('padding:0')
 
-    const darkTab = WIDGET.slice(WIDGET.indexOf('html.dark #xiaomaomao .xm-tab{'), WIDGET.indexOf('}', WIDGET.indexOf('html.dark #xiaomaomao .xm-tab{')) + 1)
-    expect(darkTab).toContain('background:transparent')
-    expect(darkTab).toContain('border:none')
-    expect(darkTab).toContain('box-shadow:none')
-
-    const tabSvg = WIDGET.slice(WIDGET.indexOf('#xiaomaomao .xm-tab svg{'), WIDGET.indexOf('}', WIDGET.indexOf('#xiaomaomao .xm-tab svg{')) + 1)
-    expect(tabSvg).toContain('width:16px')
-    expect(tabSvg).toContain('height:16px')
-    expect(tabSvg).toContain('pointer-events:none')
+    const tabImgStart = WIDGET.indexOf("'#xiaomaomao .xm-tab img{")
+    const tabImg = WIDGET.slice(tabImgStart, WIDGET.indexOf('}', tabImgStart) + 1)
+    expect(tabImg).toContain('object-fit:contain')
+    expect(tabImg).toContain('background:transparent')
+    expect(tabImg).toContain('box-shadow:none')
 
     const pHeadImg = WIDGET.slice(WIDGET.indexOf('#xiaomaomao .xm-p-head img{'), WIDGET.indexOf('}', WIDGET.indexOf('#xiaomaomao .xm-p-head img{')) + 1)
     expect(pHeadImg).toContain('object-fit:contain')
@@ -205,7 +183,7 @@ describe('小猫猫挂件一直动态与性能/布局优化守卫', () => {
     expect(WIDGET).toContain('var suppressFocusCtl = false;')
     expect(WIDGET).toContain('#xiaomaomao .xm-dock .xm-chat-btn{order:1}#xiaomaomao .xm-dock .xm-fish-btn{order:2}#xiaomaomao .xm-dock .xm-game-btn{order:3}#xiaomaomao .xm-dock .xm-more-btn{order:4}#xiaomaomao .xm-dock .xm-dock-sec{order:5}')
     expect(WIDGET).toContain("if (panelEl.classList.contains('xm-looking')) closeLook();")
-    expect(WIDGET).toContain('#xiaomaomao .xm-tab svg{width:16px;height:16px;display:block;pointer-events:none}')
+    expect(WIDGET).toContain('#xiaomaomao .xm-tab img{width:100%;height:100%;border-radius:0;')
     expect(WIDGET).toContain('#xiaomaomao .xm-bubble.xm-bubble-below{bottom:auto;top:calc(100% + 10px)}')
     // 第五轮易用性深度优化：气泡可点直达聊天、面板一键清空对话、分页场景智能推荐词、上键召回上条输入、接星星按下即判中
     expect(WIDGET).toContain('#xiaomaomao .xm-bubble.xm-show{opacity:1;pointer-events:auto;cursor:pointer}')

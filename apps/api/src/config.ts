@@ -77,8 +77,6 @@ export interface AppConfig {
     thinking: boolean;
     /** 独立密钥加密口令（不设则回退 sessionSecret） */
     secretsKey: string | null;
-    /** 测试装配注入；环境变量与用户配置均不能设置，生产默认走安全出口。 */
-    fetchImpl?: typeof fetch;
   };
   fetch: {
     timeoutMs: number;

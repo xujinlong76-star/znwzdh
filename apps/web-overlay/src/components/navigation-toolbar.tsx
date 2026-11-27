@@ -7,7 +7,7 @@
  *   3. 探索矩阵升级为分组 2 列网格大菜单（零超长滚动，与侧栏唯一收口）；
  *   4. 外观与阅读聚合浮层（🎨 深浅主题 / 字号 / 高对比 / 长辈模式 / 密度），移动端保留一键 AA 字号与 DIY 排版。
  */
-import { memo, useEffect, useState, type ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 import Link from 'next/link'
 import { Button } from '@/registry/new-york/ui/button'
 import {
@@ -93,68 +93,22 @@ const SearchPalette = dynamic(
         aria-busy="true"
       >
         <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">正在加载搜索面板…</span>
+        <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">搜索站点、标签或拼音…</span>
+        <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground shrink-0">
+          <span className="inline-flex h-6 items-center gap-0.5 rounded-full px-1.5">
+            <Sparkles className="h-3 w-3" aria-hidden="true" />
+            <span>AI</span>
+          </span>
+          <span className="inline-flex h-6 items-center gap-0.5 rounded-full px-1.5">
+            <Radar className="h-3 w-3" aria-hidden="true" />
+            <span>相似</span>
+          </span>
+        </span>
+        <span className="sr-only">正在加载搜索面板…</span>
       </div>
     ),
   }
 )
-
-function LazySearchPalette({
-  siteConfig,
-  placeholder,
-  onOpenDiscoveryDialog,
-}: {
-  siteConfig: SiteConfig
-  placeholder: string
-  onOpenDiscoveryDialog?: (mode?: 'ai' | 'similar', initialQuery?: string) => void
-}) {
-  const [mounted, setMounted] = useState(false)
-  const [discoveryMode, setDiscoveryMode] = useState<'ai' | 'similar'>()
-
-  useEffect(() => {
-    const onFocusSearch = (event: Event) => {
-      const detail = (event as CustomEvent<{ ai?: boolean; similar?: boolean }>).detail
-      setDiscoveryMode(detail?.similar ? 'similar' : detail?.ai ? 'ai' : undefined)
-      setMounted(true)
-    }
-    window.addEventListener('navhub:focus-search', onFocusSearch)
-    return () => window.removeEventListener('navhub:focus-search', onFocusSearch)
-  }, [])
-
-  if (mounted) {
-    return (
-      <SearchPalette
-        siteConfig={siteConfig}
-        placeholder={placeholder}
-        onOpenDiscoveryDialog={onOpenDiscoveryDialog}
-        autoFocus
-        initialDiscoveryMode={discoveryMode}
-      />
-    )
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => setMounted(true)}
-      className="flex h-10 w-full items-center gap-2 rounded-xl border border-border-strong bg-background/90 pl-3 pr-2 text-left shadow-xs transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-      aria-label={placeholder}
-    >
-      <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{placeholder}</span>
-      <span className="hidden shrink-0 items-center gap-1.5 text-[11px] font-semibold text-muted-foreground sm:inline-flex">
-        <span className="inline-flex h-6 items-center gap-0.5 rounded-full px-1.5">
-          <Sparkles className="h-3 w-3" aria-hidden="true" />
-          <span>AI</span>
-        </span>
-        <span className="inline-flex h-6 items-center gap-0.5 rounded-full px-1.5">
-          <Radar className="h-3 w-3" aria-hidden="true" />
-          <span>相似</span>
-        </span>
-      </span>
-    </button>
-  )
-}
 
 export interface NavigationToolbarProps {
   siteConfig: SiteConfig
@@ -178,8 +132,6 @@ export interface NavigationToolbarProps {
   onOpenAppearanceGuide?: () => void
   onOpenAiFinder?: (mode?: 'ai' | 'similar', initialQuery?: string) => void
   unreadNotifications?: number
-  /** 嵌入分类聚焦下拉抽屉时去掉 sticky，由外层抽屉承接定位与底色 */
-  embedded?: boolean
 }
 
 // P0-2：包 memo——父组件回调已全部 useCallback 化，浅比较才能生效。
@@ -200,23 +152,16 @@ export const NavigationToolbar = memo(function NavigationToolbar({
   onOpenWidgetBox,
   onOpenAppearanceGuide,
   onOpenAiFinder,
-  embedded = false,
 }: NavigationToolbarProps) {
   const hasTodayAlert = Boolean(todayBadge && (todayBadge.urgentCount > 0 || todayBadge.todayCount > 0))
   const { resolvedTheme, setTheme } = useTheme()
   return (
-    <header
-      className={cn(
-        embedded
-          ? "relative bg-transparent px-3 sm:px-6 md:px-8 border-b border-border/40"
-          : "sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 shadow-2xs"
-      )}
-    >
+    <header className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 shadow-2xs">
       <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-3 gap-y-1 md:h-14 lg:flex-nowrap">
         <div className="flex flex-1 min-w-[260px] max-w-[880px] items-center gap-1.5 transition-all duration-300 ease-out">
           <div className="flex-1 min-w-0">
             {/* 山羊胡三合一融合检索引擎（全站检索 × AI 找站 × 找相似） */}
-            <LazySearchPalette
+            <SearchPalette
               siteConfig={siteConfig}
               placeholder="搜索站点、标签或拼音…"
               onOpenDiscoveryDialog={onOpenAiFinder}
@@ -301,7 +246,7 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
                       <Link href="/hot" className="flex items-center gap-2.5 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
-                        <Flame className="h-4 w-4 text-pinned shrink-0" />
+                        <Flame className="h-4 w-4 text-amber-500 shrink-0" />
                         <div className="min-w-0 flex flex-col">
                           <span className="font-medium text-foreground">热度趋势榜</span>
                           <span className="truncate text-[11px] text-muted-foreground">全站高频与新品趋势</span>
@@ -541,14 +486,13 @@ export const NavigationToolbar = memo(function NavigationToolbar({
               <Button
                 type="button"
                 variant="ghost"
-                data-testid="diy-toggle-btn"
                 onClick={() => {
                   trackDiyEvent('diy_appearance_click')
                   onOpenAppearanceGuide()
                 }}
                 className="relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-0 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors sm:w-auto sm:flex-row sm:gap-1.5 sm:px-2.5"
                 title="DIY 排版、外观与皮肤（打开外观向导小窗）"
-                aria-label="打开外观排版与新手向导小窗"
+                aria-label="DIY 排版：打开外观排版与新手向导小窗"
               >
                 <SlidersHorizontal className="h-4 w-4 shrink-0" />
                 <span className="text-center text-[10px] leading-none whitespace-nowrap tracking-tight sm:text-xs sm:tracking-normal">DIY 排版</span>

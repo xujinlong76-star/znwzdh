@@ -93,7 +93,6 @@ afterAll(async () => {
 function fakeRun(): JobRunHandle {
   return {
     jobId: "test-health-check",
-    runToken: "test-health-token",
     kind: "health_check",
     signal: new AbortController().signal,
     deadlineAt: 0,

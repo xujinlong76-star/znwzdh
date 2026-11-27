@@ -9,8 +9,8 @@
  *   「晚于 now 的时间戳一律忽略」口径；
  * - 看完（progressPercent >= 95%）不发删除、记录照常保留，只是卡上不显示，
  *   因此规约层不过滤 95%+ 的断点；
- * - 压缩时 payload.updatedAt 保留原始 LWW 版本，op.timestamp/clientId/id 保留原值，
- *   使相同 updatedAt 时仍按原操作排序决胜，且无关 op 不抬高本视频水位。
+ * - 压缩时 payload.updatedAt 保留原始值、只把 op.timestamp 抬到 maxTs，
+ *   否则压缩体会误胜另一设备上 updatedAt 介于原值与 maxTs 之间的真实新断点。
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -244,9 +244,8 @@ describe("compactOperationLog 视频分支", () => {
     expect(videoOps).toHaveLength(1);
     expect(videoOps[0]!.entityId).toBe("v1");
     expect((videoOps[0]!.payload as VideoProgress).timestampSec).toBe(500);
-    // v2 已被删除：不留正向断点，但必须保留 tombstone 以压制老 peer 的旧日志
-    expect(compacted.some((o) => o.entityId === "v2" && o.type === "UPSERT_VIDEO_PROGRESS")).toBe(false);
-    expect(compacted.some((o) => o.entityId === "v2" && o.type === "DELETE_VIDEO_PROGRESS")).toBe(true);
+    // v2 已被删除：压缩后不留任何痕迹
+    expect(compacted.some((o) => o.entityId === "v2")).toBe(false);
     expect(reduceOperationsToState(compacted, undefined, NOW)).toEqual(
       reduceOperationsToState(ops, undefined, NOW),
     );
@@ -265,50 +264,17 @@ describe("compactOperationLog 视频分支", () => {
     expect(state.videoProgress["v1"]!.updatedAt).toBe(2000);
   });
 
-  it("视频快照保留原排序字段，同 updatedAt 仍按 timestamp/clientId/id 决胜", () => {
-    const local = {
-      ...upsert("v1", { timestampSec: 900, updatedAt: 1000 }, "z-client", 9000),
-      id: "op_9000_z-client_local",
-    };
-    const compacted = compactOperationLog([local]);
-    const snapshot = compacted.find((o) => o.type === "UPSERT_VIDEO_PROGRESS")!;
-    expect(snapshot).toMatchObject({
-      id: local.id,
-      clientId: local.clientId,
-      timestamp: local.timestamp,
-    });
-    expect((snapshot.payload as VideoProgress).updatedAt).toBe(1000);
-
-    const tiedPeers = [
-      upsert("v1", { timestampSec: 100, updatedAt: 1000 }, "a-client", 3000),
-      { ...upsert("v1", { timestampSec: 200, updatedAt: 1000 }, "a-client", 9000), id: "op_9000_a-client_peer" },
-      { ...upsert("v1", { timestampSec: 300, updatedAt: 1000 }, "z-client", 9000), id: "op_9000_z-client_a" },
-    ];
-    for (const peer of tiedPeers) {
-      const expected = reduceOperationsToState(mergeOperationLogs([local], [peer]), undefined, NOW);
-      const actual = reduceOperationsToState(mergeOperationLogs(compacted, [peer]), undefined, NOW);
-      expect(actual).toEqual(expected);
-      expect(actual.videoProgress.v1!.timestampSec).toBe(900);
-    }
-
-    // 保留原 op.timestamp 只影响同版本 tie-break，不改变 updatedAt 的 LWW 版本语义。
-    const newerVersion = upsert("v1", { timestampSec: 200, updatedAt: 1500 }, "a-client", 1000);
-    const merged = reduceOperationsToState(mergeOperationLogs(compacted, [newerVersion]), undefined, NOW);
-    expect(merged.videoProgress.v1).toMatchObject({ timestampSec: 200, updatedAt: 1500 });
-  });
-
-  it("压缩保留视频原 op.timestamp，无关 op 不抬高 LWW 水位：未见过的中间断点仍能胜出", () => {
+  it("压缩保留 maxTs 作 op.timestamp，但 payload.updatedAt 不抬高：另一设备上介于两者之间的真实新断点仍能胜出", () => {
     const ops = [
       upsert("v1", { timestampSec: 500, updatedAt: 2000 }, "c1", 2000),
-      // 一条无关排版 op 的时间戳为 9000，但不能成为 v1 的水位。
+      // 一条无关排版 op 把 maxTs 抬到 9000
       createCRDTOperation("SET_CATEGORY_PIN", "c1", { isPinned: true }, "c1", 9000),
     ];
     const compacted = compactOperationLog(ops);
     const videoOp = compacted.find((o) => o.type === "UPSERT_VIDEO_PROGRESS")!;
-    expect(videoOp.timestamp).toBe(2000);
+    expect(videoOp.timestamp).toBe(9000);
     expect((videoOp.payload as VideoProgress).updatedAt).toBe(2000);
-    expect(compacted.find((o) => o.type === "SET_CATEGORY_PIN")?.timestamp).toBe(9000);
-    // 另一设备有一条压缩时没见过的断点 updatedAt=3000。
+    // 另一设备有一条压缩时没见过的断点 updatedAt=3000（介于 2000 与 9000 之间）
     const unseen = upsert("v1", { timestampSec: 700, updatedAt: 3000 }, "c2", 3000);
     const state = reduceOperationsToState(mergeOperationLogs(compacted, [unseen]), undefined, NOW);
     expect(state.videoProgress["v1"]!.timestampSec).toBe(700);

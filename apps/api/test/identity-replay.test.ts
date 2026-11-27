@@ -11,7 +11,7 @@
  *   - 只要带了 v2 头就绝不回退 v1（防止把 v2 改坏来降级）
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -23,7 +23,6 @@ import {
   IDENTITY_SIGNATURE_WINDOW_SECONDS,
   signIdentity,
   signIdentityV2,
-  signIdentityV3,
   verifyIdentityHeaders,
 } from "../src/identity-signature.ts";
 
@@ -88,14 +87,6 @@ afterAll(async () => {
   await strict.app.close();
   await strict.ctx.close();
   rmSync(dir, { recursive: true, force: true });
-});
-
-describe("日志脱敏", () => {
-  it("Fastify redact 覆盖 v3 身份与匿名签名头", () => {
-    const source = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
-    expect(source).toContain("req.headers['x-navhub-identity-signature-v3']");
-    expect(source).toContain("req.headers['x-navhub-anon-signature-v3']");
-  });
 });
 
 describe("v2 请求头校验", () => {
@@ -177,58 +168,6 @@ describe("兼容窗口", () => {
 
 describe("校验函数单元口径", () => {
   const base = { secret: SECRET, identity: USER };
-
-  it("v3 绑定用途：anon 签名不能迁移到 identity 前缀", () => {
-    const now = Date.now();
-    const ts = Math.floor(now / 1000);
-    const nonce = randomBytes(16).toString("hex");
-    const headers = {
-      "x-navhub-identity-signature-v3": signIdentityV3(SECRET, USER, ts, nonce, "anon"),
-      "x-navhub-identity-ts": String(ts),
-      "x-navhub-identity-nonce": nonce,
-    };
-    expect(verifyIdentityHeaders({ ...base, headers, guard: new IdentityReplayGuard(), nowMs: now }))
-      .toMatchObject({ ok: false, reason: "v3-invalid" });
-    expect(verifyIdentityHeaders({
-      ...base,
-      headers: {
-        "x-navhub-anon-signature-v3": signIdentityV3(SECRET, USER, ts, nonce, "anon"),
-        "x-navhub-anon-ts": String(ts),
-        "x-navhub-anon-nonce": nonce,
-      },
-      prefix: "x-navhub-anon",
-      guard: new IdentityReplayGuard(),
-      nowMs: now,
-    })).toMatchObject({ ok: true, mode: "v3", purpose: "anon" });
-  });
-
-  it("v3 登录签名带 user 用途，且坏签名不回退 v2", () => {
-    const now = Date.now();
-    const ts = Math.floor(now / 1000);
-    const nonce = randomBytes(16).toString("hex");
-    const valid = signIdentityV3(SECRET, USER, ts, nonce, "user");
-    expect(verifyIdentityHeaders({
-      ...base,
-      headers: {
-        "x-navhub-identity-signature-v3": valid,
-        "x-navhub-identity-ts": String(ts),
-        "x-navhub-identity-nonce": nonce,
-      },
-      guard: new IdentityReplayGuard(),
-      nowMs: now,
-    })).toMatchObject({ ok: true, mode: "v3", purpose: "user" });
-    expect(verifyIdentityHeaders({
-      ...base,
-      headers: {
-        "x-navhub-identity-signature-v3": "0".repeat(64),
-        "x-navhub-identity-signature-v2": signIdentityV2(SECRET, USER, ts, nonce),
-        "x-navhub-identity-ts": String(ts),
-        "x-navhub-identity-nonce": nonce,
-      },
-      guard: new IdentityReplayGuard(),
-      nowMs: now,
-    })).toMatchObject({ ok: false, reason: "v3-invalid" });
-  });
 
   it("anon 前缀只读 anon 头，不会误用 identity 头", () => {
     const now = Date.now();

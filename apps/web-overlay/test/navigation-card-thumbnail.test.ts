@@ -256,8 +256,8 @@ describe('navigation-card.tsx：视觉槽接线守则', () => {
 
   it('rich 有横幅时不再重复放小图标，无缩略图时保持原有图标渲染', () => {
     expect(cardSrc).toContain('{!thumbnail && (')
-    // 2026-11-21 触控热区收口：图标盒 48→36px（w-9），::after 无形扩到 44px 点击区
-    expect(cardSrc).toContain('boxClassName="flex-shrink-0 w-9 h-9 rounded-lg')
+    // 2026-11-21 触控热区收口：图标盒 48→40px（w-10），::after 无形扩到 44px 点击区
+    expect(cardSrc).toContain('boxClassName="flex-shrink-0 w-10 h-10 rounded-lg')
   })
 
   it('缩略图是装饰性的，不进读屏、不抢点击（外链覆盖层仍是唯一入口）', () => {
@@ -279,12 +279,7 @@ describe('密度控制已存在：本轮不重建，只钉住它还在', () => {
   })
 
   it('卡片仍消费密度变量（本轮改动没有动密度驱动的内边距）', () => {
-    // S2–S4 迁移（2026-11-26）：三档壳密度内边距全部收进 SiteCard card 面
-    //（surface 配方含 p-[var(--density-card-padding,0.875rem)]），navigation-card
-    // 只经 rootProps 传置顶 pt-7 修正，不再直接写密度字面量。
     const cardSrc = readSrc('src/components/navigation-card.tsx')
-    const siteCardSrc = readSrc('src/components/site-card.tsx')
-    expect(cardSrc).not.toContain('p-[var(--density-card-padding,0.875rem)]')
-    expect(siteCardSrc).toContain('p-[var(--density-card-padding,0.875rem)]')
+    expect(cardSrc).toContain('p-[var(--density-card-padding,0.875rem)]')
   })
 })

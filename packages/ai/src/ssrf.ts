@@ -9,9 +9,7 @@
  *      环回 / 私网 / 链路本地 / 唯一本地 / 保留网段。
  *      ⚠️ 只校验 URL 字符串是不够的 —— 攻击者可用 127.0.0.1.nip.io 这类
  *      域名解析到内网，必须看解析后的真实 IP。
- *   3. **连接级 IP pinning**：把校验通过的 IP 通过 socket lookup 回调固定到
- *      本次连接，HTTPS 仍用原域名做 SNI/证书校验，关闭解析后重绑定的 TOCTOU。
- *   4. **重定向逐跳校验**：手动跟随重定向，每一跳都重新做 DNS + IP 校验并重新 pin，
+ *   3. **重定向逐跳校验**：手动跟随重定向，每一跳都重新做 DNS + IP 校验，
  *      否则 https://evil.com -> 302 -> http://169.254.169.254/ 就绕过了校验。
  *
  * 另外限制超时、响应体大小与重定向跳数，避免被慢速/超大响应拖死。
@@ -20,8 +18,6 @@ import { lookup } from "node:dns/promises";
 import http from "node:http";
 import https from "node:https";
 import { isIP } from "node:net";
-import { PassThrough, Readable, Transform } from "node:stream";
-import zlib from "node:zlib";
 import { BLOCKED_PORTS_UNION } from "@navhub/core";
 
 export interface FetchGuardOptions {
@@ -214,8 +210,8 @@ export function isBlockedIpv6(ip: string): boolean {
   if (b[0] === 0x20 && b[1] === 0x01 && b[2] === 0x00 && b[3] === 0x00) return true;
   // 文档网段 2001:db8::/32
   if (b[0] === 0x20 && b[1] === 0x01 && b[2] === 0x0d && b[3] === 0xb8) return true;
-  // 链路本地 fe80::/10 与已废弃的站点本地 fec0::/10
-  if (b[0] === 0xfe && ((b[1]! & 0xc0) === 0x80 || (b[1]! & 0xc0) === 0xc0)) return true;
+  // 链路本地 fe80::/10
+  if (b[0] === 0xfe && (b[1]! & 0xc0) === 0x80) return true;
   // 唯一本地 fc00::/7
   if ((b[0]! & 0xfe) === 0xfc) return true;
   // 组播 ff00::/8
@@ -314,51 +310,41 @@ export function isAlwaysBlockedIp(ip: string): boolean {
     return false;
   }
   if (v === 6) {
-    const bytes = ipv6ToBytes(ip);
-    if (!bytes) return true;
-    // fe80::/10 链路本地（覆盖 fe80:... 的完整与压缩写法）
-    if (bytes[0] === 0xfe && (bytes[1]! & 0xc0) === 0x80) return true;
-    // fd00:ec2::254：AWS IPv6 IMDS，虽属 ULA 也必须无条件阻断。
-    if (
-      bytes[0] === 0xfd && bytes[1] === 0x00 && bytes[2] === 0x0e && bytes[3] === 0xc2
-      && bytesAllZero(bytes, 4, 14) && bytes[14] === 0x02 && bytes[15] === 0x54
-    ) {
-      return true;
-    }
-    // ::1 由 allowPrivateNetworks 的常规环回规则决定，不能按兼容 IPv4 的 0.0.0.1 处理。
-    if (bytesAllZero(bytes, 0, 15) && bytes[15] === 0x01) return false;
-    // 所有内嵌 IPv4 的过渡形态都递归判断，不能只认 ::ffff/96。
-    const ipv4Mapped = bytesAllZero(bytes, 0, 10) && bytes[10] === 0xff && bytes[11] === 0xff;
-    const ipv4Compatible = bytesAllZero(bytes, 0, 12);
-    const nat64WellKnown = bytes[0] === 0x00 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b
-      && bytesAllZero(bytes, 4, 12);
-    const nat64LocalUse = bytes[0] === 0x00 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b
-      && bytes[4] === 0x00 && bytes[5] === 0x01 && bytesAllZero(bytes, 6, 8);
-    if (ipv4Mapped || ipv4Compatible || nat64WellKnown || nat64LocalUse) {
-      return isAlwaysBlockedIp(embeddedIpv4(bytes));
-    }
+    const lower = ip.toLowerCase();
+    // fe80::/10 链路本地
+    if (/^fe[89ab]/.test(lower)) return true;
+    // IPv4 映射地址：剥出内嵌 IPv4 再判
+    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
+    // 捕获组 1 在匹配成功时恒非空；noUncheckedIndexedAccess 下仍标 string|undefined，
+    // ?? '' 仅消除类型告警——空串进 isAlwaysBlockedIp 走 v!==4/v!==6 分支返回 false，安全。
+    if (mapped) return isAlwaysBlockedIp(mapped[1] ?? "");
     return false;
   }
-  return true;
+  return false;
 }
 
 export async function resolveAndCheck(url: URL, opts: FetchGuardOptions): Promise<string[]> {
+  if (opts.allowPrivateNetworks) {
+    // 放行私网，但元数据/链路本地仍然拦（见 isAlwaysBlockedIp 注释）
+    const hostOnly = url.hostname.replace(/^\[|\]$/g, "");
+    if (isIP(hostOnly) && isAlwaysBlockedIp(hostOnly)) {
+      throw new SsrfBlockedError("目标是受保护地址: " + hostOnly, "blocked-ip");
+    }
+    return [];
+  }
   const host = url.hostname.replace(/^\[|\]$/g, "");
 
-  // 主机名本身就是字面 IP 时直接判（白名单不适用于字面 IP）。
-  // 显式放行私网时仍返回自身，供连接级 pinning 使用。
+  // 主机名本身就是字面 IP 时直接判（白名单不适用于字面 IP）
   if (isIP(host)) {
-    if (opts.allowPrivateNetworks ? isAlwaysBlockedIp(host) : isBlockedIp(host)) {
-      throw new SsrfBlockedError("目标是受保护地址: " + host, "blocked-ip");
-    }
+    if (isBlockedIp(host)) throw new SsrfBlockedError("目标是受保护网段: " + host, "blocked-ip");
     return [host];
   }
 
   // 精确主机名白名单：跳过 DNS-IP 校验（出口网关用合成地址代理出站时，
   // 写死在代码里的第一方端点会被误拦，见 U-284）。协议/端口/凭证校验在
   // assertUrlShape 里已做；重定向每一跳都重新进本函数按新 URL 主机名判定，
-  // 跳出白名单的主机仍会被校验。返回 [] 表示“已显式信任、无需钉 IP 直连”
-  //（仅用于调用方写死的第一方 HTTPS 端点，绝不用于用户可控 URL）。
+  // 跳出白名单的主机仍会被校验。返回 [] 表示“已放行、无需钉 IP 直连”
+  //（http 明文钉 IP 分支见 runGuardedFetch；本机六源全是 https）。
   if (isTrustedHost(host, opts.trustedHosts)) return [];
 
   let addrs: Array<{ address: string }>;
@@ -371,12 +357,10 @@ export async function resolveAndCheck(url: URL, opts: FetchGuardOptions): Promis
   if (addrs.length === 0) throw new SsrfBlockedError("DNS 无结果: " + host, "dns-empty");
 
   const safeIps: string[] = [];
-  // 全部解析结果都必须检查。显式放行私网时只放宽普通私网，
-  // 云元数据/链路本地仍无条件拒绝；任一结果不安全则整次拒绝。
+  // 全部解析结果都必须安全（DNS 轮询/多 A 记录下，只要有一个是不安全的就拒绝）
   for (const a of addrs) {
-    const blocked = opts.allowPrivateNetworks ? isAlwaysBlockedIp(a.address) : isBlockedIp(a.address);
-    if (blocked) {
-      throw new SsrfBlockedError(host + " 解析到受保护地址 " + a.address, "blocked-ip");
+    if (isBlockedIp(a.address)) {
+      throw new SsrfBlockedError(host + " 解析到受保护网段 " + a.address, "blocked-ip");
     }
     safeIps.push(a.address);
   }
@@ -588,9 +572,7 @@ async function runGuardedFetch(
   let current = assertUrlShape(rawUrl);
   const redirects: string[] = [];
   let method = normalizeMethod(request.method);
-  const requestBody = request.body;
-  const bodyIsForm = requestBody instanceof URLSearchParams;
-  let body = bodyIsForm ? requestBody.toString() : requestBody;
+  let body = request.body instanceof URLSearchParams ? request.body.toString() : request.body;
   if (body !== undefined && typeof body !== "string") {
     throw new SsrfBlockedError("请求体只支持字符串或 URLSearchParams", "unsupported-body");
   }
@@ -606,46 +588,67 @@ async function runGuardedFetch(
 
   for (let hop = 0; hop <= opts.maxRedirects; hop++) {
     const verifiedIps = await resolveAndCheck(current, opts);
-    const rawHost = current.hostname.replace(/^\[|\]$/g, "");
-    // 普通域名与显式放行私网的域名都固定使用本次校验的首个安全 IP。
-    // trustedHosts 是调用方显式信任的出口网关，返回空数组时不 pin（原有安全语义）。
-    const pinned = verifiedIps[0] ?? (isIP(rawHost) ? rawHost : null);
-    if (request.signal?.aborted) throw new Error("抓取已取消: " + current.toString());
 
-    // fetch 会忽略 Node 的 connect.lookup，不能用于连接级 pinning。这里与 safeFetch
-    // 共用 rawRequest，保证“校验的 IP”就是 socket 实际连接的 IP。
-    if (body !== undefined && (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE") && !hasHeader(headers, "content-type")) {
-      // 与 fetch 对请求体的默认行为保持一致。
-      headers["Content-Type"] = bodyIsForm ? "application/x-www-form-urlencoded;charset=UTF-8" : "text/plain;charset=UTF-8";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
+    const onParentAbort = () => controller.abort(request.signal?.reason);
+    if (request.signal) {
+      if (request.signal.aborted) {
+        clearTimeout(timer);
+        throw new Error("抓取已取消: " + current.toString());
+      }
+      request.signal.addEventListener("abort", onParentAbort, { once: true });
     }
-    let res: RawResponse;
+    let res: Response;
     try {
-      res = await rawRequest({
-        url: current,
+      // TOCTOU 阻断：http 明文请求直接钉 IP 直连（Host 头保留原域名），
+      // 避免 resolve 与 fetch 之间的 DNS 重绑定窗口；
+      let fetchUrl = current.toString();
+      const extraHeaders: Record<string, string> = {};
+      if (current.protocol === "http:" && !opts.allowPrivateNetworks && !isIP(current.hostname.replace(/^\[|\]$/g, ""))) {
+        const first = verifiedIps[0];
+        if (first && isIP(first)) {
+          if (isBlockedIp(first)) throw new SsrfBlockedError(current.hostname + " 解析到受保护网段 " + first, "blocked-ip");
+          const portSuffix = current.port ? ":" + current.port : "";
+          fetchUrl = "http://" + (first.includes(":") ? "[" + first + "]" : first) + portSuffix + (current.pathname + current.search + current.hash);
+          extraHeaders.Host = current.host;
+        }
+      }
+      res = await fetch(fetchUrl, {
         method,
-        headers,
         body: method === "GET" || method === "HEAD" ? undefined : body,
-        pinnedIp: pinned,
-        hostname: rawHost,
-        timeoutMs: opts.timeoutMs,
-        maxBytes: opts.maxBytes,
-        signal: request.signal,
-        truncateOnLimit: true,
+        redirect: "manual",
+        signal: controller.signal,
+        headers: { ...headers, ...extraHeaders },
       });
+      // https 二次校验：收窄 DNS 重绑定窗口。
+      // 只吞掉「解析失败」这类瞬态错误；若二次解析落到受保护网段（重绑定攻击的特征），
+      // 必须把 SsrfBlockedError 抛出去 —— 否则这次校验等于没做。
+      if (current.protocol === "https:") {
+        await resolveAndCheck(current, opts).catch((err) => {
+          if (err instanceof SsrfBlockedError) throw err;
+        });
+      }
     } catch (err) {
-      // 保留安全拦截的原始类型；超时在旧实现中由 AbortController 触发，属于网络失败，
-      // 因此仍包装为普通 Error，避免观测分类从 network_error 突变成 blocked。
-      if (err instanceof SsrfBlockedError && err.reason !== "timeout") throw err;
+      clearTimeout(timer);
+      if (request.signal) request.signal.removeEventListener("abort", onParentAbort);
+      // 保留安全拦截的原始类型：调用方靠 instanceof SsrfBlockedError 区分
+      // 「被防护拒绝」与「网络失败」，包装成普通 Error 会让前者退化成 500。
+      if (err instanceof SsrfBlockedError) throw err;
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error("抓取失败 " + current.toString() + ": " + msg);
     }
 
     if (res.status >= 300 && res.status < 400) {
+      clearTimeout(timer);
+      if (request.signal) request.signal.removeEventListener("abort", onParentAbort);
       const loc = res.headers.get("location");
       if (!loc) throw new Error("重定向缺少 Location: " + current.toString());
       const next = new URL(loc, current);
-      // 下一跳同样要过协议检查；IP 检查与重新 pin 在循环头部进行。
+      // 下一跳同样要过协议检查；IP 检查在循环头部进行
       assertUrlShape(next.toString());
+      // 释放中间响应体，避免连接一直挂着
+      await res.body?.cancel().catch(() => undefined);
       if (next.origin !== current.origin) {
         for (const key of Object.keys(headers)) {
           if (SENSITIVE_REDIRECT_HEADERS.has(key.toLowerCase())) delete headers[key];
@@ -665,34 +668,72 @@ async function runGuardedFetch(
       continue;
     }
 
-    const etag = res.headers.get("etag");
-    const lastModified = res.headers.get("last-modified");
-    return {
-      finalUrl: current.toString(),
-      status: res.status,
-      contentType: res.headers.get("content-type"),
-      body: new TextDecoder("utf-8", { fatal: false }).decode(res.body),
-      truncated: res.truncated,
-      bytes: res.body.byteLength,
-      redirects,
-      ...(etag ? { etag } : {}),
-      ...(lastModified ? { lastModified } : {}),
-    };
+    try {
+      const { text, truncated, bytes } = await readLimited(res, opts.maxBytes);
+      const etag = res.headers.get("etag");
+      const lastModified = res.headers.get("last-modified");
+      return {
+        finalUrl: current.toString(),
+        status: res.status,
+        contentType: res.headers.get("content-type"),
+        body: text,
+        truncated,
+        bytes,
+        redirects,
+        ...(etag ? { etag } : {}),
+        ...(lastModified ? { lastModified } : {}),
+      };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   throw new Error("重定向次数超过 " + opts.maxRedirects + " 次");
+}
+
+/** 边读边计数，超过上限立即停止（避免大文件把内存吃满） */
+async function readLimited(res: Response, maxBytes: number): Promise<{ text: string; truncated: boolean; bytes: number }> {
+  const body = res.body;
+  if (!body) return { text: "", truncated: false, bytes: 0 };
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let truncated = false;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      chunks.push(value.subarray(0, Math.max(0, value.byteLength - (total - maxBytes))));
+      truncated = true;
+      await reader.cancel().catch(() => undefined);
+      break;
+    }
+    chunks.push(value);
+  }
+  const merged = new Uint8Array(chunks.reduce((n, c) => n + c.byteLength, 0));
+  let off = 0;
+  for (const c of chunks) { merged.set(c, off); off += c.byteLength; }
+  return { text: new TextDecoder("utf-8", { fatal: false }).decode(merged), truncated, bytes: merged.byteLength };
 }
 
 /* ==========================================================================
  * safeFetch：统一的对外请求安全边界（2026-11-21）
  * ==========================================================================
  *
- * guardedFetch 与 safeFetch 共用下面的 rawRequest：
+ * 为什么还要再包一层（仓库里已有 guardedFetch）：
  *
- * 两者都把已校验的 IP 通过 node:http/https 的 `lookup` 回调固定到 socket，
- * 同时在 HTTPS 上显式给 `servername` 保证 SNI 与证书校验仍按**域名**进行。
- * 这样「校验的 IP」与「实际发包的 IP」是同一个值，不存在解析后重绑定的窗口。
- * safeFetch 提供精简的 Uint8Array 响应；guardedFetch 保留文本截断与观测语义。
+ * guardedFetch 的五道防线都在，但**第 3 道（防 DNS Rebinding）是打折扣的**：
+ * 它靠「HTTP 明文改写 URL 为 IP + Host 头」间接钉扎，HTTPS 下只能
+ * 「连完再复核一次 DNS」——两次解析之间存在 TOCTOU 窗口，攻击者可以在
+ * 校验通过后把域名切回 127.0.0.1，连接就落到内网。这正是 CodeQL 对
+ * 「校验过的值没有真正用于建连」持续告警的根因。
+ *
+ * safeFetch 把钉扎做到**连接级**：把已校验的 IP 通过 undici 兼容的
+ * `lookup` 回调交给底层 socket，同时在 HTTPS 上显式给 `servername`
+ * 保证 SNI 与证书校验仍按**域名**进行。这样「校验的 IP」与「实际发包的 IP」
+ * 是同一个值，不存在第二个解析窗口。
  *
  * 五道防线与本文件既有实现保持一致（payload 上限、超时、逐跳校验、
  * 敏感头剥离、协议/端口/凭据白名单），不新造第二套口径。
@@ -713,25 +754,13 @@ export interface PinnedAddress {
  * 同时导出给测试断言存在性（ssrf-safefetch-guard.test.ts 锁
  * `pinnedLookup`、`lookup: pinnedLookup`、`servername:` 三个符号）。
  */
-type LookupCallback = (
-  err: NodeJS.ErrnoException | null,
-  address: string | PinnedAddress[],
-  family?: number,
-) => void;
-
 export function pinnedLookup(pinned: PinnedAddress) {
   const family = pinned.family === 6 ? 6 : 4;
   return (
     _hostname: string,
-    options: unknown,
-    callback: LookupCallback,
+    _options: unknown,
+    callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void,
   ): void => {
-    // Node 24 autoSelectFamily 默认会传 all:true，此时必须返回地址数组；
-    // 旧版/显式单地址形态仍返回 callback(err, address, family)。
-    if (typeof options === "object" && options !== null && "all" in options && options.all === true) {
-      callback(null, [{ address: pinned.address, family }]);
-      return;
-    }
     callback(null, pinned.address, family);
   };
 }
@@ -743,8 +772,6 @@ export interface SafeFetchResult {
   headers: Headers;
   /** 已按 maxBytes 截断的响应体 */
   body: Uint8Array;
-  /** 是否因达到 maxBytes 而提前结束读取 */
-  truncated: boolean;
   /** 跟随重定向后的最终 URL */
   finalUrl: string;
   /** 实际落地的对端 IP（钉扎值，便于审计与测试断言） */
@@ -756,15 +783,8 @@ export interface SafeFetchOptions extends Partial<FetchGuardOptions> {
   method?: string;
   headers?: Record<string, string>;
   body?: string | URLSearchParams | undefined;
-  /**
-   * 覆盖默认的允许端口（默认仅 80/443）。传 null 表示接受 URL 显式声明的、
-   * 未命中 BLOCKED_PORTS 的任意端口，供需要兼容既有抓取行为的调用方使用。
-   */
-  allowedPorts?: readonly number[] | null;
-  /** 达到 maxBytes 时返回截断结果而非抛 body_too_large；默认抛错。 */
-  truncateOnLimit?: boolean;
-  /** 外部取消信号。 */
-  signal?: AbortSignal;
+  /** 覆盖默认的允许端口（默认 80/443 与 URL 显式声明的端口） */
+  allowedPorts?: readonly number[];
 }
 
 /**
@@ -780,7 +800,7 @@ export interface SafeFetchOptions extends Partial<FetchGuardOptions> {
 export async function safeFetch(rawUrl: string, options: SafeFetchOptions = {}): Promise<SafeFetchResult> {
   const opts: FetchGuardOptions = { ...DEFAULT_GUARD, ...options };
   const maxRedirects = Math.max(0, opts.maxRedirects);
-  const allowedPorts = options.allowedPorts === undefined ? [80, 443] : options.allowedPorts;
+  const allowedPorts = options.allowedPorts ?? [80, 443];
 
   let current = assertUrlShape(rawUrl);
   const redirects: string[] = [];
@@ -794,7 +814,7 @@ export async function safeFetch(rawUrl: string, options: SafeFetchOptions = {}):
   for (let hop = 0; hop <= maxRedirects; hop++) {
     // ---- 防线 1b：端口白名单 ----
     const port = current.port ? Number(current.port) : current.protocol === "https:" ? 443 : 80;
-    if (allowedPorts !== null && !allowedPorts.includes(port)) {
+    if (!allowedPorts.includes(port)) {
       throw new SsrfBlockedError(`端口 ${port} 不在允许范围内`, "port_not_allowed");
     }
 
@@ -807,12 +827,14 @@ export async function safeFetch(rawUrl: string, options: SafeFetchOptions = {}):
     // 任一 A 记录不安全就抛 SsrfBlockedError（多记录下 fail-closed）。
     const resolved = await resolveAndCheck(current, opts);
     // 钉扎目标取值优先级：
-    //  1) resolveAndCheck 返回的首个安全 IP（公网或显式放行私网的域名）；
-    //  2) 主机名本身是字面 IP 时用它自己（各分支均返回自身，此处为兜底）；
-    //  3) 都没有则不钉（仅可能是显式 trustedHosts，由调用方承担对应信任语义）。
+    //  1) resolveAndCheck 返回的首个安全 IP（公网域名的常规路径）；
+    //  2) 主机名本身是字面 IP 时用它自己（resolveAndCheck 在各分支下
+    //     可能返回空数组，比如 allowPrivateNetworks=true，但连接目标仍然是它）；
+    //  3) 都没有则不钉（此时没有可钉的 IP，链路仍受后续复核保护）。
     const pinned = resolved[0] ?? (isIP(rawHost) ? rawHost : null);
 
     // ---- 防线 3：把校验通过的 IP 钉到本次连接 ----
+    // 用 undici 的 connect 选项形态（Node 的 fetch 走 undici，认这个结构）。
     const headers: Record<string, string> = {
       "User-Agent": opts.userAgent,
       ...carriedHeaders,
@@ -823,6 +845,15 @@ export async function safeFetch(rawUrl: string, options: SafeFetchOptions = {}):
         if (SENSITIVE_REDIRECT_HEADERS.has(k.toLowerCase())) delete headers[k];
       }
     }
+
+    const connectOptions = pinned
+      ? {
+          // lookup 必须是我们校验过的那个地址
+          lookup: pinnedLookup({ address: pinned, family: isIP(pinned) }),
+          // servername 让 TLS SNI 与证书校验仍按域名进行（否则 pin 到 IP 会证书不匹配）
+          servername: rawHost,
+        }
+      : undefined;
 
     // ---- 防线 5：硬超时 + 体积上限 ----
     //
@@ -840,8 +871,6 @@ export async function safeFetch(rawUrl: string, options: SafeFetchOptions = {}):
       hostname: rawHost,
       timeoutMs: opts.timeoutMs,
       maxBytes: opts.maxBytes,
-      signal: options.signal,
-      truncateOnLimit: options.truncateOnLimit === true,
     });
 
     // ---- 防线 4：受控重定向，逐跳重新校验 ----
@@ -853,7 +882,6 @@ export async function safeFetch(rawUrl: string, options: SafeFetchOptions = {}):
         status: res.status,
         headers: res.headers,
         body: res.body,
-        truncated: res.truncated,
         finalUrl: current.toString(),
         pinnedIp: pinned,
         redirects,
@@ -880,7 +908,6 @@ export async function safeFetch(rawUrl: string, options: SafeFetchOptions = {}):
         status: res.status,
         headers: res.headers,
         body: res.body,
-        truncated: res.truncated,
         finalUrl: current.toString(),
         pinnedIp: pinned,
         redirects,
@@ -889,324 +916,22 @@ export async function safeFetch(rawUrl: string, options: SafeFetchOptions = {}):
   throw new SsrfBlockedError("重定向次数超出限制", "too_many_redirects");
 }
 
-export interface SafeFetchStreamOptions extends SafeFetchOptions {
-  /** 响应头等待时间；0 表示由调用方的 signal 控制。 */
-  timeoutMs?: number;
-}
 
-/**
- * 连接级钉扎的流式出口。仅供 SSE 等必须边收边处理的调用方使用。
- * 与 safeFetch 共用 URL/DNS/IP 校验，但拒绝重定向，避免把凭据带到下一跳。
- */
-export async function safeFetchStream(
-  rawUrl: string,
-  options: SafeFetchStreamOptions = {},
-): Promise<Response> {
-  const current = assertUrlShape(rawUrl);
-  const port = current.port ? Number(current.port) : current.protocol === "https:" ? 443 : 80;
-  if (options.allowedPorts !== null && !(options.allowedPorts ?? [80, 443]).includes(port)) {
-    throw new SsrfBlockedError(`端口 ${port} 不在允许范围内`, "port_not_allowed");
-  }
-  const opts = { ...DEFAULT_GUARD, ...options };
-  const hostname = current.hostname.replace(/^\[|\]$/g, "");
-  if (!isHostAllowed(hostname, opts.allowedHosts)) {
-    throw new SsrfBlockedError(`主机 ${hostname} 不在域名白名单内`, "host_not_allowed");
-  }
-  const resolved = await resolveAndCheck(current, opts);
-  const pinnedIp = resolved[0] ?? (isIP(hostname) ? hostname : null);
-  const headers = cloneHeaders(options.headers);
-  if (!hasHeader(headers, "user-agent")) headers["User-Agent"] = opts.userAgent;
-
-  return rawStreamRequest({
-    url: current,
-    method: (options.method ?? "GET").toUpperCase(),
-    headers,
-    body: options.body instanceof URLSearchParams ? options.body.toString() : options.body,
-    pinnedIp,
-    hostname,
-    timeoutMs: options.timeoutMs ?? 0,
-    maxBytes: options.maxBytes ?? opts.maxBytes,
-    signal: options.signal,
-  });
-}
-
-function byteLimitTransform(maxBytes: number): Transform {
-  let bytes = 0;
-  return new Transform({
-    transform(chunk: Buffer, _encoding, callback) {
-      bytes += chunk.byteLength;
-      if (bytes > maxBytes) {
-        callback(bodyTooLargeError(maxBytes));
-        return;
-      }
-      callback(null, chunk);
-    },
-  });
-}
-
-/** 原生流式请求：头部返回后解除建连超时，body 仍受 signal 与双重字节上限约束。 */
-function rawStreamRequest(args: {
-  url: URL;
-  method: string;
-  headers: Record<string, string>;
-  body: string | undefined;
-  pinnedIp: string | null;
-  hostname: string;
-  timeoutMs: number;
-  maxBytes: number;
-  signal?: AbortSignal;
-}): Promise<Response> {
-  const { url, method, headers, body, pinnedIp, hostname, timeoutMs, maxBytes, signal } = args;
-  const isHttps = url.protocol === "https:";
-
-  return new Promise<Response>((resolvePromise, rejectPromise) => {
-    let req: http.ClientRequest;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let settled = false;
-    let response: http.IncomingMessage | undefined;
-    let outputStream: PassThrough | undefined;
-
-    const cleanup = () => {
-      if (timer) clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    const fail = (err: Error) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      rejectPromise(err);
-    };
-    const onAbort = () => {
-      const reason = signal?.reason;
-      const err = reason instanceof Error ? reason : new Error("抓取已取消: " + url.toString());
-      req?.destroy(err);
-      response?.destroy(err);
-      outputStream?.destroy(err);
-      fail(err);
-    };
-    const onResponse = (res: http.IncomingMessage) => {
-      response = res;
-      if (settled) {
-        res.destroy();
-        return;
-      }
-      if (res.statusCode !== undefined && res.statusCode >= 300 && res.statusCode < 400) {
-        const err = new SsrfBlockedError("流式端点不允许重定向", "redirect");
-        res.destroy();
-        req?.destroy();
-        fail(err);
-        return;
-      }
-
-      settled = true;
-      if (timer) clearTimeout(timer);
-      const responseHeaders = new Headers();
-      for (const [key, value] of Object.entries(res.headers)) {
-        if (typeof value === "string") responseHeaders.set(key, value);
-        else if (Array.isArray(value)) responseHeaders.set(key, value.join(", "));
-      }
-      const encodingHeader = res.headers["content-encoding"];
-      const encodings = parseContentEncodings(typeof encodingHeader === "string" ? encodingHeader : null);
-      const shouldDecode = encodings !== null
-        && encodings.length > 0
-        && method !== "HEAD"
-        && res.statusCode !== 204
-        && res.statusCode !== 304;
-      if (shouldDecode) {
-        responseHeaders.delete("content-encoding");
-        responseHeaders.delete("content-length");
-      }
-
-      const output = new PassThrough();
-      outputStream = output;
-      const stages: Transform[] = [byteLimitTransform(maxBytes)];
-      if (shouldDecode && encodings !== null) {
-        for (const encoding of [...encodings].reverse()) {
-          stages.push(createContentDecoder(encoding), byteLimitTransform(maxBytes));
-        }
-      }
-      const failStream = (err: Error) => {
-        res.destroy();
-        for (const stage of stages) stage.destroy();
-        cleanup();
-        if (!output.destroyed) output.destroy(err);
-      };
-      res.on("error", failStream);
-      output.on("error", failStream);
-      output.on("finish", cleanup);
-      let upstream: Readable = res;
-      for (const stage of stages) {
-        stage.on("error", failStream);
-        upstream = upstream.pipe(stage);
-      }
-      upstream.pipe(output);
-      const noBody = method === "HEAD" || res.statusCode === 204 || res.statusCode === 304;
-      resolvePromise(new Response(noBody ? null : Readable.toWeb(output) as unknown as ReadableStream<Uint8Array>, {
-        status: res.statusCode ?? 0,
-        headers: responseHeaders,
-      }));
-    };
-
-    const common = {
-      method,
-      headers: { ...headers, ...(body !== undefined ? { "Content-Length": String(Buffer.byteLength(body)) } : {}) },
-      ...(pinnedIp
-        ? { lookup: pinnedLookup({ address: pinnedIp, family: isIP(pinnedIp) }), servername: hostname }
-        : {}),
-    };
-    const requestOptions = {
-      hostname,
-      port: url.port || (isHttps ? 443 : 80),
-      path: url.pathname + url.search,
-      ...common,
-      agent: false,
-    };
-    req = isHttps
-      ? https.request(requestOptions, onResponse)
-      : http.request(requestOptions, onResponse);
-    req.on("error", fail);
-    if (timeoutMs > 0) {
-      timer = setTimeout(() => {
-        const err = new SsrfBlockedError(`请求超时（${timeoutMs}ms）`, "timeout");
-        req.destroy(err);
-        fail(err);
-      }, timeoutMs);
-    }
-    if (signal) {
-      if (signal.aborted) onAbort();
-      else signal.addEventListener("abort", onAbort, { once: true });
-    }
-    if (!settled) {
-      if (body !== undefined) req.write(body);
-      req.end();
-    }
-  });
-}
-
-
-/** rawRequest 返回的轻量响应（safeFetch 与 guardedFetch 共用）。 */
+/** rawRequest 返回的轻量响应（只保留 safeFetch 用得到的字段）。 */
 interface RawResponse {
   status: number;
   headers: Headers;
   body: Uint8Array;
-  truncated: boolean;
-}
-
-type ContentEncoding = "gzip" | "x-gzip" | "deflate" | "br" | "zstd";
-
-const SUPPORTED_CONTENT_ENCODINGS = new Set<string>(["gzip", "x-gzip", "deflate", "br", "zstd"]);
-
-/**
- * 返回 null 表示编码链中含有未知编码。此时必须整条链都不解码，并与 fetch 一样
- * 保留原始字节及 Content-Encoding/Content-Length，避免破坏调用方仍可识别的响应。
- */
-function parseContentEncodings(value: string | null): ContentEncoding[] | null {
-  if (value === null) return [];
-  const encodings = value.split(",").map((item) => item.trim().toLowerCase());
-  if (encodings.some((item) => !SUPPORTED_CONTENT_ENCODINGS.has(item))) return null;
-  return encodings as ContentEncoding[];
-}
-
-function createContentDecoder(encoding: ContentEncoding): Transform {
-  switch (encoding) {
-    case "gzip":
-    case "x-gzip":
-      return zlib.createGunzip();
-    case "deflate":
-      return zlib.createInflate();
-    case "br":
-      return zlib.createBrotliDecompress();
-    case "zstd":
-      return zlib.createZstdDecompress();
-  }
-}
-
-function bodyTooLargeError(maxBytes: number): SsrfBlockedError {
-  return new SsrfBlockedError(`响应体超过上限 ${maxBytes} 字节`, "body_too_large");
-}
-
-/**
- * 对已受网络字节上限约束的编码体逐层解码。
- *
- * 使用流式解码而非一次性解压：每一层输出都在超过 maxBytes 时立即停止，避免
- * gzip/br 炸弹在计数前先扩展出巨大 Buffer。多编码按声明顺序的逆序解码。
- */
-function decodeContentBody(
-  encoded: Buffer,
-  encodings: readonly ContentEncoding[],
-  maxBytes: number,
-  truncateOnLimit: boolean,
-): Promise<{ body: Buffer; truncated: boolean }> {
-  return new Promise((resolve, reject) => {
-    const decoders = [...encodings].reverse().map(createContentDecoder);
-    const chunks: Buffer[] = [];
-    const stageBytes = decoders.map(() => 0);
-    let finalBytes = 0;
-    let settled = false;
-
-    const destroyDecoders = () => {
-      for (const decoder of decoders) decoder.destroy();
-    };
-    const fail = (err: Error) => {
-      if (settled) return;
-      settled = true;
-      destroyDecoders();
-      reject(err);
-    };
-    const limitExceeded = (decoderIndex: number, chunk: Buffer) => {
-      if (decoderIndex === decoders.length - 1) {
-        const remaining = Math.max(0, maxBytes - finalBytes);
-        if (remaining > 0) chunks.push(chunk.subarray(0, remaining));
-      }
-      if (!truncateOnLimit) {
-        fail(bodyTooLargeError(maxBytes));
-        return;
-      }
-      settled = true;
-      destroyDecoders();
-      resolve({ body: Buffer.concat(chunks), truncated: true });
-    };
-
-    decoders.forEach((decoder, index) => {
-      decoder.on("data", (chunk: Buffer) => {
-        if (settled) return;
-        const nextStageBytes = (stageBytes[index] ?? 0) + chunk.byteLength;
-        stageBytes[index] = nextStageBytes;
-        if (nextStageBytes > maxBytes) {
-          limitExceeded(index, chunk);
-          return;
-        }
-        if (index === decoders.length - 1) {
-          chunks.push(chunk);
-          finalBytes += chunk.byteLength;
-        }
-      });
-      decoder.on("error", (err) => {
-        fail(new Error(`响应内容解码失败 (${encodings[encodings.length - 1 - index]}): ${err.message}`));
-      });
-      const next = decoders[index + 1];
-      if (next) decoder.pipe(next);
-    });
-
-    const last = decoders[decoders.length - 1];
-    last?.on("end", () => {
-      if (settled) return;
-      settled = true;
-      resolve({ body: Buffer.concat(chunks), truncated: false });
-    });
-    decoders[0]?.end(encoded);
-  });
 }
 
 /**
  * 用 node:http/https 发一次请求，并**把已校验的 IP 钉到 socket 上**。
  *
- * 这是 safeFetch/guardedFetch 唯一真正发网络包的地方。钉扎靠 `lookup` 选项：
+ * 这是整个 safeFetch 唯一真正发网络包的地方。钉扎靠 `lookup` 选项：
  * Node 会用它替代 dns.lookup 来解析主机名，于是"校验的 IP"与"连接的 IP"
  * 是同一个值——中间没有第二次解析，DNS Rebinding 的 TOCTOU 窗口被关闭。
  * HTTP 与 HTTPS 都用同一个回调；HTTPS 另有 `servername` 保证 SNI 与
  * 证书校验仍按域名进行（否则钉到 IP 会证书不匹配）。
- * `agent:false` 禁用跨请求连接复用，避免 socket 绕过后续请求的策略与 pinning。
  */
 function rawRequest(args: {
   url: URL;
@@ -1217,61 +942,15 @@ function rawRequest(args: {
   hostname: string;
   timeoutMs: number;
   maxBytes: number;
-  signal?: AbortSignal;
-  truncateOnLimit: boolean;
 }): Promise<RawResponse> {
-  const { url, method, headers, body, pinnedIp, hostname, timeoutMs, maxBytes, signal, truncateOnLimit } = args;
+  const { url, method, headers, body, pinnedIp, hostname, timeoutMs, maxBytes } = args;
   const isHttps = url.protocol === "https:";
 
   return new Promise<RawResponse>((resolvePromise, rejectPromise) => {
-    let settled = false;
-    let req: http.ClientRequest;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const cleanup = () => {
-      if (timer) clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    const fail = (err: Error) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      rejectPromise(err);
-    };
-    const onAbort = () => {
-      const reason = signal?.reason;
-      const err = reason instanceof Error ? reason : new Error("抓取已取消: " + url.toString());
-      req.destroy(err);
-      fail(err);
-    };
-    const toResponse = (
-      res: http.IncomingMessage,
-      body: Buffer,
-      truncated: boolean,
-      decoded: boolean,
-    ): RawResponse => {
-      const flat: Record<string, string> = {};
-      for (const [k, v] of Object.entries(res.headers)) {
-        if (typeof v === "string") flat[k] = v;
-        else if (Array.isArray(v)) flat[k] = v.join(", ");
-      }
-      const responseHeaders = new Headers(flat);
-      if (decoded) {
-        responseHeaders.delete("content-encoding");
-        responseHeaders.delete("content-length");
-      }
-      return {
-        status: res.statusCode ?? 0,
-        headers: responseHeaders,
-        body: new Uint8Array(body),
-        truncated,
-      };
-    };
-
     const common = {
       method,
       headers: { ...headers, ...(body !== undefined ? { "Content-Length": String(Buffer.byteLength(body)) } : {}) },
-      // 钉扎：已验证的 IP 直接作为连接目标地址。
+      // 钉扎：已验证的 IP 直接作为连接目标地址
       ...(pinnedIp
         ? {
             lookup: pinnedLookup({ address: pinnedIp, family: isIP(pinnedIp) }),
@@ -1279,87 +958,56 @@ function rawRequest(args: {
           }
         : {}),
     };
+
     const onResponse = (res: http.IncomingMessage) => {
       const chunks: Buffer[] = [];
-      const encodingHeader = res.headers["content-encoding"];
-      const encodings = parseContentEncodings(typeof encodingHeader === "string" ? encodingHeader : null);
-      // HEAD 与无正文状态没有可解码的表示体；保持原始响应语义。
-      const shouldDecode = encodings !== null
-        && encodings.length > 0
-        && method !== "HEAD"
-        && res.statusCode !== 204
-        && res.statusCode !== 304;
       let total = 0;
+      let settled = false;
       res.on("data", (chunk: Buffer) => {
         if (settled) return;
         total += chunk.byteLength;
         if (total > maxBytes) {
-          if (truncateOnLimit) {
-            const remaining = Math.max(0, maxBytes - (total - chunk.byteLength));
-            if (remaining > 0) chunks.push(chunk.subarray(0, remaining));
-            settled = true;
-            cleanup();
-            // 编码流本身被截断时无法保证得到完整表示体，保留原来的原始字节截断语义。
-            resolvePromise(toResponse(res, Buffer.concat(chunks), true, false));
-            res.destroy();
-            req.destroy();
-          } else {
-            fail(bodyTooLargeError(maxBytes));
-            res.destroy();
-            req.destroy();
-          }
+          settled = true;
+          // 超限：主动断开，避免把超大响应读完
+          req.destroy();
+          rejectPromise(new SsrfBlockedError(`响应体超过上限 ${maxBytes} 字节`, "body_too_large"));
           return;
         }
         chunks.push(chunk);
       });
       res.on("end", () => {
         if (settled) return;
-        const encoded = Buffer.concat(chunks);
-        if (!shouldDecode || encodings === null) {
-          settled = true;
-          cleanup();
-          resolvePromise(toResponse(res, encoded, false, false));
-          return;
+        settled = true;
+        const flat: Record<string, string> = {};
+        for (const [k, v] of Object.entries(res.headers)) {
+          if (typeof v === "string") flat[k] = v;
+          else if (Array.isArray(v)) flat[k] = v.join(", ");
         }
-        // 解码仍在同一总超时内；流式解码的每一层输出都再次受 maxBytes 约束。
-        decodeContentBody(encoded, encodings, maxBytes, truncateOnLimit).then((decoded) => {
-          if (settled) return;
-          settled = true;
-          cleanup();
-          resolvePromise(toResponse(res, decoded.body, decoded.truncated, true));
-        }, fail);
+        resolvePromise({
+          status: res.statusCode ?? 0,
+          headers: new Headers(flat),
+          body: new Uint8Array(Buffer.concat(chunks)),
+        });
       });
-      res.on("aborted", () => fail(new Error("响应提前中断: " + url.toString())));
-      res.on("error", fail);
+      res.on("error", (err) => {
+        if (settled) return;
+        settled = true;
+        rejectPromise(err);
+      });
     };
 
-    // HTTPS 的 hostname 传原域名（SNI/证书校验按域名），实际 IP 由 lookup 决定。
-    // agent:false 每次独立建连，禁止跨请求/跨策略复用 socket。
-    const requestOptions = {
-      hostname,
-      port: url.port || (isHttps ? 443 : 80),
-      path: url.pathname + url.search,
-      ...common,
-      agent: false,
-    };
-    req = isHttps
-      ? https.request(requestOptions, onResponse)
-      : http.request(requestOptions, onResponse);
+    const onError = (err: Error) => rejectPromise(err);
+    // 注意：HTTPS 的 hostname 传原域名（SNI/证书校验按域名），
+    // 实际连哪个 IP 由上面的 lookup 决定。
+    const req = isHttps
+      ? https.request({ hostname, port: url.port || 443, path: url.pathname + url.search, ...common }, onResponse)
+      : http.request({ hostname, port: url.port || 80, path: url.pathname + url.search, ...common }, onResponse);
 
-    req.on("error", fail);
-    // 总时限（而非 socket 空闲时限）：慢速分包也不能绕过 timeoutMs。
-    timer = setTimeout(() => {
-      const err = new SsrfBlockedError(`请求超时（${timeoutMs}ms）`, "timeout");
-      req.destroy(err);
-      fail(err);
-    }, timeoutMs);
-    if (signal) {
-      if (signal.aborted) onAbort();
-      else signal.addEventListener("abort", onAbort, { once: true });
-    }
-    if (!settled) {
-      if (body !== undefined) req.write(body);
-      req.end();
-    }
+    req.on("error", onError);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new SsrfBlockedError(`请求超时（${timeoutMs}ms）`, "timeout"));
+    });
+    if (body !== undefined) req.write(body);
+    req.end();
   });
 }

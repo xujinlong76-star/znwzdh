@@ -176,19 +176,7 @@ describe("v7 全套 SVG 图标", () => {
     expect(WIDGET).toContain("gameBtn.innerHTML = ICONS.star;");
     expect(WIDGET).toContain("micBtn.innerHTML = ICONS.mic;");
     expect(WIDGET).toContain("go.innerHTML = ICONS.arrow;");
-    const sk = skeleton();
-    const tabAt = sk.indexOf('<button class="xm-tab"');
-    expect(tabAt).toBeGreaterThan(-1);
-    const tab = sk.slice(tabAt, sk.indexOf('</button>', tabAt) + '</button>'.length);
-    expect(tab).toContain('data-testid="xiaomaomao-reopen-edge-btn"');
-    expect(tab).toContain('type="button"');
-    expect(tab).toContain('aria-label="叫出小猫猫"');
-    expect(tab).toContain('<svg viewBox="0 0 24 24"');
-    expect(tab).toContain('stroke="currentColor"');
-    expect(tab).toContain('aria-hidden="true"');
-    expect(tab).toContain('<path d="M15 6l-6 6 6 6"/>');
-    expect(tab).not.toContain('<img');
-    expect(WIDGET).not.toContain('class="xm-tab-badge"');
+    expect(WIDGET).toContain('class="xm-tab-badge" aria-hidden="true">' + "' + ICONS.chat + '");
     expect(WIDGET).toContain("' + ICONS.camera + '上传我的图片</button>'");
     expect(WIDGET).toContain("s.innerHTML = gold ? ICONS.starGold : ICONS.starSoft;");
     // 语音开关换图走同一套 SVG（不再是文字/emoji 切换）
@@ -207,7 +195,7 @@ describe("v7 全套 SVG 图标", () => {
     expect(EMOJI_RE.test(sk), "骨架段混入 emoji").toBe(false);
     expect(sk).not.toContain(">✕<");
     expect(sk).not.toContain("‹");
-    // 收起入口只允许内联 SVG，不许复活图片圆标或字符角标
+    // 收起圆标的「聊」字角标已换 SVG
     expect(WIDGET).not.toContain('.xm-tab:after{content:"聊"');
   });
 });

@@ -91,7 +91,7 @@ NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d  # 追加 MCP HTTP
 | --- | --- | --- |
 | `NODE_IMAGE` | `node:22-bookworm-slim` | `dockerproxy.net/library/node:22-bookworm-slim` |
 | `DEBIAN_MIRROR` | `deb.debian.org` | `mirrors.tuna.tsinghua.edu.cn` |
-| `NAVSPHERE_REF` | `6ba74fab9f86aa6ba4e276c002128a8f5a0acc0a` | 上游 NavSphere 固定 commit（与 `scripts/vendor-web.mjs` 一致） |
+| `NAVSPHERE_REF` | `main` | 上游 NavSphere 分支 |
 
 或配置 `~/.docker/daemon.json`：
 

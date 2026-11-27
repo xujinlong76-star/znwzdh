@@ -109,12 +109,7 @@ describe('/offline 标题过滤：三个分区共用同一查询，不调搜索�
 describe('data-prefetch-target 认领：Provider 扫描优先处理带标记的卡片链接', () => {
   it('navigation-card 三处标记都在（外站卡片链接），未被删除', () => {
     const card = overlaySource('src/components/navigation-card.tsx')
-    // S2 迁移（2026-11-26）：标准档经 SiteCard overlayProps 传（对象字面量形态），
-    // 紧凑/富卡仍是 JSX 属性形态——两种接线合计 3 处。
-    const hits =
-      (card.match(/data-prefetch-target="true"/g) ?? []).length +
-      (card.match(/'data-prefetch-target': 'true'/g) ?? []).length
-    expect(hits).toBe(3)
+    expect((card.match(/data-prefetch-target="true"/g) ?? []).length).toBe(3)
   })
 
   it('Provider 的 A0 扫描先扫标记链接、再补位普通 http 链接，仍只取前 12 个', () => {

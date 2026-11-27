@@ -127,52 +127,27 @@ export function combineAndSortCategories(args: CombineArgs): CategoryView {
     allCategoryIds.push(cat.id)
   }
 
-  // 1. 跨分类/跨子分类归类重映射（双阶段 map：同时覆盖直属 items 与 subCategories[].items）
+  // 1. 跨分类归类重映射
   let processedCombined = combined
   if (siteCategoryOverrides && Object.keys(siteCategoryOverrides).length > 0) {
     const movedMap: Record<string, CategoryItemNode[]> = {}
-    const extractMoved = (items: CategoryItemNode[], currentContainerId: string): CategoryItemNode[] =>
-      items.filter((item) => {
+    processedCombined = combined.map((cat) => {
+      const catItems = Array.isArray(cat.items) ? cat.items : []
+      const remaining = catItems.filter((item) => {
         const targetId = siteCategoryOverrides[item.id]
-        if (targetId && targetId !== currentContainerId) {
+        if (targetId && targetId !== cat.id) {
           if (!movedMap[targetId]) movedMap[targetId] = []
           movedMap[targetId]!.push(item)
           return false
         }
         return true
       })
-
-    processedCombined = combined
-      .map((cat) => {
-        const catItems = Array.isArray(cat.items) ? cat.items : []
-        const remainingDirect = extractMoved(catItems, cat.id)
-        const rawSubs = Array.isArray(cat.subCategories) ? cat.subCategories : []
-        const nextSubs = rawSubs.map((sub) => {
-          const subItems = Array.isArray(sub.items) ? sub.items : []
-          const remainingSub = extractMoved(subItems, sub.id)
-          return remainingSub.length === subItems.length ? sub : { ...sub, items: remainingSub }
-        })
-        return { ...cat, items: remainingDirect, subCategories: nextSubs }
-      })
-      .map((cat) => {
-        const incomingDirect = movedMap[cat.id] || []
-        const currentItems = Array.isArray(cat.items) ? cat.items : []
-        const rawSubs = Array.isArray(cat.subCategories) ? cat.subCategories : []
-        let subsChanged = false
-        const nextSubs = rawSubs.map((sub) => {
-          const incomingSub = movedMap[sub.id] || []
-          if (incomingSub.length === 0) return sub
-          subsChanged = true
-          const curSubItems = Array.isArray(sub.items) ? sub.items : []
-          return { ...sub, items: [...curSubItems, ...incomingSub] }
-        })
-        if (incomingDirect.length === 0 && !subsChanged) return cat
-        return {
-          ...cat,
-          items: incomingDirect.length > 0 ? [...currentItems, ...incomingDirect] : currentItems,
-          subCategories: subsChanged ? nextSubs : rawSubs,
-        }
-      })
+      return { ...cat, items: remaining }
+    }).map((cat) => {
+      const incoming = movedMap[cat.id] || []
+      const currentItems = Array.isArray(cat.items) ? cat.items : []
+      return incoming.length > 0 ? { ...cat, items: [...currentItems, ...incoming] } : cat
+    })
   }
 
   // 2. 隐藏过滤

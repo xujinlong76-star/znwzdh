@@ -205,17 +205,6 @@ describe.skipIf(!client)("跨方言：rollup 在 PostgreSQL 上与 SQLite 行为
       placeholder: (i) => `$${i}`,
       select: async (sql, params) => (await client!.query(sql, params)).rows,
       execute: async (sql, params) => (await client!.query(sql, params)).rowCount ?? 0,
-      transaction: async (fn) => {
-        await client!.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
-        try {
-          const result = await fn();
-          await client!.query("COMMIT");
-          return result;
-        } catch (err) {
-          try { await client!.query("ROLLBACK"); } catch { /* 连接已不可用时由 end 兜底 */ }
-          throw err;
-        }
-      },
     };
   }
 });

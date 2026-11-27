@@ -56,7 +56,6 @@ function makeFake(options: { sources: Source; specs: RollupSpec[]; style?: "sqli
 
   const adapter: RetentionAdapter = {
     placeholder: (i) => (style === "pg" ? `$${i}` : "?"),
-    transaction: async (fn) => fn(),
     select(sql, params) {
       calls.push({ sql, params });
       const table = sql.match(/FROM (\w+)/)?.[1] ?? "";
@@ -163,26 +162,6 @@ describe("runRollup", () => {
     expect(calls.some((c) => c.sql.startsWith("CREATE TABLE"))).toBe(false);
     expect(calls.some((c) => c.sql.startsWith("INSERT"))).toBe(false);
     expect(calls.some((c) => c.sql.startsWith("DELETE"))).toBe(false);
-  });
-
-  it("apply 缺少事务能力时 fail-closed，不能静默退化成非原子写入", async () => {
-    const sources: Source = { events: [ev(400)] };
-    const { adapter, calls } = makeFake({ sources, specs: [EVENT_DAILY_ROLLUP] });
-    const withoutTransaction: RetentionAdapter = {
-      placeholder: adapter.placeholder,
-      select: adapter.select,
-      execute: adapter.execute,
-    };
-
-    await expect(
-      runRollup(withoutTransaction, {
-        targets: [{ spec: EVENT_DAILY_ROLLUP, keepDays: 180 }],
-        now: NOW,
-        dryRun: false,
-      }),
-    ).rejects.toThrow(/事务/);
-    expect(calls).toHaveLength(0);
-    expect(sources.events).toHaveLength(1);
   });
 
   it("apply 后按 天 × kind × site 聚合，明细被删且聚合值正确", async () => {

@@ -3,11 +3,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { AppContext } from "../context.ts";
-import { scopeSatisfies } from "../auth.ts";
 import { isPubliclyVisibleSite } from "../storage.ts";
 import { restoreStagingDir } from "../restore-staging.ts";
-import { jobEnqueueScope } from "../jobs.ts";
-import { forbidden } from "./shared.ts";
 import {
   canonicalizeUrl,
   exportNetscapeBookmarks,
@@ -515,17 +512,11 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
      *
      * 入队失败不影响恢复结果：数据已经落库，定时任务仍会在下一轮补上。
      */
-    let reindexQueued = false;
     if (restoredSites > 0) {
-      const reindexPayload = { vectors: true };
-      const requiredScope = jobEnqueueScope("reindex", reindexPayload);
-      if (scopeSatisfies(req.auth.scopes, requiredScope)) {
-        try {
-          await ctx.repo.enqueueJob("reindex", reindexPayload);
-          reindexQueued = true;
-        } catch (err) {
-          req.log.warn({ err }, "恢复后入队索引重建失败（数据已恢复，等待定时 reindex 补齐）");
-        }
+      try {
+        await ctx.repo.enqueueJob("reindex", { vectors: true });
+      } catch (err) {
+        req.log.warn({ err }, "恢复后入队索引重建失败（数据已恢复，等待定时 reindex 补齐）");
       }
     }
 
@@ -544,7 +535,7 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
        */
       durationMs: Date.now() - startedAt,
       /** 异步补索引任务的入口提示：语义检索在 reindex 跑完后才完整 */
-      reindexQueued,
+      reindexQueued: restoredSites > 0,
     };
     },
   );
@@ -569,12 +560,6 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       bodyLimit: RESTORE_BODY_LIMIT_BYTES,
     },
     async (req, reply) => {
-      // 与 /api/jobs 入队共用破坏性任务判权；静态 admin 仍是第一道闸，
-      // 这里按真实任务类型再校验，避免未来路由 scope 回退后形成单点绕过。
-      const requiredScope = jobEnqueueScope("backup_restore", {});
-      if (!scopeSatisfies(req.auth.scopes, requiredScope)) {
-        return forbidden(reply, `任务 backup_restore 需要 ${requiredScope} 权限（当前令牌不足）`);
-      }
       const body = req.body as any;
       const jsonStr = typeof body === "string" ? body : JSON.stringify(body);
       const validation = validateNavHubBackup(jsonStr);

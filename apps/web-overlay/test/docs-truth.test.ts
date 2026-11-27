@@ -89,7 +89,7 @@ describe("B13-1 MCP 工具数：代码 45（32 read / 12 write / 1 admin）", ()
   });
 });
 
-describe("B13-2 前端版本：Next.js 16（package.json 16.4.5 / React 19.3.1）", () => {
+describe("B13-2 前端版本：Next.js 16（package.json 16.4.2 / React 19.3.1）", () => {
   it("wiki 与 FILE_INDEX 不再称 Next.js 15", () => {
     expect(WIKI).toContain("Next.js 16");
     expect(WIKI).not.toContain("Next.js 15");
@@ -204,12 +204,10 @@ describe("B13-余 §9 两行核对（第 16 轮）：洛伦兹双模型 + 镜像
     expect(read("apps/api/src/server.ts")).toContain("rankRoutes");
   });
 
-  it("概览 §9 洛伦兹行不再称仅庞加莱实现，镜像机制明确为纯校验门禁", () => {
+  it("概览 §9 洛伦兹行不再称仅庞加莱实现，同步行不再称 272 个", () => {
     expect(OVERVIEW).not.toContain("272 个");
     expect(OVERVIEW).toContain("lorentzDistance");
-    expect(OVERVIEW).toContain("check:generated");
-    expect(OVERVIEW).toContain("纯校验");
-    expect(OVERVIEW).not.toContain("1153 个覆盖层文件");
+    expect(OVERVIEW).toContain("1153 个覆盖层文件");
   });
 
   it("wiki 不再称 web 与 web-overlay 100% 同步", () => {

@@ -86,9 +86,9 @@ export default function MobileNav() {
                 href={href}
                 aria-label={
                   href === '/me' && unread > 0
-                    ? `${label}，${unread} 条未读通知`
+                    ? `${unread} ${label}，未读通知`
                     : href === '/drama' && dueCount > 0
-                      ? `${label}，今日待看 ${dueCount} 部`
+                      ? `${dueCount} ${label}，今日待看`
                       : label
                 }
                 aria-current={active ? 'page' : undefined}

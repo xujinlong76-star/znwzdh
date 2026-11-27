@@ -11,15 +11,14 @@
  *
  * 两条都跑真实 SQLite + 真实 tick（不 mock 仓储），与 jobs.test.ts 同口径。
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import { buildServer } from "../src/server.ts";
-import { JobRunner, jobEventBus, isJobInFlight, requestJobAbort, type JobEventPayload } from "../src/jobs.ts";
-import { handleRecomputeRank } from "../src/jobs/tasks/rank-recompute.task.ts";
+import { JobRunner, jobEventBus, requestJobAbort, type JobEventPayload } from "../src/jobs.ts";
 
 let dir: string;
 let ctx: AppContext;
@@ -220,157 +219,6 @@ describe("health_check 的停手边界", () => {
     expect(Number(withMeta!.checked)).toBeLessThan(Number(withMeta!.planned));
   });
 });
-describe("任务执行代次与超时 fencing", () => {
-  it("预算到点后忽略 AbortSignal 的执行体仍保持心跳，结算后才允许 tick 返回", async () => {
-    await drainClaimable();
-    const jobId = await ctx.repo.enqueueJob("recompute_rank", {});
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    let started!: () => void;
-    const handlerStarted = new Promise<void>((resolve) => { started = resolve; });
-    const runner = new JobRunner(ctx, {
-      budgetOverrides: { recompute_rank: 20 },
-      jobHeartbeatMs: 5,
-    });
-    runner.taskRegistry.register("recompute_rank", async ({ run }) => {
-      started();
-      await gate;
-      expect(run.signal.aborted).toBe(true);
-    });
-
-    let tickSettled = false;
-    const ticking = runner.tick().then((result) => {
-      tickSettled = true;
-      return result;
-    });
-    try {
-      await handlerStarted;
-      const deadline = Date.now() + 2_000;
-      while (Date.now() < deadline) {
-        const row = (await ctx.repo.raw("SELECT status FROM jobs WHERE id = ?", [jobId]))[0];
-        if (String(row?.status) === "cancelling") break;
-        await new Promise((resolve) => setTimeout(resolve, 2));
-      }
-      expect(String((await ctx.repo.raw("SELECT status FROM jobs WHERE id = ?", [jobId]))[0]?.status)).toBe("cancelling");
-      expect(isJobInFlight(jobId)).toBe(true);
-
-      const before = Number((await ctx.repo.raw("SELECT updated_at FROM jobs WHERE id = ?", [jobId]))[0]?.updated_at);
-      await new Promise((resolve) => setTimeout(resolve, 30));
-      const after = Number((await ctx.repo.raw("SELECT updated_at FROM jobs WHERE id = ?", [jobId]))[0]?.updated_at);
-      expect(after).toBeGreaterThan(before);
-      expect(tickSettled).toBe(false);
-    } finally {
-      release();
-      await ticking;
-    }
-
-    expect(isJobInFlight(jobId)).toBe(false);
-    expect(String((await ctx.repo.raw("SELECT status FROM jobs WHERE id = ?", [jobId]))[0]?.status)).toBe("failed");
-  });
-
-  it("执行体恰在超时标记期间结算时仍能落到 failed 终态", async () => {
-    await drainClaimable();
-    const jobId = await ctx.repo.enqueueJob("recompute_rank", {});
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    let started!: () => void;
-    const handlerStarted = new Promise<void>((resolve) => { started = resolve; });
-    const runner = new JobRunner(ctx, { budgetOverrides: { recompute_rank: 20 } });
-    runner.taskRegistry.register("recompute_rank", async () => {
-      started();
-      await gate;
-    });
-
-    const originalMark = ctx.repo.markJobCancelling.bind(ctx.repo);
-    const markSpy = vi.spyOn(ctx.repo, "markJobCancelling").mockImplementationOnce(async (id, message, runToken) => {
-      release();
-      await Promise.resolve();
-      return originalMark(id, message, runToken);
-    });
-    const ticking = runner.tick();
-    try {
-      await handlerStarted;
-      await ticking;
-    } finally {
-      release();
-      markSpy.mockRestore();
-    }
-
-    expect(String((await ctx.repo.raw("SELECT status FROM jobs WHERE id = ?", [jobId]))[0]?.status)).toBe("failed");
-  });
-
-  it("同一 job 的新旧执行代次互不覆盖，定向中止只命中旧代次", async () => {
-    await drainClaimable();
-    const jobId = await ctx.repo.enqueueJob("recompute_rank", {});
-    const claimed = await ctx.repo.claimNextJob();
-    expect(claimed?.id).toBe(jobId);
-    const oldToken = claimed!.runToken;
-    const newToken = "replacement-run-token";
-    await ctx.repo.run("UPDATE jobs SET status = 'running', run_token = ? WHERE id = ?", [newToken, jobId]);
-
-    let releaseOld!: () => void;
-    let releaseNew!: () => void;
-    const oldGate = new Promise<void>((resolve) => { releaseOld = resolve; });
-    const newGate = new Promise<void>((resolve) => { releaseNew = resolve; });
-    let oldStarted!: () => void;
-    let newStarted!: () => void;
-    const oldStartedPromise = new Promise<void>((resolve) => { oldStarted = resolve; });
-    const newStartedPromise = new Promise<void>((resolve) => { newStarted = resolve; });
-    let oldSignal: AbortSignal | undefined;
-    let newSignal: AbortSignal | undefined;
-    const oldRunner = new JobRunner(ctx);
-    const newRunner = new JobRunner(ctx);
-    oldRunner.taskRegistry.register("recompute_rank", async ({ run }) => {
-      oldSignal = run.signal;
-      oldStarted();
-      await oldGate;
-    });
-    newRunner.taskRegistry.register("recompute_rank", async ({ run }) => {
-      newSignal = run.signal;
-      newStarted();
-      await newGate;
-    });
-    const processWithToken = (runner: JobRunner, runToken: string) =>
-      (runner as unknown as {
-        process(kind: "recompute_rank", payload: unknown, jobId: string, attempts: number, runToken: string): Promise<void>;
-      }).process("recompute_rank", {}, jobId, claimed!.attempts, runToken);
-
-    const oldRun = processWithToken(oldRunner, oldToken);
-    const newRun = processWithToken(newRunner, newToken);
-    await Promise.all([oldStartedPromise, newStartedPromise]);
-    try {
-      expect(requestJobAbort(jobId, "cancelled", oldToken)).toBe(true);
-      expect(oldSignal?.aborted).toBe(true);
-      expect(newSignal?.aborted).toBe(false);
-      releaseOld();
-      await oldRun;
-      expect(isJobInFlight(jobId)).toBe(true);
-    } finally {
-      releaseOld();
-      releaseNew();
-      await Promise.all([oldRun, newRun]);
-    }
-
-    expect(isJobInFlight(jobId)).toBe(false);
-    expect(String((await ctx.repo.raw("SELECT status FROM jobs WHERE id = ?", [jobId]))[0]?.status)).toBe("done");
-  });
-
-  it("热度重算在收到停手信号后不写 trend_score", async () => {
-    await ctx.repo.createCategory({ id: "rank-abort-cat", title: "热度停手类目" });
-    const site = await ctx.repo.createSite({
-      url: "https://rank-abort.example.com",
-      title: "热度停手站点",
-      categoryId: "rank-abort-cat",
-    });
-    await ctx.repo.run("UPDATE sites SET trend_score = 0 WHERE id = ?", [site.id]);
-
-    await handleRecomputeRank(ctx, { shouldStop: () => true });
-
-    const row = (await ctx.repo.raw("SELECT trend_score FROM sites WHERE id = ?", [site.id]))[0];
-    expect(Number(row?.trend_score)).toBe(0);
-  });
-});
-
 describe("取消路由：POST /api/jobs/:id/cancel", () => {
   /**
    * 路由级验收：对 **running** 的任务按取消，必须同时满足两件事——

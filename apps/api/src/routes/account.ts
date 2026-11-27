@@ -22,12 +22,6 @@ import type { AppContext } from "../context.ts";
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const RESET_TTL_MS = 60 * 60 * 1000;
 
-/** 令牌/账号状态导致的可预期拒绝；事务回滚后仍按原有 400 契约返回。 */
-class PasswordResetRejectedError extends Error {}
-
-/** 会话撤销是密码重置成功的必要条件；单独标记以便失败审计与通用 500 区分。 */
-class PasswordResetSessionRevocationError extends Error {}
-
 /**
  * 邮箱格式：顶级域至少 2 个字母（`a@b.c` 不是真实邮箱，单字符 TLD 不存在）。
  * 只拦形状，不做 MX/DNS 查询——注册是高频入口，DNS 失败会把正常用户挡在门外。
@@ -418,65 +412,44 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         reply.code(400);
         return { error: "重置链接无效或已失效" };
       }
-      const rawUserId = String(row.user_id);
-      let sessionsRevoked: number;
-      try {
-        /**
-         * token 消费、密码更新、会话撤销必须同生共死。
-         *
-         * 任一步失败都会让 Repository.withTransaction 回滚整条链：尤其是撤销失败时，
-         * 不能留下「密码已改但旧会话仍有效」的半成品，也不能白白烧掉一次性令牌。
-         * SQLite 与 PG 的仓储实现都提供真实事务，无需补偿式恢复旧密码。
-         */
-        sessionsRevoked = await ctx.repo.withTransaction(async () => {
-          const consumed = await ctx.repo.consumeAuthToken({
-            userId: rawUserId,
-            purpose: "password_reset",
-            tokenHash,
-          });
-          if (!consumed) {
-            throw new PasswordResetRejectedError("重置链接无效或已使用");
-          }
-          const updated = await ctx.repo.updateUserPassword(rawUserId, body.data.password);
-          if (!updated) {
-            throw new PasswordResetRejectedError("密码不符合要求");
-          }
-          try {
-            // users.id 可能是裸 UUID，也可能是 legacy OAuth 行；仓储会查询
-            // identity_aliases 并覆盖 credentials:<uuid> 与 github:<providerId> 等全部身份。
-            return await ctx.repo.revokeAllSessionsForUser(rawUserId);
-          } catch (err) {
-            throw new PasswordResetSessionRevocationError(
-              err instanceof Error ? err.message : String(err),
-            );
-          }
-        });
-      } catch (err) {
-        if (err instanceof PasswordResetRejectedError) {
-          reply.code(400);
-          return { error: err.message };
-        }
-        // 审计必须放在事务回滚之后，且不能盖住 fail-closed 的 500 响应。
-        await ctx.repo.audit({
-          actor: rawUserId,
-          actorKind: "user",
-          action: err instanceof PasswordResetSessionRevocationError
-            ? "account.password_reset_sessions_revoke_failed"
-            : "account.password_reset_failed",
-        }).catch(() => {
-          // 审计/遥测类写库是尽力而为：失败不阻断主操作，写失败即丢弃。
-        });
-        reply.code(500);
-        return { error: "密码重置失败，请稍后重试" };
+      const consumed = await ctx.repo.consumeAuthToken({
+        userId: String(row.user_id),
+        purpose: "password_reset",
+        tokenHash,
+      });
+      if (!consumed) {
+        reply.code(400);
+        return { error: "重置链接无效或已使用" };
       }
+      const updated = await ctx.repo.updateUserPassword(String(row.user_id), body.data.password);
+      if (!updated) {
+        reply.code(400);
+        return { error: "密码不符合要求" };
+      }
+    // 密码重置后吊销该用户全部已登录会话：旧的 next-auth JWT (sid) 即便未过期，
+    // BFF 也会在下一个 /api/me/* 请求上经 isSessionRevoked 拦下 (401)。
+    // row.user_id 是 users 表原始 id——凭据用户为裸 UUID，而 sessions 表按 canonical
+    // 身份建行（凭据用户为 credentials:<uuid>）；须先规范化再吊销，否则凭据用户的
+    // 会话一行都吊销不到、旧 JWT 仍可在 30 天内继续用。
+    const rawUserId = String(row.user_id);
+    const canonicalUserId = rawUserId.includes(":") ? rawUserId : "credentials:" + rawUserId;
+    let sessionsRevoked = 0;
+    try {
+      sessionsRevoked = await ctx.repo.revokeAllSessions(canonicalUserId);
+    } catch {
+      // 吊销失败不阻塞密码重置（密码已改），但必须记审计以便排查。
       await ctx.repo.audit({
-        actor: rawUserId,
+        actor: String(row.user_id),
+        actorKind: "user",
+        action: "account.password_reset_sessions_revoke_failed",
+      });
+    }
+      await ctx.repo.audit({
+        actor: String(row.user_id),
         actorKind: "user",
         action: "account.password_reset",
-      }).catch(() => {
-        // 主事务已提交：审计失败不能把已生效的重置误报成 500，否则重试只会得到 400。
       });
-      return { ok: true, message: "密码已重置，请使用新密码登录", sessionsRevoked };
+    return { ok: true, message: "密码已重置，请使用新密码登录", sessionsRevoked };
     },
   );
 
@@ -529,8 +502,6 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         actorKind: "user",
         action: "account.login",
         target: user.email ?? undefined,
-      }).catch(() => {
-        // 登录成功审计是尽力而为：审计存储故障不能否定已通过的口令校验。
       });
       return {
         ok: true,
@@ -540,7 +511,6 @@ export const accountRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
           email: user.email,
           role: user.role,
           emailVerified: user.emailVerified,
-          passwordVersion: user.passwordVersion,
         },
       };
     },

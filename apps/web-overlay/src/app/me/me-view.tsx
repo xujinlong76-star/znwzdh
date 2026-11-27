@@ -47,12 +47,6 @@ import {
   type HistoryRetentionDays,
 } from '@/lib/user-settings'
 import { contentDensityOf } from '@/lib/user-preferences'
-import {
-  XIAOMAOMAO_ENABLED_CHANGED_EVENT,
-  XIAOMAOMAO_ENABLED_STORAGE_KEY,
-  loadXiaomaomaoEnabled,
-  setXiaomaomaoEnabled,
-} from '@/lib/xiaomaomao-pref'
 import { cn } from '@/lib/utils'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { SectionState } from '@/components/user-center/section-state'
@@ -118,28 +112,6 @@ function SettingsSummary({
   onPatch?: (patch: UserSettingsPatch) => void
   busy?: boolean
 }) {
-  const [catEnabled, setCatEnabled] = useState(true)
-  useEffect(() => {
-    setCatEnabled(loadXiaomaomaoEnabled())
-    const sync = () => setCatEnabled(loadXiaomaomaoEnabled())
-    const onStorage = (ev: StorageEvent) => {
-      if (ev.key && ev.key !== XIAOMAOMAO_ENABLED_STORAGE_KEY) return
-      sync()
-    }
-    window.addEventListener(XIAOMAOMAO_ENABLED_CHANGED_EVENT, sync)
-    window.addEventListener('storage', onStorage)
-    return () => {
-      window.removeEventListener(XIAOMAOMAO_ENABLED_CHANGED_EVENT, sync)
-      window.removeEventListener('storage', onStorage)
-    }
-  }, [])
-
-  const toggleCatEnabled = () => {
-    const next = !catEnabled
-    setXiaomaomaoEnabled(next)
-    setCatEnabled(next)
-  }
-
   return (
     <section className="flex h-full flex-col rounded-2xl border border-border/70 bg-card/75 p-4 shadow-xs sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -307,7 +279,7 @@ function SettingsSummary({
               disabled={busy || !onPatch}
               onClick={() => onPatch?.({ speculativeZeroRttEnabled: !settings.speculativeZeroRttEnabled })}
               className={cn(
-                'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-border-strong transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2.5 pointer-coarse:after:content-[\'\']',
+                'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-border-strong transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
                 settings.speculativeZeroRttEnabled ? 'bg-primary' : 'bg-muted',
               )}
             >
@@ -315,42 +287,6 @@ function SettingsSummary({
                 className={cn(
                   'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out',
                   settings.speculativeZeroRttEnabled ? 'translate-x-5' : 'translate-x-0',
-                )}
-              />
-            </button>
-          </div>
-        </div>
-
-        {/* 桌面小猫猫全局显隐（关闭后全站彻底隐藏小猫猫与右侧 < 唤出箭头） */}
-        <div className="flex flex-col justify-between gap-2 rounded-xl border border-border/60 bg-background/50 p-3 sm:col-span-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground font-medium">桌面小猫猫</span>
-            <span className="text-[10px] text-muted-foreground font-mono">
-              {catEnabled ? '显示中' : '已关闭'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[11px] leading-snug text-muted-foreground">
-              {catEnabled
-                ? '已开启：页面收起后仅在最右侧中间显示 < 方向箭头，可随时唤出。'
-                : '已关闭：全站任何页面均不显示小猫猫与右侧唤出箭头。'}
-            </span>
-            <button
-              type="button"
-              role="switch"
-              data-testid="me-xiaomaomao-toggle"
-              aria-checked={catEnabled}
-              aria-label="桌面小猫猫显示开关"
-              onClick={toggleCatEnabled}
-              className={cn(
-                'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-border-strong transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2.5 pointer-coarse:after:content-[\'\']',
-                catEnabled ? 'bg-primary' : 'bg-muted',
-              )}
-            >
-              <span
-                className={cn(
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out',
-                  catEnabled ? 'translate-x-5' : 'translate-x-0',
                 )}
               />
             </button>

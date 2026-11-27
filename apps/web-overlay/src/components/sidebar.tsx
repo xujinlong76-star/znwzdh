@@ -739,11 +739,7 @@ export const Sidebar = memo(function Sidebar({
                     isExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
                   )}
                 >
-                  <div
-                    aria-hidden={!isExpanded}
-                    inert={!isExpanded}
-                    className="mt-0.5 mb-1 ml-4 pl-2.5 border-l border-border/60 space-y-0.5 overflow-hidden"
-                  >
+                  <div className="mt-0.5 mb-1 ml-4 pl-2.5 border-l border-border/60 space-y-0.5 overflow-hidden">
                     {visibleSubCategories.map((subCategory) => {
                       const subCount = subCategory.items?.length || 0;
                       const isSubActive = focusedCategoryId === category.id && focusedSubCategoryId === subCategory.id;

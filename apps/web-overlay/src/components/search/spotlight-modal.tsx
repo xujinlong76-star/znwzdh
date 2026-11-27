@@ -828,7 +828,7 @@ export function SpotlightModal({
         // onDegraded 标记请求真的没到中枢：响应体里的 degraded 还可能是服务端关键词回退
         searchPlugins({ q: trimmed, limit: 3 }, () => {
           pluginSearchFailed = true
-        }, ac.signal).catch(() => {
+        }).catch(() => {
           pluginSearchFailed = true
           return null
         }),

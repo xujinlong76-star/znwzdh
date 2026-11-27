@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { PageShell, PageHeader } from '@/components/page-shell'
+import Link from 'next/link'
+import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { pageShareMetadata } from '@/lib/seo/metadata'
@@ -109,35 +110,46 @@ export default async function CategoryIndexPage() {
 
   return (
     <>
-      <PageShell as="main" id="main-content" width="doc">
-        <Breadcrumbs
-          items={[
-            { label: '首页', path: '/' },
-            { label: '分类总览', path: '/category' },
-          ]}
-        />
-        <PageHeader
-          title="分类总览"
-          description={
-            counts
-              ? `共 ${groups.length} 个一级分类、${leafTotal} 个子分类收录了 ${MIN_SITES_FOR_CATEGORY_INDEX} 个以上站点。点一级分类进它的聚合页，点子分类看对应站点列表。`
-              : '分类数据暂时不可用，请稍后重试。'
-          }
-          links={[
-            { href: '/sites', label: '全部站点目录' },
-            { href: '/tags', label: '按标签浏览' },
-          ]}
-        />
-
-        {formattedGroups.length === 0 ? (
-          <p className="text-sm text-muted-foreground">暂无可展示的分类。</p>
-        ) : (
-          <CategoryIndexFilterableList
-            groups={formattedGroups}
-            totalLeaves={leafTotal}
+      <Container as="main" id="main-content">
+        <div className="py-6 sm:py-10 max-w-5xl mx-auto space-y-6">
+          <Breadcrumbs
+            items={[
+              { label: '首页', path: '/' },
+              { label: '分类总览', path: '/category' },
+            ]}
           />
-        )}
-      </PageShell>
+          <header className="space-y-2">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+              分类总览
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {counts
+                ? `共 ${groups.length} 个一级分类、${leafTotal} 个子分类收录了 ${MIN_SITES_FOR_CATEGORY_INDEX} 个以上站点。点一级分类进它的聚合页，点子分类看对应站点列表。`
+                : '分类数据暂时不可用，请稍后重试。'}
+            </p>
+            <nav aria-label="站内目录" className="flex flex-wrap items-center gap-3 text-xs pt-1">
+              <Link href="/sites" className="text-primary hover:underline">
+                全部站点目录
+              </Link>
+              <span className="text-border" aria-hidden>
+                ·
+              </span>
+              <Link href="/tags" className="text-primary hover:underline">
+                按标签浏览
+              </Link>
+            </nav>
+          </header>
+
+          {formattedGroups.length === 0 ? (
+            <p className="text-sm text-muted-foreground">暂无可展示的分类。</p>
+          ) : (
+            <CategoryIndexFilterableList
+              groups={formattedGroups}
+              totalLeaves={leafTotal}
+            />
+          )}
+        </div>
+      </Container>
       <Footer />
     </>
   )

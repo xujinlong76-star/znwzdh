@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { PageShell } from '@/components/page-shell'
+import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { hubGet } from '@/lib/server/hub'
@@ -133,8 +133,8 @@ export default async function HotPage({
   const { trending, fresh, recomputedAt, degraded, pluginRankings, pluginDegraded, categoryNames } =
     await loadHot()
   return (
-    <>
-      <PageShell as="main" id="main-content" width="list">
+    <Container as="main" id="main-content">
+      <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">
         <Breadcrumbs
           items={[
             { label: '首页', path: '/' },
@@ -153,8 +153,8 @@ export default async function HotPage({
           initialDomain={initialDomain}
           categoryNames={categoryNames}
         />
-      </PageShell>
+      </div>
       <Footer />
-    </>
+    </Container>
   )
 }

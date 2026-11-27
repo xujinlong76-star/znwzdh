@@ -305,17 +305,6 @@ describe("构建期就地改写的 tsconfig 归一", () => {
     expect(diffWith(OVERLAY_TSCONFIG, VENDED_TSCONFIG.replace("// next 会在这里追加类型目录", "// 改过的注释")).drifted.length).toBe(1);
   });
 
-  it("归一 JSONC 尾逗号，但 include 之外的 .next 配置差异仍算漂移", () => {
-    const trailingComma = VENDED_TSCONFIG.replace('"paths": { "@/*": ["./src/*"] }', '"paths": { "@/*": ["./src/*",] }');
-    expect(diffWith(OVERLAY_TSCONFIG, trailingComma).drifted).toEqual([]);
-
-    const changedExclude = VENDED_TSCONFIG.replace('    "node_modules"\n', '    "node_modules",\n    ".next*/**"\n');
-    expect(diffWith(OVERLAY_TSCONFIG, changedExclude).drifted.map((d) => d.rel)).toEqual(["tsconfig.json"]);
-
-    const changedPaths = VENDED_TSCONFIG.replace('"paths": { "@/*": ["./src/*"] }', '"paths": { "@/*": ["./src/*", ".next-cache"] }');
-    expect(diffWith(OVERLAY_TSCONFIG, changedPaths).drifted.map((d) => d.rel)).toEqual(["tsconfig.json"]);
-  });
-
   it("归一只对 tsconfig.json 生效，别的路径里的 .next 字样照旧严格", () => {
     const overlay = makeTree(makeRoot(), { "src/lib/a.json": '{"paths": [".next-x", "keep"]}\n' });
     const target = makeTree(makeRoot(), { "src/lib/a.json": '{"paths": ["keep"]}\n' });

@@ -131,30 +131,7 @@ const nextConfig = {
     if (process.env.NAVHUB_CSP_REPORT_ONLY === "1" && process.env.NAVHUB_CSP !== "1") {
       hosts.push({ key: "Content-Security-Policy-Report-Only", value: cspValue });
     }
-    return [
-      { source: "/:path*", headers: hosts },
-      // P0-3 静态资源长缓存策略：避免回访时 public/* 静态资产反复 304 回源
-      {
-        source: "/brand-icons/:path*",
-        headers: [{ key: "Cache-Control", value: "public, max-age=2592000, stale-while-revalidate=86400" }],
-      },
-      {
-        source: "/assets/:path*",
-        headers: [{ key: "Cache-Control", value: "public, max-age=2592000, stale-while-revalidate=86400" }],
-      },
-      {
-        source: "/xiaomaomao/:path*.min.js",
-        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
-      },
-      {
-        source: "/xiaomaomao/:path*",
-        headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }],
-      },
-      {
-        source: "/drama-media.json",
-        headers: [{ key: "Cache-Control", value: "public, max-age=300, stale-while-revalidate=3600" }],
-      },
-    ];
+    return [{ source: "/:path*", headers: hosts }];
   },
   async redirects() {
     // 两条都是「分页/预览从 query 迁到路径段」的兜底，动机相同：

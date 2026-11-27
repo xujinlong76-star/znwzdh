@@ -76,10 +76,10 @@ export function sameContent(a, b) {
  * 只要本地跑过一次带自定义 DIST_DIR 的构建，pnpm verify 就永远是红的，
  * 而长红的闸门真正的代价是逼人 --fix 覆盖别人的工作树、或者干脆跳过门禁。
  *
- * 归一只做三件有界的事，其余差异一律照旧算漂移：
- *   1) 丢弃 include 里指向 `.next*` 的生成项（exclude 的配置仍严格比对）；
- *   2) 折叠空白（Next 重写时会改缩进、也会在删除项后留下换行差异）；
- *   3) 归一 JSONC 尾逗号，避免删除最后一项后留下不对称标点。
+ * 归一只做两件有界的事，其余差异一律照旧算漂移：
+ *   1) 丢弃 include 里指向 `.next*` 的生成项（与 isExcluded 对路径段的口径一致：
+ *      .next / .next-e2e / .next-verify87 这类目录本身就不进镜像比对）；
+ *   2) 折叠空白（Next 重写时会改缩进、也会在删除项后留下换行差异）。
  * 注释本身仍然参与比对，所以「改了 compilerOptions / 改了非生成项 / 改了注释」都会被抓出来。
  */
 const BUILD_INJECTED_CONFIGS = new Set(["tsconfig.json"]);
@@ -94,57 +94,6 @@ const GENERATED_ENTRY_WITH_COMMA = /"\.next[^"]*"\s*,/g;
 const GENERATED_ENTRY_TRAILING = /,?\s*"\.next[^"]*"/;
 const GENERATED_ENTRY_SOLO = /\[\s*"\.next[^"]*"\s*\]/g;
 
-function findJsonArrayEnd(text, openIndex) {
-  let inString = false;
-  let escaped = false;
-  for (let i = openIndex + 1; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-    if (ch === "/" && text[i + 1] === "/") {
-      const newline = text.indexOf("\n", i + 2);
-      i = newline < 0 ? text.length : newline;
-      continue;
-    }
-    if (ch === "/" && text[i + 1] === "*") {
-      const end = text.indexOf("*/", i + 2);
-      i = end < 0 ? text.length : end + 1;
-      continue;
-    }
-    if (ch === "]") return i;
-  }
-  return -1;
-}
-
-/** 只清理 include 的生成类型项；exclude 的构建目录配置仍是真实差异，必须参与比对。 */
-function stripGeneratedIncludeEntries(text) {
-  const match = /"include"\s*:\s*\[/.exec(text);
-  if (!match) return text;
-  const openIndex = match.index + match[0].length - 1;
-  const closeIndex = findJsonArrayEnd(text, openIndex);
-  if (closeIndex < 0) return text;
-  let body = text.slice(openIndex + 1, closeIndex);
-  for (let prev; prev !== body; ) {
-    prev = body;
-    body = body.replace(GENERATED_ENTRY_WITH_COMMA, "");
-  }
-  body = body.replace(GENERATED_ENTRY_SOLO, "[]");
-  while (GENERATED_ENTRY_TRAILING.test(body)) {
-    body = body.replace(GENERATED_ENTRY_TRAILING, "");
-  }
-  body = body.replace(/,\s*(?=(?:(?:\/\/[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)\s*)*$)/, "");
-  body = body.trim();
-  return text.slice(0, openIndex + 1) + body + text.slice(closeIndex);
-}
-
 /**
  * @param {string} rel 相对 overlay 的 posix 路径
  * @param {Buffer|string} buf 文件内容
@@ -152,9 +101,17 @@ function stripGeneratedIncludeEntries(text) {
  */
 export function normBuildInjectedConfig(rel, buf) {
   if (!isBuildInjectedConfig(rel)) return null;
-  let text = stripGeneratedIncludeEntries(normText(buf));
-  // Next 删除最后一项后会留下尾逗号；JSONC 允许它，但不能因此制造镜像漂移。
-  text = text.replace(/,(?<tail>\s*(?:(?:\/\/[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)\s*)*)([}\]])/g, "$<tail>$2");
+  let text = normText(buf);
+  // 反复删除「带尾随逗号的生成项」直到不动点，处理连续多项的情况
+  for (let prev; prev !== text; ) {
+    prev = text;
+    text = text.replace(GENERATED_ENTRY_WITH_COMMA, "");
+  }
+  text = text.replace(GENERATED_ENTRY_SOLO, "[]");
+  // 数组最后一项是生成项：连同它前面的逗号一起去掉
+  while (GENERATED_ENTRY_TRAILING.test(text)) {
+    text = text.replace(GENERATED_ENTRY_TRAILING, "");
+  }
   return text.replace(/\s+/g, " ").trim();
 }
 

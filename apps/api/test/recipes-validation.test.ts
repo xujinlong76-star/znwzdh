@@ -21,8 +21,8 @@ let ctx: AppContext;
 let app: Awaited<ReturnType<typeof buildServer>>;
 
 function stubLlm(payload: Record<string, unknown>) {
-  const original = ctx.config.llm.fetchImpl;
-  ctx.config.llm.fetchImpl = (async (input: RequestInfo | URL) => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
     if (!url.includes("/chat/completions")) {
       return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -37,7 +37,7 @@ function stubLlm(payload: Record<string, unknown>) {
     );
   }) as typeof fetch;
   return () => {
-    ctx.config.llm.fetchImpl = original;
+    globalThis.fetch = original;
   };
 }
 

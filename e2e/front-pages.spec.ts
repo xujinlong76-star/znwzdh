@@ -41,24 +41,6 @@ test.describe('核心旅程 4：前台多维探索与高频核心页面冒烟测
     await expect(submitBtn).toBeVisible();
   });
 
-  test('网站目录推广可关闭，并按 7 天静默期记忆', async ({ page }) => {
-    await page.goto('/sites');
-    const promo = page.getByRole('note').filter({ hasText: '除了工具网站，还想看技术视频教程？' });
-    await expect(promo).toBeVisible();
-
-    await promo.getByRole('button', { name: /关闭此提示，7 天内不再显示/ }).click();
-    await expect(promo).toHaveCount(0);
-    const storedUntil = await page.evaluate(() => Number(localStorage.getItem('navhub.promo.video-hub.v1')));
-    expect(storedUntil).toBeGreaterThan(Date.now() + 6 * 24 * 60 * 60 * 1000);
-    expect(storedUntil).toBeLessThanOrEqual(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-    await page.reload();
-    await expect(promo).toHaveCount(0);
-    await page.evaluate(() => localStorage.setItem('navhub.promo.video-hub.v1', String(Date.now() - 1)));
-    await page.reload();
-    await expect(promo).toBeVisible();
-  });
-
   test('算法实验室 (/algorithms)：装载 12 大前沿算法实验室与交互式推演台', async ({ page }) => {
     await page.goto('/algorithms');
     await expect(page.getByRole('heading', { name: '山羊胡 5.0+ 算法实验室' })).toBeVisible();

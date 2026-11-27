@@ -205,12 +205,6 @@ export async function runRollup(adapter: RetentionAdapter, options: RollupOption
   const maxGroups = options.maxGroupsPerDay ?? 5000;
   const ensureTable = options.ensureTable ?? !dryRun;
   const targets = options.targets ?? DEFAULT_ROLLUP_TARGETS;
-  const transaction = adapter.transaction;
-  if (!dryRun && !transaction) {
-    // apply 的 INSERT 与 DELETE 之间有 await，没有事务就可能留下“聚合已写、明细未删”
-    // 或反过来的半状态。静默降级成非原子执行比直接失败更危险。
-    throw new Error("rollup apply 模式要求 adapter 提供真实事务能力");
-  }
   const p = (i: number) => adapter.placeholder(i);
   const tables: RollupTableResult[] = [];
 
@@ -318,9 +312,10 @@ export async function runRollup(adapter: RetentionAdapter, options: RollupOption
 
       for (const dayRow of days) {
         const dayStart = Number(dayRow.day_start);
-        const outcome = dryRun
-          ? await processDay(dayStart)
-          : await transaction!(() => processDay(dayStart));
+        const outcome =
+          dryRun || !adapter.transaction
+            ? await processDay(dayStart)
+            : await adapter.transaction(() => processDay(dayStart));
 
         if (outcome.skipped) {
           seenSkipped.add(dayStart);

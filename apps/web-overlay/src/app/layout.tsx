@@ -17,7 +17,6 @@ import {
   WebVitalsReporter,
 } from '@/components/shell-background'
 import MobileNav from '@/components/mobile-nav'
-import { XiaomaomaoLoader } from '@/components/xiaomaomao-loader'
 import { GlobalFloatingDock } from '@/components/global-floating-dock'
 import { Suspense } from 'react'
 import { GrowthTracker } from '@/components/growth/growth-tracker'
@@ -308,7 +307,9 @@ export default async function RootLayout({
           {/* 2026-11-21 统一右下角浮坞：回顶按钮由 React 侧渲染，
               小猫挂件由下面的脚本自绘（已在 CSS 里对齐同一套 right/bottom/z 值）。 */}
           <GlobalFloatingDock />
-          {settings.features.xiaomaomao ? <XiaomaomaoLoader /> : null}
+          {settings.features.xiaomaomao ? (
+            <Script src="/xiaomaomao/xiaomaomao.js" strategy="lazyOnload" />
+          ) : null}
           {/* 成长档案感知层（挂机/路由/点击计数，无可见 UI）。
               GrowthTracker 用了 useSearchParams，必须包 Suspense，否则静态生成
               /404 时报 missing-suspense-with-csr-bailout（2026-11-10 构建实测）。

@@ -50,9 +50,9 @@ export function isDiyDragActive(): boolean {
 
 /** 键盘拖拽流程说明（Tab → Space 拿起 → 方向键移动 → Enter 放下 → Esc 取消） */
 export const KEYBOARD_DRAG_INSTRUCTIONS =
-  '拖拽排序：在 DIY 排版模式下可直接按住任意卡片自由拖拽，支持同分类内平滑重排及跨分类收录或重归类精准落位；键盘可聚焦卡片后按空格拿起、方向键移动、回车放下、Esc 取消，也可通过卡片右上角更多操作菜单微调顺序。'
+  '拖拽排序：聚焦拖拽手柄后按空格键开始拖动，方向键移动，回车键放下，Esc 取消。卡片拖到分类上是收录或重归类，不改变它在分类内的位置；要调整卡片在分类内的顺序，用卡片右上角的更多操作菜单（上移、下移、移到顶部、移到末尾）。'
 
-/** dnd-kit draggable/sortable 上挂的卡片载荷（与 provider / section 两边的 data 同形） */
+/** dnd-kit draggable 上挂的卡片载荷（与 provider / section 两边的 data 同形） */
 export interface DiyCardDragData {
   kind: 'card'
   siteId: string
@@ -61,14 +61,6 @@ export interface DiyCardDragData {
   description?: string
   icon?: string
   sourceCategoryId?: string
-  /** 当前卡片所属精确容器 ID（一级分类 ID 或二级子分类 ID） */
-  containerId?: string
-  /** 当前卡片在容器中的 0-based 序号 */
-  index?: number
-  /** 当前容器已渲染的有序站点 ID 列表（用于计算精确重排/落位索引） */
-  displayedIds?: string[]
-  /** 当前容器是否属于用户专属自定义分类 */
-  isCustomContainer?: boolean
 }
 
 /** dnd-kit droppable 上挂的分类落点（拖拽源的分类手柄也挂同一形状） */
@@ -157,116 +149,6 @@ export function resolveCardDrop(input: ResolveCardDropInput): ResolveCardDropRes
     return { action: 'reclassify', reason: '跨分类重归类' }
   }
   return { action: 'noop', reason: '同分类内拖动不改变顺序，请用卡片菜单移动' }
-}
-
-export type CardSortDropPlan =
-  | {
-      action: 'reorder'
-      containerId: string
-      orderedIds: string[]
-      fromIndex: number
-      toIndex: number
-    }
-  | {
-      action: 'move-to-index'
-      siteId: string
-      sourceContainerId: string
-      targetCategoryId: string
-      targetContainerId: string
-      targetIndex: number
-      sourceDisplayedIds?: string[]
-      targetDisplayedIds?: string[]
-      targetLabel?: string
-    }
-  | {
-      action: 'collect'
-      targetCategoryId: string
-      targetLabel?: string
-    }
-  | {
-      action: 'noop'
-      reason: string
-    }
-
-/**
- * Phase 1 自由拖拽统一决策（组内重排 + 跨组精准落位）：
- * - 落到同容器另一张卡片上 → 返回 reorder + 精确新顺序列表；
- * - 落到不同容器的某张卡片上 → 返回 move-to-index（精准插入目标卡片对应索引）；
- * - 落到不同分类容器（含空分类）上 → 返回 collect（自定义分类）或 move-to-index（内置分类）。
- */
-export function resolveCardSortDrop(input: {
-  source: DiyCardDragData | null | undefined
-  target: DiyCardDragData | DiyCategoryDropData | null | undefined
-  isEditing: boolean
-  targetHasSite?: boolean
-}): CardSortDropPlan {
-  const { source, target, isEditing, targetHasSite = false } = input
-  if (!source || !target) return { action: 'noop', reason: '缺少有效的起点或落点' }
-
-  const sourceContainerId = source.containerId ?? source.sourceCategoryId ?? ''
-
-  if (target.kind === 'card') {
-    if (source.siteId === target.siteId) {
-      return { action: 'noop', reason: '落回原位置' }
-    }
-    const targetContainerId = target.containerId ?? target.sourceCategoryId ?? ''
-    if (!targetContainerId) return { action: 'noop', reason: '目标容器未知' }
-
-    // 1. 同容器内自由重排
-    if (sourceContainerId && sourceContainerId === targetContainerId) {
-      const list = [...(target.displayedIds ?? source.displayedIds ?? [])]
-      const fromIndex = list.indexOf(source.siteId)
-      const toIndex = list.indexOf(target.siteId)
-      if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
-        return { action: 'noop', reason: '顺序未发生变化' }
-      }
-      const [moved] = list.splice(fromIndex, 1)
-      if (moved === undefined) return { action: 'noop', reason: '顺序未发生变化' }
-      list.splice(toIndex, 0, moved)
-      return {
-        action: 'reorder',
-        containerId: sourceContainerId,
-        orderedIds: list,
-        fromIndex,
-        toIndex,
-      }
-    }
-
-    // 2. 跨容器精准落位（拖放到目标分类的指定卡片索引处）
-    if (!isEditing) return { action: 'noop', reason: '非编辑态不支持跨分类重排' }
-    const targetList = target.displayedIds ?? []
-    const idx = targetList.indexOf(target.siteId)
-    const targetIndex = idx >= 0 ? idx : (target.index ?? targetList.length)
-    return {
-      action: 'move-to-index',
-      siteId: source.siteId,
-      sourceContainerId,
-      targetCategoryId: targetContainerId,
-      targetContainerId,
-      targetIndex,
-      sourceDisplayedIds: source.displayedIds,
-      targetDisplayedIds: targetList,
-    }
-  }
-
-  // target.kind === 'category'
-  if (target.isCustom) {
-    if (targetHasSite) return { action: 'noop', reason: '目标分类里已有该站点' }
-    return { action: 'collect', targetCategoryId: target.categoryId, targetLabel: target.title }
-  }
-  if (isEditing && sourceContainerId && sourceContainerId !== target.categoryId) {
-    return {
-      action: 'move-to-index',
-      siteId: source.siteId,
-      sourceContainerId,
-      targetCategoryId: target.categoryId,
-      targetContainerId: target.categoryId,
-      targetIndex: 0,
-      sourceDisplayedIds: source.displayedIds,
-      targetLabel: target.title,
-    }
-  }
-  return { action: 'noop', reason: '位置没有变化' }
 }
 
 export interface ResolveCategoryDropIndexInput {

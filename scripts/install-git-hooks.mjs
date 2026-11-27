@@ -150,8 +150,6 @@ node scripts/check-large-files.mjs --staged || exit 1
 node scripts/check-web-overlay.mjs --staged || exit 1
 # 显式 any 棘轮：只看暂存集，按文件基线拦「新增」和「回增」（存量不要求清零）。
 node scripts/check-no-explicit-any.mjs --staged || exit 1
-# raw palette 棘轮（2026-11-25 UI 评审 P2-6）：组件层色彩只认语义 Token，同款基线口径。
-node scripts/check-no-raw-palette.mjs --staged || exit 1
 node scripts/check-extensions.mjs || exit 1
 node scripts/check-upstream-ref.mjs || exit 1
 

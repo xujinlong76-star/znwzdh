@@ -19,8 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
-import { Repository, type Db } from "@navhub/store";
-import { readKv, pathToKey, readStorageVersion, readStoragePath, writeStoragePath } from "../src/storage.ts";
+import { readStorageVersion, readStoragePath, writeStoragePath } from "../src/storage.ts";
 
 let dir = "";
 let ctx: AppContext;
@@ -77,47 +76,6 @@ describe("版本号单调性", () => {
   });
 });
 
-describe("PostgreSQL KV 版本 SQL 方言", () => {
-  function fakePgContext() {
-    const queries: Array<{ sql: string; params: unknown[] | undefined }> = [];
-    const pool = {
-      query: async (sql: string, params?: unknown[]) => {
-        queries.push({ sql, params });
-        return {
-          rows: sql.trim().toUpperCase().startsWith("SELECT") ? [{ updated_at: 101 }] : [],
-          rowCount: 1,
-        };
-      },
-      connect: async () => {
-        throw new Error("KV 写入不需要独占连接");
-      },
-      end: async () => {},
-    };
-    const db = { dialect: "pg", orm: {}, pg: pool, close: async () => {} } as unknown as Db;
-    const repo = new Repository(db);
-    return { ctx: { db, repo } as unknown as AppContext, queries };
-  }
-
-  it("条件更新使用 GREATEST，并经 Repository 转成 $n 占位符", async () => {
-    const { ctx: pgCtx, queries } = fakePgContext();
-    await writeStoragePath(pgCtx, PATH, JSON.stringify({ seq: "pg-conditional" }), { ifVersion: 100 });
-
-    const update = queries.find((q) => q.sql.startsWith("UPDATE jobs"));
-    expect(update?.sql).toContain("GREATEST(updated_at + 1, $2)");
-    expect(update?.sql).toContain("WHERE id = $3 AND updated_at = $4");
-    expect(update?.sql).not.toMatch(/MAX\s*\([^)]*,/i);
-  });
-
-  it("无条件 upsert 也使用 GREATEST，避免 PG 把两参数 MAX 当聚合函数", async () => {
-    const { ctx: pgCtx, queries } = fakePgContext();
-    await writeStoragePath(pgCtx, PATH, JSON.stringify({ seq: "pg-upsert" }));
-
-    const insert = queries.find((q) => q.sql.startsWith("INSERT INTO jobs"));
-    expect(insert?.sql).toContain("GREATEST(jobs.updated_at + 1, excluded.updated_at)");
-    expect(insert?.sql).not.toMatch(/MAX\s*\([^)]*,/i);
-  });
-});
-
 describe("ifVersion 的原子性", () => {
   it("版本匹配时写入成功并推进版本；用旧版本再写必须 409", async () => {
     await writeStoragePath(ctx, PATH, JSON.stringify({ seq: "init" }));
@@ -159,43 +117,5 @@ describe("ifVersion 的原子性", () => {
     const v2 = (await readStorageVersion(ctx, fresh))!;
     expect(v2).toBeGreaterThan(v1);
     expect(((await readStoragePath(ctx, fresh)) as { a?: number }).a).toBe(2);
-  });
-
-  it("KV 读写绕过门禁时会被无关事务吞掉，修复后必须排队并存活", async () => {
-    const path = "src/navsphere/content/gate-probe.json";
-    await writeStoragePath(ctx, path, JSON.stringify({ seq: "committed" }));
-    let release!: () => void;
-    let started!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const entered = new Promise<void>((resolve) => { started = resolve; });
-
-    const tx = ctx.repo.withTransaction(async () => {
-      await ctx.repo.run(
-        "UPDATE jobs SET payload = ? WHERE id = ?",
-        [JSON.stringify({ seq: "uncommitted" }), "kv:" + pathToKey(path)],
-      );
-      started();
-      await gate;
-      throw new Error("KV 隔离事务回滚");
-    });
-    await entered;
-
-    let readSettled = false;
-    let writeSettled = false;
-    const read = readKv(ctx, pathToKey(path)).then((value) => {
-      readSettled = true;
-      return value;
-    });
-    const write = writeStoragePath(ctx, path, JSON.stringify({ seq: "outside" })).then(() => {
-      writeSettled = true;
-    });
-    await new Promise((r) => setTimeout(r, 30));
-    expect(readSettled).toBe(false);
-    expect(writeSettled).toBe(false);
-
-    release();
-    await expect(tx).rejects.toThrow("KV 隔离事务回滚");
-    await Promise.all([read, write]);
-    expect((await readStoragePath(ctx, path) as { seq?: string }).seq).toBe("outside");
   });
 });

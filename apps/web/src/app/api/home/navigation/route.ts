@@ -9,28 +9,24 @@ export const runtime = 'nodejs'
 const NAVIGATION_PATH = 'src/navsphere/content/navigation.json'
 
 export async function GET() {
-  const startedAt = performance.now()
   try {
     const data = await getFileContent(NAVIGATION_PATH)
-    const dur = Math.round((performance.now() - startedAt) * 10) / 10
     return NextResponse.json(data, {
       headers: {
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=3600',
-        'Content-Type': 'application/json',
-        'Server-Timing': `nav;dur=${dur}`,
-      },
+        'Cache-Control': 's-maxage=60, stale-while-revalidate',
+        'Content-Type': 'application/json'
+      }
     })
   } catch (error) {
     console.error('Error in navigation API:', error)
     return NextResponse.json(
       { error: '获取导航数据失败' },
-      {
+      { 
         status: 500,
         headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-store',
-        },
-      },
+          'Content-Type': 'application/json'
+        }
+      }
     )
   }
 }

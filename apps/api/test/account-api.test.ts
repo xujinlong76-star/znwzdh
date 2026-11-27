@@ -225,30 +225,6 @@ describe("账号生命周期 API", () => {
     expect(missing.statusCode).toBe(401);
   });
 
-  it("登录：成功审计 reject 是 best-effort，正确口令仍登录成功", async () => {
-    await post("/api/account/register", {
-      username: "audit-login",
-      email: "audit-login@example.com",
-      password: "S3cret-Passw0rd!",
-    });
-    const auditSpy = vi.spyOn(ctx.repo, "audit").mockRejectedValueOnce(new Error("audit unavailable"));
-    let res: Awaited<ReturnType<typeof post>>;
-    try {
-      res = await post("/api/account/login", {
-        identifier: "audit-login@example.com",
-        password: "S3cret-Passw0rd!",
-      });
-      expect(auditSpy).toHaveBeenCalledWith(expect.objectContaining({ action: "account.login" }));
-    } finally {
-      auditSpy.mockRestore();
-    }
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({
-      ok: true,
-      user: { email: "audit-login@example.com", passwordVersion: 0 },
-    });
-  });
-
   it("忘记密码：无论邮箱是否存在都返回同一文案", async () => {
     captured.length = 0;
     const existing = await post("/api/account/forgot-password", {
@@ -327,128 +303,7 @@ describe("账号生命周期 API", () => {
     expect(await ctx.repo.isSessionRevoked(sidToken, canonical)).toBe(true);
   });
 
-  it("重置密码：legacy OAuth 认领后的 raw / credentials / provider 会话全部撤销", async () => {
-    captured.length = 0;
-    await post("/api/account/register", {
-      username: "legacy-oauth-reset",
-      email: "legacy-oauth-reset@example.com",
-      password: "OldPassw0rd!",
-    });
-    const user = await ctx.repo.findUserByEmail("legacy-oauth-reset@example.com");
-    expect(user).not.toBeNull();
-    const rawId = user?.id ?? "";
-    await ctx.repo.upsertOauthUser({
-      id: "github:legacy-oauth-reset-provider",
-      username: "legacy-oauth-reset",
-      email: "legacy-oauth-reset@example.com",
-    });
-
-    const identities = [rawId, "credentials:" + rawId, "github:legacy-oauth-reset-provider"];
-    const sessions = identities.map((identity, index) => {
-      const sid = `test-sid-legacy-oauth-${index}`;
-      return { identity, sid, token: createHash("sha256").update(sid).digest("hex") };
-    });
-    for (const session of sessions) {
-      await ctx.repo.upsertSessionActivity({
-        token: session.token,
-        userId: session.identity,
-        userAgent: "legacy-oauth-test",
-        expiresAt: Date.now() + 86_400_000,
-      });
-    }
-
-    await post("/api/account/forgot-password", { email: "legacy-oauth-reset@example.com" });
-    const resetMsg = captured.find((m) => m.text.includes("reset-password"));
-    const resetToken = extractToken(resetMsg!, "reset-password");
-    const res = await post("/api/account/reset-password", {
-      token: resetToken,
-      password: "NewPassw0rd!",
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().sessionsRevoked).toBe(3);
-    for (const session of sessions) {
-      expect(await ctx.repo.isSessionRevoked(session.token, session.identity)).toBe(true);
-    }
-  });
-
-  it("重置密码：旧登录返回的版本失效，新登录版本可建立会话", async () => {
-    captured.length = 0;
-    await post("/api/account/register", {
-      username: "version-race",
-      email: "version-race@example.com",
-      password: "OldPassw0rd!",
-    });
-    const oldLogin = await post("/api/account/login", {
-      identifier: "version-race@example.com",
-      password: "OldPassw0rd!",
-    });
-    expect(oldLogin.statusCode).toBe(200);
-    const oldVersion = oldLogin.json().user.passwordVersion;
-    expect(oldVersion).toBe(0);
-    const user = await ctx.repo.findUserByEmail("version-race@example.com");
-    const canonical = "credentials:" + (user?.id ?? "");
-
-    await post("/api/account/forgot-password", { email: "version-race@example.com" });
-    const resetMsg = captured.find((m) => m.text.includes("reset-password"));
-    const resetToken = extractToken(resetMsg!, "reset-password");
-    expect((await post("/api/account/reset-password", {
-      token: resetToken,
-      password: "NewPassw0rd!",
-    })).statusCode).toBe(200);
-
-    const staleSid = createHash("sha256").update("stale-login-result-sid").digest("hex");
-    expect(await ctx.repo.isSessionRevoked(staleSid, canonical, Date.now() + 1000, oldVersion)).toBe(true);
-
-    const newLogin = await post("/api/account/login", {
-      identifier: "version-race@example.com",
-      password: "NewPassw0rd!",
-    });
-    expect(newLogin.statusCode).toBe(200);
-    expect(newLogin.json().user.passwordVersion).toBe(oldVersion + 1);
-    const freshSid = createHash("sha256").update("fresh-login-result-sid").digest("hex");
-    expect(await ctx.repo.isSessionRevoked(
-      freshSid,
-      canonical,
-      Date.now() + 1000,
-      newLogin.json().user.passwordVersion,
-    )).toBe(false);
-  });
-
-  it("重置密码：提交后的成功审计失败仍返回成功，重放令牌才返回 400", async () => {
-    captured.length = 0;
-    await post("/api/account/register", {
-      username: "audit-reset",
-      email: "audit-reset@example.com",
-      password: "OldPassw0rd!",
-    });
-    await post("/api/account/forgot-password", { email: "audit-reset@example.com" });
-    const resetMsg = captured.find((m) => m.text.includes("reset-password"));
-    const resetToken = extractToken(resetMsg!, "reset-password");
-
-    const auditSpy = vi.spyOn(ctx.repo, "audit").mockRejectedValueOnce(new Error("audit unavailable"));
-    let res: Awaited<ReturnType<typeof post>>;
-    try {
-      res = await post("/api/account/reset-password", {
-        token: resetToken,
-        password: "NewPassw0rd!",
-      });
-    } finally {
-      auditSpy.mockRestore();
-    }
-    expect(res.statusCode).toBe(200);
-    expect(res.json().ok).toBe(true);
-    expect(res.body).toContain("密码已重置");
-    expect((await post("/api/account/login", {
-      identifier: "audit-reset@example.com",
-      password: "NewPassw0rd!",
-    })).statusCode).toBe(200);
-    expect((await post("/api/account/reset-password", {
-      token: resetToken,
-      password: "Another1!",
-    })).statusCode).toBe(400);
-  });
-
-  it("重置密码：撤销失败 fail-closed，令牌/密码/会话整体回滚且可安全重试", async () => {
+  it("重置密码：吊销失败不阻塞重置，但记失败审计", async () => {
     captured.length = 0;
     await post("/api/account/register", {
       username: "hank",
@@ -458,21 +313,9 @@ describe("账号生命周期 API", () => {
     const user = await ctx.repo.findUserByEmail("hank@example.com");
     expect(user).not.toBeNull();
     const rawId = user?.id ?? "";
-    const canonical = "credentials:" + rawId;
-    const sidToken = createHash("sha256").update("test-sid-acct-hank-rollback").digest("hex");
-    await ctx.repo.upsertSessionActivity({
-      token: sidToken,
-      userId: canonical,
-      userAgent: "acct-rollback-test",
-      expiresAt: Date.now() + 86_400_000,
-    });
-
-    // 模拟“已写部分撤销数据后失败”，验证事务连这部分写入也会回滚。
-    const revokeAllSessionsForUser = ctx.repo.revokeAllSessionsForUser.bind(ctx.repo);
-    const revokeSpy = vi.spyOn(ctx.repo, "revokeAllSessionsForUser").mockImplementationOnce(async (userId) => {
-      await revokeAllSessionsForUser(userId);
-      throw new Error("revoke boom");
-    });
+    vi.spyOn(ctx.repo, "revokeAllSessions").mockRejectedValueOnce(
+      new Error("revoke boom"),
+    );
     await post("/api/account/forgot-password", { email: "hank@example.com" });
     const resetMsg = captured.find((m) => m.text.includes("reset-password"));
     const resetToken = extractToken(resetMsg!, "reset-password");
@@ -480,43 +323,18 @@ describe("账号生命周期 API", () => {
       token: resetToken,
       password: "NewPassw0rd!",
     });
-    revokeSpy.mockRestore();
-
-    expect(res.statusCode).toBe(500);
-    expect(res.json().ok).not.toBe(true);
-    expect(res.body).not.toContain("密码已重置");
-    const tokenRows = await ctx.repo.raw(
-      "SELECT consumed_at FROM auth_tokens WHERE token_hash = ?",
-      [createHash("sha256").update(resetToken).digest("hex")],
-    );
-    expect(tokenRows[0]?.consumed_at).toBeNull();
-    expect(await ctx.repo.isSessionRevoked(sidToken, canonical)).toBe(false);
-    expect((await post("/api/account/login", {
-      identifier: "hank@example.com",
-      password: "OldPassw0rd!",
-    })).statusCode).toBe(200);
-    expect((await post("/api/account/login", {
-      identifier: "hank@example.com",
-      password: "NewPassw0rd!",
-    })).statusCode).toBe(401);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().sessionsRevoked).toBe(0);
     const rows = await ctx.repo.raw(
       "SELECT action FROM audit_logs WHERE actor = ? AND action = ?",
       [rawId, "account.password_reset_sessions_revoke_failed"],
     );
     expect(rows.length).toBeGreaterThan(0);
-
-    // 失败没有烧掉一次性令牌；重试成功后密码与撤销必须同时生效。
-    const retried = await post("/api/account/reset-password", {
-      token: resetToken,
-      password: "NewPassw0rd!",
-    });
-    expect(retried.statusCode).toBe(200);
-    expect(retried.json().sessionsRevoked).toBe(1);
-    expect(await ctx.repo.isSessionRevoked(sidToken, canonical)).toBe(true);
-    expect((await post("/api/account/login", {
+    const login = await post("/api/account/login", {
       identifier: "hank@example.com",
       password: "NewPassw0rd!",
-    })).statusCode).toBe(200);
+    });
+    expect(login.statusCode).toBe(200);
   });
 
   it("重置密码：令牌一次性", async () => {

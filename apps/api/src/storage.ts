@@ -1236,12 +1236,16 @@ export async function writeVideosData(
  * 调用方需要据此决定是否返回默认值。
  */
 export async function readKv(ctx: AppContext, key: string, strict = false): Promise<unknown> {
-  // KV 与业务表共用 SQLite 单连接，读取也必须经过 Repository 门禁，避免看到
-  // 他人事务的未提交 payload（回滚后读取结果还会凭空消失）。
-  const row = (await ctx.repo.raw("SELECT payload FROM jobs WHERE id = ?", ["kv:" + key]))[0] as
-    | { payload?: string }
-    | undefined;
-  const payloadStr = row?.payload;
+  const db = ctx.db;
+  let payloadStr: string | undefined;
+  if (db.dialect === "sqlite") {
+    const row = db.sqlite!.prepare("SELECT payload FROM jobs WHERE id = ?").get("kv:" + key) as { payload: string } | undefined;
+    payloadStr = row?.payload;
+  } else {
+    const res = await db.pg!.query("SELECT payload FROM jobs WHERE id = $1", ["kv:" + key]);
+    const row = res.rows[0] as { payload: string } | undefined;
+    payloadStr = row?.payload;
+  }
   if (payloadStr === undefined) return null;
   try {
     return JSON.parse(payloadStr);
@@ -1262,9 +1266,15 @@ export async function readKv(ctx: AppContext, key: string, strict = false): Prom
  * 返回 `null` 表示从未写入过。
  */
 export async function readKvVersion(ctx: AppContext, key: string): Promise<number | null> {
-  const row = (await ctx.repo.raw("SELECT updated_at FROM jobs WHERE id = ?", ["kv:" + key]))[0] as
-    | { updated_at?: unknown }
-    | undefined;
+  const db = ctx.db;
+  if (db.dialect === "sqlite") {
+    const row = db.sqlite!
+      .prepare("SELECT updated_at FROM jobs WHERE id = ?")
+      .get("kv:" + key) as { updated_at?: number } | undefined;
+    return typeof row?.updated_at === "number" ? row.updated_at : null;
+  }
+  const res = await db.pg!.query("SELECT updated_at FROM jobs WHERE id = $1", ["kv:" + key]);
+  const row = res.rows[0] as { updated_at?: number } | undefined;
   return typeof row?.updated_at === "number" ? row.updated_at : null;
 }
 
@@ -1295,6 +1305,7 @@ async function writeKv(
   value: unknown,
   ifVersion?: number,
 ): Promise<void> {
+  const db = ctx.db;
   const payload = JSON.stringify(value);
   const now = Date.now();
 
@@ -1316,30 +1327,40 @@ async function writeKv(
    * 取 max 后版本**严格单调递增**，客户端可以真的依赖「版本一定变大」。
    */
   const id = "kv:" + key;
-  const isPg = ctx.db.dialect === "pg";
 
   if (ifVersion !== undefined) {
-    // 条件 UPDATE 仍是单条原子语句；改走 Repository 只为统一写门禁，避免落在
-    // 无关事务的连接上并被其 ROLLBACK 连带抹掉。PG 没有 SQLite 的两参数 MAX，
-    // 必须用 GREATEST；Repository 随后会把 ? 占位符转换成 $n。
-    const changed = await ctx.repo.runCount(
-      isPg
-        ? "UPDATE jobs SET payload = ?, updated_at = GREATEST(updated_at + 1, ?) WHERE id = ? AND updated_at = ?"
-        : "UPDATE jobs SET payload = ?, updated_at = MAX(updated_at + 1, ?) WHERE id = ? AND updated_at = ?",
+    if (db.dialect === "sqlite") {
+      // node:sqlite 的 run() 返回类型是 unknown（不同版本签名不一致），只取 changes
+      const info = db.sqlite!.prepare(
+        "UPDATE jobs SET payload = ?, updated_at = MAX(updated_at + 1, ?) WHERE id = ? AND updated_at = ?",
+      ).run(payload, now, id, ifVersion) as { changes?: number | bigint };
+      if (Number(info.changes ?? 0) === 0) {
+        throw new StorageVersionConflictError(await readKvVersion(ctx, key));
+      }
+      return;
+    }
+    const res = await db.pg!.query(
+      "UPDATE jobs SET payload = $1, updated_at = GREATEST(updated_at + 1, $2) WHERE id = $3 AND updated_at = $4",
       [payload, now, id, ifVersion],
     );
-    if (changed === 0) {
+    if ((res.rowCount ?? 0) === 0) {
       throw new StorageVersionConflictError(await readKvVersion(ctx, key));
     }
     return;
   }
 
-  await ctx.repo.run(
-    "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES (?,?,?,?,0,?,?) " +
+  if (db.dialect === "sqlite") {
+    db.sqlite!.prepare(
+      "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES (?,?,?,?,0,?,?) " +
       "ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, " +
-      (isPg
-        ? "updated_at = GREATEST(jobs.updated_at + 1, excluded.updated_at)"
-        : "updated_at = MAX(jobs.updated_at + 1, excluded.updated_at)"),
+      "updated_at = MAX(jobs.updated_at + 1, excluded.updated_at)",
+    ).run(id, "kv", payload, "done", now, now);
+    return;
+  }
+  await db.pg!.query(
+    "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES ($1,$2,$3,$4,0,$5,$6) " +
+    "ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, " +
+    "updated_at = GREATEST(jobs.updated_at + 1, EXCLUDED.updated_at)",
     [id, "kv", payload, "done", now, now],
   );
 }
@@ -1436,16 +1457,24 @@ export async function listAssetDocs(ctx: AppContext, limit = 500): Promise<Asset
     created_at: number | string; mime: string | null; sha256: string | null;
     width: number | null; height: number | null;
   };
-  const sql = ctx.db.dialect === "sqlite"
-    ? "SELECT id, length(payload) AS bytes, updated_at, created_at, " +
-      "json_extract(payload, '$.mime') AS mime, json_extract(payload, '$.sha256') AS sha256, " +
-      "json_extract(payload, '$.width') AS width, json_extract(payload, '$.height') AS height " +
-      "FROM jobs WHERE id LIKE ? AND json_valid(payload) ORDER BY updated_at DESC LIMIT ?"
-    : "SELECT id, LENGTH(payload) AS bytes, updated_at, created_at, " +
+  let rows: Row[];
+  if (ctx.db.dialect === "sqlite") {
+    rows = ctx.db.sqlite!
+      .prepare("SELECT id, length(payload) AS bytes, updated_at, created_at, " +
+        "json_extract(payload, '$.mime') AS mime, json_extract(payload, '$.sha256') AS sha256, " +
+        "json_extract(payload, '$.width') AS width, json_extract(payload, '$.height') AS height " +
+        "FROM jobs WHERE id LIKE ? AND json_valid(payload) ORDER BY updated_at DESC LIMIT ?")
+      .all(prefix + "%", cap) as Row[];
+  } else {
+    const res = await ctx.db.pg!.query(
+      "SELECT id, LENGTH(payload) AS bytes, updated_at, created_at, " +
       "payload::jsonb->>'mime' AS mime, payload::jsonb->>'sha256' AS sha256, " +
       "payload::jsonb->>'width' AS width, payload::jsonb->>'height' AS height " +
-      "FROM jobs WHERE id LIKE $1 ORDER BY updated_at DESC LIMIT $2";
-  const rows = await ctx.repo.raw(sql, [prefix + "%", cap]) as Row[];
+      "FROM jobs WHERE id LIKE $1 ORDER BY updated_at DESC LIMIT $2",
+      [prefix + "%", cap],
+    );
+    rows = res.rows as Row[];
+  }
   const references = await persistedAssetReferences(ctx);
   const out: AssetDocInfo[] = [];
   for (const row of rows) {
@@ -1488,8 +1517,12 @@ export async function deleteAssetDoc(ctx: AppContext, path: string): Promise<{ d
       throw Object.assign(new Error(`资源仍被已保存的配置引用：${references.join("、")}，请先替换并保存设置`), { statusCode: 409 });
     }
     const id = "kv:" + pathToKey(norm);
-    const deleted = await ctx.repo.runCount("DELETE FROM jobs WHERE id = ?", [id]);
-    return { deleted: deleted > 0 };
+    if (ctx.db.dialect === "sqlite") {
+      const info = ctx.db.sqlite!.prepare("DELETE FROM jobs WHERE id = ?").run(id) as { changes?: number };
+      return { deleted: Number(info?.changes ?? 0) > 0 };
+    }
+    const res = await ctx.db.pg!.query("DELETE FROM jobs WHERE id = $1", [id]);
+    return { deleted: Number(res.rowCount ?? 0) > 0 };
   });
 }
 

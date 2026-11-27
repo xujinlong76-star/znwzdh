@@ -5,8 +5,6 @@ import {
   predictArmWeights,
   updateDiscountedArmReward,
   computeDwellTimeReward,
-  isValidDwellSeconds,
-  isValidLinUCBReward,
   fuse,
   type LinUCBModel,
   type RetrievalChannel,
@@ -32,11 +30,10 @@ import type { FullTextStore } from "./fts.ts";
 import { bindSqlite, slugify, toPgSql } from "./repository.ts";
 import { containsLike, escapeLike, prefixLike } from "./sql-like.ts";
 import { chunkList } from "./sql-in.ts";
-import { readWithDbGate } from "./db-access.ts";
 import type { VectorStore } from "./vector/types.ts";
 
 /**
- * 混合检索引擎：四路召回 + RRF 融合 + 个性化 rerank。
+ * 混合检索引擎：四路召回 + RRF 融合 + 个性化。
  *
  * 通道设计取舍：
  *  - exact   : LIKE 子串命中。中文语义下这是**必要**通道——用户搜"天气"时，
@@ -330,21 +327,12 @@ export class SearchEngine {
   ): void {
     const q = (query ?? "").trim();
     if (!q) return;
-    // 必须在 dwell -> reward 映射之前拦截非法时长；否则 ±Infinity 会分别被
-    // 钳成 1.5 或 -0.5，NaN 也可能绕过后续奖励范围检查。
-    if (
-      rewardOrDwell?.reward === undefined &&
-      rewardOrDwell?.dwellSeconds !== undefined &&
-      !isValidDwellSeconds(rewardOrDwell.dwellSeconds)
-    ) return;
     const reward =
       rewardOrDwell?.reward !== undefined
         ? rewardOrDwell.reward
         : rewardOrDwell?.dwellSeconds !== undefined
           ? computeDwellTimeReward(rewardOrDwell.dwellSeconds, rewardOrDwell.interactionType ?? "click")
           : 1.0;
-    // 公开遥测或其它调用方传入 NaN/Infinity/越界值时静默丢弃，绝不能污染全局模型。
-    if (!isValidLinUCBReward(reward)) return;
     updateDiscountedArmReward(this.linucbModel, channel, q, reward, 0.98);
     this.feedbackCount++;
     // 每 10 次交互反馈自动进行一次轻量后台落库
@@ -824,8 +812,7 @@ export class SearchEngine {
       }
     }
 
-    // 个性化 rerank：只给四路已经召回的站点追加 personal 偏好信号，不发现/扩展召回集合。
-    // 因此没有词法或语义命中的站点不会仅因画像相似而进入结果；这是重排，不是第五路召回。
+    // 个性化作为独立通道参与融合
     if (effectiveOpt.personalize && !effectiveOpt.disablePersonal && candidates.length > 0) {
       const recalled = [...new Set(candidates.map((c) => c.siteId))];
       const sites = await this.loadPersonalizable(recalled);
@@ -1606,9 +1593,7 @@ export class SearchEngine {
   /** 方言无关的原始查询：sqlite 同步、pg 异步，这里统一成 Promise */
   private async rawRows(sqlText: string, params: unknown[]): Promise<SiteRow[]> {
     if (this.deps.db.dialect === "sqlite" || this.deps.db.dialect === "libsql") {
-      return readWithDbGate(this.deps.db, () =>
-        this.deps.db.sqlite!.prepare(sqlText).all(...bindSqlite(params)) as SiteRow[],
-      );
+      return this.deps.db.sqlite!.prepare(sqlText).all(...bindSqlite(params)) as SiteRow[];
     }
     // PostgreSQL 用 $1..$n 占位符，且布尔必须是 true/false（不能传 0/1）
     const res = await this.deps.db.pg!.query(toPgSql(sqlText), params);

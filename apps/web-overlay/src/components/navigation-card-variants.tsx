@@ -53,17 +53,19 @@ function LaunchpadSquircleIcon({
     return (
       <div
         aria-hidden="true"
-        className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl transition-transform duration-200 group-hover/card:scale-[1.06]"
+        className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-[16px] shadow-sm ring-1 ring-inset ring-black/[0.06] transition-all duration-200 group-hover/card:scale-[1.06] group-hover/card:shadow-md dark:ring-white/[0.12]"
+        style={{ background: gradient.cssGradient }}
       >
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/25 via-transparent to-black/10" />
         <img
           src={thumbnail.src}
           alt=""
-          width={48}
-          height={48}
+          width={36}
+          height={36}
           loading="lazy"
           decoding="async"
           draggable={false}
-          className="h-full w-full rounded-xl object-contain"
+          className="relative z-10 h-9 w-9 object-contain drop-shadow-xs"
           onError={() => setImgFailed(true)}
         />
       </div>
@@ -74,11 +76,11 @@ function LaunchpadSquircleIcon({
     return (
       <div
         aria-hidden="true"
-        className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl transition-transform duration-200 group-hover/card:scale-[1.06]"
+        className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-[16px] shadow-sm ring-1 ring-inset ring-black/[0.06] transition-all duration-200 group-hover/card:scale-[1.06] group-hover/card:shadow-md dark:ring-white/[0.12]"
         style={{ background: gradient.cssGradient }}
       >
         <span
-          className="text-xl font-bold leading-none"
+          className="text-xl font-bold leading-none drop-shadow-xs"
           style={{ color: gradient.textColor }}
         >
           {monogram}
@@ -88,13 +90,13 @@ function LaunchpadSquircleIcon({
   }
 
   return (
-    <div className="relative flex h-12 w-12 items-center justify-center transition-transform duration-200 group-hover/card:scale-[1.06]">
+    <div className="relative flex h-14 w-14 items-center justify-center rounded-[16px] border border-border/60 bg-background/95 p-2.5 shadow-sm transition-all duration-200 group-hover/card:scale-[1.06] group-hover/card:shadow-md dark:bg-card/80">
       <SiteFavicon
         title={item.title}
         url={item.href}
         icon={item.icon}
         useDefaultIcon={item.useDefaultIcon}
-        className="h-full w-full rounded-xl object-contain"
+        className="h-full w-full rounded-md object-contain"
       />
     </div>
   )
@@ -278,13 +280,13 @@ function ListRowItemView({ controller }: { controller: SiteItemController }) {
     >
       {/* 左侧信息列：图标 + 站名 + 横向简介 + 域名胶囊 + 标签 */}
       <div className="pointer-events-none relative z-10 flex min-w-0 flex-1 items-center gap-3">
-        <div className="relative flex h-6 w-6 shrink-0 items-center justify-center transition-transform duration-150 group-hover/card:scale-105">
+        <div className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-muted/50 p-1 transition-transform duration-150 group-hover/card:scale-105 dark:bg-muted/25">
           <SiteFavicon
             title={item.title}
             url={item.href}
             icon={item.icon}
             useDefaultIcon={item.useDefaultIcon}
-            className="h-full w-full rounded-md object-contain"
+            className="h-full w-full rounded-xs object-contain"
           />
         </div>
 
@@ -497,13 +499,13 @@ function MinimalChipItemView({ controller }: { controller: SiteItemController })
       )}
     >
       <div className="pointer-events-none relative z-10 flex min-w-0 flex-1 items-center gap-2">
-        <div className="relative flex h-5 w-5 shrink-0 items-center justify-center transition-transform duration-150 group-hover/card:scale-110">
+        <div className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted/50 p-0.5 transition-transform duration-150 group-hover/card:scale-110">
           <SiteFavicon
             title={item.title}
             url={item.href}
             icon={item.icon}
             useDefaultIcon={item.useDefaultIcon}
-            className="h-full w-full rounded-sm object-contain"
+            className="h-full w-full rounded-full object-contain"
           />
         </div>
         <SiteItemTitle
@@ -736,15 +738,15 @@ function BentoTileItemView({ controller }: { controller: SiteItemController }) {
         style={{ background: gradient.cssGradient }}
       />
 
-      {/* 顶部行：纯净品牌图标（无外框无底色）+ 右上角贴边域名/星标（悬浮无缝切为快捷动作） */}
+      {/* 顶部行：40×40 浮雕品牌图标 + 右上角贴边域名/星标（悬浮无缝切为快捷动作） */}
       <div className="relative z-10 flex items-start justify-between gap-2">
-        <div className="pointer-events-none relative flex h-9 w-9 shrink-0 items-center justify-center transition-transform duration-200 group-hover/card:scale-105">
+        <div className="pointer-events-none relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-background p-1.5 shadow-xs transition-transform duration-200 group-hover/card:scale-105 dark:bg-white/[0.10]">
           <SiteFavicon
             title={item.title}
             url={item.href}
             icon={item.icon}
             useDefaultIcon={item.useDefaultIcon}
-            className="h-full w-full rounded-lg object-contain"
+            className="h-full w-full rounded-md object-contain"
           />
           <NumberDialBadge digit={dialDigit} className="-right-1.5 -bottom-1.5 z-20" />
         </div>
@@ -954,14 +956,14 @@ function GlassDockItemView({ controller }: { controller: SiteItemController }) {
         />
       </div>
 
-      {/* 居中纯净品牌图标（无圆框无底色） */}
-      <div className="pointer-events-none relative z-10 flex h-11 w-11 items-center justify-center transition-transform duration-200 group-hover/card:scale-105">
+      {/* 居中内凹圆形晶格底座 */}
+      <div className="pointer-events-none relative z-10 flex h-12 w-12 items-center justify-center rounded-full border border-border/60 bg-background p-2.5 shadow-inner ring-4 ring-muted/45 transition-all duration-200 group-hover/card:scale-105 group-hover/card:ring-primary/15 dark:bg-white/[0.10] dark:ring-muted/25">
         <SiteFavicon
           title={item.title}
           url={item.href}
           icon={item.icon}
           useDefaultIcon={item.useDefaultIcon}
-          className="h-full w-full rounded-xl object-contain"
+          className="h-full w-full rounded-full object-contain"
         />
         {isPinnedInCategory && (
           <span
@@ -1035,13 +1037,13 @@ function MagazineCardItemView({ controller }: { controller: SiteItemController }
         {/* 头部：图标 + 杂志标题 + 域名芯片 */}
         <div>
           <div className="pointer-events-none relative z-10 flex items-center gap-2.5">
-            <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
+            <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/40 p-1 dark:bg-white/[0.10]">
               <SiteFavicon
                 title={item.title}
                 url={item.href}
                 icon={item.icon}
                 useDefaultIcon={item.useDefaultIcon}
-                className="h-full w-full rounded-lg object-contain"
+                className="h-full w-full rounded-sm object-contain"
               />
             </div>
             <div className="min-w-0 flex-1">
@@ -1231,7 +1233,7 @@ function TerminalRowItemView({ controller }: { controller: SiteItemController })
         >
           ›
         </span>
-        <div className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+        <div className="relative flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-xs dark:bg-white/[0.10] dark:p-0.5">
           <SiteFavicon
             title={item.title}
             url={item.href}

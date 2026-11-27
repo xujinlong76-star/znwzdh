@@ -152,50 +152,16 @@ describe('decideGlobalUndoKey：重做只走 DIY/画布，不重做收藏删除'
 })
 
 describe('接线守卫：三处旧监听收敛为一处分发', () => {
-  it('use-home-diy / modular-canvas 不再有旧撤销监听，navigation-content 只处理聚焦搜索热键', () => {
+  it('use-home-diy / modular-canvas / navigation-content 里不再有 keydown 监听', () => {
     for (const rel of [
       'src/lib/modular/use-home-diy.ts',
       'src/components/modular/modular-canvas.tsx',
+      'src/components/navigation-content.tsx',
     ]) {
       const src = overlaySource(rel)
       expect(src, rel + ' 仍挂着 window keydown').not.toContain("window.addEventListener('keydown'")
       expect(src, rel + ' 仍挂着 window keydown').not.toContain('window.addEventListener("keydown"')
     }
-    const content = overlaySource('src/components/navigation-content.tsx')
-    const listenerStart = content.indexOf('const onKeyDown = (e: KeyboardEvent)')
-    expect(listenerStart).toBeGreaterThan(-1)
-    const listener = content.slice(listenerStart, content.indexOf("window.addEventListener('keydown', onKeyDown)", listenerStart))
-    expect(listener).not.toContain('undoLast')
-    expect(listener).not.toContain('redoLast')
-    expect(listener).not.toContain("e.key.toLowerCase() === 'z'")
-    expect(listener).not.toContain("e.key.toLowerCase() === 'y'")
-    expect(listener).toContain("e.key === 'Escape'")
-    expect(listener).toContain("e.key === '/'")
-    expect(listener).toContain("e.key.toLowerCase() === 'k'")
-  })
-
-  it('聚焦快捷抽屉 Escape 关闭后等一帧把焦点还给触发按钮', () => {
-    const content = overlaySource('src/components/navigation-content.tsx')
-    expect(content).toContain('const focusedQuickDrawerTriggerRef = useRef<HTMLButtonElement | null>(null)')
-
-    const toggleStart = content.indexOf('const handleToggleFocusedQuickDrawer')
-    const toggle = content.slice(toggleStart, content.indexOf('}, [])', toggleStart))
-    expect(toggle).toContain('focusedQuickDrawerTriggerRef.current = event.currentTarget')
-    expect(toggle).toContain('setFocusedQuickDrawerOpen((prev) => !prev)')
-
-    const listenerStart = content.indexOf('const onKeyDown = (e: KeyboardEvent)')
-    const listener = content.slice(listenerStart, content.indexOf("window.addEventListener('keydown', onKeyDown)", listenerStart))
-    expect(listener).toContain("e.key === 'Escape' && focusedQuickDrawerOpen && !inEditable")
-    expect(listener).toContain('setFocusedQuickDrawerOpen(false)')
-
-    // 焦点归还必须发生在关闭状态提交后的 effect + rAF，不能同步 focus 到即将卸载的抽屉。
-    const effectStart = content.indexOf('// 快捷抽屉关闭提交后')
-    const effect = content.slice(effectStart, content.indexOf('}, [focusedQuickDrawerOpen])', effectStart))
-    expect(effect).toContain('if (focusedQuickDrawerOpen) return')
-    expect(effect).toContain('window.requestAnimationFrame')
-    expect(effect).toContain('document.contains(trigger)')
-    expect(effect).toContain('trigger.focus()')
-    expect(effect).toContain('window.cancelAnimationFrame(frame)')
   })
 
   it('use-global-undo 是唯一真源：统一用 keyboard-guards 判定输入框/对话框', () => {

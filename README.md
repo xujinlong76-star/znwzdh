@@ -1,7 +1,7 @@
 # 山羊胡网 — AI 原生开发者网址导航与知识工作台
 
 <p align="center">
-  <b>四路混合检索 + 个性化重排</b> · <b>Bento-Flow 自由排版工作台</b> · <b>0-RTT 原地微工具</b> · <b>MCP Server</b>
+  <b>五路混合检索</b> · <b>Bento-Flow 自由排版工作台</b> · <b>0-RTT 原地微工具</b> · <b>MCP Server</b>
 </p>
 
 **山羊胡**是一款专为开发者与技术团队打造的 AI 原生网址导航与知识工作台（Developer Knowledge OS），原名 NavHub。底座派生自开源项目 NavSphere（MIT），山羊胡在它的存储接缝上做替换与扩展，而非重写。
@@ -27,9 +27,9 @@
 - 站点有健康巡检：定时任务轮询站点可用性，连续多次失败才标记 broken；有断链自愈、分类清洗与去重脚本。
 - 视频导航（`/videos`）：6,007 条视频条目，含分类、播放器、章节与字幕；场景包（`/scenes`）按「做短剧、做简历、考公考研」等目标组织站点。
 
-### 2. 四路混合检索、个性化重排与自适应调权
+### 2. 五路混合检索与自适应调权
 
-搜索框（`⌘K`）与 `/search` 页背后是四路异构召回，再用 RRF 融合；个性化只对已召回站点做 rerank，不扩展召回集合：
+搜索框（`⌘K`）与 `/search` 页背后是五路异构召回，再用 RRF 融合：
 
 | 通道 | 做法 |
 |---|---|
@@ -37,7 +37,7 @@
 | `fts` | BM25 全文检索，CJK 写入期展开为单字 + 相邻二元组后喂 FTS5 |
 | `pinyin` | 全拼与拼音首字母，如 `qdjb` → `启动脚本` |
 | `semantic` | 本地量化 Embedding 向量检索（`Xenova/bge-small-zh-v1.5`，512 维 q8） |
-| `personal` | 对上述四路已召回站点按个人访问/收藏偏好 rerank（不是第五路召回） |
+| `personal` | 个人访问频次与置顶收藏权重 |
 
 融合默认 RRF（`w/(60+rank)`），多路共识有加权奖励；再由 Discounted-LinUCB（γ=0.98，5 维上下文：长度 / CJK 比 / 字母比 / 拼音似然 / 数字比）按停留时长动态调整各通道权重，模型持久化在 `system_states`。
 
@@ -116,13 +116,13 @@
 │   ├── chrome-extension/# Chrome 扩展（MV3）：omnibox 搜索、一键收录
 │   └── raycast-extension/# Raycast 扩展：全局模糊检索、Markdown 链接复制
 ├── docker/              # 生产级 Dockerfile 与多模式 Compose 编排（以此为准）
-├── scripts/             # 工程脚本：校验、验证、上游同步、备份、SEO 等（当前值见 docs/metrics.json）
-└── docs/                # 架构文档 + wiki + ADR / 契约 / SEO（当前值见 docs/metrics.json）
+├── scripts/             # 约 269 个脚本：校验、验证、上游同步、备份、SEO 等
+└── docs/                # 68 篇文档 + wiki 13 篇 + ADR / 契约 / SEO
 ```
 
-依赖方向：`core`（底层）← `store` / `ai` ← `api` ← `mcp`；前端不 import `@navhub/*`，走 `STORAGE_ADAPTER=http` + `/api/hub/*` BFF 代理。`apps/web` 是生成目录，**不能直接构建运行**，必须先 `pnpm vendor:web` 拉上游底座并应用 overlay；该入口同时生成镜像，通常无需再单独跑 `pnpm mirror:web`。
+依赖方向：`core`（底层）← `store` / `ai` ← `api` ← `mcp`；前端不 import `@navhub/*`，走 `STORAGE_ADAPTER=http` + `/api/hub/*` BFF 代理。`apps/web` 本地只有 13 个文件快照，**不能直接构建运行**，必须先 `pnpm vendor:web` 拉上游底座，再 `pnpm mirror:web` 覆盖 overlay。
 
-后端（`apps/api`，Fastify 5）：按域拆分路由插件，REST 路由数以 `docs/metrics.json` 的 `restRoutes` 为准；鉴权 scope 分级 `public / read / favorites / write / admin`；API token 为 `nh_` + 24 字节随机，库内只存 SHA-256；14 种定时任务（健康巡检、权重重算、热榜刷新、每日简报、站点自愈、备份等），单实例锁（lite 用幂等表，standard 用 PG advisory lock）。
+后端（`apps/api`，Fastify 5）：57 个路由插件按域拆分，REST 路由 342 条（以 `docs/CODEBASE_OVERVIEW.md` 为准）；鉴权 scope 分级 `public / read / favorites / write / admin`；API token 为 `nh_` + 24 字节随机，库内只存 SHA-256；14 种定时任务（健康巡检、权重重算、热榜刷新、每日简报、站点自愈、备份等），单实例锁（lite 用幂等表，standard 用 PG advisory lock）。
 
 ## 技术栈
 
@@ -132,7 +132,7 @@
 | 语言 / 类型 | TypeScript 严格模式（Node 24 strip-types 直跑源码） |
 | 后端 | Fastify 5、Drizzle ORM、better-sqlite3 / pg |
 | 检索 | sqlite-vec（vec0）/ pgvector、FTS5 / tsvector + pg_trgm、ONNX（`bge-small-zh-v1.5`） |
-| 前端 | Next.js 16.4.5（App Router）、React 19.3.1、Tailwind CSS 4、Radix UI、next-auth 5 beta、SWR |
+| 前端 | Next.js 16.4.2（App Router）、React 19、Tailwind CSS 4、Radix UI、next-auth 5 beta、SWR |
 | 测试 | Vitest、Playwright（E2E，Desktop Chrome） |
 | 部署 | Docker（`node:24-bookworm-slim`） |
 
@@ -158,9 +158,9 @@
 git clone https://github.com/xujinlong76-star/znwzdh.git
 cd znwzdh
 
-# apps/web 本地不完整：统一入口拉上游底座、应用 overlay 并生成镜像
+# apps/web 本地不完整：先拉上游 NavSphere 底座，再用 overlay 覆盖生成镜像
 pnpm vendor:web
-# 仅改过 overlay、且不想重新下载底座时，可单独刷新镜像：pnpm mirror:web
+pnpm mirror:web
 
 pnpm install
 cp .env.example .env
@@ -190,9 +190,7 @@ pnpm dev:web    # 仅 Web
 ### 4. 验证
 
 ```bash
-pnpm check:generated # 四条生成/镜像链聚合校验（纯校验，不自修）
-pnpm check:overlay   # 前端覆盖层镜像一致性（纯校验，不自修）
-pnpm build           # 后端包 + 前端 navsphere 完整构建
+pnpm check:overlay   # 前端覆盖层镜像一致性
 pnpm verify          # 类型检查、覆盖层、契约、边界等聚合验证
 pnpm test            # Vitest 单元测试
 pnpm test:e2e        # Playwright 端到端（需先停掉 pnpm dev:all，端口会冲突）

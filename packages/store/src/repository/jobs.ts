@@ -1,4 +1,3 @@
-import Database from "better-sqlite3";
 import type { Repository } from "../repository.ts";
 import { randomUUID } from "node:crypto";
 import type {
@@ -12,132 +11,6 @@ import {
   parseKeysetCursor,
   type KeysetKey,
 } from "../keyset.ts";
-
-export interface JobRunnerLease {
-  holder: string;
-  createdAt: number;
-}
-
-export interface ClaimedJob extends JobRecord {
-  runToken: string;
-}
-
-export interface JobCompletionOptions {
-  runToken: string;
-  retryAt?: number | null;
-  exhausted?: boolean;
-  durationMs?: number;
-}
-
-interface RunnerLeaseRow {
-  holder: string;
-  created_at: number;
-}
-
-interface RunnerLeaseConnection {
-  db: Database.Database;
-  owned: boolean;
-}
-
-// :memory: 主库本身不能跨进程共享，只需让同一 Db 上的多个 Runner 共享租约。
-// 文件库则每次操作打开 sidecar 后立即关闭，避免引入需要接入 Db.close 的生命周期。
-const memoryRunnerLeases = new WeakMap<object, Database.Database>();
-const RUNNER_LEASE_DDL = `
-  CREATE TABLE IF NOT EXISTS job_runner_lease (
-    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-    holder TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-  )
-`;
-
-function runnerLeaseConnection(repo: Repository): RunnerLeaseConnection {
-  const sqlite = repo.db.sqlite;
-  if (!sqlite) throw new Error("JobRunner 独立租约仅支持 SQLite");
-  const name = (sqlite as unknown as { name?: unknown }).name;
-  if (typeof name === "string" && name !== "" && name !== ":memory:") {
-    // 独立文件而非主库的第二条连接：主库 BEGIN IMMEDIATE 不会物理阻塞它。
-    const db = new Database(`${name}.job-runner-lease.db`);
-    db.pragma("busy_timeout = 5000");
-    return { db, owned: true };
-  }
-  const key = sqlite as object;
-  let db = memoryRunnerLeases.get(key);
-  if (!db) {
-    db = new Database(":memory:");
-    db.pragma("busy_timeout = 5000");
-    memoryRunnerLeases.set(key, db);
-  }
-  return { db, owned: false };
-}
-
-function withRunnerLeaseDb<T>(repo: Repository, action: (db: Database.Database) => T): T {
-  const connection = runnerLeaseConnection(repo);
-  try {
-    connection.db.exec(RUNNER_LEASE_DDL);
-    return action(connection.db);
-  } finally {
-    if (connection.owned) connection.db.close();
-  }
-}
-
-/** 抢主库之外的 JobRunner 租约；过期接管和 holder 条件都在 sidecar 事务内完成。 */
-export function acquireJobRunnerLease(
-  repo: Repository,
-  holder: string,
-  ttlMs: number,
-  now = Date.now(),
-): boolean {
-  if (!Number.isFinite(ttlMs) || ttlMs <= 0) throw new Error("JobRunner 租约 TTL 必须为正数");
-  return withRunnerLeaseDb(repo, (db) => {
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      const row = db.prepare(
-        "SELECT holder, created_at FROM job_runner_lease WHERE singleton = 1",
-      ).get() as RunnerLeaseRow | undefined;
-      if (!row) {
-        db.prepare("INSERT INTO job_runner_lease (singleton, holder, created_at) VALUES (1, ?, ?)")
-          .run(holder, now);
-      } else if (Number(row.created_at) < now - ttlMs) {
-        db.prepare("UPDATE job_runner_lease SET holder = ?, created_at = ? WHERE singleton = 1 AND holder = ?")
-          .run(holder, now, row.holder);
-      } else {
-        db.exec("ROLLBACK");
-        return false;
-      }
-      db.exec("COMMIT");
-      return true;
-    } catch (err) {
-      try { db.exec("ROLLBACK"); } catch { /* 原异常优先 */ }
-      throw err;
-    }
-  });
-}
-
-/** holder 条件续期；0 行表示租约已被夺，旧 Runner 必须立即停手。 */
-export function renewJobRunnerLease(repo: Repository, holder: string, now = Date.now()): number {
-  return withRunnerLeaseDb(repo, (db) => Number(
-    db.prepare(
-      "UPDATE job_runner_lease SET created_at = MAX(created_at + 1, ?) WHERE singleton = 1 AND holder = ?",
-    ).run(now, holder).changes ?? 0,
-  ));
-}
-
-/** 只释放自己的租约，迟到的旧持有者不能删掉新持有者的锁。 */
-export function releaseJobRunnerLease(repo: Repository, holder: string): void {
-  withRunnerLeaseDb(repo, (db) => {
-    db.prepare("DELETE FROM job_runner_lease WHERE singleton = 1 AND holder = ?").run(holder);
-  });
-}
-
-/** 协调租约读数，用于运维观测与 fencing 回归测试。 */
-export function getJobRunnerLease(repo: Repository): JobRunnerLease | null {
-  return withRunnerLeaseDb(repo, (db) => {
-    const row = db.prepare(
-      "SELECT holder, created_at FROM job_runner_lease WHERE singleton = 1",
-    ).get() as RunnerLeaseRow | undefined;
-    return row ? { holder: String(row.holder), createdAt: Number(row.created_at) } : null;
-  });
-}
 
 /**
  * 上报长任务进度（异步恢复等）。
@@ -157,13 +30,12 @@ export async function updateJobProgress(
   repo: Repository,
   id: string,
   progress: { done: number; total: number },
-  runToken: string,
 ): Promise<void> {
   const done = Math.max(0, Math.floor(progress.done));
   const total = Math.max(0, Math.floor(progress.total));
   await repo.run(
-    "UPDATE jobs SET progress_done = ?, progress_total = ?, updated_at = ? WHERE id = ? AND status = 'running' AND run_token = ?",
-    [done, total, Date.now(), id, runToken],
+    "UPDATE jobs SET progress_done = ?, progress_total = ?, updated_at = ? WHERE id = ? AND status = 'running'",
+    [done, total, Date.now(), id],
   );
 }
 
@@ -240,9 +112,8 @@ function claimFilters(opts: ClaimJobOptions): { kindFilter: string; order: strin
   return { kindFilter, order };
 }
 
-export async function claimNextJob(repo: Repository, opts: ClaimJobOptions = {}): Promise<ClaimedJob | null> {
+export async function claimNextJob(repo: Repository, opts: ClaimJobOptions = {}): Promise<JobRecord | null> {
   const { kindFilter, order } = claimFilters(opts);
-  const runToken = randomUUID();
   // 占位符顺序必须按 SQL 文本顺序：先 WHERE（now + kinds），再 ORDER BY（deferKinds）
   const filters = [...(opts.kinds ?? []), ...(opts.deferKinds ?? [])];
   if (repo.db.dialect === "pg") {
@@ -251,12 +122,12 @@ export async function claimNextJob(repo: Repository, opts: ClaimJobOptions = {})
       "WITH next AS (" +
         "SELECT id FROM jobs WHERE status = 'pending' AND (next_run_at IS NULL OR next_run_at <= ?)" + kindFilter + " " +
         "ORDER BY " + order + " LIMIT 1 FOR UPDATE SKIP LOCKED" +
-        ") UPDATE jobs SET status = 'running', attempts = attempts + 1, run_token = ?, next_run_at = NULL, updated_at = ? " +
+        ") UPDATE jobs SET status = 'running', attempts = attempts + 1, next_run_at = NULL, updated_at = ? " +
         "FROM next WHERE jobs.id = next.id RETURNING jobs.*",
-      [now, ...filters, runToken, now],
+      [now, ...filters, now],
     );
     const row = rows[0];
-    return row ? { ...rowToJob(row), runToken } : null;
+    return row ? rowToJob(row) : null;
   }
   return repo.withTransaction(async () => {
     const rows = await repo.raw(
@@ -267,21 +138,20 @@ export async function claimNextJob(repo: Repository, opts: ClaimJobOptions = {})
     const row = rows[0];
     if (!row) return null;
     await repo.run(
-      "UPDATE jobs SET status = 'running', attempts = attempts + 1, run_token = ?, next_run_at = NULL, updated_at = ? WHERE id = ? AND status = 'pending'",
-      [runToken, Date.now(), String(row.id)],
+      "UPDATE jobs SET status = 'running', attempts = attempts + 1, next_run_at = NULL, updated_at = ? WHERE id = ? AND status = 'pending'",
+      [Date.now(), String(row.id)],
     );
     // 返回更新后的行（attempts 已 +1），调用方拿到的就是最新状态
     const updated = (await repo.raw("SELECT * FROM jobs WHERE id = ?", [String(row.id)]))[0];
-    const job = updated ? rowToJob(updated) : rowToJob(row);
-    return { ...job, runToken };
+    return updated ? rowToJob(updated) : rowToJob(row);
   });
 }
 
 export async function completeJob(
   repo: Repository,
   id: string,
-  error: string | null | undefined,
-  opts: JobCompletionOptions,
+  error?: string | null,
+  opts: { retryAt?: number | null; exhausted?: boolean; durationMs?: number } | null = null,
 ): Promise<boolean> {
   const now = Date.now();
   /**
@@ -293,16 +163,16 @@ export async function completeJob(
   // CAS 到 running：任务被取消 / 被 reaper 回收 / 已被另一个实例接管后，
   // 迟到的执行结果不得再改写终态。旧实现无条件 UPDATE，一个跑超时的 handler
   // 醒来后能把 cancelled 覆盖成 done，甚至把别人重跑后的 failed 改回 done。
-  if (error && !opts.exhausted && opts.retryAt) {
+  if (error && !opts?.exhausted && opts?.retryAt) {
     const rows = await repo.raw(
-      "UPDATE jobs SET status = 'pending', error = ?, next_run_at = ?, updated_at = ?, duration_ms = ?, run_token = NULL WHERE id = ? AND status = 'running' AND run_token = ? RETURNING id",
-      [error, opts.retryAt, now, durationMs, id, opts.runToken],
+      "UPDATE jobs SET status = 'pending', error = ?, next_run_at = ?, updated_at = ?, duration_ms = ? WHERE id = ? AND status = 'running' RETURNING id",
+      [error, opts.retryAt, now, durationMs, id],
     );
     return rows.length > 0;
   }
   const rows = await repo.raw(
-    "UPDATE jobs SET status = ?, error = ?, next_run_at = NULL, updated_at = ?, duration_ms = ?, run_token = NULL WHERE id = ? AND status = 'running' AND run_token = ? RETURNING id",
-    [error ? "failed" : "done", error ?? null, now, durationMs, id, opts.runToken],
+    "UPDATE jobs SET status = ?, error = ?, next_run_at = NULL, updated_at = ?, duration_ms = ? WHERE id = ? AND status = 'running' RETURNING id",
+    [error ? "failed" : "done", error ?? null, now, durationMs, id],
   );
   return rows.length > 0;
 }
@@ -332,10 +202,10 @@ export async function completeJob(
  * 旧代码的 `=== "sqlite"` 在 libsql 上会掉进 pg 分支取 `db.pg` 而抛错，
  * 调用方的 catch 把它吞掉——等于 libsql 部署上任务心跳从未生效过。
  */
-export async function heartbeatJob(repo: Repository, id: string, runToken: string): Promise<"running" | "cancelling" | null> {
+export async function heartbeatJob(repo: Repository, id: string): Promise<"running" | "cancelling" | null> {
   const rows = await repo.raw(
-    "UPDATE jobs SET updated_at = ? WHERE id = ? AND status IN ('running', 'cancelling') AND run_token = ? RETURNING status",
-    [Date.now(), id, runToken],
+    "UPDATE jobs SET updated_at = ? WHERE id = ? AND status IN ('running', 'cancelling') RETURNING status",
+    [Date.now(), id],
   );
   const status = String(rows[0]?.status ?? "");
   return status === "running" || status === "cancelling" ? status : null;
@@ -437,7 +307,7 @@ export async function cancelJob(repo: Repository, id: string): Promise<"cancelle
   );
   if (running.length > 0) return "cancelling";
   const idle = await repo.raw(
-    "UPDATE jobs SET status = 'cancelled', run_token = NULL, updated_at = ? WHERE id = ? AND status IN ('pending', 'retrying') RETURNING id",
+    "UPDATE jobs SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('pending', 'retrying') RETURNING id",
     [now, id],
   );
   return idle.length > 0 ? "cancelled" : null;
@@ -450,10 +320,10 @@ export async function cancelJob(repo: Repository, id: string): Promise<"cancelle
  * 语义相同——执行体可能仍在跑，不能提前写终态。
  * CAS 条件要求 `running`：任务已被用户取消（`cancelling`）时不覆盖对方的原因。
  */
-export async function markJobCancelling(repo: Repository, id: string, note: string, runToken: string): Promise<boolean> {
+export async function markJobCancelling(repo: Repository, id: string, note: string): Promise<boolean> {
   const rows = await repo.raw(
-    "UPDATE jobs SET status = 'cancelling', error = ?, updated_at = ? WHERE id = ? AND status = 'running' AND run_token = ? RETURNING id",
-    [note, Date.now(), id, runToken],
+    "UPDATE jobs SET status = 'cancelling', error = ?, updated_at = ? WHERE id = ? AND status = 'running' RETURNING id",
+    [note, Date.now(), id],
   );
   return rows.length > 0;
 }
@@ -470,7 +340,7 @@ export async function settleCancellingJob(
   repo: Repository,
   id: string,
   terminal: "cancelled" | "failed",
-  opts: { error?: string | null; durationMs?: number; runToken: string },
+  opts: { error?: string | null; durationMs?: number } = {},
 ): Promise<boolean> {
   const now = Date.now();
   const sets: string[] = ["status = ?"];
@@ -483,11 +353,11 @@ export async function settleCancellingJob(
     sets.push("duration_ms = ?");
     params.push(Math.max(0, Math.floor(opts.durationMs)));
   }
-  sets.push("updated_at = ?", "run_token = NULL");
+  sets.push("updated_at = ?");
   params.push(now);
   const rows = await repo.raw(
-    "UPDATE jobs SET " + sets.join(", ") + " WHERE id = ? AND status = 'cancelling' AND run_token = ? RETURNING id",
-    [...params, id, opts.runToken],
+    "UPDATE jobs SET " + sets.join(", ") + " WHERE id = ? AND status = 'cancelling' RETURNING id",
+    [...params, id],
   );
   return rows.length > 0;
 }
@@ -497,7 +367,7 @@ export async function retryJob(repo: Repository, id: string): Promise<JobRecord 
   // 只有失败/已取消的终态可以重试。pending 重试会把 attempts 清零（等于白送重试次数）；
   // running 重试会让同一任务被两个 Worker 同时执行；done 重试则静默抹掉历史结果。
   const rows = await repo.raw(
-    "UPDATE jobs SET status = 'pending', attempts = 0, error = NULL, run_token = NULL, next_run_at = NULL, updated_at = ? WHERE id = ? AND status IN ('failed', 'cancelled') RETURNING *",
+    "UPDATE jobs SET status = 'pending', attempts = 0, error = NULL, next_run_at = NULL, updated_at = ? WHERE id = ? AND status IN ('failed', 'cancelled') RETURNING *",
     [now, id],
   );
   if (rows[0]) return rowToJob(rows[0]);
@@ -573,7 +443,7 @@ export async function reapStaleJobs(
       "status = CASE WHEN attempts < ? THEN 'pending' ELSE 'failed' END, " +
       "next_run_at = CASE WHEN attempts < ? THEN ? ELSE NULL END, " +
       "error = CASE WHEN attempts < ? THEN 'Worker 中断，已重新排队' ELSE '任务执行超时或 Worker 异常中断' END, " +
-      "run_token = NULL, updated_at = ? " +
+      "updated_at = ? " +
       "WHERE status IN ('running', 'cancelling') AND updated_at < ? RETURNING id, status",
     [maxAttempts, maxAttempts, now, maxAttempts, now, cutoff],
   );

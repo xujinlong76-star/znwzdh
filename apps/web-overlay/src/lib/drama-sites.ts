@@ -22,12 +22,7 @@ export interface DramaCategoryLike {
   slug?: string | null
   title?: string
   items?: DramaSiteLike[]
-  subCategories?: Array<{
-    id?: string
-    slug?: string | null
-    title?: string
-    items?: DramaSiteLike[]
-  }>
+  subCategories?: Array<{ items?: DramaSiteLike[] }>
 }
 
 export interface DramaSite {
@@ -66,9 +61,13 @@ export function isDramaCategoryRef(ref: string | null | undefined): boolean {
   return Boolean(norm && DRAMA_CATEGORY_REFS.has(norm))
 }
 
-/** 从 /api/home/navigation 的返回里找短剧分类（支持独立一级或合并到影音与游戏下的短剧子分类）并摊平其站点（去重、剔除已失效/已停用）。 */
+/** 从 /api/home/navigation 的返回里找短剧分类并摊平其站点（去重、剔除已失效/已停用）。 */
 export function collectDramaSites(navigationItems: unknown): DramaSite[] {
   const cats = Array.isArray(navigationItems) ? (navigationItems as DramaCategoryLike[]) : []
+  const drama = cats.find(
+    (c) => c?.id === 'duanju' || c?.id === 'reg-short-drama' || c?.slug === 'short-drama' || c?.title === '短剧',
+  )
+  if (!drama) return []
   const flat: DramaSite[] = []
   const seen = new Set<string>()
   const push = (items: DramaSiteLike[] | undefined) => {
@@ -80,21 +79,8 @@ export function collectDramaSites(navigationItems: unknown): DramaSite[] {
       flat.push({ id: it.id, title: it.title, href: it.href, description: it.description })
     }
   }
-  const drama = cats.find(
-    (c) => c?.id === 'duanju' || c?.id === 'reg-short-drama' || c?.slug === 'short-drama' || c?.title === '短剧',
-  )
-  if (drama) {
-    push(drama.items)
-    for (const sub of drama.subCategories || []) push(sub.items)
-    return flat
-  }
-  for (const cat of cats) {
-    for (const sub of cat.subCategories || []) {
-      if (isDramaCategoryRef(sub?.id) || isDramaCategoryRef(sub?.slug) || (sub?.title && sub.title.includes('短剧'))) {
-        push(sub.items)
-      }
-    }
-  }
+  push(drama.items)
+  for (const sub of drama.subCategories || []) push(sub.items)
   return flat
 }
 

@@ -126,7 +126,6 @@ apps/web-overlay/public/xiaomaomao/media/
 # 与 4 份笔记，全部被误提交。已清理并归档（见 docs/audits/ 与 scripts/perf/）。
 # 下面的规则防止同类文件再被误提交；长期保留的探针请放 scripts/perf/。
 /tmp-probe-*.mjs
-/.probe-*
 /diag-*.mjs
 /measure-*.mjs
 /verify-*.mjs

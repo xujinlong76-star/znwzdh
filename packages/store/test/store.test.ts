@@ -1056,17 +1056,17 @@ describe("SQLite 集成：导航增强能力", () => {
     expect(claimed!.payload).toEqual({ siteId: "x" });
     // 没有更多 pending
     expect(await repo.claimNextJob()).toBeNull();
-    await repo.completeJob(claimed!.id, null, { runToken: claimed!.runToken });
+    await repo.completeJob(claimed!.id, null);
     const done = (await repo.listJobs("done", 10)).find((j) => j.id === claimed!.id);
     expect(done).toBeTruthy();
     // completeJob 是 CAS 到 running：已完成的任务不会被迟到的失败结果改写。
     // 要验证失败落库，先把任务恢复成 running（模拟重新认领）。
-    await repo.run("UPDATE jobs SET status = 'running', run_token = ? WHERE id = ?", [claimed!.runToken, claimed!.id]);
-    expect(await repo.completeJob(claimed!.id, "boom", { runToken: claimed!.runToken })).toBe(true);
+    await repo.run("UPDATE jobs SET status = 'running' WHERE id = ?", [claimed!.id]);
+    expect(await repo.completeJob(claimed!.id, "boom")).toBe(true);
     const failed = (await repo.listJobs("failed", 10)).find((j) => j.id === claimed!.id);
     expect(failed!.error).toBe("boom");
     // 再次回写同一任务（已不在 running）必须被忽略
-    expect(await repo.completeJob(claimed!.id, "late", { runToken: claimed!.runToken })).toBe(false);
+    expect(await repo.completeJob(claimed!.id, "late")).toBe(false);
     expect((await repo.getJob(claimed!.id))?.error).toBe("boom");
   });
 

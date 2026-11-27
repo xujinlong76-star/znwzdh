@@ -104,11 +104,6 @@ export async function removePluginIndex(ctx: AppContext, slug: string): Promise<
   try {
     await ctx.pluginVectors.remove([pluginVectorId(slug)]);
     await ctx.repo.deletePluginEmbedding(slug);
-    // 删除与发布可跨请求竞态；若期间已重新上架，按当前清单恢复索引。
-    const current = await ctx.repo.getPluginBySlug(slug);
-    if (current?.status === "published" && ctx.embedding) {
-      await indexPlugin(ctx, indexItemFromManifest(current.slug, current.manifest));
-    }
   } catch (err) {
     ctx.capabilities.notes.push(
       "插件向量清理失败：" + (err instanceof Error ? err.message : String(err))

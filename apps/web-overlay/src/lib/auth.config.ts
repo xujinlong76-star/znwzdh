@@ -1,6 +1,4 @@
-import type { NextAuthConfig, Session } from 'next-auth'
-import { canonicalUserId } from './me-identity'
-import { hubSessionRevoked } from './server/hub'
+import type { NextAuthConfig } from 'next-auth'
 
 /**
  * 后台管理员白名单。
@@ -87,28 +85,6 @@ if (!process.env.AUTH_SECRET) {
   process.env.AUTH_SECRET = authSecret
 }
 
-/** Auth.js 运行时会用 null 会话响应登出，但其 beta 类型只声明 Session。 */
-function invalidSession(): Session {
-  return null as unknown as Session
-}
-
-export interface SessionGovernance {
-  sid?: string
-  issuedAt?: number
-  passwordVersion?: number
-}
-
-export function sessionGovernanceFromToken(token: object): SessionGovernance {
-  // 接受 object 而非直接依赖 JWT 类型：overlay/web 并存时 NextAuth 的模块增强
-  // 可能解析到两份 JWT 声明，运行时形状则始终由本项目的 sid/issuedAt/版本字段构成。
-  const source = token as { sid?: unknown; issuedAt?: unknown; passwordVersion?: unknown }
-  const governance: SessionGovernance = {}
-  if (typeof source.sid === 'string') governance.sid = source.sid
-  if (typeof source.issuedAt === 'number') governance.issuedAt = source.issuedAt
-  if (typeof source.passwordVersion === 'number') governance.passwordVersion = source.passwordVersion
-  return governance
-}
-
 export const authConfig = {
   secret: authSecret,
   trustHost: true,
@@ -134,15 +110,7 @@ export const authConfig = {
         // 与 lib/auth.ts 保持一致：不把 role 默认成 'admin'（否则等于绕过白名单）。
         token.role = (user as { role?: string }).role
         token.sub = user.id || token.sub || 'admin'
-        token.issuedAt = Date.now()
-        const passwordVersion = (user as { passwordVersion?: number }).passwordVersion
-        if (typeof passwordVersion === 'number' && Number.isInteger(passwordVersion) && passwordVersion >= 0) {
-          token.passwordVersion = passwordVersion
-        } else {
-          delete token.passwordVersion
-        }
       }
-      if (!token.sid) token.sid = globalThis.crypto.randomUUID()
       return token
     },
     async session({ session, token }) {
@@ -154,18 +122,6 @@ export const authConfig = {
         if (typeof token.provider === 'string') {
           ;(session.user as { provider?: string }).provider = token.provider
         }
-        // proxy.ts 与 edge admin layout 也使用这份配置。所有已登录会话都必须
-        // 有 sid 且能从中枢取得明确结论；OAuth 不再拥有 fail-open 例外。
-        const { sid, issuedAt, passwordVersion } = sessionGovernanceFromToken(token)
-        if (!sid) return invalidSession()
-        const provider = typeof token.provider === 'string' ? token.provider : undefined
-        const identity = canonicalUserId({ id: token.sub, provider })
-        if (!identity) return invalidSession()
-        const revoked = await hubSessionRevoked(sid, identity, issuedAt, passwordVersion).catch(() => {
-          // 核对异常按不可用处理，随后统一 fail-closed。
-          return null
-        })
-        if (revoked !== false) return invalidSession()
       }
       return session
     }

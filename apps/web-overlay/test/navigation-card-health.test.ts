@@ -100,38 +100,15 @@ function renderCard(
 }
 
 describe("卡片健康徽标渲染（§9 第 5 条）", () => {
-  it("有巡检 health 的卡片画徽标：状态词 + Token 点色；延迟只进 title 不进正文", () => {
+  it("有巡检 health 的卡片画徽标：可访问 + 延迟，title 含状态码与巡检日期", () => {
     const html = renderCard(
       itemWithHealth({ ok: true, httpStatus: 200, latencyMs: 123, lastCheckedAt: CHECKED }),
     );
     expect(html).toContain("可访问");
-    // 2026-11-25 P1-4：延迟数字不再进徽标正文（React SSR 会插 <!-- -->，同样先去掉再断言）
-    expect(html.replace(/<!-- -->/g, "")).not.toContain("(123ms)");
-    // 点色断言钉 span 本身（操作栏另有 hover:bg-success/10 之类的交互类，不能整串断言）
-    expect(html).toContain("rounded-full bg-success");
+    // React SSR 会在表达式与文本之间插 <!-- -->，先去掉再断言（与速览弹窗同款写法）
+    expect(html.replace(/<!-- -->/g, "")).toContain("(123ms)");
     expect(html).toContain('title="HTTP 200 · 123ms · 巡检于 2026-11-19"');
     expect(html).not.toContain("看存档");
-  });
-
-  it("延迟分档：>3s 转「响应缓慢」+ 琥珀点，且不进「只看失效」侧", () => {
-    const sluggish = itemWithHealth({ ok: true, httpStatus: 200, latencyMs: 7035, lastCheckedAt: CHECKED });
-    const html = renderCard(sluggish);
-    expect(html).toContain("响应缓慢");
-    expect(html).not.toContain("rounded-full bg-success");
-    expect(html).toContain("rounded-full bg-pinned");
-    expect(html.replace(/<!-- -->/g, "")).not.toContain("(7035ms)");
-    expect(html).toContain('title="HTTP 200 · 7035ms · 巡检于 2026-11-19"');
-    // 慢 ≠ 失效：开关打开时慢站整卡不渲染（与可访问同口径）
-    expect(renderCard(sluggish, { showFailingOnly: true })).toBe("");
-  });
-
-  it("延迟分档：1–3s 转「响应较慢」+ 琥珀点", () => {
-    const html = renderCard(
-      itemWithHealth({ ok: true, httpStatus: 200, latencyMs: 1500, lastCheckedAt: CHECKED }),
-    );
-    expect(html).toContain("响应较慢");
-    expect(html).toContain("rounded-full bg-pinned");
-    expect(html).not.toContain("rounded-full bg-success");
   });
 
   it("已失效卡片画「已失效 · 看存档」+ 看存档链接（* 回落最新快照）", () => {

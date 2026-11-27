@@ -37,13 +37,17 @@ describe("hub 代理源码：客户端那一路必须并进取消上游", () => 
     expect(ROUTE).toMatch(/AbortSignal\.any\(\s*\[\s*deadline\.signal\s*,\s*request\.signal\s*\]\s*\)/);
   });
 
-  it("fetch 拿的是合并后的信号；单独挂任何一路都不算穿透", () => {
-    const fetchCall = ROUTE.slice(ROUTE.indexOf("await fetch(target"));
-    const fetchOptions = fetchCall.slice(0, fetchCall.indexOf("})"));
-    expect(fetchOptions).toMatch(/signal:\s*upstreamSignal/);
+  it("guardedFetch 拿的是合并后的信号；单独挂任何一路都不算穿透", () => {
+    // 2026-11-25 改写：裸 fetch 改走 guardedFetch（SSRF host 钉死 + 逐跳重定向校验），
+    // 合并信号改由 options.signal 传进守卫（守卫内部再与自身超时合并），取消语义不变；
+    // 信号真能掐断上游由本文件下方行为用例与 ssrf-hub-proxy-guard.test.ts 钉住。
+    const atGuarded = ROUTE.indexOf("guardedFetch(");
+    expect(atGuarded).toBeGreaterThan(-1);
+    const callWindow = ROUTE.slice(atGuarded, atGuarded + 800);
+    expect(callWindow).toMatch(/signal:\s*upstreamSignal/);
     // 负向：写回 `signal: deadline.signal` 或 `signal: request.signal` 都会漏掉另一路
-    expect(fetchOptions).not.toMatch(/signal:\s*deadline\.signal/);
-    expect(fetchOptions).not.toMatch(/signal:\s*request\.signal/);
+    expect(callWindow).not.toMatch(/signal:\s*deadline\.signal/);
+    expect(callWindow).not.toMatch(/signal:\s*request\.signal/);
   });
 
   it("「客户端走了」判在「等到期限」之前——顺序反了就把取消写成 504", () => {

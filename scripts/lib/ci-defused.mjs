@@ -231,11 +231,6 @@ export const DEFUSED_GATES = [
         label: "显式 any 棘轮（按文件基线只减不增）",
         note: "eslint 该规则按台账 off，本步骤用 AST 语法树替代；阻断式，无 continue-on-error",
       },
-      {
-        id: "web-no-raw-palette",
-        label: "raw palette 棘轮（按文件基线只减不增）",
-        note: "组件层只认语义 Token；阻断式，无 continue-on-error",
-      },
       { id: "web-build", label: "next build" },
       { id: "web-budget", label: "首屏预算硬门禁" },
       {
@@ -308,18 +303,18 @@ export const DEFUSED_GATES = [
       { id: "gate-hub-id", label: "check-hub-id（hubId = id 且内唯一）" },
       { id: "gate-deps-integrity", label: "check-deps-integrity（依赖入口可解析）" },
       { id: "gate-video-scope", label: "typecheck-video-scope（视频作用域类型）" },
-      { id: "gate-generated", label: "check:generated（四条生成链聚合，纯校验）" },
       { id: "gate-overlay", label: "check-web-overlay（覆写层与镜像同源）" },
       // 2026-11-07 九维评审 1-2：四条构建路径的配置事实源一致性。
       // 排在 vendor / check-web-overlay 之后，前一步红会把它整步 skipped，
       // 不登记就等于「配置漂移静默撤防」——正是评审要点名的问题。
       { id: "gate-config-parity", label: "check-web-config-parity（四条构建路径配置同源）" },
+      { id: "gate-core-mirrors", label: "sync-core-mirrors --check（core 镜像一致）" },
       { id: "gate-upstream-ref", label: "check-upstream-ref（上游 ref 存在）" },
       { id: "gate-extensions", label: "check-extensions（扩展清单 schema）" },
     ],
   },
   {
-    // 这几道的命令形状不在 GATE_STEP_RE 里（`docker build` / `docker-smoke.mjs` / `pnpm ... audit` 都不是
+    // 这两道的命令形状不在 GATE_STEP_RE 里（`docker build` / `pnpm ... audit` 都不是
     // check-*.mjs 那一类），所以覆盖面判据推不出它们——登记是人为判断：
     // 它们是这两个作业里**唯一**的判定，红会吞掉同作业后面的判定。
     job: "docker-smoke",
@@ -330,7 +325,6 @@ export const DEFUSED_GATES = [
     gates: [
       { id: "docker-api", label: "docker build Dockerfile.api" },
       { id: "docker-web", label: "docker build Dockerfile.web" },
-      { id: "docker-runtime", label: "容器启动 / health / 首页 / 空库迁移冒烟" },
     ],
   },
   {

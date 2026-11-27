@@ -27,9 +27,9 @@ let app: Awaited<ReturnType<typeof buildServer>>;
 let generations: number[];
 
 function stubLlm() {
-  const original = ctx.config.llm.fetchImpl;
+  const original = globalThis.fetch;
   generations = [];
-  ctx.config.llm.fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     // 非模型端点一律就地回空，绝不 fall through 到真实网络：
     // 真发一次就取决于当天网络，测试结果也跟着抖。
@@ -77,7 +77,7 @@ function stubLlm() {
     );
   }) as typeof fetch;
   return () => {
-    ctx.config.llm.fetchImpl = original;
+    globalThis.fetch = original;
   };
 }
 

@@ -23,14 +23,7 @@
  *     判定只看字段名）；超时/鉴权/限流/坏响应一律原样抛出，
  *     业务层（如富化）自己的两次尝试与启发式降级保持不变。
  */
-import {
-  DEFAULT_GUARD,
-  SsrfBlockedError,
-  assertUrlShape,
-  resolveAndCheck,
-  safeFetch,
-  safeFetchStream,
-} from "./ssrf.ts";
+import { DEFAULT_GUARD, assertUrlShape, resolveAndCheck } from "./ssrf.ts";
 import { clampToDeadline } from "./deadline.ts";
 
 /**
@@ -149,8 +142,7 @@ export type LlmErrorCode =
   | "http"
   | "network"
   | "cancelled"
-  | "invalid_response"
-  | "response_too_large";
+  | "invalid_response";
 
 export class LlmError extends Error {
   readonly code: LlmErrorCode;
@@ -183,59 +175,6 @@ export class LlmError extends Error {
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_DETAIL_CHARS = 400;
-
-/** LLM 响应硬上限（字节）。JSON/SSE 允许长回答，错误体只需保留很短的诊断片段。 */
-export const MAX_LLM_JSON_RESPONSE_BYTES = 8 * 1024 * 1024;
-export const MAX_LLM_ERROR_RESPONSE_BYTES = 64 * 1024;
-export const MAX_LLM_STREAM_RESPONSE_BYTES = 8 * 1024 * 1024;
-
-/** 响应超限与网络/JSON 语法错误区分，调用方可稳定识别并停止重试。 */
-export class LlmResponseTooLargeError extends Error {
-  readonly maxBytes: number;
-  readonly receivedBytes: number;
-
-  constructor(maxBytes: number, receivedBytes: number) {
-    super(`模型响应超过硬上限 ${maxBytes} 字节`);
-    this.name = "LlmResponseTooLargeError";
-    this.maxBytes = maxBytes;
-    this.receivedBytes = receivedBytes;
-  }
-}
-
-/** 边读边计数；超限立即 cancel reader，绝不先无界缓冲再截断。 */
-async function readResponseTextLimited(res: Response, maxBytes: number): Promise<string> {
-  if (!res.body) return "";
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!value) continue;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => undefined);
-      throw new LlmResponseTooLargeError(maxBytes, total);
-    }
-    chunks.push(value);
-  }
-  const merged = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(merged);
-}
-
-async function readJsonResponseLimited(res: Response): Promise<unknown> {
-  return JSON.parse(await readResponseTextLimited(res, MAX_LLM_JSON_RESPONSE_BYTES)) as unknown;
-}
-
-function asResponseTooLargeError(err: unknown, status?: number): LlmError | null {
-  if (!(err instanceof LlmResponseTooLargeError)) return null;
-  return new LlmError("response_too_large", err.message, status, `received=${err.receivedBytes}`);
-}
 
 /** 思考态请求的内置放宽下限（仅在超时值并非显式配置时生效，见 resolveRequestTimeout） */
 export const THINKING_TIMEOUT_FLOOR_MS = 60_000;
@@ -286,9 +225,32 @@ const UPSTREAM_CANCEL_NOTICES = new Set([
   "operation canceled",
 ]);
 
+/** 尾部取消提示标点：与旧正则尾部字符类等价的字符集（线性扫描用） */
+const CANCEL_TRAILING_PUNCT = new Set(["。", ".", "!", "！", "?", "？"]);
+
+/**
+ * 线性剥离尾部标点与空白（O(n)，无回溯）。
+ *
+ * 旧实现 `content.trim().replace(/…+$/g, "")` 对「N 个 。 后接一个非标点
+ * 字符」的输入要 O(N²) 回溯（本机实测 N=5000 时 349ms、N=20000 时 2747ms，
+ * 翻倍输入耗时翻 4 倍）——模型输出是上游可控串，单次恶意输出即可拖垮
+ * Node 事件循环（CodeQL js/polynomial-redos 同类）。
+ * 倒序单遍扫描，与旧正则逐字符等价：空白判定沿用 String.prototype.trim
+ * 对单个字符的语义，其字符集与 JS `\s` 相同；孤立代理项半区两边都不认。
+ */
+export function stripTrailingCancelPunct(value: string): string {
+  let end = value.length;
+  while (end > 0) {
+    const ch = value[end - 1]!;
+    if (CANCEL_TRAILING_PUNCT.has(ch) || ch.trim() === "") end--;
+    else break;
+  }
+  return value.slice(0, end);
+}
+
 /** 判断一段模型输出是否只是上游的「取消」提示（整段相等才算） */
 export function isUpstreamCancelNotice(content: string): boolean {
-  const normalized = content.trim().replace(/[。.!！?？\s]+$/g, "").toLowerCase();
+  const normalized = stripTrailingCancelPunct(content.trim()).toLowerCase();
   if (!normalized || normalized.length > 32) return false;
   return UPSTREAM_CANCEL_NOTICES.has(normalized);
 }
@@ -409,57 +371,6 @@ export async function assertLlmEndpoint(baseUrl: string, allowPrivateNetwork = f
   }
 }
 
-function llmTransportError(err: unknown): LlmError {
-  if (err instanceof LlmError) return err;
-  if (err instanceof SsrfBlockedError) {
-    if (err.reason === "body_too_large") {
-      return new LlmError("response_too_large", err.message);
-    }
-    if (err.reason === "timeout") return new LlmError("timeout", err.message);
-    return new LlmError("ssrf", err.message);
-  }
-  return new LlmError("network", "模型请求失败：" + (err instanceof Error ? err.message : String(err)));
-}
-
-/** 所有 LLM 请求共用的连接级钉扎出口；fetchImpl 只用于测试注入。 */
-async function requestLlmEndpoint(
-  url: string,
-  init: RequestInit,
-  allowPrivateNetwork: boolean,
-  fetchImpl?: typeof fetch,
-  stream = false,
-): Promise<Response> {
-  if (fetchImpl) {
-    await assertLlmEndpoint(url, allowPrivateNetwork);
-    return fetchImpl(url, { ...init, redirect: "error" });
-  }
-
-  try {
-    const headers = Object.fromEntries(
-      new Headers(init.headers).entries(),
-    );
-    const common = {
-      method: init.method,
-      headers,
-      body: typeof init.body === "string" ? init.body : undefined,
-      signal: init.signal ?? undefined,
-      allowPrivateNetworks: allowPrivateNetwork,
-      allowedPorts: null,
-      maxBytes: MAX_LLM_JSON_RESPONSE_BYTES,
-      maxRedirects: 0,
-    };
-    if (stream) return await safeFetchStream(url, common);
-
-    const result = await safeFetch(url, common);
-    return new Response(Buffer.from(result.body), {
-      status: result.status,
-      headers: result.headers,
-    });
-  } catch (err) {
-    throw llmTransportError(err);
-  }
-}
-
 function capabilityKey(provider: LlmProvider): string {
   return stripTrailingSlashes(provider.baseUrl) + "|" + provider.model;
 }
@@ -526,13 +437,9 @@ function looksLikeThinkingParamRejection(detail: string): boolean {
 
 async function readErrorDetail(res: Response): Promise<string> {
   try {
-    const text = await readResponseTextLimited(res, MAX_LLM_ERROR_RESPONSE_BYTES);
+    const text = await res.text();
     return text.slice(0, MAX_DETAIL_CHARS);
-  } catch (err) {
-    if (err instanceof LlmResponseTooLargeError) {
-      const tooLarge = asResponseTooLargeError(err, res.status);
-      if (tooLarge) throw tooLarge;
-    }
+  } catch {
     return "";
   }
 }
@@ -683,6 +590,7 @@ async function callOnce(
     throw new LlmError("timeout", "模型调用已超出总预算，未再发起请求");
   }
   const url = chatCompletionsUrl(provider.baseUrl);
+  await assertLlmEndpoint(url, provider.allowPrivateNetwork === true);
 
   const baseTimeout = provider.timeoutMs && provider.timeoutMs > 0 ? provider.timeoutMs : DEFAULT_TIMEOUT_MS;
   // 思维链确实下发时才放宽超时：去参重试走的是普通请求，没必要多等 40 秒
@@ -691,19 +599,21 @@ async function callOnce(
   const timeoutMs = clampToDeadline(naturalTimeout, opts.deadlineAt);
   if (timeoutMs <= 0) throw new LlmError("timeout", "模型调用已超出总预算，未再发起请求");
   const gate = timeoutSignal(timeoutMs, opts.signal);
-  const fetchImpl = opts.fetchImpl;
+  const fetchImpl = opts.fetchImpl ?? fetch;
   const startedAt = Date.now();
 
   try {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (provider.apiKey) headers.Authorization = "Bearer " + provider.apiKey;
 
-    const res = await requestLlmEndpoint(url, {
+    const res = await fetchImpl(url, {
       method: "POST",
       headers,
       body: JSON.stringify(buildBody(provider, opts, useResponseFormat, false, includeThinking)),
       signal: gate.signal,
-    }, provider.allowPrivateNetwork === true, fetchImpl);
+      // LLM 端点不应重定向；禁跟随可避免「302 -> 内网」绕过 SSRF 预检
+      redirect: "error",
+    });
 
     if (!res.ok) {
       const detail = await readErrorDetail(res);
@@ -712,10 +622,8 @@ async function callOnce(
 
     let payload: unknown;
     try {
-      payload = await readJsonResponseLimited(res);
-    } catch (err) {
-      const tooLarge = asResponseTooLargeError(err, res.status);
-      if (tooLarge) throw tooLarge;
+      payload = await res.json();
+    } catch {
       throw new LlmError("invalid_response", "模型响应不是合法 JSON", res.status);
     }
 
@@ -754,8 +662,6 @@ async function callOnce(
     };
   } catch (err) {
     if (err instanceof LlmError) throw err;
-    const tooLarge = asResponseTooLargeError(err);
-    if (tooLarge) throw tooLarge;
     if (gate.timedOut()) throw new LlmError("timeout", "模型调用超时（" + timeoutMs + "ms）");
     if (err instanceof Error && err.name === "AbortError") throw new LlmError("network", "模型调用被取消");
     throw new LlmError("network", "模型网络请求失败：" + (err instanceof Error ? err.message : String(err)));
@@ -977,6 +883,7 @@ export async function* chatStream(provider: LlmProvider, opts: ChatOptions): Asy
     throw new LlmError("timeout", "模型流式调用已超出总预算，未再发起请求");
   }
   const url = chatCompletionsUrl(provider.baseUrl);
+  await assertLlmEndpoint(url, provider.allowPrivateNetwork === true);
 
   const key = capabilityKey(provider);
   const thinkingSent = opts.thinking === true && !thinkingParamUnsupported.has(key);
@@ -986,7 +893,7 @@ export async function* chatStream(provider: LlmProvider, opts: ChatOptions): Asy
   const timeoutMs = clampToDeadline(naturalTimeout, opts.deadlineAt);
   if (timeoutMs <= 0) throw new LlmError("timeout", "模型流式调用已超出总预算，未再发起请求");
   const gate = timeoutSignal(timeoutMs, opts.signal);
-  const fetchImpl = opts.fetchImpl;
+  const fetchImpl = opts.fetchImpl ?? fetch;
 
   try {
     const keys = extractApiKeys(provider.apiKey);
@@ -997,12 +904,13 @@ export async function* chatStream(provider: LlmProvider, opts: ChatOptions): Asy
     const request = (includeUsage: boolean) => {
       const body = buildBody(provider, opts, false, true, thinkingSent);
       if (includeUsage) body.stream_options = { include_usage: true };
-      return requestLlmEndpoint(url, {
+      return fetchImpl(url, {
         method: "POST",
         headers,
         body: JSON.stringify(body),
         signal: gate.signal,
-      }, provider.allowPrivateNetwork === true, fetchImpl, true);
+        redirect: "error",
+      });
     };
 
     let includeUsage = !streamUsageUnsupported.has(key);
@@ -1027,7 +935,6 @@ export async function* chatStream(provider: LlmProvider, opts: ChatOptions): Asy
     let buffer = "";
     let model = provider.model;
     let usage: ChatUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-    let receivedBytes = 0;
 
     const pump = (payload: SsePayload): LlmStreamEvent[] => {
       const events: LlmStreamEvent[] = [];
@@ -1065,11 +972,6 @@ export async function* chatStream(provider: LlmProvider, opts: ChatOptions): Asy
     outer: for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      receivedBytes += value.byteLength;
-      if (receivedBytes > MAX_LLM_STREAM_RESPONSE_BYTES) {
-        await reader.cancel().catch(() => undefined);
-        throw new LlmResponseTooLargeError(MAX_LLM_STREAM_RESPONSE_BYTES, receivedBytes);
-      }
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() ?? "";
@@ -1092,9 +994,6 @@ export async function* chatStream(provider: LlmProvider, opts: ChatOptions): Asy
     yield { type: "end", model, usage, thinkingApplied: thinkingSent };
   } catch (err) {
     if (err instanceof LlmError) throw err;
-    if (err instanceof SsrfBlockedError) throw llmTransportError(err);
-    const tooLarge = asResponseTooLargeError(err);
-    if (tooLarge) throw tooLarge;
     if (gate.timedOut()) throw new LlmError("timeout", "模型流式调用超时（" + timeoutMs + "ms）");
     if (err instanceof Error && err.name === "AbortError") throw new LlmError("network", "模型流式调用被取消");
     throw new LlmError("network", "模型流式请求失败：" + (err instanceof Error ? err.message : String(err)));
@@ -1111,9 +1010,6 @@ export interface ImageGenerationOptions {
   size?: string;
   n?: number;
   timeoutMs?: number;
-  /** 仅系统级配置可显式允许本地或内网媒体端点。 */
-  allowPrivateNetwork?: boolean;
-  /** 测试注入；生产不传。 */
   fetchImpl?: typeof fetch;
 }
 
@@ -1131,7 +1027,7 @@ async function generateImageSingle(opts: ImageGenerationOptions, key: string): P
   }
   const baseUrl = normalizeBaseUrl(opts.baseUrl);
   const endpoint = baseUrl.endsWith("/images/generations") ? baseUrl : `${baseUrl}/images/generations`;
-  const fetchImpl = opts.fetchImpl;
+  const fetchFn = opts.fetchImpl ?? fetch;
   const model = opts.model;
   const timeoutMs = opts.timeoutMs ?? 30_000;
 
@@ -1139,7 +1035,7 @@ async function generateImageSingle(opts: ImageGenerationOptions, key: string): P
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await requestLlmEndpoint(endpoint, {
+    const res = await fetchFn(endpoint, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${key}`,
@@ -1152,7 +1048,7 @@ async function generateImageSingle(opts: ImageGenerationOptions, key: string): P
         n: opts.n || 1,
       }),
       signal: controller.signal,
-    }, opts.allowPrivateNetwork === true, fetchImpl);
+    });
 
     if (!res.ok) {
       const detail = await readErrorDetail(res);
@@ -1167,7 +1063,7 @@ async function generateImageSingle(opts: ImageGenerationOptions, key: string): P
       throw new LlmError(code, `AI 图像生成失败（HTTP ${res.status}）`, res.status, detail);
     }
 
-    const data = (await readJsonResponseLimited(res)) as Record<string, unknown>;
+    const data = (await res.json()) as Record<string, unknown>;
     const items = Array.isArray(data.data) ? (data.data as Array<Record<string, unknown>>) : [];
     const firstUrl = typeof items[0]?.url === "string" ? items[0].url : "";
     if (!firstUrl) {
@@ -1182,8 +1078,6 @@ async function generateImageSingle(opts: ImageGenerationOptions, key: string): P
     };
   } catch (err) {
     if (err instanceof LlmError) throw err;
-    const tooLarge = asResponseTooLargeError(err);
-    if (tooLarge) throw tooLarge;
     if (err instanceof Error && err.name === "AbortError") throw new LlmError("timeout", `AI 图像生成超时（${timeoutMs}ms）`);
     throw new LlmError("network", "AI 图像生成网络失败：" + (err instanceof Error ? err.message : String(err)));
   } finally {
@@ -1231,9 +1125,6 @@ export interface VideoGenerationOptions {
   size?: "720P";
   aspectRatio?: "16:9" | "9:16";
   timeoutMs?: number;
-  /** 仅系统级配置可显式允许本地或内网媒体端点。 */
-  allowPrivateNetwork?: boolean;
-  /** 测试注入；生产不传。 */
   fetchImpl?: typeof fetch;
 }
 
@@ -1253,7 +1144,7 @@ async function createVideoTaskSingle(opts: VideoGenerationOptions, key: string):
   }
   const baseUrl = normalizeBaseUrl(opts.baseUrl);
   const endpoint = baseUrl.endsWith("/videos") ? baseUrl : `${baseUrl}/videos`;
-  const fetchImpl = opts.fetchImpl;
+  const fetchFn = opts.fetchImpl ?? fetch;
   const model = opts.model;
   const timeoutMs = opts.timeoutMs ?? 30_000;
 
@@ -1261,7 +1152,7 @@ async function createVideoTaskSingle(opts: VideoGenerationOptions, key: string):
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await requestLlmEndpoint(endpoint, {
+    const res = await fetchFn(endpoint, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${key}`,
@@ -1276,10 +1167,10 @@ async function createVideoTaskSingle(opts: VideoGenerationOptions, key: string):
         aspect_ratio: opts.aspectRatio || "16:9",
       }),
       signal: controller.signal,
-    }, opts.allowPrivateNetwork === true, fetchImpl);
+    });
 
     if (res.status === 503) {
-      const errText = await readResponseTextLimited(res, MAX_LLM_ERROR_RESPONSE_BYTES);
+      const errText = await res.text();
       let msg = "视频队列已满，请稍后重试";
       try {
         const parsed = JSON.parse(errText);
@@ -1308,7 +1199,7 @@ async function createVideoTaskSingle(opts: VideoGenerationOptions, key: string):
       throw new LlmError(code, `AI 视频生成任务创建失败（HTTP ${res.status}）`, res.status, detail);
     }
 
-    const data = (await readJsonResponseLimited(res)) as Record<string, unknown>;
+    const data = (await res.json()) as Record<string, unknown>;
     const nestedData = (typeof data.data === "object" && data.data !== null) ? (data.data as Record<string, unknown>) : {};
     const taskId =
       (typeof data.task_id === "string" ? data.task_id : "") ||
@@ -1343,8 +1234,6 @@ async function createVideoTaskSingle(opts: VideoGenerationOptions, key: string):
     };
   } catch (err) {
     if (err instanceof LlmError) throw err;
-    const tooLarge = asResponseTooLargeError(err);
-    if (tooLarge) throw tooLarge;
     if (err instanceof Error && err.name === "AbortError") throw new LlmError("timeout", `AI 视频任务创建超时（${timeoutMs}ms）`);
     throw new LlmError("network", "AI 视频任务网络失败：" + (err instanceof Error ? err.message : String(err)));
   } finally {
@@ -1403,9 +1292,6 @@ export async function pollVideoTask(opts: {
   baseUrl?: string;
   model?: string;
   timeoutMs?: number;
-  /** 仅系统级配置可显式允许本地或内网轮询端点。 */
-  allowPrivateNetwork?: boolean;
-  /** 测试注入；生产不传。 */
   fetchImpl?: typeof fetch;
 }): Promise<{ ok: boolean; status: "completed" | "processing" | "failed"; url?: string; message?: string }> {
   // 无内置默认：此前硬编码的厂商轮询端点已随 Agnes 移除；缺地址或模型必须明说
@@ -1416,7 +1302,7 @@ export async function pollVideoTask(opts: {
   const keys = extractApiKeys(opts.apiKey);
   const key = keys[0] || "";
   const model = opts.model;
-  const fetchImpl = opts.fetchImpl;
+  const fetchFn = opts.fetchImpl ?? fetch;
   const timeoutMs = opts.timeoutMs ?? 15_000;
 
   const controller = new AbortController();
@@ -1424,19 +1310,19 @@ export async function pollVideoTask(opts: {
 
   try {
     const url = `${baseUrl}?video_id=${encodeURIComponent(opts.taskId)}&model_name=${encodeURIComponent(model)}`;
-    const res = await requestLlmEndpoint(url, {
+    const res = await fetchFn(url, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${key}`,
       },
       signal: controller.signal,
-    }, opts.allowPrivateNetwork === true, fetchImpl);
+    });
 
     if (!res.ok) {
       return { ok: false, status: "failed", message: `HTTP ${res.status}` };
     }
 
-    const data = (await readJsonResponseLimited(res)) as Record<string, unknown>;
+    const data = (await res.json()) as Record<string, unknown>;
     const nestedData = (typeof data.data === "object" && data.data !== null) ? (data.data as Record<string, unknown>) : {};
     const statusRaw = String(data.status || nestedData.status || "").toLowerCase();
     const videoUrl = String(data.url || nestedData.url || "");
@@ -1450,11 +1336,6 @@ export async function pollVideoTask(opts: {
 
     return { ok: true, status: "processing" };
   } catch (err) {
-    // 配置、SSRF、鉴权与响应契约错误不能被当成可恢复的轮询抖动。
-    if (err instanceof LlmError) throw err;
-    // 超限是明确的响应契约失败，不能混进“网络抖动”后无限轮询。
-    const tooLarge = asResponseTooLargeError(err);
-    if (tooLarge) throw tooLarge;
     // 容错降级：轮询网络抖动或超时不判定为彻底失败，仍返回 processing 允许后续重试
     return { ok: true, status: "processing", message: err instanceof Error ? err.message : String(err) };
   } finally {

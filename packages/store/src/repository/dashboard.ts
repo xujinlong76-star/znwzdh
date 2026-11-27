@@ -1,5 +1,4 @@
 import type { Repository } from "../repository.ts";
-import { readWithDbGate } from "../db-access.ts";
 import type {
   CategoryDistributionItem,
   DashboardOverview,
@@ -189,13 +188,10 @@ export async function dbStorageMetrics(repo: Repository): Promise<{ dbSizeBytes:
   let walSizeBytes: number | null = null;
 
   if (repo.db.dialect === "sqlite" && repo.db.sqlite) {
-    const sqlite = repo.db.sqlite;
     try {
-      dbSizeBytes = await readWithDbGate(repo.db, () => {
-        const pageCount = Number((sqlite.prepare("PRAGMA page_count").get() as any)?.["page_count"] ?? 0);
-        const pageSize = Number((sqlite.prepare("PRAGMA page_size").get() as any)?.["page_size"] ?? 4096);
-        return pageCount * pageSize;
-      });
+      const pageCount = Number((repo.db.sqlite.prepare("PRAGMA page_count").get() as any)?.["page_count"] ?? 0);
+      const pageSize = Number((repo.db.sqlite.prepare("PRAGMA page_size").get() as any)?.["page_size"] ?? 4096);
+      dbSizeBytes = pageCount * pageSize;
     } catch {
       // 兼容在非原生支持 PRAGMA 环境下的退化
     }

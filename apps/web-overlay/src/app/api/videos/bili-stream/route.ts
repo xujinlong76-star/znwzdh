@@ -79,6 +79,39 @@ const SSRF_DNS_GUARD =
 /** 尽力而为的标记：播放器看到它就知道失败时该回退直链，而不是死等代理 */
 const STREAM_MODE_HEADER = 'X-NavHub-Stream-Mode'
 
+/**
+ * 路由内联的显式域名白名单（SSRF 2026-11-25 补齐）。
+ *
+ * lib 的 isAllowedBilivideoStreamHost 已做同口径后缀校验 + 每跳 DNS/IP 校验，
+ * 真实 SSRF 已缓解；但那份校验在另一个模块里，CodeQL 不把它当成 sanitizer。
+ * 这里在路由内联再做一次 `new URL()` + 显式成员检查（与 lib 同口径的后缀表，
+ * 另加端口只许 80/443、禁 URL 内嵌凭据），入口与每个重定向跳都过一遍。
+ * 校验不通过即 403；通过后仍走手动 fetch + 流式透传，绝不改走 safeFetch
+ *（safeFetch 会 arrayBuffer() 全量缓冲，吃掉 Range 流式播放）。
+ */
+const BILI_STREAM_ALLOWED_SUFFIXES = [
+  '.bilivideo.com',
+  '.bilivideo.cn',
+  '.hdslb.com',
+  '.akamaized.net',
+  '.biliapi.net',
+]
+
+function isAllowedBiliStreamHostInline(rawUrl: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(rawUrl)
+  } catch {
+    return false
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
+  if (parsed.username || parsed.password) return false
+  const port = parsed.port ? Number(parsed.port) : parsed.protocol === 'https:' ? 443 : 80
+  if (port !== 80 && port !== 443) return false
+  const host = parsed.hostname.toLowerCase()
+  return BILI_STREAM_ALLOWED_SUFFIXES.some((suffix) => host.endsWith(suffix))
+}
+
 /** 每一跳请求前（与 https 建连后）的解析后 IP 校验；被拦按 403 处理 */
 async function assertHostResolvableSafe(url: string): Promise<void> {
   if (!SSRF_DNS_GUARD) return
@@ -123,7 +156,7 @@ async function handleStreamProxy(request: NextRequest, method: 'GET' | 'HEAD') {
   }
 
   const targetUrl = ensureHttpsUrl(rawUrl) || rawUrl
-  if (!isAllowedBilivideoStreamHost(targetUrl)) {
+  if (!isAllowedBilivideoStreamHost(targetUrl) || !isAllowedBiliStreamHostInline(targetUrl)) {
     return NextResponse.json(
       { error: '非法的视频流域名，仅允许 B 站官方 CDN 节点 (*.bilivideo.com / *.hdslb.com)' },
       { status: 403 }
@@ -163,7 +196,7 @@ async function handleStreamProxy(request: NextRequest, method: 'GET' | 'HEAD') {
     // 域名白名单之外，每一跳再做 DNS 解析后的受保护网段校验
     try {
       for (let hop = 0; hop < 3; hop++) {
-        if (!isAllowedBilivideoStreamHost(currentUrl)) {
+        if (!isAllowedBilivideoStreamHost(currentUrl) || !isAllowedBiliStreamHostInline(currentUrl)) {
           return NextResponse.json(
             { error: '重定向跳转目标域名不在 B 站官方 CDN 白名单中' },
             { status: 403 }

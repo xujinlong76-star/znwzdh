@@ -27,7 +27,6 @@ import { getIdentity } from '@/lib/identity'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SearchPaletteLazy as SearchPalette } from '@/components/search-palette-lazy'
 import { SiteFavicon } from '@/components/site-favicon'
-import { SiteCard } from '@/components/site-card'
 import { EmptyState } from '@/components/ui/empty-state'
 
 export function TagResultsBoard({
@@ -294,31 +293,47 @@ export function TagResultsBoard({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5! gap-3.5 sm:gap-4">
               {filteredSites.map((site) => (
-            /* 卡片走 SiteCard overlay 模式：整卡拉伸外链（z-0）+ 标题站内内链（z-10）+
-               收藏按钮（z-20）三者是**兄弟节点**的结构收进原语（site-card.tsx）——
-               `<a>` 里嵌 `<a>` 是非法 HTML，浏览器会自动闭合外层，整卡点击当场坏掉
-               （navigation-card 的教训）。这里只声明两个目的地：点空白/描述 = 直达官网，
-               点标题 = 进 /site/{id} 详情，收藏位置与可见性不变。 */
-            <SiteCard
+            /* 卡片双模式：整卡拉伸外链（z-0）+ 标题站内内链（z-10）+
+               收藏按钮（z-20）三者是**兄弟节点**，绝不嵌套——
+               `<a>` 里嵌 `<Link>` 是非法 HTML，浏览器会自动闭合外层
+               <a>，整卡点击当场坏掉（navigation-card 的教训）。
+               行为：点空白/描述 = 直达官网（与改版前一致）；
+               点标题 = 进 /site/{id} 详情；收藏按钮位置与可见性不变。 */
+            <div
               key={site.id}
-              variant="grid"
-              surface="glass"
-              overlayHref={safeHref(site.url)}
-              overlayTarget={linkTarget}
-              overlayRel="noopener noreferrer nofollow"
-              overlayLabel={`访问 ${site.title} 官网`}
-              href={`/site/${encodeURIComponent(site.id)}`}
-              title={site.title}
-              description={site.description}
-              icon={
-                <SiteFavicon
-                  title={site.title}
-                  url={site.url}
-                  icon={site.iconKey ?? undefined}
-                  className="w-full h-full object-contain rounded"
-                />
-              }
-              actions={
+              className="relative group rounded-xl border border-border/70 glass-surface subtle-mesh p-4 transition-all duration-200 hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5 flex flex-col justify-between"
+            >
+              <a
+                href={safeHref(site.url)}
+                target={linkTarget}
+                rel="noopener noreferrer nofollow"
+                aria-label={`访问 ${site.title} 官网`}
+                className="absolute inset-0 z-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary/50"
+              >
+                <span className="sr-only">{`访问 ${site.title} 官网`}</span>
+              </a>
+              <div className="relative z-10 pointer-events-none flex items-start gap-3">
+                <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-muted/60 border border-border/50 p-1 flex items-center justify-center overflow-hidden">
+                  <SiteFavicon
+                    title={site.title}
+                    url={site.url}
+                    icon={site.iconKey ?? undefined}
+                    className="w-full h-full object-contain rounded"
+                  />
+                </div>
+                <div className="min-w-0 flex-1 pr-6">
+                  <Link
+                    href={`/site/${encodeURIComponent(site.id)}`}
+                    className="pointer-events-auto block text-sm font-semibold truncate hover:text-primary hover:underline underline-offset-4 transition-colors"
+                  >
+                    {site.title}
+                  </Link>
+                  {site.description && (
+                    <p className="text-xs text-muted-foreground line-clamp-2 mt-1 leading-relaxed">{site.description}</p>
+                  )}
+                </div>
+              </div>
+              <div className="absolute top-3 right-3 z-20 opacity-80 sm:opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                 <FavoriteButton
                   site={{
                     siteId: site.id,
@@ -328,8 +343,8 @@ export function TagResultsBoard({
                     description: site.description ?? undefined,
                   }}
                 />
-              }
-            />
+              </div>
+            </div>
           ))}
         </div>
           )}

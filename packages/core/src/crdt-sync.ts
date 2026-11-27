@@ -389,202 +389,91 @@ export function compactOperationLog(
   // 先完整计算状态
   const reduced = reduceOperationsToState(operations)
   const compacted: CRDTOperation[] = []
+  // 保留原最大时间戳，避免压缩后因果序丢失（老 op 变“最新”与未压缩副本合并时 LWW 误胜）
+  const maxTs = operations.reduce((m, o) => Math.max(m, o.timestamp), 0) || Date.now();
+  const timestamp = maxTs;
+  const clientId = 'compact_sys'
 
-  /**
-   * 每个 LWW 键最后一条有效写入。压缩不能只序列化“存在的状态”：
-   * 取消 pin / 删除在规约结果里表现为“什么都没有”，但它仍是压制旧 op 的水位。
-   * 丢掉这些 tombstone 后，与未压缩的老 peer 日志合并会把旧正值复活。
-   */
-  type LatestWrite = { op: CRDTOperation; orderTs: number }
-  const latestByKey = new Map<string, LatestWrite>()
-  const remember = (key: string, op: CRDTOperation, valid = true, orderTs = op.timestamp) => {
-    if (!valid) return
-    const prev = latestByKey.get(key)
-    if (!prev || orderTs >= prev.orderTs) latestByKey.set(key, { op, orderTs })
-  }
-  const videoOrderTsOf = (op: CRDTOperation): number => {
-    const raw = (op.payload as { updatedAt?: unknown } | null | undefined)?.updatedAt
-    return typeof raw === 'number' && Number.isFinite(raw) ? raw : op.timestamp
-  }
-  // 分类删除还会清除该分类的 pin/site。即使分类随后重建，也必须保留最新删除屏障，
-  // 否则与老 peer 合流时，删除时间点之前的跨键正值会重新挂到重建分类下。
-  const latestCategoryDelete = new Map<string, LatestWrite>()
-  const rememberCategoryDelete = (categoryId: string, op: CRDTOperation) => {
-    const prev = latestCategoryDelete.get(categoryId)
-    if (!prev || op.timestamp >= prev.orderTs) {
-      latestCategoryDelete.set(categoryId, { op, orderTs: op.timestamp })
-    }
-  }
-  const now = Date.now()
-  for (const op of operations) {
-    switch (op.type) {
-      case 'SET_CATEGORY_PIN':
-        remember(`cat_pin_${op.entityId}`, op)
-        break
-      case 'REORDER_CATEGORIES':
-        remember('global_category_order', op)
-        break
-      case 'PIN_SITE_IN_CATEGORY':
-      case 'UNPIN_SITE_IN_CATEGORY':
-        if (op.payload?.siteId) remember(`site_pin_${op.entityId}_${op.payload.siteId}`, op)
-        break
-      case 'UPSERT_CUSTOM_CATEGORY':
-        remember(`custom_cat_${op.entityId}`, op)
-        break
-      case 'DELETE_CUSTOM_CATEGORY':
-        remember(`custom_cat_${op.entityId}`, op)
-        rememberCategoryDelete(op.entityId, op)
-        break
-      case 'UPSERT_CUSTOM_SITE':
-        if (op.payload?.site?.id) {
-          remember(`custom_site_${op.payload.site.id}`, op)
-        }
-        break
-      case 'DELETE_CUSTOM_SITE': {
-        const siteId = op.payload?.siteId || op.entityId
-        if (siteId) remember(`custom_site_${siteId}`, op)
-        break
-      }
-      case 'UPSERT_VIDEO_PROGRESS': {
-        if (!op.entityId) break
-        const p = (op.payload || {}) as Partial<VideoProgress>
-        const valid =
-          typeof p.title === 'string' && p.title.length > 0 &&
-          typeof p.timestampSec === 'number' && Number.isFinite(p.timestampSec) && p.timestampSec >= 0 &&
-          typeof p.durationSec === 'number' && Number.isFinite(p.durationSec) && p.durationSec >= 0 &&
-          typeof p.progressPercent === 'number' && Number.isFinite(p.progressPercent)
-        const orderTs = videoOrderTsOf(op)
-        remember(`video_${op.entityId}`, op, valid && orderTs <= now + VIDEO_PROGRESS_FUTURE_SKEW_MS, orderTs)
-        break
-      }
-      case 'DELETE_VIDEO_PROGRESS': {
-        if (!op.entityId) break
-        const orderTs = videoOrderTsOf(op)
-        remember(`video_${op.entityId}`, op, orderTs <= now + VIDEO_PROGRESS_FUTURE_SKEW_MS, orderTs)
-        break
-      }
-    }
-  }
-
-  // 正值快照默认使用所属 LWW 键自己的 orderTs，并保留原 clientId/id 作为 tie-break。
-  // 视频快照显式传原 op.timestamp：updatedAt 只用于选值，不能改写合并排序字段。
-  // 内嵌站点没有同键原 op 时，再从来源分类写派生一个稳定 id。
-  const snapshotFromWrite = (
-    type: CRDTOpType,
-    entityId: string,
-    payload: unknown,
-    write: LatestWrite,
-    timestamp = write.orderTs
-  ): CRDTOperation => {
-    const sameIdentity = write.op.type === type && write.op.entityId === entityId
-    return {
-      ...write.op,
-      ...(sameIdentity ? {} : { id: `${write.op.id}_${type}_${entityId}` }),
-      type,
-      entityId,
-      payload,
-      timestamp,
-    }
-  }
-
-  // 0. 分类删除是跨 pin/site 键的屏障，先于正值快照输出，保证直接规约压缩结果也等价。
-  // 每分类只保留最新一条，历史删除/重建循环不会让快照持续增长。
-  for (const { op: barrier } of latestCategoryDelete.values()) {
-    compacted.push({ ...barrier, payload: {} })
-  }
-
-  // 1. 全局分类排序。空数组也是一个有效终态：老 peer 的旧顺序不能把它填回去。
-  const orderWrite = latestByKey.get('global_category_order')
-  if (orderWrite) {
-    compacted.push(snapshotFromWrite(
-      'REORDER_CATEGORIES',
-      'global',
-      { categoryOrder: reduced.categoryOrder },
-      orderWrite
-    ))
+  // 1. 全局分类排序
+  if (reduced.categoryOrder.length > 0) {
+    compacted.push(
+      createCRDTOperation(
+        'REORDER_CATEGORIES',
+        'global',
+        { categoryOrder: reduced.categoryOrder },
+        clientId,
+        timestamp
+      )
+    )
   }
 
   // 2. 置顶分类
   for (const catId of reduced.pinnedCategoryIds) {
-    const write = latestByKey.get(`cat_pin_${catId}`)
-    if (!write) continue
-    compacted.push(snapshotFromWrite('SET_CATEGORY_PIN', catId, { isPinned: true }, write))
+    compacted.push(
+      createCRDTOperation(
+        'SET_CATEGORY_PIN',
+        catId,
+        { isPinned: true },
+        clientId,
+        timestamp
+      )
+    )
   }
 
   // 3. 分类内置顶站点
   for (const [catId, siteIds] of Object.entries(reduced.pinnedSiteIdsByCategory)) {
     for (const siteId of siteIds) {
-      const write = latestByKey.get(`site_pin_${catId}_${siteId}`)
-      if (!write) continue
-      compacted.push(snapshotFromWrite('PIN_SITE_IN_CATEGORY', catId, { siteId }, write))
+      compacted.push(
+        createCRDTOperation(
+          'PIN_SITE_IN_CATEGORY',
+          catId,
+          { siteId },
+          clientId,
+          timestamp
+        )
+      )
     }
   }
 
-  // 4. 自定义分类及旗下站点。
-  // DELETE 写只能作为 tombstone，不能改头换面变成正值快照：同站点可能因分类内嵌数据
-  // 仍存在于另一个分类，而其 custom_site 水位是带 categoryId 的删除；把它合成 UPSERT
-  // 会在合流另一端的分类删除时复活站点。自动建类同样不能合成显式分类写，否则默认标题
-  // 会覆盖 peer 已命名的标题。两类歧义历史统一保留原日志、放弃压缩，宁可多存也不丢因果。
-  const isDeleteWrite = (write: LatestWrite): boolean => write.op.type.startsWith('DELETE_')
+  // 4. 自定义分类及旗下站点
   for (const cat of reduced.customCategories) {
-    const categoryWrite = latestByKey.get(`custom_cat_${cat.id}`)
-    if (!categoryWrite || isDeleteWrite(categoryWrite)) return operations
+    compacted.push(
+      createCRDTOperation(
+        'UPSERT_CUSTOM_CATEGORY',
+        cat.id,
+        { id: cat.id, title: cat.title, items: [] },
+        clientId,
+        timestamp
+      )
+    )
     for (const site of cat.items) {
-      const siteWrite = latestByKey.get(`custom_site_${site.id}`) ?? categoryWrite
-      if (isDeleteWrite(siteWrite)) return operations
+      compacted.push(
+        createCRDTOperation(
+          'UPSERT_CUSTOM_SITE',
+          site.id,
+          { categoryId: cat.id, site },
+          clientId,
+          timestamp
+        )
+      )
     }
   }
 
-  for (const cat of reduced.customCategories) {
-    const categoryWrite = latestByKey.get(`custom_cat_${cat.id}`)
-    if (!categoryWrite) continue
-    compacted.push(snapshotFromWrite(
-      'UPSERT_CUSTOM_CATEGORY',
-      cat.id,
-      { id: cat.id, title: cat.title, items: [] },
-      categoryWrite
-    ))
-    for (const site of cat.items) {
-      const siteWrite = latestByKey.get(`custom_site_${site.id}`) ?? categoryWrite
-      compacted.push(snapshotFromWrite('UPSERT_CUSTOM_SITE', site.id, { categoryId: cat.id, site }, siteWrite))
-    }
-  }
-
-  // 5. 视频断点：每视频只留最新一条。LWW 选择仍用原始 payload.updatedAt，
-  // 快照的 op.timestamp/clientId/id 则必须保持原操作排序字段，不能改成版本号。
+  // 5. 视频断点：每视频只留最新一条。
+  // 关键：payload.updatedAt 保留原始值、只把 op.timestamp 抬到 maxTs。
+  // 若把 updatedAt 也抬到 maxTs，压缩体会误胜另一设备上 updatedAt 介于
+  // 原值与 maxTs 之间的真实新断点；若丢掉 maxTs，压缩后的 op 与未压缩
+  // 副本合流时旧 op 可能「复活」成最新。两者缺一不可。
   for (const [videoId, progress] of Object.entries(reduced.videoProgress)) {
-    const write = latestByKey.get(`video_${videoId}`)
-    if (!write) continue
-    compacted.push(snapshotFromWrite('UPSERT_VIDEO_PROGRESS', videoId, { ...progress }, write, write.op.timestamp))
-  }
-
-  // 6. 负向终态显式落成 tombstone。只输出规约后确实不存在的对象，避免与上面的正值快照互相覆盖。
-  // tombstone 必须原样保留 op.timestamp/clientId/id：它既是本键水位，也是同时间戳的 tie-break。
-  for (const { op: negative } of latestByKey.values()) {
-    if (negative.type === 'SET_CATEGORY_PIN' && !negative.payload?.isPinned) {
-      if (reduced.pinnedCategoryIds.includes(negative.entityId)) continue
-      compacted.push({ ...negative, payload: { isPinned: false } })
-      continue
-    }
-    if (negative.type === 'UNPIN_SITE_IN_CATEGORY') {
-      const siteId = negative.payload?.siteId
-      if (!siteId || reduced.pinnedSiteIdsByCategory[negative.entityId]?.includes(siteId)) continue
-      compacted.push({ ...negative, payload: { siteId } })
-      continue
-    }
-    if (negative.type === 'DELETE_CUSTOM_SITE') {
-      const siteId = negative.payload?.siteId || negative.entityId
-      if (!siteId || reduced.customCategories.some((cat) => cat.items.some((site) => site.id === siteId))) continue
-      const payload = negative.payload?.categoryId ? { siteId, categoryId: negative.payload.categoryId } : { siteId }
-      compacted.push({ ...negative, payload })
-      continue
-    }
-    if (negative.type === 'DELETE_VIDEO_PROGRESS') {
-      if (reduced.videoProgress[negative.entityId]) continue
-      // 视频删除的 LWW 水位仍是原始 updatedAt；op.timestamp 也保持原值，避免无关 op 抬高它。
-      const payload = { ...(negative.payload || {}), updatedAt: videoOrderTsOf(negative) }
-      compacted.push({ ...negative, payload })
-    }
+    compacted.push(
+      createCRDTOperation(
+        'UPSERT_VIDEO_PROGRESS',
+        videoId,
+        { ...progress },
+        clientId,
+        timestamp
+      )
+    )
   }
 
   return compacted

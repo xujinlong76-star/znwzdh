@@ -268,7 +268,7 @@ const CHECK_SCRIPTS = [
   ["check-db-integrity.mjs", "数据库引用完整性 + 保留策略健康（只读）：扫 9 项孤儿引用（关联表指向不存在的 sites/categories），并检查 events/audit_logs/search_history/site_archives/health_checks 五张表的保留期积压，过期占比 >50% 且 >5000 行判红"],
   ["check-dead-modules.mjs", "死模块候选扫描棘轮：overlay 内 0 引用模块，仅「不在基线里的新候选」判红；BASELINE_NOTES 逐份登记 keep/delete 结论"],
   ["check-tag-data.mjs", "标签数据护栏（只读）：扫全库站点，报告零标签站点 / 超长标签(CJK>6) / 单卡包含关系三类瑕疵；--strict 时任一违规退出码 1，用于防新增站点漏填标签与分类名复读回归"],
-  ["check-root-hygiene.mjs", "根目录卫生门禁：检查已跟踪及未跟踪且未被忽略的根目录条目，命中 diag-/measure-/verify-/shot-/probe- 一次性脚本、*-notes.md 过程笔记或 *-evidence/ 验证据目录即报错；--strict 用于 CI，防止临时产物再堆回仓库根目录"],
+  ["check-root-hygiene.mjs", "根目录卫生门禁：检查被 git 跟踪的根目录条目，命中 diag-/measure-/verify-/shot-/probe- 一次性脚本、*-notes.md 过程笔记或 *-evidence/ 验证据目录即报错；--strict 用于 CI，防止临时产物再堆回仓库根目录"],
   ["check-frontend-typecheck.mjs", "前端类型门禁棘轮：校验 apps/web（构建镜像）的 tsc --noEmit 错误数必须为 0，改 overlay 后需先同步镜像再跑"],
   ["check-generated-all.mjs", "生成/镜像链聚合入口：core 镜像 / 路由策略 / REST 契约 / overlay→web 四条链一次跑完，任一退出非 0 即整体判红"],
   ["check-health-coverage.mjs", "健康探测覆盖与新鲜度 SLO（只读）：已探测样本中超 7×24h 比例 ≤5%、单类目未探测占比 ≤20%"],
@@ -280,9 +280,6 @@ const CHECK_SCRIPTS = [
   ["check-web-config-parity.mjs", "前端配置唯一事实源断言：apps/web 与 overlay 的 next.config.js / package.json / tsconfig.json 必须同源"],
   ["check-no-explicit-any.mjs", "显式 any 棘轮守卫：按文件基线只减不增（TypeScript 语法树数 AnyKeyword，口径与 eslint 一致）；--staged 供 pre-commit 只查暂存集"],
   ["check-a11y-token-changed.mjs", "冷区 a11y token 变更门禁：pre-push 只扫改动 overlay 文件，防新引入冷区 a11y token 违例"],
-  ["check-hub-id.mjs", "hubId 映射门禁：hubId 与导航 id 不一致或重复即失败，缺失仅告警；可传 --hub-list 交叉校验中枢 id 与归一化 URL"],
-  ["check-no-raw-palette.mjs", "raw palette 棘轮守卫：按文件基线限制 overlay 源码中的 Tailwind 彩色调色板类只减不增，防绕过语义 Token 与高对比模式"],
-  ["check-root-hygiene.test.mjs", "根目录卫生门禁单测：锁定未跟踪探针文件纳入扫描、目录折叠与永久 scripts 探针放行规则"],
 ];
 
 // ---------------- 动态枚举 docs/ 下的 .md ----------------

@@ -179,7 +179,7 @@ export async function callLlm(
     toolChoice: opts.toolChoice,
     signal: opts.signal,
     deadlineAt: opts.deadlineAt,
-    fetchImpl: opts.fetchImpl ?? ctx.config.llm.fetchImpl,
+    fetchImpl: opts.fetchImpl,
   };
 
   const candidates: Array<{ provider: LlmProvider; source: string }> = [
@@ -327,7 +327,7 @@ export async function* callLlmStream(
     maxTokens: opts.maxTokens,
     signal: opts.signal,
     deadlineAt: opts.deadlineAt,
-    fetchImpl: opts.fetchImpl ?? ctx.config.llm.fetchImpl,
+    fetchImpl: opts.fetchImpl,
   };
 
   const candidates: Array<{ provider: LlmProvider; source: string }> = [

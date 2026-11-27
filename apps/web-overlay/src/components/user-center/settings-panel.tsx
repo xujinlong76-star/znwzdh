@@ -68,12 +68,6 @@ import {
   loadHalfScreenDockOn,
   setHalfScreenDockOn,
 } from '@/lib/half-screen-dock'
-import {
-  XIAOMAOMAO_ENABLED_CHANGED_EVENT,
-  XIAOMAOMAO_ENABLED_STORAGE_KEY,
-  loadXiaomaomaoEnabled,
-  setXiaomaomaoEnabled,
-} from '@/lib/xiaomaomao-pref'
 
 const FONT_SIZE_LEVELS: FontSizeLevel[] = ['standard', 'large', 'xlarge']
 
@@ -157,55 +151,6 @@ function HalfScreenDockField({ idPrefix }: { idPrefix: string }) {
       </Button>
       <p className="text-[11px] leading-relaxed text-muted-foreground">
         视口 640–1024px 时，首页底部出现一条常驻操作栏，放回半屏下工具栏里丢失的场景、密度、视图、工具箱与热度榜入口；只存这台设备。
-      </p>
-    </div>
-  )
-}
-
-/**
- * 桌面小猫猫（本机设置）：关闭后全站任何页面都不显示小猫猫与右侧正中 `<` 唤出箭头。
- */
-function XiaomaomaoField({ idPrefix }: { idPrefix: string }) {
-  const [on, setOn] = useState(true)
-  useEffect(() => {
-    setOn(loadXiaomaomaoEnabled())
-    const refresh = () => setOn(loadXiaomaomaoEnabled())
-    const onStorage = (ev: StorageEvent) => {
-      if (ev.key && ev.key !== XIAOMAOMAO_ENABLED_STORAGE_KEY) return
-      refresh()
-    }
-    window.addEventListener(XIAOMAOMAO_ENABLED_CHANGED_EVENT, refresh)
-    window.addEventListener('storage', onStorage)
-    return () => {
-      window.removeEventListener(XIAOMAOMAO_ENABLED_CHANGED_EVENT, refresh)
-      window.removeEventListener('storage', onStorage)
-    }
-  }, [])
-  const toggle = () => {
-    const next = !on
-    setXiaomaomaoEnabled(next)
-    setOn(next)
-  }
-  return (
-    <div className="space-y-1.5">
-      <label htmlFor={`${idPrefix}-xiaomaomao-enabled`} className="block text-xs font-medium text-foreground">
-        桌面小猫猫
-      </label>
-      <Button
-        id={`${idPrefix}-xiaomaomao-enabled`}
-        data-testid="settings-xiaomaomao-toggle"
-        size="sm"
-        variant={on ? 'outline' : 'default'}
-        className="h-7 text-[11px] pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-        onClick={toggle}
-        aria-pressed={on}
-      >
-        {on ? '已开启' : '已关闭'}
-      </Button>
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
-        {on
-          ? '已开启：在页面关闭小猫猫后，仅在屏幕最右侧中间保留 < 方向箭头随时唤出；只存这台设备。'
-          : '已关闭：全站任何位置都不显示小猫猫与右侧 < 方向箭头；只存这台设备。'}
       </p>
     </div>
   )
@@ -352,8 +297,8 @@ function ThemeField({ idPrefix }: { idPrefix: string }) {
  * 新手引导重看（本机设置）：与字号同款纪律，只动本机 localStorage。
  * B11：引导卡注释承诺「设置页可重新打开」，此前却没有任何入口——
  * 关掉引导的用户除手动清 localStorage 外再也看不到它。
- * 点按即清除关闭记录并回首页，再从首页顶栏「DIY 排版 → 外观与向导」打开；
- * 引导本来就没关过时按钮只是直达首页，不说「重新查看」的假话。
+ * 点按即清除关闭记录并回首页，卡片重新出现；引导本来就没关过时
+ * 按钮只是直达首页，不说「重新查看」的假话。
  */
 function OnboardingReplayField() {
   const [dismissed, setDismissed] = useState<boolean | null>(null)
@@ -837,8 +782,6 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
         </div>
 
         <HalfScreenDockField idPrefix={idPrefix} />
-
-        <XiaomaomaoField idPrefix={idPrefix} />
 
         <FontSizeField idPrefix={idPrefix} />
 

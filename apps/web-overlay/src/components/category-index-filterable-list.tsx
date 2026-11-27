@@ -2,9 +2,9 @@
 
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
-import { Search, ChevronDown, ChevronUp, Folder, ArrowRight } from 'lucide-react'
+import { Search, X, ChevronDown, ChevronUp, Folder, ArrowRight } from 'lucide-react'
+import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { FilterBar } from '@/components/filter-bar'
 import { EmptyState } from '@/components/ui/empty-state'
 import { safeHref } from '@/lib/safe-url'
 
@@ -106,14 +106,31 @@ export function CategoryIndexFilterableList({
 
   return (
     <div className="space-y-4">
-      {/* 0-RTT 分类搜索与快捷控制条（FilterBar 原语） */}
-      <FilterBar
-        value={filterQuery}
-        onChange={setFilterQuery}
-        placeholder="快速查找分类或子类目（例如: AI, 数据库, 博客, 官方文档）..."
-        aria-label="快速查找分类或子类目"
-        meta={
-          <span className="font-mono hidden sm:inline-block">
+      {/* 0-RTT 分类搜索与快捷控制条 */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl border border-border/70 bg-card/60 backdrop-blur-xs shadow-2xs">
+        <div className="relative flex-1 min-w-[220px] sm:min-w-[18rem] max-w-md">
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            placeholder="快速查找分类或子类目（例如: AI, 数据库, 博客, 官方文档）..."
+            aria-label="快速查找分类或子类目"
+            className="pl-9 pr-8 h-9 text-xs sm:text-sm bg-background/80"
+          />
+          {filterQuery && (
+            <button
+              type="button"
+              onClick={() => setFilterQuery('')}
+              aria-label="清空筛选输入"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 rounded-sm cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-muted-foreground font-mono hidden sm:inline-block">
             {isFiltering ? (
               <span>
                 匹配到 <strong className="text-foreground">{filteredGroups.length}</strong> / {groups.length} 个主类目，
@@ -123,9 +140,8 @@ export function CategoryIndexFilterableList({
               <span>共 {groups.length} 个主类目 · {totalLeaves} 个子分类</span>
             )}
           </span>
-        }
-        actions={
-          <>
+
+          <div className="flex items-center gap-1.5 ml-auto">
             <Button
               variant="outline"
               size="sm"
@@ -144,7 +160,7 @@ export function CategoryIndexFilterableList({
               <ChevronUp className="w-3.5 h-3.5 mr-1" />
               <span>全部收起</span>
             </Button>
-            {isFiltering ? (
+            {isFiltering && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -153,10 +169,10 @@ export function CategoryIndexFilterableList({
               >
                 重置
               </Button>
-            ) : null}
-          </>
-        }
-      />
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* 分类列表或无匹配状态 */}
       {filteredGroups.length === 0 ? (

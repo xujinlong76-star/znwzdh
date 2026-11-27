@@ -2,14 +2,8 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync, timingSafeEq
 import NextAuth from 'next-auth'
 import GithubProvider from 'next-auth/providers/github'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import type { NextAuthConfig, Session } from 'next-auth'
-import {
-  authConfig as baseAuthConfig,
-  authSecret,
-  isAdminAccessAllowed,
-  sessionGovernanceFromToken,
-} from './auth.config'
-import { readRequestSessionGovernance } from './session-governance'
+import type { NextAuthConfig } from 'next-auth'
+import { authConfig, authSecret, isAdminAccessAllowed } from './auth.config'
 import { canonicalUserId } from './me-identity'
 import { hubSessionRevoked } from './server/hub'
 
@@ -233,7 +227,7 @@ const providers: NextAuthConfig['providers'] = [
           });
           if (res.ok) {
             const data = (await res.json()) as {
-              user?: { id?: string; username?: string; email?: string | null; role?: string; passwordVersion?: number };
+              user?: { id?: string; username?: string; email?: string | null; role?: string };
             };
             const u = data?.user;
             if (u?.id) {
@@ -242,7 +236,6 @@ const providers: NextAuthConfig['providers'] = [
                 name: u.username ?? rawUsername,
                 email: u.email ?? null,
                 role: u.role ?? "user",
-                passwordVersion: u.passwordVersion,
               };
             }
           }
@@ -287,16 +280,11 @@ if (hasGithubAuth) {
   )
 }
 
-/** Auth.js 运行时会用 null 会话响应登出，但其 beta 类型只声明 Session。 */
-function invalidSession(): Session {
-  return null as unknown as Session
-}
-
-export const authOptions = {
-  ...baseAuthConfig,
+const config = {
+  ...authConfig,
   providers,
   callbacks: {
-    ...baseAuthConfig.callbacks,
+    ...authConfig.callbacks,
     async jwt({ token, user, account }) {
       if (account?.access_token) {
         if (token.sub) serverTokenStore.set(token.sub, account.access_token)
@@ -305,61 +293,40 @@ export const authOptions = {
       if (user) {
         token.role = (user as { role?: string }).role
         token.sub = user.id || token.sub || 'admin'
-        const passwordVersion = (user as { passwordVersion?: number }).passwordVersion
-        if (typeof passwordVersion === 'number' && Number.isInteger(passwordVersion) && passwordVersion >= 0) {
-          token.passwordVersion = passwordVersion
-        } else {
-          delete token.passwordVersion
-        }
       }
       // 会话治理（T8）：sid 是设备吊销的锚点。JWT 无状态，服务端只存 sid 的
       // sha256——用户在 /me/account 踢出某 sid 后，BFF 校验会让该设备 401。
       if (!token.sid) token.sid = globalThis.crypto.randomUUID()
-      // 登录时强制登记会话（P0-2）：立即调 sessions/check 建行，不等用户第一次调 /api/me/*。
-      // passwordVersion 同时在该消费点复核：旧密码验证通过后若发生重置，不得签发 JWT。
-      if (user && typeof token.sid === 'string') {
-        const issuedAt = Date.now()
-        token.issuedAt = issuedAt
-        const identity = canonicalUserId({ id: user.id, provider: account?.provider })
-        if (identity) {
-          const sessionPasswordVersion = typeof token.passwordVersion === 'number' ? token.passwordVersion : undefined
-          const revoked = await hubSessionRevoked(token.sid, identity, issuedAt, sessionPasswordVersion).catch(() => {
-            // 登录登记异常按不可用处理，不能签发无法核验的会话。
-            return null
-          })
-          // 登录登记同样 fail-closed：中枢不可达时不能签发无法核验的会话，
-          // credentials 与 OAuth 使用同一安全口径。
-          if (revoked !== false) {
-            console.warn('[session-register] sessions/check rejected or unavailable at login')
-            return null
-          }
-        } else {
-          return null
-        }
+    // 登录时强制登记会话（P0-2）：立即调 sessions/check 建行，不等用户第一次调 /api/me/*。
+    if (user && typeof token.sid === 'string') {
+      const issuedAt = Date.now()
+      token.issuedAt = issuedAt
+      const identity = canonicalUserId({ id: user.id, provider: account?.provider })
+      if (identity) {
+        const revoked = await hubSessionRevoked(token.sid, identity, issuedAt).catch(() => { /* 核对失败按不可用处理，fail-open */ return null })
+        if (revoked === true) console.warn('[session-register] unexpected revoked at login')
+        else if (revoked === null) console.warn('[session-register] sessions/check unavailable')
       }
+    }
       return token
     },
     async session({ session, token }) {
       if (session?.user && token.sub) {
         ;(session.user as { id?: string }).id = token.sub
+        // sid 只在 BFF（服务端）与吊销校验中使用：挂 session 顶层而不是 user 上，
+        // 避免被当成用户资料透传给任意客户端组件。
+        if (typeof token.sid === 'string') {
+          ;(session as { sessionSid?: string }).sessionSid = token.sid
+        }
+      if (typeof token.issuedAt === 'number') {
+        ;(session as { sessionIssuedAt?: number }).sessionIssuedAt = token.issuedAt
+      }
         if (typeof token.role === 'string') {
           ;(session.user as { role?: string }).role = token.role
         }
         if (typeof token.provider === 'string') {
           ;(session.user as { provider?: string }).provider = token.provider
         }
-        // 每次 session 读取都核对。所有已登录会话（含 OAuth）在枢纽不可达、
-        // 缺少 sid 或无法派生身份时一律 fail-closed；匿名请求不进入此回调。
-        const { sid, issuedAt, passwordVersion } = sessionGovernanceFromToken(token)
-        if (!sid) return invalidSession()
-        const provider = typeof token.provider === 'string' ? token.provider : undefined
-        const identity = canonicalUserId({ id: token.sub, provider })
-        if (!identity) return invalidSession()
-        const revoked = await hubSessionRevoked(sid, identity, issuedAt, passwordVersion).catch(() => {
-          // 核对异常按不可用处理，已登录会话随后 fail-closed。
-          return null
-        })
-        if (revoked !== false) return invalidSession()
       }
       return session
     },
@@ -367,7 +334,7 @@ export const authOptions = {
   secret: authSecret,
 } satisfies NextAuthConfig
 
-const handler = NextAuth(authOptions)
+const handler = NextAuth(config)
 
 export const auth = handler.auth
 export const { handlers: { GET, POST } } = handler
@@ -383,21 +350,14 @@ export async function verifyAdminSession() {
     return { ok: false as const, error: 'Forbidden', status: 403 }
   }
 
-  // auth() 的 session 回调已统一核对；这里再从已验签 Cookie 取元数据防御一次，
-  // 避免任何调用方绕过回调。OAuth 与凭证会话在不可达时均 fail-closed。
-  const { sid: sessionSid, issuedAt, passwordVersion } = await readRequestSessionGovernance(session)
+  // 吊销检查（P0-2）：被踢出/改密的管理员 JWT 须 401；核对不可用时 fail-open。
+  const sessionSid = (session as { sessionSid?: string }).sessionSid
   if (typeof sessionSid === 'string' && sessionSid) {
     const identity = canonicalUserId(user)
-    if (!identity) return { ok: false as const, error: 'Unauthorized', status: 401 }
-    const revoked = await hubSessionRevoked(sessionSid, identity, issuedAt, passwordVersion).catch(() => {
-      // 二次核对异常同样拒绝，不给无法核验的管理员会话放行。
-      return null
-    })
-    if (revoked !== false) {
-      return { ok: false as const, error: 'Unauthorized', status: 401 }
-    }
-  } else {
-    return { ok: false as const, error: 'Unauthorized', status: 401 }
+    const issuedAt = (session as { sessionIssuedAt?: number }).sessionIssuedAt
+    const revoked = identity ? await hubSessionRevoked(sessionSid, identity, issuedAt).catch(() => { /* 核对失败按不可用处理，fail-open */ return null }) : null
+    if (revoked === true) return { ok: false as const, error: 'Unauthorized', status: 401 }
+    if (revoked === null && identity) console.warn('[admin-session] sessions/check unavailable, fail-open')
   }
   const githubToken = getServerGithubToken(user.id) || process.env.GITHUB_PAT || ''
   return { ok: true as const, session, user, githubToken }

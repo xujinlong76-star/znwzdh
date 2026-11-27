@@ -257,8 +257,7 @@ CREATE INDEX IF NOT EXISTS collection_items_site_idx ON collection_items(site_id
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY, username TEXT NOT NULL, password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'admin', email TEXT, avatar TEXT,
-  source TEXT NOT NULL DEFAULT 'local', created_at INTEGER NOT NULL,
-  password_version INTEGER NOT NULL DEFAULT 0
+  source TEXT NOT NULL DEFAULT 'local', created_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_idx ON users(username);
 
@@ -334,9 +333,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   next_run_at INTEGER, progress_done INTEGER NOT NULL DEFAULT 0, progress_total INTEGER NOT NULL DEFAULT 0,
   -- 本次执行的耗时（毫秒）。created_at→updated_at 含排队等待，用它算「跑了多久」会把
   -- 「在队列里等了 3 分钟」也算进执行时间；这一列只记 handler 本身的耗时。
-  duration_ms INTEGER NOT NULL DEFAULT 0,
-  -- 每次认领生成；心跳、进度与终态回写必须匹配，隔离被回收后重新认领的执行代次。
-  run_token TEXT
+  duration_ms INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_next_run_idx ON jobs(status, next_run_at);
@@ -1067,8 +1064,7 @@ CREATE INDEX IF NOT EXISTS collection_items_site_idx ON collection_items(site_id
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY, username TEXT NOT NULL, password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'admin', email TEXT, avatar TEXT,
-  source TEXT NOT NULL DEFAULT 'local', created_at BIGINT NOT NULL,
-  password_version INTEGER NOT NULL DEFAULT 0
+  source TEXT NOT NULL DEFAULT 'local', created_at BIGINT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_idx ON users(username);
 
@@ -1138,8 +1134,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT, status TEXT NOT NULL DEFAULT 'pending',
   attempts INTEGER NOT NULL DEFAULT 0, error TEXT, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL,
   next_run_at BIGINT, progress_done INTEGER NOT NULL DEFAULT 0, progress_total INTEGER NOT NULL DEFAULT 0,
-  duration_ms INTEGER NOT NULL DEFAULT 0,
-  run_token TEXT
+  duration_ms INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_next_run_idx ON jobs(status, next_run_at);

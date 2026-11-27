@@ -176,7 +176,7 @@ export function classifyProbeError(err: unknown, ctx: ProbeErrorContext): ProbeO
   if (raw.includes("重定向次数超过")) {
     return { kind: "dead", reason: "重定向次数过多，浏览器同样会报错" };
   }
-  if (raw.includes("受保护网段") || raw.includes("受保护地址") || raw.includes("禁止访问该端口") || raw.includes("仅允许 http")) {
+  if (raw.includes("受保护网段") || raw.includes("禁止访问该端口") || raw.includes("仅允许 http")) {
     return { kind: "dead", reason: "目标指向内网或非法地址，已拒绝探测" };
   }
   if (msg.includes("certificate") || msg.includes("ssl") || msg.includes("tls") || msg.includes("self-signed")) {

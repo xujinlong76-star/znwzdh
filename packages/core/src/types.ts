@@ -247,11 +247,12 @@ export interface TagAlias {
  * ------------------------------------------------------------------ */
 
 /**
- * 融合/重排信号。exact/fts/pinyin/semantic 是四路相关性召回；personal 是
- * **只作用于已召回站点的偏好 rerank 信号**，不是第五路召回，也不能扩展结果集合。
+ * 召回通道。前四路是"相关性"通道，personal 是"偏好"通道 —— 二者都进入 RRF 融合。
  *
- * personal 以较小的独立权重进入 RRF，用于限制偏好翻转相关性的能力；保留 channel
- * 名称是为了兼容既有 contributions 与权重配置，不代表它执行了独立检索。
+ * 设计要点：个性化**不是**融合后的后处理加成，而是与相关性通道并列进入 RRF 的一路。
+ * 原因是实测发现 RRF（k=60）会把排名 1~10 压缩到仅 ~3% 的分数差，
+ * 任何"融合后再乘系数"的做法都会轻易翻转相关性顺序。
+ * 把它变成一路、并给一个明确小于相关性通道的权重，翻转能力就被权重天然限界了。
  *
  * 类型说明：内置通道（BuiltinChannel）保留字面量自动补全；
  * `(string & {})` 允许注册表扩展的新通道不报类型错（见 channels.ts）。
@@ -263,7 +264,7 @@ export type SearchChannel = BuiltinChannel | (string & {});
 export interface SearchCandidate {
   siteId: Id;
   channel: SearchChannel;
-  /** 召回通道内 / personal rerank 偏好强度排名，从 1 开始 */
+  /** 通道内排名，从 1 开始 */
   rank: number;
   /** 通道原始分（可解释性用） */
   rawScore?: number;
@@ -277,7 +278,7 @@ export interface SearchCandidate {
 export interface SearchHit {
   siteId: Id;
   score: number;
-  /** 各路召回与 personal rerank 的贡献，用于「为什么是它」的可解释排序 */
+  /** 每路召回的贡献，用于「为什么是它」的可解释排序 */
   contributions: Partial<Record<SearchChannel, { rank: number; value: number }>>;
 }
 
@@ -335,14 +336,14 @@ export interface SearchQuery {
   mode?: "hybrid" | "keyword" | "semantic";
   /** 关闭语义通道（无模型或追求极低延迟时） */
   disableSemantic?: boolean;
-  /** 关闭个性化 rerank（只重排已召回站点，不增加召回） */
+  /** 关闭个性化通道 */
   disablePersonal?: boolean;
   /**
    * 关闭自动查询纠正（前端「不是这个？搜原来的」回退用；nocorrect=1）。
    * 关闭后零结果只走 didYouMean 建议，不自动重跑纠正后的查询。
    */
   disableCorrection?: boolean;
-  /** 个性化：用户近来偏好；仅对四路相关性召回结果做 rerank。 */
+  /** 个性化：用户近来偏好 */
   personalize?: PersonalizationSignals;
   /** 排除的关键词（负向关键词，排除包含任一词的站点） */
   excludedTerms?: string[];
@@ -350,7 +351,7 @@ export interface SearchQuery {
 
 export interface SearchResult {
   hits: SearchHit[];
-  /** 实际参与的召回/重排信号；personal 仅表示已召回结果被个性化 rerank。 */
+  /** 每个通道是否真正参与，用于「AI 不可用」的诚实降级提示 */
   channelsUsed: SearchChannel[];
   semanticAvailable: boolean;
   tookMs: number;

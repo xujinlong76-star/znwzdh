@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
-import { safeFetch } from "@navhub/ai";
+import { guardedFetch } from "@navhub/ai";
 import type { AppContext } from "../context.ts";
 import type { SiteOfflineArchive } from "@navhub/core";
 
@@ -154,23 +154,20 @@ export const archiveRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     let bodyText = escapeHtml(site.description || "");
     try {
       /**
-       * 必须走 safeFetch，不能直接 fetch(site.url)：
+       * 必须走 guardedFetch，不能直接 fetch(site.url)：
        * 这个端点 scope=public，站点 URL 又可由写入方自由指定（canonicalizeUrl 只做归一，
        * 不拦私网）。裸 fetch 等于把「让服务端访问任意地址并把响应存库再公开读出」
        * 的能力暴露给匿名用户（典型目标是 169.254.169.254 云元数据与内网管理台）。
-       * safeFetch 把校验通过的 IP pin 到 socket，逐跳重新校验，并保留原有的超时、
-       * 非危险显式端口与响应体截断语义。
+       * 逐跳 SSRF 校验 + 超时 + 响应体上限都交给同一个守卫。
        */
-      const res = await safeFetch(site.url, {
+      const res = await guardedFetch(site.url, {
         timeoutMs: 3000,
         maxBytes: 256 * 1024,
         maxRedirects: 2,
         allowPrivateNetworks: ctx.config.fetch.allowPrivateNetworks,
-        allowedPorts: null,
-        truncateOnLimit: true,
       });
       if (res.status >= 200 && res.status < 300) {
-        const text = new TextDecoder().decode(res.body);
+        const text = res.body;
         const bodyMatch = text.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
         if (bodyMatch && bodyMatch[1]) {
           // 严格清洗 HTML 标签与属性（防存储型/导出型 XSS）

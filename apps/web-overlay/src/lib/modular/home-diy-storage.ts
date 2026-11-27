@@ -32,11 +32,6 @@ import {
   type CanonicalCardDisplayMode,
   type CardDisplayMode,
 } from './card-display-modes'
-import {
-  migrateLayoutToV2,
-  type ActiveDragLayer,
-  type WorkspaceLayoutV2,
-} from './workspace-layout-v2'
 import { readClientViewModeCookie, writeViewModeCookie } from './view-mode-cookie'
 
 export type HomeViewMode = 'hybrid' | 'classic' | 'workbench'
@@ -93,12 +88,6 @@ export function resolveRankingMode(config: {
   return config.enableAdaptiveRanking ? 'adaptive' : 'default'
 }
 
-export interface BlockLayoutOverride {
-  colSpan?: number
-  rowSpan?: number
-  order?: number
-}
-
 export interface HomeDIYConfig {
   version: 3
   viewMode: HomeViewMode
@@ -116,12 +105,6 @@ export interface HomeDIYConfig {
   hiddenCategoryIds: string[]
   collapsedCategoryIds: string[]
   pinnedSiteIdsByCategory: Record<string, string[]>
-  /** Phase 1 自由拖拽排序覆盖层：categoryId / subCategoryId → 有序站点 id 列表（不污染原始 Catalog） */
-  siteOrderByCategory?: Record<string, string[]>
-  /** Phase 2 块级 Bento 网格扩展预留：blockId → 坐标/跨列覆写 */
-  blockOverrides?: Record<string, BlockLayoutOverride>
-  /** Phase 2：12 列 Bento 自由画布多断点布局（lg/md/sm + blockOverrides + trash） */
-  workspaceLayoutV2?: WorkspaceLayoutV2
   customCategories: CustomCategory[]
   siteCategoryOverrides: Record<string, string>
   // 单分类卡片形态单独覆盖 (Category Density Overrides)
@@ -178,8 +161,6 @@ export const DEFAULT_CONFIG: HomeDIYConfig = {
   hiddenCategoryIds: [],
   collapsedCategoryIds: [],
   pinnedSiteIdsByCategory: {},
-  siteOrderByCategory: {},
-  blockOverrides: {},
   customCategories: [],
   siteCategoryOverrides: {},
   categoryDensityOverrides: {},
@@ -293,12 +274,6 @@ export interface HomeDiySharedState {
   history: LayoutHistoryState<HomeDIYConfig>
   /** 编排模式：工具栏与导航区共享同一份，否则拖拽手柄不会出现 */
   isEditingLayout: boolean
-  /** Phase 2 双层拖拽引擎全局互斥锁（仅运行态，不落盘） */
-  activeDragLayer: ActiveDragLayer
-  /** Phase 2 紧凑大纲全景态开关（仅运行态，不落盘） */
-  outlineMode: boolean
-  /** Phase 2 当前在属性检查器中选中的区块 id（仅运行态，不落盘） */
-  selectedBlockId: string | null
   /** 非 null = 上次落盘失败；改动已在内存生效，但刷新会丢 */
   storageWarning: string | null
   pendingShare: PendingHomeDiyShare | null
@@ -333,9 +308,6 @@ const INITIAL_SHARED_STATE: HomeDiySharedState = {
   config: DEFAULT_CONFIG,
   history: createLayoutHistory(DEFAULT_CONFIG),
   isEditingLayout: false,
-  activeDragLayer: 'none',
-  outlineMode: false,
-  selectedBlockId: null,
   storageWarning: null,
   pendingShare: null,
   preview: null,
@@ -792,31 +764,7 @@ export function applyRemoteHomeDiyConfig(payload: {
 
 export function setHomeDiyEditingLayout(next: boolean): void {
   if (sharedState.isEditingLayout === next) return
-  if (!next) {
-    commitSharedState({
-      isEditingLayout: false,
-      activeDragLayer: 'none',
-      outlineMode: false,
-      selectedBlockId: null,
-    })
-    return
-  }
-  commitSharedState({ isEditingLayout: true })
-}
-
-export function setHomeDiyActiveDragLayer(layer: ActiveDragLayer): void {
-  if (sharedState.activeDragLayer === layer) return
-  commitSharedState({ activeDragLayer: layer })
-}
-
-export function setHomeDiyOutlineMode(enabled: boolean): void {
-  if (sharedState.outlineMode === enabled) return
-  commitSharedState({ outlineMode: enabled })
-}
-
-export function setHomeDiySelectedBlockId(blockId: string | null): void {
-  if (sharedState.selectedBlockId === blockId) return
-  commitSharedState({ selectedBlockId: blockId })
+  commitSharedState({ isEditingLayout: next })
 }
 
 export function dismissHomeDiyStorageWarning(): void {
@@ -931,68 +879,11 @@ export async function hydrateHomeDiy(initialCardDisplayMode?: CanonicalCardDispl
   }
   const stored = readStoredHomeDiyConfig(raw)
   if (stored.status === 'ok') {
-    // Phase 2 无损升维：旧版 V1 / Phase 1 本地配置缺少 workspaceLayoutV2 时，自动幂等迁移为 V2
-    // 并携带原始 V1 字段（hiddenSites / customSiteOrders）及 feature-mask 回收站回写持久化。
-    let nextStoredConfig = stored.config
-    let upgradedToV2 = false
-    if (!nextStoredConfig.workspaceLayoutV2) {
-      let rawV1Extras: { hiddenSites?: string[]; customSiteOrders?: Record<string, string[]> } = {}
-      try {
-        const rawObj = raw ? (JSON.parse(raw) as Record<string, unknown>) : null
-        if (rawObj && typeof rawObj === 'object') {
-          if (Array.isArray(rawObj.hiddenSites)) {
-            rawV1Extras.hiddenSites = rawObj.hiddenSites.filter((s): s is string => typeof s === 'string')
-          }
-          if (rawObj.customSiteOrders && typeof rawObj.customSiteOrders === 'object' && !Array.isArray(rawObj.customSiteOrders)) {
-            rawV1Extras.customSiteOrders = rawObj.customSiteOrders as Record<string, string[]>
-          }
-        }
-      } catch {
-        rawV1Extras = {}
-      }
-      let legacyTrash: Array<{ id: string; title: string; level?: string; deletedAt?: number }> = []
-      try {
-        const rawMask = storage.getItem('navhub_feature_mask_v1')
-        if (rawMask) {
-          const parsedMask = JSON.parse(rawMask) as { trashBin?: unknown }
-          if (Array.isArray(parsedMask?.trashBin)) {
-            legacyTrash = parsedMask.trashBin
-              .filter(
-                (t): t is { id: string; title: string; level?: string; deletedAt?: number } =>
-                  Boolean(t) &&
-                  typeof t === 'object' &&
-                  typeof (t as { id?: unknown }).id === 'string' &&
-                  typeof (t as { title?: unknown }).title === 'string',
-              )
-          }
-        }
-      } catch {
-        // 忽略回收站解析失败，保证主迁移链路不中断
-      }
-      const migratedV2 = migrateLayoutToV2({ ...nextStoredConfig, ...rawV1Extras }, { legacyTrash })
-      const mergedSiteOrder = {
-        ...(rawV1Extras.customSiteOrders || {}),
-        ...(nextStoredConfig.siteOrderByCategory || {}),
-      }
-      nextStoredConfig = {
-        ...nextStoredConfig,
-        siteOrderByCategory: mergedSiteOrder,
-        workspaceLayoutV2: migratedV2,
-      }
-      upgradedToV2 = true
-    }
     // Cookie 缺失时以 SSR 首帧为准，只纠正模式字段，其余 DIY 配置仍来自本地存储。
     const config = authoritativeMode
-      ? { ...nextStoredConfig, cardDisplayMode: normalizeCardDisplayMode(authoritativeMode) }
-      : nextStoredConfig
+      ? { ...stored.config, cardDisplayMode: normalizeCardDisplayMode(authoritativeMode) }
+      : stored.config
     commitSharedState({ config, history: createLayoutHistory(config) })
-    if (upgradedToV2) {
-      try {
-        storage.setItem(STORAGE_KEY, JSON.stringify(config))
-      } catch {
-        // 隐私模式或空间不足时静默降级为内存态 V2
-      }
-    }
     // 回填/纠正 Cookie：SSR 首帧与内存模式同源，下一次刷新也不会闪。
     writeViewModeCookie(config.cardDisplayMode)
   } else if (

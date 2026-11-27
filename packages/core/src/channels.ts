@@ -6,7 +6,7 @@
  * 所有消费方都被迫跟着改。
  *
  * 注册表把「通道名单 + 默认权重」变成运行时可变：
- *   - 内置四路召回（exact/fts/pinyin/semantic）+ personal rerank 信号开箱即用
+ *   - 内置五路（exact/fts/pinyin/semantic/personal）开箱即用
  *   - `registerChannel(name, weight)` 追加新通道，fusion 自动纳入融合与 coverage 统计
  *   - 类型上 `SearchChannel = BuiltinChannel | (string & {})`：内置通道保留自动补全，
  *     扩展通道不报类型错
@@ -18,7 +18,7 @@
 export const BUILTIN_CHANNELS = ["exact", "fts", "pinyin", "semantic", "personal"] as const;
 export type BuiltinChannel = (typeof BUILTIN_CHANNELS)[number];
 
-/** 内置信号默认权重（四路召回 0.9~1.4，personal rerank 0.3——见 fusion.ts） */
+/** 内置通道的默认权重（相关性通道 0.9~1.4，个性化 0.3——见 fusion.ts 的 RRF 教训） */
 export const BUILTIN_CHANNEL_WEIGHTS: Record<BuiltinChannel, number> = {
   exact: 1.4,
   fts: 1.0,

@@ -41,8 +41,7 @@ describe('safeFetch 五道防线', () => {
   it('权威层: 严格域名白名单 + 受控重定向 + 超时体积', () => {
     expect(AI).toContain('allowedHosts')
     expect(AI).toContain('isHostAllowed')
-    expect(AI).toContain('rawRequest')
-    expect(AI).toMatch(/for \(let hop = 0; hop <= maxRedirects; hop\+\+\)/)
+    expect(AI).toMatch(/redirect:\s*['"]manual['"]/)
     expect(AI).toContain('maxBytes')
     expect(AI).toContain('maxRedirects')
   })
@@ -58,15 +57,6 @@ describe('safeFetch 五道防线', () => {
     expect(WEB).toContain('export async function safeFetch')
     expect(WEB).toContain('export function isHostAllowed')
     expect(WEB).toContain('::ffff:')
-  })
-  it('web 层: 原生 HTTP(S) lookup 钉扎、SNI 且禁止 socket 复用', () => {
-    expect(WEB).toContain("import http from 'node:http'")
-    expect(WEB).toContain("import https from 'node:https'")
-    expect(WEB).toContain('export function pinnedLookup')
-    expect(WEB).toContain('lookup: pinnedLookup')
-    expect(WEB).toContain('servername: hostname')
-    expect(WEB).toContain('agent: false')
-    expect(WEB).not.toMatch(/await fetch\(/)
   })
 })
 

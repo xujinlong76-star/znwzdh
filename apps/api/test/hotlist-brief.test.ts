@@ -24,7 +24,9 @@ import { handleDailyBrief } from "../src/jobs/tasks/daily-brief.task.ts";
 import {
   anchoredOpening,
   briefDateKey,
+  briefRegenerateCutoffMs,
   generateDailyBrief,
+  getOrGenerateTodayBrief,
   type BriefPayload,
 } from "../src/brief/brief.ts";
 import {
@@ -322,6 +324,63 @@ describe("正点版任务语义", () => {
     expect(stored?.opening).not.toBe("哨兵早期版开场白");
     expect(stored?.generatedAt).toBeGreaterThan(1);
     expect(JSON.parse(stored!.payload).hotPicks.length).toBeGreaterThanOrEqual(20);
+  });
+});
+
+describe("凌晨抢跑版自愈", () => {
+  it("05:00 前生成的早期版在 05:00 后首次被读到时重生成", async () => {
+    const today = briefDateKey(Date.now());
+    const cutoff = briefRegenerateCutoffMs(today);
+    await ctx.repo.upsertDailyBrief({
+      date: today,
+      generatedAt: cutoff - 3_600_000,
+      opening: "哨兵早期版开场白",
+      openingMode: "template",
+      payload: JSON.stringify({ date: today, hotPicks: [], newSitesScope: "recent", newSites: [] }),
+    });
+    const brief = await getOrGenerateTodayBrief(ctx, {
+      now: new Date(cutoff + 3_600_000),
+      openingCaller: async () => null,
+    });
+    expect(brief.generatedAt).toBeGreaterThanOrEqual(cutoff);
+    expect(brief.opening).not.toBe("哨兵早期版开场白");
+    expect(brief.payload.hotPicks.length).toBeGreaterThanOrEqual(20);
+  });
+
+  it("05:00 后生成的版在 05:00 后不再重生成", async () => {
+    const today = briefDateKey(Date.now());
+    const cutoff = briefRegenerateCutoffMs(today);
+    await ctx.repo.upsertDailyBrief({
+      date: today,
+      generatedAt: cutoff + 3_600_000,
+      opening: "哨兵正点版开场白",
+      openingMode: "template",
+      payload: JSON.stringify({ date: today, hotPicks: [], newSitesScope: "recent", newSites: [] }),
+    });
+    const brief = await getOrGenerateTodayBrief(ctx, {
+      now: new Date(cutoff + 7_200_000),
+      openingCaller: async () => null,
+    });
+    expect(brief.generatedAt).toBe(cutoff + 3_600_000);
+    expect(brief.opening).toBe("哨兵正点版开场白");
+  });
+
+  it("05:00 前读到早期版不提前重生成", async () => {
+    const today = briefDateKey(Date.now());
+    const cutoff = briefRegenerateCutoffMs(today);
+    await ctx.repo.upsertDailyBrief({
+      date: today,
+      generatedAt: cutoff - 3_600_000,
+      opening: "哨兵早期版开场白",
+      openingMode: "template",
+      payload: JSON.stringify({ date: today, hotPicks: [], newSitesScope: "recent", newSites: [] }),
+    });
+    const brief = await getOrGenerateTodayBrief(ctx, {
+      now: new Date(cutoff - 1_800_000),
+      openingCaller: async () => null,
+    });
+    expect(brief.generatedAt).toBe(cutoff - 3_600_000);
+    expect(brief.opening).toBe("哨兵早期版开场白");
   });
 });
 

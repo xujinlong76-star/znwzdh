@@ -37,6 +37,15 @@ export function briefDateKey(ts: number): string {
   return datePartsFmt.format(new Date(ts));
 }
 
+/** 当天 05:00（Asia/Shanghai，UTC+8、无夏令时）的 epoch ms。 */
+export function briefRegenerateCutoffMs(date: string): number {
+  const parts = date.split("-").map(Number);
+  const y = parts[0] ?? 1970;
+  const m = parts[1] ?? 1;
+  const d = parts[2] ?? 1;
+  return Date.UTC(y, m - 1, d, 5 - 8, 0, 0, 0);
+}
+
 /** 某个 Shanghai 日期键的星期（0=周日）：用 UTC 构造该日历日再取 getUTCDay，避免服务器时区干扰 */
 function weekdayOfDateKey(dateKey: string): number {
   const parts = dateKey.split("-").map(Number);
@@ -360,6 +369,13 @@ export async function getOrGenerateTodayBrief(
   const date = briefDateKey(now.getTime());
   const existing = await ctx.repo.getDailyBrief(date);
   if (existing) {
+    // 凌晨抢跑版自愈：05:00 前生成的早期版（热榜还是昨夜缓存）在 05:00 后
+    // 首次被读到时重出一版覆盖，不等 daily_brief 任务（滚动 24h 排期，实际
+    // 落点不是 05:00）。05:00 后生成的版全天直读，不反复重生成。
+    const cutoff = briefRegenerateCutoffMs(date);
+    if (existing.generatedAt < cutoff && now.getTime() >= cutoff) {
+      return generateDailyBrief(ctx, { now, openingCaller: opts.openingCaller });
+    }
     return {
       date: existing.date,
       generatedAt: existing.generatedAt,

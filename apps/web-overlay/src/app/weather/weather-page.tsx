@@ -42,6 +42,7 @@ import { saveSettingsPatchToCloud } from '@/lib/me-settings-save'
 import {
   WEATHER_CITIES,
   ageLabel,
+  aqiAdvice,
   aqiLevel,
   describeWeatherCode,
   formatTemp,
@@ -407,6 +408,7 @@ export function WeatherPage() {
   const days = payload?.days ?? []
   const hourly = payload?.hourly ?? []
   const level = aqiLevel(payload?.aqi ?? null)
+  const advice = aqiAdvice(payload?.aqi ?? null)
   const condition = describeWeatherCode(current?.code ?? null)
   const wind = windLabel(current?.windDirectionDeg ?? null, current?.windSpeedKmh ?? null)
   const pollutants = payload?.aqiPollutants ?? null
@@ -736,6 +738,7 @@ export function WeatherPage() {
                   </span>
                   <span className="text-xs text-muted-foreground">美国 EPA 口径</span>
                 </div>
+                {advice ? <p className="mt-2 text-xs text-muted-foreground">{advice}</p> : null}
                 <div className="mt-3 grid grid-cols-3 sm:grid-cols-6 gap-2 text-xs">
                   {(
                     [

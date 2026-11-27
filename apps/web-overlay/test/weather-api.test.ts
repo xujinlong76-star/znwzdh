@@ -7,6 +7,7 @@
  * DNS 被桩成公网 IP：SSRF 防护的三层校验照跑，但不依赖测试机的解析结果。
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { aqiAdvice } from '../src/lib/modular/weather';
 
 vi.mock("node:dns/promises", () => ({
   lookup: vi.fn(async () => [{ address: "93.184.216.34" }]),
@@ -408,6 +409,27 @@ describe("/api/weather：城市表就是唯一的出网面", () => {
     expect(uvLevel(13)?.label).toBe("极高");
   });
 });
+
+describe('aqiAdvice：按 aqiLevel 五档给一句话健康建议（P1-6）', () => {
+  it('五档各一例', () => {
+    expect(aqiAdvice(20)).toBe('空气清新，适合开窗与户外运动')
+    expect(aqiAdvice(80)).toBe('空气良好，可正常户外活动')
+    expect(aqiAdvice(120)).toBe('敏感人群减少长时间户外活动')
+    expect(aqiAdvice(180)).toBe('减少户外活动，外出建议佩戴口罩')
+    expect(aqiAdvice(250)).toBe('尽量减少外出，外出请佩戴口罩')
+  })
+
+  it('边界值 50/100/150/200 归入低一档', () => {
+    expect(aqiAdvice(50)).toBe('空气清新，适合开窗与户外运动')
+    expect(aqiAdvice(100)).toBe('空气良好，可正常户外活动')
+    expect(aqiAdvice(150)).toBe('敏感人群减少长时间户外活动')
+    expect(aqiAdvice(200)).toBe('减少户外活动，外出建议佩戴口罩')
+  })
+
+  it('AQI 为 null 时不给建议', () => {
+    expect(aqiAdvice(null)).toBeNull()
+  })
+})
 
 // mock 卫生（D2）：清除本文件的模块 mock 缓存，避免驻留同 worker 的后续文件
 afterAll(() => {

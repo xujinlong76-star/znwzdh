@@ -119,6 +119,26 @@ export function aqiLevel(aqi: number | null): { label: string; tone: 'good' | 'm
   return { label: '重度污染', tone: 'poor' }
 }
 
+/** AQI 健康建议：一句话，按 aqiLevel 五档；只基于分档，不引入新数据、不承诺医疗效果 */
+export function aqiAdvice(aqi: number | null): string | null {
+  const level = aqiLevel(aqi)
+  if (!level) return null
+  switch (level.label) {
+    case '优':
+      return '空气清新，适合开窗与户外运动'
+    case '良':
+      return '空气良好，可正常户外活动'
+    case '轻度污染':
+      return '敏感人群减少长时间户外活动'
+    case '中度污染':
+      return '减少户外活动，外出建议佩戴口罩'
+    case '重度污染':
+      return '尽量减少外出，外出请佩戴口罩'
+    default:
+      return null
+  }
+}
+
 export interface WeatherCurrent {
   tempC: number | null
   feelsLikeC: number | null

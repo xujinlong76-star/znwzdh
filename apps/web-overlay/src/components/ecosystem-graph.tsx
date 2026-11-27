@@ -1231,26 +1231,34 @@ export function EcosystemGraph() {
                 focusId !== null && neighborIds !== null && !neighborIds.has(n.id)
 
               return (
+                // 外层只管定位与淡化；内层才是按钮。WCAG 2.5.3（U-461）：
+                // axe 的 label-content-name-mismatch 按「可见文本」（含 aria-hidden
+                // 的内容，aria-hidden 只藏 AT、不藏视线）与 accessible name 比对，
+                // 所以装饰性的 monogram 字母与 OS 徽标必须移出按钮子树，只留标签文本
+                // 在按钮内——标签已在 name 最前（nodeAccessibleName），规则即通过。
+                // 淡化 opacity 放外层，装饰文本与按钮一起淡化。
                 <g
                   key={n.id}
-                  ref={(el) => {
-                    if (el) nodeRefs.current.set(n.id, el)
-                    else nodeRefs.current.delete(n.id)
-                  }}
                   transform={`translate(${n.x}, ${n.y})`}
-                  className="group cursor-pointer transition-transform focus:outline-none"
-                  role="button"
-                  tabIndex={rovingId === n.id ? 0 : -1}
-                  aria-label={nodeAccessibleName(n.title, CATEGORY_COLORS[n.category].name, label)}
-                  aria-pressed={isSelected}
-                  onClick={() => setSelectedNode(n)}
-                  onFocus={() => setFocusedNodeId(n.id)}
-                  onKeyDown={(event) => handleNodeKeyDown(event, n)}
-                  onMouseEnter={() => setHoveredNodeId(n.id)}
-                  onMouseLeave={() => setHoveredNodeId((id) => (id === n.id ? null : id))}
                   opacity={isDimmed ? 0.18 : 1}
                   style={{ transition: 'opacity 200ms ease' }}
                 >
+                  <g
+                    ref={(el) => {
+                      if (el) nodeRefs.current.set(n.id, el)
+                      else nodeRefs.current.delete(n.id)
+                    }}
+                    className="group cursor-pointer transition-transform focus:outline-none"
+                    role="button"
+                    tabIndex={rovingId === n.id ? 0 : -1}
+                    aria-label={nodeAccessibleName(n.title, CATEGORY_COLORS[n.category].name, label)}
+                    aria-pressed={isSelected}
+                    onClick={() => setSelectedNode(n)}
+                    onFocus={() => setFocusedNodeId(n.id)}
+                    onKeyDown={(event) => handleNodeKeyDown(event, n)}
+                    onMouseEnter={() => setHoveredNodeId(n.id)}
+                    onMouseLeave={() => setHoveredNodeId((id) => (id === n.id ? null : id))}
+                  >
                   {/* 完整名称：hover 原生 tooltip 与详情抽屉展示，标签只显示截断版 */}
                   <title>{n.title}</title>
                   {/* 开源外环：翠绿细环套在节点外圈，与分类填充色无关（色盲友好） */}
@@ -1280,7 +1288,8 @@ export function EcosystemGraph() {
                     strokeWidth={isSelected ? 3.5 : 1.8}
                     className="drop-shadow-md"
                   />
-                  {hasIcon ? (
+                  {/* favicon 优先；无图标时 monogram 字母在按钮外渲染（见外层注释） */}
+                  {hasIcon && (
                     <>
                       <circle r={nodeR * 0.72} fill="#ffffff" />
                       <image
@@ -1294,7 +1303,34 @@ export function EcosystemGraph() {
                         onError={() => handleFaviconError(iconSrc)}
                       />
                     </>
-                  ) : (
+                  )}
+                  <text
+                    y={nodeR + 12}
+                    textAnchor="middle"
+                    fontSize="11"
+                    fontWeight={isSelected ? 'bold' : '500'}
+                    strokeWidth={3}
+                    strokeLinejoin="round"
+                    paintOrder="stroke"
+                    className="pointer-events-none select-none drop-shadow-sm font-mono fill-slate-800 stroke-white dark:fill-slate-100 dark:stroke-slate-950"
+                  >
+                    {label}
+                  </text>
+                  {n.openSource && (
+                    <circle
+                      cx={nodeR * 0.7}
+                      cy={-nodeR * 0.7}
+                      r={4.5}
+                      fill="#10b981"
+                      stroke="#0f172a"
+                      strokeWidth="1.5"
+                    />
+                  )}
+                  </g>
+                  {/* 装饰性文本（按钮子树之外）：monogram 字母与 OS 徽标。aria-hidden
+                      让读屏不逐字念出；移出按钮子树才满足 WCAG 2.5.3（见外层注释）。
+                      pointer-events-none 保持点击/悬停落在下方圆上，视觉位置不变。 */}
+                  {!hasIcon && (
                     <text
                       y={1}
                       textAnchor="middle"
@@ -1320,28 +1356,6 @@ export function EcosystemGraph() {
                       className="pointer-events-none select-none"
                       aria-hidden="true"
                     >OS</text>
-                  )}
-                  <text
-                    y={nodeR + 12}
-                    textAnchor="middle"
-                    fontSize="11"
-                    fontWeight={isSelected ? 'bold' : '500'}
-                    strokeWidth={3}
-                    strokeLinejoin="round"
-                    paintOrder="stroke"
-                    className="pointer-events-none select-none drop-shadow-sm font-mono fill-slate-800 stroke-white dark:fill-slate-100 dark:stroke-slate-950"
-                  >
-                    {label}
-                  </text>
-                  {n.openSource && (
-                    <circle
-                      cx={nodeR * 0.7}
-                      cy={-nodeR * 0.7}
-                      r={4.5}
-                      fill="#10b981"
-                      stroke="#0f172a"
-                      strokeWidth="1.5"
-                    />
                   )}
                 </g>
               )

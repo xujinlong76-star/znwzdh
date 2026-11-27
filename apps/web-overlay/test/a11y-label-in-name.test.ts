@@ -10,9 +10,13 @@
  * 修法（与 Lighthouse 规则对齐）：
  * - 可见文案是 accessible name 的子串（DIY / 工作区触发器把可见文案放进
  *   aria-label 最前；图谱节点把截断后的可见标签放进 name 最前）；
- * - 图谱里纯装饰的可见文本（monogram 字母、`OS` 徽标）加 `aria-hidden`，
- *   不再参与 accessible name / 可见文本计算；
- * - 下方标签文本保持可见（不加 aria-hidden），它是 name 必须包含的文案。
+ * - 图谱里纯装饰的可见文本（monogram 字母、`OS` 徽标）移出 `<g role="button">`
+ *   子树（与按钮同处一个定位 `<g>` 下的兄弟节点，视觉位置不变）——
+ *   axe 的 label-content-name-mismatch 按「可见文本」比对，aria-hidden 只藏
+ *   AT、不藏视线，单加 aria-hidden 仍会被该规则计入（实测：axe-core 4.14
+ *   对移出前的结构仍报 1 处违规），所以必须移出子树；aria-hidden 仍保留，
+ *   让读屏浏览 SVG 时不逐字念出装饰字母；
+ * - 下方标签文本保持在按钮内、保持可见，它是 name 必须包含的文案。
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -97,7 +101,7 @@ describe('U-461 /graph 节点：可见标签必须在 accessible name 内', () =
     )
   })
 
-  it('装饰性文本加 aria-hidden：monogram 字母与 OS 徽标不再参与命名', () => {
+  it('装饰性文本加 aria-hidden：monogram 字母与 OS 徽标不再被读屏逐字念出', () => {
     const src = overlaySource('src/components/ecosystem-graph.tsx')
     // 每个 <text ...>...</text> 块单独检查，避免远处另一处的 aria-hidden 蒙混过关
     const textBlocks = src.match(/<text[\s\S]*?<\/text>/g) ?? []
@@ -108,6 +112,25 @@ describe('U-461 /graph 节点：可见标签必须在 accessible name 内', () =
     const osBadge = textBlocks.find((b) => b.includes('>OS</text>'))
     expect(osBadge, '找不到 OS 徽标文本块').toBeTruthy()
     expect(osBadge).toContain('aria-hidden="true"')
+  })
+
+  it('装饰性文本在按钮子树之外：按钮内可见文本只剩标签（否则 axe 仍报违规）', () => {
+    const src = overlaySource('src/components/ecosystem-graph.tsx')
+    const start = src.indexOf('{displayNodes.map((n) => {')
+    expect(start, '找不到节点渲染层').toBeGreaterThan(-1)
+    const end = src.indexOf('})}', start)
+    expect(end).toBeGreaterThan(start)
+    const layer = src.slice(start, end)
+    // 按钮 <g> 内无嵌套 <g>，role="button" 之后第一个 </g> 就是按钮的闭标签
+    const btnClose = layer.indexOf('</g>', layer.indexOf('role="button"'))
+    expect(btnClose, '找不到按钮闭标签').toBeGreaterThan(0)
+    const labelIdx = layer.indexOf('{label}')
+    const monoIdx = layer.indexOf('extractFaviconMonogram(n.title)')
+    const osIdx = layer.indexOf('>OS</text>')
+    expect(labelIdx, '找不到标签文本').toBeGreaterThan(0)
+    expect(labelIdx).toBeLessThan(btnClose) // 标签在按钮内
+    expect(monoIdx, '找不到 monogram 文本').toBeGreaterThan(btnClose) // monogram 在按钮外
+    expect(osIdx, '找不到 OS 徽标').toBeGreaterThan(btnClose) // OS 在按钮外
   })
 
   it('下方标签文本保持可见：它是 name 必须包含的文案，不能顺手隐藏', () => {

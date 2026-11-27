@@ -47,6 +47,9 @@ function buttonBlock(src: string, ariaLabel: string): string {
 }
 
 describe("U-155：外观按钮是图标 + 可见文字「DIY 排版」", () => {
+  // U-460（2026-11-27，WCAG 2.5.3）：aria-label 由「打开外观排版与新手向导小窗」
+  // 改为「DIY 排版：打开外观排版与新手向导小窗」，可见文案须在 accessible name 内；
+  // 本文件用 aria-label 作按钮定位锚点，锚点随新行为改写，断言意图不变。
   it("按钮含可见文字标签「DIY 排版」，全宽度可见（无 <390px 隐藏）", () => {
     const src = overlayFile("src/components/navigation-toolbar.tsx");
     const block = buttonBlock(src, "DIY 排版：打开外观排版与新手向导小窗");

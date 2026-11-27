@@ -549,3 +549,55 @@ describe('rose/sky 第二档 21 处：管理后台/纯图标/大字 -600→-700 
     expect(ux9Contrast('#fb7185', '#240711')).toBeGreaterThanOrEqual(4.5)
   })
 })
+
+/**
+ * R5-A-05 / U-462（2026-11-27）：/search 分面筛选的计数徽章对比度只有 3.13:1。
+ *
+ * 根因：计数 `<span class="font-mono text-[10px] opacity-70">` 叠在
+ * `text-muted-foreground`（浅色 #62626A）上，0.7 透明度兑白底后前景变成
+ * #919197，白底 3.13:1 < AA 4.5:1（Lighthouse `color-contrast` 0 分）。
+ * 修法：去掉 `opacity-70`，计数以全不透明 muted 前景色渲染；
+ * 同款嫌疑 `search-results.tsx` 相关标签计数 `({t.count})` 一并修掉
+ * （LH 未单独 flag，但同一配方、同一底色，实测同样跌破）。
+ * 数值口径与 UX #9 相同（Tailwind 色板 hex 现场算；token 值见
+ * `src/styles/globals.css`：浅色 muted-fg #62626A、深色 #A1A1AA）。
+ */
+describe('R5-A-05 / U-462 搜索分面计数对比度', () => {
+  const facetBar = overlayFile('src/components/search-facet-bar.tsx')
+  const searchResults = overlayFile('src/app/search/search-results.tsx')
+
+  it('分面计数不再叠 opacity-70：全不透明 muted 前景色', () => {
+    const line = facetBar.split('\n').find((l) => l.includes('{opt.count}'))
+    expect(line).toBeTruthy()
+    expect(line).not.toContain('opacity-70')
+    // 该文件内不得再出现 opacity-70 + 小字计数的混用（本文件原仅此一处）
+    expect(facetBar).not.toContain('opacity-70')
+  })
+
+  it('相关标签计数同样不再叠 opacity-70', () => {
+    const line = searchResults.split('\n').find((l) => l.includes('({t.count})'))
+    expect(line).toBeTruthy()
+    expect(line).not.toContain('opacity-70')
+    expect(searchResults).not.toContain('opacity-70')
+  })
+
+  it('修后数值：分面计数浅色 6.04 / 深色 7.76，≥4.5:1', () => {
+    // 未选中态：muted 前景色压页面底（浅 #ffffff / 深 #09090b）
+    expect(ux9Contrast('#62626a', '#ffffff')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#a1a1aa', '#09090b')).toBeGreaterThanOrEqual(4.5)
+    // 选中态：text-primary 压 bg-primary/10 tint
+    // （浅 #18181b 压 #e8e8e8 / 深 #fafafa 压 #212123）
+    expect(ux9Contrast('#18181b', '#e8e8e8')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#fafafa', '#212123')).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('修后数值：相关标签计数压 bg-muted/60 药丸底，浅色 5.69 / 深色 6.70，≥4.5:1', () => {
+    // 药丸底 = muted 60% 兑页面底（浅 #f4f4f5→#f8f8f9 / 深 #27272a→#1b1b1e）
+    expect(ux9Contrast('#62626a', '#f8f8f9')).toBeGreaterThanOrEqual(4.5)
+    expect(ux9Contrast('#a1a1aa', '#1b1b1e')).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('修前数值锁死：0.7 透明度兑白底 #919197 只有 3.13:1，证实该配方不达标', () => {
+    expect(ux9Contrast('#919197', '#ffffff')).toBeLessThan(4.5)
+  })
+})

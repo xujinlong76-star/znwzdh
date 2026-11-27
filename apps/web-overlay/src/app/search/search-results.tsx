@@ -706,7 +706,7 @@ function SearchRelatedTags({
           title={`${t.count} 个命中站点包含此标签`}
         >
           <span>#{t.name}</span>
-          <span className="text-[10px] opacity-70">({t.count})</span>
+          <span className="text-[10px]">({t.count})</span>
         </Link>
       ))}
     </div>

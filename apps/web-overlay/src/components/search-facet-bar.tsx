@@ -122,7 +122,7 @@ export function SearchFacetBar({ groups, q, tag, category, selected }: SearchFac
                       }
                     >
                       <span>{opt.label}</span>
-                      <span className="font-mono text-[10px] opacity-70">{opt.count}</span>
+                      <span className="font-mono text-[10px]">{opt.count}</span>
                     </Link>
                   )
                 })}

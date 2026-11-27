@@ -166,7 +166,8 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     const todayBtn = page.getByRole('button', { name: '打开今日中心小窗', exact: true });
     await expect(todayBtn).toBeVisible({ timeout: 60_000 });
     const toolbarAppearance = page.getByRole('button', {
-      name: '打开外观排版与新手向导小窗',
+      // U-460（2026-11-27，WCAG 2.5.3）：aria-label 改为以可见文案开头
+      name: 'DIY 排版：打开外观排版与新手向导小窗',
       exact: true,
     });
     await expect(toolbarAppearance).toBeVisible({ timeout: 60_000 });
@@ -184,10 +185,17 @@ test.describe('工具栏 360px 无横向溢出（2026-11-19 02:22 轮）', () =>
     // 360px 下入口是 home-capsule-row.tsx 的「切换工作区与快捷功能」下拉内的
     // 同名 DropdownMenuItem（role=menuitem）。触发器 aria-label 在 2dbd63a8 由
     // 「更多工作区与快捷功能」改为「切换工作区与快捷功能」，本用例同步新文案；
-    // 不断言行内按钮（产品侧不把入口搬回行内，与首屏批目标一致）。只改测试。
+    // U-460（2026-11-27，WCAG 2.5.3）：触发器 aria-label 改为「<工作区名>：
+    // 切换工作区与快捷功能」（可见的工作区名须在 name 内），工作区名随状态变，
+    // 故此处不用 exact 全串匹配，改子串匹配。不断言行内按钮（产品侧不把入口
+    // 搬回行内，与首屏批目标一致）。只改测试。
+    // Rebase（2026-11-27，基底 7933bde5）：main 侧把定位改为尾锚正则
+    // /切换工作区与快捷功能$/（仍 exact:true 时全串须匹配，工作区名前缀在则失效），
+    // 故合并不取 exact，保留 main 的尾锚正则——比纯子串更严，且与新 name 的
+    // 「<工作区名>：切换工作区与快捷功能」形态一致。
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    const moreMenu = page.getByRole('button', { name: /切换工作区与快捷功能$/, exact: true });
+    const moreMenu = page.getByRole('button', { name: /切换工作区与快捷功能$/ });
     await expect(moreMenu).toBeVisible({ timeout: 60_000 });
     await moreMenu.click();
     // 菜单条目由客户端水合后据 localStorage 决定是否渲染（guidePending 默认 false，

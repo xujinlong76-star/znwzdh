@@ -1241,7 +1241,7 @@ export function EcosystemGraph() {
                   className="group cursor-pointer transition-transform focus:outline-none"
                   role="button"
                   tabIndex={rovingId === n.id ? 0 : -1}
-                  aria-label={nodeAccessibleName(n.title, CATEGORY_COLORS[n.category].name)}
+                  aria-label={nodeAccessibleName(n.title, CATEGORY_COLORS[n.category].name, label)}
                   aria-pressed={isSelected}
                   onClick={() => setSelectedNode(n)}
                   onFocus={() => setFocusedNodeId(n.id)}
@@ -1303,6 +1303,7 @@ export function EcosystemGraph() {
                       fontWeight="700"
                       fill="#ffffff"
                       className="pointer-events-none select-none"
+                      aria-hidden="true"
                     >
                       {extractFaviconMonogram(n.title)}
                     </text>
@@ -1317,6 +1318,7 @@ export function EcosystemGraph() {
                       fontWeight="700"
                       fill="#10b981"
                       className="pointer-events-none select-none"
+                      aria-hidden="true"
                     >OS</text>
                   )}
                   <text

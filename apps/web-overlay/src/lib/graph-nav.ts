@@ -122,7 +122,20 @@ export function rovingNodeId<T extends { id: string }>(
   return nodes[0].id
 }
 
-/** 节点的可访问名：单独一个英文名对读屏用户信息量太少，带上分类 */
-export function nodeAccessibleName(title: string, categoryName: string): string {
+/**
+ * 节点的可访问名：单独一个英文名对读屏用户信息量太少，带上分类。
+ *
+ * WCAG 2.5.3（Label in Name，U-461）：节点 `<g role="button">` 内的可见
+ * 标签（`truncateGraphLabel` 截断版）必须是 accessible name 的子串。
+ * 截断过的标题（visibleLabel !== title）把可见标签放最前、再补全名与分类；
+ * 未截断时沿用旧格式，避免读屏把同一名字念两遍。
+ */
+export function nodeAccessibleName(
+  title: string,
+  categoryName: string,
+  visibleLabel?: string,
+): string {
+  const label = (visibleLabel ?? title).trim()
+  if (label && label !== title) return `${label}：${title}（${categoryName}）`
   return `${title}（${categoryName}）`
 }

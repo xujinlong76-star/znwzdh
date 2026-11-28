@@ -2003,6 +2003,23 @@ async revokeAllSessions(userId: string): Promise<number> {
     return jobsRepo.reapStaleJobs(this, timeoutMs);
   }
 
+  /** JobRunner 单实例租约（sidecar 文件，不走主库写门禁） */
+  async acquireJobRunnerLease(holder: string, ttlMs: number, now = Date.now()): Promise<boolean> {
+    return jobsRepo.acquireJobRunnerLease(this, holder, ttlMs, now);
+  }
+
+  async renewJobRunnerLease(holder: string, now = Date.now()): Promise<number> {
+    return jobsRepo.renewJobRunnerLease(this, holder, now);
+  }
+
+  async releaseJobRunnerLease(holder: string): Promise<void> {
+    return jobsRepo.releaseJobRunnerLease(this, holder);
+  }
+
+  async getJobRunnerLease(): Promise<jobsRepo.JobRunnerLease | null> {
+    return jobsRepo.getJobRunnerLease(this);
+  }
+
 
   /* ------------------------- 系统状态 ------------------------- */
 

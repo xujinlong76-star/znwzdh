@@ -1145,7 +1145,9 @@ export class JobRunner {
       this.lockHeld = true;
       this.lockLost = false;
       return true;
-    } catch {
+    } catch (err) {
+      // 只记异常分支：锁被他人持有返回 false 是正常分支，不记（多实例下会刷屏）。
+      console.warn("[navhub-job] 获取 JobRunner 租约失败", { holder: this.holder, err });
       return false;
     }
   }

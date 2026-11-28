@@ -11,6 +11,7 @@ import {
   registerSearchedCity,
   type WeatherCity,
 } from '@/lib/modular/weather'
+import { WEATHER_DNS_TIMEOUT_MS, getWeatherDnsResolver } from '@/lib/weather-dns'
 
 /**
  * 城市搜索代理（Open-Meteo geocoding）。
@@ -95,7 +96,12 @@ function numOrNull(raw: unknown): number | null {
 }
 
 function reasonFromError(err: unknown): string {
-  if (err instanceof SsrfBlockedError) return 'blocked'
+  // 注入的真实 DNS 解析器本身失败/超时 → dns_failure（走 502），
+  // 绝不回退系统解析器；解析成功后被 SSRF 规则拦截的仍是 blocked。
+  if (err instanceof SsrfBlockedError) {
+    if (err.code === 'dns-failure' || err.code === 'dns-timeout') return 'dns_failure'
+    return 'blocked'
+  }
   const name = err instanceof Error ? err.name : ''
   if (name === 'TimeoutError' || name === 'AbortError') return 'timeout'
   return 'network'
@@ -106,16 +112,24 @@ async function fetchJson(
 ): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; reason: string; message: string }> {
   let response: Response
   try {
+    // 天气走真实 DNS 解析器（8.8.8.8，已连接 UDP + 金丝雀）：
+    // 本机系统解析器把公网域名解析到 198.18/15，SSRF 守卫拦截致 502。
+    const dnsResolver = await getWeatherDnsResolver()
     const guarded = await guardedFetch(url, {
       timeoutMs: FETCH_TIMEOUT_MS,
       maxBytes: MAX_BYTES,
       maxRedirects: 0,
       allowPrivateNetworks: false,
+      dnsResolver,
+      dnsTimeoutMs: WEATHER_DNS_TIMEOUT_MS,
     })
     response = guarded.response
   } catch (err) {
     const reason = reasonFromError(err)
     if (err instanceof SsrfBlockedError) {
+      if (reason === 'dns_failure') {
+        return { ok: false, reason, message: `地理编码服务 DNS 解析失败（${err.reason}），未回退系统解析器` }
+      }
       return { ok: false, reason, message: `地理编码请求被 SSRF 防护拒绝：${err.reason}` }
     }
     return {

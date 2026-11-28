@@ -1,4 +1,6 @@
-﻿import { lookup } from 'node:dns/promises'
+﻿import { randomInt } from 'node:crypto'
+import { createSocket } from 'node:dgram'
+import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 
 /**
@@ -38,6 +40,17 @@ export interface GuardOptions {
    * 代理路由用它把「客户端断开」穿透到上游，不加则取消只能等超时。
    */
   signal?: AbortSignal
+  /**
+   * 可注入的 DNS 解析器（天气专用，移植 PR #208 的巡检方案）。
+   * 传入时 resolveAndCheck 用它解析域名，不用系统解析器；不传时保持系统解析器。
+   * 只由天气路由传入，其它 guardedFetch/safeFetch 调用方不受影响。
+   */
+  dnsResolver?: DnsResolverLike
+  /**
+   * DNS 解析超时上限（毫秒）。不设时用 timeoutMs。
+   * 天气传 5_000：单个坏域名不拖住整次取数。
+   */
+  dnsTimeoutMs?: number
 }
 
 export const DEFAULT_GUARD: GuardOptions = {
@@ -48,12 +61,211 @@ export const DEFAULT_GUARD: GuardOptions = {
   userAgent: 'NavHubBot/0.1 (+https://github.com/navhub)',
 }
 
+/**
+ * 可注入 DNS 解析器的最小接口：与 `node:dns/promises` 的
+ * `lookup(host, { all: true })` 同形，只取 address。
+ */
+export interface DnsResolverLike {
+  lookup(host: string): Promise<Array<{ address: string }>>
+}
+
+/** 天气专用 DNS：已验证的外部解析器（2026-11-28 实测 api.open-meteo.com 返回真实地址）。 */
+export const WEATHER_DNS_SERVERS: readonly string[] = ['8.8.8.8']
+/** 天气 DNS 单次解析超时（毫秒）。 */
+export const WEATHER_DNS_TIMEOUT_MS = 5_000
+/** 金丝雀域名：IANA 保留的 example.com，恒解析到公网 IP，永不落在受保护网段。 */
+export const WEATHER_DNS_CANARY_HOST = 'example.com'
+
+/**
+ * 创建天气专用外部 DNS 解析器（移植 PR #208 的巡检方案）。
+ *
+ * 为什么不用 `node:dns` 的 `Resolver`（2026-11-28 dry-run 实测证伪）：
+ * 本机沙箱拦未连接 UDP 的 sendto/sendmsg（EPERM），`Resolver`（c-ares）
+ * 内部走的就是未连接 socket，于是对 8.8.8.8 的查询一次次重试后报
+ * ETIMEOUT；而 `dig`/`nslookup` 能通，是因为它们用已连接 UDP socket。
+ * 实测：已连接 dgram 直连 8.8.8.8:53，130ms 拿到真实地址；
+ * `dig @1.1.1.1` 超时，说明只有 8.8.8.8 这一个外部门口是通的。
+ *
+ * 因此这里用最小 DNS 线路编解码 + 已连接 dgram 实现 A/AAAA 查询：
+ * 直接问 8.8.8.8，绕过本机坏解析器（nameserver 198.19.0.1 把公网域名
+ * 解析到 198.18/15）。只做 A/AAAA 查询：天气目标全是公网域名，
+ * 不读 /etc/hosts，不影响其它调用方。
+ *
+ * 局限（已确认，无解）：TCP/53 到 8.8.8.8 同样不通（`dig +tcp` 超时），
+ * 所以响应被截断（TC 位）时没有 TCP 回退，只能报错；调用方按
+ * dns-failure 处理——天气走 stale/502，绝不回退系统解析器。
+ */
+export function createExternalDnsResolver(
+  servers: readonly string[] = WEATHER_DNS_SERVERS,
+  timeoutMs: number = WEATHER_DNS_TIMEOUT_MS,
+): DnsResolverLike {
+  const server = servers[0] ?? '8.8.8.8'
+  return {
+    async lookup(host: string): Promise<Array<{ address: string }>> {
+      const [v4, v6] = await Promise.allSettled([
+        dnsQueryUdp(server, host, 1, timeoutMs),
+        dnsQueryUdp(server, host, 28, timeoutMs),
+      ])
+      const addrs: Array<{ address: string }> = [
+        ...(v4.status === 'fulfilled' ? v4.value : []),
+        ...(v6.status === 'fulfilled' ? v6.value : []),
+      ]
+      if (addrs.length === 0) {
+        const firstRejection = [v4, v6].find((r): r is PromiseRejectedResult => r.status === 'rejected')
+        const reason = firstRejection?.reason
+        throw new Error('DNS 解析失败: ' + host + (reason instanceof Error ? '（' + reason.message + '）' : ''))
+      }
+      return addrs
+    },
+  }
+}
+
+/** 组装一条最小 DNS 查询报文（header + question，RD=1，不带 EDNS）。 */
+function buildDnsQuery(id: number, host: string, qtype: number): Buffer {
+  const labels: Buffer[] = []
+  for (const part of host.split('.').filter(Boolean)) {
+    const bytes = Buffer.from(part, 'utf8')
+    labels.push(Buffer.from([bytes.length]), bytes)
+  }
+  labels.push(Buffer.from([0]))
+  const header = Buffer.alloc(12)
+  header.writeUInt16BE(id, 0)
+  header.writeUInt16BE(0x0100, 2) // RD
+  header.writeUInt16BE(1, 4) // QDCOUNT
+  const question = Buffer.concat([...labels, Buffer.from([(qtype >> 8) & 0xff, qtype & 0xff, 0, 1])])
+  return Buffer.concat([header, question])
+}
+
+/** 跳过一条 DNS 域名（含压缩指针），返回域名后第一个字节的下标。 */
+function skipDnsName(buf: Buffer, offset: number): number {
+  let pos = offset
+  for (;;) {
+    if (pos >= buf.length) throw new Error('DNS 报文截断（域名）')
+    const len = buf[pos]!
+    if (len === 0) return pos + 1
+    if ((len & 0xc0) === 0xc0) return pos + 2 // 压缩指针：2 字节即止
+    pos += 1 + len
+  }
+}
+
+function formatIPv6(bytes: Buffer): string {
+  const groups: string[] = []
+  for (let i = 0; i < 16; i += 2) groups.push(bytes.readUInt16BE(i).toString(16))
+  let bestStart = -1
+  let bestLen = 0
+  let curStart = -1
+  let curLen = 0
+  for (let i = 0; i < 8; i++) {
+    if (groups[i] === '0') {
+      if (curStart < 0) {
+        curStart = i
+        curLen = 1
+      } else {
+        curLen += 1
+      }
+      if (curLen > bestLen) {
+        bestLen = curLen
+        bestStart = curStart
+      }
+    } else {
+      curStart = -1
+      curLen = 0
+    }
+  }
+  if (bestLen < 2) return groups.join(':')
+  return groups.slice(0, bestStart).join(':') + '::' + groups.slice(bestStart + bestLen).join(':')
+}
+
+/**
+ * 解析 DNS 响应，只取应答区的 A/AAAA 记录。
+ * CNAME 链不用跟：终端 A/AAAA 记录本身就在应答区里，SSRF 校验只关心 IP。
+ */
+function parseDnsResponse(buf: Buffer, id: number): Array<{ address: string }> {
+  if (buf.length < 12) throw new Error('DNS 响应过短')
+  if (buf.readUInt16BE(0) !== id) throw new Error('DNS 响应 ID 不匹配')
+  const flags = buf.readUInt16BE(2)
+  if (flags & 0x0200) throw new Error('DNS 响应被截断（TC），无 TCP 回退')
+  const rcode = flags & 0x000f
+  if (rcode !== 0) throw new Error('DNS 解析失败（RCODE ' + rcode + '）')
+  const qdCount = buf.readUInt16BE(4)
+  const anCount = buf.readUInt16BE(6)
+  let pos = 12
+  for (let i = 0; i < qdCount; i++) {
+    pos = skipDnsName(buf, pos)
+    if (pos + 4 > buf.length) throw new Error('DNS 报文截断（问题区）')
+    pos += 4
+  }
+  const addrs: Array<{ address: string }> = []
+  for (let i = 0; i < anCount; i++) {
+    pos = skipDnsName(buf, pos)
+    if (pos + 10 > buf.length) throw new Error('DNS 报文截断（应答区）')
+    const type = buf.readUInt16BE(pos)
+    const rdLength = buf.readUInt16BE(pos + 8)
+    const rdata = pos + 10
+    if (rdata + rdLength > buf.length) throw new Error('DNS 报文截断（RDATA）')
+    if (type === 1 && rdLength === 4) {
+      addrs.push({ address: [...buf.subarray(rdata, rdata + 4)].join('.') })
+    } else if (type === 28 && rdLength === 16) {
+      addrs.push({ address: formatIPv6(buf.subarray(rdata, rdata + 16)) })
+    }
+    pos = rdata + rdLength
+  }
+  return addrs
+}
+
+/**
+ * 一次 UDP DNS 查询（A=1 / AAAA=28）。
+ * 关键：socket 必须先 `connect(53, server)` 再 `send`——未连接的
+ * sendto 在本机沙箱里直接 EPERM（见 createExternalDnsResolver 注释）。
+ */
+function dnsQueryUdp(server: string, host: string, qtype: number, timeoutMs: number): Promise<Array<{ address: string }>> {
+  const id = randomInt(0, 65536)
+  const packet = buildDnsQuery(id, host, qtype)
+  return new Promise<Array<{ address: string }>>((resolve, reject) => {
+    const sock = createSocket('udp4')
+    let done = false
+    let timer: NodeJS.Timeout | undefined
+    const finish = (fn: () => void): void => {
+      if (done) return
+      done = true
+      if (timer !== undefined) clearTimeout(timer)
+      try {
+        sock.close()
+      } catch {
+        // 已关，无事可做
+      }
+      fn()
+    }
+    timer = setTimeout(() => finish(() => reject(new Error('DNS 查询超时: ' + host))), timeoutMs)
+    sock.on('error', (err) => finish(() => reject(err)))
+    sock.on('message', (msg) =>
+      finish(() => {
+        try {
+          resolve(parseDnsResponse(msg, id))
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error(String(err)))
+        }
+      }),
+    )
+    sock.connect(53, server, () => {
+      sock.send(packet, (err) => {
+        if (err) finish(() => reject(err))
+      })
+    })
+  })
+}
+
+/** 机器可读的拦截原因码（与 packages/ai/src/ssrf.ts 同口径）：dns-failure / dns-timeout 为注入解析器本身失败；blocked-ip 为解析成功后的正常拦截。 */
+export type SsrfBlockCode = 'dns-failure' | 'dns-timeout' | 'blocked-ip'
+
 export class SsrfBlockedError extends Error {
   readonly reason: string
-  constructor(reason: string) {
+  readonly code?: SsrfBlockCode
+  constructor(reason: string, code?: SsrfBlockCode) {
     super(`SSRF 防护拦截: ${reason}`)
     this.name = 'SsrfBlockedError'
     this.reason = reason
+    this.code = code
   }
 }
 
@@ -210,13 +422,17 @@ export function isBlockedIp(ip: string): boolean {
  * `lookup()` 本身没有超时；弱网或恶意域名可以让请求在 DNS 阶段无限挂起，
  * 此时 fetch 的 AbortSignal 还没开始计时。超时按 fail-closed 处理。
  */
-async function lookupWithTimeout(host: string, timeoutMs: number): Promise<Array<{ address: string }>> {
+async function lookupWithTimeout(
+  host: string,
+  timeoutMs: number,
+  resolver?: DnsResolverLike,
+): Promise<Array<{ address: string }>> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
-      lookup(host, { all: true }),
+      resolver ? resolver.lookup(host) : lookup(host, { all: true }),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new SsrfBlockedError(`DNS 解析超时: ${host}`)), timeoutMs)
+        timer = setTimeout(() => reject(new SsrfBlockedError(`DNS 解析超时: ${host}`, 'dns-timeout')), timeoutMs)
       }),
     ])
   } finally {
@@ -229,27 +445,68 @@ async function resolveAndCheckAddresses(url: URL, opts: GuardOptions): Promise<s
   const host = url.hostname.replace(/^\[|\]$/g, '')
   if (isIP(host)) {
     if (!opts.allowPrivateNetworks && isBlockedIp(host)) {
-      throw new SsrfBlockedError(`目标 IP 位于受保护网段: ${host}`)
+      throw new SsrfBlockedError(`目标 IP 位于受保护网段: ${host}`, 'blocked-ip')
     }
     return [host]
   }
   let records: Array<{ address: string }>
   try {
-    records = await lookupWithTimeout(host, opts.timeoutMs)
+    records = await lookupWithTimeout(host, opts.dnsTimeoutMs ?? opts.timeoutMs, opts.dnsResolver)
   } catch (err) {
     // DNS 超时是安全拦截，保留原始错误类型；其它解析失败统一收敛
     if (err instanceof SsrfBlockedError) throw err
-    throw new SsrfBlockedError(`域名解析失败: ${host}`)
+    throw new SsrfBlockedError(`域名解析失败: ${host}`, 'dns-failure')
   }
-  if (!records.length) throw new SsrfBlockedError(`域名无解析结果: ${host}`)
+  if (!records.length) throw new SsrfBlockedError(`域名无解析结果: ${host}`, 'dns-failure')
   if (!opts.allowPrivateNetworks) {
     for (const r of records) {
       if (isBlockedIp(r.address)) {
-        throw new SsrfBlockedError(`${host} 解析到受保护地址: ${r.address}`)
+        throw new SsrfBlockedError(`${host} 解析到受保护地址: ${r.address}`, 'blocked-ip')
       }
     }
   }
   return records.map((r) => r.address)
+}
+
+export type DnsCanaryResult = { ok: true; addresses: string[] } | { ok: false; reason: string }
+
+/**
+ * 金丝雀自检（移植 PR #208）：天气首次出网前先用注入解析器解析一个已知好域名。
+ *
+ * 若解析失败/超时，或任一结果落在受保护网段（本机坏解析器把公网域名解析到
+ * 198.18/15 的故障形态），返回失败——调用方应让本次取数直接按 dns_failure
+ * 失败（stale/502），绝不要静默回退系统解析器、也不要把站标 broken。
+ */
+export async function verifyWeatherDnsResolver(
+  resolver: DnsResolverLike,
+  host: string = WEATHER_DNS_CANARY_HOST,
+  timeoutMs: number = WEATHER_DNS_TIMEOUT_MS,
+): Promise<DnsCanaryResult> {
+  let addrs: Array<{ address: string }>
+  try {
+    addrs = await lookupWithTimeout(host, timeoutMs, resolver)
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) }
+  }
+  if (addrs.length === 0) return { ok: false, reason: 'DNS 无结果: ' + host }
+  for (const a of addrs) {
+    if (isBlockedIp(a.address)) {
+      return { ok: false, reason: host + ' 解析到受保护网段 ' + a.address + '（解析器不可信）' }
+    }
+  }
+  return { ok: true, addresses: addrs.map((a) => a.address) }
+}
+
+/**
+ * 是否为“注入解析器本身失败/超时”。
+ *
+ * 只认 dns-failure / dns-timeout 两个原因：解析器不可达、超时、无结果。
+ * blocked-ip 不算——那是解析成功后 SSRF 规则的正常拦截，仍按失败记。
+ */
+export function isDnsResolverFailure(error: unknown): boolean {
+  return (
+    error instanceof SsrfBlockedError && (error.code === 'dns-failure' || error.code === 'dns-timeout')
+  )
 }
 
 /** DNS 解析 + 逐结果 IP 校验（关键：不能只校验 URL 字符串） */

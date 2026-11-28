@@ -6,8 +6,12 @@
  * 未重算时按 visit_count 兜底，不会空白）。
  *
  * 首屏数据由服务端 page 下发（站点卡片的 `/site/{id}` 内链必须进 SSR
- * HTML）；本岛只负责降级提示与重试。首帧已有数据时跳过挂载期请求，
+ * HTML）；本岛只负责降级提示、重试与 trending 轮询。首帧已有数据时跳过挂载期请求，
  * 避免把 SSR 内容闪成骨架屏。
+ *
+ * 轮询（方案 C，2026-11-28）：已打开页面 30 秒轮询 trending 一路
+ * （见 lib/hot-polling），可见时才轮询、失败静默旧榜不动；
+ * 服务端缓存与 page.tsx revalidate=60 不动。
  *
  * 名次标记已移除（2026-11-15）：此前每张卡片左上角有名次徽章
  * （🥇🥈🥉 + 数字序号），但访问量统计尚未积累、榜单不反映真实热度，
@@ -20,6 +24,7 @@ import { safeHref } from '@/lib/safe-url'
 import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
 import { fetchNewSites, fetchTrendingMeta, fetchPlugins, reportClick, type HubSite, type HubPluginItem } from '@/lib/navhub-api'
+import { startTrendingPoller } from '@/lib/hot-polling'
 import { rankingMetric, type PluginRankGroups } from '@/lib/plugins/marketplace-rankings'
 import {
   RANK_DOMAINS,
@@ -346,6 +351,25 @@ export default function HotView({
       cancelled = true
     }
   }, [reloadToken])
+
+  useEffect(() => {
+    // 方案 C（2026-11-28）：/hot 已打开页面 30 秒轮询 trending 一路。
+    // 首帧是 SSR 数据，挂载时不立即重取；可见时每 30 秒取一次，成功才换榜
+    // （榜 + 重算时间戳）；切后台停轮询、回前台立刻补一次；失败静默——
+    // 旧榜不动、不弹错，下次继续轮询。只碰 trending，不碰 fresh/插件排行；
+    // 服务端两层 60 秒缓存与 page.tsx revalidate=60 一律不动。
+    // 卸载时 startTrendingPoller 的返回函数清 interval、摘监听。
+    return startTrendingPoller({
+      fetchTrending: (onDegraded) => fetchTrendingMeta(30, onDegraded),
+      onUpdate: (t) => {
+        setTrending(t.sites)
+        if (t.recomputedAt != null) setRecomputedAt(t.recomputedAt)
+      },
+      isVisible: () => document.visibilityState === 'visible',
+      addVisibilityListener: (listener) => document.addEventListener('visibilitychange', listener),
+      removeVisibilityListener: (listener) => document.removeEventListener('visibilitychange', listener),
+    })
+  }, [])
 
   /**
    * 榜单页点击上报：卡片标题内链、直达按钮两处共用同一口径，

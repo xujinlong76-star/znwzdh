@@ -57,7 +57,9 @@ describe('详情页出站点击上报接线', () => {
   })
 
   it('「立即直达官方主站」CTA 点击上报', () => {
-    const tag = windowAround(code, '立即直达官方主站', 300, 0)
+    // 用 <span>…</span> 作锚：handler 上方的注释里也出现了「立即直达官方主站」
+    // 字样，indexOf 会先命中注释；JSX 里只有这一处是 <span> 包裹的文案。
+    const tag = windowAround(code, '<span>立即直达官方主站</span>', 300, 0)
     expect(tag).toContain('href={safeHref(site.url)}')
     expect(tag).toContain('onClick={handleOutboundClick}')
     expect(tag).toContain('target="_blank"')

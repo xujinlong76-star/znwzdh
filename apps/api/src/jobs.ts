@@ -1586,7 +1586,9 @@ export class JobRunner {
    * 健康巡检：与 MCP health_check 同一套抓取逻辑，但走仓储（双方言）（委派给 tasks/health-check.task.ts）。
    */
   private async runHealthCheck(payload: { siteId?: string; limit?: number }, run: JobRunHandle): Promise<void> {
-    return handleHealthCheck(this.ctx, payload, run, (limit) => this.patrolTargets(limit));
+    // B 方案：巡检专用 DNS（8.8.8.8 解析器 + 金丝雀自检）。只走这条 JobRunner 路径；
+    // MCP health_check 与其它 guardedFetch 调用方不受影响。
+    return handleHealthCheck(this.ctx, payload, run, (limit) => this.patrolTargets(limit), { patrolDns: true });
   }
 
   // 这里曾有一份 `private shouldBreak()`，与 jobs/tasks/health-check.task.ts 的

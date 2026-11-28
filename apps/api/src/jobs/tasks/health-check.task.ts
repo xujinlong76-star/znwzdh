@@ -9,6 +9,7 @@
  */
 
 import { auditPageHealth, BOT_BLOCKED_ERROR_PREFIX, classifyCorporateTerminalRedirect, classifyProbeStatus } from "@navhub/core";
+import type { DnsResolverLike } from "@navhub/ai";
 import type { AppContext } from "../../context.ts";
 import {
   HEALTH_FAIL_THRESHOLD,
@@ -88,13 +89,45 @@ export async function shouldBreak(ctx: AppContext, siteId: string): Promise<bool
   }
 }
 
+export interface HealthCheckOptions {
+  /**
+   * 启用巡检专用 DNS（B 方案）：用 8.8.8.8 解析器 + 金丝雀自检。
+   * 仅 JobRunner 的 health_check 任务传入；其它调用方不传时保持旧行为
+   * （系统解析器、无金丝雀），已有测试不受影响。
+   */
+  patrolDns?: boolean;
+  /** 注入的解析器（测试用；传入时优先于 patrolDns 创建的真实解析器）。 */
+  dnsResolver?: DnsResolverLike;
+}
+
 export async function handleHealthCheck(
   ctx: AppContext,
   payload: { siteId?: string; limit?: number },
   run: JobRunHandle,
-  getTargets: (limit: number) => Promise<PatrolSelection>
+  getTargets: (limit: number) => Promise<PatrolSelection>,
+  options: HealthCheckOptions = {},
 ): Promise<void> {
-  const { guardedFetch } = await import("@navhub/ai");
+  const {
+    guardedFetch,
+    createExternalDnsResolver,
+    verifyPatrolDnsResolver,
+    isDnsResolverFailure,
+    PATROL_DNS_TIMEOUT_MS,
+  } = await import("@navhub/ai");
+  // B 方案：巡检专用 DNS（8.8.8.8）+ 金丝雀自检。仅 JobRunner 传入
+  // patrolDns/dnsResolver 时启用；不传时保持旧行为。
+  const patrolResolver =
+    options.dnsResolver ?? (options.patrolDns ? createExternalDnsResolver() : undefined);
+  if (patrolResolver) {
+    const canary = await verifyPatrolDnsResolver(patrolResolver);
+    if (!canary.ok) {
+      // 金丝雀失败 = 解析器本身不可信：本轮直接失败告警，不探活、不标 broken。
+      throw new Error("健康巡检 DNS 金丝雀自检失败（" + canary.reason + "），本轮直接失败，不探活、不标 broken");
+    }
+  }
+  const fetchOpts = patrolResolver
+    ? { ...ctx.config.fetch, dnsResolver: patrolResolver, dnsTimeoutMs: PATROL_DNS_TIMEOUT_MS }
+    : { ...ctx.config.fetch };
   const limit = payload.limit ?? 50;
   let selection: PatrolSelection;
   if (payload.siteId) {
@@ -115,6 +148,8 @@ export async function handleHealthCheck(
   // U-13 可观测：两层都被拦截的站数 / 第二层救回来的站数（进 job 事件 meta）。
   let botBlocked = 0;
   let desktopRescued = 0;
+  // B 方案：注入解析器本身失败/超时而跳过的站数（不写库、不记失败、不标 broken）。
+  let dnsSkipped = 0;
 
   /**
    * 抓取并发度（窗口大小）。
@@ -139,7 +174,7 @@ export async function handleHealthCheck(
       window.map(async (site) => {
         const startedAt = Date.now();
         try {
-          let res = await guardedFetch(site!.url, { ...ctx.config.fetch });
+          let res = await guardedFetch(site!.url, fetchOpts);
           let layer1Status: number | null = null;
           let retried = false;
           let layer2Error: unknown = null;
@@ -152,7 +187,7 @@ export async function handleHealthCheck(
             try {
               res = await guardedFetch(
                 site!.url,
-                { ...ctx.config.fetch },
+                fetchOpts,
                 { headers: DESKTOP_RETRY_HEADERS },
               );
             } catch (err2) {
@@ -183,8 +218,14 @@ export async function handleHealthCheck(
     );
 
     for (const item of fetched) {
-      checked++;
       const site = item.site;
+      // B 方案：注入解析器本身失败/超时 → 跳过该站，不写库、不记失败、不标 broken；
+      // 保持原状态，下一轮再试。blocked-ip 不走这里（那是解析成功后的正常拦截）。
+      if (!item.res && patrolResolver && isDnsResolverFailure(item.error)) {
+        dnsSkipped++;
+        continue;
+      }
+      checked++;
       if (item.res) {
         const res = item.res;
         let healthy = res.status >= 200 && res.status < 400;
@@ -263,11 +304,12 @@ export async function handleHealthCheck(
     }
   }
 
-  const deferred = targets.length - checked;
+  const deferred = targets.length - checked - dnsSkipped;
   if (deferred > 0) {
     console.warn("[navhub-job] health_check 预算到点，剩余站点顺延下一轮", {
       planned: targets.length,
       checked,
+      dnsSkipped,
       deferred,
     });
   }
@@ -289,6 +331,9 @@ export async function handleHealthCheck(
         // U-13 分层探活计数：两层都被拦截的站数 / 第二层救回来的站数。
         botBlocked,
         desktopRescued,
+        // B 方案：注入解析器本身失败/超时而跳过的站数；巡检是否走了外部 DNS。
+        dnsSkipped,
+        patrolDns: patrolResolver !== undefined,
         // 名额怎么分的：quota 是计划，picked 是实际选中（队列不足时两者不同）
         quota: selection.quota,
         picked: selection.picked,

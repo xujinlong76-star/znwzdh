@@ -127,3 +127,52 @@ describe('U-237：源码守卫——label 结构与扩区不回潮', () => {
     expect(src).not.toContain('mt-1.5 h-2 w-2')
   })
 })
+
+describe('圆点与徽标同一口径：PEAK 时刻已过圆点置灰（2026-11-28 修复）', () => {
+  // 2026-11-28 09:59:59 / 10:00:00 北京时间（广东模拟核验 10:00 截止）。
+  const NOV_28_095959_CST = Date.UTC(2026, 10, 28, 1, 59, 59)
+  const NOV_28_100000_CST = Date.UTC(2026, 10, 28, 2, 0, 0)
+
+  /** 取某节点行（未关注态）的圆点 class。 */
+  function dotClassOf(html: string, label: string): string {
+    const chunk = liChunks(html).find((c) => c.includes(label))!
+    const m = chunk.match(/h-2 w-2 shrink-0 rounded-full ([^"]+)/)
+    expect(m).not.toBeNull()
+    return m![1]
+  }
+
+  /** 在指定 fake 时刻渲染未关注态 tracker。 */
+  async function renderAt(nowMs: number): Promise<string> {
+    vi.useFakeTimers()
+    vi.setSystemTime(nowMs)
+    try {
+      return await renderTracker(null)
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
+  it('10:00 前：广东模拟核验行绿点 + 「进行中」', async () => {
+    const html = await renderAt(NOV_28_095959_CST)
+    const chunk = liChunks(html).find((c) => c.includes('广东考区模拟核验'))!
+    expect(chunk).toContain('进行中')
+    expect(dotClassOf(html, '广东考区模拟核验')).toBe('bg-emerald-500')
+  })
+
+  it('10:00 整点：同行徽标翻「已截止」且圆点置灰（与徽标同一口径）', async () => {
+    const html = await renderAt(NOV_28_100000_CST)
+    const chunk = liChunks(html).find((c) => c.includes('广东考区模拟核验'))!
+    expect(chunk).toContain('已截止')
+    expect(dotClassOf(html, '广东考区模拟核验')).toBe('bg-muted-foreground/40')
+  })
+
+  it('普通节点行为不变：10:00 后准考证打印与专业科目笔试仍绿点', async () => {
+    const html = await renderAt(NOV_28_100000_CST)
+    // 准考证打印：多日 active、无 PEAK 条目，仍「进行中」+ 绿点。
+    expect(dotClassOf(html, '准考证打印')).toBe('bg-emerald-500')
+    expect(liChunks(html).find((c) => c.includes('准考证打印'))!).toContain('进行中')
+    // 专业科目笔试：单日 today、无 PEAK 条目，仍「今天」+ 绿点。
+    expect(dotClassOf(html, '专业科目笔试')).toBe('bg-emerald-500')
+    expect(liChunks(html).find((c) => c.includes('专业科目笔试'))!).toContain('今天')
+  })
+})

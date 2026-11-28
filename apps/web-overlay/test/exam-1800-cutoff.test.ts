@@ -105,6 +105,9 @@
  * Date.UTC(2026, 10, 30, 9, 0, 0)。陷阱：绝不是天津成绩复核 11-19 18:00
  * （键与日期均不同）；绝不是结果窗口 11-25 09:00 开通时刻。
  */
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { ExamInfo, ExamNode } from '../src/lib/exam-calendar'
 import {
@@ -126,6 +129,9 @@ const jingkao = EXAMS.find((e) => e.id === 'jingkao')!
 const jundui = EXAMS.find((e) => e.id === 'jundui-wenzhi')!
 const guokao = EXAMS.find((e) => e.id === 'guokao')!
 const chengkao = EXAMS.find((e) => e.id === 'chengkao')!
+
+const here = dirname(fileURLToPath(import.meta.url))
+const read = (rel: string) => readFileSync(join(here, '..', rel), 'utf8')
 const jingkaoApply = jingkao.nodes.find((n) => n.label === '报名')!
 const jingkaoFee = jingkao.nodes.find((n) => n.label === '缴费')!
 const junduiFee = jundui.nodes.find((n) => n.label === '缴费')!
@@ -1373,5 +1379,33 @@ describe('国考广东考区模拟核验 10:00 时刻门控（post_4985097）', 
     expect(
       examNodeDeadlineLabel(guokao, mockVerify, Date.UTC(2026, 10, 28, 15, 59, 59)),
     ).toBe('已截止')
+  })
+})
+
+/**
+ * 2026-11-28 修复：徽标「已截止」时行首圆点曾仍为绿（进行中色），与文案
+ * 口径分裂。修法只在渲染层：tracker 由 examNodeDeadlineLabel 派生圆点，
+ * 返回「已截止」时取 done 灰（bg-muted-foreground/40），其余沿用日期口径
+ * NODE_DOT_CLASS；examNodeStatus / 今日行 / 禁用逻辑一律不动。
+ * 圆点渲染断言见 test/exam-tracker-label-u237.test.ts（fake 时刻渲染）。
+ */
+describe('圆点与徽标同一口径：源码守卫（2026-11-28 修复不回潮）', () => {
+  const mockVerify = guokao.nodes.find((n) => n.label === '广东考区模拟核验')!
+
+  it('tracker 圆点由 deadlineLabel 派生：已截止取 done 灰，否则沿用状态色', () => {
+    const src = read('src/app/exam/my-exam-tracker.tsx')
+    expect(src).toContain('const deadlineLabel = examNodeDeadlineLabel(exam, node, now)')
+    expect(src).toContain(
+      "deadlineLabel === '已截止' ? NODE_DOT_CLASS.done : NODE_DOT_CLASS[status]",
+    )
+    expect(src).toContain('className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`}')
+    // 徽标与圆点共用同一份 deadlineLabel，不各算各的。
+    expect(src).toContain('{deadlineLabel ?? EXAM_NODE_STATUS_LABEL[status]}')
+  })
+
+  it('状态机不动：10:00 后 examNodeStatus 仍按日期口径（当天 active、次日 done）', () => {
+    expect(examNodeStatus(mockVerify, Date.UTC(2026, 10, 28, 2, 0, 0))).toBe('active')
+    expect(examNodeStatus(mockVerify, Date.UTC(2026, 10, 28, 15, 59, 59))).toBe('active')
+    expect(examNodeStatus(mockVerify, Date.UTC(2026, 10, 29, 0, 0, 0))).toBe('done')
   })
 })

@@ -5,9 +5,13 @@
  *   1. 外观按钮是图标 + 可见文字标签「DIY 排版」，全宽度可见——桌面与
  *      390px 首屏都能认出 DIY 入口；<390px 手机不再零入口；
  *   2. 360px 不溢出：小组件盒按钮 <390px 收进探索菜单，多选按钮
- *      <640px 收进探索菜单（C-W7-5，2026-11-21），行内只剩 6 个
- *      44px 按钮，6×44px + 5×6px 间隙 = 294px ≤ 360−24px 可用宽；
- *      390px 时 7×44px + 6×6px = 344px ≤ 390−24px；
+ *      <640px 收进探索菜单（C-W7-5，2026-11-21），外观聚合浮层
+ *      <390px 隐藏（2026-11-28 23:22 轮，给「考试」直达腾位；浮层五项
+ *      开关全在 DIY 向导小窗内，入口不丢）。2026-11-28 23:22 轮后：
+ *      360px 行内 7 个 44px 按钮（今日/探索/热榜/考试/字号/DIY/菜单），
+ *      7×44px + 6×2px 间隙 = 320px ≤ 360−24px 可用宽；
+ *      390px 时 8 个 44px（+ 外观浮层），8×44px + 7×2px = 366px = 366px 可用宽，
+ *      恰好占满；考试按钮全宽度可见，见 exam-topbar-link.test.ts。
  *      （旧账「7×44 + 6×2 = 320」「8×44 + 7×2 = 366 恰好占满」与代码不符：
  *      右组 gap-1.5 = 6px，不是 2px；修正前 360px 行实为 344px 超 8px、
  *      390px 行实为 394px 超 28px。）
@@ -83,11 +87,13 @@ describe("U-155：外观按钮是图标 + 可见文字「DIY 排版」", () => {
 });
 
 describe("U-155：360px/390px 融合宽度账（小组件盒并入今日效率中心，外观收进聚合浮层）", () => {
-  it("360px/390px 行内统一 6 个 44px 按钮：6×44 + 5×2 间隙 = 274 ≤ 336 可用宽", () => {
+  it("360px 行内 7 个 44px 按钮、390px 行内 8 个：7×44 + 6×2 = 320 ≤ 336、8×44 + 7×2 = 366 = 366 可用宽", () => {
     const src = overlayFile("src/components/navigation-toolbar.tsx");
     for (const marker of [
       'aria-label="打开今日中心小窗"',
       'aria-label="探索矩阵与导航工具箱"',
+      'aria-label="热榜"',
+      'aria-label="考试"',
       'aria-label="多选模式"',
       "<FontSizeToggle",
       "<AppearanceQuickPopover",
@@ -102,8 +108,13 @@ describe("U-155：360px/390px 融合宽度账（小组件盒并入今日效率�
     expect(multi, "多选按钮 ≥640px 应恢复显示").toContain("sm:inline-flex");
     // 2026-11-24 效率三合一：小组件盒已并入今日中心小窗 + 探索 2 列菜单，顶栏不再单占一格
     expect(src).not.toContain('aria-label="打开桌面小组件盒"');
-    expect(6 * 44 + 5 * 2).toBe(274);
-    expect(274).toBeLessThanOrEqual(360 - 24);
+    // 2026-11-28 23:22 轮：外观聚合浮层 <390px 隐藏（hidden min-[390px]:contents），
+    // 给「考试」直达腾 46px 行宽；考试按钮本身全宽度可见（exam-topbar-link.test.ts 锁）。
+    expect(src).toContain('hidden min-[390px]:contents');
+    expect(7 * 44 + 6 * 2).toBe(320);
+    expect(320).toBeLessThanOrEqual(360 - 24);
+    expect(8 * 44 + 7 * 2).toBe(366);
+    expect(366).toBeLessThanOrEqual(390 - 24);
   });
 
   it("桌面小组件盒仍保留在探索菜单内（受 onOpenWidgetBox 守卫）及今日效率中心 Tab 内", () => {

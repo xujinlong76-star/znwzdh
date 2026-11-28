@@ -172,8 +172,12 @@ export const NavigationToolbar = memo(function NavigationToolbar({
         </div>
 
         {/* 右侧工具组（2026-11-24 融合瘦身）：
-            360px/390px 移动端行内固定 7 个 44px 按钮（今日 / 探索 / 热榜 / 字号 / 外观 / DIY 排版 / 菜单），
-            7×44 + 6×2 = 320px ≤ 336px，宽裕零溢出；桌面端仅保留 7 组核心控台。 */}
+            360px 行内 7 个 44px 按钮（今日 / 探索 / 热榜 / 考试 / 字号 / DIY 排版 / 菜单），
+            7×44 + 6×2 = 320px ≤ 336px；390px 行内 8 个（+ 外观聚合浮层），
+            8×44 + 7×2 = 366px = 366px 可用宽，恰好占满；桌面端仅保留 7 组核心控台。
+            分档依据：外观聚合浮层 <390px 隐藏（其字号/高对比/主题/长辈/密度五项
+            全在 DIY 向导小窗内，功能不丢），溢出靠减入口、不挤间距（2px 已是下限）。
+            2026-11-28 23:22 轮加「考试」直达后，360px 仍为 7 钮、390px 为 8 钮。 */}
         <div data-testid="nav-toolbar-actions" className="flex shrink-0 flex-wrap items-center justify-end">
           <div data-testid="toolbar-button-row" className="shrink-0 flex items-center gap-0.5 sm:gap-1.5">
             {/* 📅 效率三合一入口（今日中心 + 桌面小组件盒 + 极客微工具箱统一收纳） */}
@@ -407,7 +411,8 @@ export const NavigationToolbar = memo(function NavigationToolbar({
             {/* 🔥 热榜直达（M-02）：首屏/顶栏可见入口。原入口只在探索下拉与页脚——
                 首页 2 个 /hot 链接其一 0×0、其一在约 57k px 页底，首屏无“热榜”字样；
                 手机底部 tab 按 mobile-touch-targets 锁死不放热榜，故入口放顶栏。
-                宽度账：移动端行内 7×44 + 6×2 = 320px ≤ 336px（360px 档），仍在预算内。 */}
+                宽度账：360px 行内 7×44 + 6×2 = 320px ≤ 336px（外观浮层 <390px 隐藏），
+                390px 行内 8×44 + 7×2 = 366px = 366px 可用宽，恰好占满，仍在预算内。 */}
             <Button
               asChild
               variant="ghost"
@@ -420,6 +425,34 @@ export const NavigationToolbar = memo(function NavigationToolbar({
                 <span className="text-center text-[10px] leading-none whitespace-nowrap tracking-tight sm:text-xs sm:tracking-normal">
                   热榜
                 </span>
+              </Link>
+            </Button>
+
+            {/* 📅 考试直达（2026-11-28 23:22 轮 · 方案 A）：首页 1 步到 /exam。
+                与热榜同款按钮（图标 + 可见「考试」文字，全宽度可见）；国考窗口期内
+                （todayBadge.countdownLabel 非空，服务端 computeHomeTodayBadge 算出、
+                SSR 可得，不引入客户端倒计时）在文字旁挂今日中心同款琥珀倒计时徽章，
+                徽章仅 ≥lg 显示，窄屏不占行宽。宽度账见本文件顶部工具组注释。 */}
+            <Button
+              asChild
+              variant="ghost"
+              className="relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-0 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors sm:w-auto sm:flex-row sm:gap-1.5 sm:px-2.5"
+              title="考试日历：备考节点与倒计时"
+              aria-label="考试"
+            >
+              <Link href="/exam">
+                <GraduationCap className="h-4 w-4 shrink-0 text-violet-500" aria-hidden />
+                <span className="text-center text-[10px] leading-none whitespace-nowrap tracking-tight sm:text-xs sm:tracking-normal">
+                  考试
+                </span>
+                {todayBadge?.countdownLabel ? (
+                  <span
+                    data-testid="exam-countdown-badge"
+                    className="hidden shrink-0 items-center whitespace-nowrap rounded-full bg-amber-500/12 px-2 py-0.5 text-[11px] font-medium text-amber-700 lg:inline-flex dark:text-amber-300"
+                  >
+                    {todayBadge.countdownLabel}
+                  </span>
+                ) : null}
               </Link>
             </Button>
 
@@ -478,8 +511,12 @@ export const NavigationToolbar = memo(function NavigationToolbar({
               <FontSizeToggle />
             </div>
 
-            {/* 🎨 外观与阅读紧凑聚合浮层（整合字号 / 高对比 / 深浅主题 / 长辈模式 / 卡片密度） */}
-            <AppearanceQuickPopover onOpenAppearanceGuide={onOpenAppearanceGuide} />
+            {/* 🎨 外观与阅读紧凑聚合浮层（整合字号 / 高对比 / 深浅主题 / 长辈模式 / 卡片密度）。
+                <390px 隐藏（2026-11-28 23:22 轮：给「考试」直达腾 46px 行宽；02:22 轮
+                同款做法）：浮层内五项开关全在 DIY 向导小窗内，入口不丢；≥390px 恢复显示。 */}
+            <div className="hidden min-[390px]:contents">
+              <AppearanceQuickPopover onOpenAppearanceGuide={onOpenAppearanceGuide} />
+            </div>
 
             {/* DIY 排版入口（全宽度可见文字标签） */}
             {onOpenAppearanceGuide ? (

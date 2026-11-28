@@ -77,8 +77,12 @@ describe('navigation-toolbar：顶栏 Flex 布局', () => {
     expect(btn).toContain('href="/hot"')
     expect(btn).toContain('热榜')
     expect(src).toContain('aria-label="热榜"')
-    // 宽度账（360px 档）：行内 7×44 + 6×2 = 320px ≤ 336px，仍在预算内
+    // 宽度账（2026-11-28 23:22 轮加「考试」直达后）：360px 行内 7×44 + 6×2 = 320px ≤ 336px
+    //（外观聚合浮层 <390px 隐藏腾位），390px 行内 8×44 + 7×2 = 366px = 366px 可用宽，
+    // 恰好占满，仍在预算内；考试按钮见 exam-topbar-link.test.ts。
     expect(src).toContain('7×44 + 6×2 = 320px')
+    expect(src).toContain('8×44 + 7×2 = 366px')
+    expect(src).toContain('hidden min-[390px]:contents')
   })
 })
 

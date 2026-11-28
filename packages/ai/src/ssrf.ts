@@ -15,6 +15,8 @@
  * 另外限制超时、响应体大小与重定向跳数，避免被慢速/超大响应拖死。
  */
 import { lookup } from "node:dns/promises";
+import { randomInt } from "node:crypto";
+import { createSocket } from "node:dgram";
 import http from "node:http";
 import https from "node:https";
 import { isIP } from "node:net";
@@ -45,6 +47,212 @@ export interface FetchGuardOptions {
    * 唯一能彻底消除污点告警的形态。
    */
   allowedHosts?: readonly string[];
+  /**
+   * 可注入的 DNS 解析器（B 方案：健康巡检专用）。
+   * 传入时 resolveAndCheck 用它解析域名，不用系统解析器；不传时保持系统解析器。
+   * 只由 JobRunner 的 health_check 任务传入，其它 guardedFetch 调用方不受影响。
+   */
+  dnsResolver?: DnsResolverLike;
+  /**
+   * DNS 解析超时上限（毫秒）。不设时用 timeoutMs。
+   * 巡检传 5000：单个坏域名不拖住整轮。
+   */
+  dnsTimeoutMs?: number;
+}
+
+/**
+ * 可注入 DNS 解析器的最小接口：与 `node:dns/promises` 的
+ * `lookup(host, { all: true })` 同形，只取 address。
+ */
+export interface DnsResolverLike {
+  lookup(host: string): Promise<Array<{ address: string }>>;
+}
+
+/** 巡检专用 DNS：已验证的外部解析器（2026-11-26 实测 python.org / hub.docker.com / api.open-meteo.com 均返回真实地址）。 */
+export const PATROL_DNS_SERVERS: readonly string[] = ["8.8.8.8"];
+/** 巡检 DNS 单次解析超时（毫秒）。 */
+export const PATROL_DNS_TIMEOUT_MS = 5_000;
+/** 金丝雀域名：IANA 保留的 example.com，恒解析到公网 IP，永不落在受保护网段。 */
+export const PATROL_DNS_CANARY_HOST = "example.com";
+
+/**
+ * 创建巡检专用外部 DNS 解析器（B 方案）。
+ *
+ * 为什么不用 `node:dns` 的 `Resolver`（2026-11-28 dry-run 实测证伪）：
+ * 本机沙箱拦未连接 UDP 的 sendto/sendmsg（EPERM），`Resolver`（c-ares）
+ * 内部走的就是未连接 socket，于是对 8.8.8.8 的查询一次次重试后报
+ * ETIMEOUT（5 站 dry-run 全败，各 ~25 秒）；而 `dig`/`nslookup` 能通，
+ * 是因为它们用已连接 UDP socket。实测：已连接 dgram 直连 8.8.8.8:53，
+ * 130ms 拿到 python.org 的 4 条 A 记录；`dig @1.1.1.1` 超时，
+ * 说明只有 8.8.8.8 这一个外部门口是通的。
+ *
+ * 因此这里用最小 DNS 线路编解码 + 已连接 dgram 实现 A/AAAA 查询：
+ * 直接问 8.8.8.8，绕过本机坏解析器（nameserver 198.19.0.1 把公网域名
+ * 解析到 198.18/15）。只做 A/AAAA 查询：巡检目标全是公网域名，
+ * 不读 /etc/hosts，不影响其它调用方。
+ *
+ * 局限（已确认，无解）：TCP/53 到 8.8.8.8 同样不通（`dig +tcp` 超时），
+ * 所以响应被截断（TC 位）时没有 TCP 回退，只能报错；调用方按
+ * dns-failure 处理——巡检跳过该站，不标 broken。
+ */
+export function createExternalDnsResolver(
+  servers: readonly string[] = PATROL_DNS_SERVERS,
+  timeoutMs: number = PATROL_DNS_TIMEOUT_MS,
+): DnsResolverLike {
+  const server = servers[0] ?? "8.8.8.8";
+  return {
+    async lookup(host: string): Promise<Array<{ address: string }>> {
+      const [v4, v6] = await Promise.allSettled([
+        dnsQueryUdp(server, host, 1, timeoutMs),
+        dnsQueryUdp(server, host, 28, timeoutMs),
+      ]);
+      const addrs: Array<{ address: string }> = [
+        ...(v4.status === "fulfilled" ? v4.value : []),
+        ...(v6.status === "fulfilled" ? v6.value : []),
+      ];
+      if (addrs.length === 0) {
+        const firstRejection = [v4, v6].find((r): r is PromiseRejectedResult => r.status === "rejected");
+        const reason = firstRejection?.reason;
+        throw new Error("DNS 解析失败: " + host + (reason instanceof Error ? "（" + reason.message + "）" : ""));
+      }
+      return addrs;
+    },
+  };
+}
+
+/** 组装一条最小 DNS 查询报文（header + question，RD=1，不带 EDNS）。 */
+function buildDnsQuery(id: number, host: string, qtype: number): Buffer {
+  const labels: Buffer[] = [];
+  for (const part of host.split(".").filter(Boolean)) {
+    const bytes = Buffer.from(part, "utf8");
+    labels.push(Buffer.from([bytes.length]), bytes);
+  }
+  labels.push(Buffer.from([0]));
+  const header = Buffer.alloc(12);
+  header.writeUInt16BE(id, 0);
+  header.writeUInt16BE(0x0100, 2); // RD
+  header.writeUInt16BE(1, 4); // QDCOUNT
+  const question = Buffer.concat([...labels, Buffer.from([(qtype >> 8) & 0xff, qtype & 0xff, 0, 1])]);
+  return Buffer.concat([header, question]);
+}
+
+/** 跳过一条 DNS 域名（含压缩指针），返回域名后第一个字节的下标。 */
+function skipDnsName(buf: Buffer, offset: number): number {
+  let pos = offset;
+  for (;;) {
+    if (pos >= buf.length) throw new Error("DNS 报文截断（域名）");
+    const len = buf[pos]!;
+    if (len === 0) return pos + 1;
+    if ((len & 0xc0) === 0xc0) return pos + 2; // 压缩指针：2 字节即止
+    pos += 1 + len;
+  }
+}
+
+function formatIPv6(bytes: Buffer): string {
+  const groups: string[] = [];
+  for (let i = 0; i < 16; i += 2) groups.push(bytes.readUInt16BE(i).toString(16));
+  let bestStart = -1;
+  let bestLen = 0;
+  let curStart = -1;
+  let curLen = 0;
+  for (let i = 0; i < 8; i++) {
+    if (groups[i] === "0") {
+      if (curStart < 0) {
+        curStart = i;
+        curLen = 1;
+      } else {
+        curLen += 1;
+      }
+      if (curLen > bestLen) {
+        bestLen = curLen;
+        bestStart = curStart;
+      }
+    } else {
+      curStart = -1;
+      curLen = 0;
+    }
+  }
+  if (bestLen < 2) return groups.join(":");
+  return groups.slice(0, bestStart).join(":") + "::" + groups.slice(bestStart + bestLen).join(":");
+}
+
+/**
+ * 解析 DNS 响应，只取应答区的 A/AAAA 记录。
+ * CNAME 链不用跟：终端 A/AAAA 记录本身就在应答区里，SSRF 校验只关心 IP。
+ */
+function parseDnsResponse(buf: Buffer, id: number): Array<{ address: string }> {
+  if (buf.length < 12) throw new Error("DNS 响应过短");
+  if (buf.readUInt16BE(0) !== id) throw new Error("DNS 响应 ID 不匹配");
+  const flags = buf.readUInt16BE(2);
+  if (flags & 0x0200) throw new Error("DNS 响应被截断（TC），无 TCP 回退");
+  const rcode = flags & 0x000f;
+  if (rcode !== 0) throw new Error("DNS 解析失败（RCODE " + rcode + "）");
+  const qdCount = buf.readUInt16BE(4);
+  const anCount = buf.readUInt16BE(6);
+  let pos = 12;
+  for (let i = 0; i < qdCount; i++) {
+    pos = skipDnsName(buf, pos);
+    if (pos + 4 > buf.length) throw new Error("DNS 报文截断（问题区）");
+    pos += 4;
+  }
+  const addrs: Array<{ address: string }> = [];
+  for (let i = 0; i < anCount; i++) {
+    pos = skipDnsName(buf, pos);
+    if (pos + 10 > buf.length) throw new Error("DNS 报文截断（应答区）");
+    const type = buf.readUInt16BE(pos);
+    const rdLength = buf.readUInt16BE(pos + 8);
+    const rdata = pos + 10;
+    if (rdata + rdLength > buf.length) throw new Error("DNS 报文截断（RDATA）");
+    if (type === 1 && rdLength === 4) {
+      addrs.push({ address: [...buf.subarray(rdata, rdata + 4)].join(".") });
+    } else if (type === 28 && rdLength === 16) {
+      addrs.push({ address: formatIPv6(buf.subarray(rdata, rdata + 16)) });
+    }
+    pos = rdata + rdLength;
+  }
+  return addrs;
+}
+
+/**
+ * 一次 UDP DNS 查询（A=1 / AAAA=28）。
+ * 关键：socket 必须先 `connect(53, server)` 再 `send`——未连接的
+ * sendto 在本机沙箱里直接 EPERM（见 createExternalDnsResolver 注释）。
+ */
+function dnsQueryUdp(server: string, host: string, qtype: number, timeoutMs: number): Promise<Array<{ address: string }>> {
+  const id = randomInt(0, 65536);
+  const packet = buildDnsQuery(id, host, qtype);
+  return new Promise<Array<{ address: string }>>((resolve, reject) => {
+    const sock = createSocket("udp4");
+    let done = false;
+    let timer: NodeJS.Timeout | undefined;
+    const finish = (fn: () => void): void => {
+      if (done) return;
+      done = true;
+      if (timer !== undefined) clearTimeout(timer);
+      try {
+        sock.close();
+      } catch {
+        // 已关，无事可做
+      }
+      fn();
+    };
+    timer = setTimeout(() => finish(() => reject(new Error("DNS 查询超时: " + host))), timeoutMs);
+    sock.on("error", (err) => finish(() => reject(err)));
+    sock.on("message", (msg) =>
+      finish(() => {
+        try {
+          resolve(parseDnsResponse(msg, id));
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error(String(err)));
+        }
+      }),
+    );
+    sock.connect(53, server, () => {
+      sock.send(packet, (err) => {
+        if (err) finish(() => reject(err));
+      });
+    });
+  });
 }
 
 export const DEFAULT_GUARD: FetchGuardOptions = {
@@ -264,11 +472,15 @@ export function assertUrlShape(raw: string): URL {
  * 说明：被超时放弃的底层查询不会真正中断（node:dns/promises 的 lookup 不支持
  * AbortSignal），但它不持有需要清理的句柄；我们只保证调用方不再等待它。
  */
-async function lookupWithTimeout(host: string, timeoutMs: number): Promise<Array<{ address: string }>> {
+async function lookupWithTimeout(
+  host: string,
+  timeoutMs: number,
+  resolver?: DnsResolverLike,
+): Promise<Array<{ address: string }>> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      lookup(host, { all: true }),
+      resolver ? resolver.lookup(host) : lookup(host, { all: true }),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new SsrfBlockedError("DNS 解析超时: " + host, "dns-timeout")), timeoutMs);
       }),
@@ -349,7 +561,7 @@ export async function resolveAndCheck(url: URL, opts: FetchGuardOptions): Promis
 
   let addrs: Array<{ address: string }>;
   try {
-    addrs = await lookupWithTimeout(host, opts.timeoutMs);
+    addrs = await lookupWithTimeout(host, opts.dnsTimeoutMs ?? opts.timeoutMs, opts.dnsResolver);
   } catch (err) {
     if (err instanceof SsrfBlockedError) throw err; // 解析超时：fail-closed
     throw new SsrfBlockedError("DNS 解析失败: " + host, "dns-failure");
@@ -365,6 +577,47 @@ export async function resolveAndCheck(url: URL, opts: FetchGuardOptions): Promis
     safeIps.push(a.address);
   }
   return safeIps;
+}
+
+export type DnsCanaryResult = { ok: true; addresses: string[] } | { ok: false; reason: string };
+
+/**
+ * 金丝雀自检（B 方案）：巡检启动前先用注入解析器解析一个已知好域名。
+ *
+ * 若解析失败/超时，或任一结果落在受保护网段（本机坏解析器把公网域名解析到
+ * 198.18/15 的故障形态），返回失败——调用方应让本轮直接失败告警，
+ * 绝不要静默把站批量标 broken。
+ */
+export async function verifyPatrolDnsResolver(
+  resolver: DnsResolverLike,
+  host: string = PATROL_DNS_CANARY_HOST,
+  timeoutMs: number = PATROL_DNS_TIMEOUT_MS,
+): Promise<DnsCanaryResult> {
+  let addrs: Array<{ address: string }>;
+  try {
+    addrs = await lookupWithTimeout(host, timeoutMs, resolver);
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+  if (addrs.length === 0) return { ok: false, reason: "DNS 无结果: " + host };
+  for (const a of addrs) {
+    if (isBlockedIp(a.address)) {
+      return { ok: false, reason: host + " 解析到受保护网段 " + a.address + "（解析器不可信）" };
+    }
+  }
+  return { ok: true, addresses: addrs.map((a) => a.address) };
+}
+
+/**
+ * 是否为“注入解析器本身失败/超时”（B 方案跳过条件）。
+ *
+ * 只认 dns-failure / dns-timeout 两个原因：解析器不可达、超时、无结果。
+ * blocked-ip 不算——那是解析成功后 SSRF 规则的正常拦截，仍按失败记。
+ */
+export function isDnsResolverFailure(error: unknown): boolean {
+  return (
+    error instanceof SsrfBlockedError && (error.reason === "dns-failure" || error.reason === "dns-timeout")
+  );
 }
 
 export interface GuardedFetchResult {

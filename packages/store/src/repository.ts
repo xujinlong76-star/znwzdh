@@ -1939,15 +1939,15 @@ async revokeAllSessions(userId: string): Promise<number> {
   }
 
   /** 长任务进度上报（只对 running 生效，同时刷新 updated_at 供僵尸判定） */
-  async updateJobProgress(id: string, progress: { done: number; total: number }): Promise<void> {
-    return jobsRepo.updateJobProgress(this, id, progress);
+  async updateJobProgress(id: string, progress: { done: number; total: number }, runToken: string): Promise<void> {
+    return jobsRepo.updateJobProgress(this, id, progress, runToken);
   }
 
-  async claimNextJob(opts: jobsRepo.ClaimJobOptions = {}): Promise<JobRecord | null> {
+  async claimNextJob(opts: jobsRepo.ClaimJobOptions = {}): Promise<jobsRepo.ClaimedJob | null> {
     return jobsRepo.claimNextJob(this, opts);
   }
 
-  async completeJob(id: string, error?: string | null, opts: { retryAt?: number | null; exhausted?: boolean; durationMs?: number } | null = null): Promise<boolean> {
+  async completeJob(id: string, error: string | null | undefined, opts: jobsRepo.JobCompletionOptions): Promise<boolean> {
     return jobsRepo.completeJob(this, id, error, opts);
   }
 
@@ -1955,8 +1955,8 @@ async revokeAllSessions(userId: string): Promise<number> {
    * 执行心跳：续期并回报当前执行态。
    * `running` = 正常；`cancelling` = 已要求停手；`null` = 行已离开执行态，必须停手。
    */
-  async heartbeatJob(id: string): Promise<"running" | "cancelling" | null> {
-    return jobsRepo.heartbeatJob(this, id);
+  async heartbeatJob(id: string, runToken: string): Promise<"running" | "cancelling" | null> {
+    return jobsRepo.heartbeatJob(this, id, runToken);
   }
 
   async listJobs(status?: string, limit = 50, offset = 0, options: { cursor?: string } = {}): Promise<JobRecord[]> {
@@ -1978,15 +1978,15 @@ async revokeAllSessions(userId: string): Promise<number> {
   }
 
   /** 预算到点：由 Runner 把 running 标成「已要求停手、尚未确认」 */
-  async markJobCancelling(id: string, note: string): Promise<boolean> {
-    return jobsRepo.markJobCancelling(this, id, note);
+  async markJobCancelling(id: string, note: string, runToken: string): Promise<boolean> {
+    return jobsRepo.markJobCancelling(this, id, note, runToken);
   }
 
   /** handler 确认停手后，把 `cancelling` 收成 cancelled / failed 终态 */
   async settleCancellingJob(
     id: string,
     terminal: "cancelled" | "failed",
-    opts: { error?: string | null; durationMs?: number } = {},
+    opts: { error?: string | null; durationMs?: number; runToken: string },
   ): Promise<boolean> {
     return jobsRepo.settleCancellingJob(this, id, terminal, opts);
   }
@@ -1999,8 +1999,25 @@ async revokeAllSessions(userId: string): Promise<number> {
     return jobsRepo.pruneJobs(this, olderThanDays, statuses);
   }
 
-  async reapStaleJobs(timeoutMs = 15 * 60 * 1000): Promise<number> {
-    return jobsRepo.reapStaleJobs(this, timeoutMs);
+  async reapStaleJobs(timeoutMs = 15 * 60 * 1000, maxAttempts = 3): Promise<number> {
+    return jobsRepo.reapStaleJobs(this, timeoutMs, maxAttempts);
+  }
+
+  /** JobRunner 租约（SQLite sidecar）：抢锁 / 续期 / 释放 / 读数。 */
+  acquireJobRunnerLease(holder: string, ttlMs: number): boolean {
+    return jobsRepo.acquireJobRunnerLease(this, holder, ttlMs);
+  }
+
+  renewJobRunnerLease(holder: string): number {
+    return jobsRepo.renewJobRunnerLease(this, holder);
+  }
+
+  releaseJobRunnerLease(holder: string): void {
+    return jobsRepo.releaseJobRunnerLease(this, holder);
+  }
+
+  getJobRunnerLease(): jobsRepo.JobRunnerLease | null {
+    return jobsRepo.getJobRunnerLease(this);
   }
 
 

@@ -20,17 +20,16 @@ import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import { JobRunner } from "../src/jobs.ts";
 
-const LOCK_KEY = "lock:job-runner";
-
 let dir: string;
 let ctx: AppContext;
 
+/**
+ * 锁行读数：379782c1「租约耦合」起，Runner 锁在 sidecar `job_runner_lease`
+ * 表（经 `repo.getJobRunnerLease()` 读），不再是 idempotency 表里的
+ * `lock:job-runner` 行——旧读法恒返回 null，本文件在该提交后即失效。
+ */
 function lockRow(): { holder: string; createdAt: number } | null {
-  const row = ctx.db.sqlite!
-    .prepare("SELECT response, created_at FROM idempotency WHERE key = ?")
-    .get(LOCK_KEY) as { response: string; created_at: number | string } | undefined;
-  if (!row) return null;
-  return { holder: row.response, createdAt: Number(row.created_at) };
+  return ctx.repo.getJobRunnerLease();
 }
 
 beforeAll(async () => {
@@ -93,18 +92,16 @@ describe("JobRunner 单实例锁心跳", () => {
    * 不能把新持有者顶掉（否则两边 forever 互抢）。
    */
   it("锁被别的实例接管后，旧持有者的心跳不会顶掉新持有者", async () => {
-    ctx.db.sqlite!.prepare("DELETE FROM idempotency WHERE key = ?").run(LOCK_KEY);
-    ctx.db.sqlite!
-      .prepare("INSERT INTO idempotency (key, response, created_at) VALUES (?,?,?)")
-      .run(LOCK_KEY, "pid-new", Date.now());
+    ctx.repo.releaseJobRunnerLease("pid-new");
+    expect(ctx.repo.acquireJobRunnerLease("pid-new", 120_000)).toBe(true);
 
     const stale = new JobRunner(ctx, { holder: "pid-old", lockHeartbeatMs: 40 });
     (stale as unknown as { lockHeld: boolean }).lockHeld = true;
     try {
       await (stale as unknown as { renewLock: () => Promise<void> }).renewLock();
-      expect(lockRow()!.holder).toBe("pid-new");
+      expect(ctx.repo.getJobRunnerLease()?.holder).toBe("pid-new");
     } finally {
-      ctx.db.sqlite!.prepare("DELETE FROM idempotency WHERE key = ?").run(LOCK_KEY);
+      ctx.repo.releaseJobRunnerLease("pid-new");
     }
   });
 });

@@ -14,10 +14,10 @@ describe("任务取消与僵尸回收", () => {
   let db: Db;
   let repo: Repository;
 
-  const insertJob = async (id: string, status: string, attempts: number, updatedAt: number) => {
+  const insertJob = async (id: string, status: string, attempts: number, updatedAt: number, runToken?: string) => {
     await repo.run(
-      "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
-      [id, "health_check", null, status, attempts, updatedAt, updatedAt],
+      "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at, run_token) VALUES (?,?,?,?,?,?,?,?)",
+      [id, "health_check", null, status, attempts, updatedAt, updatedAt, runToken ?? null],
     );
   };
   const statusOf = async (id: string): Promise<string> =>
@@ -76,14 +76,14 @@ describe("任务取消与僵尸回收", () => {
   /* ---------------- P1-4：cancelling 过渡态 ---------------- */
 
   it("running 任务取消后停在 cancelling，执行体确认前不写 cancelled", async () => {
-    await insertJob("cancel-running", "running", 1, Date.now());
+    await insertJob("cancel-running", "running", 1, Date.now(), "tok-cancel-running");
 
     // running 有执行体在等：只能先落「已要求停手」，终态由执行体在分片边界自己收
     expect(await repo.cancelJob("cancel-running")).toBe("cancelling");
     expect(await statusOf("cancel-running")).toBe("cancelling");
 
     // 心跳必须能看清自己处在过渡态（Runner 靠这个在取消后主动停手）
-    expect(await repo.heartbeatJob("cancel-running")).toBe("cancelling");
+    expect(await repo.heartbeatJob("cancel-running", "tok-cancel-running")).toBe("cancelling");
 
     // 过渡态既不可重试也不可被再次认领：否则就是「假取消 → 两个执行流」。
     // 这里不能用单次 claimNextJob 断言 null —— 同一内存库前面几个用例留下了
@@ -101,35 +101,37 @@ describe("任务取消与僵尸回收", () => {
   });
 
   it("settleCancellingJob 只从 cancelling 收尾（CAS），迟到的收尾覆盖不了别人", async () => {
-    await insertJob("settle-ok", "cancelling", 1, Date.now());
+    await insertJob("settle-ok", "cancelling", 1, Date.now(), "tok-settle-ok");
     await insertJob("settle-running", "running", 1, Date.now());
     await insertJob("settle-done", "done", 1, Date.now());
 
-    expect(await repo.settleCancellingJob("settle-ok", "cancelled", { error: "已取消", durationMs: 12 })).toBe(true);
+    expect(
+      await repo.settleCancellingJob("settle-ok", "cancelled", { error: "已取消", durationMs: 12, runToken: "tok-settle-ok" }),
+    ).toBe(true);
     const row = await rowOf("settle-ok");
     expect(String(row.status)).toBe("cancelled");
     expect(Number(row.duration_ms)).toBe(12);
 
     // 还在跑（没确认停手）或已是终态：都不能被「迟到的收尾」改写
-    expect(await repo.settleCancellingJob("settle-running", "cancelled", {})).toBe(false);
+    expect(await repo.settleCancellingJob("settle-running", "cancelled", { runToken: "tok-settle-ok" })).toBe(false);
     expect(await statusOf("settle-running")).toBe("running");
-    expect(await repo.settleCancellingJob("settle-done", "failed", {})).toBe(false);
+    expect(await repo.settleCancellingJob("settle-done", "failed", { runToken: "tok-settle-ok" })).toBe(false);
     expect(await statusOf("settle-done")).toBe("done");
 
     // 收尾后恢复心跳语义：终态不再续期
-    expect(await repo.heartbeatJob("settle-ok")).toBeNull();
+    expect(await repo.heartbeatJob("settle-ok", "tok-settle-ok")).toBeNull();
   });
 
   it("markJobCancelling 只作用于 running（预算到点的入口）", async () => {
-    await insertJob("mark-running", "running", 1, Date.now());
+    await insertJob("mark-running", "running", 1, Date.now(), "tok-mark-running");
     await insertJob("mark-done", "done", 1, Date.now());
 
-    expect(await repo.markJobCancelling("mark-running", "超出单次预算")).toBe(true);
+    expect(await repo.markJobCancelling("mark-running", "超出单次预算", "tok-mark-running")).toBe(true);
     expect(await statusOf("mark-running")).toBe("cancelling");
     const row = await rowOf("mark-running");
     expect(String(row.error)).toContain("超出单次预算");
 
-    expect(await repo.markJobCancelling("mark-done", "不该写")).toBe(false);
+    expect(await repo.markJobCancelling("mark-done", "不该写", "tok-mark-running")).toBe(false);
     expect(await statusOf("mark-done")).toBe("done");
   });
 

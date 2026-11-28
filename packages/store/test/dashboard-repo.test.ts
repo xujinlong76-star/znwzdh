@@ -128,9 +128,9 @@ describe("Dashboard Repository & Search Extensions", () => {
     expect(retried?.status).toBe("pending");
     expect(retried?.attempts).toBe(0);
 
-    // 模拟任务失败（completeJob 只接受 running，先恢复成执行中）
-    await repo.run("UPDATE jobs SET status = 'running' WHERE id = ?", [jobId]);
-    await repo.completeJob(jobId, "simulated error", { retryAt: null, exhausted: true });
+    // 模拟任务失败（completeJob 只接受 running，先恢复成执行中；run_token 须同步恢复，CAS 要验它）
+    await repo.run("UPDATE jobs SET status = 'running', run_token = ? WHERE id = ?", ["tok-dash-1", jobId]);
+    await repo.completeJob(jobId, "simulated error", { retryAt: null, exhausted: true, runToken: "tok-dash-1" });
     const failedJob = await repo.getJob(jobId);
     expect(failedJob?.status).toBe("failed");
     expect(failedJob?.error).toBe("simulated error");
@@ -141,8 +141,8 @@ describe("Dashboard Repository & Search Extensions", () => {
     expect(retriedAgain?.error).toBeNull();
 
     // 标记完成并测试 prune（先恢复成 running，completeJob 是 running→终态的 CAS）
-    await repo.run("UPDATE jobs SET status = 'running' WHERE id = ?", [jobId]);
-    expect(await repo.completeJob(jobId, null)).toBe(true);
+    await repo.run("UPDATE jobs SET status = 'running', run_token = ? WHERE id = ?", ["tok-dash-1", jobId]);
+    expect(await repo.completeJob(jobId, null, { runToken: "tok-dash-1" })).toBe(true);
     const pruneResult = await repo.pruneJobs(0, ["done"]);
     expect(pruneResult.pruned).toBeGreaterThanOrEqual(1);
     const prunedJob = await repo.getJob(jobId);
@@ -203,9 +203,10 @@ describe("Dashboard Repository & Search Extensions", () => {
     await repo.run("DELETE FROM jobs");
     const id = await repo.enqueueJob("retry_state_test", {});
     expect((await repo.retryJob(id))?.status).toBe("pending");
-    expect((await repo.claimNextJob())?.id).toBe(id);
+    const claimed = await repo.claimNextJob();
+    expect(claimed?.id).toBe(id);
     expect((await repo.retryJob(id))?.status).toBe("running");
-    await repo.completeJob(id, null);
+    await repo.completeJob(id, null, { runToken: claimed!.runToken });
     const done = await repo.retryJob(id);
     expect(done?.status).toBe("done");
   });
@@ -213,17 +214,18 @@ describe("Dashboard Repository & Search Extensions", () => {
   it("heartbeatJob 回报执行态：running 续期成功，取消后仍是 cancelling", async () => {
     await repo.run("DELETE FROM jobs");
     const id = await repo.enqueueJob("heartbeat_test", {});
-    await repo.claimNextJob();
+    const claimed = await repo.claimNextJob();
+    expect(claimed?.id).toBe(id);
     const stale = Date.now() - 10 * 60 * 1000;
     await repo.run("UPDATE jobs SET updated_at = ? WHERE id = ?", [stale, id]);
     // running 上心跳回 "running"：续期成功且状态未变。
-    expect(await repo.heartbeatJob(id)).toBe("running");
+    expect(await repo.heartbeatJob(id, claimed!.runToken)).toBe("running");
     expect((await repo.getJob(id))?.updatedAt).toBeGreaterThan(stale);
 
     // 取消 running 的任务只会停在 cancelling（真 cancelled 要等 Runner 收尾写），
     // 而心跳口径覆盖 cancelling —— 收尾期间 updated_at 必须继续前进，
     // 否则 reaper 会在 handler 还没停手时就把任务重新排队，又造一次并发执行。
     await repo.cancelJob(id);
-    expect(await repo.heartbeatJob(id)).toBe("cancelling");
+    expect(await repo.heartbeatJob(id, claimed!.runToken)).toBe("cancelling");
   });
 });

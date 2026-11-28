@@ -89,6 +89,14 @@ test('小猫挂件遮挡与闲置贴边现状测量（桌面 1920x1080）', asyn
     () => document.querySelector('#xiaomaomao')?.classList.contains('xm-closed') ?? false,
   )
   if (isClosed) {
+    // F1（2026-11-28）：首帧自动收起会把圆标收到视口外，点不到 .xm-tab。先滚到
+    // 200px：y>60 摘 xm-parked（y=200<300 不触发 doDock），等 .45s 收起滑动落定再点。
+    await page.evaluate(() => window.scrollTo({ top: 200, behavior: 'instant' as ScrollBehavior }))
+    await page.waitForFunction(
+      () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-parked'),
+      { timeout: 10_000 },
+    )
+    await page.waitForTimeout(600) // .45s 收起滑动过渡落定
     await page.locator('#xiaomaomao .xm-tab').click({ timeout: 10_000 })
     await page.waitForFunction(
       () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-closed'),

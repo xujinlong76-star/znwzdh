@@ -132,6 +132,15 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
       () => document.querySelector('#xiaomaomao')?.classList.contains('xm-closed') ?? false,
     );
     if (isClosed) {
+      // F1（2026-11-28）：首帧自动收起（syncAutoPark：y<=30 加 xm-closed/xm-parked）
+      // 会把圆标收到视口外，点不到 .xm-tab。先滚到 200px：y>60 摘 xm-parked
+      //（y=200<300 不触发 doDock），等 .45s 收起滑动落定再点。
+      await page.evaluate(() => window.scrollTo({ top: 200, behavior: 'instant' as ScrollBehavior }));
+      await page.waitForFunction(
+        () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-parked'),
+        { timeout: 10_000 },
+      );
+      await page.waitForTimeout(600); // .45s 收起滑动过渡落定
       await page.locator(`${CAT} .xm-tab`).click({ timeout: 10_000 });
       await page.waitForFunction(
         () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-closed'),
@@ -161,6 +170,16 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
     // 刷新后位置还在（localStorage navhub.xiaomaomao.v1 持久化）
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator(CAT)).toBeAttached({ timeout: 60_000 });
+    // F1（2026-11-28）：reload 回到 y=0，首帧自动收起重新收走猫（xm-parked 的
+    // 位移会压过拖动写下的行内 left/top），直接量 after.x 会对不上 dragged.x。
+    // 先滚到 200px 摘掉 xm-parked（同上：y>60 露出、y=200<300 不触发 doDock），
+    // 再等入场动画落定后量几何。
+    await page.evaluate(() => window.scrollTo({ top: 200, behavior: 'instant' as ScrollBehavior }));
+    await page.waitForFunction(
+      () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-parked'),
+      { timeout: 10_000 },
+    );
+    await page.waitForTimeout(600); // .45s 收起滑动过渡落定
     // 入场动画 xmPop（.32s，根节点 scale+translateY）落定后再量几何：
     // 否则量到动画中途的 boundingBox，x/y 会差零点几 px 而误报
     //（2026-11-16 实测：两次失败分别差 0.52px / 1.14px，均刚过 0.5px 阈值）
@@ -180,6 +199,15 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
       () => document.querySelector('#xiaomaomao')?.classList.contains('xm-closed') ?? false,
     );
     if (isClosed) {
+      // F1（2026-11-28）：首帧自动收起（syncAutoPark：y<=30 加 xm-closed/xm-parked）
+      // 会把圆标收到视口外，点不到 .xm-tab。先滚到 200px：y>60 摘 xm-parked
+      //（y=200<300 不触发 doDock），等 .45s 收起滑动落定再点。
+      await page.evaluate(() => window.scrollTo({ top: 200, behavior: 'instant' as ScrollBehavior }));
+      await page.waitForFunction(
+        () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-parked'),
+        { timeout: 10_000 },
+      );
+      await page.waitForTimeout(600); // .45s 收起滑动过渡落定
       await page.locator(`${CAT} .xm-tab`).click({ timeout: 10_000 });
       await page.waitForFunction(
         () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-closed'),
@@ -227,6 +255,15 @@ test.describe('半屏下沉栏遮挡回归（BLOCK 修复）', () => {
       () => document.querySelector('#xiaomaomao')?.classList.contains('xm-closed') ?? false,
     );
     if (isClosed) {
+      // F1（2026-11-28）：首帧自动收起（syncAutoPark：y<=30 加 xm-closed/xm-parked）
+      // 会把圆标收到视口外，点不到 .xm-tab。先滚到 200px：y>60 摘 xm-parked
+      //（y=200<300 不触发 doDock），等 .45s 收起滑动落定再点。
+      await page.evaluate(() => window.scrollTo({ top: 200, behavior: 'instant' as ScrollBehavior }));
+      await page.waitForFunction(
+        () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-parked'),
+        { timeout: 10_000 },
+      );
+      await page.waitForTimeout(600); // .45s 收起滑动过渡落定
       await page.locator(`${CAT} .xm-tab`).click({ timeout: 10_000 });
       await page.waitForFunction(
         () => !document.querySelector('#xiaomaomao')?.classList.contains('xm-closed'),

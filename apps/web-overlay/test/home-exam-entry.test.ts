@@ -118,7 +118,22 @@ describe('nearestExam（最近一场）', () => {
     //「倒计时岛源码守卫」），此处只比对条带文案等于该考试的 firstDayLabel
     expect(strip.label).toBe(EXAMS.find((e) => e.id === 'guokao')!.firstDayLabel)
     const island = read('src/app/exam/exam-countdown.tsx')
-    expect(island).toContain('daysUntil(firstExamDay(exam), now) === 0 && exam.firstDayLabel')
+    expect(island).toContain('firstDayLabelActive(exam, now)')
+  })
+
+  it('U-107：11-28 16:00 后条带与 /exam 国考卡片岛同落各自既有 fallback（2026-11-28 1922 轮）', () => {
+    // 15:59:59 北京时间 = UTC 07:59:59；16:00:00 = UTC 08:00:00。
+    // 条带侧回落「今天国考」；岛侧回落「今天考试」（两者 fallback 用词
+    // 本就不一致，不得强求同字，此处只断各自 fallback）。
+    const before = nearestExamCountdown(Date.UTC(2026, 10, 28, 7, 59, 59))!
+    expect(before.exam.id).toBe('guokao')
+    expect(before.label).toBe('今天国考 · 专业科目 14:00 开考')
+    const after = nearestExamCountdown(Date.UTC(2026, 10, 28, 8, 0, 0))!
+    expect(after.exam.id).toBe('guokao')
+    expect(after.label).toBe('今天国考')
+    const island = read('src/app/exam/exam-countdown.tsx')
+    expect(island).toContain('firstDayLabelActive(exam, now)')
+    expect(island).toContain(": '今天考试'")
   })
 })
 

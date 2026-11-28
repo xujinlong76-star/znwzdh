@@ -197,6 +197,21 @@ describe('C1 国考准考证打印回访卡（0422-W3 §3.4）', () => {
     }
   })
 
+  it('#6b：11-28 16:00 后回访卡回落（2026-11-28 1922 轮）：15:59:59 仍取 firstDayLabel，16:00 起标签为「今天国考」', () => {
+    expect(guokaoReturnCardContent(at('2026-11-28', 15, 59, 59))).toEqual({
+      phase: 'last-call',
+      title: '末班提醒：准考证打印 11 月 29 日 15:00 截止',
+      label: '今天国考 · 专业科目 14:00 开考',
+    })
+    for (const now of [at('2026-11-28', 16, 0), at('2026-11-28', 23, 59, 59)]) {
+      expect(guokaoReturnCardContent(now)).toEqual({
+        phase: 'last-call',
+        title: '末班提醒：准考证打印 11 月 29 日 15:00 截止',
+        label: '今天国考',
+      })
+    }
+  })
+
   it('#8/#9：11-29 last-call，标签「今天笔试」，不出现 0 天/负数', () => {
     for (const now of [at('2026-11-29', 8, 59), at('2026-11-29', 14, 59)]) {
       const content = guokaoReturnCardContent(now)

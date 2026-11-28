@@ -202,6 +202,26 @@ describe('nearestExamCountdown（时钟卡倒计时行）', () => {
     })
   })
 
+  it('11-28 16:00 后条带回落（2026-11-28 1922 轮）：15:59:59 仍取 firstDayLabel，16:00 起回落「今天国考」', () => {
+    // 15:59:59 北京时间 = UTC 07:59:59；16:00:00 = UTC 08:00:00；
+    // 23:59:59 = UTC 15:59:59。档位与天数不变（today / 0 天），只变文案。
+    expect(nearestExamCountdown(Date.UTC(2026, 10, 28, 7, 59, 59))).toMatchObject({
+      days: 0,
+      tier: 'today',
+      label: '今天国考 · 专业科目 14:00 开考',
+    })
+    expect(nearestExamCountdown(Date.UTC(2026, 10, 28, 8, 0, 0))).toMatchObject({
+      days: 0,
+      tier: 'today',
+      label: '今天国考',
+    })
+    expect(nearestExamCountdown(Date.UTC(2026, 10, 28, 15, 59, 59))).toMatchObject({
+      days: 0,
+      tier: 'today',
+      label: '今天国考',
+    })
+  })
+
   it('京考数据按首考日说事：examDateLabel 两日、tagline 提公安专业科目、首考日 12-05', () => {
     expect(jingkao.examDateLabel).toBe('12 月 5–6 日')
     expect(jingkao.tagline).toContain('公安专业科目 12 月 5 日')

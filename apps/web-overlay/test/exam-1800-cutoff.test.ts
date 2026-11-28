@@ -114,11 +114,14 @@ import {
   admissionReminderFor,
   examNodeDeadlineLabel,
   examNodeStatus,
+  firstDayLabelActive,
   guokaoAdmissionPhase,
   isNodeActionable,
+  nearestExamCountdown,
   nextExamNode,
   todayFollowUpNodes,
   todayNodeDeadlineMs,
+  todayNodeTargetMs,
   todayNodes,
 } from '../src/lib/exam-calendar'
 
@@ -1373,5 +1376,200 @@ describe('国考广东考区模拟核验 10:00 时刻门控（post_4985097）', 
     expect(
       examNodeDeadlineLabel(guokao, mockVerify, Date.UTC(2026, 10, 28, 15, 59, 59)),
     ).toBe('已截止')
+  })
+})
+
+describe('国考专业科目笔试 16:00 时刻门控（2026-11-28 1922 轮，异常 (2)）', () => {
+  // 专业科目笔试是 11-28 单日节点（14:00–16:00，部分岗位），PEAK 表目标 16:00。
+  // 时刻常量：北京时间 = UTC + 8，11-28 16:00 CST = Date.UTC(2026, 10, 28, 8, 0, 0)。
+  const proNode = () => guokao.nodes.find((n) => n.label === '专业科目笔试')!
+  /** 2026-11-28 08:00 北京时间（首考日白天） */
+  const NOV_28_0800_CST = Date.UTC(2026, 10, 28, 0, 0, 0)
+  /** 2026-11-28 13:59:59 北京时间 = UTC 05:59:59（开考前 1 秒） */
+  const NOV_28_135959_CST = Date.UTC(2026, 10, 28, 5, 59, 59)
+  /** 2026-11-28 14:00:00 北京时间 = UTC 06:00:00（开考时刻，不翻态） */
+  const NOV_28_140000_CST = Date.UTC(2026, 10, 28, 6, 0, 0)
+  /** 2026-11-28 15:59:59 北京时间 = UTC 07:59:59（边界前 1 秒） */
+  const NOV_28_155959_CST = Date.UTC(2026, 10, 28, 7, 59, 59)
+  /** 2026-11-28 16:00:00 北京时间 = UTC 08:00:00（边界整点） */
+  const NOV_28_160000_CST = Date.UTC(2026, 10, 28, 8, 0, 0)
+  /** 2026-11-28 23:59:59 北京时间 = UTC 15:59:59（截止日深夜） */
+  const NOV_28_235959_CST = Date.UTC(2026, 10, 28, 15, 59, 59)
+  /** 2026-11-29 08:00 北京时间（次日：公共科目日，节点已结束） */
+  const NOV_29_0800_CST = Date.UTC(2026, 10, 29, 0, 0, 0)
+
+  it('节点落库：单日 11-28，detail 写明 14:00–16:00（部分岗位）', () => {
+    const node = proNode()
+    expect(node.startISO).toBe('2026-11-28')
+    expect(node.endISO).toBe('2026-11-28')
+    expect(node.detail).toContain('11 月 28 日 14:00–16:00')
+  })
+
+  it('目标时刻毫秒值：todayNodeDeadlineMs 与 todayNodeTargetMs 均为 11-28 16:00', () => {
+    const byKey = new Map(
+      todayNodes(NOV_28_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    const item = byKey.get('guokao:专业科目笔试')!
+    expect(item.kind).toBe('today')
+    expect(todayNodeDeadlineMs(item)).toBe(Date.UTC(2026, 10, 28, 8, 0, 0))
+    expect(todayNodeTargetMs(item, NOV_28_0800_CST)).toBe(Date.UTC(2026, 10, 28, 8, 0, 0))
+  })
+
+  it('边界前三点仍「今天」：13:59:59 / 14:00 / 15:59:59 helper 为 null，组合文案「今天」', () => {
+    for (const now of [NOV_28_135959_CST, NOV_28_140000_CST, NOV_28_155959_CST]) {
+      expect(examNodeDeadlineLabel(guokao, proNode(), now)).toBeNull()
+      expect(nodeDeadlineDisplayLabel(guokao, proNode(), now)).toBe('今天')
+      expect(examNodeStatus(proNode(), now)).toBe('today')
+    }
+  })
+
+  it('边界整点已截止：11-28 16:00:00 helper 返回「已截止」，组合文案「已截止」', () => {
+    expect(examNodeDeadlineLabel(guokao, proNode(), NOV_28_160000_CST)).toBe('已截止')
+    expect(nodeDeadlineDisplayLabel(guokao, proNode(), NOV_28_160000_CST)).toBe('已截止')
+  })
+
+  it('截止日深夜已截止：11-28 23:59:59 helper 返回「已截止」，不等到次日 0 点才翻', () => {
+    expect(examNodeDeadlineLabel(guokao, proNode(), NOV_28_235959_CST)).toBe('已截止')
+    expect(nodeDeadlineDisplayLabel(guokao, proNode(), NOV_28_235959_CST)).toBe('已截止')
+  })
+
+  it('时刻门控只在渲染层：16:00 起 examNodeStatus 仍为 today（日期口径不动）', () => {
+    expect(examNodeStatus(proNode(), NOV_28_160000_CST)).toBe('today')
+    expect(examNodeStatus(proNode(), NOV_28_235959_CST)).toBe('today')
+    expect(examNodeDeadlineLabel(guokao, proNode(), NOV_28_155959_CST)).toBeNull()
+  })
+
+  it('次日已结束：11-29 08:00 节点状态翻 done，helper 回 null（不再是「已截止」）', () => {
+    expect(examNodeStatus(proNode(), NOV_29_0800_CST)).toBe('done')
+    expect(examNodeDeadlineLabel(guokao, proNode(), NOV_29_0800_CST)).toBeNull()
+    expect(nodeDeadlineDisplayLabel(guokao, proNode(), NOV_29_0800_CST)).toBe('已结束')
+  })
+
+  it('今日行入选口径不动：11-28 今日行仍含专业科目笔试（只变排序键与 chip）', () => {
+    const key = (t: { exam: ExamInfo; node: ExamNode }) => `${t.exam.id}:${t.node.label}`
+    expect(todayNodes(NOV_28_0800_CST).map(key)).toContain('guokao:专业科目笔试')
+    expect(todayNodes(NOV_28_160000_CST).map(key)).toContain('guokao:专业科目笔试')
+    expect(todayNodes(NOV_29_0800_CST).map(key)).not.toContain('guokao:专业科目笔试')
+  })
+
+  it('firstDayLabelActive：15:59:59 为 true、16:00:00 起为 false、23:59:59 仍为 false', () => {
+    expect(firstDayLabelActive(guokao, NOV_28_135959_CST)).toBe(true)
+    expect(firstDayLabelActive(guokao, NOV_28_140000_CST)).toBe(true)
+    expect(firstDayLabelActive(guokao, NOV_28_155959_CST)).toBe(true)
+    expect(firstDayLabelActive(guokao, NOV_28_160000_CST)).toBe(false)
+    expect(firstDayLabelActive(guokao, NOV_28_235959_CST)).toBe(false)
+  })
+
+  it('条带回落：16:00 前 nearestExamCountdown 取 firstDayLabel 全句，16:00 后回落「今天国考」', () => {
+    expect(nearestExamCountdown(NOV_28_0800_CST)).toMatchObject({
+      exam: expect.objectContaining({ id: 'guokao' }),
+      days: 0,
+      tier: 'today',
+      label: '今天国考 · 专业科目 14:00 开考',
+    })
+    expect(nearestExamCountdown(NOV_28_155959_CST)).toMatchObject({
+      days: 0,
+      tier: 'today',
+      label: '今天国考 · 专业科目 14:00 开考',
+    })
+    expect(nearestExamCountdown(NOV_28_160000_CST)).toMatchObject({
+      days: 0,
+      tier: 'today',
+      label: '今天国考',
+    })
+    expect(nearestExamCountdown(NOV_28_235959_CST)).toMatchObject({
+      days: 0,
+      tier: 'today',
+      label: '今天国考',
+    })
+    // 11-29 公共科目日：days -1，条带仍是「今天国考」（与改动前一致）
+    expect(nearestExamCountdown(NOV_29_0800_CST)).toMatchObject({
+      days: -1,
+      tier: 'today',
+      label: '今天国考',
+    })
+  })
+})
+
+describe('京考公安专业科目笔试 16:00 时刻门控（2026-11-28 1922 轮，异常 (2)）', () => {
+  // 京考公安专业科目笔试是 12-05 单日节点（14:00–16:00），PEAK 表目标 16:00。
+  const proNode = () => jingkao.nodes.find((n) => n.label === '公安专业科目笔试')!
+  /** 2026-12-05 15:59:59 北京时间 = UTC 07:59:59（边界前 1 秒） */
+  const DEC_05_155959_CST = Date.UTC(2026, 11, 5, 7, 59, 59)
+  /** 2026-12-05 16:00:00 北京时间 = UTC 08:00:00（边界整点） */
+  const DEC_05_160000_CST = Date.UTC(2026, 11, 5, 8, 0, 0)
+  /** 2026-12-05 23:59:59 北京时间 = UTC 15:59:59（截止日深夜） */
+  const DEC_05_235959_CST = Date.UTC(2026, 11, 5, 15, 59, 59)
+  /** 2026-12-06 08:00 北京时间（次日：公共科目日，节点已结束） */
+  const DEC_06_0800_CST = Date.UTC(2026, 11, 6, 0, 0, 0)
+
+  it('节点落库：单日 12-05，detail 写明 14:00–16:00', () => {
+    const node = proNode()
+    expect(node.startISO).toBe('2026-12-05')
+    expect(node.endISO).toBe('2026-12-05')
+    expect(node.detail).toContain('12 月 5 日 14:00–16:00')
+  })
+
+  it('目标时刻毫秒值：todayNodeDeadlineMs 为 12-05 16:00', () => {
+    const byKey = new Map(
+      todayNodes(DEC_05_0800_CST).map((t) => [`${t.exam.id}:${t.node.label}`, t] as const),
+    )
+    const item = byKey.get('jingkao:公安专业科目笔试')!
+    expect(item.kind).toBe('today')
+    expect(todayNodeDeadlineMs(item)).toBe(Date.UTC(2026, 11, 5, 8, 0, 0))
+    expect(todayNodeTargetMs(item, DEC_05_0800_CST)).toBe(Date.UTC(2026, 11, 5, 8, 0, 0))
+  })
+
+  it('边界：15:59:59 仍「今天」，16:00:00 起「已截止」，23:59:59 仍「已截止」', () => {
+    expect(examNodeDeadlineLabel(jingkao, proNode(), DEC_05_155959_CST)).toBeNull()
+    expect(nodeDeadlineDisplayLabel(jingkao, proNode(), DEC_05_155959_CST)).toBe('今天')
+    expect(examNodeDeadlineLabel(jingkao, proNode(), DEC_05_160000_CST)).toBe('已截止')
+    expect(nodeDeadlineDisplayLabel(jingkao, proNode(), DEC_05_160000_CST)).toBe('已截止')
+    expect(examNodeDeadlineLabel(jingkao, proNode(), DEC_05_235959_CST)).toBe('已截止')
+  })
+
+  it('时刻门控只在渲染层：16:00 起 examNodeStatus 仍为 today；次日翻 done', () => {
+    expect(examNodeStatus(proNode(), DEC_05_160000_CST)).toBe('today')
+    expect(examNodeStatus(proNode(), DEC_05_235959_CST)).toBe('today')
+    expect(examNodeStatus(proNode(), DEC_06_0800_CST)).toBe('done')
+    expect(examNodeDeadlineLabel(jingkao, proNode(), DEC_06_0800_CST)).toBeNull()
+  })
+
+  it('firstDayLabelActive：15:59:59 为 true、16:00:00 起为 false', () => {
+    expect(firstDayLabelActive(jingkao, DEC_05_155959_CST)).toBe(true)
+    expect(firstDayLabelActive(jingkao, DEC_05_160000_CST)).toBe(false)
+    expect(firstDayLabelActive(jingkao, DEC_05_235959_CST)).toBe(false)
+  })
+})
+
+describe('firstDayLabelActive 向后兼容（无表项 → true）', () => {
+  it('首考日单日节点无 PEAK 表项：军队文职 12-13 全天 true', () => {
+    const jundui = EXAMS.find((e) => e.id === 'jundui-wenzhi')!
+    expect(jundui.firstDayLabel).toBeUndefined()
+    expect(firstDayLabelActive(jundui, Date.UTC(2026, 11, 13, 0, 0, 0))).toBe(true)
+    expect(firstDayLabelActive(jundui, Date.UTC(2026, 11, 13, 8, 0, 0))).toBe(true)
+    expect(firstDayLabelActive(jundui, Date.UTC(2026, 11, 13, 15, 59, 59))).toBe(true)
+  })
+
+  it('无首考日单日节点：合成考试（nodes 为空）恒为 true', () => {
+    const synthetic: ExamInfo = {
+      id: 'exam-x',
+      name: '合成考试 X',
+      shortName: 'X',
+      tagline: '',
+      examDateLabel: '12 月 1 日',
+      startISO: '2026-12-01',
+      endISO: '2026-12-01',
+      firstExamDayISO: '2026-12-01',
+      nodes: [],
+    }
+    expect(firstDayLabelActive(synthetic, Date.UTC(2026, 11, 1, 0, 0, 0))).toBe(true)
+  })
+
+  it('多日节点不命中：广东模拟核验（11-27→11-28）不影响国考首日门控——11-28 10:00 后 helper 仍由专业科目笔试 16:00 决定', () => {
+    // 10:00 是广东模拟核验的 PEAK 时刻，但它不是首考日单日节点；
+    // firstDayLabelActive 在 11-28 10:00 仍为 true（专业科目 16:00 未到）
+    expect(firstDayLabelActive(guokao, Date.UTC(2026, 10, 28, 2, 0, 0))).toBe(true)
+    expect(firstDayLabelActive(guokao, Date.UTC(2026, 10, 28, 2, 0, 1))).toBe(true)
   })
 })

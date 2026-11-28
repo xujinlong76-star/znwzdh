@@ -31,8 +31,10 @@ import {
   JUNDUANWENZHI_PORTAL_URL,
   countdownParts,
   daysUntil,
+  examNodeDeadlineLabel,
   examNodeStatus,
   examStatus,
+  firstDayLabelActive,
   firstExamDay,
 } from '../src/lib/exam-calendar'
 
@@ -124,6 +126,21 @@ describe('U-107 首日文案（firstDayLabel）', () => {
     // today 分支取首日文案的门控：距首考日 0 天
     expect(daysUntil(firstExamDay(guokao), NOV_28_0800_CST)).toBe(0)
     expect(guokao.firstDayLabel).toBe('今天国考 · 专业科目 14:00 开考')
+  })
+
+  it('11-28 16:00 后首日文案回落（2026-11-28 1922 轮）：节点行「已截止」，firstDayLabelActive 为 false', () => {
+    const guokao = EXAMS.find((e) => e.id === 'guokao')!
+    const pro = guokao.nodes.find((n) => n.label === '专业科目笔试')!
+    // 15:59:59：节点行仍「今天」，首日文案仍有效
+    expect(examNodeDeadlineLabel(guokao, pro, Date.UTC(2026, 10, 28, 7, 59, 59))).toBeNull()
+    expect(firstDayLabelActive(guokao, Date.UTC(2026, 10, 28, 7, 59, 59))).toBe(true)
+    // 16:00:00：节点行翻「已截止」，首日文案失效（岛与条带回落既有 fallback）
+    expect(examNodeDeadlineLabel(guokao, pro, Date.UTC(2026, 10, 28, 8, 0, 0))).toBe('已截止')
+    expect(firstDayLabelActive(guokao, Date.UTC(2026, 10, 28, 8, 0, 0))).toBe(false)
+    // 23:59:59 仍「已截止」；状态机仍是日期口径（today），次日才翻 done
+    expect(examNodeDeadlineLabel(guokao, pro, Date.UTC(2026, 10, 28, 15, 59, 59))).toBe('已截止')
+    expect(examNodeStatus(pro, Date.UTC(2026, 10, 28, 8, 0, 0))).toBe('today')
+    expect(examNodeStatus(pro, NOV_29_0800_CST)).toBe('done')
   })
 
   it('12-05 京考首考日：today 分支取 firstDayLabel，精确文案', () => {
@@ -637,9 +654,13 @@ describe('倒计时岛源码守卫', () => {
   })
 
   it('U-107：today 分支首考日当天用 firstDayLabel、次日回落「今天考试」，ongoing 分支不动', () => {
-    // today 分支：距首考日 === 0 天才取 firstDayLabel，否则回落「今天考试」；
+    // today 分支：距首考日 === 0 天且首考日单日节点目标时刻未到才取
+    // firstDayLabel（2026-11-28 1922 轮加 firstDayLabelActive 门控，
+    // 国考 11-28 16:00 后回落「今天考试」），否则回落「今天考试」；
     // 首日文案只在 today 分支出现两次（门控 + 取值），ongoing 分支不含它
-    expect(island).toContain('daysUntil(firstExamDay(exam), now) === 0 && exam.firstDayLabel')
+    expect(island).toContain('daysUntil(firstExamDay(exam), now) === 0 &&')
+    expect(island).toContain('exam.firstDayLabel &&')
+    expect(island).toContain('firstDayLabelActive(exam, now)')
     expect(island).toContain('? exam.firstDayLabel')
     expect(island).toContain(": '今天考试'")
     expect(island.match(/exam\.firstDayLabel/g)?.length).toBe(2)

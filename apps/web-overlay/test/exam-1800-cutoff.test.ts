@@ -1375,3 +1375,78 @@ describe('国考广东考区模拟核验 10:00 时刻门控（post_4985097）', 
     ).toBe('已截止')
   })
 })
+
+/**
+ * 广东自考 2027-01 四节点时刻门控（2026-11-28 PEAK 修复；22:22 轮根因）：
+ * PEAK_DAY_DEADLINE_MINUTES 缺 guangdong-zikao-2027-01 四条，examNodeStatus
+ * 自然日口径致 11-27 当天两节点全天「进行中」，与 12:00/17:00 真实截止无关；
+ * 补表即翻文案，不改节点、不改状态机。时刻来源：节点 detail 原文与
+ * guangdongZikaoSignupPhase 内同一时刻互为印证（预报名 12:00、正式报名
+ * 17:00；考生报考 12-04 17:00、网上缴费 12-05 17:00）。
+ * 目标时刻（北京时间→UTC）：11-27 12:00 = Date.UTC(2026, 10, 27, 4, 0, 0)；
+ * 11-27 17:00 = Date.UTC(2026, 10, 27, 9, 0, 0)；12-04 17:00 =
+ * Date.UTC(2026, 11, 4, 9, 0, 0)；12-05 17:00 = Date.UTC(2026, 11, 5, 9, 0, 0)。
+ */
+describe('广东自考 2027-01 四节点时刻门控（PEAK 补表）', () => {
+  const gz = EXAMS.find((e) => e.id === 'guangdong-zikao-2027-01')!
+  const preSignup = gz.nodes.find((n) => n.label === '新生预报名')!
+  const signup = gz.nodes.find((n) => n.label === '正式报名')!
+  const apply = gz.nodes.find((n) => n.label === '考生报考')!
+  const pay = gz.nodes.find((n) => n.label === '网上缴费')!
+
+  it('节点窗口与 detail 时刻：预报名 11-24→11-27 12:00、正式报名 11-24→11-27 17:00、考生报考 12-01→12-04 17:00、网上缴费 12-02→12-05 17:00', () => {
+    expect(preSignup.startISO).toBe('2026-11-24')
+    expect(preSignup.endISO).toBe('2026-11-27')
+    expect(preSignup.detail).toContain('11 月 27 日 12:00')
+    expect(signup.startISO).toBe('2026-11-24')
+    expect(signup.endISO).toBe('2026-11-27')
+    expect(signup.detail).toContain('11 月 27 日 17:00')
+    expect(apply.startISO).toBe('2026-12-01')
+    expect(apply.endISO).toBe('2026-12-04')
+    expect(apply.detail).toContain('12 月 4 日 17:00')
+    expect(pay.startISO).toBe('2026-12-02')
+    expect(pay.endISO).toBe('2026-12-05')
+    expect(pay.detail).toContain('12 月 5 日 17:00')
+  })
+
+  it('PEAK 表目标时刻为四节点各自截止时刻', () => {
+    expect(todayNodeDeadlineMs({ exam: gz, node: preSignup, kind: 'endsToday' })).toBe(
+      Date.UTC(2026, 10, 27, 4, 0, 0),
+    )
+    expect(todayNodeDeadlineMs({ exam: gz, node: signup, kind: 'endsToday' })).toBe(
+      Date.UTC(2026, 10, 27, 9, 0, 0),
+    )
+    expect(todayNodeDeadlineMs({ exam: gz, node: apply, kind: 'endsToday' })).toBe(
+      Date.UTC(2026, 11, 4, 9, 0, 0),
+    )
+    expect(todayNodeDeadlineMs({ exam: gz, node: pay, kind: 'endsToday' })).toBe(
+      Date.UTC(2026, 11, 5, 9, 0, 0),
+    )
+  })
+
+  it('边界前 1 秒仍进行中：四节点截止前 1 秒 helper 均为 null', () => {
+    expect(examNodeDeadlineLabel(gz, preSignup, Date.UTC(2026, 10, 27, 3, 59, 59))).toBeNull()
+    expect(examNodeDeadlineLabel(gz, signup, Date.UTC(2026, 10, 27, 8, 59, 59))).toBeNull()
+    expect(examNodeDeadlineLabel(gz, apply, Date.UTC(2026, 11, 4, 8, 59, 59))).toBeNull()
+    expect(examNodeDeadlineLabel(gz, pay, Date.UTC(2026, 11, 5, 8, 59, 59))).toBeNull()
+  })
+
+  it('边界整点已截止：四节点截止整点 helper 均返回「已截止」', () => {
+    expect(examNodeDeadlineLabel(gz, preSignup, Date.UTC(2026, 10, 27, 4, 0, 0))).toBe('已截止')
+    expect(examNodeDeadlineLabel(gz, signup, Date.UTC(2026, 10, 27, 9, 0, 0))).toBe('已截止')
+    expect(examNodeDeadlineLabel(gz, apply, Date.UTC(2026, 11, 4, 9, 0, 0))).toBe('已截止')
+    expect(examNodeDeadlineLabel(gz, pay, Date.UTC(2026, 11, 5, 9, 0, 0))).toBe('已截止')
+  })
+
+  it('截止日深夜已截止：11-27 23:59:59 两节点均为「已截止」，不等到次日 0 点才翻', () => {
+    expect(examNodeDeadlineLabel(gz, preSignup, Date.UTC(2026, 10, 27, 15, 59, 59))).toBe('已截止')
+    expect(examNodeDeadlineLabel(gz, signup, Date.UTC(2026, 10, 27, 15, 59, 59))).toBe('已截止')
+  })
+
+  it('回归钉：截止整点 examNodeStatus 仍为 active（日期口径不变，文案由渲染层翻）', () => {
+    expect(examNodeStatus(preSignup, Date.UTC(2026, 10, 27, 4, 0, 0))).toBe('active')
+    expect(examNodeStatus(signup, Date.UTC(2026, 10, 27, 9, 0, 0))).toBe('active')
+    expect(nodeDeadlineDisplayLabel(gz, preSignup, Date.UTC(2026, 10, 27, 4, 0, 0))).toBe('已截止')
+    expect(nodeDeadlineDisplayLabel(gz, signup, Date.UTC(2026, 10, 27, 9, 0, 0))).toBe('已截止')
+  })
+})

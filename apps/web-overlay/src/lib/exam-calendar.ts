@@ -1273,6 +1273,14 @@ const PEAK_DAY_DEADLINE_MINUTES: Readonly<Record<string, { date: string; minutes
   'shengkao:江苏准考证打印': { date: '2026-12-06', minutes: 15 * 60 },
   'jundui-wenzhi:准考证打印': { date: '2026-12-13', minutes: 14 * 60 },
   'guokao:广东考区模拟核验': { date: '2026-11-28', minutes: 10 * 60 },
+  // 广东自考 2027-01（2026-11-28 PEAK 修复；22:22 轮根因）：11-27 两节点
+  // 只给日期无时刻，examNodeStatus 自然日口径致截止当天全天「进行中」；
+  // 时刻只进 PEAK 表（节点 detail 原文与 guangdongZikaoSignupPhase 互证）。
+  'guangdong-zikao-2027-01:新生预报名': { date: '2026-11-27', minutes: 12 * 60 },
+  'guangdong-zikao-2027-01:正式报名': { date: '2026-11-27', minutes: 17 * 60 },
+  // 同根因预防：12-04 考生报考、12-05 网上缴费一周内同款复发，顺手入表。
+  'guangdong-zikao-2027-01:考生报考': { date: '2026-12-04', minutes: 17 * 60 },
+  'guangdong-zikao-2027-01:网上缴费': { date: '2026-12-05', minutes: 17 * 60 },
 }
 
 /** 表内节点的目标时刻（UTC 毫秒数）；表外或节点日期不覆盖目标日期的返回 undefined */

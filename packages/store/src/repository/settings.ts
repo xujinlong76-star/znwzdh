@@ -26,6 +26,19 @@ export type HistoryRetentionDays = 30 | 90 | 180 | 365;
 /** 主题偏好：null = 未设置（跟随全站默认/系统），与 next-themes 的用户选择互通 */
 export type ThemePreference = "light" | "dark" | "system" | null;
 
+export type TemperatureUnit = "celsius" | "fahrenheit";
+
+/** 天气城市偏好：/weather 选定的城市（id 为内置 key 或搜索不透明 id；坐标只用于过期后重搜匹配） */
+export interface WeatherCityPreference {
+  id: string;
+  name: string;
+  region: string;
+  country: string;
+  timezone: string;
+  latitude: number;
+  longitude: number;
+}
+
 export interface ExtendedUserPreferences {
   defaultSearchEngine: SearchEngineId;
   openLinksInNewTab: boolean;
@@ -41,6 +54,10 @@ export interface ExtendedUserPreferences {
   themePreference: ThemePreference;
   /** 账号级「首页隐藏模块」键名列表（与前端 FEATURE_KEYS 同名；个人优先于全站开关） */
   hiddenHomeModules: string[];
+  /** 账号级天气城市偏好（跨设备）：null = 未设置过（默认上海） */
+  weatherCity: WeatherCityPreference | null;
+  /** 账号级温度单位偏好（跨设备；缺省 °C，与 /weather 页和天气挂件同源） */
+  tempUnit: TemperatureUnit;
 }
 
 export interface UserSettingsRecord extends ExtendedUserPreferences {
@@ -65,6 +82,8 @@ export const DEFAULT_EXTENDED_PREFERENCES: ExtendedUserPreferences = {
   historyRetentionDays: 180,
   themePreference: null,
   hiddenHomeModules: [],
+  weatherCity: null,
+  tempUnit: "celsius",
 };
 
 const VALID_ENGINES = new Set<SearchEngineId>(["internal", "google", "baidu", "bing", "sogou", "duckduckgo", "github", "perplexity"]);
@@ -132,6 +151,31 @@ export function parseExtendedPreferences(raw: unknown): ExtendedUserPreferences 
     hiddenHomeModules: Array.isArray(parsed.hiddenHomeModules)
       ? [...new Set(parsed.hiddenHomeModules.filter((v): v is string => typeof v === "string" && v.length <= 32))].slice(0, 8)
       : [],
+    weatherCity: parseWeatherCityPreference(parsed.weatherCity),
+    tempUnit: parsed.tempUnit === "fahrenheit" ? "fahrenheit" : "celsius",
+  };
+}
+
+/** 天气城市偏好只做形状收口：坏结构归 null（默认上海），不抛错、不猜城市 */
+function parseWeatherCityPreference(raw: unknown): WeatherCityPreference | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const id = typeof r.id === "string" ? r.id.trim() : "";
+  const name = typeof r.name === "string" ? r.name.trim() : "";
+  const timezone = typeof r.timezone === "string" ? r.timezone.trim() : "";
+  const latitude = typeof r.latitude === "number" ? r.latitude : Number.NaN;
+  const longitude = typeof r.longitude === "number" ? r.longitude : Number.NaN;
+  if (!id || !name || !timezone) return null;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  return {
+    id,
+    name,
+    region: typeof r.region === "string" ? r.region : "",
+    country: typeof r.country === "string" ? r.country : "",
+    timezone,
+    latitude,
+    longitude,
   };
 }
 
@@ -214,6 +258,9 @@ export async function updateUserSettings(
     // themePreference 允许显式写 null（清除偏好），故用 !== undefined 区分「没动」与「清掉」
     themePreference: patch.themePreference !== undefined ? patch.themePreference : current.themePreference,
     hiddenHomeModules: patch.hiddenHomeModules ?? current.hiddenHomeModules,
+    // weatherCity 同理允许显式写 null（清除后回默认上海）
+    weatherCity: patch.weatherCity !== undefined ? patch.weatherCity : current.weatherCity,
+    tempUnit: patch.tempUnit ?? current.tempUnit,
   });
 
   const next: UserSettingsRecord = {

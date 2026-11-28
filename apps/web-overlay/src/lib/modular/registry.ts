@@ -236,7 +236,7 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition> = {
     type: 'weather-clock',
     title: '实时天气与环境气象',
     description:
-      '由服务端 /api/weather 代取 Open-Meteo 的实况气温、体感、湿度、风力与近三日预报，空气指数单独取自空气质量上游；取不到时明确报错或标注旧观测，不用写死的示例温度冒充实时。',
+      '由服务端 /api/weather 代取 Open-Meteo 的实况气温、体感、湿度、风力与 7 日预报，空气指数单独取自空气质量上游；取不到时明确报错或标注旧观测，不用写死的示例温度冒充实时。',
     category: 'efficiency',
     icon: 'CloudSun',
     defaultColSpan: 4,

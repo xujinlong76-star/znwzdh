@@ -7,8 +7,11 @@
  * 注册表标题却叫「实时天气」。用户据此决定穿什么出门，假数据比没数据更糟。
  * 现在数据走服务端 /api/weather 代取 Open-Meteo，取不到就明确失败并说明原因。
  *
- * widget 只能读 config、不能自己落盘：卡上的单位切换是本卡临时状态，因此带「临时」标记，
- * 永久设置要走卡片齿轮里的「温度单位」。
+ * 温度单位与 /weather 页同源：偏好 tempUnit（本机快照 + 账号同步）是唯一来源，
+ * 挂件挂载时读它；卡片齿轮里的「温度单位」（config.unit）是旧入口，挂载时采纳
+ * 一次写回偏好（采纳水位见 CONFIG_UNIT_ADOPTED_KEY），不再另存一份单位值。
+ * 卡上的单位切换仍是本卡临时状态（unitOverride），因此带「临时」标记；
+ * 要长期生效，到 /weather 页切换，或点卡片齿轮里的「温度单位」。
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
@@ -26,12 +29,16 @@ import {
   Wind,
 } from 'lucide-react'
 
+import { isLoggedIn } from '@/lib/identity'
+import { saveSettingsPatchToCloud } from '@/lib/me-settings-save'
+import { readLocalUserSettings, writeLocalUserSettings } from '@/lib/user-settings'
 import {
   WEATHER_CITIES,
   ageLabel,
   aqiLevel,
   describeWeatherCode,
   formatTemp,
+  hourLabel,
   normalizeUnit,
   observedAtLabel,
   resolveCityKey,
@@ -80,12 +87,37 @@ function tempOrDash(value: number | null | undefined, unit: WeatherUnit): string
   return formatTemp(typeof value === 'number' ? value : null, unit)
 }
 
+/**
+ * 齿轮采纳水位：记下上次已采纳进共享偏好的 config.unit 值。
+ * 齿轮只在用户显式改过单位时才写 config.unit（配置弹窗不物化默认值），
+ * 但采纳过一次后它就成了旧值：页面切过单位后，挂件再挂载不能拿它把偏好
+ * 顶回去 —— 只有与水位不同的新值（即用户刚在齿轮里改过）才再采纳一次。
+ */
+const CONFIG_UNIT_ADOPTED_KEY = 'navhub_weather_unit_config_adopted_v1'
+
 export function WeatherWidget({ config }: WeatherWidgetProps) {
   const resolved = resolveCityKey(config?.city)
   const city = WEATHER_CITIES[resolved.key]!
-  const configuredUnit = normalizeUnit(config?.unit)
+  // 单一来源：温度单位偏好 tempUnit（本机快照 + 账号同步），与 /weather 页同源。
+  // 页面切换后写偏好，挂件下次打开即读新值；刷新后保持，缺省 °C。
+  const [prefUnit, setPrefUnit] = useState<WeatherUnit>(() => readLocalUserSettings().tempUnit)
   const [unitOverride, setUnitOverride] = useState<WeatherUnit | null>(null)
-  const unit = unitOverride ?? configuredUnit
+  const unit = unitOverride ?? prefUnit
+
+  function persistTempUnit(next: WeatherUnit) {
+    setPrefUnit(next)
+    try {
+      writeLocalUserSettings({ tempUnit: next })
+    } catch {
+      // 本机写失败不阻断显示：本次仍用新单位
+    }
+    if (isLoggedIn()) {
+      // 云端同步尽力而为：失败时本机仍生效，下次改单位再同步
+      void saveSettingsPatchToCloud({ tempUnit: next }).catch(() => {
+        /* 云端同步是尽力而为：失败时本机偏好仍生效。 */
+      })
+    }
+  }
 
   const [state, setState] = useState<State>({ kind: 'loading' })
   const [refreshing, setRefreshing] = useState(false)
@@ -135,6 +167,42 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
     return () => abortRef.current?.abort()
   }, [resolved.key, load])
 
+  // 齿轮 → 偏好：config.unit 与水位不同时，说明用户刚在齿轮里改过单位，
+  // 采纳一次写回共享偏好，/weather 页下次打开即同步；与水位相同时是旧值，
+  // 不采纳（页面切过的单位不会被顶回去）。
+  useEffect(() => {
+    const raw = config?.unit
+    if (raw !== 'celsius' && raw !== 'fahrenheit') return
+    let adopted: string | null = null
+    try {
+      adopted = window.localStorage.getItem(CONFIG_UNIT_ADOPTED_KEY)
+    } catch {
+      // 读不到水位就当没采纳过：最坏多采纳一次，与偏好同值时无副作用
+    }
+    if (adopted === raw) return
+    try {
+      window.localStorage.setItem(CONFIG_UNIT_ADOPTED_KEY, raw)
+    } catch {
+      // 水位写失败不阻断：下次挂载可能重复采纳，同值时无副作用
+    }
+    if (readLocalUserSettings().tempUnit !== raw) {
+      persistTempUnit(raw)
+    }
+    // 只在挂载时跑一次：后续变化由水位键去重
+  }, [])
+
+  // 同设备另一处改了偏好（/weather 页切换、另一张卡采纳）时即时跟随，
+  // 不用等下次挂载。writeLocalUserSettings 会发 navhub_settings_changed。
+  useEffect(() => {
+    const onSettings = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { tempUnit?: unknown } | undefined
+      if (detail?.tempUnit === undefined) return
+      setPrefUnit(normalizeUnit(detail.tempUnit))
+    }
+    window.addEventListener('navhub_settings_changed', onSettings)
+    return () => window.removeEventListener('navhub_settings_changed', onSettings)
+  }, [])
+
   const payload = state.kind === 'ready' ? state.payload : null
   const current = payload?.current ?? null
   const days = payload?.days ?? []
@@ -149,7 +217,13 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
       <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground min-w-0">
           <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-          <span className="truncate">{city.name}</span>
+          <a
+            href={`/weather?city=${encodeURIComponent(resolved.key)}`}
+            className="truncate hover:underline"
+            title="打开天气详情页"
+          >
+            {city.name}
+          </a>
           <span className="text-xs text-muted-foreground font-normal shrink-0">({city.region})</span>
           {payload?.stale && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-normal shrink-0">
@@ -170,7 +244,7 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
           <button
             onClick={() => setUnitOverride(unit === 'celsius' ? 'fahrenheit' : 'celsius')}
             className="text-xs font-mono px-2 py-0.5 rounded-full bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40 transition-colors"
-            title="仅本卡临时切换显示单位；永久设置请点卡片齿轮里的「温度单位」"
+            title="仅本卡临时切换显示单位；永久设置请到天气页切换，或点卡片齿轮里的「温度单位」"
           >
             {unit === 'celsius' ? '切换至 °F' : '切换至 °C'}
           </button>
@@ -267,9 +341,33 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
             </div>
           </div>
 
-          {/* 近三日趋势胶囊（含今天） */}
-          <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-border/40">
-            {days.slice(0, 3).map((d, idx) => {
+          {/* 未来 6 小时迷你条：点进 /weather 看完整 24 小时 */}
+          {payload?.hourly && payload.hourly.length > 0 && (
+            <div className="flex gap-1.5 pt-1 border-t border-border/40 overflow-x-auto">
+              {payload.hourly.slice(0, 6).map((h) => {
+                const hc = describeWeatherCode(h.code)
+                return (
+                  <a
+                    key={h.time}
+                    href={`/weather?city=${encodeURIComponent(resolved.key)}`}
+                    className="flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg bg-muted/30 border border-border/30 text-[10px] shrink-0"
+                    title={`${h.time} · ${hc.label}`}
+                  >
+                    <span className="text-muted-foreground font-mono">{hourLabel(h.time)}</span>
+                    <WeatherGlyph kind={hc.kind} className="w-3 h-3" />
+                    <span className="font-mono font-medium text-foreground">{tempOrDash(h.tempC, unit)}</span>
+                    <span className="text-sky-600 dark:text-sky-400 font-mono">
+                      {h.precipProb === null ? '—' : `${Math.round(h.precipProb)}%`}
+                    </span>
+                  </a>
+                )
+              })}
+            </div>
+          )}
+
+          {/* 近四日趋势胶囊（含今天）；完整 7 日在 /weather */}
+          <div className="grid grid-cols-4 gap-1.5 pt-1 border-t border-border/40">
+            {days.slice(0, 4).map((d, idx) => {
               const dc = describeWeatherCode(d.code)
               return (
                 <div
@@ -277,7 +375,7 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
                   className="flex items-center justify-between px-2 py-1 rounded-lg bg-muted/30 border border-border/30 text-xs"
                   title={`${d.date || '日期未知'} · ${dc.label}`}
                 >
-                  <span className="text-muted-foreground">{d.label}</span>
+                  <span className="text-muted-foreground">{idx < 3 ? d.label : d.date ? d.date.slice(5) : d.label}</span>
                   <div className="flex items-center gap-1 font-mono font-medium">
                     <WeatherGlyph kind={dc.kind} className="w-2.5 h-2.5" />
                     <span>{tempOrDash(d.highC, unit)}</span>
@@ -287,8 +385,16 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
               )
             })}
             {days.length === 0 && (
-              <div className="col-span-3 text-xs text-muted-foreground text-center py-1">上游未返回预报数据</div>
+              <div className="col-span-4 text-xs text-muted-foreground text-center py-1">上游未返回预报数据</div>
             )}
+          </div>
+          <div className="text-right -mt-1">
+            <a
+              href={`/weather?city=${encodeURIComponent(resolved.key)}`}
+              className="text-[11px] text-primary hover:underline"
+            >
+              查看 7 日预报 →
+            </a>
           </div>
         </>
       )}

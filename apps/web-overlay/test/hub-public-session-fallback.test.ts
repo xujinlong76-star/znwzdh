@@ -60,7 +60,12 @@ beforeAll(async () => {
   }
   setEnv("NODE_ENV", "test");
   setEnv("AUTH_SECRET", "s".repeat(40));
-  setEnv("NAVHUB_STORAGE_BASE_URL", "http://hub.test");
+  // HUB_BASE 用 127.0.0.1 字面 IP 而不用 hub.test 这类假域名：guardedFetch 会对
+  // hub 主机做真实 DNS 解析；hub.test 在本机解析器上返回 198.18.18.88（通配），
+  // 在 CI（GitHub DNS）上 NXDOMAIN → SsrfBlockedError → 路由回 403，测试在
+  // 本地过、CI 挂。127.0.0.1 是字面 IP，resolveAndCheckAddresses 直接返回、
+  // 不走 DNS，所有环境行为一致。fetch 本就被 mock，不会真连 8787。
+  setEnv("NAVHUB_STORAGE_BASE_URL", "http://127.0.0.1:8787");
   setEnv("NAVHUB_IDENTITY_SECRET", "i".repeat(40));
   route = await import("../src/app/api/hub/[...path]/route");
 });

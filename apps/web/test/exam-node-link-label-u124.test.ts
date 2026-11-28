@@ -18,7 +18,7 @@
  *   江西成绩复核 →「去报名系统申请复核」/ aria「江西成绩复核报名系统申请复核入口（新窗口打开）」
  *   广东自考成绩查询 →「去系统查成绩」/ aria「成绩查询系统查询成绩入口（新窗口打开）」
  *   缴费（京考，U-395）→「去官网缴费」/ aria「缴费官方缴费入口（新窗口打开）」
- *   其余 13 处准考证打印类节点 →「去官网打印准考证」不变。
+ *   其余 14 处准考证打印类节点 →「去官网打印准考证」不变。
  *
  * label 键安全性：'公共科目笔试' 在国考/省考也出现，但那两处节点无 url、
  * 不渲染链接，映射只在 node.url 分支内调用，误伤不到；'报名' 与
@@ -26,7 +26,7 @@
  * 但只有广东节点带 url，映射只在 node.url 分支内调用，误伤不到。T6 锁死这一事实源状态。
  *
  * 计数口径修正（相对 /tmp/u124-test-plan.md 草稿 T5）：
- * 「打印准考证」短串在渲染 HTML 里修后仍出现 16 次——13 次链接文案 +
+ * 「打印准考证」短串在渲染 HTML 里修后仍出现 17 次——14 次链接文案 +
  * 3 处节点 detail 原文（教资/文职/京考准考证打印行写「下载打印准考证」），
  * 故 T5 只对链接文案与「去官网打印准考证」全串计数，不对短串全量计数。
  */
@@ -42,6 +42,7 @@ import {
   GUANGDONG_SHENGKAO_ADMISSION_URL,
   GUANGDONG_ZIKAO_SCORE_URL,
   GUOKAO_ADMISSION_URL,
+  GUOKAO_GUANGDONG_MOCK_VERIFY_URL,
   GUOKAO_PORTAL_URL,
   JIANGSU_SHENGKAO_ADMISSION_URL,
   JIANGXI_CHENGKAO_REVIEW_URL,
@@ -121,9 +122,10 @@ const allLinks = (): RenderedLink[] => EXAMS.flatMap((exam) => linksOf(exam))
 
 const examById = (id: string): ExamInfo => EXAMS.find((e) => e.id === id)!
 
-/** 23 个带 url 节点逐字映射（examId + label → URL 常量），T4/T6 共用。 */
+/** 24 个带 url 节点逐字映射（examId + label → URL 常量），T4/T6 共用。 */
 const EXPECTED_URLS: Array<[string, string, string]> = [
   ['guokao', '准考证打印', GUOKAO_ADMISSION_URL],
+  ['guokao', '广东考区模拟核验', GUOKAO_GUANGDONG_MOCK_VERIFY_URL],
   ['cet', '口试准考证打印', CET_ADMISSION_URL],
   ['cet', '笔试准考证打印', CET_ADMISSION_URL],
   ['shengkao', '天津准考证打印', TIANJIN_SHENGKAO_ADMISSION_URL],
@@ -148,7 +150,7 @@ const EXPECTED_URLS: Array<[string, string, string]> = [
   ['guangdong-zikao-2027-01', '考试', GUANGDONG_ZIKAO_SCORE_URL],
 ]
 
-/** 10 处例外 label（其余 13 处仍为「去官网打印准考证」）。 */
+/** 10 处例外 label（其余 14 处仍为「去官网打印准考证」）。 */
 const EXCEPTION_LABELS = new Set([
   '报名',
   '缴费',
@@ -210,10 +212,10 @@ describe('T3b：广东自考成绩查询改对', () => {
   })
 })
 
-describe('T4：其余 13 处准考证打印类节点文案不变', () => {
-  it('13 处链接文本仍为「去官网打印准考证」，aria-label 仍为「…官方打印入口」，href 各自原值', () => {
+describe('T4：其余 14 处准考证打印类节点文案不变', () => {
+  it('14 处链接文本仍为「去官网打印准考证」，aria-label 仍为「…官方打印入口」，href 各自原值', () => {
     const links = allLinks()
-    expect(links).toHaveLength(23)
+    expect(links).toHaveLength(24)
     for (const [examId, label, url] of EXPECTED_URLS) {
       if (EXCEPTION_LABELS.has(label)) continue
       const link = links.find((l) => l.examId === examId && l.label === label)!
@@ -225,10 +227,10 @@ describe('T4：其余 13 处准考证打印类节点文案不变', () => {
 })
 
 describe('T5：全量计数（防漏网/防多改）', () => {
-  it('「去官网打印准考证」恰好 13 次、带 url 的 <a> 恰好 23 个、10 处例外无「打印」残留', () => {
+  it('「去官网打印准考证」恰好 14 次、带 url 的 <a> 恰好 24 个、10 处例外无「打印」残留', () => {
     const links = allLinks()
-    expect(links).toHaveLength(23)
-    expect(links.filter((l) => l.text === '去官网打印准考证')).toHaveLength(13)
+    expect(links).toHaveLength(24)
+    expect(links.filter((l) => l.text === '去官网打印准考证')).toHaveLength(14)
     for (const link of links) {
       if (EXCEPTION_LABELS.has(link.label)) {
         expect(link.text).not.toContain('打印')
@@ -238,12 +240,12 @@ describe('T5：全量计数（防漏网/防多改）', () => {
     const html = EXAMS.map((exam) =>
       renderToString(createElement(MyExamTracker, { exam })),
     ).join('')
-    expect(html.match(/去官网打印准考证/g)?.length).toBe(13)
+    expect(html.match(/去官网打印准考证/g)?.length).toBe(14)
   })
 })
 
 describe('T6：无数据改动（数据层守卫）', () => {
-  it('十二场 id、节点总数 51、23 个 url 逐字一致；ExamNode 只新增 portalUrl（门户备用链）', () => {
+  it('十二场 id、节点总数 52、24 个 url 逐字一致；ExamNode 只新增 portalUrl（门户备用链）', () => {
     expect(EXAMS.map((e) => e.id)).toEqual([
       'guokao',
       'cet',
@@ -258,15 +260,15 @@ describe('T6：无数据改动（数据层守卫）', () => {
       'guangdong-zikao-2027-01',
       'shanghai-zikao',
     ])
-    expect(EXAMS.flatMap((e) => e.nodes)).toHaveLength(51)
+    expect(EXAMS.flatMap((e) => e.nodes)).toHaveLength(52)
     const byKey = new Map(
       EXAMS.flatMap((e) => e.nodes.map((n) => [`${e.id}:${n.label}`, n] as const)),
     )
-    expect(byKey.size).toBe(51)
+    expect(byKey.size).toBe(52)
     for (const [examId, label, url] of EXPECTED_URLS) {
       expect(byKey.get(`${examId}:${label}`)?.url).toBe(url)
     }
-    expect(EXAMS.flatMap((e) => e.nodes).filter((n) => n.url)).toHaveLength(23)
+    expect(EXAMS.flatMap((e) => e.nodes).filter((n) => n.url)).toHaveLength(24)
     // U-144：江苏两节点不挂 url；广东自考查询节点挂线上系统直链（U-87），
     // url 总数 16→17。U-163：上海两节点不挂 url（无网页深链可挂），url 总数仍 17。
     // U-164：海南查分不挂 url（U-102 口径），url 总数仍 17。
@@ -276,6 +278,8 @@ describe('T6：无数据改动（数据层守卫）', () => {
     // U-279：天津成绩复核结果查询不挂 url（转载级，未见官方原文），url 总数仍 17，节点总数 44→45。
     // U-395：京考缴费挂报名平台直链（公告原文逐字核实，2026-11-22），节点总数 45→46，url 总数 17→18。
     // C4：广东自考·1月五节点挂自考系统直链（须知原文，2026-11-23），节点总数 46→51，url 总数 18→23。
+    // 2026-11-27：国考广东考区模拟核验挂官方温馨提示直链（post_4985097，广东省人事考试局
+    // 2026-11-26 发布，2026-11-27 browser.open 直读核实），节点总数 51→52，url 总数 23→24。
     // 门户备用链：只有国考准考证节点挂 portalUrl（专题网站门户 GUOKAO_PORTAL_URL），
     // 其余节点不挂；portalUrl 不作主链，url 计数不受影响。
     expect(EXAMS.flatMap((e) => e.nodes).filter((n) => n.portalUrl)).toHaveLength(1)
@@ -311,9 +315,9 @@ describe('T6：无数据改动（数据层守卫）', () => {
 })
 
 describe('T7：链接安全属性不变', () => {
-  it('全部 23 个链接均有 target="_blank" 与 rel="noopener noreferrer"，href 均过 safeHref', () => {
+  it('全部 24 个链接均有 target="_blank" 与 rel="noopener noreferrer"，href 均过 safeHref', () => {
     const links = allLinks()
-    expect(links).toHaveLength(23)
+    expect(links).toHaveLength(24)
     const urlByKey = new Map(EXPECTED_URLS.map(([e, l, u]) => [`${e}:${l}`, u]))
     for (const link of links) {
       expect(link.target).toBe('_blank')

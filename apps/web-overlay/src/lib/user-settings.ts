@@ -11,6 +11,12 @@
 import { FAVORITES_STORAGE_KEY, corruptKeyFor, parseFavorites } from './favorites-storage'
 import { ANON_ID_STORAGE_KEY } from './identity-keys'
 import { isAnonIdentity } from './hub-identity-guard'
+import {
+  normalizeUnit,
+  normalizeWeatherCityPreference,
+  type WeatherCityPreference,
+  type WeatherUnit,
+} from './modular/weather'
 
 export type SearchEngineId = 'internal' | 'google' | 'baidu' | 'bing' | 'sogou' | 'duckduckgo' | 'github' | 'perplexity'
 export type CardDensityMode = 'comfortable' | 'compact' | 'minimal'
@@ -38,6 +44,15 @@ export interface UserSettingsModel {
   themePreference: ThemePreference
   /** 账号级首页隐藏模块键名（与全站 features 同名；个人优先于全站默认） */
   hiddenHomeModules: string[]
+  /** 账号级天气城市偏好（跨设备；null = 未设置过，默认上海） */
+  weatherCity: WeatherCityPreference | null
+  /**
+   * 账号级温度单位偏好（跨设备；缺省 °C）。
+   * /weather 页与天气挂件共用这一个来源（single source of truth）：页面切换
+   * 写这里，挂件挂载时读这里；挂件齿轮的 config.unit 只作旧入口采纳（见
+   * weather-widget.tsx 的采纳水位），不再另存一份单位值。
+   */
+  tempUnit: WeatherUnit
   /** 0 表示从未保存过；云端返回的 Overview.settings 契约要求该字段必填 */
   updatedAt: number
 }
@@ -136,6 +151,8 @@ export const DEFAULT_USER_SETTINGS: UserSettingsModel = {
   historyRetentionDays: 180,
   themePreference: null,
   hiddenHomeModules: [],
+  weatherCity: null,
+  tempUnit: 'celsius',
   updatedAt: 0,
 }
 
@@ -264,6 +281,8 @@ export function normalizeUserSettings(raw?: unknown): UserSettingsModel {
     hiddenHomeModules: Array.isArray(s.hiddenHomeModules)
       ? [...new Set(s.hiddenHomeModules.filter((v): v is string => typeof v === 'string' && v.length <= 32))].slice(0, 8)
       : [],
+    weatherCity: normalizeWeatherCityPreference(s.weatherCity),
+    tempUnit: normalizeUnit(s.tempUnit),
     updatedAt:
       typeof s.updatedAt === 'number' && Number.isFinite(s.updatedAt)
         ? s.updatedAt
@@ -413,10 +432,14 @@ export function verifySettingsConsistency(
     if (k === 'updatedAt') continue
     const expectedVal = normalizedExpected[k]
     const localVal = localWritten[k]
-    // 数组类字段（hiddenHomeModules）按值比较：引用比较永远不等，
-    // 会把每次保存都误报成「修复了 1 项偏差」
+    // 数组与普通对象字段按值比较：引用比较永远不等，
+    // 会把每次保存都误报成「修复了 1 项偏差」。
+    // weatherCity 是模型里唯一的普通对象型字段，normalizeUserSettings
+    // 每次都生成新对象，=== 恒为 false。
+    const isValueObject = (v: unknown): boolean =>
+      Array.isArray(v) || (typeof v === 'object' && v !== null)
     const same =
-      Array.isArray(expectedVal) || Array.isArray(localVal)
+      isValueObject(expectedVal) || isValueObject(localVal)
         ? JSON.stringify(expectedVal) === JSON.stringify(localVal)
         : expectedVal === localVal
     if (!same) {

@@ -78,6 +78,21 @@ const settingsPatchSchema = z
       .array(z.enum(["aiFinder", "dramaCinema", "onboarding", "heroDeck", "xiaomaomao"]))
       .max(5)
       .optional(),
+    // 账号级温度单位偏好：/weather 页与天气挂件同源（缺省 °C）
+    tempUnit: z.enum(["celsius", "fahrenheit"]).optional(),
+    // 账号级天气城市偏好：null = 显式清除（回默认上海）；坐标只用于搜索 id 过期后重搜匹配
+    weatherCity: z
+      .object({
+        id: z.string().min(1).max(64),
+        name: z.string().min(1).max(64),
+        region: z.string().max(64),
+        country: z.string().max(64),
+        timezone: z.string().min(1).max(64),
+        latitude: z.number().min(-90).max(90),
+        longitude: z.number().min(-180).max(180),
+      })
+      .nullable()
+      .optional(),
   })
   .refine(
     (v) => Object.values(v).some((val) => val !== undefined),

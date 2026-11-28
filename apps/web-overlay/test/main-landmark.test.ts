@@ -80,6 +80,7 @@ const LANDMARK_ELSEWHERE: Record<string, string> = {
   "src/app/me/plugins/page.tsx": "插件管理主体在 app/me/plugins/me-plugins-view.tsx（服务端壳只注入首屏数据）",
   "src/app/me/settings/page.tsx": "个性偏好主体在 components/user-center/me-settings-view.tsx（服务端壳只注入首屏数据）",
   "src/app/me/sites/page.tsx": "我的站点主体在 components/user-center/custom-sites-view.tsx（服务端壳只做元数据与挂载）",
+  "src/app/weather/page.tsx": "天气页主体在 app/weather/weather-page.tsx（服务端壳只做元数据与挂载）",
 };
 
 /** 这些文件必须真的带地标（承载了委托页面的主体） */
@@ -105,6 +106,8 @@ const COMPONENTS_WITH_LANDMARK = [
   "src/app/sites/sites-directory.tsx",
   // 搜索结果页：服务端壳只解析 URL，地标在视图组件上
   "src/app/search/search-results.tsx",
+  // 天气页：服务端壳只做元数据与挂载，地标在客户端视图组件上
+  "src/app/weather/weather-page.tsx",
 ];
 
 describe("每个内容页都要有主内容地标", () => {

@@ -62,6 +62,7 @@ function CrdtSyncStatusPillPlaceholder() {
 }
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { useFeatureMask } from '@/lib/modular/feature-mask-store'
+import { sidebarShortTitle } from '@/lib/sidebar-titles'
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   navigationData: NavigationData
@@ -102,6 +103,10 @@ function shortBrandName(full: string): string {
   return trimmed.length > 6 ? trimmed.slice(0, 6) : trimmed
 }
 
+/**
+ * 侧栏一级分类短标题见 lib/sidebar-titles.ts（P0 C 线）：
+ * 7 个 5–6 字分类收成 4 字行内显示，全称仍挂 title / tooltip / aria-label。
+ */
 export const Sidebar = memo(function Sidebar({
   className,
   navigationData,
@@ -689,7 +694,12 @@ export const Sidebar = memo(function Sidebar({
                   >
                     {renderIcon(category.icon)}
                   </span>
-                  <span className="truncate min-w-0 flex-1 text-left">{category.title}</span>
+                  <span
+                    className="truncate min-w-0 flex-1 text-left"
+                    title={category.title}
+                  >
+                    {sidebarShortTitle(category.title)}
+                  </span>
                   {totalSiteCount > 0 && (
                     <span
                       /* 2026-11-25 阶段 C（UI 评审 P0-2 ②）：计数降噪——非当前类目的

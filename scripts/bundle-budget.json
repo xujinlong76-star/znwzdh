@@ -27,7 +27,7 @@
     "/admin/data": 1025024,
     "/admin/videos/[id]/categories/[categoryId]/items": 1044480,
     "/favorites": 1245184,
-    "/me": 1032192,
+    "/me": 1085440,
     "/me/data": 941056,
     "/me/history": 1013760,
     "/admin/stats": 1015808,
@@ -109,9 +109,33 @@
     "/me/growth": 893952,
     "/exam/guokao-checklist": 879616,
     "/marketplace/categories": 845824,
-    "/extension": 839680
+    "/extension": 839680,
+    "/weather": 871424
   },
   "_raise_log": [
+    {
+      "at": "2026-11-27T15:38:31.650Z",
+      "sha": "7e888413",
+      "source": "local",
+      "distDir": ".next-budget-verify",
+      "bundler": "turbopack",
+      "builtAt": "2026-11-27T15:34:57.207Z",
+      "reason": "自 2026-11-14 实测 982,495 B 以来，/me 首屏 JS 随用户中心已落地功能（与 /favorites 同源的 Local-First 同步引擎/Outbox/六态徽标等共享 chunk）增长至实测 1,033,633 B，超预算 1,032,192 B 仅 1,441 B；属真实功能增长，按 +5% 棘轮上调至 1,085,440 B，非为过门禁无依据上调。新路由 /weather 实测 829,860 B，补专属预算 871,424 B（实测×1.05）。",
+      "changes": [
+        {
+          "route": "/me",
+          "from": 1032192,
+          "to": 1085440,
+          "measured": 1033633
+        },
+        {
+          "route": "/weather",
+          "from": 1270784,
+          "to": 871424,
+          "measured": 829860
+        }
+      ]
+    },
     {
       "at": "2026-11-25T01:44:13.724Z",
       "sha": "2dbd63a8",

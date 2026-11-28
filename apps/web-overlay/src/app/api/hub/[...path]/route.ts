@@ -182,10 +182,21 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
         sessionError = '会话无法校验，请重新登录'
       } else {
         const issuedAt = (session as { sessionIssuedAt?: number } | null)?.sessionIssuedAt
-        const revoked = await hubSessionRevoked(sessionSid, sessionIdentity, issuedAt).catch(() => null)
-        if (revoked !== false) {
+        const revoked = await hubSessionRevoked(sessionSid, sessionIdentity, issuedAt).catch(() => {
+          /* 核对失败按不可用处理：下文 fail-open，与 verifyAdminSession、登录登记
+             两处调用方一致。 */
+          return null
+        })
+        if (revoked === true) {
           sessionIdentity = null
-          sessionError = '会话已被吊销或暂时无法校验，请重新登录'
+          sessionError = '会话已被吊销，请重新登录'
+        } else if (revoked === null) {
+          // 核对不可用（中枢不可达，或未配 NAVHUB_IDENTITY_SECRET/管理令牌导致
+          // sessions/check 无法受信）时 fail-open：开发/E2E 环境默认不配身份密钥，
+          // 此时核对恒为 null；若按吊销处理，所有写操作都会 401，E2E 插件导入等
+          // 6 项用例即因此失败。已确认吊销的 sid 由 hubSessionRevoked 内的短 TTL
+          // 缓存继续 fail-closed 拦截，不因 fail-open 被放行。
+          console.warn('[hub-session] sessions/check unavailable, fail-open')
         }
       }
     }

@@ -4,14 +4,12 @@
  * 天气卡以前是纯静态表，没有可测的取数路径；现在它有了真实的失败面，
  * 所以要把「失败必须说清楚、缺失必须是 null、旧观测必须挂 stale」钉住。
  *
- * DNS 被桩成公网 IP：SSRF 防护的三层校验照跑，但不依赖测试机的解析结果。
+ * DNS 走注入的假解析器（返回公网 IP）：SSRF 防护的三层校验照跑，
+ * 但不依赖测试机的解析结果；系统解析器不再被天气路由调用。
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { aqiAdvice } from '../src/lib/modular/weather';
-
-vi.mock("node:dns/promises", () => ({
-  lookup: vi.fn(async () => [{ address: "93.184.216.34" }]),
-}));
+import { __setWeatherDnsResolverForTest } from '../src/lib/weather-dns';
 
 type FetchCall = { url: string };
 
@@ -89,6 +87,8 @@ async function getWeather(query: string, headers?: Record<string, string>) {
 beforeEach(() => {
   calls.length = 0;
   originalFetch = globalThis.fetch;
+  // 天气路由只认注入的解析器：测试里注入返回公网 IP 的假解析器
+  __setWeatherDnsResolverForTest({ lookup: async () => [{ address: "93.184.216.34" }] });
   // qweatherConfigured 的断言必须与环境无关：测试里 key 一律视为未配
   delete process.env.QWEATHER_API_HOST;
   delete process.env.QWEATHER_API_KEY;
@@ -96,6 +96,7 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  __setWeatherDnsResolverForTest(null);
 });
 
 describe("/api/weather：城市表就是唯一的出网面", () => {

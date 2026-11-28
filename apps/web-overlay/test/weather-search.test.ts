@@ -4,13 +4,12 @@
  * 安全面与 /api/weather 相同：前端只传关键词，坐标只由服务端在注册候选时决定；
  * 搜索结果里的经纬度只是展示信息，回传给天气接口的只能是不透明 id。
  *
- * DNS 被桩成公网 IP：SSRF 防护的三层校验照跑，但不依赖测试机的解析结果。
+ * DNS 走注入的假解析器（返回公网 IP）：SSRF 防护的三层校验照跑，
+ * 但不依赖测试机的解析结果；系统解析器不再被天气路由调用。
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock("node:dns/promises", () => ({
-  lookup: vi.fn(async () => [{ address: "93.184.216.34" }]),
-}));
+import { __setWeatherDnsResolverForTest } from '../src/lib/weather-dns';
 
 type FetchCall = { url: string };
 
@@ -82,10 +81,13 @@ async function getSearch(query: string, headers?: Record<string, string>) {
 beforeEach(() => {
   calls.length = 0;
   originalFetch = globalThis.fetch;
+  // 天气路由只认注入的解析器：测试里注入返回公网 IP 的假解析器
+  __setWeatherDnsResolverForTest({ lookup: async () => [{ address: "93.184.216.34" }] });
 });
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  __setWeatherDnsResolverForTest(null);
 });
 
 describe("/api/weather/search：关键词进，候选出", () => {

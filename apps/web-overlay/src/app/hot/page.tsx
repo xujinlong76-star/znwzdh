@@ -7,7 +7,7 @@ import type { HubSite, HubPluginItem } from '@/lib/navhub-api'
 import type { PluginRankGroups } from '@/lib/plugins/marketplace-rankings'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 import { normalizeSearchQuery } from '@/lib/search-page'
-import { parseDomain } from '@/lib/rank-mode'
+import { parseDomain, resolveHeatMode } from '@/lib/rank-mode'
 import HotView from './hot-view'
 
 /**
@@ -122,16 +122,23 @@ export default async function HotPage({
   const sp = await searchParams
   // U-239 + U-240：深链首帧初值——?tab= 决定首帧页签、?fq= 决定首帧筛选词，
   // 服务端直出，不再等挂载 effect 才恢复（消掉深链先 trending/全量再闪切）。
-  // 非法 tab 回落 trending；fq 走 normalizeSearchQuery 口径（截断 256）。
+  // 非法 tab 无显式值，走冷启动默认（2026-11-28 B）；fq 走 normalizeSearchQuery 口径（截断 256）。
   // canonical 仍固定 /hot，?fq=/?tab= 变体由 canonical 收敛，无需新增 robots 规则。
   const tabParam = Array.isArray(sp.tab) ? sp.tab[0] : sp.tab
-  const initialTab = tabParam === 'new' ? 'new' : tabParam === 'plugins' ? 'plugins' : 'trending'
   const initialFilterQuery = normalizeSearchQuery(sp.fq)
   // 2026-11-21：?domain= 领域分榜的首帧值（非法值由 parseDomain 归一到 all）
   const domainParam = Array.isArray(sp.domain) ? sp.domain[0] : sp.domain
   const initialDomain = parseDomain(domainParam)
   const { trending, fresh, recomputedAt, degraded, pluginRankings, pluginDegraded, categoryNames } =
     await loadHot()
+  // 2026-11-28 /hot 冷启动去假存真 v1（B）：无 ?tab= 且 Top10 总热度未达标
+  // （resolveHeatMode(trending) === 'cold'）时默认看「最新入库榜」——新收录
+  // 是唯一真实流动的信号；热度达标自动回落「访问量榜」，无需改代码。
+  // ?tab= 显式值优先于冷启动默认；degraded 时 trending 为 []，resolveHeatMode
+  // 得 cold，默认仍为「最新入库榜」，不新增分支。
+  const explicitTab =
+    tabParam === 'new' ? 'new' : tabParam === 'plugins' ? 'plugins' : tabParam === 'trending' ? 'trending' : null
+  const initialTab = explicitTab ?? (resolveHeatMode(trending) === 'cold' ? 'new' : 'trending')
   return (
     <Container as="main" id="main-content">
       <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">

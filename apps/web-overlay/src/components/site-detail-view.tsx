@@ -60,11 +60,13 @@ import {
   fetchSiteCollections,
   fetchSiteHealthHistory,
   fetchSiteAlternatives,
+  reportClick,
   type HubSite,
   type HubSiteRelation,
   type HubCollection,
   type HealthCheckPoint,
 } from '@/lib/navhub-api'
+import { getIdentity } from '@/lib/identity'
 import { useFavorites } from '@/hooks/useFavorites'
 import { buildCompareHref, mergeCompareCandidates, toggleComparePick } from '@/lib/compare'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -317,6 +319,21 @@ export function SiteDetailView({
     // 只有真的写入成功才显示「已复制」；失败要看得见（见 lib/clipboard.ts）
     const result = await copyText(site.url)
     reportCopy(result)
+  }
+
+  /**
+   * 详情页出站点击上报（2026-11-28 /hot 冷启动去假存真 v1）。
+   *
+   * 漏斗两个阶段有意分开计：卡片点击（进详情）与这里的出站点击（离站到官网）
+   * 同一旅程会产生 2 条 click 事件——入口量 vs 出站量，不是重复计数；
+   * trendScore 把两者都算作 visits7d，与现有口径一致。
+   * reportClick 是 fire-and-forget，失败静默落端侧出箱，永不阻塞跳转；
+   * 只接两处出站锚点（URL 文本链 +「立即直达官方主站」CTA），复制 /
+   * 收藏 / 纠错 / wayback / 相关站链不报。
+   */
+  const handleOutboundClick = () => {
+    if (!site) return
+    reportClick(site.id, getIdentity())
   }
 
   // 加载站点主数据（服务端已下发且未点重试时跳过，避免首屏重复请求）
@@ -728,6 +745,7 @@ export function SiteDetailView({
                   href={safeHref(site.url)}
                   target="_blank"
                   rel={externalRel}
+                  onClick={handleOutboundClick}
                   className="text-xs sm:text-sm text-primary hover:underline break-all font-mono"
                 >
                   {site.url}
@@ -827,7 +845,7 @@ export function SiteDetailView({
           <div className="pt-4 border-t border-border/50 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <Button asChild size="sm" className="h-9 text-xs px-4 gap-1.5 shadow-xs font-semibold">
-                <a href={safeHref(site.url)} target="_blank" rel={externalRel}>
+                <a href={safeHref(site.url)} target="_blank" rel={externalRel} onClick={handleOutboundClick}>
                   <span>立即直达官方主站</span>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>

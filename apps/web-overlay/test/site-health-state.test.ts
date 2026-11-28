@@ -118,6 +118,14 @@ describe("siteHealthState 分级全表（§3.2 八行）", () => {
     ).toEqual({ state: "anomaly", tone: "warn", label: "待核验", latencyMs: null });
   });
 
+  it("兜底：ok 缺失但给了 200（自相矛盾快照）仍返待核验，且毫秒数置空（W11 返工，W10 须修 2）", () => {
+    // 精确 toEqual：钉住 latencyMs: null——此前兜底分支无精确断言，
+    // 仅靠 toMatchObject({ state: "anomaly" }) 拦不住毫秒数透传回归。
+    expect(
+      siteHealthState({ httpStatus: 200, latencyMs: 87, lastCheckedAt: CHECKED }),
+    ).toEqual({ state: "anomaly", tone: "warn", label: "待核验", latencyMs: null });
+  });
+
   it("第 8 行：连续失败 1 次 + 404 返疑似，连续失败 2 次 + 404 返已失效", () => {
     expect(
       siteHealthState({ ok: false, httpStatus: 404, lastCheckedAt: CHECKED, consecutiveFailures: 1 }),
@@ -256,5 +264,12 @@ describe("siteHealthTitle（§7 悬停格式）", () => {
     );
     expect(siteHealthTitle(null)).toBeNull();
     expect(siteHealthTitle({ lastCheckedAt: null })).toBeNull();
+  });
+
+  it("兜底快照（ok 缺失但给了 200）：title 同样写待核验，不写 HTTP 200 与延迟段（W11 返工，W10 须修 2）", () => {
+    // badge 与 title 一致：徽章不画毫秒数，悬停也不展示 "HTTP 200 · 87ms"。
+    expect(
+      siteHealthTitle({ httpStatus: 200, latencyMs: 87, lastCheckedAt: CHECKED }),
+    ).toBe("待核验 · 巡检于 2026-11-19");
   });
 });

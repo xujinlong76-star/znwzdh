@@ -134,7 +134,9 @@ describe("卡片健康徽标渲染（§9 第 5 条）", () => {
     );
     expect(html).toContain("待核验");
     expect(html).not.toContain("近期检测异常");
-    expect(html).not.toContain("(0ms)");
+    // React SSR 会在表达式与文本之间插 <!-- -->，旧代码下渲染为 "(<!-- -->0<!-- -->ms)"，
+    // 字面量 "(0ms)" 不会出现——须先去掉注释再断言，否则是空断言（W10 复审须修 1）。
+    expect(html.replace(/<!-- -->/g, "")).not.toContain("(0ms)");
     expect(html).toContain('title="待核验 · 巡检于 2026-11-19"');
   });
 

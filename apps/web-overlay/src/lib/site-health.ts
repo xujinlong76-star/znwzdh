@@ -184,6 +184,8 @@ export function isFailingHealthState(state: SiteHealthState | null | undefined):
 /**
  * 徽标悬停 title（§7 写死）：`HTTP <code> · <latency>ms · 巡检于 <YYYY-MM-DD>`；
  * 延迟无值时不写延迟段；无状态码时写 `待核验 · 巡检于 <YYYY-MM-DD>`；
+ * anomaly 态（主分支无状态码 / 兜底自相矛盾快照）一律写待核验、不写延迟段——
+ * 徽章本体不画毫秒数时悬停也不展示延迟，口径一致（W11 返工）；
  * 未巡检返回 null（无徽标、无 title）。
  */
 export function siteHealthTitle(health: SiteHealthInput | null | undefined): string | null {
@@ -191,6 +193,9 @@ export function siteHealthTitle(health: SiteHealthInput | null | undefined): str
   const d = new Date(health.lastCheckedAt)
   const pad = (n: number): string => String(n).padStart(2, '0')
   const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  // anomaly 态一律不写延迟段：主分支（无状态码）与兜底分支（ok 缺失但给了 200）
+  // 的徽章都不带毫秒数，title 若仍写 "HTTP 200 · 87ms" 即自相矛盾。
+  if (siteHealthState(health)?.state === 'anomaly') return `待核验 · 巡检于 ${day}`
   if (health.httpStatus == null) return `待核验 · 巡检于 ${day}`
   const latency = health.latencyMs != null ? ` · ${health.latencyMs}ms` : ''
   return `HTTP ${health.httpStatus}${latency} · 巡检于 ${day}`

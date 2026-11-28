@@ -31,7 +31,6 @@
  *     客户端可以建无限会话、每会话挂无限条 SSE 流，把内存与文件描述符耗尽。
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomUUID, timingSafeEqual, createHash } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { AppContext } from "@navhub/api";
@@ -39,6 +38,12 @@ import { scopeSatisfies, hashToken, parseScopes } from "@navhub/api";
 import { createHandlers } from "../../../packages/mcp/src/handlers.ts";
 import { createMcpServer } from "../../../packages/mcp/src/mcp-server.ts";
 import { TOOL_DEFS, type McpScope, type ToolContext } from "../../../packages/mcp/src/tools.ts";
+import {
+  enforceEgressGates,
+  toolCallNames,
+  MCP_QUOTA_EXCEEDED,
+  type EgressGateResult,
+} from "./egress-gates.ts";
 
 export interface McpHttpOptions {
   /** 应用上下文（数据库 / 检索 / AI），由调用方装配以便测试注入 */
@@ -66,6 +71,11 @@ export interface McpHttpOptions {
    * 客户端泄漏或恶意占用，超限的 GET /mcp 回 429。
    */
   maxStreamsPerSession?: number;
+  /**
+   * 每窗口工具调用配额（默认 120/60s，环境变量 NAVHUB_MCP_RATE_LIMIT 覆盖）。
+   * 配额门 + 审计门在此处统一挂载（ADR-0008 双签裁定③）。
+   */
+  rateLimit?: number;
 }
 
 /** MCP 规范：请求体大小上限（与旧 REST 端点一致） */
@@ -139,11 +149,13 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
   const token = opts.token ?? "";
   const allowInsecure = opts.allowInsecure === true;
   const allowedOrigins = opts.allowedOrigins ?? [];
-  const scopes = opts.scopes ?? (["read", "write"] as McpScope[]);
+  // ADR-0008 门三：静态引导 token 默认只读，要写权限须显式配置 scopes。
+  const scopes = opts.scopes ?? (["read"] as McpScope[]);
   const actor = opts.actor ?? "mcp:http";
   const sessionIdleMs = opts.sessionIdleMs ?? 30 * 60 * 1000;
   const maxSessions = opts.maxSessions ?? DEFAULT_MAX_SESSIONS;
   const maxStreamsPerSession = opts.maxStreamsPerSession ?? DEFAULT_MAX_STREAMS_PER_SESSION;
+  const rateLimit = opts.rateLimit ?? 120;
 
   const handlers = createHandlers(opts.ctx) as Record<string, (a: unknown, t: ToolContext) => Promise<unknown>>;
   const sessions = new Map<string, McpSession>();
@@ -218,6 +230,29 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
   function headerValue(req: IncomingMessage, name: string): string | undefined {
     const v = req.headers[name];
     return Array.isArray(v) ? v[0] : v;
+  }
+
+  /**
+   * ADR-0008 三道门的统一执行点：把识别出的工具名交给出口门模块做配额+审计。
+   * 非工具调用（names 为空）直接放行。批量 tools/call 每个工具各计一次。
+   */
+  async function runGates(
+    req: IncomingMessage,
+    toolCtx: ToolContext,
+    names: string[],
+  ): Promise<EgressGateResult | null> {
+    if (names.length === 0) return null;
+    let last: EgressGateResult | null = null;
+    for (const name of names) {
+      last = await enforceEgressGates({
+        repo: opts.ctx.repo,
+        actor: toolCtx.actor,
+        limit: rateLimit,
+        ip: req.socket.remoteAddress ?? undefined,
+      }, name);
+      if (!last.allowed) return last; // 任一超限即拒绝整批
+    }
+    return last;
   }
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -303,6 +338,21 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
       if (!parsed.ok) return rpcError(parsed.reason === "toolarge" ? 413 : 400, parsed.reason === "toolarge" ? "Request body too large" : "Parse error: Invalid JSON");
       if (!isValidJsonRpcMessage(parsed.body)) return rpcError(400, "Invalid JSON-RPC 2.0 message");
 
+      // ADR-0008 门一/门二：识别 tools/call 后跑配额 + 审计（两通道统一）。
+      // initialize / tools/list / ping / 响应消息不含 tools/call → names 为空 → 放行。
+      const gateNames = toolCallNames(parsed.body);
+      if (gateNames.length > 0) {
+        const gate = await runGates(req, toolCtx, gateNames);
+        if (gate && !gate.allowed) {
+          res.setHeader("Retry-After", String(gate.retryAfterSeconds));
+          return send(429, {
+            jsonrpc: "2.0",
+            error: { code: MCP_QUOTA_EXCEEDED, message: "MCP_QUOTA_EXCEEDED" },
+            id: null,
+          });
+        }
+      }
+
       // 已有会话：复用（传输层自行处理请求/通知/响应）
       if (sid) {
         const session = sessions.get(sid);
@@ -365,6 +415,13 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
       const parsed = await readJsonBody(req);
       if (!parsed.ok) return send(parsed.reason === "toolarge" ? 413 : 400, { error: parsed.reason === "toolarge" ? "请求体过大" : "请求体不是合法 JSON" });
 
+      // ADR-0008 门一/门二：兼容端点同样受配额 + 审计约束（防绕道）。
+      const gate = await runGates(req, toolCtx, [name]);
+      if (gate && !gate.allowed) {
+        res.setHeader("Retry-After", String(gate.retryAfterSeconds));
+        return send(429, { error: "MCP_QUOTA_EXCEEDED", retryAfterSeconds: gate.retryAfterSeconds });
+      }
+
       try {
         return send(200, await handler(parsed.body, toolCtx));
       } catch (err) {
@@ -412,7 +469,8 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
 
 /** 从环境变量构造选项（http.ts 的启动入口使用；测试直接传 options） */
 export function mcpHttpOptionsFromEnv(ctx: AppContext): McpHttpOptions {
-  const scopes = (process.env.NAVHUB_MCP_SCOPES ?? "read,write")
+  // ADR-0008 门三：默认 read（原 read,write）——静态 token 默认只读，写须显式开启。
+  const scopes = (process.env.NAVHUB_MCP_SCOPES ?? "read")
     .split(",").map((s) => s.trim()).filter(Boolean) as McpScope[];
   // 非法/非正数回退默认：上限配错（0 除外，0 = 显式禁用新会话）不能把服务变成「谁都连不上还不报错」
   const envInt = (key: string, fallback: number): number => {
@@ -430,5 +488,6 @@ export function mcpHttpOptionsFromEnv(ctx: AppContext): McpHttpOptions {
     actor: process.env.NAVHUB_MCP_ACTOR ?? "mcp:http",
     maxSessions: envInt("NAVHUB_MCP_MAX_SESSIONS", DEFAULT_MAX_SESSIONS),
     maxStreamsPerSession: envInt("NAVHUB_MCP_MAX_STREAMS_PER_SESSION", DEFAULT_MAX_STREAMS_PER_SESSION),
+    rateLimit: envInt("NAVHUB_MCP_RATE_LIMIT", 120),
   };
 }

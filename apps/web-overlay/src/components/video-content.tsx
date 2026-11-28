@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
@@ -103,6 +103,7 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
                 if (data && Array.isArray(data.navigationItems) && data.navigationItems.length > 0) {
                     setNavigationData(data)
                     fullCatalogRef.current = data
+                    fullCatalogLoadedRef.current = true
                 }
             }
         } catch (err) {
@@ -112,40 +113,74 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
     const [searchQuery, setSearchQuery] = useState('')
 
     // 全量视频库缓存池（Ref 存储避免触发 2.7 秒全局组件树重渲染与丢帧）
+    // 不再首屏预取：浏览走 view=card 按 categoryId 按需取；搜索首次有词才拉全量（compact=1）。
     const fullCatalogRef = useRef<NavigationData | null>(null)
+    const fullCatalogLoadedRef = useRef(false)
+    /** 同一 categoryId 只付一次请求：展开多个子分类命中同一份分类卡片缓存 */
+    const categoryCacheRef = useRef(new Map<string, NavigationItem>())
+    /** 同 categoryId 的在途请求去重：连点 3 个子分类只发 1 次 view=card */
+    const categoryLoadPromiseRef = useRef(new Map<string, Promise<void>>())
+    const fullLoadPromiseRef = useRef<Promise<NavigationData | null> | null>(null)
+    /** 数据落 Ref 后靠这个版本号触发一次轻量重渲染（不整包塞 state） */
+    const [catalogVersion, setCatalogVersion] = useState(0)
+    /** 分类卡片加载态：loading 出骨架、error 出重试，失败绝不清空已渲染内容 */
+    const [categoryLoadState, setCategoryLoadState] = useState<Record<string, 'loading' | 'error' | undefined>>({})
 
-    // 首屏秒开后，在浏览器空闲时静默预加载全量视频池到 Ref 中
-    useEffect(() => {
-        let cancelled = false
-        const loadFullCatalog = async () => {
-            try {
-                const res = await fetch('/api/videos?compact=1')
-                if (!res.ok) return
-                const data = await res.json()
-                if (!cancelled && data && Array.isArray(data.navigationItems) && data.navigationItems.length > 0) {
-                    fullCatalogRef.current = data
-                }
-            } catch {
-                // 静默失败，保持 initialData 正常浏览
-            }
-        }
-
-        if (typeof window !== 'undefined') {
-            if ('requestIdleCallback' in window) {
-                const id = (window as any).requestIdleCallback(loadFullCatalog, { timeout: 3500 })
-                return () => {
-                    cancelled = true
-                    if ('cancelIdleCallback' in window) (window as any).cancelIdleCallback(id)
-                }
-            } else {
-                const timer = setTimeout(loadFullCatalog, 500)
-                return () => {
-                    cancelled = true
-                    clearTimeout(timer)
-                }
-            }
-        }
+    // 搜索用的全量池：首次有词才拉；失败不缓存、下次可重试；URL 只带 compact=1 不带 categoryId。
+    const loadFullCatalog = useCallback(async (): Promise<NavigationData | null> => {
+        if (fullCatalogLoadedRef.current && fullCatalogRef.current) return fullCatalogRef.current
+        if (fullLoadPromiseRef.current) return fullLoadPromiseRef.current
+        const task = fetch('/api/videos?compact=1')
+            .then(async (res) => {
+                if (!res.ok) return null
+                const data = (await res.json()) as NavigationData
+                if (!data || !Array.isArray(data.navigationItems) || data.navigationItems.length === 0) return null
+                fullCatalogRef.current = data
+                fullCatalogLoadedRef.current = true
+                return data
+            })
+            .catch(() => {
+                // 搜索全量池只是补充检索数据：拉取失败就返回 null 继续用首屏数据浏览，
+                // 不缓存失败结果，下次有检索词会重新拉取；已渲染内容不受影响。
+                return null
+            })
+            .finally(() => { fullLoadPromiseRef.current = null })
+        fullLoadPromiseRef.current = task
+        return task
     }, [])
+
+    // 浏览用的分类卡片：一次请求拿整类，按 categoryId 缓存，合并进浏览池供展开处读取。
+    const loadCategory = useCallback(async (categoryId: string) => {
+        // 全量池已到位（搜索触发过 compact=1）时，分类条目已在 Ref 里，不必再拉 view=card。
+        if (fullCatalogLoadedRef.current && fullCatalogRef.current) return
+        if (categoryCacheRef.current.has(categoryId)) return
+        const inflight = categoryLoadPromiseRef.current.get(categoryId)
+        if (inflight) return inflight
+        setCategoryLoadState(prev => prev[categoryId] === 'loading' ? prev : { ...prev, [categoryId]: 'loading' })
+        const task = (async () => {
+            try {
+                const res = await fetch(`/api/videos?view=card&categoryId=${encodeURIComponent(categoryId)}`)
+                if (!res.ok) throw new Error(`HTTP ${res.status}`)
+                const data = (await res.json()) as NavigationData
+                const cat = data?.navigationItems?.[0]
+                if (!cat) throw new Error('empty category')
+                categoryCacheRef.current.set(categoryId, cat)
+                const pool = fullCatalogRef.current ?? { navigationItems: initialData.navigationItems }
+                const next = pool.navigationItems.slice()
+                const idx = next.findIndex(c => c.id === categoryId)
+                if (idx >= 0) next[idx] = cat
+                fullCatalogRef.current = { ...pool, navigationItems: next }
+                setCategoryLoadState(prev => { const copy = { ...prev }; delete copy[categoryId]; return copy })
+                setCatalogVersion(v => v + 1)
+            } catch {
+                setCategoryLoadState(prev => ({ ...prev, [categoryId]: 'error' }))
+            } finally {
+                categoryLoadPromiseRef.current.delete(categoryId)
+            }
+        })()
+        categoryLoadPromiseRef.current.set(categoryId, task)
+        return task
+    }, [initialData.navigationItems])
 
 
     // 构建视频 CJK 倒排索引。
@@ -154,9 +189,17 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
     // （遍历全部分类/子分类/条目、拆 CJK bigram、累计词频）。
     // 依赖里用 hasQuery 而不是 searchQuery：布尔值在一次搜索会话里从 false 变 true 后不再翻转，
     // 所以「输入框反复增删字符」不会重复构建（索引本身仍按 navigationData 记忆化）。
+    // 搜索首次有词才拉全量：index 用首屏数据即可，fullCatalog 拉到后只替换检索池并触发重算。
     const hasQuery = searchQuery.trim().length > 0
+    useEffect(() => {
+        if (!hasQuery) return
+        let cancelled = false
+        void loadFullCatalog().then(data => { if (data && !cancelled) setCatalogVersion(v => v + 1) })
+        return () => { cancelled = true }
+    }, [hasQuery, loadFullCatalog])
     const searchIndex = useMemo(
         () => (hasQuery ? buildVideoSearchIndex(navigationData) : null),
+        // catalogVersion 依赖：全量池落 Ref 后不需要重建索引，但检索结果需重算
         [hasQuery, navigationData]
     )
 
@@ -202,7 +245,7 @@ export function VideoContent({ navigationData: initialData, siteData }: VideoCon
             items: cat.items,
             subCategories: Array.from(cat.subCategoryMap.values())
         }))
-    }, [navigationData, searchQuery, searchIndex])
+    }, [navigationData, searchQuery, searchIndex, catalogVersion])
 
     const totalSearchResultsCount = useMemo(() => {
         if (!hasQuery) return 0
@@ -1130,6 +1173,8 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                                                     </>
                                                                 )}
                                                             </button>
+                                                            {categoryLoadState[res.category.id] === 'loading' && <span role="status" className="ml-3 text-xs text-muted-foreground">加载中…</span>}
+                                                            {categoryLoadState[res.category.id] === 'error' && <button type="button" onClick={() => void loadCategory(res.category.id)} className="ml-3 text-xs text-destructive-text underline">加载失败，重试</button>}
                                                         </div>
                                                     )}
                                                 </div>
@@ -1448,7 +1493,10 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                                             <div className="flex items-center justify-center pt-2">
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => toggleSubCatExpand(subCategory.id)}
+                                                                    onClick={() => {
+                                                                        toggleSubCatExpand(subCategory.id)
+                                                                        if (!isExpanded) void loadCategory(category.id)
+                                                                    }}
                                                                     className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-border/70 bg-card/60 hover:bg-accent text-xs font-medium text-muted-foreground hover:text-foreground transition-all duration-200 group/expand shadow-2xs hover:border-primary/40 hover:shadow-xs"
                                                                     aria-expanded={isExpanded}
                                                                 >
@@ -1470,6 +1518,12 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                                                         </>
                                                                     )}
                                                                 </button>
+                                                                {categoryLoadState[category.id] === 'loading' && (
+                                                                    <span role="status" className="text-xs text-muted-foreground">加载中…</span>
+                                                                )}
+                                                                {categoryLoadState[category.id] === 'error' && (
+                                                                    <button type="button" onClick={() => void loadCategory(category.id)} className="text-xs text-destructive-text underline">加载失败，重试</button>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </div>
@@ -1512,7 +1566,10 @@ const INITIAL_VISIBLE_CATEGORIES = 2
                                                         <div className="flex items-center justify-center pt-2">
                                                             <button
                                                                 type="button"
-                                                                onClick={() => toggleSubCatExpand(category.id)}
+                                                                onClick={() => {
+                                                                    toggleSubCatExpand(category.id)
+                                                                    if (!isCatExpanded) void loadCategory(category.id)
+                                                                }}
                                                                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-border/70 bg-card/60 hover:bg-accent text-xs font-medium text-muted-foreground hover:text-foreground transition-all duration-200 group/expand shadow-2xs hover:border-primary/40 hover:shadow-xs"
                                                                 aria-expanded={isCatExpanded}
                                                             >

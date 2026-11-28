@@ -1,7 +1,7 @@
 {
  "_comment": "门禁清单的单一事实源：每一枚「会拦住提交/推送/合并」的检查都在这里登记。只登记能被自动核对的坐标（命令 / runner id / CI 作业）与它的测试，不复制实现。双向口径见 scripts/check-gates-registry.mjs：登记了没接线 = 以为在拦其实没跑；接线了没登记 = 下次改钩子会悄悄删掉它。test 里的文件必须真实存在；确实没有专属测试的写 whyNoTest 说明理由（没有理由的「裸门禁」不许入库）。U-385（2026-11-21 钩子瘦身）：typecheck 与 impact-select 两枚 staged 登记已删——全量 typecheck 与选测 vitest 移出本地 pre-commit，全量只在 CI 跑（test-sqlite：pnpm run typecheck + 全量 vitest 三片；test-web：前端 tsc / lint / build），合入前分支保护不变；如需恢复为 staged，必须同步恢复钩子模板里的接线，否则本校验即红。",
  "version": 1,
- "updatedAt": "2026-11-21",
+ "updatedAt": "2026-11-28",
  "gates": [
   {
    "name": "large-files-staged",
@@ -159,6 +159,17 @@
    "why": "pre-commit 可被绕过；被 GitHub 拒绝只发生在 push 那一刻，此时历史还能在本地处理"
   },
   {
+   "name": "public-asset-size-unpushed",
+   "when": "prepush",
+   "runner": "prepush-gates",
+   "blocks": true,
+   "test": [
+    "scripts/check-public-asset-size.test.ts",
+    "scripts/prepush-gates.test.ts"
+   ],
+   "why": "public/ 下的巨型图标（如曾入库的 260 KB cnki.svg）会拖慢首屏且无任何构建期告警；预推送判的是未推送 blob（--unpushed），别人未提交的资源不该挡住我的推送"
+  },
+  {
    "name": "prepush-gates",
    "when": "prepush",
    "script": "scripts/prepush-gates.mjs",
@@ -260,6 +271,14 @@
    "why": "PG 套件必须走 pnpm test:pg:suite（带环境守卫，防整体 skip 假绿）"
   },
   {
+   "name": "public-asset-size",
+   "when": "ci",
+   "job": "test-web",
+   "blocks": true,
+   "test": "scripts/check-public-asset-size.test.ts",
+   "why": "同一枚体积门禁的 CI 兜底档：全量扫 apps/web-overlay/public（含别人未提交的文件），与 pre-push 的 --unpushed 档共用同一份 LIMITS；跑在 build 之前，不依赖构建产物。步骤级接线的事实源是 scripts/lib/ci-defused.mjs 的 web-public-asset-size"
+  },
+  {
    "name": "test-web",
    "when": "ci",
    "job": "test-web",
@@ -333,6 +352,14 @@
    "blocks": true,
    "test": "apps/web/test/ci-gate.test.ts",
    "why": "覆盖率门禁（2026-11-06 接线）：阈值 lines≥83.68% / functions≥84.35%（2026-11-06 全量实测 85.68/86.35 减 2pp 容差）；低于即红，收紧时只改 coverage-thresholds.json（独立 PR），ci.yml 里没有阈值参数"
+  },
+  {
+   "name": "mcp-http-smoke",
+   "when": "ci",
+   "job": "mcp-http-smoke",
+   "blocks": true,
+   "whyNoTest": "这道门禁的唯一有效验证就是在 CI 里用 node 原生起真进程并 curl 8790/health——不能写 vitest 测试冒充：Vitest 用 esbuild 会自动去重 import，2026-11-28 的 P0（apps/mcp/src/http-server.ts 重复 import createServer 导致生产启动即 SyntaxError）正是被 mcp-http.test.ts 15 passed 的假绿掩盖。测试文件若 import 该模块只会重演假绿，故不设 test，以 CI 真进程 job 为唯一判据。",
+   "why": "MCP HTTP 是独立 node:http 服务，曾因重复 import 在 HEAD 里崩溃且不在任何 typecheck/CI 覆盖内；这道真进程冒烟确保它不可能再在「全绿」状态下启动失败"
   }
  ]
 }

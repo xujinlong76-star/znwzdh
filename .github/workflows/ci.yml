@@ -5,7 +5,7 @@
 # 1. test-sqlite（Lite 模式 / 默认引擎）:
 #    - 全 Monorepo 类型检查（pnpm typecheck）
 #    - 全量 Vitest（SQLite + sqlite-vec + FTS5 CJK 二元分词）
-#    - 核心包与 SDK 打包构建（pnpm build）
+#    - 核心包与 SDK + 前端完整构建（pnpm build，已包含 navsphere）
 # 2. test-postgres（Standard 模式 / 企业跨方言引擎）:
 #    - pgvector 服务容器注入 NAVHUB_TEST_DATABASE_URL
 #      （pg-dialect.e2e.test.ts 与 scripts/pg-check.mts 都只认这个变量名，
@@ -260,6 +260,19 @@ jobs:
       # 绕过钩子的提交（--no-verify）在这里被同一口径拦下。
       - run: node scripts/check-no-explicit-any.mjs
         id: web-no-explicit-any
+      # raw palette 棘轮（2026-11-25 UI 评审 P2-6）：组件层色彩只认语义 Token。
+      # 存量约 5500 处按 scripts/no-raw-palette-baseline.json **逐文件只减不增**；
+      # 计数只认字符串字面量（注释里写迁移说明可引用旧类名）。阻断式（无
+      # continue-on-error）：与 pre-commit 的 `--staged` 同源同判据，
+      # 绕过钩子的提交（--no-verify）在这里被同一口径拦下。
+      - run: node scripts/check-no-raw-palette.mjs
+        id: web-no-raw-palette
+      # public/ 下的巨型静态资源（图标 / 大 JSON / 未压缩脚本）拖慢首屏且无构建期告警。
+      # 阈值在脚本内 LIMITS（SVG 图标 50 KB / 品牌图标 120 KB / .min.js gzip 50 KB / JSON 250 KB）；
+      # 阻断式（无 continue-on-error）：与 pre-push 同源同判据，绕过钩子的提交在这里被同一口径拦下。
+      # 扫的是 apps/web-overlay/public（事实源），此时本作业尚未 vendor，故放在 build 之前。
+      - run: node scripts/check-public-asset-size.mjs
+        id: web-public-asset-size
       - run: pnpm --filter navsphere build
         id: web-build
       # 首屏 JS 预算硬门禁：build 产物已就绪。阈值在 scripts/bundle-budget.json，
@@ -716,6 +729,10 @@ jobs:
       # overlay 覆写优先，之后比对即为真；顺带也 smoke test 了 Docker/vendor 这条路径。
       - run: node scripts/vendor-web.mjs
         id: overlay-vendor
+      # 聚合入口覆盖 core 镜像、路由策略、REST 契约与 overlay→web 四条生成链。
+      # 纯校验、不自修；漂移必须在源目录修复后显式重跑生成/校验。
+      - run: pnpm check:generated
+        id: gate-generated
       # overlay 是 Docker 构建与 vendor 的事实源；apps/web 改了没同步回去会在这里失败
       - run: node scripts/check-web-overlay.mjs
         id: gate-overlay
@@ -726,17 +743,14 @@ jobs:
       # 放在 vendor 之后：此时两个目录都已就绪，比对才有意义。
       - run: node scripts/check-web-config-parity.mjs
         id: gate-config-parity
-      # core 纯算法的前端运行时副本必须与 packages/core 事实源逐字节一致
-      # （历史事故：13 个镜像里 9 个悄悄漂移，knowledge-graph 前端缺 computeGraphCentrality）
-      - run: node scripts/sync-core-mirrors.mjs --check
-        id: gate-core-mirrors
-      # 上游底座 ref 三处声明（vendor 脚本 / Dockerfile / UPSTREAM.md）同源，且产物未漂移
+      # 上游底座 ref 三处声明（vendor 脚本 / UPSTREAM.md / compose）同源，且产物未漂移；
+      # Dockerfile.web 与 .slim 都直接调用 vendor 脚本，不再各自复制 ref / 下载 / overlay 逻辑。
       - run: node scripts/check-upstream-ref.mjs
         id: gate-upstream-ref
       # 验证浏览器扩展 (Chrome Manifest V3) 与桌面扩展 (Raycast) 的规范与文件完整性
       - run: node scripts/check-extensions.mjs
         id: gate-extensions
-      # 撤防账：这个作业是七道门禁排成的一列，默认条件下最前面任何一道红
+      # 撤防账：这个作业的门禁排成的一列，默认条件下最前面任何一道红
       # 都会把后面几道整步跳过——「overlay 与镜像同源」这种历史反复出事的判定
       # 一旦静默 skip，作业结论里根本看不出来。
       - name: 撤防账（没跑成的门禁要点名）
@@ -890,21 +904,23 @@ jobs:
 
   docker-smoke:
     timeout-minutes: 30
-    name: 镜像冒烟构建（api / web）
+    name: 镜像构建与启动冒烟（api / web / migration）
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # CI 此前从不构建镜像：Dockerfile 坏了只有用户拉镜像时才发现。
-      # 这里只验证"能构建出镜像"，不推送；Web 镜像的上游底座在 Dockerfile 内自取。
+      # 构建后必须启动 API/Web、等镜像 HEALTHCHECK，并验证首页与空库迁移；不推送镜像。
       - name: 构建 API 镜像
         id: docker-api
         run: docker build -f docker/Dockerfile.api -t navhub/api:ci .
       - name: 构建 Web 镜像
         id: docker-web
         run: docker build -f docker/Dockerfile.web -t navhub/web:ci .
-      # 撤防账：这两道是**互不替代**的——API 镜像一红，Web 镜像按默认条件 skipped，
-      # 作业结论只说「docker-smoke 红了」，不说「Web 镜像从没构建过」。
-      # 命令形状（docker build）不在覆盖面判据的正则里 ⇒ 登记是人为判断，理由写在登记表上。
+      - name: 启动、health、首页与迁移冒烟
+        id: docker-runtime
+        run: node scripts/docker-smoke.mjs --api-image navhub/api:ci --web-image navhub/web:ci
+      # 撤防账：这几道互不替代，前一道红不能让后面的启动/迁移检查无声跳过。
+      # 命令形状不在覆盖面判据的正则里 ⇒ 登记是人为判断，理由写在登记表上。
       - name: 撤防账（没跑成的门禁要点名）
         id: defused-gates
         if: ${{ always() }}
@@ -1113,10 +1129,52 @@ jobs:
           name: responsive-pr-failures
           path: test-results/
           retention-days: 7
+  mcp-http-smoke:
+    timeout-minutes: 10
+    name: MCP HTTP 生产入口冒烟（真进程 + /health）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        id: mcp-install
+      # 必须起真进程：Vitest 用 esbuild 会自动去重 import，P0 那次重复
+      # `import { createServer }` 就被它掩盖成 mcp-http.test.ts 15 passed 假绿；
+      # 只有 node 原生跑源码才会抛 "Identifier 'createServer' has already been
+      # declared"。因此这里**不许用 vitest 代替**，必须 node 直接起 + curl /health。
+      - name: 启动 MCP HTTP 并探测 /health
+        id: mcp-http-smoke
+        run: |
+          node apps/mcp/src/http.ts > "$RUNNER_TEMP/mcp-http.log" 2>&1 &
+          MCP_PID=$!
+          trap 'kill "$MCP_PID" 2>/dev/null || true' EXIT
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:8790/health 2>/dev/null | grep -q '^200$'; then
+              ok=1
+              break
+            fi
+            if ! kill -0 "$MCP_PID" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          echo '--- MCP HTTP 启动日志 ---'
+          cat "$RUNNER_TEMP/mcp-http.log"
+          if [ "$ok" -ne 1 ]; then
+            echo 'MCP HTTP /health 未在 30s 内返回 200'
+            exit 1
+          fi
+          echo 'MCP HTTP /health = 200'
+
   ci-passed:
     name: CI 整体通过 (All Checks Passed)
     runs-on: ubuntu-latest
-    needs: [test-sqlite, test-postgres, test-web, check-web-overlay, check-isr-live, test-e2e, test-responsive-pr, docker-smoke, audit, coverage]
+    needs: [test-sqlite, test-postgres, test-web, check-web-overlay, check-isr-live, test-e2e, test-responsive-pr, docker-smoke, audit, coverage, mcp-http-smoke]
     if: always()
     steps:
       - name: 评估检查结果
@@ -1130,7 +1188,8 @@ jobs:
              [ "${{ needs.test-responsive-pr.result }}" != "success" ] || \
              [ "${{ needs.docker-smoke.result }}" != "success" ] || \
              [ "${{ needs.audit.result }}" != "success" ] || \
-             [ "${{ needs.coverage.result }}" != "success" ]; then
+             [ "${{ needs.coverage.result }}" != "success" ] || \
+             [ "${{ needs.mcp-http-smoke.result }}" != "success" ]; then
             echo "CI 检查未全部通过！"
             echo "SQLite:   ${{ needs.test-sqlite.result }}"
             echo "PG:       ${{ needs.test-postgres.result }}"
@@ -1142,6 +1201,7 @@ jobs:
             echo "Docker:   ${{ needs.docker-smoke.result }}"
             echo "Audit:    ${{ needs.audit.result }}"
             echo "Coverage: ${{ needs.coverage.result }}"
+            echo "MCP HTTP: ${{ needs.mcp-http-smoke.result }}"
             exit 1
           fi
           echo "🎉 所有 CI 检查均已顺利通过！"

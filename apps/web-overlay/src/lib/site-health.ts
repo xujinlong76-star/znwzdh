@@ -6,8 +6,10 @@
  * 「SLA」还是内部术语，对访客没有意义。
  *
  * 口径：只有完成过巡检（lastCheckedAt 有值）才展示；文案按可验证的事实
- * 给出——HTTP 状态码优先；没有状态码时只说「近期检测异常」（是本站的检测
- * 失败，不等于目标站对用户不可达），不臆测原因。
+ * 给出——HTTP 状态码优先；没有状态码时只说「待核验」（是本站的检测
+ * 失败，不等于目标站对用户不可达），不臆测原因，且不带毫秒数——没有收
+ * 到 HTTP 响应时，探测自身的耗时不是站点的延迟（DNS 失败瞬间返回的
+ * 0ms 尤其不能当众展示，否则「待核验 (0ms)」自相矛盾）。
  *
  * 分级映射 `siteHealthState()`（§3.1/§3.2）：判定顺序写死，按表自上而下，
  * 第一条命中即返回，不叠加——未巡检 → 已失效（硬条件）→ 疑似反爬 →
@@ -132,9 +134,11 @@ export function siteHealthState(health: SiteHealthInput | null | undefined): Sit
   }
 
   // 检测异常：已巡检且 ok === false 且无状态码（本站检测本身失败，
-  // 不等于目标站对用户不可达）。
+  // 不等于目标站对用户不可达）。结论存疑，不判站死刑：文案降级为「待核验」，
+  // 毫秒数置空——没有 HTTP 响应就没有可展示的站点延迟，三处渲染方
+  // （卡片 / 详情页 / 速览弹窗）据此不再画 "(0ms)"。
   if (health.ok === false && health.httpStatus == null) {
-    return { state: 'anomaly', tone: 'warn', label: '近期检测异常', latencyMs }
+    return { state: 'anomaly', tone: 'warn', label: '待核验', latencyMs: null }
   }
 
   // 可访问：最近一次巡检确认目标站正常响应，且内容审计未检出劫持特征。
@@ -146,8 +150,8 @@ export function siteHealthState(health: SiteHealthInput | null | undefined): Sit
   }
 
   // 兜底：ok 既非 true 又非上述失败形态（如 ok 缺失但给了 200）——
-  // 事实自相矛盾时不报可访问，只报检测异常。
-  return { state: 'anomaly', tone: 'warn', label: '近期检测异常', latencyMs }
+  // 事实自相矛盾时不报可访问，只报待核验（同样不带毫秒数）。
+  return { state: 'anomaly', tone: 'warn', label: '待核验', latencyMs: null }
 }
 
 /**
@@ -179,7 +183,7 @@ export function isFailingHealthState(state: SiteHealthState | null | undefined):
 
 /**
  * 徽标悬停 title（§7 写死）：`HTTP <code> · <latency>ms · 巡检于 <YYYY-MM-DD>`；
- * 延迟无值时不写延迟段；无状态码时写 `近期检测异常 · 巡检于 <YYYY-MM-DD>`；
+ * 延迟无值时不写延迟段；无状态码时写 `待核验 · 巡检于 <YYYY-MM-DD>`；
  * 未巡检返回 null（无徽标、无 title）。
  */
 export function siteHealthTitle(health: SiteHealthInput | null | undefined): string | null {
@@ -187,7 +191,7 @@ export function siteHealthTitle(health: SiteHealthInput | null | undefined): str
   const d = new Date(health.lastCheckedAt)
   const pad = (n: number): string => String(n).padStart(2, '0')
   const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-  if (health.httpStatus == null) return `近期检测异常 · 巡检于 ${day}`
+  if (health.httpStatus == null) return `待核验 · 巡检于 ${day}`
   const latency = health.latencyMs != null ? ` · ${health.latencyMs}ms` : ''
   return `HTTP ${health.httpStatus}${latency} · 巡检于 ${day}`
 }

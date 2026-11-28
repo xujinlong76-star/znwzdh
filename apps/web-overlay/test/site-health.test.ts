@@ -37,13 +37,13 @@ describe("站点巡检徽标", () => {
     ).toEqual({ tone: "ok", label: "可访问", latencyMs: 87 });
   });
 
-  it("巡检失败按分级写种类词（03 §3.2）：单次 5xx 是疑似服务端错误，无状态码只说检测异常", () => {
+  it("巡检失败按分级写种类词（03 §3.2）：单次 5xx 是疑似服务端错误，无状态码只说待核验、不带毫秒数", () => {
     expect(
       siteHealthBadge({ ok: false, httpStatus: 503, latencyMs: null, lastCheckedAt: 1792581464978 }),
     ).toEqual({ tone: "warn", label: "服务端错误 (503)", latencyMs: null });
     expect(
       siteHealthBadge({ ok: false, httpStatus: null, latencyMs: 10004, lastCheckedAt: 1792581464978 }),
-    ).toEqual({ tone: "warn", label: "近期检测异常", latencyMs: 10004 });
+    ).toEqual({ tone: "warn", label: "待核验", latencyMs: null });
   });
 
   it("详情页与速览弹窗共用该口径（03 §3.1：直接调 siteHealthState），不再出现 SLA 文案", () => {

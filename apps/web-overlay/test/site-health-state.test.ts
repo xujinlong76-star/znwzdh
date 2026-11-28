@@ -104,13 +104,18 @@ describe("siteHealthState 分级全表（§3.2 八行）", () => {
     ).toMatchObject({ state: "suspect-thin" });
   });
 
-  it("第 7 行：无状态码返检测异常", () => {
+  it("第 7 行：无状态码返待核验（不带毫秒数）", () => {
     expect(
       siteHealthState({ ok: false, httpStatus: null, latencyMs: null, lastCheckedAt: CHECKED }),
-    ).toEqual({ state: "anomaly", tone: "warn", label: "近期检测异常", latencyMs: null });
+    ).toEqual({ state: "anomaly", tone: "warn", label: "待核验", latencyMs: null });
     expect(
       siteHealthState({ ok: false, lastCheckedAt: CHECKED }),
     ).toMatchObject({ state: "anomaly" });
+    // DNS 误判快照形：无状态码 + 0ms（探测自身瞬间失败的耗时，不是站点延迟）——
+    // 同样只说待核验，且毫秒数置空，卡片上不再出现自相矛盾的「待核验 (0ms)」。
+    expect(
+      siteHealthState({ ok: false, httpStatus: null, latencyMs: 0, lastCheckedAt: CHECKED }),
+    ).toEqual({ state: "anomaly", tone: "warn", label: "待核验", latencyMs: null });
   });
 
   it("第 8 行：连续失败 1 次 + 404 返疑似，连续失败 2 次 + 404 返已失效", () => {
@@ -245,9 +250,9 @@ describe("siteHealthTitle（§7 悬停格式）", () => {
     );
   });
 
-  it("无状态码时写近期检测异常 · 巡检于 <YYYY-MM-DD>；未巡检返 null", () => {
+  it("无状态码时写待核验 · 巡检于 <YYYY-MM-DD>；未巡检返 null", () => {
     expect(siteHealthTitle({ ok: false, httpStatus: null, lastCheckedAt: CHECKED })).toBe(
-      "近期检测异常 · 巡检于 2026-11-19",
+      "待核验 · 巡检于 2026-11-19",
     );
     expect(siteHealthTitle(null)).toBeNull();
     expect(siteHealthTitle({ lastCheckedAt: null })).toBeNull();

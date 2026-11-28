@@ -128,6 +128,16 @@ describe("卡片健康徽标渲染（§9 第 5 条）", () => {
     expect(html).toContain('title="HTTP 404 · 巡检于 2026-11-19"');
   });
 
+  it("无状态码的卡片只画「待核验」不带毫秒数（DNS 误判快照形：0ms 不当众展示）", () => {
+    const html = renderCard(
+      itemWithHealth({ ok: false, httpStatus: null, latencyMs: 0, lastCheckedAt: CHECKED }),
+    );
+    expect(html).toContain("待核验");
+    expect(html).not.toContain("近期检测异常");
+    expect(html).not.toContain("(0ms)");
+    expect(html).toContain('title="待核验 · 巡检于 2026-11-19"');
+  });
+
   it("疑似失效卡片画「疑似失效 · 看存档」+ 看存档链接", () => {
     const html = renderCard(
       itemWithHealth({

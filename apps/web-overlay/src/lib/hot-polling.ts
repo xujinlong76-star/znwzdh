@@ -49,8 +49,13 @@ export interface TrendingPollerDeps {
  */
 export function startTrendingPoller(deps: TrendingPollerDeps): () => void {
   const intervalMs = deps.intervalMs ?? HOT_TRENDING_POLL_MS
-  const setIntervalFn = deps.setIntervalFn ?? setInterval
-  const clearIntervalFn = deps.clearIntervalFn ?? clearInterval
+  // 注意：不能写 `deps.clearIntervalFn ?? clearInterval` 再直接调用——
+  // 那样局部变量是联合函数类型，调用时要同时满足全局 clearInterval 的
+  // 全部重载，unknown 入参会报 TS2769；包一层 lambda 收敛成单一签名。
+  const setIntervalFn: (fn: () => void, ms: number) => unknown =
+    deps.setIntervalFn ?? ((fn, ms) => setInterval(fn, ms))
+  const clearIntervalFn: (id: unknown) => void =
+    deps.clearIntervalFn ?? ((id: unknown) => clearInterval(id as number))
   let timer: unknown = null
   let inFlight = false
   let stopped = false

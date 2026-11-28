@@ -132,6 +132,12 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
       <ol className="mt-3 space-y-2.5">
         {exam.nodes.map((node) => {
           const status = examNodeStatus(node, now)
+          // 圆点与徽标同一口径：PEAK 时刻已过（徽标「已截止」）时圆点置灰，
+          // 否则沿用日期口径的 NODE_DOT_CLASS；状态机与禁用逻辑不动
+          // （门控仍按日期口径，午夜才翻 done；U-106 未定）。
+          const deadlineLabel = examNodeDeadlineLabel(exam, node, now)
+          const dotClass =
+            deadlineLabel === '已截止' ? NODE_DOT_CLASS.done : NODE_DOT_CLASS[status]
           const checked = followed && checkedLabels.includes(node.label)
           const linkCopy = nodeLinkCopy(node.label)
           // U-237：行文本（label + detail）与复选框槽位共用一个 span；已关注态
@@ -174,7 +180,7 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
                   <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
                     <span
                       aria-hidden
-                      className={`h-2 w-2 shrink-0 rounded-full ${NODE_DOT_CLASS[status]}`}
+                      className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`}
                     />
                   </span>
                   {text}
@@ -210,9 +216,10 @@ export function MyExamTracker({ exam }: { exam: ExamInfo }) {
               <span className="shrink-0 text-xs text-muted-foreground">
                 {/* 峰值日包 W10：11-18 七项目标时刻已过时文案读「已截止」
                     （examNodeDeadlineLabel，渲染层时刻口径）；其余节点
-                    沿用日期口径的状态文案。只改文案，不改状态、圆点、
-                    关注/勾选禁用逻辑（门控仍按日期口径，午夜才翻）。 */}
-                {examNodeDeadlineLabel(exam, node, now) ?? EXAM_NODE_STATUS_LABEL[status]}
+                    沿用日期口径的状态文案。只改文案与圆点，不改状态、
+                    关注/勾选禁用逻辑（门控仍按日期口径，午夜才翻）；
+                    时刻已过时圆点与文案同口径置灰（见上方 dotClass）。 */}
+                {deadlineLabel ?? EXAM_NODE_STATUS_LABEL[status]}
               </span>
             </li>
           )

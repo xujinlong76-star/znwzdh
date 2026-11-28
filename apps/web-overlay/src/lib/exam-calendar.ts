@@ -1217,6 +1217,10 @@ export const EXAM_NODE_STATUS_LABEL: Record<ExamNodeStatus, string> = {
  *  - 国考广东考区模拟核验 11-28 10:00（post_4985097，广东省人事考试局
  *    2026-11-26 发布，2026-11-27 browser.open 直读逐字；多日窗口末日，
  *    kind endsToday，过期显示「已截止」）。
+ *  - 国考专业科目笔试 11-28 16:00 与京考公安专业科目笔试 12-05 16:00
+ *    （2026-11-28 1922 轮）：首考日单日节点，detail 原文所载 14:00–16:00
+ *    窗口末时刻；入表后 16:00 起跟踪行翻「已截止」、今日行 chip 消失、
+ *    firstDayLabelActive 按此时刻回落既有 fallback。
  *  - 山西成考成绩复核不入表（U-160）：复核窗口 11-19–20 只写「工作时间内」、
  *    无截止时刻，不得编造时刻；11 月 27 日前通知结果是结果通知日、不是节点
  *    截止时刻，同样不入表。节点 11-19→11-20：11-19 被海南直接节点抑制
@@ -1273,6 +1277,8 @@ const PEAK_DAY_DEADLINE_MINUTES: Readonly<Record<string, { date: string; minutes
   'shengkao:江苏准考证打印': { date: '2026-12-06', minutes: 15 * 60 },
   'jundui-wenzhi:准考证打印': { date: '2026-12-13', minutes: 14 * 60 },
   'guokao:广东考区模拟核验': { date: '2026-11-28', minutes: 10 * 60 },
+  'guokao:专业科目笔试': { date: '2026-11-28', minutes: 16 * 60 },
+  'jingkao:公安专业科目笔试': { date: '2026-12-05', minutes: 16 * 60 },
 }
 
 /** 表内节点的目标时刻（UTC 毫秒数）；表外或节点日期不覆盖目标日期的返回 undefined */
@@ -1343,6 +1349,28 @@ export function examNodeDeadlineLabel(
 }
 
 /**
+ * 首日文案是否仍有效（2026-11-28 1922 轮，异常 (2)）：
+ * firstDayLabel 只在首考日当天、首考日单日节点的 PEAK 目标时刻之前成立。
+ * 找首考日单日节点（startISO === endISO === firstExamDay），取其中 PEAK
+ * 目标时刻最小者；无单日节点、或单日节点均无表项 → true（向后兼容）；
+ * 有表项 → nowMs < 目标时刻。时刻源复用 PEAK 表，不解析 detail 文本。
+ * 国考 11-28 只命中专业科目笔试（广东模拟核验是多日节点，不命中）；
+ * 京考 12-05 只命中公安专业科目笔试。
+ */
+export function firstDayLabelActive(exam: ExamInfo, nowMs: number = Date.now()): boolean {
+  const firstDay = firstExamDay(exam)
+  let earliest: number | undefined
+  for (const node of exam.nodes) {
+    if (node.startISO !== firstDay || node.endISO !== firstDay) continue
+    const deadlineMs = peakDayDeadlineMs(exam, node)
+    if (deadlineMs === undefined) continue
+    if (earliest === undefined || deadlineMs < earliest) earliest = deadlineMs
+  }
+  if (earliest === undefined) return true
+  return nowMs < earliest
+}
+
+/**
  * 倒计时紧迫度分档（纯派生：考试 + 时刻，不存状态、不写存储）。
  * 档位互斥：ended → null（不参与任何档位）；today/ongoing → today；
  * 距首考日 1 天 → tomorrow；≤3 天 → urgent；≤7 天 → soon；其余 → relaxed。
@@ -1370,7 +1398,9 @@ export function urgencyTier(
  * 文案与 /exam 倒计时岛同口径：首考日当天「今天国考 · 专业科目 14:00
  * 开考」（国考首考日 11-28 设了 firstDayLabel）、进行中「考研进行中 ·
  * 第 2 天」、首考日前一天「明天国考（专业科目先考 11 月 28 日）」
- *（设了 eveLabel）、其余「距国考 N 天」；天数按北京时间自然日
+ *（设了 eveLabel）、其余「距国考 N 天」；首考日单日节点目标时刻过后
+ *（国考 11-28 16:00、京考 12-05 16:00，firstDayLabelActive）回落
+ *「今天国考」/「今天京考」；天数按北京时间自然日
  *（daysUntil 首考日），与考试条带数字一致。
  */
 export interface ExamCountdownLine {
@@ -1390,7 +1420,10 @@ export function nearestExamCountdown(nowMs: number = Date.now()): ExamCountdownL
   const d = daysUntil(firstExamDay(exam), nowMs)
   let label: string
   if (status === 'today') {
-    label = d === 0 && exam.firstDayLabel ? exam.firstDayLabel : `今天${exam.shortName}`
+    label =
+      d === 0 && exam.firstDayLabel && firstDayLabelActive(exam, nowMs)
+        ? exam.firstDayLabel
+        : `今天${exam.shortName}`
   } else if (status === 'ongoing') label = `${exam.shortName}进行中 · 第 ${1 - d} 天`
   else if (d === 1) label = exam.eveLabel ?? `明天${exam.shortName}`
   else label = `距${exam.shortName} ${d} 天`

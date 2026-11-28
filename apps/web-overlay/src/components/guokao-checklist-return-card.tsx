@@ -6,6 +6,7 @@ import { CalendarDays } from 'lucide-react'
 import {
   EXAMS,
   daysUntil,
+  firstDayLabelActive,
   firstExamDay,
   guokaoAdmissionPhase,
 } from '@/lib/exam-calendar'
@@ -44,7 +45,9 @@ const LAST_CALL_TITLE = '末班提醒：准考证打印 11 月 29 日 15:00 截�
  *  - phase 为 null（11-23 前或 11-29 15:00 后）→ null，整卡不渲染；
  *  - d > 0 且 open（11-23–11-26）→ 标题「准考证打印已开放」，标签实算天数；
  *  - d > 0 且 last-call（仅 11-27）→ eveLabel 全句，不显示天数；
- *  - d === 0（11-28）→ firstDayLabel 全句，不显示天数；
+ *  - d === 0（11-28）→ firstDayLabel 全句，不显示天数；16:00 后
+ *    （首考日单日节点目标时刻已过，firstDayLabelActive 为 false）
+ *    回落「今天国考」（2026-11-28 1922 轮）；
  *  - d < 0 且 phase 非 null（仅 11-29，15:00 前）→ 「今天笔试」，不出现 0 天/负数。
  */
 export function guokaoReturnCardContent(nowMs: number): GuokaoReturnCardContent {
@@ -60,7 +63,16 @@ export function guokaoReturnCardContent(nowMs: number): GuokaoReturnCardContent 
     return { phase, title: LAST_CALL_TITLE, label: guokao.eveLabel ?? `明天${guokao.shortName}` }
   }
   if (d === 0) {
-    return { phase, title: LAST_CALL_TITLE, label: guokao.firstDayLabel ?? `今天${guokao.shortName}` }
+    // 2026-11-28 1922 轮：首日文案只在首考日单日节点目标时刻前成立
+    //（国考 11-28 16:00，firstDayLabelActive），16:00 后回落「今天国考」。
+    return {
+      phase,
+      title: LAST_CALL_TITLE,
+      label:
+        guokao.firstDayLabel && firstDayLabelActive(guokao, nowMs)
+          ? guokao.firstDayLabel
+          : `今天${guokao.shortName}`,
+    }
   }
   return { phase, title: LAST_CALL_TITLE, label: '今天笔试' }
 }

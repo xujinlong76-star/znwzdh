@@ -5,6 +5,7 @@ import {
   countdownParts,
   daysUntil,
   examStatus,
+  firstDayLabelActive,
   firstExamDay,
   hasActionableNodes,
   shanghaiMidnightMs,
@@ -75,9 +76,14 @@ export function ExamCountdown({ exam }: { exam: ExamInfo }) {
     // 专业科目 14:00 开考」），与首页条带 nearestExamCountdown 同口径；
     // 首考日之后（国考 11-29 / 京考 12-06，daysUntil 首考日为 -1）仍
     // 回落「今天考试」——首日文案只在首日成立。ongoing 分支不动。
+    // 2026-11-28 1922 轮：首日文案只在首考日单日节点目标时刻前成立
+    //（国考 11-28 16:00、京考 12-05 16:00，firstDayLabelActive），
+    // 16:00 后回落「今天考试」。
     const label =
       status === 'today'
-        ? daysUntil(firstExamDay(exam), now) === 0 && exam.firstDayLabel
+        ? daysUntil(firstExamDay(exam), now) === 0 &&
+          exam.firstDayLabel &&
+          firstDayLabelActive(exam, now)
           ? exam.firstDayLabel
           : '今天考试'
         : `进行中 · 第 ${1 - daysUntil(firstExamDay(exam), now)} 天`

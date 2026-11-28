@@ -1439,10 +1439,15 @@ describe('国考专业科目笔试 16:00 时刻门控（2026-11-28 1922 轮，�
     expect(examNodeDeadlineLabel(guokao, proNode(), NOV_28_155959_CST)).toBeNull()
   })
 
-  it('次日已结束：11-29 08:00 节点状态翻 done，helper 回 null（不再是「已截止」）', () => {
+  it('次日状态翻 done，但 helper 仍为「已截止」（PEAK 既有语义，非本轮改动）', () => {
+    // 纠正设计 §3 表：examNodeDeadlineLabel 是纯 nowMs >= 目标时刻判定，
+    // 次日仍返回「已截止」，不回 null；跟踪行表达式 deadlineLabel ?? 状态文案
+    // 故次日该行仍显示「已截止」，不是「已结束」。同款既有行为已实测：
+    // 京考报名 11-19 status done、helper 仍「已截止」。改 helper 语义会
+    // 牵动全部 22 个表项的次日显示，不在本轮范围。
     expect(examNodeStatus(proNode(), NOV_29_0800_CST)).toBe('done')
-    expect(examNodeDeadlineLabel(guokao, proNode(), NOV_29_0800_CST)).toBeNull()
-    expect(nodeDeadlineDisplayLabel(guokao, proNode(), NOV_29_0800_CST)).toBe('已结束')
+    expect(examNodeDeadlineLabel(guokao, proNode(), NOV_29_0800_CST)).toBe('已截止')
+    expect(nodeDeadlineDisplayLabel(guokao, proNode(), NOV_29_0800_CST)).toBe('已截止')
   })
 
   it('今日行入选口径不动：11-28 今日行仍含专业科目笔试（只变排序键与 chip）', () => {
@@ -1494,6 +1499,8 @@ describe('国考专业科目笔试 16:00 时刻门控（2026-11-28 1922 轮，�
 describe('京考公安专业科目笔试 16:00 时刻门控（2026-11-28 1922 轮，异常 (2)）', () => {
   // 京考公安专业科目笔试是 12-05 单日节点（14:00–16:00），PEAK 表目标 16:00。
   const proNode = () => jingkao.nodes.find((n) => n.label === '公安专业科目笔试')!
+  /** 2026-12-05 08:00 北京时间（首考日白天） */
+  const DEC_05_0800_CST = Date.UTC(2026, 11, 5, 0, 0, 0)
   /** 2026-12-05 15:59:59 北京时间 = UTC 07:59:59（边界前 1 秒） */
   const DEC_05_155959_CST = Date.UTC(2026, 11, 5, 7, 59, 59)
   /** 2026-12-05 16:00:00 北京时间 = UTC 08:00:00（边界整点） */
@@ -1528,11 +1535,12 @@ describe('京考公安专业科目笔试 16:00 时刻门控（2026-11-28 1922 �
     expect(examNodeDeadlineLabel(jingkao, proNode(), DEC_05_235959_CST)).toBe('已截止')
   })
 
-  it('时刻门控只在渲染层：16:00 起 examNodeStatus 仍为 today；次日翻 done', () => {
+  it('时刻门控只在渲染层：16:00 起 examNodeStatus 仍为 today；次日翻 done、helper 仍「已截止」', () => {
     expect(examNodeStatus(proNode(), DEC_05_160000_CST)).toBe('today')
     expect(examNodeStatus(proNode(), DEC_05_235959_CST)).toBe('today')
     expect(examNodeStatus(proNode(), DEC_06_0800_CST)).toBe('done')
-    expect(examNodeDeadlineLabel(jingkao, proNode(), DEC_06_0800_CST)).toBeNull()
+    // 与国考同款 PEAK 既有语义：次日 helper 仍「已截止」，不回 null
+    expect(examNodeDeadlineLabel(jingkao, proNode(), DEC_06_0800_CST)).toBe('已截止')
   })
 
   it('firstDayLabelActive：15:59:59 为 true、16:00:00 起为 false', () => {

@@ -33,6 +33,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { normalizeSearchQuery } from "../src/lib/search-page";
+import { resolveHeatMode } from "../src/lib/rank-mode";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -123,9 +124,57 @@ describe("U-240：深链首帧初值，不闪切", () => {
     expect(pageSrc).toContain("initialFilterQuery={initialFilterQuery}");
   });
 
-  it("非法 tab 回落 trending；canonical 仍固定 /hot", () => {
-    expect(pageSrc).toContain("tabParam === 'new' ? 'new' : tabParam === 'plugins' ? 'plugins' : 'trending'");
+  it("非法 tab 无显式值、走冷启动默认；canonical 仍固定 /hot", () => {
+    expect(pageSrc).toContain(
+      "explicitTab ?? (resolveHeatMode(trending) === 'cold' ? 'new' : 'trending')",
+    );
     expect(pageSrc).toContain("canonical: '/hot'");
+  });
+});
+
+/**
+ * 2026-11-28 /hot 冷启动去假存真 v1（B）：无 ?tab= 时首帧默认 tab 由热度决定。
+ *
+ * 冷启动（Top10 总热度 <50）默认看「最新入库榜」——新收录是唯一真实流动
+ * 的信号；热度达标自动回落「访问量榜」，过渡自动、无需改代码。
+ * ?tab= 显式值优先于冷启动默认；degraded 时 trending 为 []，resolveHeatMode
+ * 得 cold，默认仍为「最新入库榜」，不新增分支。
+ * resolveHeatMode 的阈值行为（50 / 10）由 rank-mode.test.ts 钉住，本文件
+ * 只钉 page.tsx 的接线 + 用 mock 数据复核 cold/live 两态的判定结果。
+ */
+describe("2026-11-28 冷启动默认 tab：无 ?tab= 时 cold → new、live → trending", () => {
+  const pageSrc = overlaySource("src/app/hot/page.tsx");
+
+  it("page.tsx 从 rank-mode import resolveHeatMode，与 parseDomain 同模块", () => {
+    expect(pageSrc).toContain("import { parseDomain, resolveHeatMode } from '@/lib/rank-mode'");
+  });
+
+  it("显式 ?tab= 优先：new / plugins / trending 各自直出，不走冷启动默认", () => {
+    expect(pageSrc).toContain(
+      "tabParam === 'new' ? 'new' : tabParam === 'plugins' ? 'plugins' : tabParam === 'trending' ? 'trending' : null",
+    );
+    expect(pageSrc).toContain(
+      "explicitTab ?? (resolveHeatMode(trending) === 'cold' ? 'new' : 'trending')",
+    );
+  });
+
+  it("冷启动判定：全零热度 → cold（默认 new）；总热度 ≥50 → live（默认 trending）", () => {
+    const coldSites = Array.from({ length: 10 }, (_, i) => ({
+      id: `s${i}`,
+      visitCount: 0,
+      trendScore: 0,
+    }));
+    expect(resolveHeatMode(coldSites)).toBe("cold");
+    const hotSites = Array.from({ length: 10 }, (_, i) => ({
+      id: `s${i}`,
+      visitCount: i === 0 ? 60 : 0,
+      trendScore: 0,
+    }));
+    expect(resolveHeatMode(hotSites)).toBe("live");
+  });
+
+  it("degraded 态：trending 为空数组时 resolveHeatMode 得 cold，默认仍为 new", () => {
+    expect(resolveHeatMode([])).toBe("cold");
   });
 });
 
